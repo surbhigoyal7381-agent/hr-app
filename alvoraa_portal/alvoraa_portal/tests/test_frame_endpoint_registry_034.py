@@ -392,7 +392,11 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# blind spot became obvious. Two count them and two list them, and
 			# all four take the SAME scope subquery out of the part's one filter
 			# expression - which is the control, not the call.
-			"inbox_api.py": ("frappe.get_all",) * 3 + ("frappe.qb.from_",) * 4,
+			# +3 in slice 063: the companies whose pay rule set is on, and the
+			# leave types marked leave without pay (read twice). Configuration
+			# records, never a person's - the HR scope itself stays on the
+			# Leave Application query, which is get_list.
+			"inbox_api.py": ("frappe.get_all",) * 6 + ("frappe.qb.from_",) * 4,
 			# home_api (slice 042, re-counted for 044 R1/D6, and again when
 			# Wave 4 rebased onto the fixed Wave 3). EIGHT reads and one
 			# aggregate, and all but one are the CALLER'S OWN record:

@@ -8,16 +8,16 @@ in a tree you hunt.
 It is also where seats are created and re-parented, because that is awkward on
 a chart and obvious in a row.
 
-WHO MAY CHANGE IT IS A SETTING, not a hard-coded role. At the first customer the
-owners maintain the structure themselves and HR does not; at the next it will be
-the other way round. `alvoraa_org_position_editor_roles` decides, and like the
-other keys that hand out privilege it can only be changed by a System Manager,
-and leaves a record when it is.
+WHO MAY OPEN IT, AND WHO MAY CHANGE IT, IS FRAPPE'S OWN PERMISSION on the
+document type "Alvoraa Position" - set on Desk, Role Permissions Manager, like
+every other module (Surbhi, 19 Oct 2026). Read opens the page; Write changes
+seats and who sits in them. It ships as HR Manager and System Manager. At the
+first customer the owners keep the structure themselves through a role of their
+own; at the next it may be HR. Either way an administrator ticks the boxes, and
+nothing here needs to know which.
 
-WHO MAY OPEN IT AT ALL IS A SETTING TOO: `alvoraa_org_positions_view_roles`,
-HR Manager by default (Surbhi, 19 Oct 2026). Everybody else has the
-Organisation page. Until then any manager could read it, because reading
-followed the org chart's reach.
+Everybody else has the Organisation page. The org chart's `reach()` decides
+that page and does not decide this one.
 
 READING IS SCOPED THE SAME WAY AS EVERY OTHER HR READER (slice 030): the
 companies somebody may act for, and their branches if they are tied to a store.
@@ -29,8 +29,12 @@ from frappe.utils import add_days, flt, getdate, nowdate
 
 from hrms.alvoraa_org_structure import settings
 
-EDITOR_ROLES_KEY = "alvoraa_org_position_editor_roles"
-VIEWER_ROLES_KEY = "alvoraa_org_positions_view_roles"
+POSITION = "Alvoraa Position"
+
+# The fixed first words of the reason the hire hook writes on an assignment
+# (slice 064). Ids only follow it, never a name. The page reads it to say
+# "hired for this seat".
+PLACED = "Placed on joining from Job Opening"
 
 
 def _scope():
@@ -38,40 +42,143 @@ def _scope():
 
 	Returns (companies, branches). `branches` is None for somebody who is not
 	tied to a store, which means "every branch" rather than "no branch".
+
+	Somebody given this page in Role Permissions Manager without an HR role -
+	the owners at the first customer - gets the same answer HR would: the
+	companies in their User Permissions, or else the company on their own
+	employee record. `permitted_companies` gives a non-HR role nothing, which
+	opened the page on an empty table and refused every save. Every caller of
+	this function has already passed `may_view` or `may_edit`.
 	"""
+	from frappe.core.doctype.user_permission.user_permission import get_user_permissions
+
 	from hrms.alvoraa_hr_core.access import permitted_branches, permitted_companies
 
-	return permitted_companies(), permitted_branches()
+	companies = permitted_companies()
+	if not companies:
+		companies = sorted({d.get("doc") for d in get_user_permissions().get("Company", [])
+		                    if d.get("doc")})
+	if not companies:
+		own = frappe.db.get_value("Employee", {"user_id": frappe.session.user,
+		                                       "status": "Active"}, "company")
+		companies = [own] if own else []
+	return companies, permitted_branches()
 
 
 def may_view():
-	"""Whether this person may open the Positions page at all.
-
-	The roles in `alvoraa_org_positions_view_roles`, HR Manager by default.
-	This used to be `reach()`, the org chart's rule, which lets in anybody with
-	a direct report. `reach()` still decides the chart; it no longer decides
-	this page.
-
-	ANYBODY WHO MAY EDIT MAY ALSO VIEW. Otherwise the two settings could
-	contradict each other: a role in the editor list but not in this one could
-	change seats it cannot see. With the shipped defaults that is exactly the
-	System Manager, so the editor roles count here too.
-
-	A blank setting reads as the default, so clearing it cannot lock HR out.
+	"""Whether this person may open the Positions page at all: Frappe's Read on
+	Alvoraa Position. One rule for every endpoint behind the page and the menu.
 	"""
-	allowed = {r.strip() for r in str(settings.get(VIEWER_ROLES_KEY)).split(",") if r.strip()}
-	return bool(allowed & set(frappe.get_roles())) or may_edit()
+	return bool(frappe.has_permission(POSITION, "read"))
 
 
 def may_edit():
-	"""Whether this person may create or change a seat.
+	"""Whether this person may change the structure: Frappe's Write on Alvoraa
+	Position.
 
-	Read from a setting rather than fixed in code, because who owns the shape of
-	the organisation differs by customer. At DTC it is the owners; elsewhere it
-	will be HR.
+	ONE CAPABILITY, SET IN ONE PLACE. It covers the seats AND who sits in them
+	(Alvoraa Position Assignment), so an administrator ticks one row and not
+	two. Asking each doctype separately would let somebody draw seats they could
+	not fill - which is what the first customer's own permission rows would have
+	done to its owners. Write rather than Create, because nearly every change
+	here is to a seat that already exists.
 	"""
-	allowed = {r.strip() for r in str(settings.get(EDITOR_ROLES_KEY)).split(",") if r.strip()}
-	return bool(allowed & set(frappe.get_roles()))
+	return bool(frappe.has_permission(POSITION, "write"))
+
+
+AUDITED = (POSITION, "Alvoraa Position Assignment")
+
+
+def record_permission_change(doc, method=None):
+	"""A readable record of every change to who may use the Positions page,
+	and the menu brought up to date at once. Hooked on Custom DocPerm, which
+	is what Role Permissions Manager adds, ticks and removes.
+
+	THE RECORD is a Version on the doctype, written in the same transaction as
+	the change, like the org chart's access settings (SEC-18). Frappe's own
+	Permission Log was not enough on its own: a ticked box does not name the
+	role, and the first change to a doctype copies every shipped row, which it
+	logs as rows "Added" - an auditor would read that as HR being given rights.
+	Here a copy says it is a copy.
+
+	Skipped on purpose during a migrate, install or patch: nobody chose those
+	changes on the screen, and the code that makes them is reviewed in git.
+	Frappe's Permission Log skips them for the same reason.
+
+	THE MENU: the Positions item is cached per user for an hour. Clearing it
+	for the holders of the changed role makes it follow within the time of a
+	page load. The server's own refusal never depended on this cache.
+	"""
+	if doc.parent not in AUDITED:
+		return
+	if frappe.flags.in_migrate or frappe.flags.in_install or frappe.flags.in_patch:
+		return
+
+	removed = method == "on_trash"
+	before = None if removed else doc.get_doc_before_save()
+	rights = [(df.fieldname, df.label) for df in frappe.get_meta("Custom DocPerm").fields
+	          if df.fieldtype == "Check"]
+	who = doc.role if not doc.permlevel else "{0} (level {1})".format(doc.role, doc.permlevel)
+	yes_no = lambda v: "Yes" if v else "No"  # noqa: E731
+
+	others = frappe.get_all("Custom DocPerm",
+	                        filters={"parent": doc.parent, "name": ("!=", doc.name)},
+	                        fields=["role", "permlevel"] + [f for f, _l in rights])
+	if not removed and not before and _is_shipped_copy(doc, others, rights):
+		changed = [["Role row: " + who, "shipped table",
+		            "copied as it was - nobody gained or lost a right"]]
+		roles = set()
+	elif removed:
+		changed = [["Role row: " + who, "on the list", "removed"]]
+		changed += [[who + ": " + label, "Yes", "No"] for f, label in rights if doc.get(f)]
+		roles = {doc.role}
+		if not others:
+			# The last row of the doctype's own gone: Frappe goes back to the
+			# shipped table, which gives its roles their rights back.
+			shipped = frappe.get_all("DocPerm", filters={"parent": doc.parent}, pluck="role")
+			changed.append(["Permission table", "this organisation's own rows",
+			                "the shipped rows apply again: " + ", ".join(sorted(set(shipped)))])
+			roles |= set(shipped)
+	elif not before:
+		changed = [["Role row: " + who, "not on the list", "added"]]
+		changed += [[who + ": " + label, "No", "Yes"] for f, label in rights if doc.get(f)]
+		roles = {doc.role}
+	else:
+		changed = [[who + ": " + label, yes_no(before.get(f)), yes_no(doc.get(f))]
+		           for f, label in rights if bool(before.get(f)) != bool(doc.get(f))]
+		roles = {doc.role}
+		if not changed:
+			return
+
+	frappe.get_doc({
+		"doctype": "Version", "ref_doctype": "DocType", "docname": doc.parent,
+		"data": frappe.as_json({"changed": changed}, indent=None, separators=(",", ":")),
+	}).insert(ignore_permissions=True)  # Version has no create permission for anyone; Frappe writes its own the same way
+
+	if doc.parent == POSITION and roles:
+		holders = frappe.get_all("Has Role", filters={"parenttype": "User", "role": ("in", list(roles))},
+		                         pluck="parent", distinct=True)
+		if holders:
+			keys = ["portal_ctx_" + u for u in holders]
+			# After the commit, or a page load in between could cache the old answer again.
+			frappe.db.after_commit.add(lambda: frappe.cache.delete_value(keys))
+
+
+def _is_shipped_copy(doc, others, rights):
+	"""True when Frappe is copying the shipped table, which it does the first
+	time anything on a doctype is changed. The row matches a shipped row
+	exactly, and so does every row of the doctype's own so far - so the rights
+	in force do not change."""
+	fields = ["role", "permlevel"] + [f for f, _l in rights]
+	shipped = [tuple(_box(r.get(f)) for f in fields) for r in frappe.get_all(
+		"DocPerm", filters={"parent": doc.parent}, fields=fields)]
+	key = lambda r: tuple(_box(r.get(f)) for f in fields)  # noqa: E731
+	return key(doc) in shipped and all(key(o) in shipped for o in others)
+
+
+def _box(value):
+	"""0, None and "" all mean an unticked box; a role name stays a name."""
+	return value if isinstance(value, str) and value else int(value or 0)
 
 
 def _may_see_who_is_leaving():
@@ -180,7 +287,7 @@ def position_table(branch=None, department=None, as_at=None):
 		order_by="branch asc, department asc, position_title asc",
 		limit_page_length=0)
 	if not seats:
-		return {"rows": [], "may_edit": may_edit(), "as_at": as_at}
+		return {"rows": [], "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at}
 
 	names = [s.name for s in seats]
 	filled, people = {}, {}
@@ -188,7 +295,7 @@ def position_table(branch=None, department=None, as_at=None):
 			"Alvoraa Position Assignment",
 			filters={"position": ("in", names), "from_date": ("<=", as_at)},
 			fields=["name", "position", "employee", "employee_name", "weight",
-			        "assignment_type", "to_date"],
+			        "assignment_type", "to_date", "from_date", "reason"],
 			limit_page_length=0):
 		if a.to_date and str(a.to_date) < str(as_at):
 			continue
@@ -201,7 +308,10 @@ def position_table(branch=None, department=None, as_at=None):
 			"employee": a.employee, "name": a.employee_name,
 			"weight": flt(a.weight),
 			"type": a.assignment_type or "Permanent",
-			"covering": (a.assignment_type or "Permanent") != "Permanent"})
+			"covering": (a.assignment_type or "Permanent") != "Permanent",
+			# Put in this seat by the hire hook (slice 064): the day they joined.
+			# Read from the assignment's own fixed reason; nothing is stored for it.
+			"hired_on": str(a.from_date) if (a.reason or "").startswith(PLACED) else None})
 
 	# Who is working their notice. Nothing new is stored for this: somebody is
 	# on notice when they are still Active and their last day is already known.
@@ -223,7 +333,8 @@ def position_table(branch=None, department=None, as_at=None):
 	# one-person seat names them exactly, so a count is not a weaker disclosure
 	# than a date - it is the same one, worded vaguely.
 	leaving = {}
-	if _may_see_who_is_leaving():
+	may_see_leaving = _may_see_who_is_leaving()
+	if may_see_leaving:
 		holders = {a["employee"] for rows_ in people.values() for a in rows_} 			if people else set()
 		mine = _my_reporting_line()
 		if holders:
@@ -317,8 +428,71 @@ def position_table(branch=None, department=None, as_at=None):
 				seen.add(d.name)
 			edge = [parents[e]["parent"] for e in edge if e in parents]
 
-	return {"rows": rows, "may_edit": may_edit(), "as_at": as_at,
-	        "departments": parents}
+	out = {"rows": rows, "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at,
+	        "departments": parents,
+	        # Whether the page may say "leaving" at all, so a reader who may not
+	        # see leavers gets no tile - never a "Nobody leaving" that is untrue.
+	        "may_see_leaving": bool(may_see_leaving),
+	        # "Set manager" opens the Employee record; offered only to somebody
+	        # who may change it (design X-6).
+	        "may_edit_employee": bool(frappe.has_permission("Employee", "write"))}
+
+	# The people who are on no chart at all: Active, in no seat. A list of
+	# named people, so it goes ONLY to somebody who may see them as HR, and
+	# the key is ABSENT otherwise - the page then shows no tile, never a "0"
+	# that would be untrue (SEC-2). Not stored anywhere; worked out per load.
+	from hrms.alvoraa_hr_core.access import NO_EMPLOYEES, permitted_employee_filters
+
+	people = permitted_employee_filters()
+	if people != NO_EMPLOYEES:
+		out["unseated"], out["active_people"] = _unseated(people, as_at)
+	return out
+
+
+# The ONLY fields a person in the "in no seat" list carries (PRIV-1). Named one
+# by one, never a whole row, so a field added to Employee later cannot leak.
+UNSEATED_KEYS = ("employee", "name", "job_role", "branch", "joined", "no_manager")
+
+
+def _unseated(people, as_at):
+	"""Active employees within `people` (HR's own scope, as Frappe filters)
+	who hold no seat on `as_at`, and how many Active people that scope holds.
+
+	Two statements whatever the headcount. The scope and the "no seat" test
+	stay inside the database - a NOT EXISTS against current assignments - so
+	no list of seated ids is read into Python and sent back (nfr-budget §2).
+	`no_manager` is a yes/no; the manager's name is never sent.
+	"""
+	from pypika.terms import ExistsCriterion
+
+	emp = frappe.qb.DocType("Employee")
+	seat = frappe.qb.DocType(ASSIGNMENT)
+	held = (frappe.qb.from_(seat).select(seat.name)
+	        .where(seat.employee == emp.name)
+	        .where(seat.from_date <= as_at)
+	        .where(seat.to_date.isnull() | (seat.to_date >= as_at)))
+	q = (frappe.qb.from_(emp)
+	     .select(emp.name, emp.employee_name, emp.designation, emp.branch,
+	             emp.date_of_joining, emp.reports_to)
+	     .where(emp.status == "Active")
+	     .where(ExistsCriterion(held).negate())
+	     .orderby(emp.branch).orderby(emp.employee_name))
+	for field, (op, value) in people.items():
+		# permitted_employee_filters returns exactly these two shapes. Anything
+		# else is refused rather than guessed at: a filter dropped here would
+		# widen the list (fails closed).
+		if op == "in":
+			q = q.where(emp[field].isin(list(value)))
+		elif op == "!=":
+			q = q.where(emp[field] != value)
+		else:
+			frappe.throw(_("The list of people in no seat could not be scoped."))
+	rows = [{"employee": e.name, "name": e.employee_name, "job_role": e.designation or "",
+	         "branch": e.branch or "", "joined": str(e.date_of_joining or ""),
+	         "no_manager": not e.reports_to}
+	        for e in q.run(as_dict=True)]
+	active = frappe.db.count("Employee", {**people, "status": "Active"})
+	return rows, active
 
 
 @frappe.whitelist()
@@ -370,6 +544,49 @@ def save_position(name=None, position_title=None, reports_to_position=None,
 	doc.flags.ignore_permissions = True
 	doc.save() if name else doc.insert()
 	return {"ok": True, "name": doc.name, "title": doc.position_title}
+
+
+def may_delete():
+	"""Frappe's own Delete right on Alvoraa Position, ticked on the same
+	screen as Read and Write. Separate from Write on purpose: deleting is the
+	one change here that cannot be undone from the page."""
+	return bool(frappe.has_permission(POSITION, "delete"))
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_position(position):
+	"""Remove a seat that was made by mistake and never used.
+
+	ONLY A SEAT WITH NO PAST. Anybody ever assigned to it is part of the record
+	of who did what job, which a chart is asked about a year later - so that
+	seat is closed, not deleted. Each refusal says what to do instead.
+	"""
+	if not may_delete():
+		_refuse("register.delete_position", position)
+	doc = frappe.get_doc(POSITION, position)
+	companies, branches = _scope()
+	if doc.company not in companies or (
+			branches is not None and (doc.branch or "") not in branches):
+		_refuse("register.delete_position", position)
+
+	title = frappe.bold(doc.position_title or doc.name)
+	if doc._current_assignments():
+		frappe.throw(_("{0} still has people in it. Take them out of the seat, then "
+		               "set its status to Closed - a seat somebody held is kept, "
+		               "not deleted.").format(title))
+	if frappe.db.exists(POSITION, {"reports_to_position": doc.name}):
+		frappe.throw(_("{0} has other seats reporting to it. Move those seats "
+		               "under a different one first, then delete this one.").format(title))
+	if frappe.db.exists(ASSIGNMENT, {"position": doc.name}):
+		frappe.throw(_("{0} has had people in it, and that history is kept. Set its "
+		               "status to Closed instead of deleting it.").format(title))
+	try:
+		frappe.delete_doc(POSITION, doc.name)
+	except frappe.LinkExistsError:
+		frappe.throw(_("{0} is named on another record, such as a job opening or a "
+		               "dotted reporting line. Set its status to Closed instead of "
+		               "deleting it.").format(title))
+	return {"ok": True, "name": doc.name}
 
 
 # ── who is in a seat ─────────────────────────────────────────────────────────
@@ -570,10 +787,11 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 		"delegate_authority": 1 if frappe.utils.cint(delegate_authority) else 0,
 		"reason": reason or None,
 	})
-	# No ignore_permissions. The editor role holds create on this doctype, so
-	# this is a real check and not a formality - and if a tenant has not given
-	# it, the refusal is the correct answer rather than something to work past.
-	a.insert()
+	# The permission was checked above, by `_position_in_scope`: Write on
+	# Alvoraa Position, the one capability that governs the structure and who
+	# sits in it (see `may_edit`). Asking Frappe again about the Assignment
+	# doctype would refuse an owner a tenant had given the structure to.
+	a.insert(ignore_permissions=True)
 	return {"name": a.name, "position": doc.name, "moved": moved}
 
 

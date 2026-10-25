@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grooming red - prototype v2 (slice 066)</title>
+<!--
+  Slice 066 prototype v2, 24 Oct 2026. hrms-ux-designer. A copy of the approved v1 with only
+  these additions: the "Grooming review pending" line and its clearing sheet, the "limit
+  reached" refusal, HR's "told in person" tick, and two HR list views. See v2-diff.txt.
+  Slice 066 prototype v1, 24 Oct 2026. hrms-ux-designer.
+  ALL names and numbers are invented (Sample). No tenant data.
+  Tokens copied from alvoraa_portal/templates/includes/design_system.html (light + dark),
+  the same copy slice 063's prototype uses. Phone rules live under .phone here; in the
+  product they are the portal's existing @media rules. This file is not product code.
+-->
+<style>
+:root,[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#9A6510;--amber-lt:#FBF1E0;--sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16)}
+[data-theme="dark"]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;--sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60)}
+:root{--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--r-full:999px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:var(--fs-base);line-height:1.45}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* review scaffolding: wraps, never sticky */
+.review{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:var(--fs-sm)}
+.review label{display:flex;gap:6px;align-items:center;font-weight:600;color:var(--text2);flex-wrap:wrap}
+.review select{min-height:32px;padding:4px 8px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:var(--fs-sm);max-width:100%}
+.review .hint{flex-basis:100%;color:var(--text3)}
+.sample{display:inline-block;font-size:12px;font-weight:700;padding:1px 6px;border-radius:var(--r-full);background:var(--amber-lt);color:var(--amber);border:1px solid currentColor;vertical-align:middle}
+.note{border:1px dashed var(--border2);border-radius:var(--r-sm);padding:10px 12px;color:var(--text3);font-size:var(--fs-sm);margin:12px 0}
+.note b{color:var(--text2)}
+
+/* stage */
+.stage{margin:16px auto;background:var(--bg);border:1px solid var(--border);box-shadow:var(--sh2);position:relative;overflow:hidden}
+.stage.desk{width:1440px;max-width:calc(100vw - 24px);min-height:900px}
+.stage.phone{width:390px;max-width:100vw;min-height:844px;border-radius:18px}
+.app{display:flex;min-height:inherit}
+.side{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:14px 10px}
+.side .brand{font-weight:800;color:var(--primary);font-size:var(--fs-md);padding:6px 10px 14px}
+.side a{display:flex;align-items:center;min-height:36px;padding:6px 10px;border-radius:var(--r-sm);color:var(--text2);text-decoration:none}
+.side a.on{background:var(--primary-lt);color:var(--primary);font-weight:700}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:10px;min-height:56px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border)}
+.top .ttl{font-weight:700;font-size:var(--fs-md)}
+.top .sp{margin-left:auto}
+.bell{position:relative;min-width:44px;min-height:44px;border:1px solid var(--border);border-radius:var(--r-full);background:var(--surface);cursor:pointer;font-weight:700}
+.bell .badge{position:absolute;top:-4px;right:-6px;background:var(--red);color:#fff;border-radius:var(--r-full);font-size:12px;min-width:20px;padding:0 5px;line-height:20px}
+.content{padding:20px 24px 96px;max-width:1080px}
+.page-title{font-size:var(--fs-xl);font-weight:800;margin:0}
+.page-sub{color:var(--text3);margin:2px 0 14px}
+.btn{min-height:36px;padding:7px 14px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);cursor:pointer;font-weight:600}
+.btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}
+[data-theme="dark"] .btn-primary{color:#1A1815}
+.btn:disabled{opacity:.6;cursor:wait}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh1);margin-bottom:18px}
+.card-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border)}
+.card-t{font-weight:700;font-size:var(--fs-md)}
+.card-s{color:var(--text3);font-size:var(--fs-sm)}
+.card-b{padding:6px 16px 12px}
+.help{color:var(--text2);margin:8px 0}
+.muted{color:var(--text3)}
+
+/* the Today rows */
+.trow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--border)}
+.trow:last-child{border-bottom:0}
+.trow .who{flex:1;min-width:180px}
+.trow .nm{font-weight:700}
+.trow .sub{color:var(--text3);font-size:var(--fs-sm)}
+.trow .msg{flex-basis:100%;font-size:var(--fs-base);color:var(--text2);padding:8px 10px;border-radius:var(--r-sm);background:var(--surface2)}
+.trow .msg.ok{background:var(--green-lt);color:var(--text)}
+.trow .msg.warn{background:var(--amber-lt);color:var(--text)}
+.tag{display:inline-block;font-size:var(--fs-sm);font-weight:700;padding:1px 8px;border-radius:var(--r-full);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);margin-right:4px}
+.tag.gr{border-color:var(--amber);background:var(--amber-lt);color:var(--amber)}
+.count{font-size:var(--fs-sm);color:var(--text2);padding:10px 0 2px;border-top:1px solid var(--border);margin-top:4px}
+.skel{height:44px;border-radius:var(--r-sm);background:var(--surface2);margin:10px 0;animation:p 1.2s infinite}
+@keyframes p{50%{opacity:.5}}
+
+/* month (simplified copy of the existing table) */
+.tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.tile{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r-sm);padding:8px 12px;background:var(--surface);min-width:120px}
+.tile .n{font-size:var(--fs-xl);font-weight:700;line-height:1.1}
+.tile .l{font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.04em;color:var(--text3);font-weight:700}
+.tile.gr{border-left-color:var(--amber);background:var(--amber-lt)}
+.mt{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
+.mt th{font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.06em;color:var(--text3);text-align:left;padding:8px 10px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.mt td{padding:10px;border-bottom:1px solid var(--border);vertical-align:top}
+.mt tr.pick{cursor:pointer}
+.mt .dow{color:var(--text3);margin-left:4px}
+.detail{background:var(--surface2);padding:12px;border-radius:var(--r-sm)}
+.facts{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--text3);font-size:var(--fs-sm)}
+.facts span{display:block;color:var(--text);font-weight:700;font-size:var(--fs-base)}
+.gblock{margin-top:12px;border:1px solid var(--border);border-left:3px solid var(--border2);border-radius:var(--r-sm);padding:10px 12px;background:var(--surface)}
+.gblock.on{border-left-color:var(--amber)}
+.gblock h3{margin:0 0 4px;font-size:var(--fs-base)}
+.gblock p{margin:4px 0}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+
+/* sheet: bottom sheet on the phone, dialog on desktop */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:20}
+.sheet{background:var(--surface);border-radius:var(--r);box-shadow:var(--sh3);width:460px;max-width:calc(100% - 24px);padding:18px}
+.sheet h2{margin:0 0 6px;font-size:var(--fs-lg)}
+.opt{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);margin:6px 0;cursor:pointer}
+.opt input{width:20px;height:20px;margin:0}
+.opt.sel{border-color:var(--primary);background:var(--primary-lt)}
+.err{color:var(--red);font-weight:600;margin:8px 0}
+.err::before{content:"! ";}
+.info{background:var(--surface2);border-radius:var(--r-sm);padding:8px 10px;color:var(--text2);margin:10px 0}
+
+/* notices (bell) */
+.notes{position:absolute;right:16px;top:60px;width:380px;max-width:calc(100% - 24px);background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh3);z-index:10}
+.notes h2{font-size:var(--fs-md);margin:0;padding:12px 14px;border-bottom:1px solid var(--border)}
+.nitem{display:block;width:100%;text-align:left;padding:12px 14px;border:0;border-bottom:1px solid var(--border);background:none;cursor:pointer;min-height:44px}
+.nitem .when{display:block;color:var(--text3);font-size:var(--fs-sm);margin-top:4px}
+.nitem.unread{background:var(--primary-lt)}
+
+/* desk report mock */
+.desk-crumb{color:var(--text3);font-size:var(--fs-sm);margin-bottom:6px}
+.rb{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border)}
+.rb th,.rb td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left}
+.rb th{background:var(--surface2);font-size:var(--fs-sm);color:var(--text3)}
+.rb td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.filters span{border:1px solid var(--border2);border-radius:var(--r-full);padding:3px 10px;font-size:var(--fs-sm);background:var(--surface)}
+.wrapx{overflow-x:auto}
+
+/* v2: the grooming review line (neutral: brand edge, no red, no amber) */
+.flag{border:1px solid var(--border2);border-left:4px solid var(--primary);border-radius:var(--r-sm);background:var(--surface);padding:10px 12px;margin-bottom:14px}
+.flag h2{margin:0 0 4px;font-size:var(--fs-md)}
+.flag p{margin:4px 0}
+.flag blockquote{margin:8px 0;padding:8px 10px;background:var(--surface2);border-radius:var(--r-sm);white-space:pre-wrap}
+.fld{display:block;font-weight:700;margin:10px 0 4px}
+.sheet textarea{width:100%;min-height:120px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:16px;font-family:inherit;resize:vertical}
+
+/* phone frame: the same rules as the portal's @media (max-width: 768px) */
+.phone .side{display:none}
+.phone .top{padding:0 12px}
+.phone .content{padding:14px 14px 96px}
+.phone .btn{min-height:44px;font-size:var(--fs-md)}
+.phone .trow .who{min-width:0;flex-basis:100%}
+.phone .trow .btn{width:100%}
+.phone .acts .btn{flex:1 1 100%}
+.phone .scrim{align-items:flex-end}
+.phone .sheet{width:100%;max-width:100%;border-radius:16px 16px 0 0;padding:16px 16px 24px}
+.phone .opt{font-size:var(--fs-md)}
+.phone .tile{min-width:0;flex:1 1 40%}
+.phone .notes{right:8px;left:8px;width:auto}
+.bbar{display:none}
+.phone .bbar{display:flex;position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--border)}
+.bbar a{flex:1;display:flex;align-items:center;justify-content:center;min-height:56px;color:var(--text3);text-decoration:none;font-size:var(--fs-sm);font-weight:600}
+.bbar a.on{color:var(--primary)}
+.phone .mt th:nth-child(3),.phone .mt td:nth-child(3){display:none}
+.phone .facts{gap:6px 12px}
+.phone .mt tr.pick td{padding:12px 10px}
+</style>
+</head>
+<body>
+
+<div class="review" id="review">
+  <label>Person
+    <select id="r-person">
+      <option value="mgr">Ravi Kumar - store manager</option>
+      <option value="hr">Ritika Mehra - HR</option>
+      <option value="emp">Rahul Sharma - employee (Senior)</option>
+      <option value="con">Geeta Devi - Contract staff</option>
+    </select></label>
+  <label>State <select id="r-state"></select></label>
+  <label>Device
+    <select id="r-device"><option value="phone">Phone 390</option><option value="desk">Desktop 1440</option></select></label>
+  <label>Theme
+    <select id="r-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+  <label>Language
+    <select id="r-lang"><option value="en">English</option><option value="hi">हिंदी (machine draft)</option></select></label>
+  <span class="hint">Review controls only. Every name, time and amount is invented <span class="sample">Sample</span>. The reason list is a draft until DTC gives theirs and counsel checks it. Hindi is a machine draft for native review and covers the manager's Today card, the reason sheet and the employee's notice and day. States starting "v2 ·" are new in this version and are English only.</span>
+</div>
+
+<div class="stage phone" id="stage"></div>
+
+<script>
+"use strict";
+/* ── words (English, then a machine-drafted Hindi for the frontline parts) ── */
+var W = {
+  en: {
+    today: "Today", groom: "Grooming red", markBtn: "Grooming red",
+    todayHelp: "Off unless you mark it. Mark someone only if they are not groomed well today. They are told at once, with your name and the reason.",
+    clocked: "Clocked in", undo: "Undo",
+    sheetT: function (n, d) { return "Grooming red for " + n + " " + d + "?"; },
+    sheetHelp: "Choose the one reason that fits. You cannot add your own words.",
+    sheetInfo: function (n, hr) { return n + " will be told now, with your name and this reason." + (hr ? " You are marking as HR." : " You can undo this until midnight."); },
+    confirm: "Mark grooming red", cancel: "Cancel",
+    chooseFirst: "Choose a reason first.",
+    saveErr: "Could not save the grooming red. Nothing was saved. Check your connection and try again.",
+    tryAgain: "Try again",
+    contract: "Contract staff are not given grooming reds.",
+    notIn: function (names, n) { return names + (n > 0 ? " and " + n + " other" + (n > 1 ? "s" : "") : "") + " have not clocked in today, so they cannot be marked yet."; },
+    none: "None of your people have clocked in yet today. They appear here after their first punch.",
+    countLine: function (n) { return "You have marked " + n + " grooming red" + (n === 1 ? "" : "s") + " this month."; },
+    // employee
+    eNotice: function (who, day, reason, amt, month) { return who + " marked a grooming red for you " + day + ": " + reason + ". It takes " + amt + " off your " + month + " pay. If you think it is wrong, open the day and tap “Ask HR to look at this”."; },
+    askBtn: "Ask HR to look at this"
+  },
+  hi: {
+    today: "आज", groom: "ग्रूमिंग रेड", markBtn: "ग्रूमिंग रेड",
+    todayHelp: "यह तभी लगता है जब आप लगाएँ। केवल तभी लगाएँ जब कोई आज ठीक से तैयार न हो। उन्हें तुरंत आपका नाम और कारण बताया जाएगा।",
+    clocked: "पंच इन", undo: "वापस लें",
+    sheetT: function (n, d) { return n + " को " + d + " ग्रूमिंग रेड?"; },
+    sheetHelp: "जो एक कारण सही हो, वह चुनें। आप अपने शब्द नहीं जोड़ सकते।",
+    sheetInfo: function (n, hr) { return n + " को अभी आपका नाम और यह कारण बताया जाएगा।" + (hr ? " आप HR के रूप में लगा रहे हैं।" : " आप इसे आधी रात तक वापस ले सकते हैं।"); },
+    confirm: "ग्रूमिंग रेड लगाएँ", cancel: "रद्द करें",
+    chooseFirst: "पहले एक कारण चुनें।",
+    saveErr: "ग्रूमिंग रेड सेव नहीं हुआ। कुछ भी सेव नहीं हुआ। इंटरनेट देखें और फिर से कोशिश करें।",
+    tryAgain: "फिर से कोशिश करें",
+    contract: "कॉन्ट्रैक्ट स्टाफ़ को ग्रूमिंग रेड नहीं दिया जाता।",
+    notIn: function (names, n) { return names + (n > 0 ? " और " + n + " अन्य" : "") + " ने आज पंच इन नहीं किया है, इसलिए अभी उन्हें मार्क नहीं किया जा सकता।"; },
+    none: "आज अभी तक आपके किसी साथी ने पंच इन नहीं किया है। पहले पंच के बाद वे यहाँ दिखेंगे।",
+    countLine: function (n) { return "इस महीने आपने " + n + " ग्रूमिंग रेड लगाए हैं।"; },
+    eNotice: function (who, day, reason, amt, month) { return who + " ने " + day + " आपको ग्रूमिंग रेड दिया: " + reason + "। इससे आपकी " + month + " की तनख्वाह से " + amt + " कटेंगे। अगर आपको लगता है यह गलत है, तो वह दिन खोलें और “HR से इसे देखने को कहें” दबाएँ।"; },
+    askBtn: "HR से इसे देखने को कहें"
+  }
+};
+var REASONS = [
+  {k: "uniform", en: "Not in uniform", hi: "वर्दी में नहीं"},
+  {k: "unclean", en: "Uniform incomplete or unclean", hi: "वर्दी अधूरी या गंदी"},
+  {k: "badge", en: "No name badge", hi: "नाम का बैज नहीं"},
+  {k: "footwear", en: "Wrong footwear", hi: "गलत जूते-चप्पल"}
+];
+var REMOVE_WHY = ["Marked by mistake", "Marked on the wrong person", "The employee showed it was wrong"];
+
+var STATES = {
+  mgr: [["today", "Today: mark someone (start here)"], ["loading", "Loading"], ["nonein", "Nobody clocked in yet"],
+        ["nologin", "No login (every DTC staff member today)"], ["nograde", "Grade not set: cannot be priced"], ["error", "Save fails (network)"], ["midnight", "After midnight: own mark locked"],
+        ["byhr", "Already marked by HR"], ["nobody", "Nobody reports to me"], ["month", "Rahul's month (no money shown)"],
+        ["capped", "v2 · Limit reached: Rahul cannot be marked"], ["flag", "v2 · Rahul's month: review pending"], ["cleared", "v2 · Rahul's month: review recorded"]],
+  hr: [["unmarked", "A day with no mark: mark it"], ["marked", "A day marked by the manager: remove"], ["questioned", "Employee asked HR to look"],
+       ["nomanager", "Person has no reporting manager"], ["lastmonth", "A day last month"], ["nograde", "Grade not set"], ["contract", "Contract staff"], ["closed", "Month closed (slip submitted)"],
+       ["leave", "Day on leave"], ["nopunch", "Day with no punch"], ["error", "Remove fails"], ["report", "Monthly view per marker (desk)"],
+       ["nologin", "v2 · No login: HR ticks 'told in person'"], ["capped", "v2 · Limit reached + review pending: record it"], ["cleared", "v2 · Review recorded"],
+       ["vmarks", "v2 · View: people with grooming reds this month (desk)"], ["vflag", "v2 · View: grooming review pending (desk)"]],
+  emp: [["notice", "The bell notice (start here)"], ["day", "The day in my month"], ["asked", "I asked HR to look"],
+        ["kept", "HR kept it"], ["removed", "HR removed it"], ["undone", "My manager undid it the same day"], ["capped", "Legal limit reached this month"],
+        ["flag", "v2 · Review pending (legal limit reached)"], ["flag4", "v2 · Review pending (4th grooming red)"], ["cleared", "v2 · Review done: action agreed"]],
+  con: [["month", "My month: nothing about grooming"]]
+};
+
+var S = {person: "mgr", state: "today", device: "phone", theme: "light", lang: "en"};
+var M = null;      // the model for the current state, rebuilt on every switch
+var SH = null;     // the open sheet, or null
+var lastFocus = null;
+
+function t(k) { var v = W[S.lang][k]; return v === undefined ? W.en[k] : v; }
+function rs(r) { return r[S.lang] || r.en; }
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]; }); }
+function reasonBy(k) { for (var i = 0; i < REASONS.length; i++) if (REASONS[i].k === k) return REASONS[i]; return REASONS[0]; }
+
+function freshModel() {
+  M = {
+    team: [
+      {id: "rahul", name: "Rahul Sharma", job: "Sales Associate", inAt: "10:24", login: S.state !== "nologin",
+       mark: S.state === "byhr" ? {k: "uniform", by: "Ritika Mehra (HR)", at: "11:05", mine: false} : null},
+      {id: "aman", name: "Aman Verma", job: "Cashier", inAt: "09:58",
+       mark: {k: "badge", by: "you", at: "10:31", mine: true}},
+      {id: "kiran", name: "Kiran Bala", job: "Sales Associate", inAt: "10:40", sub: "Half-day leave this afternoon", mark: null},
+      {id: "geeta", name: "Geeta Devi", job: "Housekeeping", inAt: "09:30", contract: true}
+    ],
+    base: 2,               // this month's marks before today
+    flash: {},             // one-line message per row after an action
+    review: S.state === "cleared" ? "cleared" : ((["flag", "flag4"].indexOf(S.state) > -1 || (S.person === "hr" && S.state === "capped")) ? "pending" : null),   // v2; the employee's v1 "capped" state is untouched
+    hrMark: (["unmarked", "nomanager", "lastmonth", "nograde", "nologin", "capped", "cleared"].indexOf(S.state) > -1) ? null
+           : {k: "unclean", by: "Ravi Kumar", as: "manager", at: "Wed 21 Oct at 10:31"},
+    asked: S.state === "questioned",
+    empAsked: S.state === "asked",
+    bellOpen: S.state === "notice"
+  };
+}
+
+/* ── the shell ─────────────────────────────────────────────────────────── */
+function shell(title, sub, body, opts) {
+  opts = opts || {};
+  var side = '<nav class="side" aria-label="Main menu"><div class="brand">Alvoraa</div>'
+    + '<a href="#">Home</a><a href="#" class="on" aria-current="page">Attendance</a><a href="#">Leave</a><a href="#">Finances</a></nav>';
+  var bell = '<button class="bell" aria-label="Notifications' + (opts.unread ? ", " + opts.unread + " new" : "") + '" aria-expanded="' + (M.bellOpen ? "true" : "false") + '" onclick="toggleBell()">Bell'
+    + (opts.unread ? '<span class="badge">' + opts.unread + "</span>" : "") + "</button>";
+  var top = '<header class="top"><span class="ttl">' + esc(title) + '</span><span class="sp"></span>' + bell + "</header>";
+  var bbar = '<nav class="bbar" aria-label="Bottom menu"><a href="#">Home</a><a href="#" class="on" aria-current="page">Attendance</a><a href="#">Finances</a></nav>';
+  return '<div class="app">' + side + '<div class="main">' + top
+    + '<main class="content"><h1 class="page-title">' + esc(title) + '</h1><p class="page-sub" role="status">' + esc(sub) + "</p>"
+    + body + "</main></div></div>" + bbar + (opts.after || "");
+}
+
+/* ── manager: Today on "Whole team" ────────────────────────────────────── */
+function myCount() {
+  var n = M.base;
+  M.team.forEach(function (p) { if (p.mark && p.mark.mine) n++; });
+  return n;
+}
+
+function todayRow(p) {
+  var h = '<div class="trow" id="row-' + p.id + '"><div class="who"><div class="nm">' + esc(p.name) + "</div>"
+    + '<div class="sub">' + esc(p.job) + " · " + esc(t("clocked")) + " " + esc(p.inAt) + (p.sub ? " · " + esc(p.sub) : "") + "</div></div>";
+  if (p.contract) {
+    return h + '<div class="sub" style="flex-basis:100%">' + esc(t("contract")) + "</div></div>";
+  }
+  if (S.state === "nograde" && p.id === "rahul") {
+    return h + '<div class="msg">Rahul’s grade is not set, so a grooming red cannot be priced. Ask HR to set it.</div></div>';
+  }
+  if (S.state === "capped" && p.id === "rahul") {   /* v2: R12 stop, no rupees for a manager */
+    return h + '<div class="msg">Rahul has reached the most grooming reds the law allows this month, so this one cannot be marked.</div></div>';
+  }
+  if (p.mark) {
+    var r = rs(reasonBy(p.mark.k));
+    var line;
+    if (p.mark.mine && S.state === "midnight" && p.id === "aman") {
+      line = "Marked by you yesterday at " + p.mark.at + ". The undo closed at midnight. To remove it now, ask HR.";
+    } else if (p.mark.mine) {
+      line = "Marked by you at " + p.mark.at + ". " + (p.login === false
+        ? p.name.split(" ")[0] + " has no login and will not get a notice. You confirmed you told them in person today."
+        : p.name.split(" ")[0] + " has been told.") + " You can undo this until midnight.";
+    } else {
+      line = "Marked by " + p.mark.by + " at " + p.mark.at + ". Only HR can remove it.";
+    }
+    h += '<div><span class="tag gr">' + esc(t("groom")) + "</span> " + esc(r) + "</div>";
+    if (p.mark.mine && !(S.state === "midnight" && p.id === "aman")) {
+      h += '<button class="btn" onclick="undoMark(\'' + p.id + '\')" aria-label="Undo the grooming red for ' + esc(p.name) + '">' + esc(t("undo")) + "</button>";
+    }
+    h += '<div class="msg ' + (p.login === false ? "warn" : "ok") + '">' + esc(line) + "</div>";
+    return h + "</div>";
+  }
+  h += '<button class="btn" onclick="openMark(\'' + p.id + '\')" aria-label="Mark a grooming red for ' + esc(p.name) + '">' + esc(t("markBtn")) + "</button>";
+  if (M.flash[p.id]) h += '<div class="msg">' + esc(M.flash[p.id]) + "</div>";
+  return h + "</div>";
+}
+
+function mgrTeam() {
+  var sub = "Whole team · today first, then days that need a look";
+  var body = "";
+  if (S.state === "nobody") {
+    body = '<p class="help">Nobody reports to you, so there is nothing to review here.</p>'
+      + '<div class="note"><b>Unchanged.</b> This is today\'s message. The Today card is not shown to somebody with no direct reports.</div>';
+    return shell("Attendance", "Whole team · days that need a look", body);
+  }
+  var card = '<section class="card" aria-labelledby="today-h"><div class="card-h"><h2 class="card-t" id="today-h" style="margin:0">'
+    + esc(t("today")) + " · Sat 24 Oct · " + esc(t("groom")) + '</h2><span class="card-s">Your direct reports who have clocked in</span></div><div class="card-b">'
+    + '<p class="help">' + esc(t("todayHelp")) + "</p>";
+  if (S.state === "loading") {
+    card += '<div class="skel"></div><div class="skel"></div><div class="skel"></div><p class="muted" role="status">Loading today’s people…</p>';
+  } else if (S.state === "nonein") {
+    card += '<p class="help">' + esc(t("none")) + "</p>";
+  } else {
+    card += M.team.map(todayRow).join("");
+    card += '<p class="sub muted" style="font-size:var(--fs-sm)">' + esc(t("notIn")("Asha Rani", 1)) + "</p>";
+  }
+  if (S.state !== "loading") card += '<div class="count">' + esc(t("countLine")(myCount())) + "</div>";
+  card += "</div></section>";
+  body = '<div class="filters" aria-hidden="true"><span>Whose record: Whole team</span></div>' + card
+    + '<div class="note"><b>Unchanged below this line.</b> From, To, Person, Group by, Show, the chips and the list of days from slice 060 stay exactly as they are. On a phone they now sit under the Today card instead of above everything.</div>';
+  return shell("Attendance", sub, body);
+}
+
+/* ── manager: Rahul's month, to show the money rule ───────────────────── */
+function monthTable(rows, open, detailFn) {
+  var h = '<div class="wrapx"><table class="mt"><thead><tr><th>Day</th><th>The day</th><th>Worked</th></tr></thead><tbody>';
+  rows.forEach(function (r) {
+    h += '<tr class="pick" tabindex="0" aria-expanded="' + (open === r.d ? "true" : "false") + '"><td><b>' + r.d + '</b><span class="dow">' + r.w + "</span></td><td>"
+      + r.tags + "</td><td>" + r.h + "</td></tr>";
+    if (open === r.d) h += '<tr><td colspan="3">' + detailFn(r) + "</td></tr>";
+  });
+  return h + "</tbody></table></div>";
+}
+var GTAG = function () { return '<span class="tag">Present</span><span class="tag gr">' + esc(t("groom")) + "</span>"; };
+
+/* ── v2: the grooming review line, one function for its three readers ── */
+var NOTE = "Talked about the uniform rule: full uniform and name badge from the start of the shift. Rahul will collect a second uniform set from the store office this week. We will look at it again at the end of November.";
+function reviewLine(viewer) {
+  if (!M.review) return "";
+  var h = '<section class="flag" aria-labelledby="rv-h">';
+  if (M.flash.review) h += '<p role="status"><b>' + esc(M.flash.review) + "</b></p>";
+  if (M.review === "pending") {
+    h += '<h2 id="rv-h">Grooming review pending</h2>';
+    if (viewer === "emp") {
+      h += (S.state === "flag4"
+          ? "<p>You have 4 grooming reds in October, so HR will talk to you about it.</p>"
+          : "<p>You have 2 grooming reds in October (₹400). One more would pass the legal limit of ₹540 (3% of your wages), so no more can be marked this month. HR will talk to you about it.</p>")
+        + "<p>The review does not change your fines.</p>";
+    } else if (viewer === "mgr") {
+      h += "<p>Rahul has reached the most grooming reds the law allows in October, so HR will talk to Rahul about it. You do not need to do anything.</p>";
+    } else {
+      h += "<p>Raised on Thu 22 Oct: Rahul reached the legal limit for grooming reds in October (2 marks; limit ₹540 = 3% of Basic ₹18,000).</p>"
+        + "<p>Talk to Rahul about dress, agree an action, then record it here.</p>"
+        + '<div class="acts"><button class="btn btn-primary" onclick="openReview()" aria-label="Record the grooming review for Rahul Sharma">Record the review</button></div>';
+    }
+    return h + "</section>";
+  }
+  /* cleared */
+  if (viewer === "emp") return h + '<h2 id="rv-h">Grooming review</h2><p>Action agreed on Sat 24 Oct.</p></section>';
+  h += '<h2 id="rv-h">Grooming review recorded</h2>'
+    + "<p>" + (viewer === "hr" ? "Recorded by you" : "Recorded by Ritika Mehra (HR)") + " on Sat 24 Oct.</p>"
+    + "<blockquote>" + esc(M.note || NOTE) + "</blockquote>";
+  if (viewer === "hr") h += "<p>The grooming reds this month still stand. The review will not be raised again for Rahul in October.</p>"
+    + '<p class="muted">This note cannot be changed or deleted. Only HR and Rahul’s manager can read it. Rahul sees only “Action agreed on Sat 24 Oct”.</p>';
+  else h += '<p class="muted">Only HR and you, as Rahul’s manager, can read this. Rahul sees only “Action agreed on Sat 24 Oct”.</p>';
+  return h + "</section>";
+}
+
+function mgrMonth() {
+  if (S.state === "flag" || S.state === "cleared") return mgrMonthReview();
+  var rows = [
+    {d: "22 Oct", w: "Thu", tags: '<span class="tag">Present</span>', h: "9.5h"},
+    {d: "23 Oct", w: "Fri", tags: '<span class="tag">Present</span>', h: "9.8h"},
+    {d: "24 Oct", w: "Sat", tags: GTAG(), h: "--"}
+  ];
+  var detail = function () {
+    return '<div class="detail"><div class="facts"><div>Shift<span>10:00 - 20:00</span></div><div>Worked<span>--</span></div></div>'
+      + '<div class="gblock on"><h3>' + esc(t("groom")) + '</h3><p><span class="tag gr">' + esc(t("groom")) + "</span> Not in uniform.</p>"
+      + "<p>Marked by you on Sat 24 Oct at 10:24. Rahul has been told. You can undo this until midnight.</p>"
+      + '<div class="acts"><button class="btn">' + esc(t("undo")) + "</button></div></div>"
+      + '<div class="note"><b>No money here.</b> A manager never sees a rupee figure on someone else\'s record. The amount is shown only to the person it belongs to, and to HR in the pay report.</div></div>';
+  };
+  var body = '<div class="filters" aria-hidden="true"><span>Whose record: Rahul Sharma</span><span>October 2026</span></div>'
+    + '<div class="tiles"><div class="tile"><div class="n">20</div><div class="l">Days present</div></div><div class="tile"><div class="n">1</div><div class="l">Late arrivals</div></div></div>'
+    + monthTable(rows, "24 Oct", detail)
+    + '<div class="note"><b>Unchanged:</b> the tiles, the table and the correction section of the day. <b>New:</b> the "Grooming red" tag on the day and the Grooming red box in the open day.</div>';
+  return shell("Attendance", "Rahul Sharma · October 2026", body);
+}
+
+/* v2: Rahul's month with the review line (two marks by this manager, limit reached) */
+function mgrMonthReview() {
+  var rows = [
+    {d: "22 Oct", w: "Thu", tags: GTAG(), h: "9.5h"},
+    {d: "23 Oct", w: "Fri", tags: '<span class="tag">Present</span>', h: "9.8h"},
+    {d: "24 Oct", w: "Sat", tags: '<span class="tag">Present</span>', h: "--"}
+  ];
+  var detail = function () {
+    return '<div class="detail"><div class="facts"><div>Shift<span>10:00 - 20:00</span></div><div>Worked<span>9.5h</span></div></div>'
+      + '<div class="gblock on"><h3>' + esc(t("groom")) + '</h3><p><span class="tag gr">' + esc(t("groom")) + "</span> No name badge.</p>"
+      + "<p>Marked by you on Thu 22 Oct at 10:12. Rahul has been told.</p></div></div>";
+  };
+  var body = '<div class="filters" aria-hidden="true"><span>Whose record: Rahul Sharma</span><span>October 2026</span></div>'
+    + reviewLine("mgr")
+    + '<div class="tiles"><div class="tile"><div class="n">20</div><div class="l">Days present</div></div><div class="tile"><div class="n">1</div><div class="l">Late arrivals</div></div></div>'
+    + monthTable(rows, "22 Oct", detail);
+  return shell("Attendance", "Rahul Sharma · October 2026", body);
+}
+
+/* ── HR: a person's day ───────────────────────────────────────────────── */
+function hrBlock() {
+  var st = S.state, m = M.hrMark;
+  var name = st === "contract" ? "Geeta Devi" : st === "nomanager" ? "Kiran Bala" : "Rahul Sharma";
+  var first = name.split(" ")[0];
+  var h = '<div class="gblock' + (m && ["marked", "questioned", "error"].indexOf(st) > -1 ? " on" : "") + '"><h3>' + esc(t("groom")) + "</h3>";
+  if (st === "contract") return h + "<p>Geeta is Contract staff. Contract staff are not given grooming reds, so there is nothing to mark.</p></div>";
+  if (st === "closed") return h + "<p>Rahul’s pay slip for September is submitted, so grooming reds for September are closed. They cannot be added or removed now.</p></div>";
+  if (st === "lastmonth") return h + "<p>No grooming red on this day.</p><p>Marks can be added only for days in this month. A September mark that already exists can still be removed until September’s pay slip is submitted.</p></div>";
+  if (st === "nograde") return h + "<p>Rahul’s grade is not set, so a grooming red would cost nothing and cannot be marked. Set Rahul’s grade on his employee record first.</p></div>";
+  if (st === "leave") return h + "<p>Rahul was on leave all day (Paid Leave), so there is nothing to mark.</p></div>";
+  if (st === "nopunch") return h + "<p>Rahul has no punch on this day, so there is nothing to mark. A grooming red is only for a day somebody came to work.</p></div>";
+  if ((st === "capped" || st === "cleared") && !m) return h + "<p>No grooming red on this day.</p><p>Rahul has reached the most grooming reds the law allows this month, so this one cannot be marked. (limit ₹540 = 3% of Basic ₹18,000)</p></div>";   // v2: R12
+  if (M.flash.hr) h += '<p role="status">' + esc(M.flash.hr) + "</p>";
+  if (!m) {
+    if (st === "nomanager") h += "<p>Kiran has no reporting manager in Alvoraa, so only HR can mark Kiran’s days.</p>";
+    h += "<p>No grooming red on this day.</p>";
+    return h + '<div class="acts"><button class="btn" onclick="openMark(\'hr\')">Mark grooming red</button></div></div>';
+  }
+  h += '<p><span class="tag gr">' + esc(t("groom")) + "</span> " + esc(reasonBy(m.k).en) + ".</p>"
+    + "<p>Marked by " + esc(m.by) + " (" + esc(m.as) + ") on " + esc(m.at) + ".</p>";
+  if (M.asked) h += '<p class="msg warn" style="padding:8px 10px;border-radius:6px;background:var(--amber-lt)">' + first + " asked HR to look at this on Wed 21 Oct at 14:02.</p>";
+  if (M.kept) h += "<p>You checked it on Sat 24 Oct and kept it. " + first + " has been told.</p>";
+  h += '<div class="acts"><button class="btn" onclick="openRemove()">Remove this mark</button>'
+    + (M.asked ? '<button class="btn" onclick="openKeep()">Keep it and tell ' + first + "</button>" : "") + "</div>";
+  return h + "</div>";
+}
+
+function hrDay() {
+  if (S.state === "report") return hrReport();
+  if (S.state === "vmarks" || S.state === "vflag") return hrViewV2();   // v2
+  var who = S.state === "contract" ? "Geeta Devi" : S.state === "nomanager" ? "Kiran Bala" : "Rahul Sharma";
+  var month = (S.state === "closed" || S.state === "lastmonth") ? "September 2026" : "October 2026";
+  var dd = (S.state === "closed" || S.state === "lastmonth") ? ["17 Sep", "18 Sep", "19 Sep"] : ["20 Oct", "21 Oct", "22 Oct"];
+  var tagOn = M.hrMark && ["marked", "questioned", "error"].indexOf(S.state) > -1;
+  var two = M.review !== null;   // v2: Rahul's two live marks sit either side of the open day
+  var rows = [
+    {d: dd[0], w: "Tue", tags: two ? GTAG() : '<span class="tag">Present</span>', h: "9.6h"},
+    {d: dd[1], w: "Wed", tags: S.state === "leave" ? '<span class="tag">Paid Leave</span>' : S.state === "nopunch" ? '<span class="tag">Absent</span>' : (tagOn ? GTAG() : '<span class="tag">Present</span>'), h: S.state === "leave" || S.state === "nopunch" ? "--" : "9.9h"},
+    {d: dd[2], w: "Thu", tags: two ? GTAG() : '<span class="tag">Present</span>', h: "9.5h"}
+  ];
+  var detail = function () {
+    return '<div class="detail"><div class="facts"><div>Shift<span>10:00 - 20:00</span></div><div>Worked<span>' + rows[1].h + "</span></div></div>"
+      + hrBlock() + '<p class="muted" style="margin-top:10px">The correction section below the day is unchanged.</p></div>';
+  };
+  var body = '<div class="filters" aria-hidden="true"><span>Whose record: ' + who + "</span><span>" + month + "</span></div>"
+    + reviewLine("hr")
+    + monthTable(rows, dd[1], detail);
+  return shell("Attendance", who + " · " + month, body);
+}
+
+/* v2: HR's two monthly list views (desk). No rupees: amounts live in the pay report. */
+function hrViewV2() {
+  var marks = S.state === "vmarks";
+  var name = marks ? "People with grooming reds this month" : "Grooming review pending";
+  var body = '<div class="desk-crumb">Desk · ' + (marks ? "Grooming Mark · Report view · saved as" : "Report ·") + " <b>" + name + "</b></div>"
+    + '<div class="filters"><span>Month: October 2026</span>' + (marks ? "<span>Live marks only</span><span>Group by: Employee</span><span>Sort: Count, highest first</span>" : "<span>Sort: Raised on, oldest first</span>") + "</div>"
+    + '<div class="wrapx"><table class="rb"><thead><tr>'
+    + (marks ? "<th>Employee</th><th>Grooming reds this month</th>"
+             : "<th>Employee</th><th>Why it was raised</th><th>Raised on</th><th>Grooming reds this month</th>")
+    + "</tr></thead><tbody>"
+    + (marks ? '<tr><td>Kiran Bala</td><td class="n">4</td></tr><tr><td>Rahul Sharma</td><td class="n">2</td></tr><tr><td>Aman Verma</td><td class="n">1</td></tr><tr><td>Pooja Nair</td><td class="n">1</td></tr><tr><td>Sunita Rawat</td><td class="n">1</td></tr>'
+             : '<tr><td>Rahul Sharma</td><td>Legal limit reached</td><td>Thu 22 Oct</td><td class="n">2</td></tr><tr><td>Kiran Bala</td><td>4th grooming red</td><td>Fri 23 Oct</td><td class="n">4</td></tr>')
+    + "</tbody></table></div>"
+    + (marks ? '<p class="help">Only people with at least one live grooming red this month. Removed marks are not counted. Click a row to see that person’s marks. You see only the people you look after as HR.</p>'
+             : '<p class="help">To record a review, open the person’s Attendance month. A person leaves this list when their review is recorded, or when a mark is removed and the reason no longer holds. When nobody is waiting, the list says “No grooming review is pending.”</p>')
+    + '<div class="note">' + (marks
+        ? "<b>Configuration.</b> A saved Report Builder view on the grooming record, like v1’s view per marker. No rupee column."
+        : "<b>Not configuration.</b> The review is worked out from the marks, not stored, so Report Builder cannot filter on it. This list needs a small script report (new code) or a stored field. A question for the analyst and engineer.")
+    + "</div>";
+  return shell("Grooming Mark", name, body);
+}
+
+function hrReport() {
+  var body = '<div class="desk-crumb">Desk · Grooming Mark · Report view · saved as <b>Marks per marker per month</b></div>'
+    + '<div class="filters"><span>Date: October 2026</span><span>Group by: Marked by, Marked as</span><span>Sort: Count, highest first</span></div>'
+    + '<div class="wrapx"><table class="rb"><thead><tr><th>Marked by</th><th>Marked as</th><th>Count</th></tr></thead><tbody>'
+    + "<tr><td>Neha Singh</td><td>Manager</td><td class=\"n\">21</td></tr>"
+    + "<tr><td>Ravi Kumar</td><td>Manager</td><td class=\"n\">3</td></tr>"
+    + "<tr><td>Ritika Mehra</td><td>HR</td><td class=\"n\">2</td></tr>"
+    + "<tr><td>Arjun Rao</td><td>Manager</td><td class=\"n\">1</td></tr>"
+    + "</tbody></table></div>"
+    + '<p class="help">Click a row to see that person’s marks: who, which day, which reason. HR’s own marks are counted here too.</p>'
+    + '<p class="help">A second saved view, <b>Asked to look at, not yet answered</b>, lists marks an employee has asked HR about.</p>'
+    + '<div class="note"><b>Configuration, not a new screen.</b> Two saved Report Builder views on the new record, in the desk HR already uses. No colour flag on the high count: the number speaks, and a red cell would turn a check into an accusation. Neha Singh\'s team may simply be large.</div>';
+  return shell("Grooming Mark", "Report view", body);
+}
+
+/* ── employee ─────────────────────────────────────────────────────────── */
+function empDayBlock() {
+  var st = S.state;
+  if (st === "removed" || st === "undone") {
+    return '<div class="gblock"><h3>' + esc(t("groom")) + "</h3><p>No grooming red on this day.</p></div>";
+  }
+  var h = '<div class="gblock on"><h3>' + esc(t("groom")) + '</h3><p><span class="tag gr">' + esc(t("groom")) + "</span> " + esc(rs(REASONS[0])) + ".</p>"
+    + "<p>Marked by Ravi Kumar, your manager, on Sat 24 Oct at 10:24.</p>"
+    + (st === "capped"
+        ? "<p>A grooming red costs ₹200 a day (the Senior rate). You have 5 this month, which would be ₹1,000. The law limits fines to 3% of your wages, so <b>₹540</b> comes off your October pay.</p>"
+        : "<p>This takes <b>₹200</b> off your October pay (the Senior rate).</p>");
+  if (M.empAsked) {
+    h += '<p role="status">You asked HR to look at this on Sat 24 Oct at 14:02. HR will decide, and you will be told on the bell.</p>';
+  } else if (st === "kept") {
+    h += "<p>HR (Ritika Mehra) checked this on Sat 24 Oct and kept it.</p>";
+  } else {
+    h += '<div class="acts"><button class="btn" onclick="openAsk()">' + esc(t("askBtn")) + "</button></div>";
+  }
+  return h + "</div>";
+}
+
+function empMonth() {
+  var con = S.person === "con";
+  var marked = !con && S.state !== "removed" && S.state !== "undone";
+  var rv = !con && M.review !== null;   // v2: more marks earlier in the month
+  var rows = [
+    {d: "22 Oct", w: "Thu", tags: rv ? GTAG() : '<span class="tag">Present</span>', h: "9.5h"},
+    {d: "23 Oct", w: "Fri", tags: '<span class="tag">Present</span>', h: "9.8h"},
+    {d: "24 Oct", w: "Sat", tags: marked ? GTAG() : '<span class="tag">Present</span>', h: "--"}
+  ];
+  var gN = S.state === "capped" ? "5" : S.state === "flag4" ? "4" : rv ? "2" : "1";
+  var gA = S.state === "capped" ? "₹540, the legal limit" : S.state === "flag4" ? "₹800" : rv ? "₹400" : "₹200";
+  var tiles = (rv ? reviewLine("emp") : "")
+    + '<div class="tiles"><div class="tile"><div class="n">20</div><div class="l">Days present</div></div><div class="tile"><div class="n">1</div><div class="l">Late arrivals</div></div>'
+    + (marked ? '<div class="tile gr"><div class="n">' + gN + ' <small style="font-size:var(--fs-md)">· ' + gA + '</small></div><div class="l">' + esc(t("groom")) + " · off October pay</div></div>" : "")
+    + "</div>"
+    + (S.state === "flag4" ? '<div class="note"><b>Sample.</b> For a Senior to reach a 4th mark, Basic must be at least ₹26,667. This state imagines Rahul on ₹30,000; the other v2 states use ₹18,000.</div>' : "");
+  var detail = function () {
+    return '<div class="detail"><div class="facts"><div>Shift<span>10:00 - 20:00</span></div><div>Worked<span>--</span></div></div>'
+      + (con ? '<p class="muted" style="margin-top:10px">The correction section below the day is unchanged.</p>' : empDayBlock()) + "</div>";
+  };
+  var body = tiles + monthTable(rows, "24 Oct", detail);
+  if (con) body += '<div class="note"><b>Contract staff never see anything about grooming:</b> no tile, no tag, no box, no bell notice. Their month is exactly as it is today.</div>';
+  var after = "";
+  if (M.bellOpen || ["kept", "removed", "undone"].indexOf(S.state) > -1) after = bellPanel();
+  return shell("Attendance", (con ? "Your record" : "Your record") + " · October 2026", body,
+    {unread: (!con && (S.state === "notice" || S.state === "kept" || S.state === "removed" || S.state === "undone")) ? 1 : 0, after: after});
+}
+
+function bellPanel() {
+  var items = [];
+  if (S.state === "undone") items.push("Ravi Kumar, your manager, removed the grooming red he marked for you today (Sat 24 Oct). Nothing will come off your pay for it.");
+  if (S.state === "removed") items.push("Ritika Mehra (HR) removed the grooming red on Sat 24 Oct: Marked by mistake. Nothing will come off your pay for it.");
+  if (S.state === "kept") items.push("Ritika Mehra (HR) checked the grooming red on Sat 24 Oct and kept it. ₹200 still comes off your October pay.");
+  items.push(t("eNotice")(S.lang === "hi" ? "रवि कुमार (आपके मैनेजर)" : "Ravi Kumar, your manager,", S.lang === "hi" ? "आज (शनि 24 अक्टू)" : "today (Sat 24 Oct)", rs(REASONS[0]), "₹200", S.lang === "hi" ? "अक्टूबर" : "October"));
+  return '<div class="notes" role="dialog" aria-label="Notifications"><h2>Notifications</h2>'
+    + items.map(function (x, i) { return '<button class="nitem' + (i === 0 ? " unread" : "") + '" onclick="toDay()">' + esc(x) + '<span class="when">' + (i === 0 && items.length > 1 ? "Today, 15:40" : "Today, 10:24") + "</span></button>"; }).join("")
+    + "</div>";
+}
+
+/* ── sheets ───────────────────────────────────────────────────────────── */
+function sheetHtml() {
+  if (!SH) return "";
+  var h = '<div class="scrim" onclick="if(event.target===this)closeSheet()"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-t" onkeydown="if(event.key===\'Escape\')closeSheet()">';
+  if (SH.kind === "mark") {
+    var hr = SH.target === "hr";
+    var name = hr ? (S.state === "nomanager" ? "Kiran Bala" : "Rahul Sharma") : personById(SH.target).name;
+    h += '<h2 id="sh-t" tabindex="-1">' + esc(t("sheetT")(name, hr ? (S.lang === "hi" ? "बुध 21 अक्टू" : "on Wed 21 Oct") : (S.lang === "hi" ? "आज" : "today"))) + "</h2>"
+      + '<p class="help" id="sh-help">' + esc(t("sheetHelp")) + "</p>"
+      + '<div role="radiogroup" aria-labelledby="sh-t" aria-describedby="sh-help">'
+      + REASONS.map(function (r) {
+          var on = SH.chosen === r.k;
+          return '<label class="opt' + (on ? " sel" : "") + '"><input type="radio" name="gr" value="' + r.k + '"' + (on ? " checked" : "") + ' onchange="SH.chosen=this.value;SH.error=null;paint(true)"> ' + esc(rs(r)) + "</label>";
+        }).join("") + "</div>"
+      + (noLogin(SH)
+          ? '<div class="info">' + esc(name.split(" ")[0]) + (hr
+              ? ' has no login and will not get a notice from the app. Tell ' + esc(name.split(" ")[0]) + ' in person, with the reason, before you mark it.</div>'   /* v2: HR tick */
+              : ' has no login and will not get a notice from the app. Tell them today, and tell them they can speak to HR.</div>')
+            + '<label class="opt' + (SH.told ? " sel" : "") + '"><input type="checkbox"' + (SH.told ? " checked" : "") + ' onchange="SH.told=this.checked;SH.error=null;paint(true)"> I have told ' + esc(name.split(" ")[0]) + (hr ? " in person" : " in person today") + "</label>"
+          : '<div class="info">' + esc(t("sheetInfo")(name.split(" ")[0], hr)) + "</div>");
+  } else if (SH.kind === "remove") {
+    h += '<h2 id="sh-t" tabindex="-1">Remove this grooming red?</h2><p class="help">Why are you removing it?</p><div role="radiogroup" aria-labelledby="sh-t">'
+      + REMOVE_WHY.map(function (r) { var on = SH.chosen === r; return '<label class="opt' + (on ? " sel" : "") + '"><input type="radio" name="rw" value="' + esc(r) + '"' + (on ? " checked" : "") + ' onchange="SH.chosen=this.value;SH.error=null;paint(true)"> ' + esc(r) + "</label>"; }).join("")
+      + '</div><div class="info">' + hrFirst() + (S.state === "nologin" ? " has no login, so tell them it was removed, by you, and why." : " will be told it was removed, by you, and why.") + ' The person who marked it will see it is gone. A record of the mark and of its removal is kept.</div>';
+  } else if (SH.kind === "review") {   /* v2: the clearing sheet */
+    h += '<h2 id="sh-t" tabindex="-1">Record the grooming review for Rahul Sharma</h2>'
+      + '<label class="fld" for="rv-text">What you talked about and the action plan</label>'
+      + '<p class="help" id="rv-help">Keep it to dress and the action you agreed. Do not write about health, family, religion or anything else personal.</p>'
+      + '<textarea id="rv-text" aria-describedby="rv-help rv-info" oninput="SH.text=this.value">' + esc(SH.text || "") + "</textarea>"
+      + '<div class="info" id="rv-info">Only HR and Rahul’s manager can read this. Rahul sees only “Action agreed on Sat 24 Oct”. You cannot change or delete it after saving. It clears the review. It does not remove any grooming red or change any fine.</div>';
+  } else if (SH.kind === "keep") {
+    h += '<h2 id="sh-t" tabindex="-1">Keep the grooming red?</h2><div class="info">Rahul will be told that HR has checked it and the mark stays. ₹200 still comes off his October pay.</div>';
+  } else if (SH.kind === "ask") {
+    h += '<h2 id="sh-t" tabindex="-1">' + (S.lang === "hi" ? "HR से इस ग्रूमिंग रेड को देखने को कहें?" : "Ask HR to look at this grooming red?") + "</h2>"
+      + '<div class="info">' + (S.lang === "hi" ? "HR आपका अनुरोध देखेगा और फ़ैसला करेगा। फ़ैसला आपको बेल पर बताया जाएगा। तब तक मार्क बना रहेगा।" : "HR will see your request and decide. You will be told on the bell. Until then the mark stays.") + "</div>";
+  }
+  if (SH.error) h += '<p class="err" role="alert">' + esc(SH.error) + "</p>";
+  var go = SH.kind === "mark" ? t("confirm") : SH.kind === "remove" ? "Remove it" : SH.kind === "keep" ? "Keep it and tell Rahul" : SH.kind === "review" ? "Save and clear" : (S.lang === "hi" ? "HR को भेजें" : "Send to HR");
+  var no = SH.kind === "remove" ? "Keep the mark" : t("cancel");
+  if (SH.failed) go = t("tryAgain");
+  h += '<div class="acts"><button class="btn btn-primary" onclick="confirmSheet()"' + (SH.busy ? " disabled" : "") + ">" + esc(SH.busy ? "Saving…" : go) + '</button><button class="btn" onclick="closeSheet()">' + esc(no) + "</button></div>";
+  return h + "</div></div>";
+}
+
+function hrFirst() { return S.state === "nomanager" ? "Kiran" : "Rahul"; }
+/* v2: the "told in person" tick, now for HR too (state "nologin") */
+function noLogin(sh) { return sh.target === "hr" ? S.state === "nologin" : personById(sh.target).login === false; }
+window.openReview = function () { lastFocus = document.activeElement; SH = {kind: "review", text: ""}; paint(); };
+function personById(id) { for (var i = 0; i < M.team.length; i++) if (M.team[i].id === id) return M.team[i]; return null; }
+
+window.openMark = function (id) { lastFocus = document.activeElement; SH = {kind: "mark", target: id, chosen: null}; paint(); };
+window.openRemove = function () { lastFocus = document.activeElement; SH = {kind: "remove", chosen: null}; paint(); };
+window.openKeep = function () { lastFocus = document.activeElement; SH = {kind: "keep"}; paint(); };
+window.openAsk = function () { lastFocus = document.activeElement; SH = {kind: "ask"}; paint(); };
+window.closeSheet = function () { SH = null; paint(); if (lastFocus && document.body.contains(lastFocus)) lastFocus.focus(); };
+
+window.confirmSheet = function () {
+  if ((SH.kind === "mark" || SH.kind === "remove") && !SH.chosen) {
+    SH.error = SH.kind === "mark" ? t("chooseFirst") : "Choose why you are removing it.";
+    paint(true);
+    var first = document.querySelector('.sheet input[type="radio"]');
+    if (first) first.focus();
+    return;
+  }
+  if (SH.kind === "review" && !(SH.text || "").trim()) {   // v2
+    SH.error = "Write what you talked about and the action plan first.";
+    paint(true);
+    var ta = document.getElementById("rv-text");
+    if (ta) ta.focus();
+    return;
+  }
+  if (SH.kind === "mark" && noLogin(SH) && !SH.told) {
+    SH.error = "Tick the box to confirm you told " + (SH.target === "hr" ? hrFirst() : personById(SH.target).name.split(" ")[0]) + " in person.";
+    paint(true);
+    var tick = document.querySelector('.sheet input[type="checkbox"]');
+    if (tick) tick.focus();
+    return;
+  }
+  if (S.state === "error") {
+    /* the network fails: say so in the sheet, keep the choice, offer Try again */
+    SH.error = SH.kind === "remove" ? "Could not remove the mark. Nothing changed. Check your connection and try again." : t("saveErr");
+    SH.failed = true;
+    paint(true);
+    return;
+  }
+  SH.busy = true; paint(true);
+  setTimeout(function () {
+    var s = SH; SH = null;
+    if (s.kind === "mark" && s.target === "hr") {
+      M.hrMark = {k: s.chosen, by: "you, Ritika Mehra", as: "HR", at: "Sat 24 Oct at 15:12"};
+      M.flash.hr = S.state === "nologin"
+        ? "Saved. " + hrFirst() + " has no login and will not get a notice. You confirmed you told them in person."
+        : "Saved. " + hrFirst() + " has been told, with your name and the reason.";
+    } else if (s.kind === "review") {   // v2
+      M.review = "cleared"; M.note = s.text.trim();
+      M.flash.review = "Review recorded. The grooming reds this month still stand.";
+    } else if (s.kind === "mark") {
+      var p = personById(s.target);
+      p.mark = {k: s.chosen, by: "you", at: "10:31", mine: true};
+    } else if (s.kind === "remove") {
+      M.hrMark = null; M.asked = false;
+      M.flash.hr = "Removed. " + hrFirst() + " has been told it was removed, by you: " + s.chosen + ".";
+    } else if (s.kind === "keep") {
+      M.asked = false; M.kept = true;
+    } else if (s.kind === "ask") {
+      M.empAsked = true;
+    }
+    paint();
+  }, 450);
+};
+
+window.undoMark = function (id) {
+  var p = personById(id);
+  p.mark = null;
+  M.flash[id] = "Grooming red removed. " + p.name.split(" ")[0] + (p.login === false ? " has no login, so tell them it was removed." : " has been told.");
+  paint();
+  var b = document.querySelector("#row-" + id + " button");
+  if (b) b.focus();
+};
+window.toggleBell = function () { M.bellOpen = !M.bellOpen; paint(); };
+window.toDay = function () { M.bellOpen = false; if (S.state === "notice") { S.state = "day"; document.getElementById("r-state").value = "day"; } paint(); };
+
+/* ── paint ────────────────────────────────────────────────────────────── */
+function paint(keepSheetFocus) {
+  var st = document.getElementById("stage");
+  st.className = "stage " + S.device;
+  document.documentElement.setAttribute("data-theme", S.theme);
+  document.documentElement.setAttribute("lang", S.lang);
+  var html;
+  if (S.person === "mgr") html = (S.state === "month" || S.state === "flag" || S.state === "cleared") ? mgrMonth() : mgrTeam();
+  else if (S.person === "hr") html = hrDay();
+  else html = empMonth();
+  st.innerHTML = html + sheetHtml();
+  if (SH && !keepSheetFocus) { var h = document.getElementById("sh-t"); if (h) h.focus(); }
+}
+
+function fillStates() {
+  var sel = document.getElementById("r-state");
+  sel.innerHTML = STATES[S.person].map(function (s) { return '<option value="' + s[0] + '">' + s[1] + "</option>"; }).join("");
+  S.state = STATES[S.person][0][0];
+}
+document.getElementById("r-person").onchange = function () { S.person = this.value; fillStates(); SH = null; freshModel(); paint(); };
+document.getElementById("r-state").onchange = function () { S.state = this.value; SH = null; freshModel(); paint(); };
+document.getElementById("r-device").onchange = function () { S.device = this.value; paint(); };
+document.getElementById("r-theme").onchange = function () { S.theme = this.value; paint(); };
+document.getElementById("r-lang").onchange = function () { S.lang = this.value; paint(); };
+
+fillStates(); freshModel(); paint();
+</script>
+</body>
+</html>

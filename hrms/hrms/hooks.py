@@ -260,6 +260,8 @@ doc_events = {
 		"after_insert": [
 			"hrms.overrides.employee_master.update_job_applicant_and_offer",
 			"hrms.alvoraa_employee_documents.employee_documents.fill_checklist",
+			# Slice 064: a hire from an opening linked to a seat is put in that seat.
+			"hrms.alvoraa_org_structure.hiring.place_hire",
 		],
 		"on_trash": "hrms.overrides.employee_master.update_employee_transfer",
 		"after_delete": "hrms.overrides.employee_master.publish_update",
@@ -313,6 +315,18 @@ doc_events = {
 	},
 	"PMS Review Template": {
 		"before_save": "hrms.pms.pms_config.before_template_save",
+	},
+	# Role Permissions Manager on the two position doctypes: a readable record
+	# of each change, and the Positions menu item follows at once (slice 061).
+	# on_update fires for a new row as well as a ticked box.
+	"Custom DocPerm": {
+		"on_update": "hrms.alvoraa_org_structure.register.record_permission_change",
+		"on_trash": "hrms.alvoraa_org_structure.register.record_permission_change",
+	},
+	# Slice 064, SEC-8: only somebody who may place people in a seat may point a
+	# job opening at it, because a hire from that opening is placed in the seat.
+	"Job Opening": {
+		"validate": "hrms.alvoraa_org_structure.hiring.guard_seat_link",
 	},
 }
 

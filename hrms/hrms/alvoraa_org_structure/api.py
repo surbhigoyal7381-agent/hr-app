@@ -256,12 +256,13 @@ def propose_positions(company=None):
 	into an afternoon of correcting, which is the difference between a feature
 	that is bought and a feature that is used.
 	"""
-	frappe.only_for(["HR Manager", "System Manager"])
-	# Offered only on the Positions page, so it follows that page's setting too.
-	from hrms.alvoraa_org_structure.register import _refuse_view, may_view
+	# Offered only to somebody who may change the Positions page, and it is the
+	# first half of writing seats, so it asks the page's own edit rule: Frappe's
+	# Write on Alvoraa Position.
+	from hrms.alvoraa_org_structure.register import _refuse, may_edit
 
-	if not may_view():
-		_refuse_view("api.propose_positions")
+	if not may_edit():
+		_refuse("api.propose_positions")
 	filters = {"status": "Active"}
 	if company:
 		filters["company"] = company
@@ -339,11 +340,10 @@ def propose_positions(company=None):
 @frappe.whitelist()
 def create_proposed_positions(positions):
 	"""Write a reviewed proposal, and put the people in the seats."""
-	frappe.only_for(["HR Manager", "System Manager"])
-	from hrms.alvoraa_org_structure.register import _refuse_view, may_view
+	from hrms.alvoraa_org_structure.register import _refuse, may_edit
 
-	if not may_view():
-		_refuse_view("api.create_proposed_positions")
+	if not may_edit():
+		_refuse("api.create_proposed_positions")
 	positions = frappe.parse_json(positions) if isinstance(positions, str) else positions
 
 	# Parents before children, or the tree link points at nothing yet - and
@@ -404,39 +404,108 @@ def create_proposed_positions(positions):
 
 @frappe.whitelist()
 def reporting_mismatches():
-	"""Where the position hierarchy and `reports_to` disagree.
+	"""Where the seat tree and `Employee.reports_to` disagree, for the
+	Positions page's two records chips (slice 064, SEC-5).
 
 	Never reconciled automatically. `reports_to` routes performance reviews, so
 	rewriting it from the chart would reassign live appraisals as a side effect of
 	somebody tidying up - and nobody would connect the two. A disagreement is
 	usually a real problem, and the answer is a person deciding which one is
 	wrong.
+
+	REWRITTEN in 064. It used to check a role only, read every company and
+	branch on the site, and run three to five queries per seated person - 1,458
+	statements and 1.4 s on a 400-person copy. Now:
+	- the same gate as the page (`may_view`), and NOTHING for a reader without
+	  HR scope - the result names people and their managers;
+	- seats from the reader's `_scope()`, people from `permitted_employee_filters()`;
+	- a fixed number of statements at any headcount: the seats, then one join
+	  of current permanent holders to their Employee record and their manager's
+	  name. Everything else is worked out in Python from those two reads.
+
+	Returns two lists with fixed keys:
+	  mismatches - a person whose record names a manager other than the holder
+	               of the seat above theirs (today's keys);
+	  mixed      - per seat whose people report, on record, to two or more
+	               managers: one row per manager with how many.
 	"""
-	frappe.only_for(["HR Manager", "System Manager"])
-	out = []
+	import hrms.alvoraa_org_structure.register as register
+	from hrms.alvoraa_hr_core.access import NO_EMPLOYEES, permitted_employee_filters
+
+	if not register.may_view():
+		register._refuse_view("api.reporting_mismatches")
+	people = permitted_employee_filters()
+	if people == NO_EMPLOYEES:
+		return {}
+
 	today = nowdate()
-	for a in _running("Alvoraa Position Assignment",
-	                  {"is_primary": 1, "from_date": ("<=", today)},
-	                  ["employee", "employee_name", "position"], today):
-		parent = frappe.db.get_value("Alvoraa Position", a.position, "reports_to_position")
-		if not parent:
-			continue
-		# Who holds the parent seat?
-		holders = [h.employee for h in _running(
-			"Alvoraa Position Assignment",
-			{"position": parent, "is_primary": 1, "from_date": ("<=", today)},
-			["employee"], today)]
-		says = frappe.db.get_value("Employee", a.employee, "reports_to")
-		if holders and says and says not in holders:
-			out.append({
-				"employee": a.employee, "employee_name": a.employee_name,
-				"position": a.position, "parent_position": parent,
-				"chart_says": holders[0],
-				"chart_says_name": frappe.db.get_value("Employee", holders[0], "employee_name"),
-				"reports_to_says": says,
-				"reports_to_says_name": frappe.db.get_value("Employee", says, "employee_name"),
+	companies, branches = register._scope()
+	pos = frappe.qb.DocType("Alvoraa Position")
+	seat = frappe.qb.DocType("Alvoraa Position Assignment")
+	emp = frappe.qb.DocType("Employee")
+	boss = frappe.qb.DocType("Employee").as_("boss")
+
+	scope = (pos.company.isin(list(companies) or [""])) & (pos.status != "Closed")
+	if branches is not None:
+		scope = scope & pos.branch.isin(list(branches) or [""])
+	seats = {s.name: s.reports_to_position
+	         for s in frappe.qb.from_(pos).select(pos.name, pos.reports_to_position).where(scope).run(as_dict=True)}
+	if not seats:
+		return {"mismatches": [], "mixed": []}
+
+	q = (frappe.qb.from_(seat)
+	     .join(pos).on(pos.name == seat.position)
+	     .join(emp).on(emp.name == seat.employee)
+	     .left_join(boss).on(boss.name == emp.reports_to)
+	     .select(seat.employee, emp.employee_name, seat.position, emp.reports_to,
+	             boss.employee_name.as_("manager_name"))
+	     .where(scope)
+	     .where(seat.assignment_type == "Permanent")
+	     .where(seat.from_date <= today)
+	     .where(seat.to_date.isnull() | (seat.to_date >= today))
+	     .where(emp.status == "Active"))
+	for field, (op, value) in people.items():
+		# Exactly the two shapes permitted_employee_filters returns; anything
+		# else is refused rather than dropped, which would widen the answer.
+		if op == "in":
+			q = q.where(emp[field].isin(list(value)))
+		elif op == "!=":
+			q = q.where(emp[field] != value)
+		else:
+			frappe.throw(_("The records check could not be scoped."))
+	held = q.run(as_dict=True)
+
+	holders, name_of, seat_of = {}, {}, {}
+	for h in held:
+		holders.setdefault(h.position, []).append(h.employee)
+		name_of[h.employee] = h.employee_name
+		seat_of.setdefault(h.employee, h.position)
+
+	mismatches, mixed = [], []
+	for h in held:
+		parent = seats.get(h.position)
+		above = holders.get(parent) if parent in seats else None
+		if above and h.reports_to and h.reports_to not in above:
+			mismatches.append({
+				"employee": h.employee, "employee_name": h.employee_name,
+				"position": h.position, "parent_position": parent,
+				"chart_says": above[0], "chart_says_name": name_of.get(above[0]),
+				"reports_to_says": h.reports_to, "reports_to_says_name": h.manager_name,
 			})
-	return {"mismatches": out, "count": len(out)}
+
+	by_seat = {}
+	for h in held:
+		if h.reports_to:
+			managers = by_seat.setdefault(h.position, {})
+			entry = managers.setdefault(h.reports_to, {"name": h.manager_name, "count": 0})
+			entry["count"] += 1
+	for position, managers in by_seat.items():
+		if len(managers) < 2:
+			continue
+		for manager, m in managers.items():
+			mixed.append({"position": position, "manager": manager, "manager_name": m["name"],
+			              "manager_position": seat_of.get(manager), "count": m["count"]})
+	return {"mismatches": mismatches, "mixed": mixed}
 
 
 # ── the view an employee actually wants ──────────────────────────────────────

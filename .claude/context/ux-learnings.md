@@ -114,6 +114,8 @@ Each one was seen on a real screen. Check new designs against this list.
 | A success message written into an unrelated field's hint ("Opening created" lands under "Or name the manager it reports to") | Positions, Advertise this seat (read in code) | P11 (slice 059) |
 | A total beside a filter counted over **all** rows, not the filtered ones ("7 open" stays company-wide after picking one branch) | Positions, count line (read in code) | P4 (slice 059) |
 | A field hidden by a condition with no route to reveal it — the seat count shows only when it is already above 1, so a one-person seat can never become a six-person one | Positions, seat dialog (read in code) | P3 (slice 059) |
+| A "Loading…" that never ends when the call fails — no error, no retry | Leave page, leave-type list, HR holidays card (24 Oct 2026) | N4 (benchmark) |
+| One idea under two names — **seen a third time** (weekly off as "Holiday", still on the ALV-213 build) | Attendance month | MA2 |
 | A clickable box that is not a button: the whole hierarchy is unreachable by keyboard, and the modals have no role, no Escape and no focus move | Organisation chart and Positions (read in code) | P7 (slice 059) |
 
 ---
@@ -162,6 +164,11 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 - [ ] A total shown next to a filter is computed over the filtered rows, or it says out loud that it is the whole.
 - [ ] A tree or chart that opens fully expanded has been tried at the real number of nodes. Default a deep level closed, and say what is folded.
 - [ ] A filter that greys rather than hides still has to lead the eye: fold the branches with no match and open the ancestors of every match.
+- [ ] For competitor screens, pull App Store India listings through the iTunes search API (screenshots + description text) and view them as contact sheets; record the listing URL and date. Help-centre pages may block fetchers (Keka returns 403).
+- [ ] A raw server message on a LOCAL bench: check the bench's database has the slice's doctypes before calling it a product bug; confirm on dev.
+- [ ] Every loading state has an end: plain words and "Try again" after a timeout.
+- [ ] A timeout does not mean "nothing was sent": the server may have saved it and lost the answer. Say "it may have gone through", check before re-sending, and test with a call that succeeds on the server but drops its reply.
+- [ ] Before raising a shared design token, count the pages that include it (`design_system.html` is in 7). Scope the change to the product's own stylesheet.
 - [ ] Count attendance-style surfaces by nav ITEM against the panel it opens, and read the gating code: an item with no `display:none` is shown to every employee.
 
 ---
@@ -170,6 +177,7 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 
 | Item | Owner | Blocks |
 |---|---|---|
+| Slice 070 design: ⚠ DECISION 1 (honest "may have gone through" wording), 2 (check-first only on the leave form), 3 (two-line attendance rows on phones) in `01b` §14. Prototype v1 not yet published (no artifact tool in that run) and not yet reacted to. | Surbhi; lead session publishes | 070 spec copy and scope |
 | My Attendance marks a 09:25 arrival "25 min late", but the shift starts at 09:30. Likely an engineering bug, not a design issue. Not yet investigated. | Engineering | Trust in lateness numbers; the late-rule explanation |
 | Hindi and Punjabi labels in the prototype are machine drafts. | Surbhi, or a native reviewer | Any language work shipping |
 | Competitor scorecard is not verified with trial accounts. | Surbhi | Quoting the scorecard externally |
@@ -204,6 +212,11 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 
 | Date | Source | What was said | What it teaches | What changed | Status |
 |---|---|---|---|---|---|
+| 2026-10-25 | Surbhi, design gate, slice 070 | "Go with this design, seen all the designs in the prototype." | Approving the prototype after trying every state (Before/After, 390/360/desktop, No signal / No answer) settled all four ⚠ DECISIONs as drawn: honest "may have gone through" wording, two-line attendance days on phones, one date format "6 Nov 2026" (overrides the "06 Nov" she accepted on ALV-213 a day earlier). A clickable failure simulation let her judge the wording without a meeting | Recorded in 01b "Decisions — Surbhi, 25 Oct 2026"; build as drawn | applied |
+| 2026-10-24 | Own design work, slice 070 (prototype v1, measured with Playwright at 360/390/1440) | Brief's WOW: "We could not reach the office. Nothing was sent." Surbhi: 15 s before "Try again" for every call | The sentence is true only when the phone knows it is offline. After a 15 s cut-off the office may have saved the request. A retry design must be tested against "saved, answer lost", not only "network off". Also: raising `design_system.html` tokens would have changed 7 pages, not one | Two checklist items; ⚠ DECISION 1 raised rather than changing her sentence quietly; tokens scoped to `frame.css` | heard |
+| 2026-10-24 | Surbhi, via the PM task (benchmark for non-tech industries) | "identify the key areas of improvement in our design compared to the competitors based on the available images of their screens online … especially for non-tech industries" | The App Store search API (`itunes.apple.com/search?...&country=in`) returns real store screenshot URLs and description text for every vendor, so we get viewable evidence without trials or scraping. Store images are still marketing: label them "seen in the vendor's store image" | Checklist item; method used in `docs/product/design-benchmark/2026-10-24-ux-benchmark.md` | applied |
+| 2026-10-24 | Own measurement, ALV-213 build | On the phone: "+ Apply Leave" 25 px, drawer items 38 px, form fields 13 px, 11 px text on every screen; weekly offs still "Holiday" (MA2, third look); first names only (TV4) still; failed calls leave "Loading…" for ever | The page-frame fixes held (no sideways scroll anywhere), but control-level floors and failure states were never applied. A frame fix does not fix controls | Anti-pattern rows below; nothing changed in code | heard |
+| 2026-10-24 | Own capture | A local bench whose database lags the mounted code shows raw "DocType … not found" pop-ups to every person | Before blaming the product for a raw error on a local bench, check whether the bench's database has the slice's doctypes. Record it as evidence of failure handling, not as a product bug, until seen on dev | Checklist item | heard |
 | 2026-10-15 | Surbhi, Positions screen review (slice 059) | "As the UX expert, thinking of the pain of the persona of this application, review the design of this page and do necessary updates to make it more intuitive, easy to use and value adding." Read from markup and endpoints only; no browser | The three questions a shop owner opens this with — where are we short, who is leaving, who could cover — were each answerable only by hunting. The default list view never showed a leaving date at all; the key numbers sat in 11 px grey text in a corner of the filter card; the empty state named no action while the button to act sat in the toolbar | 18 ranked findings; six checklist items; four anti-patterns. No code changed (she implements) | heard |
 | 2026-09-27 | Own look (Playwright, measured), M3 prototype v1 | 48 screens at 360 px light, dark and 200% text: clean at the end; the first pass found an 11 px Sample tag, an unbreakable `PASSWORD_CHANGED_SIGN_IN_AGAIN` at 200%, and "PP J…" in the top bar at 200% | Large text is its own device size; long codes need a break rule | Two checklist items; a pattern for icon-only actions at 150%+ | applied |
 | 2026-09-27 | Own measurement, M3 palette | PPJ's local brand colour is `#000000`; Material's tonal-spot recipe made it pink (`#8c4a60`) | The tenant's real setting can be the edge case; generate the palette, do not assume it | Monochrome rule under chroma 8; checklist item; D-M3-5 | applied |

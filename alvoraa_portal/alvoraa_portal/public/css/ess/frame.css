@@ -230,7 +230,14 @@ body.sb-collapsed .sidebar:hover .sb-scroll-btn{display:flex}
   margin-left:auto;width:32px;height:32px;border-radius:50%;
   background:var(--primary);color:var(--surface);font-size:var(--fs-sm);font-weight:700;
   display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
+  border:none;padding:0;font-family:inherit;
 }
+.mob-avatar:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+/* ALV-213: the account menu Frappe's navbar used to give on a phone */
+.mob-acct-menu{position:absolute;right:12px;top:52px;width:180px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh3);padding:6px 0;display:none;z-index:2000}
+.mob-acct-menu.open{display:block}
+.mob-acct-menu a{display:flex;align-items:center;min-height:44px;padding:0 16px;font-size:14px;color:var(--text);text-decoration:none}
+.mob-acct-menu a + a{border-top:1px solid var(--border)}
 .mob-notif{
   width:32px;height:32px;border-radius:50%;
   background:var(--surface2);border:1px solid var(--border);
@@ -279,3 +286,75 @@ body.sb-collapsed .sidebar:hover .sb-scroll-btn{display:flex}
    the one door. "My Account" and "Log out" are untouched (Surbhi, 27 Sep). */
 #website-post-login .switch-to-desk,
 #website-post-login .apps{display:none !important}
+
+/* ── Slice 070 (ALV-217): readable and honest on a cheap phone ────────────
+   Everything below is the employee portal's own: design_system.html is shared
+   by seven pages and is not touched (AC-6). Sizes are 01b §5. */
+
+/* A load that did not finish (01b §6): in place of "Loading...". Amber, not
+   red - nothing is wrong with the person. */
+.fail{border:1px solid var(--border);border-left:4px solid var(--amber);background:var(--surface);border-radius:var(--r);padding:16px;margin:4px 0 16px;text-align:left}
+.fail h3{margin:0 0 4px;font-size:var(--fs-md);font-weight:700;line-height:1.35;color:var(--text)}
+.fail p{margin:0 0 12px;color:var(--text2);font-size:var(--fs-base)}
+.fail .btn{min-height:44px}
+select + .fail{margin-top:8px}
+.leave-rings > .fail{grid-column:1 / -1}   /* review D1: the full width, not one ring's cell */
+/* A write whose answer was lost: the line stays beside its locked button. */
+.lost-note{margin:8px 0 0;color:var(--text);font-size:var(--fs-sm);border-left:4px solid var(--amber);padding:4px 0 4px 10px}
+/* A send that did not finish: just above the buttons. */
+.send-fail{border:1px solid var(--amber);border-left-width:4px;background:var(--amber-lt);border-radius:var(--r-sm);padding:12px 14px;margin:4px 0 2px}
+.send-fail b{display:block;font-size:var(--fs-base);color:var(--text);line-height:1.4}
+.send-fail span{display:block;color:var(--text);font-size:var(--fs-sm);margin-top:4px}
+.send-fail .btn{margin-top:10px;min-height:44px}
+/* The date in words under a date box (AC-15). */
+.date-words{font-size:var(--fs-sm);color:var(--text2);margin-top:4px;min-height:1em}
+.date-words:empty{display:none}
+/* G8: a closed drawer waits just off the right edge, and its 32 px shadow
+   reached back in as a grey band down the side of every page. */
+.emp-drawer:not(.open), #gp-detail-panel:not(.open){box-shadow:none}
+/* The phone day block of the attendance month: hidden on a desktop. */
+.ac-tbl .ac-ph{display:none}
+.ac-tbl th:nth-child(2), .ac-tbl td.day{text-align:left}   /* the Day column stays first in sight */
+
+@media (max-width:768px){
+  :root{--fs-xs:12px;--fs-sm:13px;--fs-base:15px;--fs-md:16px}
+
+  /* Fields: 16 px text, so the phone does not zoom in, and 44 px tall. */
+  body input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]),
+  body select, body textarea, body .gp-input, body .form-control,
+  body .ac-bar select, body .ac-bar input, body .tr-f .form-control,
+  body .notes-filter-row .form-control, body .tn-field .form-control,
+  body .tv-pop-field .gp-input{font-size:16px;min-height:44px}
+  body textarea, body textarea.gp-input, body textarea.form-control{min-height:88px}
+
+  /* Buttons and in-card links: 44 px. */
+  body .btn, body .btn-sm, body .gp-modal-footer .btn{min-height:44px;padding-top:0;padding-bottom:0;padding-left:18px;padding-right:18px}
+  body .card-header a, body .home-goals-link, body footer a,
+  body #hol-view-all-btn{display:inline-flex;align-items:center;min-height:44px;padding:0 8px}
+  body #hol-prev, body #hol-next{min-width:44px;min-height:44px}
+  body .card-header{flex-wrap:wrap;min-height:56px}
+  body .gp-modal-close{width:44px;height:44px}
+  body .nav-item, body .gp-tab{min-height:44px}
+  body .ac-bar button{min-width:44px;min-height:44px}
+
+  /* Header: a 44 px box around a 36 px drawn shape (AC-7). */
+  body .mob-hamburger, body .mob-notif, body .mob-avatar{width:44px;height:44px;padding:4px;background-clip:content-box;border-color:transparent}
+  body .mob-hamburger, body .mob-notif{box-shadow:inset 0 0 0 4px var(--surface),inset 0 0 0 5px var(--border)}
+
+  /* Half Day: the whole row is the label (01b §5). */
+  body .hd-row{min-height:44px}
+  body .hd-row input{width:20px !important;height:20px !important}
+
+  /* Attendance: each day is one block of two lines (D3, AC-52). */
+  body .ac-tbl thead, body .ac-tbl tr.ac-row > td:not(.ac-ph){display:none}
+  body .tbl-wrap table.ac-tbl{min-width:0}
+  body .ac-tbl, body .ac-tbl tbody, body .ac-tbl tr, body .ac-tbl td.ac-ph, body .ac-tbl tr.ac-open > td{display:block;width:100%}
+  body .ac-tbl td.ac-ph{padding:0;border-bottom:1px solid var(--border);text-align:left;white-space:normal}
+  .ac-day{display:flex;flex-direction:column;justify-content:center;gap:2px;width:100%;min-height:52px;padding:8px 12px 8px 14px;border:0;background:none;text-align:left;font:inherit;font-size:var(--fs-sm);color:var(--text2)}
+  .ac-l1{display:flex;align-items:flex-start;gap:8px;width:100%}
+  .ac-d{font-weight:600;color:var(--text);min-width:86px;flex-shrink:0;white-space:nowrap}
+  .ac-tags{flex:1;min-width:0}
+  .ac-go{color:var(--text3);font-size:20px;line-height:1}
+  .ac-l2{color:var(--text2)}
+  tr.off .ac-d{color:var(--text2)}
+}

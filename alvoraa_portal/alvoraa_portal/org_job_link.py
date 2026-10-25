@@ -35,12 +35,25 @@ def after_migrate():
 
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+	# Editable since slice 064, so an opening made by hand can be linked too.
+	# Who may SET it is the server's rule, not this flag: Frappe does not
+	# enforce read_only on the server, so the guard is a validate hook
+	# (hrms.alvoraa_org_structure.hiring.guard_seat_link, SEC-8).
 	create_custom_fields({JOB_OPENING: [
 		{"fieldname": "alvoraa_position", "fieldtype": "Link",
 		 "options": "Alvoraa Position", "label": "Position",
-		 "insert_after": "designation", "read_only": 1,
+		 "insert_after": "designation", "read_only": 0,
 		 "description": "The seat on the organisation chart this opening is "
-		                "filling. Set when the opening is raised from the "
-		                "Positions screen; blank for one created by hand."},
+		                "filling. Only someone who may place people in that "
+		                "seat can set it."},
 	]})
+
+	# Who linked an opening to a seat, and when (PRIV-3): Job Opening keeps no
+	# change history of its own. Configuration, not code - one Property Setter,
+	# made once.
+	if not frappe.db.exists("Property Setter", {"doc_type": JOB_OPENING,
+	                                            "property": "track_changes"}):
+		from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+		make_property_setter(JOB_OPENING, None, "track_changes", "1", "Check", for_doctype=True)
 	return True

@@ -242,8 +242,12 @@ class TestTheCapacityIsDerivedNotDeclared(_Corrections):
 		# `get_effective_manager` must not be used here - a test failing
 		# because the code was documented. I made the same mistake in the
 		# leave-privacy checks; this is the second time, so it is written down.
+		# 068: the lookup itself lives in `_manager_of`, and `_load_managers`
+		# reads the same field in bulk for the bell. Both are read here too.
 		src = (inspect.getsource(ac.decided_as)
-		       + inspect.getsource(ac._manager_user_for))
+		       + inspect.getsource(ac._manager_user_for)
+		       + inspect.getsource(ac._manager_of)
+		       + inspect.getsource(ac._load_managers))
 		code = "\n".join(l for l in src.split("\n") if not l.strip().startswith("#"))
 		code = re.sub(r'"""(.|\n)*?"""', "", code)
 		self.assertNotIn("get_effective_manager", code)
@@ -439,8 +443,12 @@ class TestTheRecordAnswersOnItsOwn(_Corrections):
 
 	def test_hr_is_refused_before_the_window_and_the_refusal_says_what_to_do(self):
 		"""AC-81. Raised today, so Priya is refused - and the sentence names
-		the manager and the date, because "not allowed" is not a next step."""
-		doc = self._request(self.rahul)
+		the manager and the date, because "not allowed" is not a next step.
+
+		Kamal-both, not Rahul: since 23 Oct 2026 (slice 068) the wait is only
+		for a manager who can decide. Kamal holds HR Manager; Sandeep, Rahul's
+		manager, holds only Employee and so is waited for by nobody."""
+		doc = self._request(self.kamal_both)
 
 		# **The two sources of a name are deliberately made to disagree.**
 		#
@@ -450,11 +458,11 @@ class TestTheRecordAnswersOnItsOwn(_Corrections):
 		# happened to carry a matching name, so an assertion on the shared
 		# spelling passed whichever source the code read - it proved
 		# nothing. Setting the two apart is what makes this a real check.
-		was = frappe.db.get_value("User", self.sandeep_user, "full_name")
-		self.addCleanup(self._put_full_name_back, self.sandeep_user, was)
-		frappe.db.set_value("User", self.sandeep_user, "full_name",
+		was = frappe.db.get_value("User", self.kamal_user, "full_name")
+		self.addCleanup(self._put_full_name_back, self.kamal_user, was)
+		frappe.db.set_value("User", self.kamal_user, "full_name",
 						    "S045WrongSource", update_modified=False)
-		employee_name = frappe.db.get_value("Employee", self.sandeep, "employee_name")
+		employee_name = frappe.db.get_value("Employee", self.kamal, "employee_name")
 
 		self.as_user(self.priya_user)
 		with may_review_granted(), self.assertRaises(frappe.PermissionError) as caught:

@@ -108,14 +108,23 @@ ROW_KEYS = (
 	# CONTEXT LINE is the thing that carries no colleague name and no leave
 	# type (042 AC-28), and it is built in `_leave_contexts`, not here.
 	("leave_approvals", ("name", "employee_name", "from_date", "to_date",
-	                     "leave_type", "total_days", "context", "action")),
+	                     "leave_type", "total_days", "context", "action",
+	                     # Slice 063, only on rows at a company whose pay rule
+	                     # set is on: the half-day flag, the "N of 5" figure
+	                     # for Leave Without Pay, the special-day line and the
+	                     # name at the top of the chain that will be told.
+	                     "half_day", "lwp_in_play", "lwp_limit", "special_day",
+	                     "chain_top")),
 	# No colleague name for a goal or KPI update? There is one, and there has to
 	# be: an approver cannot approve "somebody's" progress. What is absent is the
 	# number's provenance and any note about the person.
 	("goal_updates", ("name", "kind", "employee_name", "subject", "logged_on",
 	                  "value", "action")),
+	# `can_decide`: whether the caller may decide it TODAY
+	# (`attendance_correction.not_yours_yet`). Only those rows are listed and
+	# counted, so it is always true; the buttons still follow it.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
-	                      "reason", "context", "action")),
+	                      "reason", "context", "action", "can_decide")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
 	                    "shift_type", "action")),
 	# A policy is a document, not a person. No employee field at all.
@@ -370,6 +379,74 @@ def _leave_contexts(rows):
 	return out
 
 
+def _dtc_companies():
+	"""Companies whose pay rule set is switched on (slice 063, SEC-15)."""
+	return frappe.get_all("Alvoraa Payroll Rule Set", filters={"enabled": 1}, pluck="company")
+
+
+def _with_hr_lwp(who, filters):
+	"""Slice 063 (SEC-3 rev. 3). Where a company's pay rule set is on, Leave
+	Without Pay is decided by HR in scope, not by a named approver. So:
+
+	- the named-approver rows lose that company's Leave Without Pay, and
+	- an HR Manager or HR User gains it for the people inside their companies
+	  AND branches, never their own.
+
+	The scope stays in the database: company and branch conditions on the
+	query, never a list of employee ids (nfr section 2). Every other tenant -
+	no rule set switched on - gets the filter exactly as before.
+	"""
+	dtc = _dtc_companies()
+	if not dtc:
+		return filters
+	lwp = frappe.get_all("Leave Type", filters={"is_lwp": 1}, pluck="name") or [""]
+	named = [["leave_approver", "=", who.user], "and", ["status", "=", "Open"], "and",
+	         ["docstatus", "=", 0], "and", ["employee", "!=", who.employee], "and",
+	         [["leave_type", "not in", lwp], "or", ["company", "not in", dtc]]]
+	hr = hr_lwp_filters(who.user, who.employee, dtc, lwp)
+	return [named, "or", hr] if hr else named
+
+
+def hr_lwp_filters(user, employee, dtc=None, lwp=None):
+	"""Open Leave Without Pay this HR caller decides (slice 063, SEC-3): at a
+	company whose pay rule set is on, inside their companies AND branches, never
+	their own. None for anyone who decides none. The Team page's pending list
+	asks the same question through this one function."""
+	if not ({"HR Manager", "HR User"} & set(frappe.get_roles(user))):
+		return None
+	from hrms.alvoraa_hr_core.access import permitted_branches, permitted_companies
+
+	dtc = _dtc_companies() if dtc is None else dtc
+	companies = [c for c in permitted_companies(user) if c in dtc]
+	if not companies:
+		return None
+	lwp = lwp or frappe.get_all("Leave Type", filters={"is_lwp": 1}, pluck="name") or [""]
+	hr = [["leave_type", "in", lwp], "and", ["company", "in", companies], "and",
+	      ["status", "=", "Open"], "and", ["docstatus", "=", 0], "and",
+	      ["employee", "!=", employee or ""]]
+	branches = permitted_branches(user)
+	if branches is not None:
+		hr += ["and", ["employee.branch", "in", branches]]
+	return hr
+
+
+def _dtc_row_facts(r):
+	"""The extra lines on a leave row at a company whose pay rule set is on."""
+	from alvoraa_portal import leave_rules
+
+	rs = leave_rules.rule_set_for(r.company)
+	if not rs:
+		return {}
+	chain = leave_rules.chain_of(r.employee)
+	out = {"half_day": int(r.half_day or 0),
+	       "chain_top": chain[-1].employee_name if chain else None,
+	       "special_day": leave_rules._special_day(rs, r.from_date, r.to_date)}
+	if leave_rules.is_lwp(r.leave_type):
+		out["lwp_in_play"] = leave_rules.lwp_in_play(r.employee, r.from_date)
+		out["lwp_limit"] = leave_rules.LWP_MONTH_LIMIT
+	return out
+
+
 def _part_leave_approvals(who):
 	"""Leave applications waiting on this person as the named approver.
 
@@ -388,18 +465,23 @@ def _part_leave_approvals(who):
 			"docstatus": 0,
 			"employee": ["!=", who.employee],
 		}
+		filters = _with_hr_lwp(who, filters)
 
 	def rows_fn(filters, limit):
 		rows = frappe.get_list(
 			"Leave Application", filters=filters,
 			fields=["name", "employee", "employee_name", "department", "leave_type",
-			        "from_date", "to_date", "total_leave_days"],
+			        "from_date", "to_date", "total_leave_days", "company", "half_day"],
 			order_by="from_date asc", limit_page_length=limit or 0)
 		# One query for every context line on the page, not one per row.
 		contexts = _leave_contexts(rows)
+		# Slice 063: asked once for the page. Rows at other companies cost
+		# nothing extra; a row at a company whose pay rule set is on carries a
+		# few reads of its own (its chain, its month's leave without pay).
+		dtc = set(_dtc_companies()) if rows else set()
 		out = []
 		for r in rows:
-			out.append({
+			row = {
 				"name": r.name,
 				"employee_name": r.employee_name,
 				"from_date": str(r.from_date) if r.from_date else None,
@@ -408,13 +490,18 @@ def _part_leave_approvals(who):
 				"total_days": r.total_leave_days,
 				"context": contexts.get(r.name),
 				"action": "leave",
-			})
+			}
+			if r.company in dtc:
+				row.update(_dtc_row_facts(r))
+			out.append(row)
 		return out
 
 	return Part(
 		"leave_approvals", "#team",
 		scope="leave applications where this caller is the named leave_approver, "
-		      "minus their own",
+		      "minus their own; and, at a company whose pay rule set is on, Leave "
+		      "Without Pay of people inside this HR caller's companies and "
+		      "branches, minus their own (slice 063, SEC-3)",
 		filters=filters,
 		count_fn=_count_rows("Leave Application"),
 		rows_fn=rows_fn,
@@ -588,23 +675,36 @@ def _part_attendance_fixes(who):
 	**The count is not capped, and the screen is.** `to_review` reads 50 rows.
 	This counts every waiting row in the caller's scope, so the bell can say 60
 	while the screen shows 50 and says so.
+
+	**Only what the caller can press today** (Surbhi, 23 Oct 2026). A
+	correction still with a manager who can decide, or one the caller raised,
+	is neither counted nor listed here: the bell said "2 to decide" when there
+	were 0 to press. The Attendance page still lists those, with the sentence
+	saying whose they are. Count and list are worked out from the same rows,
+	so they cannot disagree.
 	"""
 	from alvoraa_portal.attendance_correction import (
-		REQUEST, _may_review, review_queue_filters,
+		REQUEST, _may_review, _with_decide_flag, review_queue_filters,
 	)
 
 	available = bool(who.employee) and bool(_may_review())
 	filters, is_hr_scope = (review_queue_filters(who.user) if available
 	                        else (no_rows(), False))
 
-	def rows_fn(filters, limit):
+	def decidable(filters, limit):
 		rows = frappe.get_list(
 			REQUEST, filters=filters,
-			fields=["name", "employee_name", "from_date", "to_date", "reason",
-			        "half_day"],
-			order_by="creation asc", limit_page_length=limit or 0)
+			fields=["name", "employee", "employee_name", "from_date", "to_date",
+			        "reason", "half_day", "creation", "owner"],
+			order_by="creation asc", limit_page_length=0)
+		# For the caller the part was built for, not whoever happens to be
+		# signed in when the count is read.
+		rows = [r for r in _with_decide_flag(rows, who.user) if r.can_decide]
+		return rows[:limit] if limit else rows
+
+	def rows_fn(filters, limit):
 		out = []
-		for r in rows:
+		for r in decidable(filters, limit):
 			out.append({
 				"name": r.name,
 				"employee_name": r.employee_name,
@@ -616,6 +716,7 @@ def _part_attendance_fixes(who):
 				# reason for an absence. It is the thing being decided.
 				"context": _("Half day") if r.half_day else None,
 				"action": "attendance_fix",
+				"can_decide": r.can_decide,
 			})
 		return out
 
@@ -625,7 +726,7 @@ def _part_attendance_fixes(who):
 		       "HR: permitted_employees() minus self; a non-HR reviewer: their "
 		       "whole queue, unchanged (W1D-14). D-2 not built"),
 		filters=filters,
-		count_fn=_count_rows(REQUEST),
+		count_fn=lambda f: len(decidable(f, None)),
 		rows_fn=rows_fn,
 		cap=CORRECTIONS_CAP,
 		available=available,

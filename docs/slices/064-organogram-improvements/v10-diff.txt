@@ -1,0 +1,63 @@
+ prototype-v9.html => prototype-v10.html | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/prototype-v9.html b/prototype-v10.html
+index c6d60405..456701f4 100644
+--- a/prototype-v9.html
++++ b/prototype-v10.html
+@@ -86,10 +86,11 @@ button.tile:hover{box-shadow:var(--sh2)}
+ .chart{display:flex;justify-content:center;align-items:flex-start;gap:16px;min-width:max-content;margin:0 auto;position:relative}
+ .sibwrap{position:relative;padding-top:22px;display:flex;flex-direction:column}
+ .sibwrap::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;background:var(--border2)}
+-.sibs{border:1px solid var(--border2);border-radius:var(--r);padding:8px 8px 12px}
++.sibs{border:1px solid var(--border2);border-radius:var(--r);padding:6px 6px 12px}
++.chart>.nomgr-slot{position:absolute;top:0;right:0}
+ .sibhead{text-align:center;font-size:var(--fs-sm);font-weight:700;color:var(--text2)}
+ .siblab{font-size:var(--fs-sm);color:var(--text2);margin:10px 4px 6px}
+-.sibgrid{display:grid;grid-template-columns:repeat(5,208px);gap:14px;justify-content:center}
++.sibgrid{display:grid;grid-template-columns:repeat(var(--cols,5),208px);gap:14px;justify-content:center}
+ .strip{margin-top:26px;border-top:2px solid var(--primary);padding-top:6px;display:flex;flex-direction:column;align-items:center}
+ .striphead{font-size:var(--fs-sm);color:var(--text2)}
+ .box.opened{outline:2px solid var(--primary);outline-offset:2px}
+@@ -196,6 +197,7 @@ td.num,th.num{text-align:right}
+   </select></label>
+   <label>Device <select id="d-device"><option value="desk">Desktop 1440</option><option value="phone">Phone 390</option></select></label>
+   <label>Theme <select id="d-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
++  <label>Window <select id="d-win"><option value="1128">1440 portal (frame 1,128)</option><option value="970">1280 portal (frame 970)</option><option value="820">1024 portal (frame 820)</option><option value="">Prototype full width</option></select></label>
+   <label>State <select id="d-state"><option value="ok">Loaded</option><option value="loading">Loading</option><option value="error">Could not load</option></select></label>
+   <span class="sample">Sample</span> <span>Every name is invented, and so are the one leaving date, the new hire and the replacement plan. The shape follows DTC on 21 Oct 2026: 90 seats, 445 people. "Print this view" is shown for you to judge; it is a "later" item.</span>
+ </div>
+@@ -489,7 +491,7 @@ function holderBox(h, path) {
+   return hb + "</div>";
+ }
+ function noMgrBox() {
+-  return '<div class="br"><button type="button" class="box dashed amber" data-act="nomgr">'
++  return '<div class="br nomgr-slot"><button type="button" class="box dashed amber" data-act="nomgr">'
+     + '<div class="ti">No reporting manager</div><div class="su">Not in any seat, and no manager on their record</div>'
+     + '<div class="roll">' + NOMGR.length + " people</div>"
+     + '<div class="chips"><span class="chip amber">Needs a manager</span></div></button></div>';
+@@ -593,6 +595,7 @@ function tilesHTML() {
+ function render() {
+   var app = document.getElementById("app");
+   app.className = "app" + (ST.phone ? " is-phone" : "");
++  app.style.maxWidth = !ST.phone && val("d-win") ? (+val("d-win") + 58) + "px" : ""; app.style.marginLeft = app.style.maxWidth ? "auto" : ""; app.style.marginRight = app.style.maxWidth ? "0" : "";
+   document.documentElement.setAttribute("data-theme", val("d-theme"));
+   var h = '<div class="head"><div><h1>Positions</h1><div class="sub">'
+     + (P().scope ? "Your part of the organisation: Manager · Delhi and the seats under it." : "Every seat in the organisation, who is in it, and which are empty.")
+@@ -639,6 +642,8 @@ function render() {
+   else h += chartHTML();
+   app.innerHTML = h;
+   wireInputs();
++  var cw = document.querySelector(".chartwrap");
++  if (cw) cw.style.setProperty("--cols", Math.max(1, Math.min(5, Math.floor((cw.clientWidth - 16) / 222))));
+   drawLinks();
+   if (ST.focus && !ST.phone) {
+     var el = document.getElementById("b-" + ST.focus);
+@@ -810,6 +815,7 @@ function toast(m) {
+ }
+ ["d-persona", "d-device", "d-state"].forEach(function (id) { document.getElementById(id).addEventListener("change", function () { closeSheet(); reset(); render(); }); });
+ document.getElementById("d-theme").addEventListener("change", render);
++document.getElementById("d-win").addEventListener("change", render);
+ reset(); render();
+ </script>
+ </body>

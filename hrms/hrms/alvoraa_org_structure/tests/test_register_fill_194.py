@@ -39,9 +39,11 @@ def _designation():
 
 
 class FillCase(RegisterCase):
-	def setUp(self):
-		super().setUp()
-		self.editors("System Manager")
+	# These run as Administrator, whom Frappe lets do everything.
+
+	def as_somebody_who_may_not_edit(self):
+		"""An HR User, whose only row here is Read (see RegisterCase)."""
+		frappe.set_user(self.hr_user("fill061.noedit@example.com"))
 
 	def role_of(self, seat):
 		return frappe.db.get_value("Alvoraa Position", seat, "designation")
@@ -113,7 +115,7 @@ class TestPuttingSomebodyInASeat(FillCase):
 		                                     "delegate_authority"), 1)
 
 	def test_somebody_who_may_not_edit_cannot_fill_a_seat(self):
-		self.editors("A Role Nobody Holds")
+		self.as_somebody_who_may_not_edit()
 		with self.assertRaises(frappe.PermissionError):
 			register.assign_person(self.seat, self.who)
 
@@ -226,7 +228,7 @@ class TestFillingItFromInside(FillCase):
 
 	def test_somebody_who_may_not_edit_cannot_list_candidates(self):
 		"""It is a list of named people with how busy each one is."""
-		self.editors("A Role Nobody Holds")
+		self.as_somebody_who_may_not_edit()
 		with self.assertRaises(frappe.PermissionError):
 			register.candidates_for(self.seat)
 
@@ -312,7 +314,7 @@ class TestAdvertisingASeat(FillCase):
 		self.assertIsNone(row["opening"])
 
 	def test_somebody_who_may_not_edit_cannot_advertise(self):
-		self.editors("A Role Nobody Holds")
+		self.as_somebody_who_may_not_edit()
 		with self.assertRaises(frappe.PermissionError):
 			register.post_job(self.seat)
 

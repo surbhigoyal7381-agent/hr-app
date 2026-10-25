@@ -109,6 +109,13 @@ doc_events = {
     # be paid.
     "Salary Slip": {
         "validate": "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+        # Slice 067: the notes the validate hook leaves for HR (held days, red
+        # and green lines not applied). A new slip is not in the database yet
+        # during validate, so a comment on it is refused; it is posted here.
+        "on_update": "alvoraa_portal.payroll_slip.post_slip_notes",
+        # Slice 066 (SEC-9, D2): a slip is not submitted with a stale grooming
+        # line or one above the legal limit. Does nothing without a rule set.
+        "before_submit": "alvoraa_portal.payroll_slip.check_grooming_before_submit",
     },
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
@@ -132,6 +139,9 @@ doc_events = {
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
         "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
+        # half-day leave day at a company with an enabled pay rule set.
+        "before_insert": "alvoraa_portal.leave_rules.prepare_half_day_correction",
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────
@@ -188,6 +198,8 @@ doc_events = {
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes
     "Shift Type": {
+        # ALV-211: a new shift accepts punches 3 h before and 3 h after.
+        "before_insert": "alvoraa_portal.attendance_correction.default_shift_window",
         "after_insert": "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_update":    "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_trash":     "alvoraa_portal.hr_api.invalidate_features_cache",
@@ -195,7 +207,13 @@ doc_events = {
     "Leave Type": {
         "after_insert": "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_update":    "alvoraa_portal.hr_api.invalidate_features_cache",
-        "on_trash":     "alvoraa_portal.hr_api.invalidate_features_cache",
+        "on_trash":     ["alvoraa_portal.hr_api.invalidate_features_cache",
+                         # Slice 063 (D1): "Paid Leaves" cannot be deleted.
+                         "alvoraa_portal.leave_rules.lock_paid_leaves"],
+        # Slice 063 (D1): "Paid Leaves" is created once with the right flags,
+        # then locked - only where a company's pay rule set is switched on.
+        "validate":     "alvoraa_portal.leave_rules.lock_paid_leaves",
+        "before_rename": "alvoraa_portal.leave_rules.lock_paid_leaves",
     },
     # Vendor Order: is_submittable removed; on_update covers all lifecycle events
     "Vendor Order": {
@@ -251,6 +269,11 @@ doc_events = {
     # even where HR Settings allows self-approval (slice 010, SEC-9).
     "Leave Application": {
         "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        # Slice 063, DTC only (an enabled pay rule set): current month only and
+        # Leave Without Pay up to 5 a month, at filing and at approval, on
+        # every door (SEC-6, SEC-13). Then the managers up the chain are told.
+        "validate":      "alvoraa_portal.leave_rules.validate_leave_application",
+        "on_submit":     "alvoraa_portal.leave_rules.notify_chain_on_approval",
     },
     # ── The field app's switches on HR Settings (slice 013 step 2) ────────
     # Turning the app off or removing a designation needs a reason in the same
@@ -306,6 +329,28 @@ doc_events = {
     "WhatsApp Message": {
         "after_insert": "alvoraa_portal.ai_leads.whatsapp.on_whatsapp_message",
     },
+    # Slice 066: nobody submits a grooming red on themselves, on any door.
+    "Grooming Mark": {
+        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+    },
+    # Slice 066 (SEC-8): no comment, assignment or share on a grooming red or a
+    # grooming review. One doctype-name comparison for every other row.
+    "Comment": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
+    "ToDo": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
+    "DocShare": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
+    # Slice 066, 25 Oct (security verification B2): no file, no tag on a mark.
+    "File": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
+    "Tag Link": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -319,6 +364,10 @@ permission_query_conditions = {
     # only Employee too, so they are scoped the same way.
     "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_query_conditions",
     "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_query_conditions",
+    # Slice 066 (SEC-4): the records' own read gate, NOT manager_scope's User
+    # Permissions - those cannot say "today", and leave a new doctype open.
+    "Grooming Mark": "alvoraa_portal.grooming.mark_query_conditions",
+    "Grooming Review": "alvoraa_portal.grooming.review_query_conditions",
 }
 
 has_permission = {
@@ -326,6 +375,9 @@ has_permission = {
     "Alvoraa Field Device": "alvoraa_portal.field_app_access.device_has_permission",
     "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_has_permission",
     "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_has_permission",
+    # Slice 066 (SEC-4): one gate per record, the same rules as the list above.
+    "Grooming Mark": "alvoraa_portal.grooming.mark_has_permission",
+    "Grooming Review": "alvoraa_portal.grooming.review_has_permission",
 }
 
 scheduler_events = {

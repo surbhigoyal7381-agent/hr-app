@@ -71,9 +71,24 @@ const RUN = [
      came back 403; nothing in the suite noticed, because the arguments
      were right and only the method was wrong. */
   { file: "portal_correction_test.js", args: [PAGE] },
+  /* Slice 063: the Paid Leaves card, the leave list, Cancel and the Apply
+     pop-up at a company whose pay rule set is on, against prototype v3. */
+  { file: "portal_leave_063_test.js", args: [PAGE] },
   /* Slice 045, Wave 4: the two that needed a get_performance_tree payload. */
   { file: "portal_tree_test.js", args: [PAGE, TREE_FIXTURE] },
   { file: "portal_redesign_test.js", args: [PAGE, TREE_FIXTURE] },
+  /* Slice 064: the Positions chart, the delete dialog and the seat and
+     people trays. The checks live in scripts/check_positions_tree.js;
+     this runs them in CI so a bad merge that drops one fails here. */
+  { file: "portal_positions_test.js" },
+  /* Slice 069: the wall chart - nothing private reaches paper, with the HR
+     copy off and on; every seat and name prints; the panel makes no server
+     call; the page size and title are set for the print and taken away. */
+  { file: "portal_wall_chart_test.js" },
+  /* Slice 070 (ALV-217): every wait ends at 15 s, the honest leave send and
+     its check before a resend, one date format, Weekly off. Waits 16 s once,
+     for OPS-S4's slow answers. */
+  { file: "portal_phone_070_test.js", args: [PAGE] },
 ];
 
 /* **Empty, and it stays empty.** AC-62: an entry here needs a ticket and a
@@ -82,7 +97,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 10;
+const EXPECTED_BROWSER_TESTS = 14;   // 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

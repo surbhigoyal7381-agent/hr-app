@@ -285,7 +285,10 @@ class TestReprocess(FrappeTestCase):
 
 	def test_a_company_with_no_rule_set_is_left_alone(self):
 		"""Every other tenant on this image. Not an error, and not a write."""
-		other = frappe.db.get_value("Company", {"name": ("!=", COMPANY)})
+		# A company with NO rule set, not merely another one: other modules
+		# (063, 067) leave companies with a rule set switched on behind them.
+		with_rules = frappe.get_all("Alvoraa Payroll Rule Set", pluck="company")
+		other = frappe.db.get_value("Company", {"name": ("not in", with_rules + [COMPANY])})
 		if not other:
 			self.skipTest("only one company on this site")
 		out = rp.preview(other, self.date, self.date)

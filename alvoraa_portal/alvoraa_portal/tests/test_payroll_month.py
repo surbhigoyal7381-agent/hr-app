@@ -10,9 +10,12 @@ import unittest
 from alvoraa_portal.payroll_month import summarise_month
 from alvoraa_portal.payroll_rules import DayVerdict
 
-# DTC's class A: a day every 7.5 days attended, capped at 4, gate at 15.
-CLASS_A = dict(period_days=7.5, credit_per_period=1.0, monthly_cap=4.0,
-               threshold_days=15, accrual_month_days=30)
+# DTC's class A as set on 21 Oct 2026 (slice 063, 01e): the whole 4 days are
+# given on the 1st and count once 15 days are attended - one 15-day period
+# worth all four, counting stopping at 15. The 9 Oct accrual cadence
+# (7.5 / 1 / 4 over a 30-day calendar) is still tested in test_payroll_rules.
+CLASS_A = dict(period_days=15.0, credit_per_period=4.0, monthly_cap=4.0,
+               threshold_days=15, accrual_month_days=15)
 CLASS_B = dict(period_days=10.0, credit_per_period=1.0, monthly_cap=3.0,
                threshold_days=15, accrual_month_days=30)
 
@@ -186,13 +189,14 @@ class TestEncashmentAgainstApprovedLeave(unittest.TestCase):
 		self.assertEqual(one_taken.paid_days, none_taken.paid_days)
 
 	def test_leave_beyond_the_credits_is_unpaid(self):
-		"""Six days taken against 24 worked, which closes three periods. Three
-		credits fund three of the days; the other three have nothing."""
+		"""Six days taken against 24 worked: the gate is met and the class
+		gives 4. Four credits fund four of the days; the other two have
+		nothing."""
 		m = month([worked() for _ in range(24)], approved_leave_days=6)
-		self.assertEqual(m.leave_credits_earned, 3.0)
-		self.assertEqual(m.leave_used_for_approved, 3.0)
+		self.assertEqual(m.leave_credits_earned, 4.0)
+		self.assertEqual(m.leave_used_for_approved, 4.0)
 		self.assertEqual(m.leave_encashed, 0.0)
-		self.assertEqual(m.approved_leave_unpaid, 3.0)
+		self.assertEqual(m.approved_leave_unpaid, 2.0)
 		self.assertIn("unpaid", " ".join(m.notes))
 
 	def test_leave_cannot_be_funded_below_the_gate(self):
@@ -271,18 +275,18 @@ class TestTheWholeSlip(unittest.TestCase):
 		# 24 worked less 2 quarters (0.5 day), less 1 extra day for the
 		# special-day absence.
 		self.assertEqual(m.day_credits, 22.5)
-		self.assertEqual(m.leave_credits_earned, 3.0)       # 24 days -> 3 periods
+		self.assertEqual(m.leave_credits_earned, 4.0)       # gate met -> the whole class
 		self.assertEqual(m.leave_used_for_approved, 1.0)
-		self.assertEqual(m.leave_encashed, 2.0)
-		self.assertEqual(m.paid_days, 25.5)
+		self.assertEqual(m.leave_encashed, 3.0)
+		self.assertEqual(m.paid_days, 26.5)
 
 		daily = 23000 / 30
-		self.assertAlmostEqual(m.earning_basic, 25.5 * daily, places=2)
+		self.assertAlmostEqual(m.earning_basic, 26.5 * daily, places=2)
 		self.assertEqual(m.deductible_reds, 2)              # 4 reds less 2 free
 		self.assertEqual(m.red_deduction, 200)
 		self.assertEqual(m.green_earning, 100)
-		self.assertAlmostEqual(m.gross, 25.5 * daily + 100, places=2)
-		self.assertAlmostEqual(m.net, 25.5 * daily + 100 - 200, places=2)
+		self.assertAlmostEqual(m.gross, 26.5 * daily + 100, places=2)
+		self.assertAlmostEqual(m.net, 26.5 * daily + 100 - 200, places=2)
 
 	def test_an_incentive_is_added_whole_and_never_prorated(self):
 		"""INC-04: a flat amount from an external system."""

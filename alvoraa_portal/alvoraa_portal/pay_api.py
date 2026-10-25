@@ -59,6 +59,7 @@ from alvoraa_portal.hr_api import (
 	_own_slips,
 	_payslip_payload,
 )
+from alvoraa_portal.payroll_slip import ENGINE_REF
 from alvoraa_portal.subscription import requires_feature
 
 # Every top-level key the Why? sheet returns. A fixed list, the same discipline
@@ -163,12 +164,18 @@ def get_deduction_explanation(additional_salary):
 	behind it - a component HR typed in by hand. The sheet says so in words
 	(AC-29) rather than drawing an empty week, which would read as "the system
 	thinks you were late on no days and took your money anyway".
+
+	Returns `{"from_attendance": True}` for a line the DTC pay-rule engine made
+	from the month's attendance (slice 067): "entered by hand" would be false.
 	"""
 	emp = _get_employee()
 	if not emp:
 		_refuse()
 
 	row = _own_additional_salary(additional_salary, emp.name)
+
+	if row.ref_doctype == ENGINE_REF:
+		return {"from_attendance": True}
 
 	if row.ref_doctype != "Attendance Deduction" or not row.ref_docname:
 		# Not a refusal. The line IS the caller's; there is simply nothing

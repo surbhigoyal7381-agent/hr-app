@@ -189,8 +189,11 @@
     if (row.says) { sub += '<span class="nf-row-sub">' + esc(row.says) + "</span>"; }
     if (row.note) { sub += '<span class="nf-row-sub">' + esc(row.note) + "</span>"; }
 
+    /* The server lists only corrections this caller may decide today
+       (`can_decide`). The guard stays so a row it ever marks otherwise gets no
+       button the server would refuse. */
     var buttons = "";
-    if (ACTIONS[part.key]) {
+    if (ACTIONS[part.key] && row.can_decide !== false) {
       buttons = '<span class="nf-row-acts">'
         + '<button type="button" class="nf-btn nf-btn-small nf-decide" data-yes="1"'
         + ' data-name="' + esc(row.name) + '">' + esc(SAY.approve) + "</button>"

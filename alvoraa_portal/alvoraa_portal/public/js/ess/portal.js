@@ -2,14 +2,179 @@
 const MOD = "alvoraa_portal.hr_api";
 const loadedPanels = new Set(["home"]);
 
+/* Slice 070 (ALV-217): every call ends.
+
+   website.js's frappe.call (this page's) never calls `error`; it calls
+   `always` and then, on HTTP 200 only, `callback`. So failures used to reach
+   no code and "Loading..." stayed for ever. The error branch now gets `kind`:
+   offline (nothing sent) · timeout (15 s; the request keeps running, a late
+   answer still reaches `cb`) · network · server (5xx; its text is never
+   shown, SEC-4) · refused (4xx; Frappe's pop-up as before). At most one.
+   `relay` shows server messages itself so a 5xx can be kept quiet. */
+var CALL_LIMIT_MS = 15000;
+/* The one sentence a failed call shows where the screen has no box of its own. */
+function callWords(kind) {
+  return (kind === "server" || kind === "refused")
+    ? drT("Something went wrong at the office.")
+    : drT("We could not reach the office.");
+}
+function callKind(r, status) {
+  if (navigator.onLine === false) return "offline";
+  if (status >= 500) return "server";
+  if (r && r._server_messages) return "refused";
+  return status ? "refused" : "network";
+}
+function relay(r) {
+  if (!r || !r._server_messages || !window.frappe || !frappe.msgprint) return;
+  try { frappe.msgprint(JSON.parse(r._server_messages)); } catch (e) {}
+}
 function api(fn, args, cb, ecb) {
-  frappe.call({
+  var answered = false, failed = false, xhr;
+  /* The button that was tapped, so a lost write can be explained beside it. */
+  var ev = window.event, origin = ev && ev.target && ev.target.closest
+    ? ev.target.closest("button, .btn") : null;
+  function fail(r) {
+    if (answered || failed) return;
+    failed = true;
+    r.origin = origin;
+    if (r.kind === "refused") relay(r);
+    if (ecb) ecb(r);
+  }
+  if (navigator.onLine === false) { setTimeout(function () { fail({kind: "offline"}); }, 0); return; }
+  var timer = setTimeout(function () { fail({kind: "timeout"}); }, CALL_LIMIT_MS);
+  xhr = frappe.call({
     method: MOD + "." + fn,
     args: args || {},
-    callback: function(r) { r.exc ? (ecb && ecb(r)) : cb(r.message); },
-    error: function(r) { ecb && ecb(r); },
+    /* Only so Frappe does not pop the message up itself; `relay` decides.
+       Not a safety boundary: jQuery still parses what is written here. */
+    error_msg: document.createElement("template"),
+    callback: function(r) {
+      answered = true;
+      clearTimeout(timer);
+      relay(r);
+      if (r.exc) { failed = true; if (ecb) ecb(Object.assign({kind: "refused"}, r)); return; }
+      cb(r.message);
+    },
+    always: function(d) {
+      clearTimeout(timer);
+      /* `callback` runs straight after this, in the same turn. Wait one turn
+         so a success is never mistaken for a failure. */
+      setTimeout(function () {
+        if (answered) return;
+        var body = (d && typeof d === "object" && !d.readyState) ? d : {};
+        fail(Object.assign({}, body, {kind: callKind(body, xhr && xhr.status)}));
+      }, 0);
+    },
   });
 }
+
+/* A write whose answer was lost may still have been saved (OPS-S3). The
+   button is not unlocked for a blind resend; the person is told to look. */
+function mayHaveGone(r) {
+  return !!r && (r.kind === "timeout" || r.kind === "network" || r.kind === "server");
+}
+/* `button` is the control that sent the write; api() remembers the one that
+   was tapped. It stays off, and a line that stays on screen sits beside it
+   (review m2: a 3-second toast was the only explanation). */
+function sayMayHaveGone(r, button) {
+  var words = drT("No answer from the office. It may have gone through.") + " "
+    + drT("Look in your list before you send it again.");
+  var el = button || (r && r.origin);
+  if (!el || !el.parentNode) { toast(words, "err"); return; }
+  el.disabled = true;
+  var note = el.nextElementSibling;
+  if (!note || !note.classList.contains("lost-note")) {
+    note = document.createElement("p");
+    note.className = "lost-note";
+    note.setAttribute("role", "alert");
+    el.insertAdjacentElement("afterend", note);
+  }
+  note.textContent = words;
+}
+
+/* Slice 070 (01b §6): the box that takes the place of "Loading..." when a
+   load fails. Try again puts "Loading..." back and calls the panel's own
+   loader once - nothing ever retries by itself (OPS-R3). A late answer to an
+   api() load reaches the loader's own success path and paints over the box;
+   for a gpFetch load, `onLate` gets the data instead. `head` replaces the
+   first heading (the leave-type list). A <select> gets the box after it. */
+function failBox(el, err, retry, onLate, head) {
+  if (typeof el === "string") el = document.getElementById(el);
+  if (!el) return;
+  var kind = (err && err.kind) || "server";
+  var again = !!el._failRetried;
+  el._failRetried = false;
+  if (el._loadingHtml === undefined) el._loadingHtml = el.innerHTML;
+  var sick = kind === "server" || kind === "refused";
+  var h = head || (sick ? "Something went wrong at the office."
+                        : (again ? "Still could not reach the office." : "We could not reach the office."));
+  var p = sick ? "Tap Try again in a minute. If it keeps happening, tell HR."
+               : kind === "timeout" ? "The office did not answer in 15 seconds. Tap Try again."
+               : "Check your signal, then tap Try again.";
+  var box = document.createElement("div");
+  box.className = "fail";
+  box.setAttribute("role", "alert");
+  box.innerHTML = "<h3>" + esc(drT(h)) + "</h3><p>" + esc(drT(p)) + "</p>"
+    + '<button type="button" class="btn btn-outline">' + esc(drT("Try again")) + "</button>";
+  box.querySelector("button").addEventListener("click", function () {
+    if (el.tagName === "SELECT") { if (box.parentNode) box.parentNode.removeChild(box); }
+    else el.innerHTML = el._loadingHtml;
+    el._failRetried = true;
+    retry();
+  });
+  if (el.tagName === "SELECT") {
+    var old = el.parentNode.querySelector(".fail");
+    if (old) old.parentNode.removeChild(old);
+    el.insertAdjacentElement("afterend", box);
+  } else if (el.tagName === "TBODY") {
+    var cols = (el.closest("table").querySelectorAll("thead th") || []).length || 1;
+    el.innerHTML = "";
+    var tr = el.insertRow(), td = tr.insertCell();
+    td.colSpan = cols;
+    td.appendChild(box);
+  } else {
+    el.innerHTML = "";
+    el.appendChild(box);
+  }
+  if (onLate && err && err.late) {
+    err.late.then(function (d) { if (box.isConnected) onLate(d); }, function () {});
+  }
+}
+
+/* Slice 070 (ALV-217, D4): one date format everywhere - "6 Nov 2026". Built
+   from the ISO parts, never `new Date(iso)` + a locale, so the day cannot move
+   with the browser's time zone and September is never "Sept". */
+var MON3 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function isoParts(d) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+/* Today on the phone's own calendar (todayISO() is UTC, a day behind in
+   India before 05:30). */
+function localToday() {
+  var n = new Date();
+  return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-"
+    + String(n.getDate()).padStart(2, "0");
+}
+/* "Friday, 6 Nov 2026" - under each date box (AC-15). */
+function dateInWords(iso) {
+  var p = isoParts(iso);
+  if (!p) return "";
+  return drT(DAY_NAMES[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()]) + ", " + fmtDate(iso);
+}
+function refreshDateWords() {
+  document.querySelectorAll(".date-words").forEach(function (w) {
+    var box = w.previousElementSibling;
+    w.textContent = box && box.type === "date" ? dateInWords(box.value) : "";
+  });
+}
+["input", "change"].forEach(function (ev) {
+  document.addEventListener(ev, function (e) {
+    var w = e.target && e.target.type === "date" && e.target.nextElementSibling;
+    if (w && w.classList.contains("date-words")) w.textContent = dateInWords(e.target.value);
+  });
+});
 
 function showLoad(){ document.getElementById("loading-overlay").classList.add("show") }
 function hideLoad(){ document.getElementById("loading-overlay").classList.remove("show") }
@@ -27,8 +192,13 @@ function openFrappe(url) { window.open(url, "_blank"); }
 
 function fmtDate(d) {
   if (!d) return "";
-  const dt = new Date(d);
-  return dt.toLocaleDateString("en-IN", {day:"2-digit",month:"short",year:"numeric"});
+  var p = isoParts(d);
+  if (!p) {
+    var dt = new Date(d);
+    if (isNaN(dt)) return "";
+    p = [dt.getFullYear(), dt.getMonth() + 1, dt.getDate()];
+  }
+  return p[2] + " " + MON3[p[1] - 1] + " " + p[0];
 }
 
 function fmtMoney(n) {
@@ -230,9 +400,21 @@ function ocRender(n, isRoot, opts) {
   opts = opts || OC_DEFAULT_OPTS;
   var kids = "";
   if (n.children && n.children.length) {
-    kids = '<div class="oc-kids">'
-      + n.children.map(function (c) { return ocRender(c, false, opts); }).join("")
-      + "</div>";
+    // Positions (slice 064, I3): three or more seats with nobody under them
+    // hang in one column under their manager - under the team leads when
+    // there are any, on a line down the family's left edge, with a tick into
+    // each box. One or two stay in the row.
+    var row = n.children, hang = [];
+    if (opts.hang) {
+      hang = row.filter(function (c) { return !c.child_count && !c._holder; });
+      if (hang.length >= 3) row = row.filter(function (c) { return hang.indexOf(c) < 0; }); else hang = [];
+    }
+    var items = hang.map(function (c) { return '<div class="oc-hang-item">' + ocNodeCard(c, false, opts) + "</div>"; }).join("");
+    kids = (hang.length && row.length)
+      ? '<div class="oc-fam"><div class="oc-kids">' + row.map(function (c) { return ocRender(c, false, opts); }).join("")
+        + '</div><div class="oc-hang under">' + items + "</div></div>"
+      : '<div class="oc-kids">' + row.map(function (c) { return ocRender(c, false, opts); }).join("")
+        + (hang.length ? '<div class="oc-branch oc-hang-slot"><div class="oc-hang">' + items + "</div></div>" : "") + "</div>";
   } else if (n.has_more) {
     // Without this the last row reads as the bottom of the organisation.
     kids = '<div class="oc-kids"><button class="oc-more" onclick="'
@@ -251,7 +433,12 @@ function ocRender(n, isRoot, opts) {
    that appears and then fails is worse than one that was never there. */
 
 var POS = { rows: [], may_edit: false, collapsed: {}, expanded: {},
-            onPath: {}, ungrouped: {} };
+            onPath: {}, ungrouped: {},
+            // Slice 064, for the trays and the delete dialog.
+            may_delete: false, today: "", may_see_leaving: false, may_edit_employee: false,
+            unseated: null, active_people: 0, records: null, sheet: null, ret: null, retEl: null,
+            // Slice 064 v2: what is drawn open, and the zoom (never stored).
+            shown: {}, zoom: 1 };
 
 /* A reporting line deeper than this is bad data, not a tall company. The
    doctype refuses a seat that reports into its own chain, twice over - a
@@ -273,7 +460,10 @@ var POS_MAX_DEPTH = 40;
 // Two levels is the organisation at a glance - the top, and what sits under
 // it - with everything below one click away and counted on the fold, so
 // nothing is hidden without saying how much.
-var POS_OPEN_DEPTH = 2;
+// ONE since slice 064 (I2, approved 23 Oct 2026): the top seat and one layer
+// below it. At DTC two levels put every one of 91 boxes on screen, 18,176 px
+// wide, with the top off to the right.
+var POS_OPEN_DEPTH = 1;
 
 function posEsc(s) { return ocEsc(s); }
 
@@ -297,6 +487,9 @@ window.posLoad = async function () {
   var body = document.getElementById("pos-body");
   if (!body) return;
   body.innerHTML = '<div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div>';
+  // Slice 069: no wall chart until this load has given seats (AC-4).
+  var wallBtn = document.getElementById("pos-wall-btn");
+  if (wallBtn) wallBtn.style.display = "none";
   /* Deliberately unfiltered. The structure view greys out what does not match
      instead of dropping it, so it needs every seat this person may see - and
      one fetch then serves both views, with the dropdowns only repainting.
@@ -313,12 +506,24 @@ window.posLoad = async function () {
   POS.rows = (out && out.rows) || [];
   POS.may_edit = !!(out && out.may_edit);
   POS.departments = (out && out.departments) || {};
+  POS.may_delete = !!(out && out.may_delete);
+  POS.today = (out && out.as_at) || "";
+  POS.may_see_leaving = !!(out && out.may_see_leaving);
+  POS.may_edit_employee = !!(out && out.may_edit_employee);
+  // Absent, not empty, for a reader without HR scope (SEC-2): no people
+  // tiles then - never a "0" that would be untrue.
+  POS.unseated = out && Object.prototype.hasOwnProperty.call(out, "unseated") ? (out.unseated || []) : null;
+  POS.active_people = (out && out.active_people) || 0;
+  POS.records = null;
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
+  if (wallBtn) wallBtn.style.display = POS.rows.length ? "" : "none";
   // The offer to build a chart lives in the empty state, where somebody is
   // already looking, and nowhere else.
+  posWire();
   posFillFilters();
   posPaint();
+  posLoadRecords();
 };
 
 /* The filter lists come from the rows themselves, so they can only ever offer
@@ -374,12 +579,22 @@ function posPaintTiles(shown) {
 
   if (!shown.length) { el.innerHTML = ""; return; }
 
+  // The two people tiles (slice 064), only for a reader the server sent the
+  // lists to. Each opens its tray.
+  var people = "";
+  if (POS.unseated !== null) {
+    var u = POS.unseated.length, nm = posNoMgrPeople().length + posExtraRoots().length;
+    people = tile(u, "IN NO SEAT", u ? "tone-medium" : "", u ? "posUnseatedSheet()" : "")
+      + tile(nm, "NO REPORTING MANAGER", nm ? "tone-medium" : "", nm ? "posNoMgrSheet()" : "");
+  }
+
   // Two noughts read as a broken screen. One sentence reads as good news.
   if (!open && !going) {
     el.innerHTML = '<div class="pf-card" style="margin-bottom:16px">'
       + "<strong>" + shown.length + " seat" + (shown.length === 1 ? "" : "s")
       + ".</strong> Every one is filled and nobody is working their notice."
-      + "</div>";
+      + "</div>"
+      + (people ? '<div class="oc-stats" style="margin-bottom:16px">' + people + "</div>" : "");
     return;
   }
 
@@ -399,6 +614,7 @@ function posPaintTiles(shown) {
            open ? "posShowOnly('open')" : "")
     + tile(going, "LEAVING IN 60 DAYS", going ? "tone-medium" : "",
            going ? "posShowOnly('leaving')" : "")
+    + people
     + "</div>";
 }
 
@@ -425,9 +641,9 @@ window.posShowOnly = function (what) {
 function posNothing() {
   if (POS.rows.length) {
     return '<div class="empty-state"><div class="empty-state-text">'
-      + "<strong>No seat matches those filters</strong></div>"
+      + "<strong>Nothing matches.</strong></div>"
       + '<button class="btn btn-outline btn-sm" style="margin-top:12px"'
-      + ' onclick="posClearFilters()">Clear the filters</button></div>';
+      + ' onclick="posClearFilter()">Clear the filter</button></div>';
   }
   if (!POS.may_edit) {
     // A branch head cannot fix this and should not be given a button that
@@ -516,9 +732,16 @@ window.posPaint = function () {
   // A list has no spine to rearrange, so the control only belongs with the
   // structure view.
   var arr = document.getElementById("pos-arrange-wrap");
-  if (arr) arr.style.display = tree ? "" : "none";
+  if (arr) arr.style.display = "";       // always shown since slice 064 (I1)
   posPaintReset();
-  if (tree) { posPaintTree(); } else { posPaintList(); }
+  var va = posVal("pos-f-view") + "|" + posArrange(), recentre = POS._va !== va;
+  POS._va = va;
+  if (tree) {
+    posPaintTree(); posApplyZoom();
+    if (POS._findId) { var fid = POS._findId; POS._findId = null; posFindFocus(fid); }
+    else if (POS._focusNext) { POS._focusNext = false; posFocusFirst(); }
+    else if (recentre) posCentreTop();
+  } else { posPaintList(); }
 };
 
 function posPaintList() {
@@ -531,7 +754,7 @@ function posPaintList() {
   if (!rows.length) { body.innerHTML = posNothing(); return; }
 
   var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
-    + "<th>Department</th><th>Who is in it</th><th>Notice period</th>"
+    + '<th>Department</th><th>Who is in it</th><th class="pos-leave-col">Notice period</th>'
     + '<th style="text-align:right">Seats</th>'
     + '<th style="text-align:right">Open</th>'
     + (POS.may_edit ? "<th></th>" : "") + "</tr>";
@@ -576,11 +799,12 @@ function posCells(r, lead, tail) {
   var who = r.people.length
     ? shown.map(function (p) {
         return posEsc(p.name)
-          + (p.weight < 100 ? ' <span class="pf-card-meta">' + posNum(p.weight) + "%</span>" : "")
-          + (p.covering ? ' <span class="pf-card-meta">covering</span>' : "")
+          // pos-flag: never printed (slice 069, SEC-3 - every Positions view)
+          + (p.weight < 100 ? ' <span class="pf-card-meta pos-flag">' + posNum(p.weight) + "%</span>" : "")
+          + (p.covering ? ' <span class="pf-card-meta pos-flag">covering</span>' : "")
           // "Who is leaving" was invisible in the view this screen opens on,
           // so one of the three questions it exists for had no answer here.
-          + (p.leaving ? ' <span class="pf-card-meta">leaving '
+          + (p.leaving ? ' <span class="pf-card-meta pos-flag">leaving '
              + posEsc(posDay(p.leaving)) + "</span>" : "");
       }).join("<br>")
       + (rest > 0
@@ -595,8 +819,8 @@ function posCells(r, lead, tail) {
     ? '<strong>' + posNum(r.open) + "</strong>"
     : '<span class="pf-card-meta">&mdash;</span>';
   return "<td>" + (lead || "") + posEsc(r.title)
-      + (r.key ? ' <span class="pf-card-meta">key seat</span>' : "")
-      + (r.status !== "Active" ? ' <span class="pf-card-meta">' + posEsc(r.status) + "</span>" : "")
+      + (r.key ? ' <span class="pf-card-meta pos-flag">key seat</span>' : "")
+      + (r.status !== "Active" ? ' <span class="pf-card-meta pos-flag">' + posEsc(r.status) + "</span>" : "")
       + (tail || "")
     + "</td>"
     + "<td>" + (r.reports_to_title
@@ -605,7 +829,7 @@ function posCells(r, lead, tail) {
     + "<td>" + posEsc(r.branch) + "</td>"
     + "<td>" + posEsc(r.department) + "</td>"
     + "<td>" + who + "</td>"
-    + "<td>" + (r.leaving_on
+    + '<td class="pos-leave-col">' + (r.leaving_on
         ? "<strong>" + posEsc(posDay(r.leaving_on)) + "</strong>"
         : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
     + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
@@ -692,13 +916,18 @@ function posNode(r, t, depth) {
   var shut = POS.collapsed[r.id]
     || (depth >= POS_OPEN_DEPTH
         && !POS.expanded[r.id] && !POS.onPath[r.id]);
+  // What is drawn open, so one press on a closed box opens it (I2).
+  POS.shown[r.id] = !shut;
   var sub = [r.branch, r.department].filter(Boolean).join(" · ");
   // "open" alone does not describe a twenty-five person seat.
   if (r.seats > 1) {
     sub = (sub ? sub + " · " : "")
       + posNum(r.filled) + " of " + posNum(r.seats) + " filled";
   }
-  if (!t.byId[r.reports_to] && r.reports_to) {
+  // Asked of every seat this reader may see, not of the seats drawn: a
+  // manager left out by a filter, or sitting in another branch, is not
+  // "above your view" (slice 064 v2).
+  if (r.reports_to && !posById(r.reports_to)) {
     sub = sub ? sub + " · reports above your view" : "reports above your view";
   }
 
@@ -758,7 +987,9 @@ function posGroupKey(r) {
   return [r.title, r.branch || "", r.department || ""].join("\u0000");
 }
 
-function posGroupSiblings(kids, t) {
+// `all` (slice 069): group every identical set, ignoring what somebody opened
+// with "Show the N" on screen - the wall chart follows the data, not the view.
+function posGroupSiblings(kids, t, all) {
   var groups = {}, order = [], out = [];
   kids.forEach(function (r) {
     // A seat with reports under it is never folded in with another.
@@ -769,7 +1000,7 @@ function posGroupSiblings(kids, t) {
   });
   order.forEach(function (k) {
     var members = groups[k];
-    if (members.length < 2 || POS.ungrouped[k]) {
+    if (members.length < 2 || (!all && POS.ungrouped[k])) {
       members.forEach(function (r) { out.push({ solo: r }); });
     } else {
       out.push({ group: k, members: members });
@@ -875,7 +1106,9 @@ function posHolderNode(id, title, subtitle, children, head) {
   //
   // This is not the same decision as "open to start", which Surbhi made
   // about the REPORTING tree and which stands - that spine is unchanged.
-  var shut = !POS.expanded[id];
+  // With a filter on, the path to every match is open (OP-4).
+  var shut = posAnyFilter() ? !!POS.collapsed[id] : !POS.expanded[id];
+  POS.shown[id] = !shut;
   var flags = [];
   if (open >= 0.5) {
     flags.push({ severity: "medium", label: posNum(open) + " to fill",
@@ -1006,9 +1239,11 @@ function posByDepartment(rows) {
 window.posToggle = function (id) {
   // Which of the two to write depends on what the default would be, so a
   // deliberate choice always beats the default whichever way it goes.
-  if (POS.collapsed[id]) { delete POS.collapsed[id]; POS.expanded[id] = true; }
-  else if (POS.expanded[id]) { delete POS.expanded[id]; }
-  else { POS.collapsed[id] = true; POS.expanded[id] = false; }
+  // Asked of what is DRAWN, not of what was chosen before. The old rule
+  // assumed every box starts open, so the first press on a closed branch or
+  // department did nothing (live bug, found 22 Oct 2026).
+  if (POS.shown[id]) { POS.collapsed[id] = true; delete POS.expanded[id]; }
+  else { delete POS.collapsed[id]; POS.expanded[id] = true; }
   posPaint();
 };
 
@@ -1016,7 +1251,12 @@ function posPaintTree() {
   var body = document.getElementById("pos-body");
   if (!body) return;
 
-  var t = posKids();
+  // A filter keeps only the matches and the seats above them (within the
+  // branch or department in those views). The rest is left out, not greyed.
+  POS.shown = {};
+  var rows = posAnyFilter() ? posKeepRows(posArrange()) : POS.rows;
+  if (posAnyFilter() && !rows.length) { posPaintTiles(POS.rows.filter(posMatches)); body.innerHTML = posNothing(); return; }
+  var t = posKids(rows);
   var matched = POS.rows.filter(posMatches).length;
 
   posPaintTiles(POS.rows.filter(posMatches));
@@ -1046,15 +1286,16 @@ function posPaintTree() {
 
   var how = posArrange();
   var nodes = how === "branch"
-    ? posByBranch(POS.rows)
+    ? posByBranch(rows)
     : (how === "department"
-        ? posByDepartment(POS.rows)
+        ? posByDepartment(rows)
         : t.roots.map(function (r) { return posNode(r, t, 0); }));
 
   var by = {};
   POS.rows.forEach(function (r) { by[r.id] = r; });
   var opts = {
     toggle: "posToggle",
+    hang: true,
     // For somebody who may edit, clicking the box opens the seat - folding it
     // away has its own button with its own count, so the click is free for
     // what they came to do.
@@ -1067,7 +1308,10 @@ function posPaintTree() {
       if (n && n._group) return "posUngroup";
       // A branch or department is not a seat either - it holds them.
       if (n && n._holder) return "posToggle";
-      return POS.may_edit ? "posOpenEditor" : "posToggle";
+      // A seat opens its tray (slice 064), for every reader: the tray says
+      // who is in it, and offers Change only to somebody who may edit.
+      // Folding keeps its own button with its own count.
+      return "posSeatSheet";
     },
     action: function (n) {
       // Only a group gets a button. For a seat, clicking the card IS Change -
@@ -1108,7 +1352,7 @@ function posPaintTree() {
   // Only meaningful on the reporting spine. Arranged by branch or department
   // every seat has a place by definition, so the question does not arise.
   var stranded = how === "reporting"
-    ? POS.rows.filter(function (r) { return !reach.seen[r.id]; })
+    ? rows.filter(function (r) { return !reach.seen[r.id]; })
     : [];
   if (stranded.length) {
     html += '<div class="pf-card" style="margin-top:16px"><strong>'
@@ -1128,9 +1372,258 @@ function posPaintTree() {
       + ' onclick="posRegroup()">Group them again</button></div>'
     : "";
 
-  body.innerHTML = back + '<div style="overflow-x:auto"><div class="oc-tree">'
-    + html + "</div></div>";
+  // "No reporting manager" on the chart (I4): dashed, above it on the right,
+  // with no line. HR only, as the tile is. It opens the existing tray.
+  var nm = (how === "reporting" && POS.unseated !== null) ? posNoMgrPeople().length + posExtraRoots().length : 0;
+  var nmBox = nm ? '<div class="pos-nomgr-row"><button type="button" class="oc-box pos-nomgr" onclick="posNoMgrSheet()">'
+      + '<div class="oc-box-hd"><span class="ti">No reporting manager</span></div>'
+      + '<div class="sub">Not in any seat, and no manager on their record</div>'
+      + '<div class="oc-flags"><span class="oc-flag medium">' + nm + " people</span></div></button></div>" : "";
+  var nMatch = posAnyFilter() ? POS.rows.filter(posMatches).length : 0;
+  // No Print button since slice 069 (D-2): it printed flags, leaving dates and
+  // the HR box. "Download wall chart (PDF)" is the way to print.
+  var tools = '<div class="pos-ztools noprint" role="group" aria-label="Zoom">'
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(-1)" aria-label="Zoom out" title="Zoom out (-)">&minus;</button>'
+    + '<span class="pos-zpct" aria-live="polite">' + Math.round((POS.zoom || 1) * 100) + "%</span>"
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(1)" aria-label="Zoom in" title="Zoom in (+)">+</button>'
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(0)">Reset</button>'
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoomFit()">Fit to width</button>'
+    + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
+      + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
+    + "</div>";
+  body.innerHTML = posPrintHead(how) + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
+    + html + "</div></div></div>";
 }
+
+/* Open a view centred on the chart (the top seat sits over the middle of its
+   family), not on its left edge (slice 064, I2). */
+function posCentreTop() {
+  var tr = document.querySelector("#pos-body .oc-tree");
+  if (tr) tr.scrollLeft = (tr.scrollWidth - tr.clientWidth) / 2;
+}
+
+/* ── zoom, print, filters that pick their view, and Find (slice 064) ──────
+   Built to prototype-old-v2, approved 23 Oct 2026. */
+
+/* ZOOM uses CSS zoom on ONE wrapper inside the chart's scroll box. It scales
+   the layout itself, so the scroll width, centring and every line scale
+   together. Nothing fixed (trays, dialogs) lives inside it, so they cannot
+   be misplaced the way a transform misplaced them on 22 Oct. Not remembered
+   between visits: every visit starts at 100 % (Q10). */
+var POS_ZMIN = 0.4, POS_ZMAX = 2;
+function posZoomEl() { return document.querySelector("#pos-body .oc-zoom"); }
+function posApplyZoom() {
+  var el = posZoomEl(), z = POS.zoom || 1;
+  if (!el) return;
+  el.style.zoom = z;
+  var pct = document.querySelector("#pos-body .pos-zpct");
+  if (pct) pct.textContent = Math.round(z * 100) + "%";
+  // Print: one page wide (A4 landscape, about 1,040 px across), as many
+  // pages down as it needs (Q8).
+  var natural = el.getBoundingClientRect().width / z;
+  document.getElementById("pos-body").style.setProperty("--pz", Math.min(z, 1040 / Math.max(1, natural)));
+}
+window.posZoom = function (dir) {
+  var tr = document.querySelector("#pos-body .oc-tree");
+  if (!tr) return;
+  var mid = (tr.scrollLeft + tr.clientWidth / 2) / Math.max(1, tr.scrollWidth);
+  var z = POS.zoom || 1;
+  POS.zoom = dir === 0 ? 1 : Math.round(Math.min(POS_ZMAX, Math.max(POS_ZMIN, z + dir * 0.1)) * 10) / 10;
+  posApplyZoom();
+  tr.scrollLeft = mid * tr.scrollWidth - tr.clientWidth / 2;
+};
+window.posZoomFit = function () {
+  var tr = document.querySelector("#pos-body .oc-tree"), el = posZoomEl();
+  if (!tr || !el) return;
+  var natural = el.getBoundingClientRect().width / (POS.zoom || 1);
+  POS.zoom = Math.max(POS_ZMIN, Math.min(1, Math.floor((tr.clientWidth - 8) / natural * 100) / 100));
+  posApplyZoom();
+  posCentreTop();
+};
+// + - 0, except while typing in a field or when a tray or dialog is open.
+document.addEventListener("keydown", function (e) {
+  var pn = document.getElementById("panel-positions");
+  if (!pn || !pn.classList.contains("active") || !e.target || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)
+      || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (posVal("pos-f-view") !== "tree") return;
+  if (document.querySelector("#pos-layer *") || document.querySelector(".gp-backdrop.open, .gp-backdrop.show")) return;
+  if (e.key === "+" || e.key === "=") { posZoom(1); e.preventDefault(); }
+  else if (e.key === "-") { posZoom(-1); e.preventDefault(); }
+  else if (e.key === "0") { posZoom(0); e.preventDefault(); }
+});
+
+/* PRINT: what is on screen now - the view, the folds, the filter, the zoom -
+   one page wide. The header is only visible in print. Anything marked
+   private (.private or [data-private], slice 065) never prints. */
+function posFilterWords() {
+  var w = [];
+  [["pos-f-branch", "Branch"], ["pos-f-dept", "Department"], ["pos-f-role", "Job role"], ["pos-f-open", "Show"]].forEach(function (f) {
+    var el = document.getElementById(f[0]);
+    if (el && el.value && el.options && el.selectedIndex >= 0) w.push(f[1] + ": " + el.options[el.selectedIndex].text);
+  });
+  return w.length ? w.join("; ") : "No filter";
+}
+function posPrintHead(how) {
+  var view = how === "branch" ? "By branch" : (how === "department" ? "By department" : "Reporting lines");
+  var co = (POS.rows[0] || {}).company || "";
+  // Never who printed it (slice 069, D5): a name on paper outlives the reason.
+  var now = new Date(), today = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2) + "-" + ("0" + now.getDate()).slice(-2);
+  var asat = POS.today || today;
+  function day(iso) { return posDay(iso) + " " + String(iso).slice(0, 4); }
+  return '<div class="pos-printhead"><strong>Positions &middot; ' + posEsc(view) + "</strong> &middot; " + posEsc(co)
+    + " &middot; seats as at " + posEsc(day(asat)) + "<br>Filter: " + posEsc(posFilterWords())
+    + " on " + posEsc(day(today)) + "</div>";
+}
+
+/* FILTERS: Branch -> By branch, Department -> By department, Job role ->
+   Reporting lines, Show -> the current arrangement (Q7). Only the matches
+   and the seats above them are drawn (the ones above faded), the path is
+   open, and the first match gets the focus. "Clear filter" brings back the
+   view and the folds that were there before. This replaces the 15 Oct rule
+   "filters grey the rest" for these four filters (Surbhi, 23 Oct 2026). */
+window.posFilterChanged = function (arr) {
+  if (!POS._saved) POS._saved = { view: posVal("pos-f-view"), arrange: posArrange(), collapsed: POS.collapsed, expanded: POS.expanded };
+  if (!posAnyFilter()) { posClearFilter(); return; }
+  document.getElementById("pos-f-view").value = "tree";
+  if (arr) document.getElementById("pos-f-arrange").value = arr;
+  POS.collapsed = {}; POS.expanded = {};
+  POS._focusNext = true;
+  posPaint();
+};
+window.posClearFilter = function () {
+  ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
+  var sv = POS._saved; POS._saved = null;
+  if (sv) {
+    document.getElementById("pos-f-view").value = sv.view;
+    document.getElementById("pos-f-arrange").value = sv.arrange;
+    POS.collapsed = sv.collapsed; POS.expanded = sv.expanded;
+  }
+  posPaint();
+};
+/* The matches and every seat above them, up to the top - within the branch
+   or department in those views. */
+function posKeepRows(how) {
+  var by = {}, keep = {};
+  POS.rows.forEach(function (r) { by[r.id] = r; });
+  POS.rows.forEach(function (r) {
+    if (!posMatches(r)) return;
+    var at = r, hops = 0;
+    while (at && hops < POS_MAX_DEPTH) {
+      keep[at.id] = 1;
+      var p = by[at.reports_to];
+      if (!p || (how === "branch" && p.branch !== r.branch) || (how === "department" && p.department !== r.department)) break;
+      at = p; hops += 1;
+    }
+  });
+  return POS.rows.filter(function (r) { return keep[r.id]; });
+}
+/* Outline the first of these boxes in reading order, centre it and give it
+   the keyboard focus. Returns how many boxes were found. */
+function posMarkFirst(hit) {
+  var tr = document.querySelector("#pos-body .oc-tree");
+  if (!tr) return 0;
+  var boxes = [].slice.call(tr.querySelectorAll(".oc-box")).filter(function (b) {
+    var m = (b.getAttribute("onclick") || "").match(/\('([^']+)'\)/);
+    return m && hit[m[1]];
+  });
+  boxes.sort(function (a, b) {
+    var p = a.getBoundingClientRect(), q = b.getBoundingClientRect();
+    return Math.abs(p.top - q.top) > 4 ? p.top - q.top : p.left - q.left;
+  });
+  if (!boxes.length) return 0;
+  boxes[0].classList.add("pos-first");
+  boxes[0].scrollIntoView({ block: "center", inline: "center" });
+  boxes[0].focus({ preventScroll: true });
+  return boxes.length;
+}
+function posFocusFirst() {
+  var hit = {};
+  POS.rows.filter(posMatches).forEach(function (r) { hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1; });
+  var found = posMarkFirst(hit);
+  var n = POS.rows.filter(posMatches).length, txt = document.getElementById("pos-fline-txt");
+  if (txt) txt.textContent = n + " matching" + (found ? ", showing the first" : "");
+}
+
+/* FIND (I5): a seat or a person, among the seats already on the page.
+   NOTHING IS SENT TO THE SERVER (SEC-3): what it can find is exactly what
+   the server already allowed this reader to see. Choosing a result opens the
+   path to the seat in the current arrangement and outlines its box. */
+var POS_FIND_MAX = 12;
+window.posFind = function (q) {
+  var res = document.getElementById("pos-find-res");
+  if (!res) return;
+  q = String(q || "").trim().toLowerCase();
+  if (q.length < 2) { res.classList.remove("open"); res.innerHTML = ""; return; }
+  var hits = [];
+  POS.rows.forEach(function (r) {
+    if (hits.length < POS_FIND_MAX && String(r.title || "").toLowerCase().indexOf(q) >= 0) {
+      hits.push({ id: r.id, main: r.title, sub: [r.branch, r.department].filter(Boolean).join(" · ") });
+    }
+    r.people.forEach(function (p) {
+      if (hits.length < POS_FIND_MAX && String(p.name || "").toLowerCase().indexOf(q) >= 0) {
+        hits.push({ id: r.id, main: p.name, sub: r.title + (r.branch ? " · " + r.branch : "") });
+      }
+    });
+  });
+  res.innerHTML = hits.length
+    ? hits.map(function (h) {
+        return '<button type="button" class="oc-hit pos-hit" onclick="posFindPick(\'' + posJs(h.id) + '\')">'
+          + "<div><div>" + posEsc(h.main) + '</div><div class="t">' + posEsc(h.sub) + "</div></div></button>";
+      }).join("")
+    : '<div class="oc-hit"><span class="t">Nothing by that name among the seats you can see</span></div>';
+  res.classList.add("open");
+};
+window.posFindKey = function (e) {
+  if (e.key === "Enter") {
+    var first = document.querySelector("#pos-find-res .pos-hit");
+    if (first) { e.preventDefault(); first.click(); }
+  } else if (e.key === "Escape") {
+    e.target.value = ""; posFind("");
+  }
+};
+window.posFindPick = function (id) {
+  var r = posById(id);
+  var res = document.getElementById("pos-find-res"), box = document.getElementById("pos-find");
+  if (res) { res.classList.remove("open"); res.innerHTML = ""; }
+  if (box) box.value = "";
+  if (!r) return;
+  // Find looks across every seat you may see, so a filter that hides the
+  // answer is cleared first.
+  if (posAnyFilter()) {
+    ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach(function (k) { var el = document.getElementById(k); if (el) el.value = ""; });
+    POS._saved = null;
+  }
+  document.getElementById("pos-f-view").value = "tree";
+  var how = posArrange(), by = {};
+  POS.rows.forEach(function (x) { by[x.id] = x; });
+  function open(k) { delete POS.collapsed[k]; POS.expanded[k] = true; }
+  var at = by[r.reports_to], hops = 0;
+  while (at && hops < POS_MAX_DEPTH) {
+    if ((how === "branch" && at.branch !== r.branch) || (how === "department" && at.department !== r.department)) break;
+    open(at.id); at = by[at.reports_to]; hops += 1;
+  }
+  if (how === "branch") open("br:" + (r.branch || ""));
+  if (how === "department") {
+    var d = r.department || "", meta = POS.departments || {}, h = 0;
+    open("dp:" + d);
+    while (d && (meta[d] || {}).parent && h < 12) { d = meta[d].parent; open("dp:" + d); h += 1; }
+  }
+  POS._findId = id;
+  posPaint();
+};
+function posFindFocus(id) {
+  var r = posById(id), hit = {};
+  if (!r) return;
+  hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
+  posMarkFirst(hit);
+}
+document.addEventListener("click", function (e) {
+  var wrap = document.querySelector(".pos-find");
+  if (wrap && e.target && !wrap.contains(e.target)) {
+    var res = document.getElementById("pos-find-res");
+    if (res) res.classList.remove("open");
+  }
+});
 
 window.posRegroup = function () {
   POS.ungrouped = {};
@@ -1699,6 +2192,10 @@ window.posOpenEditor = function (id) {
   // only appear once it does.
   var another = document.getElementById("pos-save-another");
   if (another) another.style.display = r ? "none" : "";
+  // Delete is the server's answer too (Frappe's Delete right), and only for
+  // a seat that exists. The server still refuses a seat with a past.
+  var del = document.getElementById("pos-delete-btn");
+  if (del) del.style.display = (r && POS.may_delete) ? "" : "none";
 
   // No seat count. Surbhi, 15 Oct 2026: "One dialog should only talk about
   // one position." Several of the same job are several seats, made with
@@ -1831,6 +2328,979 @@ window.posSave = async function (then) {
   posCloseEditor();
   posLoad();
 };
+
+/* Deleting a seat: an alert dialog naming the seat, focus on "Keep it",
+   Escape keeps it. A refusal (people, seats under it, history) comes back
+   from the server in plain words and is shown INSIDE the dialog, where it
+   stays until it is dismissed. It was a toast first: a one-line pill that
+   cannot wrap and lasts three seconds, which a 150-character sentence ran
+   off the screen of, so a refusal looked like a dead button. */
+window.posAskDelete = function () {
+  var r = posSeat();
+  if (!r || !POS.may_delete) return;
+  document.getElementById("pos-delete-text").textContent =
+    "Delete “" + r.title + "”? This cannot be undone from this page. "
+    + "Only a seat nobody has ever held can be deleted; otherwise set its status to Closed.";
+  document.getElementById("pos-delete-go").disabled = false;
+  document.getElementById("pos-delete-go").hidden = false;
+  var why = document.getElementById("pos-delete-err");
+  why.hidden = true;
+  why.textContent = "";
+  document.getElementById("pos-delete-keep").textContent = "Keep it";
+  document.getElementById("pos-delete").classList.add("open");
+  document.getElementById("pos-delete-keep").focus();
+};
+
+window.posCloseDelete = function () {
+  document.getElementById("pos-delete").classList.remove("open");
+  var del = document.getElementById("pos-delete-btn");
+  if (del && del.offsetParent) del.focus();
+};
+
+window.posDelete = async function () {
+  var r = posSeat();
+  if (!r) return;
+  var go = document.getElementById("pos-delete-go");
+  go.disabled = true;           // a second tap sends nothing
+  try {
+    await gpFetch("hrms.alvoraa_org_structure.register.delete_position", { position: r.id });
+  } catch (e) {
+    go.disabled = false;
+    go.hidden = true;           // nothing to retry until something changes
+    var why = document.getElementById("pos-delete-err");
+    why.textContent = (e && e.message) || "The seat could not be deleted. Try again.";
+    why.hidden = false;
+    document.getElementById("pos-delete-keep").textContent = "Close";
+    document.getElementById("pos-delete-keep").focus();
+    return;
+  }
+  document.getElementById("pos-delete").classList.remove("open");
+  posCloseEditor();
+  toast("“" + r.title + "” was deleted.");
+  posLoad();
+};
+
+document.addEventListener("keydown", function (e) {
+  var dlg = document.getElementById("pos-delete");
+  if (dlg && dlg.classList.contains("open") && e.key === "Escape") {
+    e.preventDefault();
+    posCloseDelete();
+  }
+});
+
+/* ── the seat tray and the two people trays (slice 064) ─────────────────
+   Surbhi, 22 Oct 2026: the chart stays as it was; the trays and dialogs of
+   the new design stay. Clicking a seat on the chart opens its tray; the two
+   people tiles open "No reporting manager" and "In no seat". The trays are
+   built from the rows `position_table` already returned (scoped by the
+   server, SEC-1), and the people lists exist only for a reader the server
+   sent them to (SEC-2). */
+
+function posJs(s) { return posEsc(String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/'/g, "\\'")); }
+function posShift(iso, days) {
+  var d = new Date(String(iso) + "T00:00:00Z");
+  if (isNaN(d.getTime())) d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function posToday() { return POS.today || new Date().toISOString().slice(0, 10); }
+function posOpen(r) { return r.open >= 0.5 ? r.open : 0; }
+/* Put in this seat by the hire hook in the last 30 days. */
+function posHired(p) { return !!(p.hired_on && p.hired_on >= posShift(posToday(), -30)); }
+function posIsPhone() {
+  try { return !!(window.matchMedia && window.matchMedia("(max-width: 640px)").matches); }
+  catch (e) { return false; }
+}
+function posById(id) {
+  for (var i = 0; i < POS.rows.length; i++) if (POS.rows[i].id === id) return POS.rows[i];
+  return null;
+}
+
+/* The records check (SEC-5): once per load, only for a reader who got the
+   people lists. The seat tray shows its notes when it answers. */
+async function posLoadRecords() {
+  if (POS.unseated === null || !POS.rows.length) return;
+  try {
+    var rec = await gpFetch("hrms.alvoraa_org_structure.api.reporting_mismatches", {});
+    if (rec && rec.mismatches) POS.records = rec;
+  } catch (e) { /* the page stands without it */ }
+}
+
+function posRecordsFor(id) {
+  var rec = POS.records;
+  if (!rec) return null;
+  if (!rec._by) {
+    var seatOf = {};
+    POS.rows.forEach(function (r) {
+      r.people.forEach(function (p) { if (!seatOf[p.employee]) seatOf[p.employee] = r.id; });
+    });
+    var by = {};
+    (rec.mismatches || []).forEach(function (m) {
+      var s = seatOf[m.reports_to_says];
+      if (!s) return;
+      (by[s] = by[s] || { mismatch: [], mixed: [] }).mismatch.push(m);
+    });
+    (rec.mixed || []).forEach(function (m) {
+      (by[m.position] = by[m.position] || { mismatch: [], mixed: [] }).mixed.push(m);
+    });
+    rec._by = by;
+  }
+  return rec._by[id] || null;
+}
+
+function posNoMgrPeople() {
+  return (POS.unseated || []).filter(function (p) { return p.no_manager; });
+}
+
+/* Seats with no seat above them other than the real top: the parentless seat
+   with the most seats under it. Any other is a fact HR must fix. HR scope
+   only, like the lists. */
+function posExtraRoots() {
+  if (POS.unseated === null) return [];
+  var t = posKids(), size = {};
+  function count(id, depth) {
+    if (depth >= POS_MAX_DEPTH) return 0;
+    return (t.kids[id] || []).reduce(function (a, c) { return a + 1 + count(c.id, depth + 1); }, 0);
+  }
+  var roots = t.roots.filter(function (r) { return !r.reports_to; });
+  if (roots.length < 2) return [];
+  roots.forEach(function (r) { size[r.id] = count(r.id, 0); });
+  roots.sort(function (a, b) { return (size[b.id] - size[a.id]) || (a.title < b.title ? -1 : a.title > b.title ? 1 : 0); });
+  return roots.slice(1);
+}
+
+function posSheet(title, body, foot) {
+  var L = document.getElementById("pos-layer");
+  if (!L) return;
+  if (!L.innerHTML && document.activeElement) {
+    POS.ret = document.activeElement.id || null;
+    POS.retEl = document.activeElement;
+  }
+  L.innerHTML = '<div class="pos-scrim" onclick="posCloseSheet()"></div><div class="pos-sheet'
+    + (posIsPhone() ? " phone" : "") + '" role="dialog" aria-modal="true" aria-labelledby="pos-sh-t">'
+    + '<div class="sh-h"><h2 id="pos-sh-t" tabindex="-1">' + title + '</h2><button type="button" class="btn btn-outline btn-sm" onclick="posCloseSheet()">'
+    + drT("Close") + '</button></div><div class="sh-b">' + body + "</div>"
+    + (foot ? '<div class="sh-f">' + foot + "</div>" : "") + "</div>";
+  var h = document.getElementById("pos-sh-t");
+  if (h && h.focus) h.focus();
+}
+
+window.posCloseSheet = function (noFocus) {
+  if (POS.sheet && POS.sheet.kind === "wall") posWallCleanup();   // slice 069: phones may never fire afterprint
+  var L = document.getElementById("pos-layer");
+  var had = L && L.innerHTML;
+  if (L) L.innerHTML = "";
+  POS.sheet = null;
+  if (had && !noFocus) {
+    var el = (POS.ret && document.getElementById(POS.ret)) || POS.retEl;
+    if (el && el.focus) el.focus();
+  }
+  POS.ret = null; POS.retEl = null;
+};
+
+var POS_WIRED = false;
+function posWire() {
+  if (POS_WIRED || !document.addEventListener) return;
+  POS_WIRED = true;
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && POS.sheet) posCloseSheet();
+  });
+  // Slice 069 (review m2): a browser that never fired afterprint must not
+  // leave the wall chart - possibly an HR copy - as the next panel's print.
+  window.addEventListener("beforeprint", function () {
+    var pn = document.getElementById("panel-positions");
+    var onPositions = !!(pn && pn.classList.contains("active"));
+    if (document.body.classList.contains("pos-wall-printing")) {
+      if (!onPositions) posWallCleanup();
+      return;
+    }
+    // Security F2: a page filtered to "somebody is leaving" (or "key seats")
+    // IS a list of leavers (or of key seats), which never goes on paper. Ctrl+P
+    // on Positions clears that one filter for the print, and puts the screen
+    // back as it was afterwards (Surbhi, 25 Oct 2026). If afterprint never
+    // comes, the filter simply stays cleared.
+    var show = document.getElementById("pos-f-open");
+    if (onPositions && show && (show.value === "leaving" || show.value === "key")) {
+      var was = { show: show.value, view: posVal("pos-f-view"), arrange: posArrange(), saved: POS._saved,
+                  collapsed: POS.collapsed, expanded: POS.expanded };
+      show.value = "";
+      posFilterChanged("");
+      window.addEventListener("afterprint", function () {
+        show.value = was.show;
+        document.getElementById("pos-f-view").value = was.view;
+        document.getElementById("pos-f-arrange").value = was.arrange;
+        POS._saved = was.saved; POS.collapsed = was.collapsed; POS.expanded = was.expanded;
+        posPaint();
+      }, { once: true });
+    }
+  });
+}
+
+/* ── the wall chart: the seat chart as a PDF (slice 069) ─────────────────
+   Drawn in the browser from the rows already on the page; no server call.
+
+   THE PAPER NEVER SEES A ROW (PRIV-1). posWallCopy builds a separate tree
+   holding only what may print - title, designation, branch, department,
+   names, "Vacant", the counts below - and, on the HR copy only, leaving
+   dates and how many job openings. An employee ID, a grade, a plan or a
+   leaving date on a wall copy cannot reach paper, because the drawing is
+   never handed anything that holds one. check_wall_chart.js proves it.
+
+   The paper has its own small card: the screen's ocNodeCard always draws
+   avatars, flags and fold buttons. The markup and CSS classes are the
+   screen chart's, so the boxes and lines are the same drawing. */
+
+/* Seats and people under one seat, all the way down. */
+function posWallBelow(id, t) {
+  var s = 0, p = 0;
+  (function walk(at, d) {
+    if (d >= POS_MAX_DEPTH) return;
+    (t.kids[at] || []).forEach(function (k) { s += 1; p += k.people.length; walk(k.id, d + 1); });
+  })(id, 0);
+  return { seats: s, people: p };
+}
+
+/* The HR copy is for HR only (Surbhi, 25 Oct 2026). HR is the page's existing
+   signal: the "in no seat" list reaches only HR Manager, HR User and System
+   Manager (permitted_employee_filters), never a plain manager - even one who
+   is sent leaving dates for their own reports. And the leaving dates must
+   have been sent at all. */
+function posWallMayHr() {
+  return POS.unseated !== null && !!POS.may_see_leaving;
+}
+
+/* The allowed copy. `start` is "top" or a seat id; `levels` counts the start
+   as level 1. Identical seats merge as on screen (D-6), whatever the screen
+   has ungrouped. The HR copy keys exist only when `hr` is on AND the reader
+   is HR (posWallMayHr). */
+function posWallCopy(start, levels, vacant, hr) {
+  hr = !!(hr && posWallMayHr());
+  var t = posKids(POS.rows);
+  var tops = start === "top" ? t.roots : (t.byId[start] ? [t.byId[start]] : []);
+  function seat(members, depth) {
+    var r = members[0], names = [], opening = 0;
+    members.forEach(function (m) {
+      m.people.forEach(function (p) {
+        var n = { name: p.name };
+        if (hr && p.leaving) n.leaving = posDay(p.leaving);
+        names.push(n);
+      });
+      if (m.opening) opening += 1;
+    });
+    var kids = members.length === 1 ? (t.kids[r.id] || []) : [];
+    var last = depth >= levels || depth >= POS_MAX_DEPTH;
+    var c = {
+      title: r.title,
+      designation: r.designation && r.designation !== r.title ? r.designation : "",
+      branch: r.branch || "",
+      department: r.department || "",
+      names: names,
+      vacant: !!vacant && !names.length,
+      below: last && kids.length ? posWallBelow(r.id, t) : null,
+      kids: last ? [] : posGroupSiblings(kids, t, true).map(function (g) {
+        return seat(g.group ? g.members : [g.solo], depth + 1);
+      }),
+    };
+    if (hr) c.opening = opening;
+    return c;
+  }
+  return tops.map(function (r) { return seat([r], 1); });
+}
+
+/* One box on paper. Every name, in up to four columns of ten; the box is
+   200 px plus 140 for each extra column. `boxes` collects the copies in the
+   order their boxes appear, for measuring. */
+function posWallCard(c, root, boxes) {
+  var n = c.names.length, cols = Math.min(4, Math.max(1, Math.ceil(n / 10)));
+  if (boxes) boxes.push(c);
+  var where = root ? "" : [c.branch, c.department].filter(Boolean).join(" · ");
+  var below = "";
+  if (c.below) {
+    below = (c.below.seats === 1 ? drT("1 seat") : drT("{0} seats", [c.below.seats])) + " &middot; "
+      + (c.below.people === 1 ? drT("1 person below") : drT("{0} people below", [c.below.people]));
+  }
+  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box" style="width:'
+    + (200 + (cols - 1) * 140) + 'px">'
+    + '<div class="oc-box-hd"><span class="ti">' + posEsc(c.title) + "</span></div>"
+    + (c.designation ? '<div class="sub">' + posEsc(c.designation) + "</div>" : "")
+    + (where ? '<div class="sub">' + posEsc(where) + "</div>" : "")
+    + (n ? '<div class="nm" style="columns:' + cols + '">' + c.names.map(function (p) {
+        return "<div>" + posEsc(p.name)
+          + (p.leaving ? " &middot; " + posEsc(drT("leaving {0}", [p.leaving])) : "") + "</div>";
+      }).join("") + "</div>" : "")
+    + (c.vacant ? '<div class="vac">' + posEsc(drT("Vacant")) + "</div>" : "")
+    + (c.opening ? '<div class="opn">' + posEsc(c.opening === 1 ? drT("Job opening raised")
+        : drT("{0} job openings raised", [c.opening])) + "</div>" : "")
+    + (below ? '<div class="below">' + below + "</div>" : "")
+    + "</div></div>";
+}
+
+/* Three or more seats with nobody under them: a column, as on screen. Longer
+   than K, it wraps into columns side by side joined by a bar, so the chart
+   takes the paper's shape. */
+function posWallHang(list, K, under, boxes) {
+  var wrap = list.length > K;
+  var items = list.map(function (c, i) {
+    var end = i % K === K - 1 || i === list.length - 1;
+    return '<div class="oc-hang-item' + (end ? " ce" : "") + '">' + posWallCard(c, false, boxes) + "</div>";
+  }).join("");
+  return '<div class="oc-hang' + (under ? " under" : "") + (wrap ? " wrap" : "") + '"'
+    + (wrap ? ' style="grid-template-rows:repeat(' + K + ',auto)"' : "") + ">"
+    + items + (wrap ? '<i class="pos-wall-bar"></i>' : "") + "</div>";
+}
+
+/* A seat and what is drawn under it. K rows per wrapped column; KU for a
+   column hanging under a row of team leads, which can spread across them. */
+function posWallBranch(c, root, K, KU, boxes) {
+  var card = posWallCard(c, root, boxes), kids = "";
+  if (c.kids.length) {
+    var hang = c.kids.filter(function (k) { return !k.kids.length && !k.below; });
+    var row = hang.length < 3 ? c.kids : c.kids.filter(function (k) { return hang.indexOf(k) < 0; });
+    if (hang.length < 3) hang = [];
+    var rowHtml = row.map(function (k) { return posWallBranch(k, false, K, KU, boxes); }).join("");
+    kids = hang.length && row.length
+      ? '<div class="oc-fam"><div class="oc-kids">' + rowHtml + "</div>" + posWallHang(hang, KU, true, boxes) + "</div>"
+      : '<div class="oc-kids">' + rowHtml
+        + (hang.length ? '<div class="oc-branch oc-hang-slot">' + posWallHang(hang, K, false, boxes) + "</div>" : "")
+        + "</div>";
+  }
+  return '<div class="oc-branch">' + card + kids + "</div>";
+}
+
+/* The whole paper. One top: its tree. Several tops: side by side, each with
+   its own seats (D-3) - or, when none has seats under it, a grid of K rows. */
+function posWallHtml(copy, K, KU, boxes) {
+  var inner;
+  if (copy.length === 1) {
+    inner = posWallBranch(copy[0], true, K, KU, boxes);
+  } else if (!copy.some(function (c) { return c.kids.length; })) {
+    inner = '<div class="pos-wall-grid" style="grid-template-rows:repeat(' + Math.min(K, copy.length) + ',auto)">'
+      + copy.map(function (c) { return posWallCard(c, false, boxes); }).join("") + "</div>";
+  } else {
+    inner = '<div class="pos-wall-tops">'
+      + copy.map(function (c) { return posWallBranch(c, false, K, KU, boxes); }).join("") + "</div>";
+  }
+  return '<div class="pos-wall">' + inner + "</div>";
+}
+
+/* ── the layout: two drawings, whatever the size (300 ms, AC-35) ─────────
+   Trying every wrap for real cost the prototype about a second at DTC's
+   size. Here the chart is drawn ONCE to measure each box, every wrap is
+   worked out from those sizes with the same numbers the CSS uses, and the
+   best is drawn ONCE more and measured for real. The name size the panel
+   quotes comes from that real measurement, so a slip in the sums makes the
+   layout a little less tight, never the number untrue. */
+var POS_WALL_KS = [4, 6, 8, 10, 12, 14, 16];
+
+function posWallHolder() {
+  var h = document.getElementById("pos-wall-print");
+  if (!h) {
+    h = document.createElement("div");
+    h.id = "pos-wall-print";
+    h.setAttribute("aria-hidden", "true");
+    document.body.appendChild(h);
+  }
+  return h;
+}
+
+/* A hanging column, wrapped into columns of K: as wide as its columns plus
+   20 px between them, as tall as its rows. Each item adds 24 left, 8 above. */
+function posWallHangSize(list, K, size) {
+  var cols = [], rows = [], wrap = list.length > K;
+  list.forEach(function (c, i) {
+    var b = size.get(c), col = wrap ? Math.floor(i / K) : 0, r = wrap ? i % K : i;
+    cols[col] = Math.max(cols[col] || 0, 24 + b.w);
+    rows[r] = Math.max(rows[r] || 0, 8 + b.h);
+  });
+  var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
+  return { w: sum(cols) + 20 * (cols.length - 1), h: sum(rows) };
+}
+
+/* A seat and what hangs under it: a row of leads 18 px apart, 22 above; the
+   family 20 each side with its column 20 to the left and 14 above. */
+function posWallSize(c, K, KU, size) {
+  var box = size.get(c);
+  if (!c.kids.length) return { w: box.w, h: box.h };
+  var hang = c.kids.filter(function (k) { return !k.kids.length && !k.below; });
+  var row = hang.length < 3 ? c.kids : c.kids.filter(function (k) { return hang.indexOf(k) < 0; });
+  if (hang.length < 3) hang = [];
+  var rw = 0, rh = 0;
+  row.forEach(function (k, i) {
+    var s = posWallSize(k, K, KU, size);
+    rw += s.w + (i ? 18 : 0); rh = Math.max(rh, s.h);
+  });
+  var kw = rw, kh = 22 + rh;
+  if (hang.length && row.length) {
+    var u = posWallHangSize(hang, KU, size);
+    kw = 40 + Math.max(rw, u.w - 20); kh = 22 + rh + 14 + u.h;
+  } else if (hang.length) {
+    var hs = posWallHangSize(hang, K, size);
+    kw = hs.w; kh = 22 + hs.h;
+  }
+  return { w: Math.max(box.w, kw), h: box.h + kh };
+}
+
+function posWallChartSize(copy, K, KU, size) {
+  var w = 0, h = 0;
+  if (copy.length === 1) {
+    var s = posWallSize(copy[0], K, KU, size); w = s.w; h = s.h;
+  } else if (!copy.some(function (c) { return c.kids.length; })) {
+    // A grid of K rows filled down the columns, 16 px between columns, 12 between rows.
+    var rows = Math.min(K, copy.length), cw = [], rh = [];
+    copy.forEach(function (c, i) {
+      var b = size.get(c), col = Math.floor(i / rows), r = i % rows;
+      cw[col] = Math.max(cw[col] || 0, b.w); rh[r] = Math.max(rh[r] || 0, b.h);
+    });
+    cw.forEach(function (x, i) { w += x + (i ? 16 : 0); });
+    rh.forEach(function (x, i) { h += x + (i ? 12 : 0); });
+  } else {
+    copy.forEach(function (c, i) { var s = posWallSize(c, K, KU, size); w += s.w + (i ? 40 : 0); h = Math.max(h, s.h); });
+  }
+  return { w: w + 16, h: h + 16 };
+}
+
+/* The bar joining wrapped columns: from the first column's line to the last
+   one's, and at least to the middle, where the manager's line comes down. */
+function posWallBars(host) {
+  [].forEach.call(host.querySelectorAll(".oc-hang.wrap"), function (h) {
+    var last = 0, under = h.classList.contains("under");
+    [].forEach.call(h.children, function (it) {
+      if (it.classList.contains("oc-hang-item")) last = Math.max(last, it.offsetLeft);
+    });
+    var bar = h.querySelector(".pos-wall-bar"), right = Math.max(last + 10, under ? 10 : h.offsetWidth / 2);
+    bar.style.left = "10px"; bar.style.top = under ? "14px" : "0"; bar.style.width = (right - 9) + "px";
+  });
+}
+
+/* Measure, choose, draw. The chosen wrap fills an A-series sheet best; every
+   A size has the same shape, so one layout serves every paper. */
+function posWallLayout(copy) {
+  var t0 = Date.now(), host = posWallHolder(), boxes = [];
+  host.innerHTML = posWallHtml(copy, 1e9, 1e9, boxes);
+  var size = new Map(), els = host.querySelectorAll(".oc-box");
+  boxes.forEach(function (c, i) {
+    var r = els[i].getBoundingClientRect();
+    size.set(c, { w: r.width, h: r.height });
+  });
+  var best = null;
+  POS_WALL_KS.forEach(function (K) {
+    for (var KU = 2; KU <= Math.min(K, 5); KU++) {
+      var s = posWallChartSize(copy, K, KU, size);
+      var fit = Math.max(Math.min(Math.SQRT2 / s.w, 1 / s.h), Math.min(1 / s.w, Math.SQRT2 / s.h));
+      if (!best || fit > best.fit * 1.0001) best = { K: K, KU: KU, fit: fit };
+    }
+  });
+  host.innerHTML = posWallHtml(copy, best.K, best.KU);
+  posWallBars(host);
+  var rc = host.firstChild.getBoundingClientRect(), html = host.innerHTML;
+  // Kept as markup only: a drawing left in the page would add pages to any
+  // other print (review m1). posWallPrint draws it again.
+  host.parentNode.removeChild(host);
+  return { html: html, w: Math.max(1, Math.ceil(rc.width)), h: Math.max(1, Math.ceil(rc.height)),
+           K: best.K, KU: best.KU, ms: Date.now() - t0 };
+}
+
+/* Paper sizes in mm. 10 mm margins, 8 mm for the footer, 7 mm for the HR
+   copy's banner; 96 px to the inch; names are 13 px, 9.75 pt at full size. */
+var POS_WALL_PAPER = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
+var POS_WALL_ORDER = ["A4", "A3", "A2", "A1", "A0"];
+var POS_WALL_MM = 96 / 25.4, POS_WALL_FOOT_MM = 8, POS_WALL_BANNER_MM = 7;
+
+function posWallPlan(L, paper, sheets, hr) {
+  var p = POS_WALL_PAPER[paper], land = L.w >= L.h;
+  var wmm = land ? p[1] : p[0], hmm = land ? p[0] : p[1];
+  var pw = (wmm - 20) * POS_WALL_MM;
+  var ph = (hmm - 20 - POS_WALL_FOOT_MM - (hr ? POS_WALL_BANNER_MM : 0)) * POS_WALL_MM;
+  var one = Math.min(pw / L.w, ph / L.h);
+  var out = { paper: paper, land: land, wmm: wmm, hmm: hmm, pw: pw, ph: ph,
+              scale: one, pt: 9.75 * one, cols: 1, rows: 1, fitsOne: sheets !== "one" };
+  if (sheets === "one" || out.pt >= 10) return out;
+  out.scale = 10 / 9.75; out.pt = 10; out.fitsOne = false;
+  out.cols = Math.ceil(L.w * out.scale / pw); out.rows = Math.ceil(L.h * out.scale / ph);
+  return out;
+}
+
+/* ── the panel (prototype-v1, in the Positions tray) ─────────────────────
+   Choices live in POS.wall for this page visit only - never in browser
+   storage (SEC-1). The HR copy tick starts off every time the panel opens
+   (AC-58), and exists only for HR (posWallMayHr, AC-65). */
+
+/* Levels under a seat, counting the seat. */
+function posWallDepth(id, t, d) {
+  d = d || 1;
+  if (d >= POS_MAX_DEPTH) return d;
+  return (t.kids[id] || []).reduce(function (m, k) { return Math.max(m, posWallDepth(k.id, t, d + 1)); }, d);
+}
+
+function posWallTops(t) {
+  var s = POS.wall.start;
+  return s === "top" ? t.roots : (t.byId[s] ? [t.byId[s]] : []);
+}
+
+/* Seats and people in the chosen start and levels, as the paper counts
+   them: every name line (a person in two seats counts twice). */
+function posWallCount(t, levels) {
+  var s = 0, p = 0;
+  (function walk(list, d) {
+    list.forEach(function (r) {
+      s += 1; p += r.people.length;
+      if (d < levels && d < POS_MAX_DEPTH) walk(t.kids[r.id] || [], d + 1);
+    });
+  })(posWallTops(t), 1);
+  return { seats: s, people: p };
+}
+
+function posWallStarts(t) {
+  var out = [["top", t.roots.length === 1 ? drT("The top: {0}", [t.roots[0].title])
+                                          : drT("The top of what you can see ({0} seats)", [t.roots.length])]];
+  (function walk(list, d) {
+    list.forEach(function (r) {
+      var kids = t.kids[r.id] || [];
+      if (kids.length && !(d === 0 && t.roots.length === 1)) out.push([r.id, new Array(d + 1).join("— ") + r.title]);
+      if (d + 1 < POS_MAX_DEPTH) walk(kids, d + 1);
+    });
+  })(t.roots, 0);
+  return out;
+}
+
+function posWallLevels(t) {
+  var tops = posWallTops(t);
+  var d = tops.reduce(function (m, r) { return Math.max(m, posWallDepth(r.id, t)); }, 1);
+  if (d === 1 && tops.length > 1) return [[1, drT("All: 1 level, {0} seats side by side", [tops.length])]];
+  var under = tops.reduce(function (n, r) { return n + (t.kids[r.id] || []).length; }, 0), out = [];
+  for (var i = 2; i < d; i++) {
+    out.push([i, i === 2
+      ? drT("2 levels: {0} and the {1} seats under it", [POS.wall.start === "top" ? drT("the top") : tops[0].title, under])
+      : drT("{0} levels", [i])]);
+  }
+  var all = posWallCount(t, d);
+  out.push([d, drT("All {0} levels: every seat ({1} seats, {2} people)", [d, all.seats, all.people])]);
+  return out;
+}
+
+function posWallReads(pt) {
+  return pt < 8 ? drT("Too small to read.") : pt < 10 ? drT("Readable close up.")
+    : pt < 14 ? drT("Readable at arm's length.") : drT("Readable from about a metre away.");
+}
+
+window.posWallOpen = function () {
+  if (!POS.rows.length) return;
+  var w = POS.wall = POS.wall || { start: "top", levels: 0, paper: "A3", sheets: "one", vacant: true };
+  w.hr = false; w.L = null; w.key = "";
+  if (w.start !== "top" && !posById(w.start)) w.start = "top";
+  posSheet(posEsc(drT("Download wall chart (PDF)")), "",
+    '<div class="pos-wall-go"><button type="button" class="btn btn-primary" id="pos-wall-go" onclick="posWallPrint()">'
+    + posEsc(drT("Open print preview")) + '</button><div class="pos-wall-hint">'
+    + drT("Your browser opens its print window. Choose <b>Save as PDF</b> as the printer, then Save.") + "</div></div>");
+  POS.sheet = { kind: "wall" };
+  posWallChange();
+};
+
+window.posWallSet = function (k, v) {
+  var w = POS.wall;
+  if (!w) return;
+  w[k] = k === "levels" ? parseInt(v, 10) : (k === "vacant" || k === "hr" ? !!v : v);
+  if (k === "start") w.levels = 0;   // Levels goes back to its first option
+  posWallChange();
+};
+
+/* Paper and Sheets only re-do the sums; anything that changes what is drawn
+   draws again (two drawings). When the last drawing was slow, the panel
+   says "Working out the size…" first and draws on the next frame. */
+function posWallChange() {
+  var w = POS.wall, lv = posWallLevels(posKids(POS.rows));
+  if (!lv.some(function (o) { return o[0] === w.levels; })) w.levels = lv[0][0];
+  var key = [w.start, w.levels, w.vacant, w.hr].join("|");
+  if (key === w.key && w.L) { posWallPaint(); return; }
+  w.key = key; w.L = null;
+  var run = function () {
+    if (POS.wall !== w || w.key !== key || !POS.sheet || POS.sheet.kind !== "wall") return;
+    w.L = posWallLayout(posWallCopy(w.start, w.levels, w.vacant, w.hr));
+    w.fast = w.L.ms < 150;
+    posWallPaint();
+    if (w.printNext) { w.printNext = false; posWallPrint(); }
+  };
+  if (w.fast) { run(); return; }
+  posWallPaint();
+  setTimeout(run, 30);
+}
+
+function posWallPaint() {
+  var b = document.querySelector("#pos-layer .sh-b"), w = POS.wall;
+  if (!b || !w) return;
+  var keep = document.activeElement && b.contains(document.activeElement) ? document.activeElement.id : null;
+  var t = posKids(POS.rows), c = posWallCount(t, w.levels);
+  var branches = [];
+  POS.rows.forEach(function (r) { if (r.branch && branches.indexOf(r.branch) < 0) branches.push(r.branch); });
+  branches.sort();
+
+  var scope = branches.length === 1
+    ? drT("You can see 1 branch, {0}, so the chart covers {0} only.", [branches[0]])
+    : (branches.length ? drT("Covers {0} branches: {1}.", [branches.length, branches.join(", ")]) : "");
+  if (t.roots.some(function (r) { return r.reports_to; })) {
+    scope += (scope ? " " : "") + drT("Its seats report to managers in other branches, so they print side by side with no lines above them.");
+  }
+  var fl = [["pos-f-branch", "Branch"], ["pos-f-dept", "Department"], ["pos-f-role", "Job role"], ["pos-f-open", "Show"]]
+    .filter(function (f) { return posVal(f[0]); }).map(function (f) { return drT(f[1]); });
+  var filt = !fl.length ? "" : (fl.length === 1 ? drT("Your {0} filter does not apply here.", [fl[0]])
+      : drT("Your {0} filters do not apply here.", [fl.slice(0, -1).join(", ") + " " + drT("and") + " " + fl[fl.length - 1]]))
+    + " " + drT("The wall chart uses only the choices below.");
+
+  var big, sub = "", cls = "pos-wall-result", acts = "";
+  if (!w.L) {
+    big = drT("Working out the size…");
+  } else {
+    var P = posWallPlan(w.L, w.paper, w.sheets, w.hr), orient = P.land ? drT("landscape") : drT("portrait");
+    big = P.cols * P.rows > 1
+      ? drT("{0} {1} · {2} sheets ({3} across, {4} down) · names at 10 pt", [w.paper, orient, P.cols * P.rows, P.cols, P.rows])
+      : drT("{0} {1} · one sheet · names at {2} pt", [w.paper, orient, Math.floor(P.pt)]);
+    sub = posEsc(P.fitsOne ? drT("It fits on one sheet at this size, so it prints as one.") + " " + posWallReads(P.pt) : posWallReads(P.pt));
+    // A soft warning, not a block (Surbhi, 25 Oct 2026): at 10x DTC, 130 A4
+    // sheets took the browser about two minutes to turn into a PDF.
+    if (P.cols * P.rows > 20) {
+      cls += " warn";
+      sub += '<div style="margin-top:6px">' + posEsc(drT("This will make about {0} sheets and may take a minute. Choose a larger paper size to use fewer sheets.", [P.cols * P.rows])) + "</div>";
+    }
+    if (P.pt < 8) {
+      cls += " warn";
+      var up = null;
+      for (var i = POS_WALL_ORDER.indexOf(w.paper) + 1; i < POS_WALL_ORDER.length && !up; i++) {
+        if (posWallPlan(w.L, POS_WALL_ORDER[i], "one", w.hr).pt >= 8) up = POS_WALL_ORDER[i];
+      }
+      var sev = posWallPlan(w.L, w.paper, "several", w.hr);
+      sub = "<b>" + posEsc(drT("Warning:")) + "</b> " + posEsc(drT("that is too small to read on a wall."));
+      acts = '<div class="acts">'
+        + (up ? '<button type="button" class="btn btn-outline btn-sm" id="pos-wall-up" onclick="posWallSet(\'paper\',\'' + up + '\')">'
+          + posEsc(drT("Use {0} (names at {1} pt)", [up, Math.floor(posWallPlan(w.L, up, "one", w.hr).pt)])) + "</button>" : "")
+        + '<button type="button" class="btn btn-outline btn-sm" id="pos-wall-tile" onclick="posWallSet(\'sheets\',\'several\')">'
+        + posEsc(drT("Use {0} {1} sheets", [sev.cols * sev.rows, w.paper])) + "</button></div>";
+    }
+  }
+
+  var people = "";
+  if (POS.unseated === null) {
+    people = '<div class="pos-note"><p>' + posEsc(drT("Only people placed in a seat are on the chart.")) + "</p></div>";
+  } else if (POS.unseated.length) {
+    people = '<div class="pos-note"><p>' + posEsc(branches.length === 1
+        ? drT("{0} active {1} people are not in any seat, so they are not on the chart. Placing them in a seat first is recommended, not required.", [POS.unseated.length, branches[0]])
+        : drT("{0} active people are not in any seat, so they are not on the chart. Placing them in a seat first is recommended, not required.", [POS.unseated.length]))
+      + '</p><p><button type="button" class="pos-link" onclick="posWallUnseated()">' + posEsc(drT("See who is not in a seat")) + "</button></p></div>";
+  }
+
+  var opt = function (pairs, chosen) {
+    return pairs.map(function (o) {
+      return '<option value="' + posEsc(o[0]) + '"' + (o[0] === chosen ? " selected" : "") + ">" + posEsc(o[1]) + "</option>";
+    }).join("");
+  };
+  var dims = POS_WALL_PAPER[w.paper];
+  b.innerHTML = '<p class="su" style="margin:0">' + posEsc(drT("A chart of seats and names for a wall, sized for the paper you choose.")) + "</p>"
+    + (scope || filt ? '<div class="pos-note info">' + (scope ? "<p>" + posEsc(scope) + "</p>" : "") + (filt ? "<p>" + posEsc(filt) + "</p>" : "") + "</div>" : "")
+    + '<div class="pos-wall-field"><label class="gp-label" for="pos-wall-start">' + posEsc(drT("Start from")) + "</label>"
+    + '<select class="gp-input" id="pos-wall-start" onchange="posWallSet(\'start\',this.value)">' + opt(posWallStarts(t), w.start) + "</select></div>"
+    + '<div class="pos-wall-field"><label class="gp-label" for="pos-wall-levels">' + posEsc(drT("Levels")) + "</label>"
+    + '<select class="gp-input" id="pos-wall-levels" onchange="posWallSet(\'levels\',this.value)">' + opt(posWallLevels(t), w.levels) + "</select></div>"
+    + '<fieldset class="pos-wall-field"><legend class="gp-label">' + posEsc(drT("Paper")) + '</legend><div class="pos-wall-chips">'
+    + POS_WALL_ORDER.map(function (p) {
+        return '<label class="pos-wall-chip"><input type="radio" name="pos-wall-paper" id="pos-wall-paper-' + p + '" value="' + p + '"'
+          + (p === w.paper ? " checked" : "") + ' onchange="posWallSet(\'paper\',this.value)"><span>' + p + "</span></label>";
+      }).join("")
+    + '</div><div class="pos-wall-hint">' + posEsc(drT("{0} is {1} × {2} mm.", [w.paper, dims[0], dims[1]])) + "</div></fieldset>"
+    + '<fieldset class="pos-wall-field"><legend class="gp-label">' + posEsc(drT("Sheets")) + "</legend>"
+    + [["one", "One sheet, scaled to fit", "For a print shop. The usual choice from A2 up."],
+       ["several", "Several sheets, names at 10 pt", "For an office printer. Each sheet says where it goes."]].map(function (s) {
+        return '<label class="pos-wall-radio"><input type="radio" name="pos-wall-sheets" id="pos-wall-sheets-' + s[0] + '" value="' + s[0] + '"'
+          + (w.sheets === s[0] ? " checked" : "") + ' onchange="posWallSet(\'sheets\',this.value)"><span>' + posEsc(drT(s[1]))
+          + "<small>" + posEsc(drT(s[2])) + "</small></span></label>";
+      }).join("") + "</fieldset>"
+    + '<fieldset class="pos-wall-field"><legend class="gp-label">' + posEsc(drT("On the paper")) + "</legend>"
+    + '<label class="pos-wall-radio"><input type="checkbox" id="pos-wall-vacant"' + (w.vacant ? " checked" : "")
+    + ' onchange="posWallSet(\'vacant\',this.checked)"><span>' + posEsc(drT("Show Vacant")) + "</span></label>"
+    + (posWallMayHr() ? '<label class="pos-wall-radio"><input type="checkbox" id="pos-wall-hr"' + (w.hr ? " checked" : "")
+      + ' onchange="posWallSet(\'hr\',this.checked)"><span>' + posEsc(drT("HR copy: show replacements")) + "</span></label>" : "")
+    + "</fieldset>"
+    + (w.hr ? '<div class="pos-note amber"><p>' + posEsc(drT("Print in the office, not at a print shop.")) + "</p></div>" : "")
+    + '<div class="' + cls + '" role="status" aria-live="polite"><div class="big">' + posEsc(big) + "</div>"
+    + (sub ? '<div style="margin-top:4px">' + sub + "</div>" : "")
+    + '<div class="pos-wall-hint">' + posEsc(drT("{0} seats · {1} people", [c.seats, c.people])) + "</div>" + acts + "</div>"
+    + people
+    + '<p class="su">' + posEsc(w.hr
+        ? drT("This HR copy also prints leaving dates and job openings. Replacement plans and HR notes never print.")
+        : drT("Only seat names, job titles, departments and people's names print. Flags, leaving dates and HR notes never do.")) + "</p>";
+  if (keep) {
+    // A fix button that has done its job is gone; the paper it chose takes the focus.
+    var el = document.getElementById(keep) || document.getElementById("pos-wall-paper-" + w.paper);
+    if (el && el.focus) el.focus();
+  }
+}
+
+/* "See who is not in a seat": the existing tray, in place of the panel.
+   Closing it still returns focus to the wall chart button. */
+window.posWallUnseated = function () {
+  posWallCleanup();
+  posUnseatedSheet();
+};
+
+/* After the print window closes: the page size, the title and the paper go,
+   so the next Ctrl+P or payslip prints as before (SEC-4). The layout is
+   kept, because the panel is still open. */
+function posWallAfterPrint() {
+  var st = document.getElementById("pos-wall-page");
+  if (st && st.parentNode) st.parentNode.removeChild(st);
+  document.body.classList.remove("pos-wall-printing");
+  if (POS.wall && POS.wall.title != null) { document.title = POS.wall.title; POS.wall.title = null; }
+  var h = document.getElementById("pos-wall-print");
+  if (h && h.parentNode) h.parentNode.removeChild(h);
+}
+
+/* Closing the panel: the same, and the drawing is forgotten. */
+function posWallCleanup() {
+  posWallAfterPrint();
+  if (POS.wall) { POS.wall.L = null; POS.wall.key = ""; POS.wall.printNext = false; }
+}
+
+/* Open print preview: the sheets, a page size in millimetres (Edge ignores
+   "A1"), the file name, then the browser's own print window. Each sheet is
+   a clipped copy of the chart, moved to its row and column. */
+window.posWallPrint = function () {
+  var w = POS.wall;
+  if (!w) return;
+  if (!w.L) { w.printNext = true; return; }   // prints once the size is worked out (AC-35)
+  posWallAfterPrint();
+  var t = posKids(POS.rows), L = w.L, P = posWallPlan(L, w.paper, w.sheets, w.hr);
+  var lv = posWallLevels(t), all = w.levels === lv[lv.length - 1][0];
+  var levels = all ? drT("all levels") : drT("{0} levels", [w.levels]);
+  var companies = [], branches = [];
+  POS.rows.forEach(function (r) {
+    if (r.company && companies.indexOf(r.company) < 0) companies.push(r.company);
+    if (r.branch && branches.indexOf(r.branch) < 0) branches.push(r.branch);
+  });
+  companies.sort();
+  var co = companies.join(", "), asat = POS.today || posToday();
+  var foot = [co, branches.length === 1 ? drT("{0} branch", [branches[0]]) : drT("{0} branches", [branches.length]),
+              levels + " " + (w.start === "top" ? drT("from the top") : drT("from {0}", [posWallTops(t)[0].title])),
+              drT("as at {0}", [posDay(asat) + " " + String(asat).slice(0, 4)]),
+              drT("{0} people in seats", [posWallCount(t, w.levels).people])].join(" · ");
+  var hrTag = drT("HR use only - not for display");
+  var n = P.cols * P.rows, html = "";
+  for (var r = 0; r < P.rows; r++) {
+    for (var col = 0; col < P.cols; col++) {
+      var ox = n === 1 ? (P.pw - L.w * P.scale) / 2 : -col * P.pw;
+      var oy = n === 1 ? (P.ph - L.h * P.scale) / 2 : -r * P.ph;
+      html += '<div class="pos-wall-sheet" style="width:' + (P.wmm - 20) + "mm;height:" + (P.hmm - 21) + 'mm">'
+        + (w.hr ? '<div class="pos-wall-banner">' + posEsc(hrTag) + "</div>" : "")
+        + '<div class="pos-wall-clip" style="height:' + P.ph.toFixed(2) + 'px">'
+        + '<div class="pos-wall-at" style="left:' + ox.toFixed(2) + "px;top:" + oy.toFixed(2) + "px;transform:scale(" + P.scale.toFixed(5) + ')">'
+        + L.html + "</div></div>"
+        // The HR tag, then where the sheet goes, first: a long footer wraps or
+        // is cut at its END, never on the label (review m3).
+        + '<div class="pos-wall-foot">' + posEsc((w.hr ? hrTag + " · " : "")
+          + (n > 1 ? drT("Sheet {0} of {1} (row {2}, column {3})", [r * P.cols + col + 1, n, r + 1, col + 1]) + " · " : "")
+          + foot) + "</div></div>";
+    }
+  }
+  posWallHolder().innerHTML = html;
+  var st = document.createElement("style");
+  st.id = "pos-wall-page";
+  st.textContent = "@page{size:" + P.wmm + "mm " + P.hmm + "mm;margin:10mm}";
+  // Last in the page, so it comes after the portal's A4 rule wherever that sits, and wins for this print only.
+  document.body.appendChild(st);
+  w.title = document.title;
+  document.title = (w.hr ? drT("HR copy - ") : "")
+    + drT("Wall chart - {0} - {1} - {2} - {3}", [co, levels, w.paper, String(asat).slice(0, 10)]);
+  document.body.classList.add("pos-wall-printing");
+  window.addEventListener("afterprint", posWallAfterPrint, { once: true });
+  window.print();
+};
+
+window.posSeatSheet = function (id, flash) {
+  var r = posById(id);
+  if (!r) return;
+  var up = r.reports_to ? posById(r.reports_to) : null;
+  var parent = !r.reports_to ? drT("reports to nobody (top of the chart)")
+    : up ? drT("reports to {0}", [up.title + (up.branch ? " · " + up.branch : "")])
+      : drT("reports to a seat above your view");
+  var b = '<div class="su">' + posEsc((r.branch || drT("No branch")) + " · " + (r.department || drT("No department")) + " · " + parent) + "</div>"
+    + '<div class="pos-facts"><div><b>' + drT("{0} of {1}", [posNum(r.filled), posNum(r.seats)])
+    + '</b><div class="su">' + drT("filled") + "</div></div><div><b>"
+    + (posOpen(r) ? posNum(posOpen(r)) : drT("None")) + '</b><div class="su">' + drT("to fill") + "</div></div></div>";
+  if (flash) b += '<div class="pos-note ok" role="status">' + flash + "</div>";
+  b += posRecordNotes(r);
+  b += '<h3 class="pos-h3">' + drT("Who is in it") + "</h3>";
+  if (!r.people.length) b += '<p class="su">' + drT("Nobody is in this seat.") + "</p>";
+  b += '<div class="pos-people">' + r.people.map(function (p) {
+    var c = "";
+    if (p.weight != null && p.weight < 100) c += ' <span class="su">' + drT("{0}% of the seat", [posNum(p.weight)]) + "</span>";
+    if (p.covering) c += ' <span class="su">' + posEsc(p.type) + "</span>";
+    if (posHired(p)) c += ' <span class="pos-chip green">' + drT("Joined {0}, hired for this seat", [posDay(p.hired_on)]) + "</span>";
+    if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
+    return '<div class="pos-prow">' + posEsc(p.name) + c + "</div>";
+  }).join("") + "</div>";
+  b += '<p class="pos-sheet-err" id="pos-sheet-err" role="alert" hidden></p>';
+  var f = "";
+  if (POS.may_edit) {
+    if (r.opening) {
+      f += '<a class="btn btn-outline btn-sm" target="_blank" rel="noopener" href="/app/job-opening/'
+        + encodeURIComponent(r.opening) + '">' + drT("Job opening {0}", [posEsc(r.opening)]) + "</a>";
+    } else if (r.open >= 0.5 && r.designation) {
+      f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetAdvertise(\'' + posJs(id) + '\')">'
+        + drT("Advertise it") + "</button>";
+    }
+    f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetChange(\'' + posJs(id) + '\')">'
+      + drT("Change this seat") + "</button>";
+  }
+  posSheet(posEsc(r.title), b, f);
+  POS.sheet = { kind: "seat", id: id };
+};
+
+/* The notes behind the records check (SEC-5). Empty for anyone the records
+   call was not made for. */
+function posRecordNotes(r) {
+  var rec = posRecordsFor(r.id), out = "";
+  if (!rec) return "";
+  if (rec.mismatch.length) {
+    var by = {}, order = [];
+    rec.mismatch.forEach(function (m) {
+      var s = posById(m.position), name = s ? s.title + (s.branch ? " · " + s.branch : "") : m.position;
+      if (!(name in by)) { by[name] = 0; order.push(name); }
+      by[name] += 1;
+    });
+    order.sort(function (a, b) { return by[b] - by[a]; });
+    var under = POS.rows.some(function (x) { return x.reports_to === r.id; });
+    out += '<div class="pos-note info"><h3>' + drT("{0} people report to this person on their employee records", [rec.mismatch.length])
+      + "</h3>" + (under
+        ? drT("Their seats sit under other seats on this chart, so they do not show under this box:")
+        : drT("Their seats sit under other seats on this chart, so nobody shows under this box:"))
+      + "<ul>" + order.map(function (n) { return "<li>" + posEsc(n) + ": " + by[n] + "</li>"; }).join("") + "</ul>"
+      + "<p>" + (POS.may_edit
+        ? drT("To fix it, open each seat and set Reports to to this seat. A seat shared with another manager's people needs splitting first.")
+        : drT("HR can move these seats under this one.")) + "</p></div>";
+  }
+  if (rec.mixed.length > 1) {
+    var list = rec.mixed.slice().sort(function (a, b) { return b.count - a.count; });
+    out += '<div class="pos-note info"><h3>' + drT("This seat holds the people of {0} managers", [list.length]) + "</h3><ul>"
+      + list.map(function (m) {
+          return "<li>" + posEsc(m.manager_position === r.id
+            ? drT("{0} report to {1}, who is in this seat too", [m.count, m.manager_name || m.manager])
+            : drT("{0} report to {1}", [m.count, m.manager_name || m.manager])) + "</li>";
+        }).join("") + "</ul>"
+      + "<p>" + drT("That is why it reads like one person with {0} others in their seat.", [Math.max(0, r.people.length - 1)])
+      + (POS.may_edit ? " " + drT("Give the head a seat of their own, then move each group under its own manager.") : "") + "</p></div>";
+  }
+  return out;
+}
+
+window.posSheetChange = function (id) {
+  posCloseSheet(true);
+  posOpenEditor(id);
+};
+
+/* "Advertise it" from the seat tray: today's post_job, unchanged. */
+window.posSheetAdvertise = async function (id) {
+  var r = posById(id);
+  if (!r) return;
+  var out;
+  try {
+    out = await gpFetch("hrms.alvoraa_org_structure.register.post_job", {
+      position: r.id, vacancies: Math.max(1, Math.ceil(r.open || 1)),
+    });
+  } catch (e) {
+    var err = document.getElementById("pos-sheet-err");
+    if (err) { err.textContent = e && e.message ? e.message : String(e); err.hidden = false; }
+    return;
+  }
+  posCloseSheet(true);
+  await posLoad();
+  window.open("/app/job-opening/" + encodeURIComponent(out.name), "_blank", "noopener");
+};
+
+/* "No reporting manager": people with no manager on their record and no
+   seat, and any seat with no seat above it other than the top. HR scope
+   only. Frappe HR's leave approver does not come from Reports To, so the
+   sentence does not say nobody approves their leave. */
+window.posNoMgrSheet = function () {
+  if (POS.unseated === null) return;
+  var people = posNoMgrPeople(), seats = posExtraRoots();
+  var b = "<p>" + drT("These people have no reporting manager on their employee record, and no seat. They appear nowhere on this chart.") + "</p>";
+  if (people.length) {
+    b += "<table><thead><tr><th>" + drT("Name") + "</th><th>" + drT("Job role") + "</th><th>" + drT("Branch")
+      + "</th><th>" + drT("Joined") + "</th>" + (POS.may_edit_employee ? "<th></th>" : "") + "</tr></thead><tbody>"
+      + people.map(function (p) {
+          return "<tr><td>" + posEsc(p.name) + "</td><td>" + posEsc(p.job_role || drT("None")) + "</td><td>"
+            + posEsc(p.branch || drT("No branch")) + "</td><td>" + posEsc(posDay(p.joined)) + "</td>"
+            + (POS.may_edit_employee
+              ? '<td><a class="pos-link" target="_blank" rel="noopener" href="/app/employee/' + encodeURIComponent(p.employee)
+                + '">' + drT("Set manager") + "</a></td>" : "") + "</tr>";
+        }).join("") + "</tbody></table>";
+  }
+  if (seats.length) {
+    b += '<h3 class="pos-h3">' + drT("Seats with no seat above them") + "</h3>"
+      + seats.map(function (r) {
+          return '<div class="pos-prow">' + posEsc(r.title + (r.branch ? " · " + r.branch : ""))
+            + ' <button type="button" class="pos-link" onclick="posSeatSheet(\'' + posJs(r.id) + '\')">'
+            + drT("Open this seat") + "</button></div>";
+        }).join("");
+  }
+  posSheet(drT("No reporting manager · {0} people", [people.length]), b, "");
+  POS.sheet = { kind: "nomgr" };
+};
+
+/* "In no seat": Active people in the reader's scope who hold no seat, by
+   branch, each job role with the seat that matches it (same job role and
+   branch). */
+window.posUnseatedSheet = function () {
+  if (POS.unseated === null) return;
+  var list = POS.unseated, by = {}, order = [];
+  list.forEach(function (p) {
+    var k = p.branch || "";
+    if (!(k in by)) { by[k] = []; order.push(k); }
+    by[k].push(p);
+  });
+  order.sort(function (a, b) { return !a ? 1 : !b ? -1 : a < b ? -1 : 1; });
+  var recent = posShift(posToday(), -60);
+  var lately = list.filter(function (p) { return p.joined && p.joined >= recent; }).length;
+  var b = "<p>" + drT("{0} of {1} active people hold no seat, so they are not on this chart and not in the counts above.",
+                       [list.length, POS.active_people])
+    + (lately * 2 > list.length ? " " + drT("Most joined in the last two months.") : "") + "</p>";
+  order.forEach(function (br) {
+    var people = by[br];
+    b += '<h3 class="pos-h3">' + posEsc((br || drT("No branch")) + " · " + people.length) + "</h3>";
+    if (br && !POS.rows.some(function (r) { return r.branch === br; })) {
+      var twin = posTwinOf(br, POS.rows.map(function (r) { return r.branch; }));
+      b += '<div class="pos-note amber">' + posEsc(twin
+        ? drT('There is no seat at {0}. The {0} seats use a second branch record, "{1}". HR should merge the two branch records, or move these people.', [br, twin])
+        : drT("There is no seat at {0}.", [br])) + "</div>";
+    }
+    var roles = {}, rorder = [];
+    people.forEach(function (p) {
+      var k = p.job_role || "";
+      if (!(k in roles)) { roles[k] = 0; rorder.push(k); }
+      roles[k] += 1;
+    });
+    b += "<ul>" + rorder.map(function (role) {
+      var seat = role && POS.rows.filter(function (r) { return r.designation === role && r.branch === br; })
+        .sort(function (x, y) { return x.title < y.title ? -1 : x.title > y.title ? 1 : 0; })[0];
+      return "<li>" + posEsc(roles[role] + " " + (role || drT("with no job role")))
+        + (seat ? " · " + drT("matching seat:") + ' <button type="button" class="pos-link" onclick="posSeatSheet(\'' + posJs(seat.id) + '\')">'
+                  + posEsc(seat.title + (seat.branch ? " · " + seat.branch : "")) + "</button> ("
+                  + drT("{0} of {1}", [posNum(seat.filled), posNum(seat.seats)]) + ")"
+                : " · " + drT("no matching seat")) + "</li>";
+    }).join("") + "</ul>";
+  });
+  posSheet(drT("In no seat · {0} people", [list.length]), b, "");
+  POS.sheet = { kind: "unseated" };
+};
+
+/* Two branch records for one store: the same name once case, spaces and
+   punctuation are ignored ("DTC Pitampura" and "DTC - PITAMPURA"). */
+function posBranchKey(b) { return String(b || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+function posTwinOf(branch, others) {
+  var k = posBranchKey(branch);
+  if (!k) return null;
+  for (var i = 0; i < others.length; i++) {
+    if (others[i] && others[i] !== branch && posBranchKey(others[i]) === k) return others[i];
+  }
+  return null;
+}
 
 /* ── moving around ─────────────────────────────────────────────────── */
 
@@ -2089,6 +3559,18 @@ function switchPanel(name, triggerEl) {
     if (el) el.classList.add("active");
   }
 
+  /* Slice 070 (G1, AC-58): the desktop top bar - Frappe's navbar brand - names
+     the page that is open, in the sidebar's own words, not "Home" always. */
+  const brand = document.querySelector("a.navbar-brand span");
+  const navEl = document.querySelector('.sidebar .nav-item[data-panel="' + name + '"]');
+  if (brand && navEl) {
+    const lbl = navEl.querySelector(".nav-label");
+    /* The label, never the count badge beside it. */
+    const words = (lbl ? lbl.textContent : [...navEl.childNodes]
+      .filter(n => n.nodeType === 3).map(n => n.textContent).join("")).trim();
+    if (words) brand.textContent = words;
+  }
+
   document.querySelectorAll(".bnav-item").forEach(n => n.classList.remove("active"));
   const bn = document.querySelector('.bnav-item[data-panel="' + name + '"]');
   if (bn) bn.classList.add("active");
@@ -2127,7 +3609,6 @@ function startClock() {
   var _days   = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   var _months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   var _elClock = document.getElementById("live-clock");
-  var _elDate  = document.getElementById("live-date");
   var _elTitle = document.getElementById("home-title");
   var _elSub   = document.getElementById("home-sub");
   function tick() {
@@ -2137,7 +3618,6 @@ function startClock() {
     var s = String(now.getSeconds()).padStart(2,"0");
     if (_elClock) _elClock.textContent = h + ":" + m + ":" + s;
     var dayStr = _days[now.getDay()] + ", " + now.getDate() + " " + _months[now.getMonth()];
-    if (_elDate) _elDate.textContent = dayStr;
     var hr = now.getHours();
     var g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : "Good evening";
     if (_elTitle && _elTitle.dataset.name) _elTitle.textContent = g + ", " + _elTitle.dataset.name + "!";
@@ -2248,7 +3728,7 @@ window.polAck = function(name) {
   api("acknowledge_policy", {name: name, source: "Manual"}, function(r) {
     if (window.frappe && frappe.show_alert) frappe.show_alert({message: r.message, indicator: "green"}, 5);
     polOpen(name); loadHomePolicies();
-  }, function(e) { alert((e && e.message) || "Could not acknowledge."); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } alert((e && e.message) || "Could not acknowledge."); });
 };
 
 /* ── Manage (department heads and HR) ── */
@@ -2329,8 +3809,8 @@ window.polSave = function(publish) {
     api("publish_policy", {name: r.name, change_note: g("pol-e-note")}, function(pr) {
       if (window.frappe && frappe.show_alert) frappe.show_alert({message: pr.message, indicator: "green"}, 5);
       polLoadManage(); loadHomePolicies();
-    }, function(e) { msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not publish") + "</div>"; });
-  }, function(e) { msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not save") + "</div>"; });
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not publish") + "</div>"; });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not save") + "</div>"; });
 };
 
 /* ── Compliance (HR) ── */
@@ -2403,7 +3883,7 @@ window.uploadMyDocument = async function(input, row) {
     api("attach_my_document", {row: row, file_url: j.message.file_url}, function(r) {
       if (window.frappe && frappe.show_alert) frappe.show_alert({message: r.message || "Uploaded.", indicator: "green"}, 5);
       loadMyDocuments();
-    }, function(e) { alert((e && e.message) || "Could not save the upload."); });
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } alert((e && e.message) || "Could not save the upload."); });
   } catch (e) {
     alert(e.message || "Upload failed.");
   }
@@ -2585,14 +4065,13 @@ function aiWho(d) {
 function aiWhen(from, to) {
   if (!from || !to) return "";
   var a = new Date(from + "T00:00:00"), b = new Date(to + "T00:00:00");
-  var opts = {day: "numeric", month: "short", year: "numeric"};
   var wholeMonth = a.getDate() === 1
     && b.getFullYear() === a.getFullYear() && b.getMonth() === a.getMonth()
     && b.getDate() === new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
   if (wholeMonth) {
     return a.toLocaleDateString("en-IN", {month: "long", year: "numeric"});
   }
-  return a.toLocaleDateString("en-IN", opts) + " to " + b.toLocaleDateString("en-IN", opts);
+  return fmtDate(from) + " to " + fmtDate(to);   /* slice 070: one date format */
 }
 
 function aiPaint() {
@@ -2825,18 +4304,22 @@ async function acLoad() {
   team.style.display = "none";
   body.style.display = "";
   body.innerHTML = '<p class="ac-empty">Loading&hellip;</p>';
-  try {
-    var d = await acApi("month", {year: acState.year, month: acState.month,
-                                  employee: acState.employee});
+  async function show(d) {
     acState.data = d;
     if (!acState.reasons) acState.reasons = await acApi("reasons");
     acBar();
     acPaint();
     acMine();
     if (d.can_review) acReviewQueue();
+  }
+  try {
+    await show(await acApi("month", {year: acState.year, month: acState.month,
+                                     employee: acState.employee}));
   } catch (e) {
-    body.innerHTML = '<p class="ac-empty">' + gpEsc(e.message || "Could not load your attendance.") + "</p>";
     document.getElementById("ac-bar").innerHTML = "";
+    /* Slice 070: the box, Try again, and a late answer that paints the month
+       by itself (AC-17 to AC-21). */
+    failBox(body, e, acLoad, function (d) { show(d).catch(function () {}); });
   }
 }
 
@@ -3100,13 +4583,13 @@ function acPaint() {
     {n: tt.late_days, l: "Late arrivals", warn: tt.late_days > 0},
     {n: tt.leave, l: "On leave"}
   ];
-  var html = '<div class="ac-tiles">' + tiles.map(function (x) {
+  var html = gmReview() + '<div class="ac-tiles">' + tiles.map(function (x) {
     return '<div class="ac-tile' + (x.warn ? " warn" : "") + '">'
       + '<div class="n">' + gpEsc(x.n) + '</div><div class="l">' + gpEsc(x.l) + "</div></div>";
-  }).join("") + "</div>";
+  }).join("") + gmTile() + "</div>";
 
   html += '<div class="tbl-wrap"><table class="ac-tbl"><thead><tr>'
-    + '<th>Day</th><th class="t">The day</th><th>In</th><th>Out</th>'
+    + '<th class="ac-ph"></th><th>Day</th><th class="t">The day</th><th>In</th><th>Out</th>'
     + "<th>Worked</th><th>Expected</th><th>Arrival</th><th></th>"
     + "</tr></thead><tbody>";
 
@@ -3138,7 +4621,9 @@ function acRow(x) {
   var pick = !!x.attendance || (!x.future && x.state === "no_record");
 
   var label = "";
-  if (x.holiday) label = '<span class="ac-tag">Holiday</span>';
+  /* Slice 070 (AC-8 to AC-10): a weekly off says so, and a named holiday shows
+     its own name - as plain text, whatever markup the description carries. */
+  if (x.holiday) label = '<span class="ac-tag">' + gpEsc(x.weekly_off ? drT("Weekly off") : acPlain(x.holiday)) + "</span>";
   else if (x.leave_type) label = '<span class="ac-tag">' + gpEsc(x.leave_type) + "</span>";
   else if (x.state === "future") label = '<span class="ac-tag">To come</span>';
   else if (!x.attendance) label = '<span class="ac-tag">No record</span>';
@@ -3146,6 +4631,7 @@ function acRow(x) {
     + gpEsc(x.status) + "</span>";
 
   if (x.missing_punch) label += '<span class="ac-tag warn">Missing punch</span>';
+  label += gmTag(x);
   if (x.request) label += '<span class="ac-tag' + (x.request.state === "approved" ? " ok" : "")
     + '">' + gpEsc(acSay(x.request.state)) + "</span>";
 
@@ -3156,11 +4642,31 @@ function acRow(x) {
   if (x.is_late) arrival = '<span class="hi">' + acMins(x.late_by_mins) + " late</span>";
   else if (x.in_time) arrival = "On time";
 
-  var mon = AC_MONTHS[parseInt(x.date.slice(5, 7), 10) - 1].slice(0, 3);
-  return '<tr class="' + (quiet ? "off " : "") + (pick ? "pick" : "") + '"'
+  /* "5 Oct", no leading zero; the month heading carries the year (AC-16). */
+  var day = gpEsc(lpShort(x.date)) + '<span class="dow">' + gpEsc(x.weekday.slice(0, 3)) + "</span>";
+
+  /* Slice 070 (D3, AC-52): on a phone the day is one block of two lines and
+     the strip is not drawn; this cell is hidden on a desktop, and the other
+     cells are hidden on a phone. An openable day is a real button, so it can
+     be reached and opened from the keyboard; its click reaches the row. */
+  var line2 = [];
+  if (x.attendance) {
+    if (x.in_time) line2.push(gpEsc(drT("In {0}", [x.in_time])));
+    if (x.out_time) line2.push(gpEsc(drT("Out {0}", [x.out_time])));
+    if (x.hours !== null && x.hours !== undefined) line2.push(gpEsc(drT("{0}h worked", [x.hours])));
+    if (x.in_time) line2.push(arrival);
+  }
+  var block = '<span class="ac-l1"><span class="ac-d">' + day + '</span><span class="ac-tags">' + label + "</span>"
+    + (pick ? '<span class="ac-go" aria-hidden="true">&rsaquo;</span>' : "") + "</span>"
+    + (line2.length ? '<span class="ac-l2">' + line2.join(" &middot; ") + "</span>" : "");
+  var phone = pick
+    ? '<button type="button" class="ac-day" aria-label="' + gpEsc(drT("{0}, open the day", [dateInWords(x.date)])) + '">' + block + "</button>"
+    : '<div class="ac-day">' + block + "</div>";
+
+  return '<tr class="ac-row ' + (quiet ? "off " : "") + (pick ? "pick" : "") + '"'
     + (pick ? ' onclick="acToggle(&quot;' + x.date + '&quot;)"' : "") + ">"
-    + '<td class="day">' + gpEsc(x.date.slice(8)) + " " + gpEsc(mon)
-    + '<span class="dow">' + gpEsc(x.weekday.slice(0, 3)) + "</span></td>"
+    + '<td class="ac-ph">' + phone + "</td>"
+    + '<td class="day">' + day + "</td>"
     + '<td class="t">' + acStrip(x) + label + "</td>"
     + "<td>" + gpEsc(x.in_time || "—") + "</td>"
     + "<td>" + gpEsc(x.out_time || "—") + "</td>"
@@ -3169,6 +4675,13 @@ function acRow(x) {
     + "<td>" + (x.expected_hours ? x.expected_hours + "h" : "—") + "</td>"
     + "<td>" + arrival + "</td>"
     + "<td>" + (pick ? "&rsaquo;" : "") + "</td></tr>";
+}
+
+/* A holiday's description as plain text. DOMParser builds an inert
+   document: nothing in it runs and no image in it loads. */
+function acPlain(s) {
+  try { return new DOMParser().parseFromString(String(s), "text/html").body.textContent.trim(); }
+  catch (e) { return String(s); }
 }
 
 /* The strip: the shift as the track, the punches laid over it. Where
@@ -3265,7 +4778,7 @@ window.acToggle = function (date) {
    can still be compared with the days around it. */
 function acDetail(x) {
   var d = acState.data;
-  var html = '<tr class="ac-open"><td colspan="8"><div class="ac-detail">';
+  var html = '<tr class="ac-open"><td colspan="9"><div class="ac-detail">';
 
   html += '<div class="ac-facts">'
     + "<div>Shift<span>"
@@ -3297,6 +4810,7 @@ function acDetail(x) {
       + "commonest reason a day looks short, and it is what the correction "
       + "below is for.</p>";
   }
+  html += gmBox(x);
 
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
@@ -3500,10 +5014,18 @@ async function acReviewQueue() {
         + '<div class="m">' + gpEsc(r.from_date)
         + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
         + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "")
+        /* Approve and Decline only when the server says this caller may
+           decide it today (`can_decide`, from the same function `decide`
+           asks). Otherwise its own sentence says who has it and until when -
+           a button that is certain to be refused is not offered (DTC,
+           22 Oct 2026). */
+        + (r.can_decide === false && r.not_yet
+            ? '<div class="note">' + gpEsc(r.not_yet) + "</div>" : "")
         + '<div class="ac-acts">'
         + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
-        + '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">Approve</button>'
-        + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>'
+        + (r.can_decide === false ? "" :
+            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">Approve</button>'
+          + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>')
         + "</div></div>";
     }).join("");
   } catch (e) { wrap.style.display = "none"; }
@@ -3614,14 +5136,23 @@ function loadHome() {
     document.getElementById("sb-desig").textContent = "";
   });
 
-  // Activity feed — last 7 days of portal actions
+  homeActivity();
+  homeDashboard();
+}
+
+// Activity feed — last 7 days of portal actions
+function homeActivity() {
   api("get_portal_activity", {days: 7}, function(data) {
     renderActivityFeed(data.activities || []);
-  }, function() {
-    var el = document.getElementById("home-activity-feed");
-    if (el) el.innerHTML = '<div class="empty-state"><div class="empty-state-text">Could not load activity.</div></div>';
+  }, function(e) {
+    homeBlock("home-activity-card", true);
+    failBox("home-activity-feed", e, homeActivity);
   });
+}
 
+/* Slice 070: a failed read used to draw an empty holiday list - which reads
+   as "no holidays" rather than "not loaded". */
+function homeDashboard() {
   api("get_employee_dashboard", {}, function(data) {
     if (data.no_employee) { renderHolidays([]); return; }
     loadHomeLeave(data.leave_balances);
@@ -3659,12 +5190,14 @@ function loadHome() {
     }
 
     renderHolidays(data.holidays || [], data.holiday_note);
-  }, function() { renderHolidays([]); });
+  }, function(e) { failBox("holidays-list", e, homeDashboard); });
 }
 
 function renderActivityFeed(activities) {
   var el = document.getElementById("home-activity-feed");
   if (!el) return;
+  /* Slice 070 (N7, AC-56): an empty Activity card is not shown at all. */
+  homeBlock("home-activity-card", activities && activities.length);
   if (!activities || !activities.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No activity recorded yet.</div></div>';
     return;
@@ -3936,8 +5469,11 @@ window.dmToggleLadder = function () {
   paintDayMarks(window._dmMarks);
 };
 
+/* The card is for a day that has started. Before the first check-in, from the
+   device or from this page, there is nothing to measure and no rung to stand
+   on; the one-line banner above already says when "on time" ends. */
 function dmWidget(m) {
-  if (!m) return "";
+  if (!m || !m.arrived) return "";
   var w = dmWhere(m);
   var head = '<div class="dw-head">'
     + '<div class="dw-title">Your day</div>'
@@ -3947,7 +5483,7 @@ function dmWidget(m) {
 
   var facts = '<div class="dw-facts">'
     + dmFact("In", m.arrived || "--:--",
-             m.arrived ? (m.red && m.red.late ? "late" : "on time") : "not yet")
+             m.red && m.red.late ? "late" : "on time")
     + (w && w.worked !== null
         ? dmFact("Worked", dmSpan(w.worked),
                  w.percent === null ? "" : w.percent.toFixed(1) + "% of your shift")
@@ -4020,11 +5556,8 @@ function dmLadder(m, w) {
       + "</div>";
   }).join("");
 
-  var note = (w && w.notArrived)
-    ? '<div class="dw-note">Measured from your shift start until you clock in.</div>'
-    : "";
   return '<div class="dw-ladder">'
-    + '<div class="dw-sec">Leave after&hellip;</div>' + note + rows
+    + '<div class="dw-sec">Leave after&hellip;</div>' + rows
     + '<button type="button" class="dw-more" onclick="dmToggleLadder()">'
     + (dmLadderOpen ? "Show less" : "Show all " + steps.length) + "</button>"
     + "</div>";
@@ -4207,7 +5740,7 @@ function ciSend(action, pos) {
       renderTimeline(d.todays_checkins || []);
       paintDayMarks(d.marks);
     }, function() { btn.disabled = false; });
-  }, function(err) {
+  }, function(err) { if (mayHaveGone(err)) { sayMayHaveGone(err, btn); return; }
     btn.disabled = false;
     toast((err && err.message) || "Failed to " + (action === "IN" ? "check in" : "check out") + ". Please try again.", "err");
   });
@@ -4263,8 +5796,11 @@ function _renderHolYear() {
 
   if (lbl) lbl.textContent = _holYear + " Holidays";
 
+  /* Slice 070 (H5, AC-57): only holidays still to come; today counts. */
+  var today = localToday();
   var yearHols = _holAll.filter(function(h) {
-    return new Date(h.holiday_date + "T00:00:00").getFullYear() === _holYear;
+    return new Date(h.holiday_date + "T00:00:00").getFullYear() === _holYear
+      && String(h.holiday_date).slice(0, 10) >= today;
   });
   if (!yearHols.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No holidays this year.</div></div>';
@@ -4305,13 +5841,21 @@ function _renderHolMonth() {
   if (prev) prev.style.opacity = (_holYear === firstHolDate.getFullYear() && _holMonth <= firstHolDate.getMonth()) ? "0.3" : "1";
   if (next) next.style.opacity = _holMonth >= 11 ? "0.3" : "1";
 
+  /* Slice 070 (H5, AC-57): only holidays still to come; today counts. */
+  var today = localToday();
   var filtered = _holAll.filter(function(h) {
     var d = new Date(h.holiday_date + "T00:00:00");
-    return d.getFullYear() === _holYear && d.getMonth() === _holMonth;
+    return d.getFullYear() === _holYear && d.getMonth() === _holMonth
+      && String(h.holiday_date).slice(0, 10) >= today;
   });
 
   if (!filtered.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No public holidays in ' + MONTHS[_holMonth] + '.</div></div>';
+    var now = new Date();
+    var passed = _holYear < now.getFullYear()
+      || (_holYear === now.getFullYear() && _holMonth <= now.getMonth());
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
+      + esc(passed ? drT("No more holidays in {0}.", [MONTHS[_holMonth]])
+                   : drT("No public holidays in {0}.", [MONTHS[_holMonth]])) + '</div></div>';
     return;
   }
   el.innerHTML = filtered.map(function(h) {
@@ -4339,7 +5883,7 @@ function loadAttendance() {
 
 /* ── Late-coming rule (build B1) ─────────────────────────────────── */
 function _lateViolationText(v) {
-  return v.attendance_date.slice(5) + " " + v.violation_type + " " + v.actual_time + (v.counted === 0 ? " (free)" : "");
+  return lpShort(v.attendance_date) + " " + v.violation_type + " " + v.actual_time + (v.counted === 0 ? " (free)" : "");
 }
 function loadMyLateDeductions() {
   api("get_my_attendance_deductions", {months: 3}, function(d) {
@@ -4359,13 +5903,13 @@ function loadMyLateDeductions() {
       " · first " + r.free_violations_per_week + " free · " + r.deduction_per_violation_days + " day each · " + r.round_up_from_days + " day becomes " + r.round_up_to_days;
     const tw = d.this_week || {violations: []};
     document.getElementById("late-this-week").innerHTML = tw.violations.length
-      ? "<b>This week (from " + tw.week_start + "):</b> " + tw.violations.map(_lateViolationText).join(", ") +
+      ? "<b>This week (from " + fmtDate(tw.week_start) + "):</b> " + tw.violations.map(_lateViolationText).join(", ") +
         " → " + tw.counted + " counted, " + tw.projected_days + " day projected"
       : "<b>This week:</b> no violations so far";
     }
     const tb = document.getElementById("late-tbody");
     tb.innerHTML = d.rows.length ? d.rows.map(function(x) {
-      return "<tr><td>" + x.week_start + "</td><td>" + x.total_violations + "</td><td>" + x.counted_violations + "</td><td><b>" + x.deduction_days + "</b></td><td>" +
+      return "<tr><td>" + fmtDate(x.week_start) + "</td><td>" + x.total_violations + "</td><td>" + x.counted_violations + "</td><td><b>" + x.deduction_days + "</b></td><td>" +
         x.leave_days + "</td><td>" + (x.lwp_days ? x.lwp_days + " (₹" + Math.round(x.lwp_amount) + ")" : "0") + "</td><td style=\"font-size:var(--fs-xs);color:var(--text3)\">" + frappe.utils.escape_html(x.explanation || "") + "</td></tr>";
     }).join("") : "<tr><td colspan=\"7\" style=\"text-align:center;color:var(--text3)\">No deductions in the last 3 months</td></tr>";
   }, function() {});
@@ -4375,14 +5919,14 @@ function loadTeamLateList() {
     const card = document.getElementById("team-late-card");
     if (!d || !d.enabled) { card.style.display = "none"; return; }
     card.style.display = "";
-    document.getElementById("team-late-week").textContent = "week of " + d.week_start;
+    document.getElementById("team-late-week").textContent = "week of " + fmtDate(d.week_start);
     document.getElementById("team-late-tbody").innerHTML = d.team.map(function(m) {
       const warn = m.projected_days > 0 ? " style=\"color:var(--red);font-weight:700\"" : "";
       return "<tr><td>" + frappe.utils.escape_html(m.employee_name) + "<div style=\"font-size:var(--fs-xs);color:var(--text3)\">" + frappe.utils.escape_html(m.designation || "") + "</div></td><td>" + m.violations + "</td><td>" + m.counted + "</td><td" + warn + ">" + m.projected_days + "</td><td style=\"font-size:var(--fs-xs);color:var(--text3)\">" + m.detail.join(", ") + "</td></tr>";
     }).join("");
     const rec = d.recent || [];
     document.getElementById("team-late-recent").innerHTML = rec.length
-      ? "<b>Last 4 weeks:</b> " + rec.map(function(x) { return frappe.utils.escape_html(x.employee_name) + " " + x.week_start + " → " + x.deduction_days + " day" + (x.lwp_days ? " (" + x.lwp_days + " loss of pay)" : ""); }).join(" · ")
+      ? "<b>Last 4 weeks:</b> " + rec.map(function(x) { return frappe.utils.escape_html(x.employee_name) + " " + fmtDate(x.week_start) + " → " + x.deduction_days + " day" + (x.lwp_days ? " (" + x.lwp_days + " loss of pay)" : ""); }).join(" · ")
       : "<b>Last 4 weeks:</b> no deductions in your team";
   }, function() {});
 }
@@ -4392,21 +5936,48 @@ function loadTeamLateList() {
 var _leaveSummaryCache = null;
 function loadLeaves() {
   _leaveSummaryCache = null;
+  if (LP.dtc) lpRenderCard(null);   /* slice 063: the skeleton, once we know */
   api("get_leave_summary", {}, function(data) {
     _leaveSummaryCache = data;
-    renderLeaveRings(data.balances || []);
-    renderLeaveApps(data.applications || []);
+    LP.dtc = lpIsDtc(data);
+    if (LP.dtc) {
+      lpRenderCard(data.paid_leaves || {error: 1});
+      lpRenderApps(data.applications || []);
+    } else {
+      renderLeaveRings(data.balances || []);
+      renderLeaveApps(data.applications || []);
+    }
 
     // Update sidebar badge
     const pending = (data.applications || []).filter(a => a.status === "Open").length;
     const badge = document.getElementById("sb-leave-badge");
     if (pending > 0) { badge.textContent = pending; badge.style.display = "flex"; }
     else { badge.style.display = "none"; }
-  }, function() { toast("Failed to load leave data", "err"); });
+  }, function(e) {
+    /* Slice 070: one box at the top says why; the list under it stops
+       saying "Loading...". */
+    var tb = document.getElementById("leave-apps-tbody"), cards = document.getElementById("leave-apps-cards");
+    if (tb) tb.innerHTML = "";
+    if (cards) cards.innerHTML = "";
+    if (LP.dtc) { lpRenderCard({error: 1}); return; }
+    failBox("leave-rings", e, loadLeaves);
+  });
 }
 
-function _populateLeaveTypeSelect(balances, everAllocated) {
+function _populateLeaveTypeSelect(balances, everAllocated, typesOffered) {
   var sel = document.getElementById("la-leave-type");
+  /* Slice 063: where the company's pay rule set is on, the list is the
+     server's own (Paid Leaves and Leave Without Pay, worded per the design). */
+  if (LP.dtc) { lpPopulateTypes(typesOffered || []); return; }
+  /* D5: every other tenant also gets Leave Without Pay, approved as usual. */
+  var lwpRow = (typesOffered || []).filter(function(t) { return t.lwp; })[0];
+  var hasLwp = lwpRow && (balances || []).some(function(b) { return b.leave_type === lwpRow.leave_type; });
+  var lwpOpt = (lwpRow && !hasLwp)
+    ? '<option value="' + gpEsc(lwpRow.leave_type) + '">' + gpEsc(lwpRow.leave_type) + '</option>' : "";
+  if ((!balances || !balances.length) && lwpOpt) {
+    sel.innerHTML = '<option value="">Select leave type…</option>' + lwpOpt;
+    return;
+  }
   if (!balances || !balances.length) {
     // Two different problems needing two different fixes. Saying "for this
     // period" to someone with NO allocation at all points them at dates, which
@@ -4421,7 +5992,7 @@ function _populateLeaveTypeSelect(balances, everAllocated) {
     balances.map(function(b) {
       return '<option value="' + gpEsc(b.leave_type) + '">' +
              gpEsc(b.leave_type) + ' (' + b.balance + ' day' + (b.balance === 1 ? '' : 's') + ' left)</option>';
-    }).join("");
+    }).join("") + lwpOpt;
 }
 
 var _laEmployeeCache = null;
@@ -4455,23 +6026,45 @@ function openLeaveModal() {
                      window._me.department || "");
   }
 
-  if (_leaveSummaryCache) {
-    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated);
-  } else {
-    api("get_leave_summary", {}, function(data) {
-      _leaveSummaryCache = data;
-      _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
-    }, function() {
-      sel.innerHTML = '<option value="">Could not load leave types</option>';
-    });
-  }
+  lsReset();
+  refreshDateWords();
+  laLoadTypes();
+  lpModalWords();
 
   pfOpenModal("la-modal");
+  if (LP.dtc) { var t = document.getElementById("la-title"); if (t) t.focus(); }
+}
+
+/* The leave-type list for the pop-up. Slice 070 (AC-23): when it cannot load,
+   the box under it says so, and Try again reloads only this list. */
+function laLoadTypes() {
+  var sel = document.getElementById("la-leave-type");
+  var old = sel.parentNode.querySelector(".fail");
+  if (old) old.parentNode.removeChild(old);
+  if (_leaveSummaryCache) {
+    LP.dtc = lpIsDtc(_leaveSummaryCache);
+    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated,
+                             _leaveSummaryCache.types_offered);
+    return;
+  }
+  sel.innerHTML = '<option value="">' + esc(drT("Loading…")) + '</option>';
+  api("get_leave_summary", {}, function(data) {
+    _leaveSummaryCache = data;
+    LP.dtc = lpIsDtc(data);
+    lpModalWords();
+    var f = sel.parentNode.querySelector(".fail");
+    if (f) f.parentNode.removeChild(f);
+    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated, data.types_offered);
+  }, function(e) {
+    sel.innerHTML = '<option value="">' + esc(drT("Could not load leave types")) + '</option>';
+    failBox(sel, e, laLoadTypes, null, "We could not load the leave types.");
+  });
 }
 
 var _laEmpSearchTimer = null;
 function laSearchEmployee(q) {
   document.getElementById("la-behalf-employee").value = "";
+  LP.subject = null;   /* 070 security M1: a new search drops the earlier pick */
   document.getElementById("la-behalf-selected").style.display = "none";
   var dd = document.getElementById("la-behalf-dropdown");
   clearTimeout(_laEmpSearchTimer);
@@ -4499,6 +6092,8 @@ function _laFilterEmployees(q) {
   if (!matches.length) { dd.innerHTML = '<div style="padding:10px 14px;font-size:var(--fs-base);color:var(--text3)">No employees found</div>'; dd.style.display = ""; return; }
   dd.innerHTML = matches.map(function(e) {
     var sub = [e.department, e.designation].filter(Boolean).map(esc).join(" &middot; ");
+    /* Slice 063 (AC-93): HR files for staff who cannot, so say who they are. */
+    if (e.no_login) sub = (sub ? sub + " &middot; " : "") + esc(drT("no login"));
     return '<div style="padding:8px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmousedown="laSelectEmployee(\'' + esc(e.name) + '\',\'' + esc(e.employee_name) + '\',\'' + esc(e.department||'') + '\')">' +
       '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">' +
         '<strong style="font-size:var(--fs-base)">' + esc(e.employee_name) + '</strong>' +
@@ -4520,17 +6115,28 @@ function laSelectEmployee(id, name, dept) {
   // Reload leave types for this employee
   var leaveTypeSel = document.getElementById("la-leave-type");
   leaveTypeSel.innerHTML = '<option value="">Loading…</option>';
-  api("get_leave_summary", {employee_id: id}, function(data) {
-    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
+  var isMe = !!(window._me && id === window._me.name);
+  LP.subject = isMe ? null : {name: id, label: name};
+  /* Slice 063: HR's own leave reads their own summary, so their own Paid
+     Leaves figures come with it (SEC-1 gives none for anyone else). */
+  var old = leaveTypeSel.parentNode.querySelector(".fail");
+  if (old) old.parentNode.removeChild(old);
+  api("get_leave_summary", isMe ? {} : {employee_id: id}, function(data) {
+    var f = leaveTypeSel.parentNode.querySelector(".fail");
+    if (f) f.parentNode.removeChild(f);
+    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated, data.types_offered);
     laPreview();          // balance differs per employee
-  }, function() {
-    leaveTypeSel.innerHTML = '<option value="">Could not load leave types</option>';
+  }, function(e) {
+    leaveTypeSel.innerHTML = '<option value="">' + esc(drT("Could not load leave types")) + '</option>';
+    failBox(leaveTypeSel, e, function () { laSelectEmployee(id, name, dept); }, null,
+            "We could not load the leave types.");
   });
 }
 
 function laToggleHalfDay() {
   var hd = document.getElementById("la-half-day").checked;
   document.getElementById("la-to-date-row").style.display = hd ? "none" : "";
+  if (LP.dtc) document.getElementById("la-lbl-from").textContent = hd ? drT("Date") : drT("From");
   if (hd) {
     var fd = document.getElementById("la-from-date").value;
     document.getElementById("la-to-date").value = fd;
@@ -4547,6 +6153,7 @@ var _laPreviewTimer = null;
 var _laBlocked = false;
 
 function laPreview() {
+  if (LP.dtc) return lpPreview();   /* slice 063 */
   var box = document.getElementById("la-preview");
   var btn = document.getElementById("la-submit-btn");
   var lt  = document.getElementById("la-leave-type").value;
@@ -4623,6 +6230,7 @@ function _laBlock(on) {
 
 
 function submitLeaveApp() {
+  if (LP.dtc) return lpSubmit();    /* slice 063 */
   pfClearErr("la-error");
   var lt  = document.getElementById("la-leave-type").value;
   var fd  = document.getElementById("la-from-date").value;
@@ -4640,12 +6248,8 @@ function submitLeaveApp() {
     return;
   }
 
-  var btn = document.getElementById("la-submit-btn");
-  btn.disabled = true;
-  btn.textContent = "Submitting…";
-
   var onBehalf = (document.getElementById("la-behalf-employee") || {}).value || null;
-  api("apply_leave", {
+  lsSend({
     leave_type: lt,
     from_date: fd,
     to_date: td,
@@ -4654,15 +6258,97 @@ function submitLeaveApp() {
     reason: rsn || null,
     on_behalf_of: onBehalf || undefined,
   }, function() {
+    document.getElementById("la-submit-btn").textContent = drT("Submit Application");
+  }, function() {
     pfCloseModal("la-modal");
-    toast("Leave application submitted.", "ok");
+    toast(drT("Leave application submitted."), "ok");
     loadLeaves();
-  }, function(r) {
-    var msg = "Failed to submit leave application.";
-    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch(e) {}
-    pfShowErr("la-error", msg);
+  });
+}
+
+/* ── Slice 070 (ALV-217): sending a leave request, for both leave forms ──
+   States: 02 §6. After a send that may have reached the office, Try again
+   first reads the person's own list and resends only if no Open/Approved
+   leave with the same type and dates is there (SEC-1, SEC-3). `half_day` is
+   not compared: most tenants never get it back from that read, and Frappe
+   HR's overlap check refuses a second record anyway. */
+var LS = {gen: 0, busy: false, maybeSent: false, fails: 0, done: false, inFlight: false};
+function lsReset() {
+  LS.gen++;
+  LS.busy = false; LS.maybeSent = false; LS.fails = 0; LS.done = false; LS.inFlight = false;
+  lsSay(null);
+}
+function lsSay(head, line) { sendSay("la-send-fail", head, line); }
+function lsSend(args, restore, onSuccess) {
+  if (LS.busy || LS.done) return;
+  var gen = LS.gen, btn = document.getElementById("la-submit-btn");
+  /* The check reads the person this request is FOR - the same id sent as
+     on_behalf_of, never a pick the HR user has since moved away from. */
+  var who = args.on_behalf_of || null;
+  pfClearErr("la-error");
+  function live() { return gen === LS.gen && !LS.done; }
+  function busy(words) { LS.busy = true; btn.disabled = true; btn.textContent = drT(words); }
+  function succeed() {
+    if (!live()) return;
+    LS.done = true; LS.busy = false;
+    lsSay(null);
+    onSuccess();
+  }
+  function failed(e) {
+    if (!live()) return;
+    LS.busy = false;
     btn.disabled = false;
-    btn.textContent = "Submit Application";
+    if (e.kind === "refused") {
+      LS.maybeSent = false; LS.fails = 0;
+      lsSay(null);
+      restore();
+      pfShowErr("la-error", e.message);
+      return;
+    }
+    var again = LS.fails++ > 0;
+    if (e.kind === "offline" && LS.maybeSent) {
+      lsSay("Still no signal.", "Your details are still here. Tap Try again when you have signal. We check first, so it is never sent twice.");
+    } else if (e.kind === "offline") {
+      lsSay(again ? "Still no signal. Nothing was sent." : "We could not reach the office. Nothing was sent.",
+            "Your details are still here. When you have signal, tap Try again.");
+    } else {
+      LS.maybeSent = true;
+      lsSay(again ? "Still no answer from the office." : "No answer from the office. It may have gone through.",
+            "Tap Try again. We check first, so it is never sent twice.");
+    }
+    btn.textContent = drT("Try again");
+    btn.focus();
+  }
+  /* Review M1: a request that timed out is still running on the server, and
+     the check cannot see a save that has not committed yet. So while it is
+     in flight, Try again only checks; it sends again only once that request
+     has failed. */
+  function send() {
+    busy("Sending…");
+    gpFetch("alvoraa_portal.hr_api.apply_leave", args, {lostAnswerHandled: true}).then(succeed, function (e) {
+      if (e.late) {
+        LS.inFlight = true;
+        e.late.then(function () { if (gen === LS.gen) LS.inFlight = false; succeed(); },
+                    function () { if (gen === LS.gen) LS.inFlight = false; });
+      }
+      failed(e);
+    });
+  }
+  if (!LS.maybeSent) { send(); return; }
+  busy("Checking…");
+  gpFetch("alvoraa_portal.hr_api.get_leave_summary", who ? {employee_id: who} : {}).then(function (d) {
+    if (!live()) return;
+    var hit = ((d && d.applications) || []).some(function (a) {
+      return a.leave_type === args.leave_type
+        && String(a.from_date).slice(0, 10) === args.from_date
+        && String(a.to_date).slice(0, 10) === args.to_date
+        && (a.status === "Open" || a.status === "Approved");
+    });
+    if (hit) succeed();
+    else if (LS.inFlight) failed({kind: "timeout"});
+    else send();
+  }, function (e) {
+    failed(e.kind === "offline" ? e : {kind: "timeout"});
   });
 }
 
@@ -4687,13 +6373,525 @@ function renderLeaveRings(balances) {
 
 function renderLeaveApps(apps) {
   const tb = document.getElementById("leave-apps-tbody");
+  const cards = document.getElementById("leave-apps-cards");   /* ALV-213: shown under 640 px */
   if (!apps.length) {
     tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">No leave applications found.</td></tr>';
+    if (cards) cards.innerHTML = '<p class="empty-state-text" style="padding:24px 16px;margin:0;text-align:center">No leave applications found.</p>';
     return;
   }
   tb.innerHTML = apps.map(function(a) {
     return '<tr><td>' + esc(a.leave_type) + '</td><td class="num">' + fmtDate(a.from_date) + '</td><td class="num">' + fmtDate(a.to_date) + '</td><td class="num">' + a.total_leave_days + '</td><td>' + leaveStatusBadge(a.status, a.docstatus) + '</td></tr>';
   }).join("");
+  if (cards) cards.innerHTML = apps.map(function(a) {
+    var from = String(a.from_date).slice(0, 10), to = String(a.to_date || a.from_date).slice(0, 10);
+    var dates = from === to ? fmtDate(from)
+      : (from.slice(0, 4) === to.slice(0, 4)
+          ? fmtDate(from).replace(/ \d{4}$/, "")      /* slice 070 (D4): "6 Nov – 7 Nov 2026" */
+          : fmtDate(from)) + " – " + fmtDate(to);
+    return '<div class="lv-card"><div class="lv-top"><span class="lv-type">' + esc(a.leave_type) + '</span>' +
+      leaveStatusBadge(a.status, a.docstatus) + '</div><div class="lv-meta">' + dates + ' · ' + esc(lpDays(a.total_leave_days)) + '</div></div>';
+  }).join("");
+}
+
+/* ── Slice 063: the Leave page where the company's pay rule set is on ──────
+   Own block, prefix lp. Drawn only when the server says so (the card or the
+   DTC fields in the Apply list); every other tenant keeps the rings and the
+   old table above. The server decides every figure, every refusal and who is
+   told - this file words what it is sent (prototype v3 is the contract). */
+var LP = {dtc: false, subject: null, preview: null, orig: null};
+
+function lpIsDtc(d) {
+  return !!d && (d.paid_leaves !== undefined || (d.types_offered || []).some(function(t) {
+    return t.paid_leaves || t.lwp_limit !== undefined;
+  }));
+}
+function lpNum(n) { n = parseFloat(n || 0); return String(Math.round(n * 100) / 100); }
+function lpDays(n) { return n == 1 ? drT("{0} day", [lpNum(n)]) : drT("{0} days", [lpNum(n)]); }
+/* Slice 070: built from the ISO parts like fmtDate, so September is never
+   "Sept" and the day never moves with the browser's time zone. */
+function lpShort(iso) {
+  return fmtDate(iso).replace(/ \d{4}$/, "");
+}
+function lpDay(iso) {
+  var p = isoParts(iso);
+  if (!p) return "";
+  return drT(DAY_NAMES[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()].slice(0, 3)) + " " + lpShort(iso);
+}
+function lpRange(a, b) { return (!b || String(a) === String(b)) ? lpDay(a) : drT("{0} to {1}", [lpDay(a), lpDay(b)]); }
+function lpMonthOf(iso) {
+  return new Date(String(iso).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", {month: "long"});
+}
+function lpLine(kind, html, role) {
+  var ic = kind === "ok" ? "<i class=ic-check></i>" : (kind === "info" ? "i" : "!");
+  return '<div class="lp-line ' + kind + '"' + (role ? ' role="' + role + '"' : "") +
+    '><span class="ic" aria-hidden="true">' + ic + "</span><span>" + html + "</span></div>";
+}
+function lpFig(cls, label, v, note) {
+  return '<div class="lp-fig ' + cls + '"><div class="l">' + gpEsc(label) + '</div><div class="v">' + lpNum(v) +
+    " <small>" + gpEsc(parseFloat(v) === 1 ? drT("day") : drT("days")) + '</small></div><div class="n">' + gpEsc(note) + "</div></div>";
+}
+/* "you" only when it is true: HR applying for someone reads the person's name. */
+function lpY() {
+  if (!LP.subject) return {sub: drT("you"), Sub: drT("You"), pos: drT("your"), Pos: drT("Your"), have: drT("you have"), are: drT("you are"), need: drT("need")};
+  var f = String(LP.subject.label || "").split(" ")[0];
+  return {sub: f, Sub: f, pos: drT("{0}'s", [f]), Pos: drT("{0}'s", [f]), have: drT("{0} has", [f]), are: drT("{0} is", [f]), need: drT("needs")};
+}
+
+/* ── the card ── */
+function lpRenderCard(pl) {
+  var title = document.getElementById("lv-bal-title"), body = document.getElementById("leave-rings");
+  var sub = document.getElementById("att-sub");
+  if (!body || !title) return;
+  if (sub) sub.textContent = drT("Your Paid Leaves this month and your leave requests");
+  body.className = "";
+  var month = (pl && pl.month) || new Date().toLocaleDateString("en-GB", {month: "long"});
+  title.textContent = drT("Paid Leaves - {0}", [month]);
+  var card = document.getElementById("lv-bal-card");
+  if (!pl) {
+    if (card) card.setAttribute("aria-busy", "true");
+    body.innerHTML = '<div class="lp-skel" style="width:40%"></div><div class="lp-skel" style="height:64px"></div>' +
+      '<div class="lp-skel" style="width:80%"></div><span class="lp-muted">' + gpEsc(drT("Getting your Paid Leaves...")) + "</span>";
+    return;
+  }
+  if (card) card.removeAttribute("aria-busy");
+  if (pl.error) {
+    body.innerHTML = lpLine("warn", gpEsc(drT("Your Paid Leaves figures could not be shown just now. Your leave requests below are not affected, and you can still apply.")), "alert") +
+      '<div class="lp-acts"><button class="btn btn-outline" type="button" onclick="loadLeaves()">' + gpEsc(drT("Try again")) + "</button></div>";
+    return;
+  }
+  var lwpLine = '<p class="lp-muted" style="margin:0">' + gpEsc(drT("You can still ask for Leave Without Pay, up to {0} days a month. HR approves it. You have {1} of {0} days waiting or approved in {2}.",
+    [pl.lwp_limit, lpNum(pl.lwp_in_play), month])) + "</p>";
+  if (!pl.earns) {
+    var first = pl.category ? drT("{0} staff do not get monthly Paid Leaves.", [pl.category])
+      : pl["class"] ? drT("Your leave class ({0}) does not get monthly Paid Leaves.", [pl["class"]])
+      : drT("No leave class is set for you, so you do not get monthly Paid Leaves. Ask HR if this is wrong.");
+    body.innerHTML = '<p style="margin:0 0 8px;font-size:var(--fs-md)">' + gpEsc(first) + "</p>" + lwpLine;
+    return;
+  }
+  var under = pl.attended_so_far !== undefined, gate = pl.gate || 15;
+  var usedNote = (pl.used_dates || []).map(function(u) { return lpShort(u.date) + (u.half ? drT(" (half)") : ""); }).join(", ");
+  var html = '<p class="lp-cls">' + gpEsc(drT("Class {0} · {1} of Paid Leaves for {2}", [pl["class"], lpDays(pl.credited), month])) + "</p>";
+  html += '<div class="lp-figs">' +
+    lpFig("", drT("Paid Leaves this month"), pl.credited, drT("given on 1 {0}", [month.slice(0, 3)])) +
+    lpFig("", drT("Used"), pl.used, pl.used ? usedNote : drT("none yet")) +
+    lpFig("wait", drT("Waiting for approval"), pl.waiting, pl.waiting ? drT("set aside for now") : drT("none")) +
+    lpFig("out", drT("To be paid out"), pl.to_be_paid_out, under ? drT("once you reach {0} days", [gate]) : drT("with {0} salary", [month])) + "</div>";
+  if (under) {
+    html += lpLine("info", gpEsc(pl.attended_up_to
+      ? drT("These count once you have attended {0} days in {1}. You have attended {2} so far (up to {3}).", [gate, month, lpNum(pl.attended_so_far), lpShort(pl.attended_up_to)])
+      : drT("These count once you have attended {0} days in {1}. You have attended {2} so far.", [gate, month, lpNum(pl.attended_so_far)])));
+  }
+  if (pl.waiting) {
+    html += lpLine("info", gpEsc(drT("{0} is set aside for your {1} request until {2} approves or declines it. If it is declined or you cancel it, the day comes back.",
+      [lpDays(pl.waiting), lpShort(pl.waiting_from), pl.approver || drT("your approver")])));
+  }
+  html += '<p class="lp-muted" style="margin:10px 0 0">' + gpEsc(drT("Paid with your {0} salary. Nothing carries over.", [month])) + "</p>";
+  html += '<div class="lp-rule"><b>' + gpEsc(drT("How Paid Leaves work - class {0}", [pl["class"]])) + "</b><br>" +
+    gpEsc(drT("{0} of Paid Leaves on the 1st of every month. They count once you have attended {1} days that month; approved Paid Leaves days count toward the {1}. Days you do not use are paid with that month's salary. Nothing carries over.",
+      [lpDays(pl.credited), gate])) + "</div>";
+  body.innerHTML = html;
+}
+
+/* ── the list ── */
+function lpBadge(a) {
+  var who = a.approver_label || drT("your approver");
+  if (a.status === "Open" && a.docstatus === 0) return '<span class="badge badge-amber">' + gpEsc(drT("Waiting for {0}", [who])) + "</span>";
+  if (a.status === "Approved") return '<span class="badge badge-green">' + gpEsc(drT("Approved by {0}", [who])) + "</span>";
+  if (a.status === "Cancelled") return '<span class="badge badge-gray">' + gpEsc(drT("Cancelled")) + "</span>";
+  return '<span class="badge badge-red">' + gpEsc(drT("Declined")) + "</span>";
+}
+function lpExtra(a) {
+  var h = "", today = new Date().toISOString().slice(0, 10);
+  var approved = a.status === "Approved" && a.docstatus === 1;
+  if (approved && a.has_manager === false) h += '<div class="lp-told">' + gpEsc(drT("No manager is set above you, so only HR knows.")) + "</div>";
+  else if (approved && a.told_count) {
+    h += '<div class="lp-told">' + gpEsc(a.told_count === 1
+      ? drT("Your managers up to {0} have been told (1 person).", [a.told_top_name])
+      : drT("Your managers up to {0} have been told ({1} people).", [a.told_top_name, a.told_count])) + "</div>";
+  }
+  if (approved && a.missing_punch) {
+    var d = a.half_day_date || a.from_date;
+    h += lpLine("warn", "<b>" + gpEsc(drT("Your {0} for the other half of {1} is missing.", [drT(a.missing_punch), lpDay(d)])) + "</b> " +
+      gpEsc(a.special_day
+        ? drT("Until HR approves a correction, that half counts as absent and, as it is a special day, is charged double. Ask for the correction on Attendance and HR will approve it.")
+        : drT("Until HR approves a correction, that half counts as absent. Ask for the correction on Attendance and HR will approve it.")) +
+      '<br><button type="button" class="lp-link" onclick="lpAskCorrect(\'' + gpEsc(String(d).slice(0, 10)) + '\')">' +
+      gpEsc(drT("Ask HR to correct {0}", [lpShort(d)])) + "</button>");
+  }
+  if (a.can_cancel) {
+    h += '<div class="lp-acts"><button type="button" class="btn btn-outline btn-sm" onclick="lpAskCancel(\'' + gpEsc(a.name) + '\')">' +
+      gpEsc(a.status === "Open" ? drT("Cancel request") : drT("Cancel this leave")) + "</button></div>";
+  } else if (approved && String(a.from_date).slice(0, 10) <= today) {
+    h += '<div class="lp-told">' + gpEsc(drT("This day has started or passed. To change it, speak to HR.")) + "</div>";
+  }
+  return h;
+}
+function lpRenderApps(apps) {
+  LP.apps = apps;
+  var wrap = document.getElementById("lv-apps-wrap");
+  if (!wrap) return;
+  if (!apps.length) {
+    wrap.innerHTML = '<p class="lp-muted" style="padding:16px;margin:0">' + gpEsc(drT("No leave asked for yet. Use Apply Leave above.")) + "</p>";
+    return;
+  }
+  var label = function(a) { return gpEsc(a.leave_type) + (a.half_day ? gpEsc(drT(" (half day)")) : ""); };
+  var table = '<div class="lp-table"><table><thead><tr><th>' + gpEsc(drT("Type")) + "</th><th>" + gpEsc(drT("Dates")) + "</th><th>" +
+    gpEsc(drT("Days")) + "</th><th>" + gpEsc(drT("Status")) + "</th></tr></thead><tbody>" +
+    apps.map(function(a) {
+      return "<tr><td>" + label(a) + "</td><td>" + gpEsc(lpRange(a.from_date, a.to_date)) + '</td><td class="num">' + lpNum(a.total_leave_days) +
+        "</td><td>" + lpBadge(a) + lpExtra(a) + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+  var list = '<div class="lp-list">' + apps.map(function(a) {
+    return '<div class="it"><div class="t">' + label(a) + " · " + gpEsc(lpDays(a.total_leave_days)) + "</div><div>" +
+      gpEsc(lpRange(a.from_date, a.to_date)) + '</div><div style="margin-top:4px">' + lpBadge(a) + "</div>" + lpExtra(a) + "</div>";
+  }).join("") + "</div>";
+  wrap.innerHTML = table + list;
+}
+
+/* "Ask HR to correct" opens the Attendance page's own correction at that day. */
+window.lpAskCorrect = function(date) {
+  acState.team = false;
+  acState.employee = null;
+  acState.year = parseInt(date.slice(0, 4), 10);
+  acState.month = parseInt(date.slice(5, 7), 10);
+  acState.open = date;
+  switchPanel("att-record");
+};
+
+/* ── cancelling ── */
+function lpDialog(title, body, foot) {
+  var old = document.getElementById("lp-dlg");
+  if (old) old.remove();
+  var bd = document.createElement("div");
+  bd.className = "gp-backdrop open";
+  bd.id = "lp-dlg";
+  bd.innerHTML = '<div class="gp-modal lp-modal" style="max-width:460px" role="alertdialog" aria-modal="true" aria-labelledby="lp-dlg-title">' +
+    '<div class="gp-modal-hdr"><div class="gp-modal-title" id="lp-dlg-title" tabindex="-1">' + gpEsc(title) + "</div>" +
+    '<button class="gp-modal-close" type="button" aria-label="' + gpEsc(drT("Close")) + '" onclick="lpCloseDialog()">&times;</button></div>' +
+    '<div class="gp-modal-body">' + body + '</div><div class="gp-modal-footer">' + foot + "</div></div>";
+  bd.addEventListener("keydown", function(e) { if (e.key === "Escape") lpCloseDialog(); });
+  document.body.appendChild(bd);
+  document.getElementById("lp-dlg-title").focus();
+}
+window.lpCloseDialog = function() { var d = document.getElementById("lp-dlg"); if (d) d.remove(); };
+window.lpAskCancel = function(name) {
+  var a = (LP.apps || []).filter(function(x) { return x.name === name; })[0];
+  if (!a) return;
+  var open = a.status === "Open", lwp = a.approver_label === "HR";
+  var who = a.approver_label || drT("your approver");
+  var month = lpMonthOf(a.from_date), n = a.total_leave_days;
+  var body = '<p style="margin:0 0 8px"><b>' + gpEsc(a.leave_type + " · " + lpRange(a.from_date, a.to_date) + " · " + lpDays(n)) + "</b></p>";
+  if (open) {
+    body += "<p>" + gpEsc(drT("{0} will no longer see this request.", [who])) + "</p><p>" + gpEsc(lwp
+      ? drT("{0} goes back on your {1}-day Leave Without Pay limit for {2}.", [lpDays(n), 5, month])
+      : drT("The {0} set aside comes back to your Paid Leaves.", [lpDays(n)])) + "</p>";
+  } else {
+    body += "<p>" + gpEsc(n > 1 ? drT("You will be expected at work on these days.") : drT("You will be expected at work on this day.")) + "</p>" +
+      "<p>" + gpEsc(a.first_manager
+        ? drT("HR is told it is cancelled. Your managers are not sent a message about it, so if {0} is expecting you to be away, tell them yourself.", [a.first_manager])
+        : drT("HR is told it is cancelled. Your managers are not sent a message about it.")) + "</p>" +
+      "<p>" + gpEsc(lwp ? (n > 1 ? drT("You are paid for these days if you work them.") : drT("You are paid for this day if you work it."))
+                        : drT("The day comes back to your Paid Leaves.")) + "</p>";
+  }
+  lpDialog(open ? drT("Cancel this request?") : drT("Cancel this approved leave?"), body,
+    '<button class="btn btn-outline" type="button" onclick="lpCloseDialog()">' + gpEsc(open ? drT("Keep the request") : drT("Keep the leave")) + "</button>" +
+    '<button class="btn btn-primary" type="button" id="lp-dlg-yes" onclick="lpDoCancel(\'' + gpEsc(name) + '\')">' + gpEsc(open ? drT("Cancel request") : drT("Cancel leave")) + "</button>");
+};
+window.lpDoCancel = function(name) {
+  var a = (LP.apps || []).filter(function(x) { return x.name === name; })[0] || {};
+  var btn = document.getElementById("lp-dlg-yes");
+  if (btn) btn.disabled = true;
+  api("cancel_leave", {leave_id: name}, function(r) {
+    var open = r.was === "Open", who = a.approver_label || drT("your approver");
+    lpDialog(drT("Cancelled"), '<div class="lp-result" role="status"><h3>' + gpEsc(open ? drT("Request cancelled") : drT("Leave cancelled")) + "</h3><p>" +
+      gpEsc(lpRange(a.from_date, a.to_date)) + "</p><p>" + gpEsc(open
+        ? (r.told_n ? drT("{0} has been told.", [who]) : drT("Nobody else had to be told."))
+        : (r.told_n ? drT("HR has been told. You are expected at work.") : drT("You are expected at work."))) + "</p></div>",
+      '<button class="btn btn-primary" type="button" onclick="lpCloseDialog()">' + gpEsc(drT("Done")) + "</button>");
+    loadLeaves();
+  }, function(r) { if (mayHaveGone(r)) { sayMayHaveGone(r); return; }
+    if (btn) btn.disabled = false;
+    var msg = drT("Not cancelled: the connection dropped. Try again.");
+    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
+    var body = document.querySelector("#lp-dlg .gp-modal-body");
+    if (body) body.insertAdjacentHTML("afterbegin", lpLine("bad", gpEsc(msg), "alert"));
+  });
+};
+
+/* ── the Apply pop-up ── */
+function lpModalWords() {
+  var ids = {"la-title": null, "la-lbl-type": null, "la-lbl-from": null, "la-lbl-to": null, "la-lbl-reason": null,
+             "la-close-btn": null, "la-lbl-behalf": null};
+  if (!LP.orig) {
+    LP.orig = {};
+    Object.keys(ids).forEach(function(k) { var el = document.getElementById(k); if (el) LP.orig[k] = el.textContent; });
+  }
+  var dtc = LP.dtc;
+  /* 16px field text and 44px targets on a phone (R-75), in this mode only. */
+  var shell = document.querySelector("#la-modal .gp-modal");
+  if (shell) shell.classList.toggle("lp-modal", !!dtc);
+  var words = dtc ? {"la-title": drT("Apply for leave"), "la-lbl-type": drT("Leave type"), "la-lbl-from": drT("From"),
+                     "la-lbl-to": drT("To"), "la-lbl-reason": drT("Reason (optional)"), "la-close-btn": drT("Close"),
+                     "la-lbl-behalf": drT("Who is this leave for?")} : LP.orig;
+  Object.keys(words).forEach(function(k) { var el = document.getElementById(k); if (el && words[k] != null) el.textContent = words[k]; });
+  var rh = document.getElementById("la-reason-help"), bh = document.getElementById("la-behalf-help");
+  if (rh) { rh.style.display = dtc ? "" : "none"; rh.textContent = drT("Only the person who approves it and HR can read this. Managers are never sent it."); }
+  if (bh) { bh.style.display = dtc ? "" : "none"; bh.textContent = drT("For staff without a login. The types, figures and the 5-day limit follow the person you pick."); }
+  document.getElementById("la-type-help").style.display = "none";
+  document.getElementById("la-result").style.display = "none";
+  document.getElementById("la-form").style.display = "";
+  document.getElementById("la-close-btn").style.display = "";
+  var btn = document.getElementById("la-submit-btn");
+  btn.style.display = "";
+  btn.onclick = function() { submitLeaveApp(); };
+  if (dtc) {
+    btn.textContent = drT("Choose a leave type");
+    var first = new Date(); first.setDate(1);
+    var min = first.getFullYear() + "-" + String(first.getMonth() + 1).padStart(2, "0") + "-01";
+    document.getElementById("la-from-date").min = min;
+    document.getElementById("la-to-date").min = min;
+    LP.subject = null;
+    var me = window._me;
+    if (me && me.name && window._roles && window._roles.is_hr) {
+      document.getElementById("la-behalf-selected").textContent = drT("Myself ({0})", [me.employee_name || me.name]);
+    }
+  } else {
+    document.getElementById("la-from-date").removeAttribute("min");
+    document.getElementById("la-to-date").removeAttribute("min");
+  }
+}
+
+function lpPopulateTypes(types) {
+  LP.types = types;
+  var sel = document.getElementById("la-leave-type");
+  sel.innerHTML = '<option value="">' + gpEsc(drT("Choose...")) + "</option>" + types.map(function(t) {
+    var label = t.paid_leaves
+      ? (t.left !== undefined ? drT("{0} - {1} left", [t.leave_type, lpDays(t.left)]) : t.leave_type)
+      : (t.lwp_limit !== undefined ? drT("{0} - {1} of {2} used", [t.leave_type, lpNum(t.lwp_in_play), t.lwp_limit]) : t.leave_type);
+    return '<option value="' + gpEsc(t.leave_type) + '">' + gpEsc(label) + "</option>";
+  }).join("");
+  var help = document.getElementById("la-type-help");
+  var hasPaid = types.some(function(t) { return t.paid_leaves; });
+  help.style.display = hasPaid ? "none" : "";
+  help.textContent = LP.subject
+    ? drT("{0}'s work type does not get Paid Leaves, so only Leave Without Pay is offered.", [String(LP.subject.label).split(" ")[0]])
+    : drT("Your work type does not get Paid Leaves, so only Leave Without Pay is offered.");
+  lpPreview();
+}
+
+function lpTypeRow(lt) { return (LP.types || []).filter(function(t) { return t.leave_type === lt; })[0] || {}; }
+
+function lpSendWords(block, who) {
+  var btn = document.getElementById("la-submit-btn");
+  btn.style.display = block ? "none" : "";
+  btn.disabled = false;
+  var lt = document.getElementById("la-leave-type").value;
+  btn.textContent = !lt ? drT("Choose a leave type") : drT("Send to {0}", [who || drT("your approver")]);
+}
+
+function lpPreview() {
+  var box = document.getElementById("la-preview");
+  var lt = document.getElementById("la-leave-type").value;
+  var fd = document.getElementById("la-from-date").value;
+  var hd = document.getElementById("la-half-day").checked;
+  var td = hd ? fd : document.getElementById("la-to-date").value;
+  var row = lpTypeRow(lt), lwp = row.lwp_limit !== undefined;
+  LP.preview = null;
+  box.className = "";
+  box.style.cssText = "margin:2px 0 10px";
+  if (!lt || !fd || !td) { box.style.display = "none"; lpSendWords(false, lwp ? "HR" : null); return; }
+  if (td < fd) {
+    box.style.display = "";
+    box.innerHTML = lpLine("bad", gpEsc(drT("The end date is before the start date. Change one of them.")));
+    lpSendWords(true);
+    return;
+  }
+  clearTimeout(_laPreviewTimer);
+  _laPreviewTimer = setTimeout(function() {
+    api("preview_leave_request", {
+      leave_type: lt, from_date: fd, to_date: td, half_day: hd ? 1 : 0, half_day_date: hd ? fd : null,
+      on_behalf_of: LP.subject ? LP.subject.name : undefined,
+    }, function(r) {
+      LP.preview = r;
+      var v = lpVerdict(r, lt, fd, td, hd);
+      box.style.display = "";
+      box.innerHTML = lpLine(v.kind, v.html) + (v.switchable
+        ? '<button type="button" class="lp-link" onclick="lpSwitchToLwp()">' + gpEsc(drT("Ask for Leave Without Pay instead")) + "</button>" : "");
+      lpSendWords(v.block, v.who);
+    }, function() { box.style.display = "none"; lpSendWords(false); });
+  }, 300);
+}
+
+window.lpSwitchToLwp = function() {
+  var row = (LP.types || []).filter(function(t) { return t.lwp_limit !== undefined; })[0];
+  if (!row) return;
+  document.getElementById("la-leave-type").value = row.leave_type;
+  lpPreview();
+};
+
+function lpVerdict(r, lt, fd, td, hd) {
+  var y = lpY(), lwp = lpTypeRow(lt).lwp_limit !== undefined, n = parseFloat(r.days || 0);
+  var hr = r.hr_name ? drT("{0} (HR)", [r.hr_name]) : drT("HR");
+  var who = lwp ? "HR" : (r.approver_label || drT("your approver"));
+  var month = r.month, limit = r.lwp_limit || 5;
+  var block = function(html) { return {kind: "warn", block: true, html: html, who: who}; };
+  if (r.reason_code === "earlier_month") {
+    return block("<b>" + gpEsc(drT("Leave can only be asked for days in {0}.", [month])) + "</b> " +
+      gpEsc(drT("{0} is closed. If a {0} day needs changing, speak to {1}.", [r.prev_month, hr])));
+  }
+  if (r.reason_code === "no_approver") {
+    return block(gpEsc(drT("Your request could not be sent because nobody is set to approve your Paid Leaves. Ask HR to name someone, or ask for Leave Without Pay, which HR approves.")));
+  }
+  if (r.reason_code === "worked_day") return block(gpEsc(drT("{0} is already marked as a day you worked, so leave cannot be added for it.", [r.date])));
+  if (r.reason_code === "overlap") return block(gpEsc(drT("You already have leave on {0}. Change the dates.", [r.date])));
+  if (r.reason_code === "lwp_over") {
+    var used = r.lwp_in_play, left = r.lwp_left, wait = r.lwp_waiting || [];
+    var head = left <= 0
+      ? (LP.subject ? drT("{0} has used all {1} days of Leave Without Pay for {2}.", [y.Sub, limit, month])
+                    : drT("You have used all {0} days of Leave Without Pay for {1}.", [limit, month]))
+      : drT("Only {0} of Leave Without Pay left in {1}; these dates need {2}.", [lpDays(left), month, lpDays(n)]);
+    var next = wait.length
+      ? drT("A request that is still waiting counts too: {0}.", [wait.map(function(w) { return w.label + " (" + lpDays(w.days) + ")"; }).join(", ")]) + " " +
+        (LP.subject ? drT("If it is not approved yet, it can be cancelled to free its days, or approved by HR.")
+                    : drT("If it is not approved yet, you can cancel it from the list to free its days, or remind HR to approve it."))
+      : drT("All of them are approved. If {0} {1} more time off, speak to {2}.", [y.sub, y.need, hr]);
+    return block("<b>" + gpEsc(head) + "</b> " + gpEsc(drT("Up to {0} days a month, counting requests that are waiting or approved ({1} of {0} so far).", [limit, lpNum(used)])) + " " +
+      (left > 0 ? gpEsc(drT("Shorten the dates to {0}.", [lpDays(left)])) + " " : "") + gpEsc(next));
+  }
+  if (r.reason_code === "pl_short") {
+    var lwpRow = (LP.types || []).filter(function(t) { return t.lwp_limit !== undefined; })[0];
+    return {kind: "warn", block: true, who: who, switchable: !!(lwpRow && lwpRow.lwp_in_play < lwpRow.lwp_limit),
+      html: "<b>" + gpEsc(drT("{0} asked for, but {1} {2} of Paid Leaves left for {3}.", [lpDays(n), y.have, lpDays(r.pl_left), month])) + "</b> " +
+        gpEsc(drT("Days already used or waiting for approval are taken off the {0}. {1} can ask for Leave Without Pay instead ({2} of {3} used this month).",
+          [lpNum(r.credited), y.Sub, lpNum(r.lwp_in_play), limit]))};
+  }
+  var card = (!LP.subject && _leaveSummaryCache) ? (_leaveSummaryCache.paid_leaves || {}) : {};
+  var under = card.attended_so_far !== undefined, gate = card.gate || 15;
+  var earns = (LP.types || []).some(function(t) { return t.paid_leaves; });
+  var what = n === 0.5 ? drT("this half day") : (n === 1 ? drT("this day") : drT("these days"));
+  var html, lines = [];
+  if (lwp) {
+    html = "<b>" + gpEsc(drT("Asking for {0} of Leave Without Pay.", [lpDays(n)])) + "</b> " + gpEsc(
+      !earns ? drT("If approved, {0} not paid for {1}.", [y.are, what])
+      : under ? drT("If approved, {0} not paid for {1}; {2} Paid Leaves for {3} are still paid out once {4} reach {5} days.", [y.are, what, y.pos, month, y.sub, gate])
+      : drT("If approved, {0} not paid for {1}; {2} Paid Leaves for {3} are still paid out.", [y.are, what, y.pos, month]));
+    lines.push(gpEsc(drT("This will be {0} of {1} days of Leave Without Pay in {2}.", [lpNum(parseFloat(r.lwp_in_play || 0) + n), limit, month])));
+  } else {
+    html = "<b>" + gpEsc(drT("Asking for {0} of Paid Leaves.", [lpDays(n)])) + "</b> " + gpEsc(
+      (r.credited !== undefined
+        ? drT("Until {0} decides, {1} is set aside from {2} {3}.", [who, lpDays(n), y.pos, lpNum(r.credited)])
+        : drT("Until {0} decides, {1} is set aside from {2} Paid Leaves.", [who, lpDays(n), y.pos])) + " " +
+      (under ? drT("The leave is paid, and approved Paid Leaves days count toward {0} {1} days.", [y.pos, gate]) : drT("The leave is paid.")));
+  }
+  var special = r.special_day && (hd ? r.special_day.date === fd : true);
+  if (hd) {
+    html += "<br><b>" + gpEsc(drT("Half day:")) + "</b> " + gpEsc(
+      (lwp ? drT("it counts as 0.5 of the {0} days.", [limit]) : drT("it uses half a day of Paid Leaves.")) + " " +
+      drT("{0} must check in and check out for the other half; it is measured against half the shift. Arriving late or leaving early does not count against {1} that day, and there is no green mark on a half-day leave day.", [y.Sub, y.sub]) + " " +
+      (special ? drT("If a punch is missed, ask HR to approve an attendance correction; until then the other half counts as absent and, on this special day, is charged double.")
+               : drT("If a punch is missed, ask HR to approve an attendance correction; until then the other half counts as absent.")));
+  }
+  if (r.special_day) {
+    lines.push("<b>" + gpEsc(r.special_day.name
+      ? drT("{0} is a special day ({1}).", [r.special_day.label, r.special_day.name])
+      : drT("{0} is a special day.", [r.special_day.label])) + "</b> " +
+      gpEsc(drT("If this leave is approved, the day is not charged double. A day taken without approved leave is unpaid and charged double.")));
+  }
+  if (r.past_day) lines.push(gpEsc(drT("This includes a past day. Past days in {0} can be asked for until {1}.", [month, r.month_end])));
+  lines.push(gpEsc((lwp ? hr : who) + " " + drT("decides.") + " " + lpWillTell(r.chain_top)));
+  return {kind: (hd || r.special_day) ? "warn" : (lwp ? "info" : "ok"), block: false, who: who, html: html + "<br>" + lines.join("<br>")};
+}
+
+function lpWillTell(top) {
+  var y = lpY();
+  return top ? drT("Once it is approved, {0} managers up to {1} are told.", [y.pos, top])
+             : drT("Once it is approved, only HR knows; no manager is set above {0}.", [y.sub]);
+}
+
+function lpSubmit() {
+  pfClearErr("la-error");
+  var lt = document.getElementById("la-leave-type").value;
+  var fd = document.getElementById("la-from-date").value;
+  var hd = document.getElementById("la-half-day").checked;
+  var td = hd ? fd : document.getElementById("la-to-date").value;
+  var rsn = document.getElementById("la-reason").value.trim();
+  if (!lt) { pfShowErr("la-error", drT("Choose a leave type first.")); document.getElementById("la-leave-type").focus(); return; }
+  if (!fd) { pfShowErr("la-error", drT("Choose the date the leave starts.")); document.getElementById("la-from-date").focus(); return; }
+  var r = LP.preview || {};
+  lsSend({
+    leave_type: lt, from_date: fd, to_date: td || fd, half_day: hd ? 1 : 0, half_day_date: hd ? fd : null,
+    reason: rsn || null, on_behalf_of: LP.subject ? LP.subject.name : undefined,
+  }, function() {
+    lpSendWords(false, (lpTypeRow(lt).lwp_limit !== undefined) ? "HR" : r.approver_label);
+  }, function() {
+    lpShowResult(r, lt, fd, td || fd, hd);
+    loadLeaves();
+  });
+}
+
+function lpShowResult(r, lt, fd, td, hd) {
+  var y = lpY(), lwp = lpTypeRow(lt).lwp_limit !== undefined, n = parseFloat(r.days || (hd ? 0.5 : 1));
+  var who = lwp ? "HR" : (r.approver_label || drT("your approver"));
+  var decider = lwp ? (r.hr_name ? drT("{0} (HR)", [r.hr_name]) : drT("HR")) : who;
+  var what = n === 0.5 ? drT("this half day") : (n === 1 ? drT("this day") : drT("these days"));
+  var html = "<h3>" + gpEsc(drT("Sent to {0}", [who])) + "</h3>" +
+    "<p><b>" + gpEsc(lt + " · " + lpRange(fd, td) + " · " + lpDays(n) + (hd ? drT(" (half day)") : "")) + "</b>" +
+    (LP.subject ? " · " + gpEsc(LP.subject.label) : "") + "</p>" +
+    "<p>" + gpEsc(drT("{0} will approve or decline it.", [decider]) + " " + (LP.subject
+      ? drT("{0} will be told the answer.", [y.Sub]) : drT("You will see the answer here, under Leave Applications."))) + "</p>" +
+    "<p>" + gpEsc(lpWillTell(r.chain_top)) + "</p>" +
+    (lwp ? "<p>" + gpEsc(drT("If approved, {0} not paid for {1}.", [y.are, what]) + " " +
+             drT("{0} of {1} days of Leave Without Pay are now waiting or approved in {2}.", [lpNum(parseFloat(r.lwp_in_play || 0) + n), r.lwp_limit || 5, r.month])) + "</p>"
+         : "<p>" + gpEsc(drT("{0} is set aside from {1} Paid Leaves until {2} decides.", [lpDays(n), y.pos, who])) + "</p>") +
+    (hd ? "<p>" + gpEsc(drT("Check in and check out for the other half as usual.")) + "</p>" : "") +
+    '<p class="lp-muted">' + gpEsc(drT("Changed your mind? It can be cancelled from the list.")) + "</p>";
+  var res = document.getElementById("la-result");
+  res.innerHTML = html;
+  res.style.display = "";
+  document.getElementById("la-form").style.display = "none";
+  document.getElementById("la-title").textContent = drT("Sent");
+  document.getElementById("la-close-btn").style.display = "none";
+  var btn = document.getElementById("la-submit-btn");
+  btn.disabled = false;
+  btn.style.display = "";
+  btn.textContent = drT("Done");
+  btn.onclick = function() { pfCloseModal("la-modal"); };
+  document.getElementById("la-title").focus();
+}
+
+document.addEventListener("keydown", function(e) {
+  if (e.key !== "Escape" || !LP.dtc) return;
+  var m = document.getElementById("la-modal");
+  if (m && m.classList.contains("open")) pfCloseModal("la-modal");
+});
+
+/* Slice 063: the extra lines on an approval row at a company whose pay rule
+   set is on (R-54..R-57, R-61), and the sentence after Approve or Decline. */
+function lpApprLines(a) {
+  if (a.chain_top === undefined) return "";
+  var first = String(a.employee_name || "").split(" ")[0], h = "";
+  if (a.lwp_limit !== undefined) {
+    h += "<br>" + gpEsc(drT("{0} of {1} Leave Without Pay days in {2}, counting this one",
+      [lpNum(a.lwp_in_play), a.lwp_limit, lpMonthOf(a.from_date)]));
+  }
+  if (a.special_day) h += "<br>" + gpEsc(drT("{0} is a special day. Approved, it is not charged double.", [a.special_day.label]));
+  h += "<br>" + gpEsc(a.chain_top
+    ? drT("Once it is approved, {0}'s managers up to {1} are told.", [first, a.chain_top])
+    : drT("Once it is approved, only HR knows; no manager is set above {0}.", [first]));
+  return h;
+}
+function lpDecisionWords(r) {
+  var told = r.employee_emailed ? drT("{0} has been told too.", [r.first])
+                                : drT("{0} has no email on record, so please tell them.", [r.first]);
+  if (r.told_n === undefined) {
+    return drT("Declined.") + " " + (r.employee_emailed ? drT("{0} has been told.", [r.first])
+      : drT("{0} has no email on record, so please tell them.", [r.first])) + " " + drT("Managers are not told about a declined request.");
+  }
+  var mgrs = r.told_n ? (r.told_n === 1
+      ? drT("{0}'s managers up to {1} have been told (1 person).", [r.first, r.told_top])
+      : drT("{0}'s managers up to {1} have been told ({2} people).", [r.first, r.told_top, r.told_n]))
+    : drT("No manager above {0} was sent a message.", [r.first]);
+  return drT("Approved · {0} · {1}.", [r.leave_type, r.dates]) + " " + mgrs + " " + told;
 }
 
 /* ── MY FINANCES sub-tab switcher ───────────────── */
@@ -4721,7 +6919,7 @@ function loadExpenses() {
     el.innerHTML = '<div style="display:flex;flex-direction:column;gap:10px">' + claims.map(function(c) {
       return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div></div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
-  }, function() { toast("Failed to load expenses", "err"); });
+  }, function(e) { failBox("expense-list", e, loadExpenses); });
 }
 
 var _expenseTypesCache = null;
@@ -4745,7 +6943,13 @@ function openExpenseModal() {
   pfClearErr("ec-error");
   var btn = document.getElementById("ec-submit-btn");
   btn.disabled = false;
-  btn.textContent = "Submit Claim";
+  btn.style.display = "";
+  btn.textContent = drT("Submit Claim");
+  EC_GEN++;
+  sendSay("ec-send-fail", null);
+  var close = document.getElementById("ec-close-btn");
+  close.textContent = drT("Cancel");
+  close.onclick = function() { pfCloseModal("ec-modal"); };
 
   // Default to today
   var d = new Date();
@@ -4753,19 +6957,40 @@ function openExpenseModal() {
     String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");
 
-  if (_expenseTypesCache) {
-    _populateExpenseTypeSelect(_expenseTypesCache);
-  } else {
-    api("get_expense_types", {}, function(types) {
-      _expenseTypesCache = types;
-      _populateExpenseTypeSelect(types);
-    }, function() {
-      sel.innerHTML = '<option value="">Could not load expense types</option>';
-    });
-  }
-
+  ecLoadTypes();
+  refreshDateWords();
   pfOpenModal("ec-modal");
 }
+
+function ecLoadTypes() {
+  var sel = document.getElementById("ec-expense-type");
+  var old = sel.parentNode.querySelector(".fail");
+  if (old) old.parentNode.removeChild(old);
+  if (_expenseTypesCache) { _populateExpenseTypeSelect(_expenseTypesCache); return; }
+  sel.innerHTML = '<option value="">' + esc(drT("Loading…")) + '</option>';
+  api("get_expense_types", {}, function(types) {
+    _expenseTypesCache = types;
+    var f = sel.parentNode.querySelector(".fail");
+    if (f) f.parentNode.removeChild(f);
+    _populateExpenseTypeSelect(types);
+  }, function(e) {
+    sel.innerHTML = '<option value="">' + esc(drT("Could not load expense types")) + '</option>';
+    failBox(sel, e, ecLoadTypes);
+  });
+}
+
+/* Slice 070: the message above the buttons of a send that did not finish.
+   `close`, when given, is a Close button inside the message. */
+function sendSay(id, head, line, close) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (!head) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.innerHTML = "<b>" + esc(drT(head)) + "</b><span>" + esc(drT(line)) + "</span>"
+    + (close ? '<button type="button" class="btn btn-outline">' + esc(drT("Close")) + "</button>" : "");
+  if (close) el.querySelector("button").addEventListener("click", close);
+  el.style.display = "";
+}
+var EC_GEN = 0, ADV_GEN = 0;
 
 function submitExpenseClaim() {
   pfClearErr("ec-error");
@@ -4779,25 +7004,52 @@ function submitExpenseClaim() {
   if (!ed)            { pfShowErr("ec-error", "Please enter the expense date."); return; }
   if (!amtS || !(amt > 0)) { pfShowErr("ec-error", "Please enter a valid amount greater than zero."); return; }
 
+  /* Slice 070 (D2, SEC-2, OPS-R4): there is no duplicate guard on the server
+     for an expense claim, so after a lost answer nothing here sends again -
+     the person is told to look in their list, and the footer shows only
+     Close. With no signal nothing was sent, so Try again is safe. */
   var btn = document.getElementById("ec-submit-btn");
+  if (btn.disabled) return;
   btn.disabled = true;
-  btn.textContent = "Submitting…";
-
-  api("apply_expense_claim", {
+  btn.textContent = drT("Sending…");
+  sendSay("ec-send-fail", null);
+  var gen = ++EC_GEN;
+  function done() {
+    if (gen !== EC_GEN) return;
+    EC_GEN++;
+    pfCloseModal("ec-modal");
+    toast(drT("Expense claim submitted."), "ok");
+    loadExpenses();
+  }
+  gpFetch("alvoraa_portal.hr_api.apply_expense_claim", {
     expense_type: et,
     expense_date: ed,
     amount: amt,
     description: desc || null,
-  }, function() {
-    pfCloseModal("ec-modal");
-    toast("Expense claim submitted.", "ok");
-    loadExpenses();
-  }, function(r) {
-    var msg = "Failed to submit expense claim.";
-    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch(e) {}
-    pfShowErr("ec-error", msg);
-    btn.disabled = false;
-    btn.textContent = "Submit Claim";
+  }, {lostAnswerHandled: true}).then(done, function(e) {
+    if (gen !== EC_GEN) return;
+    if (e.late) e.late.then(done, function() {});
+    if (e.kind === "refused") {
+      pfShowErr("ec-error", e.message);
+      btn.disabled = false;
+      btn.textContent = drT("Submit Claim");
+      return;
+    }
+    if (e.kind === "offline") {
+      sendSay("ec-send-fail", "We could not reach the office. Nothing was sent.",
+              "Your details are still here. When you have signal, tap Try again.");
+      btn.disabled = false;
+      btn.textContent = drT("Try again");
+      btn.focus();
+      return;
+    }
+    sendSay("ec-send-fail", "No answer from the office. It may have gone through.",
+            "Look in your list before you send it again.");
+    btn.style.display = "none";
+    var close = document.getElementById("ec-close-btn");
+    close.textContent = drT("Close");
+    close.onclick = function() { EC_GEN++; pfCloseModal("ec-modal"); loadExpenses(); };
+    close.focus();
   });
 }
 
@@ -4830,7 +7082,7 @@ function loadSalary() {
       const label = months[sd.getMonth()] + " " + sd.getFullYear();
       return '<div class="payslip-row" role="button" tabindex="0" onclick="openPayslip(' + esc(JSON.stringify(s.name)) + ')"><div><div class="payslip-month">' + label + '</div><div style="font-size:var(--fs-xs);color:var(--text3);margin-top:3px">' + fmtDate(s.start_date) + ' – ' + fmtDate(s.end_date) + '</div></div><div style="text-align:right"><div class="payslip-net">' + fmtMoney(s.net_pay) + '</div><div class="payslip-deductions">Deductions: ' + fmtMoney(s.total_deduction) + '</div></div><div class="payslip-arrow">›</div></div>';
     }).join("");
-  }, function() { toast("Failed to load payslips", "err"); });
+  }, function(e) { failBox("payslip-list", e, loadSalary); });
 }
 
   // On window, because the payslip rows call it from an inline onclick and this
@@ -4974,6 +7226,14 @@ function loadSalary() {
     /* A component payroll typed in by hand has no week behind it. Saying so is
        the whole answer. Drawing an empty week instead would read as "we think
        you were late on no days and took your money anyway". */
+    /* 067. A red line the pay rules worked out from the month's attendance.
+       It was not typed in by hand, so the sentence above would be false. */
+    if (why && why.from_attendance) {
+      body.innerHTML = whyHead() +
+        '<div style="padding:8px 2px 0;color:var(--text2)">' +
+        'Worked out from your attendance this month. Ask HR for the day-by-day workings.</div>';
+      return;
+    }
     if (why && why.hand_entered) {
       body.innerHTML = whyHead() +
         '<div style="padding:8px 2px 0;color:var(--text2)">' +
@@ -5223,6 +7483,7 @@ function clearForm(ids) {
     if (el.tagName === "SELECT") el.selectedIndex = 0;
     else el.value = "";
   });
+  refreshDateWords();   /* slice 070: an emptied date box has no words under it */
 }
 
 function todayISO() { return new Date().toISOString().slice(0,10); }
@@ -5251,7 +7512,7 @@ function loadShiftReqPanel() {
           return '<option value="' + t.name + '">' + lbl + '</option>';
         }).join("");
     }
-  });
+  }, function(e) { var sel = document.getElementById("sr-shift-type"); sel.innerHTML = '<option value="">' + esc(drT("Could not load shift types")) + '</option>'; failBox(sel, e, loadShiftReqPanel); });
   const td = todayISO();
   document.getElementById("sr-from-date").value = td;
   document.getElementById("sr-to-date").value   = td;
@@ -5265,7 +7526,7 @@ function reloadShiftHistory() {
       const cls = statusMap[r.status] || "badge-gray";
       return '<div class="req-item"><div class="req-icon"><i class=ic-refresh></i></div><div class="req-body"><div class="req-title">' + r.shift_type + '</div><div class="req-meta">' + fmtDate(r.from_date) + ' – ' + fmtDate(r.to_date) + '</div></div><div class="req-status"><span class="badge ' + cls + '">' + (r.status||"Draft") + '</span></div></div>';
     });
-  });
+  }, function(e) { failBox("sr-history", e, reloadShiftHistory); });
 }
 
 function submitShiftRequest() {
@@ -5281,7 +7542,7 @@ function submitShiftRequest() {
     hideLoad(); toast("Shift request submitted: " + d.name, "ok");
     clearForm(["sr-shift-type","sr-from-date","sr-to-date"]);
     loadedPanels.delete("shift-req"); reloadShiftHistory();
-  }, function(e) { hideLoad(); toast((e.message||"Failed to submit shift request"), "err"); });
+  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit shift request"), "err"); });
 }
 
 /* ── Attendance Request panel ────────────────────── */
@@ -5298,7 +7559,7 @@ function reloadAttReqHistory() {
       const status = r.docstatus == 1 ? '<span class="badge badge-green">Submitted</span>' : '<span class="badge badge-amber">Draft</span>';
       return '<div class="req-item"><div class="req-icon"><i class=ic-clipboard></i></div><div class="req-body"><div class="req-title">' + (r.reason||"Attendance Request") + '</div><div class="req-meta">' + fmtDate(r.from_date) + ' – ' + fmtDate(r.to_date) + '</div></div><div class="req-status">' + status + '</div></div>';
     });
-  });
+  }, function(e) { failBox("ar-history", e, reloadAttReqHistory); });
 }
 
 function submitAttendanceRequest() {
@@ -5315,7 +7576,7 @@ function submitAttendanceRequest() {
     hideLoad(); toast("Attendance request submitted: " + d.name, "ok");
     clearForm(["ar-from-date","ar-to-date","ar-reason","ar-explanation"]);
     loadedPanels.delete("att-req"); reloadAttReqHistory();
-  }, function(e) { hideLoad(); toast((e.message||"Failed to submit request"), "err"); });
+  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit request"), "err"); });
 }
 
 /* ── Leave Encashment panel ──────────────────────── */
@@ -5332,7 +7593,7 @@ function loadLeaveEncPanel() {
         }).join("");
       sel.disabled = false;
     }
-  });
+  }, function(e) { var sel = document.getElementById("le-leave-type"); sel.innerHTML = '<option value="">' + esc(drT("Could not load leave types")) + '</option>'; failBox(sel, e, loadLeaveEncPanel); });
   document.getElementById("le-date").value = todayISO();
   reloadLeaveEncHistory();
 }
@@ -5342,7 +7603,7 @@ function reloadLeaveEncHistory() {
     renderReqHistory("le-history", h.encashments, "No leave encashments submitted yet.", function(r) {
       return '<div class="req-item"><div class="req-icon"><i class=ic-money></i></div><div class="req-body"><div class="req-title">' + r.leave_type + '</div><div class="req-meta">' + fmtDate(r.encashment_date) + (r.encashment_amount ? ' · ₹' + parseFloat(r.encashment_amount).toLocaleString("en-IN") : '') + '</div></div><div class="req-status"><span class="badge badge-gray">' + (r.status||"Pending") + '</span></div></div>';
     });
-  });
+  }, function(e) { failBox("le-history", e, reloadLeaveEncHistory); });
 }
 
 function submitLeaveEncashment() {
@@ -5353,7 +7614,7 @@ function submitLeaveEncashment() {
   api("submit_leave_encashment", {leave_type: lt, encashment_date: dt||todayISO()}, function(d) {
     hideLoad(); toast("Leave encashment submitted: " + d.name, "ok");
     reloadLeaveEncHistory();
-  }, function(e) { hideLoad(); toast((e.message||"Failed to submit encashment"), "err"); });
+  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit encashment"), "err"); });
 }
 
 /* ── Advance Request panel ───────────────────────── */
@@ -5368,7 +7629,7 @@ function reloadAdvHistory() {
       const cls = statusMap[r.status] || "badge-amber";
       return '<div class="req-item"><div class="req-icon"><i class=ic-cash-out></i></div><div class="req-body"><div class="req-title">' + (r.purpose||"Advance Request").substring(0,70) + '</div><div class="req-meta">' + fmtDate(r.posting_date) + ' · ' + fmtMoney(r.advance_amount) + '</div></div><div class="req-status"><span class="badge ' + cls + '">' + (r.status||"Pending") + '</span></div></div>';
     });
-  });
+  }, function(e) { failBox("adv-history", e, reloadAdvHistory); });
 }
 
 function submitAdvanceRequest() {
@@ -5378,12 +7639,43 @@ function submitAdvanceRequest() {
   if (!purpose)          { showErr("adv-purpose-err"); ok=false; } else hideErr("adv-purpose-err");
   if (!amount||amount<=0){ showErr("adv-amount-err");  ok=false; } else hideErr("adv-amount-err");
   if (!ok) return;
-  showLoad();
-  api("submit_advance_request", {purpose: purpose, amount: amount}, function(d) {
-    hideLoad(); toast("Advance request submitted: " + d.name, "ok");
+  /* Slice 070 (D2, SEC-2, OPS-R4): as the expense claim - no server guard,
+     so no resend after a lost answer; Submit stays off until Close. */
+  var btn = document.getElementById("adv-submit-btn");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = drT("Sending…");
+  sendSay("adv-send-fail", null);
+  var gen = ++ADV_GEN;
+  function unlock(words) { btn.disabled = false; btn.textContent = drT(words || "Submit Request"); }
+  function done(d) {
+    if (gen !== ADV_GEN) return;
+    ADV_GEN++;
+    sendSay("adv-send-fail", null);
+    unlock();
+    toast(drT("Advance request submitted: {0}", [(d && d.name) || ""]), "ok");
     clearForm(["adv-purpose","adv-amount"]);
     loadedPanels.delete("adv-req"); reloadAdvHistory();
-  }, function(e) { hideLoad(); toast((e.message||"Failed to submit advance request"), "err"); });
+  }
+  gpFetch("alvoraa_portal.hr_api.submit_advance_request", {purpose: purpose, amount: amount},
+          {lostAnswerHandled: true}).then(done, function(e) {
+    if (gen !== ADV_GEN) return;
+    if (e.late) e.late.then(done, function() {});
+    if (e.kind === "refused") { unlock(); toast(e.message, "err"); return; }
+    if (e.kind === "offline") {
+      sendSay("adv-send-fail", "We could not reach the office. Nothing was sent.",
+              "Your details are still here. When you have signal, tap Try again.");
+      unlock("Try again");
+      return;
+    }
+    sendSay("adv-send-fail", "No answer from the office. It may have gone through.",
+            "Look in your list before you send it again.", function() {
+      ADV_GEN++;
+      sendSay("adv-send-fail", null);
+      unlock();
+      reloadAdvHistory();
+    });
+  });
 }
 
 /* ── Employee detail drawer ──────────────────────── */
@@ -5613,7 +7905,7 @@ window.scActionLeave = function(leaveName, action) {
     var card = document.getElementById("sc-appr-" + leaveName);
     if (card) card.innerHTML = '<div style="padding:10px;color:var(--text3);font-size:var(--fs-base)">' + (action === "approve" ? "<i class=ic-check></i> Approved" : "<i class=ic-x></i> Rejected") + '</div>';
     toast(action === "approve" ? "Leave approved" : "Leave rejected", action === "approve" ? "ok" : "");
-  }, function(e) { toast(e.message || "Action failed", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast(e.message || "Action failed", "err"); });
 };
 
 /* ── Team comparison charts ──────────────────────── */
@@ -5795,7 +8087,7 @@ function edActionLeave(leaveId, action) {
       const n = Math.max(0, (parseInt(badge.textContent)||0) - 1);
       badge.textContent = n; badge.style.display = n ? "flex" : "none";
     }
-  }, function(e) {
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e.message || "Failed to " + action + " leave"), "err");
   });
@@ -5837,7 +8129,7 @@ function homeActionLeave(leaveId, action) {
 
     // Refresh activity feed to show the approval action
     api("get_portal_activity", {days: 7}, function(d) { renderActivityFeed(d.activities || []); });
-  }, function(e) {
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e && e.message ? e.message : "Failed to " + action + " leave"), "err");
   });
@@ -5854,7 +8146,7 @@ function loadTeamPanel() {
       return;
     }
     renderTeamData(d);
-  }, function() { toast("Failed to load team data", "err"); });
+  }, function(e) { ["on-leave-body", "team-pending-list", "team-progress-approvals", "team-month-tbody"].forEach(function (id) { var el = document.getElementById(id); if (el) el.innerHTML = ""; }); failBox("team-grid", e, loadTeamPanel); });
   gpFetch("alvoraa_portal.hr_api.get_pending_approvals", {}).then(function(r) {
     renderProgressApprovals(r || {});
   }).catch(function() {
@@ -5913,14 +8205,15 @@ function renderTeamData(d) {
     ? '<div class="empty-state"><div class="empty-state-text">No pending leave approvals.</div></div>'
     : pending.map(function(a) {
         const days = parseFloat(a.total_leave_days||0);
-        return '<div class="appr-card" id="appr-' + a.name + '"><div class="appr-info"><div class="appr-avatar">' + initials(a.employee_name) + '</div><div><div class="appr-name">' + esc(a.employee_name) + '</div><div class="appr-detail">' + esc(a.leave_type||"Leave") + ' &nbsp;·&nbsp; ' + fmtDate(a.from_date) + ' – ' + fmtDate(a.to_date) + ' &nbsp;·&nbsp; <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (a.description ? '<br>' + esc(a.description) : '') + '</div></div></div><div class="appr-actions"><button class="btn btn-green btn-sm" onclick="actionLeave(\'' + a.name + '\',\'approve\')"><i class=ic-check></i> Approve</button><button class="btn btn-danger btn-sm" onclick="actionLeave(\'' + a.name + '\',\'reject\')"><i class=ic-x></i> Reject</button></div></div>';
+        return '<div class="appr-card" id="appr-' + a.name + '"><div class="appr-info"><div class="appr-avatar">' + initials(a.employee_name) + '</div><div><div class="appr-name">' + esc(a.employee_name) + '</div><div class="appr-detail">' + esc(a.leave_type||"Leave") + (a.half_day ? esc(drT(" (half day)")) : '') + ' &nbsp;·&nbsp; ' + fmtDate(a.from_date) + ' – ' + fmtDate(a.to_date) + ' &nbsp;·&nbsp; <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (a.description ? '<br>' + esc(a.description) : '') + lpApprLines(a) + '</div></div></div><div class="appr-actions"><button class="btn btn-green btn-sm" onclick="actionLeave(\'' + a.name + '\',\'approve\')"><i class=ic-check></i> Approve</button><button class="btn btn-danger btn-sm" onclick="actionLeave(\'' + a.name + '\',\'reject\')"><i class=ic-x></i> Reject</button></div></div>';
       }).join("");
 
   // Month team leaves table
   document.getElementById("team-month-tbody").innerHTML = !monthLeav.length
-    ? '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">No approved team leaves this month.</td></tr>'
+    ? '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">No approved team leaves this month.</td></tr>'
     : monthLeav.map(function(l) {
-        return '<tr><td>' + esc(l.employee_name) + '</td><td>' + esc(l.leave_type) + '</td><td class="num">' + fmtDate(l.from_date) + '</td><td class="num">' + fmtDate(l.to_date) + '</td><td class="num">' + l.total_leave_days + '</td></tr>';
+        /* Slice 063 (S3): no leave type here; a half day reads 0.5. */
+        return '<tr><td>' + esc(l.employee_name) + '</td><td class="num">' + fmtDate(l.from_date) + '</td><td class="num">' + fmtDate(l.to_date) + '</td><td class="num">' + parseFloat(l.total_leave_days || 0) + '</td></tr>';
       }).join("");
 
   // Team comparison charts
@@ -6006,6 +8299,11 @@ function actionLeave(leaveId, action) {
     if (card) {
       card.classList.add(action === "approve" ? "approved" : "rejected");
       card.querySelector(".appr-actions").innerHTML = '<span class="badge ' + (action === "approve" ? "badge-green" : "badge-red") + '">' + (action === "approve" ? "Approved" : "Rejected") + '</span>';
+      /* Slice 063 (R-58, R-59): who has been told, from what really happened. */
+      if (r && r.first) {
+        var det = card.querySelector(".appr-detail");
+        if (det) det.insertAdjacentHTML("beforeend", '<div class="lp-told" role="status">' + gpEsc(lpDecisionWords(r)) + "</div>");
+      }
       card.style.opacity = "1"; card.style.pointerEvents = "";
     }
     // Refresh pending count chip
@@ -6021,7 +8319,7 @@ function actionLeave(leaveId, action) {
       badge.textContent = next;
       if (!next) badge.style.display = "none";
     }
-  }, function(e) {
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e.message || "Failed to " + action + " leave"), "err");
   });
@@ -6683,7 +8981,7 @@ function addGoalComment(goalId) {
     inp.value = "";
     inp.disabled = false;
     loadGoalComments(goalId);
-  }, function(e) {
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     inp.disabled = false;
     toast((e && e.message) || "Failed to post comment", "err");
   });
@@ -6809,7 +9107,7 @@ function updateGoalStatus(goalId) {
     _goalData = null;
     _teamGoalData = null;
     loadedPanels.delete("goals");
-  }, function(e) {
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     toast((e && e.message) || "Failed to update status", "err");
   });
 }
@@ -6864,7 +9162,7 @@ function submitGoalEvidence(gid) {
       loadedPanels.delete("goals");
       loadHomeGoals();
       loadGoalsPanel();
-    }, function(e) {
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
       toast((e && e.message) || "Failed to submit evidence", "err");
       if (btn) { btn.disabled = false; btn.textContent = "Submit"; }
     });
@@ -6951,6 +9249,701 @@ function switchTeamTab(tab) {
   }
 }
 
+/* ── Slice 066: the grooming red ─────────────────────────────────────────
+   A manager marks a direct report on the day; HR marks or removes any open
+   day; the person sees who, why and what it costs, and can ask HR to look.
+
+   THE SERVER DECIDES EVERY BUTTON. `can_mark`, `can_undo`, `can_remove`,
+   `can_ask`, `can_keep` and the refusal sentence all come from
+   `alvoraa_portal.grooming`, worked out with the same `may_mark` the record
+   itself enforces - so a button here can never be one the server refuses.
+   Nothing in this block works out a rule, and a manager is never sent a
+   rupee figure. Words follow prototype v2 (approved 24 Oct 2026). */
+var GM = "alvoraa_portal.grooming.";
+var GM_REMOVE = ["Marked by mistake", "Marked on the wrong person",
+                 "The employee showed it was wrong"];
+var gmState = {today: null, flash: {}, sheet: null, last: null, dayFlash: {},
+               reviewFlash: null};
+
+/* AC-34: a grooming bell links to /hrms-employee?grooming=YYYY-MM-DD (and
+   &who=EMPLOYEE for HR). The page opens that Attendance month at that day.
+   The server's month() still decides whose month may be opened. */
+window.addEventListener("load", function () {
+  var day = /[?&]grooming=(\d{4}-\d{2}-\d{2})/.exec(location.search);
+  if (!day || typeof switchPanel !== "function") return;
+  var who = /[?&]who=([A-Za-z0-9._-]+)/.exec(location.search);
+  acState.team = false;
+  acState.employee = who ? who[1] : null;
+  acState.year = parseInt(day[1].slice(0, 4), 10);
+  acState.month = parseInt(day[1].slice(5, 7), 10);
+  acState.open = day[1];
+  switchPanel("att-record");
+});
+
+/* The live portal's bell (Surbhi, 24-25 Oct 2026): grooming notices in their
+   own section at the top of the existing panel, and counted in its badge.
+   The server sends the caller's own notices, fixed sentences only, and only
+   while they may still read what each is about. A notice links to its day. */
+var gmBell = {goals: 0, grooming: 0};
+
+window.gmPaintBadge = function (goals) {
+  if (goals !== undefined) gmBell.goals = goals;
+  var badge = document.getElementById("notif-badge"), total = gmBell.goals + gmBell.grooming;
+  if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+};
+
+window.gmBellLoad = async function (open) {
+  var d;
+  try { d = await gpFetch(GM + "my_notices", {}); } catch (e) { return; }
+  gmBell.grooming = d.unread || 0;
+  gmPaintBadge();
+  var el = document.getElementById("gm-bell");
+  if (!open || !el) return;
+  el.innerHTML = (d.items || []).length
+    ? '<div class="gm-bell-h">Grooming red</div>' + d.items.map(function (n) {
+        var inner = '<div class="notif-item-title' + (n.read ? "" : " gm-unread") + '">' + gpEsc(n.text) + "</div>"
+          + '<div class="notif-item-sub">' + gpEsc(n.when) + "</div>";
+        return n.link ? '<a class="notif-item gm-bell-item" href="' + gpEsc(n.link) + '">' + inner + "</a>"
+                      : '<div class="notif-item gm-bell-item">' + inner + "</div>";
+      }).join("")
+    : "";
+  if (d.unread) {
+    gpFetch(GM + "my_notices_seen", {}).catch(function () {});
+    gmBell.grooming = 0;
+    gmPaintBadge();
+  }
+};
+
+/* A network failure is a TypeError from fetch; anything else is the server
+   refusing, in a sentence worth showing as it is. */
+function gmIsNet(e) { return !e || e.name === "TypeError"; }
+
+function gmName(first) { return gpEsc(first || ""); }
+
+/* ── the Today card on Whole team ───────────────────────────────────── */
+
+window.gmToday = async function () {
+  var el = document.getElementById("gm-today");
+  if (!el) return;
+  el.innerHTML = gmCard(null, '<div class="gm-skel"></div><div class="gm-skel"></div>'
+    + '<div class="gm-skel"></div><p class="gm-muted" role="status">Loading today’s people…</p>');
+  try {
+    gmState.today = await gpFetch(GM + "today", {});
+  } catch (e) {
+    el.innerHTML = "";
+    return;
+  }
+  gmPaintToday();
+};
+
+function gmCard(day, inner) {
+  return '<section class="gm-card" aria-labelledby="gm-today-h"><div class="gm-card-h">'
+    + '<h2 class="gm-card-t" id="gm-today-h">Today' + (day ? " · " + gpEsc(day) : "")
+    + ' · Grooming red</h2><span class="gm-card-s">Your direct reports who have clocked in</span></div>'
+    + '<div class="gm-card-b"><p class="gm-help">Off unless you mark it. Mark someone only if they '
+    + "are not groomed well today. They are told at once, with your name and the reason.</p>"
+    + inner + "</div></section>";
+}
+
+function gmPaintToday() {
+  var el = document.getElementById("gm-today");
+  var d = gmState.today;
+  if (!el) return;
+  if (!d || !d.show) { el.innerHTML = ""; return; }
+  var inner = "";
+  if (!d.rows.length) {
+    inner += '<p class="gm-help">None of your people have clocked in yet today. They appear '
+      + "here after their first punch.</p>";
+  } else {
+    inner += d.rows.map(gmRow).join("");
+    if (d.not_in && d.not_in.length) {
+      var more = d.not_in.length - 1;
+      inner += '<p class="gm-muted">' + gpEsc(d.not_in[0])
+        + (more > 0 ? " and " + more + " other" + (more > 1 ? "s" : "") : "")
+        + " have not clocked in today, so they cannot be marked yet.</p>";
+    }
+  }
+  inner += '<div class="gm-count">You have marked ' + d.count + " grooming red"
+    + (d.count === 1 ? "" : "s") + " this month.</div>";
+  el.innerHTML = gmCard(d.day, inner);
+}
+
+function gmRow(r, i) {
+  var h = '<div class="gm-row" id="gm-row-' + i + '"><div class="gm-who"><div class="gm-nm">'
+    + gpEsc(r.employee_name) + '</div><div class="gm-sub">'
+    + (r.designation ? gpEsc(r.designation) + " · " : "") + "Clocked in " + gpEsc(r.in_at)
+    + (r.half_day ? " · Half-day leave this afternoon" : "") + "</div></div>";
+  var first = gmName(r.first);
+  var m = r.mark;
+  if (m) {
+    var line;
+    if (m.mine && m.locked) {
+      line = "Marked by you yesterday at " + gpEsc(m.at) + ". The undo closed at midnight. "
+        + "To remove it now, ask HR.";
+    } else if (m.mine) {
+      line = "Marked by you at " + gpEsc(m.at) + ". " + (m.has_login
+        ? first + " has been told."
+        : first + " has no login and will not get a notice. You confirmed you told them in person today.")
+        + " You can undo this until midnight.";
+    } else {
+      line = "Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : "") + " at "
+        + gpEsc(m.at) + ". Only HR can remove it.";
+    }
+    h += '<div><span class="ac-tag warn gm-tag">Grooming red</span> ' + gpEsc(m.reason) + "</div>";
+    if (m.mine && !m.locked) {
+      h += '<button class="btn btn-outline gm-btn" onclick="gmUndo(' + i + ')" aria-label="Undo the grooming red for '
+        + gpEsc(r.employee_name) + '">Undo</button>';
+    }
+    h += '<div class="gm-msg ' + (m.has_login === false && m.mine ? "warn" : "ok") + '">' + line + "</div>";
+    return h + "</div>";
+  }
+  if (r.can_mark) {
+    h += '<button class="btn btn-outline gm-btn" onclick="gmOpenToday(' + i + ')" aria-label="Mark a grooming red for '
+      + gpEsc(r.employee_name) + '">Grooming red</button>';
+    if (gmState.flash[r.employee]) h += '<div class="gm-msg">' + gpEsc(gmState.flash[r.employee]) + "</div>";
+    return h + "</div>";
+  }
+  /* Contract staff read as a quiet line; every other refusal is a message. */
+  if (r.why_code === "R4") return h + '<div class="gm-sub gm-full">' + gpEsc(r.why_not) + "</div></div>";
+  /* v3 Z11: the limit row stays neutral - nothing is wrong with the person's day. */
+  h += '<div class="gm-msg">' + gpEsc(r.why_not || "") + "</div>";
+  /* At the limit: "Raise it with HR" (brief, Decisions (3)). It asks HR for a
+     conversation and never adds a mark or a fine. */
+  if (r.raise && r.raise.can) {
+    h += '<button class="btn btn-outline gm-btn" onclick="gmOpenRaise(' + i + ')" aria-label="'
+      + gpEsc(GM_WORDS.raiseSpoken(r.employee_name)) + '">' + gpEsc(GM_WORDS.raiseBtn) + "</button>";
+  } else if (r.raise && r.raise.raised_on) {
+    /* v3 Z8: the stop alone above, then when it was raised and what happens
+       next; Z9: this line takes the focus after a raise. */
+    h += '<div class="gm-msg" id="gm-raised-' + gpEsc(r.employee) + '" role="status" tabindex="-1">'
+      + gpEsc(GM_WORDS.raisedOn(r.raise.raised_on, r.first, r.has_login, r.raise.reviewed_on)) + "</div>";
+  }
+  return h + "</div>";
+}
+
+window.gmOpenRaise = function (i) {
+  var r = gmState.today.rows[i];
+  gmOpen({kind: "raise", employee: r.employee, name: r.employee_name, first: r.first,
+          login: r.has_login, from: "today"});
+};
+
+window.gmOpenToday = function (i) {
+  var r = gmState.today.rows[i];
+  gmOpen({kind: "mark", employee: r.employee, name: r.employee_name, first: r.first,
+          tick: r.needs_told_tick, hr: false, day: "today", from: "today"});
+};
+
+window.gmUndo = async function (i) {
+  var r = gmState.today.rows[i];
+  try {
+    await gpFetch(GM + "undo", {name: r.mark.name});
+    gmState.flash[r.employee] = "Grooming red removed. " + r.first
+      + (r.mark.has_login ? " has been told." : " has no login, so tell them it was removed.");
+    await gmToday();
+    var b = document.querySelector("#gm-row-" + i + " button");
+    if (b) b.focus();
+  } catch (e) {
+    if (gmIsNet(e)) { alert("Could not undo the grooming red. Nothing changed. Check your connection and try again."); return; }
+    /* Past midnight the server says no: the undo window has closed. */
+    r.mark.locked = true;
+    gmPaintToday();
+  }
+};
+
+/* ── the month: tag, tile, box and the review line ─────────────────── */
+
+function gmData() { return (acState.data || {}).grooming || null; }
+
+function gmTag(x) {
+  var g = gmData();
+  return (g && g.days[x.date] && g.days[x.date].mark)
+    ? '<span class="ac-tag warn gm-tag">Grooming red</span>' : "";
+}
+
+function gmTile() {
+  var g = gmData();
+  if (!g || !g.tile) return "";
+  var t = g.tile;
+  return '<div class="ac-tile warn gm-tile"><div class="n">' + t.n + ' <small>· '
+    + gpEsc(t.amount) + (t.capped ? ", the legal limit" : "") + '</small></div><div class="l">'
+    + "Grooming red · off " + gpEsc(t.month) + " pay</div></div>";
+}
+
+function gmRateWords(g) {
+  return g.grade ? " (the " + gpEsc(g.grade) + " rate)" : "";
+}
+
+function gmBox(x) {
+  var g = gmData();
+  if (!g) return "";
+  var day = g.days[x.date] || {};
+  var m = day.mark;
+  var first = gmName(g.first);
+  var flash = gmState.dayFlash[x.date]
+    ? '<p role="status">' + gpEsc(gmState.dayFlash[x.date]) + "</p>" : "";
+  var h = '<div class="gm-box' + (m ? " on" : "") + '"><h3>Grooming red</h3>' + flash;
+
+  if (!m) {
+    if (g.viewer === "hr") {
+      if (day.can_mark) {
+        if (!g.has_manager) h += "<p>" + first + " has no reporting manager in Alvora, so only HR can mark "
+          + first + "’s days.</p>";
+        h += "<p>No grooming red on this day.</p>";
+        return h + '<div class="gm-acts"><button class="btn btn-outline gm-btn" onclick="gmOpenDay(&quot;'
+          + x.date + '&quot;)" aria-label="Mark a grooming red for ' + gpEsc(g.name) + '">Mark grooming red</button></div></div>';
+      }
+      if (!day.why_not) return flash ? h + "</div>" : "";
+      if (day.why_code === "R7" || day.why_code === "R12" || day.why_code === "R10")
+        h += "<p>No grooming red on this day.</p>";
+      return h + "<p>" + gpEsc(day.why_not) + "</p></div>";
+    }
+    if (day.removed || flash) return h + "<p>No grooming red on this day.</p></div>";
+    return "";
+  }
+
+  h += '<p><span class="ac-tag warn gm-tag">Grooming red</span> ' + gpEsc(m.reason) + ".</p>";
+  if (g.viewer === "self") {
+    h += "<p>Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : ", your manager,")
+      + " on " + gpEsc(m.on) + " at " + gpEsc(m.at) + ".</p>";
+    if (g.tile && g.tile.capped) {
+      h += "<p>A grooming red costs " + gpEsc(g.rate_words) + " a day" + gmRateWords(g) + ". You have "
+        + g.tile.n + " this month, which would be " + gpEsc(g.tile.would_be) + ". The law limits fines "
+        + "to 3% of your wages, so <b>" + gpEsc(g.tile.amount) + "</b> comes off your "
+        + gpEsc(g.tile.month) + " pay.</p>";
+    } else {
+      h += "<p>This takes <b>" + gpEsc(g.rate_words) + "</b> off your " + gpEsc((g.tile || {}).month || "")
+        + " pay" + gmRateWords(g) + ".</p>";
+    }
+    if (m.kept_by) h += "<p>HR (" + gpEsc(m.kept_by) + ") checked this on " + gpEsc(m.kept_on) + " and kept it.</p>";
+    else if (m.asked_on) h += '<p role="status">You asked HR to look at this on ' + gpEsc(m.asked_on)
+      + ". HR will decide, and you will be told on the bell.</p>";
+    if (m.can_ask) h += '<div class="gm-acts"><button class="btn btn-outline gm-btn" onclick="gmOpenAsk(&quot;'
+      + x.date + '&quot;)">Ask HR to look at this</button></div>';
+    return h + "</div>";
+  }
+  if (g.viewer === "hr") {
+    h += "<p>Marked by " + (m.by_me ? "you" : gpEsc(m.by)) + " (" + (m.marked_as === "HR" ? "HR" : "manager")
+      + ") on " + gpEsc(m.on) + " at " + gpEsc(m.at) + ".</p>";
+    if (m.asked_on && !m.kept_by) h += '<p class="gm-msg warn">' + first + " asked HR to look at this on "
+      + gpEsc(m.asked_on) + ".</p>";
+    if (m.kept_by) h += "<p>" + (m.kept_by_me ? "You" : gpEsc(m.kept_by)) + " checked it on " + gpEsc(m.kept_on)
+      + " and kept it. " + first + " has been told.</p>";
+    var acts = "";
+    if (m.can_remove) acts += '<button class="btn btn-outline gm-btn" onclick="gmOpenRemove(&quot;' + x.date
+      + '&quot;)">Remove this mark</button>';
+    if (m.can_keep) acts += '<button class="btn btn-outline gm-btn" onclick="gmOpenKeep(&quot;' + x.date
+      + '&quot;)">Keep it and tell ' + first + "</button>";
+    if (!m.can_remove && g.closed_month) h += "<p>" + first + "’s pay slip for " + gpEsc(g.closed_month)
+      + " is submitted, so grooming reds for " + gpEsc(g.closed_month) + " are closed. They cannot be added or removed now.</p>";
+    return h + (acts ? '<div class="gm-acts">' + acts + "</div>" : "") + "</div>";
+  }
+  /* A manager, or somebody who marked: their own marks, and today's. Never money. */
+  if (m.by_me) {
+    h += "<p>Marked by you on " + gpEsc(m.on) + " at " + gpEsc(m.at) + ". " + (g.has_login
+      ? first + " has been told."
+      : first + " has no login and will not get a notice. You confirmed you told them in person.")
+      + (m.can_undo ? " You can undo this until midnight." : "") + "</p>";
+    if (m.can_undo) h += '<div class="gm-acts"><button class="btn btn-outline gm-btn" onclick="gmUndoDay(&quot;'
+      + x.date + '&quot;)">Undo</button></div>';
+  } else {
+    h += "<p>Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : "") + " at " + gpEsc(m.at)
+      + ". Only HR can remove it.</p>";
+  }
+  return h + "</div>";
+}
+
+/* The review line, at the top of the month (US-14, US-15). */
+function gmReview() {
+  var g = gmData();
+  if (!g || !g.review || !g.review.length) return "";
+  var first = gmName(g.first);
+  return g.review.map(function (r, i) {
+    var h = '<section class="gm-flag" aria-labelledby="gm-rv-' + i + '">';
+    if (gmState.reviewFlash && !r.carried) h += '<p role="status"><b>' + gpEsc(gmState.reviewFlash) + "</b></p>";
+    var month = gpEsc(r.month);
+    if (r.state === "pending") {
+      h += '<h2 id="gm-rv-' + i + '">Grooming review pending' + (r.carried ? " (" + month + ")" : "") + "</h2>";
+      if (r.why === "raised") {
+        if (g.viewer === "self") {
+          h += "<p>" + gpEsc(GM_WORDS.employeeLine(r.raise_by)) + "</p>";
+        } else if (g.viewer === "hr") {
+          h += "<p>" + gpEsc(GM_WORDS.hrLine(r.raise_by, r.raise_on, r.raise_reason))
+            + "</p><p>Talk to " + first + " about dress, agree an action, then record it here.</p>"
+            + '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmOpenReview(' + i
+            + ')" aria-label="Record the grooming review for ' + gpEsc(g.name) + '">Record the review</button></div>';
+        } else {
+          h += "<p>" + gpEsc(GM_WORDS.managerLine(r.raise_by_me ? "You" : r.raise_by, r.raise_on, g.first)) + "</p>";
+        }
+        return h + "</section>";
+      }
+      if (g.viewer === "self") {
+        h += (r.why === "max"
+          ? "<p>You have " + r.live + " grooming reds in " + month + ", the most allowed in a month, so HR will talk to you about it.</p>"
+          : "<p>You have " + r.live + " grooming red" + (r.live === 1 ? "" : "s") + " in " + month + " ("
+            + gpEsc(r.amount) + "). One more would pass the legal limit of " + gpEsc(r.limit)
+            + " (3% of your wages), so no more can be marked this month. HR will talk to you about it.</p>")
+          + "<p>The review does not change your fines.</p>";
+      } else if (g.viewer === "hr") {
+        h += "<p>Raised on " + gpEsc(r.raised_on) + ": " + first + (r.why === "max"
+          ? " reached 3 grooming reds in " + month + ", the most allowed in a month."
+          : " reached the legal limit for grooming reds in " + month + " (" + r.live + " mark"
+            + (r.live === 1 ? "" : "s") + "; limit " + gpEsc(r.limit) + " = 3% of Basic " + gpEsc(r.base) + ").")
+          + "</p><p>Talk to " + first + " about dress, agree an action, then record it here.</p>"
+          + '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmOpenReview(' + i
+          + ')" aria-label="Record the grooming review for ' + gpEsc(g.name) + '">Record the review</button></div>';
+      } else {
+        h += "<p>" + first + (r.why === "max"
+          ? " has had " + r.live + " grooming reds in " + month + ", the most allowed"
+          : " has reached the most grooming reds the law allows in " + month)
+          + ", so HR will talk to " + first + " about it. You do not need to do anything.</p>";
+      }
+      return h + "</section>";
+    }
+    if (g.viewer === "manager" && r.note) {
+      /* Prototype v2: the direct manager reads HR's note; the person does not. */
+      return h + '<h2 id="gm-rv-' + i + '">Grooming review recorded</h2><p>Recorded by ' + gpEsc(r.by)
+        + " (HR) on " + gpEsc(r.on) + ".</p><blockquote>" + gpEsc(r.note) + "</blockquote>"
+        + '<p class="gm-muted">Only HR and you, as ' + first + "’s manager, can read this. " + first
+        + " sees only “Action agreed on " + gpEsc(r.on) + "”.</p></section>";
+    }
+    if (g.viewer !== "hr") {
+      return h + '<h2 id="gm-rv-' + i + '">Grooming review</h2><p>Action agreed on ' + gpEsc(r.on) + ".</p></section>";
+    }
+    h += '<h2 id="gm-rv-' + i + '">Grooming review recorded</h2><p>'
+      + (r.by_me ? "Recorded by you" : "Recorded by " + gpEsc(r.by) + " (HR)") + " on " + gpEsc(r.on) + ".</p>"
+      + "<blockquote>" + gpEsc(r.note || "") + "</blockquote>"
+      + "<p>" + gpEsc(r.after_raise ? GM_WORDS.noMoreReviews(g.first, r.month)
+                                    : GM_WORDS.managerMayRaise(g.first, r.month)) + "</p>"
+      + '<p class="gm-muted">This note cannot be changed or deleted. Only HR and ' + first
+      + "’s manager can read it. " + first + " sees only “Action agreed on " + gpEsc(r.on) + "”.</p>";
+    return h + "</section>";
+  }).join("");
+}
+
+window.gmOpenDay = function (date) {
+  var g = gmData();
+  gmOpen({kind: "mark", employee: acState.data.employee, name: g.name, first: g.first,
+          tick: (g.days[date] || {}).needs_told_tick, hr: true, date: date,
+          day: "on " + gmDayWords(date), from: "month"});
+};
+window.gmOpenRemove = function (date) {
+  var g = gmData();
+  gmOpen({kind: "remove", mark: g.days[date].mark.name, first: g.first, login: g.has_login,
+          date: date, from: "month"});
+};
+window.gmOpenKeep = function (date) {
+  var g = gmData();
+  gmOpen({kind: "keep", mark: g.days[date].mark.name, first: g.first, date: date,
+          rate: g.rate_words, month: (g.tile || {}).month || g.month_name, from: "month"});
+};
+window.gmOpenAsk = function (date) {
+  gmOpen({kind: "ask", mark: gmData().days[date].mark.name, date: date, from: "month"});
+};
+window.gmOpenReview = function (i) {
+  var g = gmData(), r = g.review[i];
+  gmOpen({kind: "review", employee: acState.data.employee, name: g.name, first: g.first,
+          month: r.month_start, from: "month"});
+};
+
+window.gmUndoDay = async function (date) {
+  var g = gmData();
+  try {
+    await gpFetch(GM + "undo", {name: g.days[date].mark.name});
+    gmState.dayFlash[date] = "Grooming red removed. " + g.first
+      + (g.has_login ? " has been told." : " has no login, so tell them it was removed.");
+  } catch (e) {
+    alert(gmIsNet(e) ? "Could not undo the grooming red. Nothing changed. Check your connection and try again."
+                     : (e.message || "Could not undo the grooming red."));
+  }
+  await gmReloadMonth();
+};
+
+/* "Wed 21 Oct", from the day's own date - never the browser's time zone. */
+function gmDayWords(iso) {
+  var p = String(iso).split("-");
+  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var mons = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return days[d.getUTCDay()] + " " + (+p[2]) + " " + mons[+p[1] - 1];
+}
+
+async function gmReloadMonth() {
+  try {
+    acState.data = await acApi("month", {year: acState.year, month: acState.month,
+                                         employee: acState.employee});
+  } catch (e) { /* the page keeps what it had; the next load corrects it */ }
+  acPaint();
+  /* Said once, where the action was taken; the next repaint is quiet. */
+  gmState.dayFlash = {};
+  gmState.reviewFlash = null;
+}
+
+/* ── the sheets: bottom sheet on a phone, dialog on a desk ───────────── */
+
+function gmTodayIso() {
+  var d = new Date();
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+}
+
+function gmOpen(sheet) {
+  gmState.flash = {};
+  gmState.last = document.activeElement;
+  gmState.sheet = sheet;
+  gmPaintSheet(false);
+}
+
+window.gmClose = function () {
+  gmState.sheet = null;
+  var host = document.getElementById("gm-sheet-host");
+  if (host) host.innerHTML = "";
+  if (gmState.last && document.body.contains(gmState.last)) gmState.last.focus();
+};
+
+function gmPaintSheet(keepFocus) {
+  var s = gmState.sheet;
+  var host = document.getElementById("gm-sheet-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "gm-sheet-host";
+    document.body.appendChild(host);
+  }
+  if (!s) { host.innerHTML = ""; return; }
+  var first = gmName(s.first);
+  /* The portal's own dialog shell (.gp-backdrop.open + .gp-modal), as the
+     leave sheet builds it; .gm-* only adds the phone bottom sheet. */
+  var h = '<div class="gp-backdrop open gm-bd" onclick="if(event.target===this)gmClose()"><div class="gp-modal gm-sheet" role="dialog"'
+    + ' aria-modal="true" aria-labelledby="gm-sh-t" onkeydown="if(event.key===&quot;Escape&quot;)gmClose()">';
+  var go, no = "Cancel";
+  if (s.kind === "mark") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Grooming red for ' + gpEsc(s.name) + " " + gpEsc(s.day) + "?</h2>"
+      + '<p class="gm-help" id="gm-sh-help">' + gpEsc(GM_WORDS.sheetHelp) + "</p>"
+      + '<div role="radiogroup" aria-labelledby="gm-sh-t" aria-describedby="gm-sh-help">'
+      + (gmState.today && gmState.today.reasons || GM_REASONS).map(function (r) {
+          var on = s.chosen === r;
+          return '<label class="gm-opt' + (on ? " sel" : "") + '"><input type="radio" name="gm-r" value="'
+            + gpEsc(r) + '"' + (on ? " checked" : "") + ' onchange="gmPick(this.value)"> ' + gpEsc(r) + "</label>";
+        }).join("") + "</div>";
+    if (s.chosen === "Other") {
+      h += '<label class="gm-fld" for="gm-other">' + gpEsc(GM_WORDS.otherLabel) + "</label>"
+        + '<p class="gm-help" id="gm-other-help">' + gpEsc(GM_WORDS.otherHint) + "</p>"
+        + '<input type="text" id="gm-other" class="gm-other" maxlength="' + GM_WORDS.otherMax + '" autocomplete="off"'
+        + ' aria-describedby="gm-other-help gm-other-count" value="' + gpEsc(s.other || "") + '"'
+        + ' oninput="gmOther(this.value)">'
+        + '<p class="gm-counter" id="gm-other-count">' + gpEsc(GM_WORDS.otherCount((s.other || "").length)) + "</p>";
+    }
+    if (s.tick) {
+      h += '<div class="gm-info">' + first + (s.hr
+          ? " has no login and will not get a notice from the app. Tell " + first + " in person, with the reason, before you mark it."
+          : " has no login and will not get a notice from the app. Tell them today, and tell them they can speak to HR.")
+        + "</div>"
+        + '<label class="gm-opt' + (s.told ? " sel" : "") + '"><input type="checkbox"' + (s.told ? " checked" : "")
+        + ' onchange="gmTold(this.checked)"> I have told ' + first + (s.hr ? " in person" : " in person today") + "</label>";
+    } else {
+      h += '<div class="gm-info">' + (s.chosen === "Other"
+          ? gpEsc(GM_WORDS.otherInfo(s.first, s.hr))
+          : first + " will be told now, with your name and this reason."
+            + (s.hr ? " You are marking as HR." : " You can undo this until midnight.")) + "</div>";
+    }
+    go = "Mark grooming red";
+  } else if (s.kind === "remove") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Remove this grooming red?</h2><p class="gm-help" id="gm-sh-help">'
+      + 'Why are you removing it?</p><div role="radiogroup" aria-labelledby="gm-sh-help">'
+      + GM_REMOVE.map(function (r) {
+          var on = s.chosen === r;
+          return '<label class="gm-opt' + (on ? " sel" : "") + '"><input type="radio" name="gm-w" value="'
+            + gpEsc(r) + '"' + (on ? " checked" : "") + ' onchange="gmPick(this.value)"> ' + gpEsc(r) + "</label>";
+        }).join("") + '</div><div class="gm-info">' + first
+      + (s.login ? " will be told it was removed, by you, and why." : " has no login, so tell them it was removed, by you, and why.")
+      + " The person who marked it will see it is gone. A record of the mark and of its removal is kept.</div>";
+    go = "Remove it";
+    no = "Keep the mark";
+  } else if (s.kind === "raise") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">' + gpEsc(GM_WORDS.raiseTitle(s.name)) + "</h2>"
+      + '<p class="gm-help" id="gm-sh-help">' + gpEsc(GM_WORDS.raiseHelp) + "</p>"
+      + '<div role="radiogroup" aria-labelledby="gm-sh-t" aria-describedby="gm-sh-help">'
+      + ((gmState.today && gmState.today.raise_reasons) || GM_REASONS.slice(0, 4)).map(function (r) {
+          var on = s.chosen === r;
+          return '<label class="gm-opt' + (on ? " sel" : "") + '"><input type="radio" name="gm-x" value="'
+            + gpEsc(r) + '"' + (on ? " checked" : "") + ' onchange="gmPick(this.value)"> ' + gpEsc(r) + "</label>";
+        }).join("") + "</div>"
+      + '<div class="gm-info">' + gpEsc(GM_WORDS.raiseInfo(s.first, s.login !== false)) + "</div>";
+    go = GM_WORDS.raiseBtn;
+  } else if (s.kind === "keep") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Keep the grooming red?</h2><div class="gm-info">' + first
+      + " will be told that HR has checked it and the mark stays. " + gpEsc(s.rate || "") + " still comes off "
+      + first + "’s " + gpEsc(s.month || "") + " pay.</div>";
+    go = "Keep it and tell " + (s.first || "");
+  } else if (s.kind === "ask") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Ask HR to look at this grooming red?</h2><div class="gm-info">'
+      + "HR will see your request and decide. You will be told on the bell. Until then the mark stays.</div>";
+    go = "Send to HR";
+  } else if (s.kind === "review") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Record the grooming review for ' + gpEsc(s.name) + "</h2>"
+      + '<label class="gm-fld" for="gm-rv-text">What you talked about and the action plan</label>'
+      + '<p class="gm-help" id="gm-rv-help">Keep it to dress and the action you agreed. Do not write about '
+      + "health, family, religion or anything else personal.</p>"
+      + '<textarea id="gm-rv-text" aria-describedby="gm-rv-help gm-rv-info" oninput="gmText(this.value)">'
+      + gpEsc(s.text || "") + "</textarea>"
+      + '<div class="gm-info" id="gm-rv-info">Only HR and ' + first + "’s manager can read this. " + first
+      + " sees only “Action agreed on " + gpEsc(gmDayWords(gmTodayIso())) + "”. You cannot change or delete it after "
+      + "saving. It clears the review. It does not remove any grooming red or change any fine.</div>";
+    go = "Save and clear";
+  }
+  if (s.error) h += '<p class="gm-err" role="alert">' + gpEsc(s.error) + "</p>";
+  if (s.failed) go = "Try again";
+  h += '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmConfirm()"' + (s.busy ? " disabled" : "")
+    + ">" + (s.busy ? "Saving…" : gpEsc(go)) + '</button><button class="btn btn-outline gm-btn" onclick="gmClose()">'
+    + gpEsc(no) + "</button></div></div></div>";
+  host.innerHTML = h;
+  if (!keepFocus) { var t = document.getElementById("gm-sh-t"); if (t) t.focus(); }
+}
+
+var GM_REASONS = ["Not in uniform", "Uniform incomplete", "No name badge", "Wrong footwear", "Other"];
+
+/* "Raise it with HR": every word in one place, so prototype v3 changes one
+   table. The brief gave the warning, the employee's line, HR's line and
+   "Raised with HR on..."; the sheet's heading, help and info are the
+   engineer's until v3 is drawn. (The server's own copies - the warning and
+   the bells - are in grooming.py.) */
+var GM_WORDS = {
+  // "Other" (D-6; v3 Z1-Z4)
+  sheetHelp: "Choose the one reason that fits. Choose Other only if none fits.",
+  otherLabel: "What was wrong",
+  otherHint: "Clothing or grooming only. Nothing about health or family.",
+  otherMax: 100,
+  otherCount: function (n) { return n + " of 100 characters"; },
+  otherBlank: "Write what was wrong first.",
+  otherInfo: function (n, hr) {
+    return n + " will be told now, with your name. Your words stay on the day, not in the notice."
+      + (hr ? " You are marking as HR." : " You can undo this until midnight.");
+  },
+  // "Raise it with HR" (D-7; v3 Z7-Z12)
+  raiseBtn: "Raise it with HR",
+  raiseSpoken: function (name) { return "Raise " + name + "\’s grooming with HR"; },
+  raiseTitle: function (name) { return "Raise " + name + "\’s grooming with HR?"; },
+  raiseHelp: "Choose the one reason that fits. You cannot add your own words.",
+  raiseInfo: function (first, login) {
+    return "HR will be told and will talk to " + first + ". "
+      + (login ? first + " will be told you raised it." : first + " has no login, so HR will tell " + first + ".")
+      + " This adds no fine and no grooming red.";
+  },
+  raisedOn: function (on, first, login, reviewed) {
+    return "Raised with HR on " + on + ". " + (reviewed ? "HR recorded a review on " + reviewed + "."
+      : login ? "HR will talk to " + first + "." : first + " has no login, so HR will tell " + first + ".");
+  },
+  raiseFailed: "Could not raise it. Nothing was sent. Check your connection and try again.",
+  employeeLine: function (by) { return by + ", your manager, has asked HR to talk to you about grooming. This adds no fine."; },
+  managerLine: function (who, on, first) {
+    return who + " raised it with HR on " + on + ". HR will talk to " + first + ". You do not need to do anything.";
+  },
+  hrLine: function (by, on, reason) { return by + " raised it with HR on " + on + ": " + (reason || "") + "."; },
+  // After a review (v3 Z16: true under the raise rule)
+  noMoreReviews: function (first, month) {
+    return "The grooming reds this month still stand. The review will not be raised again for " + first + " in " + month + ".";
+  },
+  managerMayRaise: function (first, month) {
+    return "The grooming reds this month still stand. More grooming reds in " + month + " will not raise it again. "
+      + first + "\’s manager can still raise it with HR once this month.";
+  }
+};
+
+window.gmPick = function (v) { gmState.sheet.chosen = v; gmState.sheet.error = null; gmPaintSheet(true); };
+window.gmTold = function (v) { gmState.sheet.told = v; gmState.sheet.error = null; gmPaintSheet(true); };
+window.gmText = function (v) { gmState.sheet.text = v; };
+window.gmOther = function (v) {
+  gmState.sheet.other = v;
+  var c = document.getElementById("gm-other-count");
+  if (c) c.textContent = GM_WORDS.otherCount(String(v || "").length);
+};
+
+window.gmConfirm = async function () {
+  var s = gmState.sheet;
+  if (!s || s.busy) return;
+  if ((s.kind === "mark" || s.kind === "remove" || s.kind === "raise") && !s.chosen) {
+    /* Only the remove sheet asks "why"; the mark and raise sheets ask for a reason. */
+    s.error = s.kind === "remove" ? "Choose why you are removing it." : "Choose a reason first.";
+    gmPaintSheet(true);
+    var r = document.querySelector('.gm-sheet input[type="radio"]');
+    if (r) r.focus();
+    return;
+  }
+  if (s.kind === "mark" && s.chosen === "Other" && !(s.other || "").trim()) {
+    s.error = GM_WORDS.otherBlank;
+    gmPaintSheet(true);
+    var o = document.getElementById("gm-other");
+    if (o) o.focus();
+    return;
+  }
+  if (s.kind === "review" && !(s.text || "").trim()) {
+    s.error = "Write what you talked about and the action plan first.";
+    gmPaintSheet(true);
+    var ta = document.getElementById("gm-rv-text");
+    if (ta) ta.focus();
+    return;
+  }
+  if (s.kind === "mark" && s.tick && !s.told) {
+    s.error = "Tick the box to confirm you told " + s.first + " in person.";
+    gmPaintSheet(true);
+    var c = document.querySelector('.gm-sheet input[type="checkbox"]');
+    if (c) c.focus();
+    return;
+  }
+  s.busy = true; s.error = null;
+  gmPaintSheet(true);
+  var call, args;
+  if (s.kind === "mark") {
+    call = "mark";
+    args = {employee: s.employee, reason: s.chosen, told_in_person: s.told ? 1 : 0, date: s.date || null,
+            other_reason: s.chosen === "Other" ? (s.other || "") : null};
+  } else if (s.kind === "remove") { call = "remove"; args = {name: s.mark, reason: s.chosen}; }
+  else if (s.kind === "keep") { call = "keep"; args = {name: s.mark}; }
+  else if (s.kind === "raise") { call = "raise_with_hr"; args = {employee: s.employee, reason: s.chosen}; }
+  else if (s.kind === "ask") { call = "ask"; args = {name: s.mark}; }
+  else { call = "record_review"; args = {employee: s.employee, month: s.month, note: s.text}; }
+  try {
+    await gpFetch(GM + call, args);
+  } catch (e) {
+    s.busy = false;
+    if (gmIsNet(e)) {
+      s.failed = true;
+      s.error = s.kind === "mark"
+        ? "Could not save the grooming red. Nothing was saved. Check your connection and try again."
+        : s.kind === "remove"
+          ? "Could not remove the mark. Nothing changed. Check your connection and try again."
+          : s.kind === "raise" ? GM_WORDS.raiseFailed
+            : "Could not save that. Nothing changed. Check your connection and try again.";
+    } else {
+      s.error = e.message;
+    }
+    gmPaintSheet(true);
+    return;
+  }
+  gmState.sheet = null;
+  gmPaintSheet(true);
+  if (s.from === "today") {
+    await gmToday();
+    if (s.kind === "raise") {
+      var line = document.getElementById("gm-raised-" + s.employee);
+      if (line) { line.focus(); return; }
+    }
+  } else {
+    if (s.kind === "mark") {
+      gmState.dayFlash[s.date] = s.tick
+        ? "Saved. " + s.first + " has no login and will not get a notice. You confirmed you told them in person."
+        : s.chosen === "Other" ? "Saved. " + s.first + " has been told, with your name."
+          : "Saved. " + s.first + " has been told, with your name and the reason.";
+    } else if (s.kind === "remove") {
+      gmState.dayFlash[s.date] = s.login
+        ? "Removed. " + s.first + " has been told it was removed, by you: " + s.chosen + "."
+        : "Removed. " + s.first + " has no login, so tell them it was removed, by you: " + s.chosen + ".";
+    } else if (s.kind === "review") {
+      gmState.reviewFlash = "Review recorded. The grooming reds this month still stand.";
+    }
+    await gmReloadMonth();
+  }
+  if (gmState.last && document.body.contains(gmState.last)) gmState.last.focus();
+};
+
 /* ── The team's days, worst first ────────────────────────────────────────
    Surbhi, 17 Oct 2026: "we would need one page with filter for all the
    reporting persons first", and "only attendance facts" - not pay
@@ -6976,7 +9969,8 @@ var trState = {
    the same order the server sorts by. */
 var TR_FLAGS = [
   ["no_clock_out", "No clock-out", "bad"],
-  ["absent_but_punched", "Absent but badged in", "bad"],
+  ["absent_not_counted", "Absent: check-out not counted", "bad"],
+  ["absent_short", "Absent: too few hours", "bad"],
   ["absent", "Absent", "warn"],
   ["short", "Short hours", "warn"],
   ["ok", "Fine", "ok"]
@@ -7014,6 +10008,7 @@ window.trOpen = async function () {
   if (!acState.reasons) {
     try { acState.reasons = await acApi("reasons"); } catch (e) { acState.reasons = []; }
   }
+  gmToday();
   trLoad();
 };
 
@@ -7202,6 +10197,10 @@ function trRows() {
 
 function trDay(r, byPerson) {
   var f = trFlag(r.flag);
+  /* ALV-211: the shift's own absent threshold, when it sets one. */
+  if (r.flag === "absent_short" && r.absent_under) {
+    f = [f[0], "Absent: under " + r.absent_under + " hours worked", f[2]];
+  }
   var key = r.employee + "|" + r.date;
   var who = byPerson ? fmtDate(r.date) : (r.employee_name || r.employee);
   var bits = [];
@@ -7415,7 +10414,7 @@ function tnSaveNote() {
     toast("Note saved", "ok");
     tnHideAdd();
     loadTeamNotes();
-  }, function(e) {
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (btn) { btn.disabled = false; btn.textContent = "Save Note"; }
     fail((e && e.message) || "Could not save the note.");
   });
@@ -7470,7 +10469,7 @@ function saveNoteEdit(noteId, empId) {
     api("save_manager_note", {employee_id: empId, note_text: ta.value, note_date: nd, note_id: noteId}, function() {
       toast("Note updated", "ok");
       loadTeamNotes();
-    }, function(e) { toast((e && e.message) || "Failed to save", "err"); });
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to save", "err"); });
   });
 }
 
@@ -7480,7 +10479,7 @@ function deleteNote(noteId, prefix) {
     const el = document.getElementById((prefix || "") + noteId);
     if (el) el.remove();
     toast("Note deleted", "ok");
-  }, function(e) { toast((e && e.message) || "Failed to delete", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to delete", "err"); });
 }
 
 function printNote(noteId, empName, noteDate) {
@@ -7560,7 +10559,7 @@ function saveDrawerNote(empId) {
     if (ta) ta.value = "";
     hideAddNoteForm(empId);
     loadDrawerNotes(empId);
-  }, function(e) { toast((e && e.message) || "Failed to save", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to save", "err"); });
 }
 
 function loadDrawerNotes(empId) {
@@ -7615,7 +10614,7 @@ function saveDrawerNoteEdit(noteId, empId) {
   api("save_manager_note", {employee_id: empId, note_text: ta.value, note_date: date, note_id: noteId}, function() {
     toast("Note updated", "ok");
     loadDrawerNotes(empId);
-  }, function(e) { toast((e && e.message) || "Failed to save", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to save", "err"); });
 }
 
 function deleteDrawerNote(noteId, empId) {
@@ -7623,7 +10622,7 @@ function deleteDrawerNote(noteId, empId) {
   api("delete_manager_note", {note_id: noteId}, function() {
     loadDrawerNotes(empId);
     toast("Note deleted", "ok");
-  }, function(e) { toast((e && e.message) || "Failed to delete", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to delete", "err"); });
 }
 
 /* ── Goals Portal (embedded IIFE) ───────────────── */
@@ -7644,22 +10643,33 @@ function deleteDrawerNote(noteId, empId) {
   window.gpEsc = function gpEsc(s) { return esc(s); };
 
   function gpFmtDate(d) {
-    if (!d) return "—";
-    try {
-      var parts = String(d).split("T")[0].split("-");
-      return new Date(parts[0], parseInt(parts[1])-1, parts[2])
-        .toLocaleDateString("en-IN", {day:"numeric", month:"short", year:"numeric"});
-    } catch(e) { return String(d); }
+    return d ? (fmtDate(d) || String(d)) : "—";
   }
 
-  /* Pull a readable sentence out of whatever Frappe returned. */
-  function gpErr(r, fallback) {
+  /* Pull a readable sentence out of whatever Frappe returned.
+
+     Slice 070 (SEC-4): only the server's own message (`_server_messages`) is
+     ever shown. `exc` is the traceback Frappe sends to system users - HR and
+     managers included - and it can name tables, SQL and record IDs; the HTTP
+     status text says nothing useful either. Anything without a message gets a
+     fixed sentence. The error carries `kind` (see callKind) and `server`
+     (true when the words are the server's own). */
+  function gpErr(r, status) {
     var msg = "";
     try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
-    if (!msg && r && typeof r.exc === "string") {
-      try { msg = JSON.parse(r.exc)[0].trim().split("\n").pop(); } catch (e) {}
-    }
-    return new Error(msg || (r && r.message) || fallback || "Request failed");
+    var kind = callKind(r, status);
+    if (kind !== "refused") msg = "";
+    var e = new Error(msg || callWords(kind));
+    e.kind = kind;
+    e.server = !!msg;
+    return e;
+  }
+
+  /* An error for a call that never got an answer (slice 070). */
+  function gpCallErr(kind) {
+    var e = new Error(callWords(kind));
+    e.kind = kind;
+    return e;
   }
 
   /* The token this page was rendered with, cleaned up.
@@ -7712,30 +10722,62 @@ function deleteDrawerNote(noteId, empId) {
                 credentials: "same-origin"};
     if (args) opts.body = JSON.stringify(args);
     return fetch("/api/method/" + method, opts).then(function(res) {
-      return res.json().then(function(data) { return {res: res, data: data}; });
+      /* An nginx 502/504 page is HTML, not JSON (slice 070). */
+      return res.json().catch(function() { return {}; })
+        .then(function(data) { return {res: res, data: data}; });
     });
   }
 
-  function gpFetch(method, args) {
-    return new Promise(function(resolve, reject) {
+  /* Slice 070: no signal -> rejects at once, nothing sent. No answer in 15 s
+     -> rejects with kind "timeout"; the request is not cancelled, and the
+     error carries `late`, a promise of the answer still on its way, so a panel
+     can replace its message with the data when it lands. A dropped connection
+     or an unreadable answer (an nginx 502 page) -> "network". */
+  /* Review M2 / OPS-S3: a write (named by its verb) never ends at 15 s - its
+     caller would turn the button back on while the save may still be running,
+     and a second tap would save twice. It waits for the real answer, as
+     before 070. Only a caller that handles a lost answer itself (the leave,
+     expense and advance forms) passes {lostAnswerHandled: true}. */
+  var WRITE_CALL = new RegExp("^(save|create|update|delete|submit|approve|reject|set|assign|end|post|"
+    + "propose|add|remove|archive|send|invite|log|relink|return|advance|answer|acknowledge|hr_create|"
+    + "hr_generate|hr_set|hr_start|raise|withdraw|decide|undo|mark|keep|ask|record|apply|cancel|"
+    + "action|attach|publish|sync|unarchive)(_|$)|^(data_review_confirm|my_notices_seen)$");
+  function gpFetch(method, args, opts) {
+    if (navigator.onLine === false) return Promise.reject(gpCallErr("offline"));
+    var call = new Promise(function(resolve, reject) {
+      function lost(err) {
+        reject(err && err.kind ? err
+               : gpCallErr(navigator.onLine === false ? "offline" : "network"));
+      }
       gpSend(method, args).then(function(out) {
         var res = out.res, data = out.data;
         if (res.ok && !data.exc_type) { resolve(data.message); return; }
 
         var stale = data.exc_type === "CSRFTokenError"
           || (res.status === 400 && /invalid request/i.test(data.message || ""));
-        if (!stale) { reject(gpErr(data, res.statusText)); return; }
+        if (!stale) { reject(gpErr(data, res.status)); return; }
 
         /* One retry, with a token read fresh from the server. If that fails
            too the answer is a real refusal, not a stale token. */
         gpRefreshCsrf().then(function(tok) {
-          if (!tok) { reject(gpErr(data, res.statusText)); return; }
+          if (!tok) { reject(gpErr(data, res.status)); return; }
           gpSend(method, args).then(function(o2) {
             if (o2.res.ok && !o2.data.exc_type) { resolve(o2.data.message); }
-            else { reject(gpErr(o2.data, o2.res.statusText)); }
-          }).catch(reject);
+            else { reject(gpErr(o2.data, o2.res.status)); }
+          }).catch(lost);
         });
-      }).catch(reject);
+      }).catch(lost);
+    });
+    if (WRITE_CALL.test(String(method).split(".").pop()) && !(opts && opts.lostAnswerHandled)) return call;
+    return new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() {
+        var e = gpCallErr("timeout");
+        e.late = call;
+        call.catch(function() {});   /* a late failure is nobody's business */
+        reject(e);
+      }, CALL_LIMIT_MS);
+      call.then(function(v) { clearTimeout(timer); resolve(v); },
+                function(e) { clearTimeout(timer); reject(e); });
     });
   }
   window.gpFetch = gpFetch; // expose for cross-module use
@@ -8518,7 +11560,7 @@ function deleteDrawerNote(noteId, empId) {
         toast("Evidence sent to your manager for approval", "ok");
         window.gpOpenDetail(gid);
         _goalData = null; _gpCtx = null;
-      }, function(e) {
+      }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
         toast((e && e.message) || "Failed to submit evidence", "err");
         if (btn) { btn.disabled = false; btn.textContent = "Submit"; }
       });
@@ -10579,7 +13621,7 @@ window.pfRatingLabel = function(value, scale) {
     var panel = document.getElementById("notif-panel");
     var wasOpen = panel.classList.contains("open");
     document.querySelectorAll(".notif-panel.open").forEach(function(p) { p.classList.remove("open"); });
-    if (!wasOpen) { panel.classList.add("open"); loadNotifPanel(); }
+    if (!wasOpen) { panel.classList.add("open"); loadNotifPanel(); gmBellLoad(true); }
   };
 
   document.addEventListener("click", function(e) {
@@ -10589,12 +13631,34 @@ window.pfRatingLabel = function(value, scale) {
     }
   });
 
+  /* ALV-213: the phone header's account menu (My Account, Log out). */
+  function setAcctMenu(open) {
+    var m = document.getElementById("mob-acct-menu"), b = document.getElementById("mob-avatar");
+    if (!m || !b) return;
+    m.classList.toggle("open", open);
+    b.setAttribute("aria-expanded", String(open));
+  }
+  window.toggleAcctMenu = function(e) {
+    if (e) e.stopPropagation();
+    var m = document.getElementById("mob-acct-menu");
+    setAcctMenu(!(m && m.classList.contains("open")));
+  };
+  document.addEventListener("click", function(e) {
+    if (!e.target.closest("#mob-acct-menu")) setAcctMenu(false);
+  });
+  document.addEventListener("keydown", function(e) {
+    var m = document.getElementById("mob-acct-menu");
+    if (e.key === "Escape" && m && m.classList.contains("open")) {
+      setAcctMenu(false);
+      document.getElementById("mob-avatar").focus();
+    }
+  });
+
   function loadNotifPanel() {
     gpFetch("alvoraa_portal.goals_api.get_pending_approvals", {}).then(function(data) {
       _pfIsManager = true;
-      var badge = document.getElementById("notif-badge");
       var total = data.total || 0;
-      if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+      gmPaintBadge(total);   /* slice 066: the badge also counts grooming notices */
       var body = document.getElementById("notif-panel-body");
       if (!body) return;
       if (total === 0) { body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>"; return; }
@@ -10612,7 +13676,12 @@ window.pfRatingLabel = function(value, scale) {
         "</div>";
       });
       body.innerHTML = html;
-    }).catch(function() { /* not a manager or API not ready — silently ignore */ });
+    }).catch(function() {
+      /* not a manager or API not ready. Slice 066: say so rather than leave
+         "Loading…" under the grooming notices an employee may have. */
+      var body = document.getElementById("notif-panel-body");
+      if (body) body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>";
+    });
   }
 
   /* Boot: just the bell badge, from a cheap count — not the full list
@@ -10620,10 +13689,9 @@ window.pfRatingLabel = function(value, scale) {
      full list still loads when the panel is actually opened. */
   function loadNotifBadge() {
     gpFetch("alvoraa_portal.goals_api.get_pending_approvals_count", {}).then(function(data) {
-      var badge = document.getElementById("notif-badge");
-      var total = (data && data.total) || 0;
-      if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+      gmPaintBadge((data && data.total) || 0);   /* slice 066: plus grooming notices */
     }).catch(function() { /* not a manager or API not ready — silently ignore */ });
+    gmBellLoad(false);
   }
   setTimeout(function() { loadNotifBadge(); }, 1500);
 

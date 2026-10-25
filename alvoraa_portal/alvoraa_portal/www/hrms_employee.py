@@ -10,6 +10,9 @@ def get_context(context):
         frappe.flags.redirect_location = "/alvoraa-login?redirect-to=/hrms-employee"
         raise frappe.Redirect
     context.no_cache  = 1
+    # ALV-213: without this Frappe's web.html wraps the portal in its 1290 px
+    # .container, which centres it and leaves a gap beside the sidebar.
+    context.full_width = 1
     # Give the login session its CSRF token before the page is built, so the
     # page carries a real one. Frappe only creates the token when a desk page
     # loads. Until then this page carried "None", and the first desk page opened

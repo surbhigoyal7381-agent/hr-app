@@ -36,6 +36,7 @@ from frappe import _
 from frappe.utils import flt, now
 
 from alvoraa_portal.payroll_rules_apply import (
+	LEAVE_FIELDS,
 	VERDICT_FIELDS,
 	judge,
 	prepare,
@@ -62,7 +63,7 @@ def _attendance_rows(company, from_date, to_date, employees=None):
 		fields=["name", "employee", "employee_name", "attendance_date", "status",
 		        "shift", "company", "alvoraa_held_confirmed",
 		        "alvoraa_confirmed_out_time"]
-		       + list(VERDICT_FIELDS),
+		       + list(LEAVE_FIELDS) + list(VERDICT_FIELDS),
 		order_by="employee asc, attendance_date asc", limit_page_length=0)
 
 

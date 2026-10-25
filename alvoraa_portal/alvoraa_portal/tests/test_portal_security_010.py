@@ -737,7 +737,13 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# 77 until slice 012 G1 moved HR Analytics' two name lists to get_list.
 		# 75 -> 69 on 17 Oct 2026: three of the six were only mentioned in
 		# comments, so the ceiling had been carrying prose as headroom.
-		("alvoraa_portal", "hr_api.py"): 69,
+		# 69 -> 70 in slice 063 (SEC-8, decided by Surbhi 21 Oct 2026):
+		# `cancel_leave` cancels an employee's OWN approved leave before it
+		# starts. The Employee role has no cancel; the bypass is set on that one
+		# document after the own-record and future-date checks.
+		("alvoraa_portal", "hr_api.py"): 70,
+		# Slice 063 (new file): DTC's leave rules read and notify; none needed.
+		("alvoraa_portal", "leave_rules.py"): 0,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
 		# is proven for them too, not only for files already listed.
 		("alvoraa_portal", "org_figures.py"): 0,
@@ -805,6 +811,29 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "field_app_housekeeping.py"): 3,
 		("alvoraa_portal", "field_app_records.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_field_app_daily_count/alvoraa_field_app_daily_count.py"): 0,
+		# Slice 064 (SEC-7). register.py had 4 and no ceiling, so a fifth would
+		# have passed. hiring.py (new) holds the ONE bypass of the hire hook: the
+		# assignment insert, for an HR User who may hire but may not place people
+		# by hand; every assignment rule still runs. The opening is closed as the
+		# user, with none. The rest of the org-structure code is held at 0.
+		("hrms", "alvoraa_org_structure/register.py"): 4,
+		("hrms", "alvoraa_org_structure/hiring.py"): 1,
+		("hrms", "alvoraa_org_structure/metrics.py"): 0,
+		("hrms", "alvoraa_org_structure/doctype/alvoraa_position/alvoraa_position.py"): 0,
+		("hrms", "alvoraa_org_structure/doctype/alvoraa_position_assignment/alvoraa_position_assignment.py"): 0,
+		("alvoraa_portal", "org_job_link.py"): 0,
+		# Slice 066 (SEC-12): the grooming red adds no bypass anywhere. The mark is
+		# made, submitted, cancelled and updated as the signed-in user.
+		("alvoraa_portal", "grooming.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/doctype/grooming_mark/grooming_mark.py"): 0,
+		# Slice 066 steps 8-11: the review record and the pay files. payroll_slip.py
+		# had 2 (its engine-line writes) and no ceiling, so a third could have
+		# slipped in unseen (01c SEC-12). It stays at 2.
+		("alvoraa_portal", "alvoraa_portal/doctype/grooming_review/grooming_review.py"): 0,
+		("alvoraa_portal", "payroll_slip.py"): 2,
+		("alvoraa_portal", "payroll_month.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/report/salary_components_and_workings/salary_components_and_workings.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/report/grooming_review_pending/grooming_review_pending.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

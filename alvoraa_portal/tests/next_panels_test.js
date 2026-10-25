@@ -497,6 +497,25 @@ async function run() {
   is(screens(dom).querySelectorAll(".nf-row").length, 1,
      "and the row stays on screen, because nothing was decided");
 
+  /* 068, DTC 22 Oct 2026. HR pressed Approve on a correction still inside
+     the manager's two working days and got a 403. The server now lists only
+     corrections the caller may decide today, each with `can_decide`; a row it
+     ever marks otherwise must still get no button the server would refuse. */
+  const waiting = (canDecide) => makeInbox({
+    total: 1, approvals_total: 1,
+    parts: [{ key: "attendance_fixes", route: "#time/fix", count: 1, shown: 1,
+              cap: 50, capped: false, label: "1 attendance fix to decide",
+              rows: [{ name: "ATR-11", employee_name: "Meera", from_date: "2026-10-20",
+                       to_date: "2026-10-20", reason: null, context: null,
+                       action: "attendance_fix", can_decide: canDecide }] }],
+  });
+  dom = await openInbox(waiting(false));
+  is(screens(dom).querySelectorAll(".nf-decide").length, 0,
+     "a row the server says may not be decided today has no Approve or Decline");
+  dom = await openInbox(waiting(true));
+  is(screens(dom).querySelectorAll(".nf-decide").length, 2,
+     "the same row, decidable, has both buttons back");
+
 
 
   /* ── 042 AC-61, review F7: the own work anniversary is DRAWN ───────────── */

@@ -73,6 +73,10 @@ from dataclasses import dataclass, field
 # does lose two days (WSD-04).
 QUARTERS_PER_DAY = 4
 
+# Half a day is two quarters. A half-day leave's worked half can never lose more
+# than that before any special-day doubling (slice 063, 01d D1 and E-a).
+HALF_DAY_QUARTERS = 2
+
 # GRN-02 and GRN-03 thresholds, in minutes. Not configurable yet: no tenant has
 # asked for a different figure, and a knob nobody turns is a knob to maintain.
 MORNING_GREEN_EARLY_MINUTES = 120
@@ -122,6 +126,10 @@ class DayVerdict:
 	late_arrival: bool = False
 	early_departure: bool = False
 	late_window_hit: bool = False
+	# Slice 063: half of this day is approved leave (Frappe's "Half Day" with a
+	# leave application behind it). Everything else on the verdict then
+	# describes the OTHER half only.
+	half_leave: bool = False
 	reasons: list = field(default_factory=list)
 
 	@property
@@ -156,6 +164,14 @@ class DayVerdict:
 		"""
 		if self.held:
 			return 0.0
+		if self.half_leave:
+			# Half the day is leave, funded at month level like a full leave
+			# day, so it adds nothing here. The other half is worth 0.5, less a
+			# quarter-day per quarter lost; absent, it is unpaid and only the
+			# quarters above its own two are charged (the full-day rule, halved).
+			if self.absent:
+				return -max(0, self.total_quarters - HALF_DAY_QUARTERS) / QUARTERS_PER_DAY
+			return 0.5 - self.total_quarters / QUARTERS_PER_DAY
 		if self.on_leave:
 			# Approved leave. The day itself is funded by a leave credit at
 			# month level (LB-02), so it contributes nothing here - and it is
@@ -194,11 +210,16 @@ def leave_credits_for_month(days_present, period_days, credit_per_period,
 		At or above it                  ->  one credit per completed period of
 											attendance, capped at the class.
 
-	DTC's three classes:
+	The cadence as first set for DTC on 9 October 2026:
 
 		A - 1 day every 7.5 days attended, up to 4
 		B - 1 day every 10 days attended,  up to 3
 		C - half a day every 7.5 days,     up to 2
+
+	SUPERSEDED for DTC on 21 October 2026 (slice 063, 01e): the whole class
+	figure is given on the 1st and counts once 15 days are attended. That is
+	settings, not code - one 15-day period worth the whole class (A 15/4/4,
+	B 15/3/3, C 15/2/2, `accrual_month_days` 15). The function is unchanged.
 
 	THE INPUT IS DAYS PRESENT, NOT DAYS ELAPSED. An earlier version accrued on
 	calendar time, which would credit an absent employee for a month they never
@@ -286,6 +307,68 @@ def _window_applies(window_from, window_to, shift_start, grace_minutes):
 	return window_from > shift_start + grace_minutes
 
 
+def _judge_other_half(v, shift_minutes, first_in, last_out, punch_count, regularised,
+                      slabs, doubles, multiplier, earns_marks):
+	"""The worked half of a half-day leave day (slice 063; 01d D1-D5, OD-1 iv).
+
+	Surbhi, 21 Oct 2026. Frappe does not record WHICH half was the leave, so
+	arriving "late" or leaving "early" may be the leave itself: no late, early or
+	late-window charge, and no green mark (D4). The other half is measured
+	against HALF the shift on the same slab table, losing at most two quarters
+	before any special-day doubling. Reds come only from the slab.
+
+	Fewer than two punches: absent (doubled on a special day), unless HR has
+	approved a half-day correction for that half - then it counts as worked in
+	full, with no punch needed (OD-1 remedy iv). A full day corrected with no
+	punches is still HELD by the rules above; this difference is hers, by name.
+	"""
+	v.half_leave = True
+	v.reasons.append("Half-day leave: half the day is approved leave, funded at month level.")
+
+	if punch_count >= 2 and first_in is not None and last_out is not None:
+		half = shift_minutes / 2.0
+		worked = max(0, last_out - first_in)
+		percent = min(100.0, worked / half * 100.0)
+		v.attendance_percent = percent
+		v.reasons.append(
+			"Other half: present {0:.0f} of {1:.0f} minutes (half the shift), {2:.1f}%."
+			.format(worked, half, percent))
+		row = find_slab(slabs, percent)
+		if row is None:
+			v.held = True
+			v.reasons.append(
+				"Held: no slab row covers {0:.1f}%. The rule set has a gap and cannot "
+				"judge this half.".format(percent))
+			return v
+		quarters = min(HALF_DAY_QUARTERS, int(row.quarters_off or 0))
+		v.reds = 1 if (row.raises_red and earns_marks) else 0
+		v.reasons.append("Slab {0}-{1}%: {2} quarter(s) off, at most 2 on a half day{3}."
+		                 .format(row.percent_from, row.percent_to, quarters,
+		                         ", 1 red" if v.reds else ", no red"))
+	elif regularised:
+		v.attendance_percent = 100.0
+		v.reasons.append(
+			"Other half: a punch is missing, and HR approved a half-day correction, so "
+			"the half counts as worked in full.")
+		return v
+	else:
+		v.absent = True
+		quarters = HALF_DAY_QUARTERS
+		v.reasons.append(
+			"Other half: no complete pair of punches and no approved correction, so it "
+			"counts as absent.")
+
+	if doubles and quarters:
+		v.reasons.append("Special day: {0} quarter(s) multiplied by {1} to {2}."
+		                 .format(quarters, multiplier, quarters * multiplier))
+		quarters = quarters * multiplier
+		v.doubled = True
+	v.slab_quarters = quarters
+	v.reasons.append("No late, early or late-window charge and no green mark on a "
+	                 "half-day leave day.")
+	return v
+
+
 def evaluate_day(
 	*,
 	shift_start,
@@ -308,11 +391,17 @@ def evaluate_day(
 	night_green_eligible=False,
 	morning_green_eligible=True,
 	earns_marks=True,
+	half_day_leave=False,
+	other_half_regularised=False,
 ) -> DayVerdict:
 	"""Judge one employee on one day.
 
 	Every time is minutes from midnight. `first_in` and `last_out` may be None
 	on a day with no usable punches.
+
+	`half_day_leave` (slice 063): half of the day is approved leave. The other
+	half is judged by `_judge_other_half`. `other_half_regularised` says HR
+	approved a half-day correction for that half (OD-1 remedy iv).
 	"""
 	v = DayVerdict()
 	slabs = slabs or []
@@ -324,6 +413,12 @@ def evaluate_day(
 			"Held: the shift has no length, so attendance cannot be measured as a "
 			"percentage of it. Fix the shift before this day can be judged.")
 		return v
+
+	if half_day_leave:
+		return _judge_other_half(
+			v, shift_minutes, first_in, last_out, punch_count, other_half_regularised,
+			slabs, is_special_day and double_deduction_applies and special_day_multiplier > 1,
+			special_day_multiplier, earns_marks)
 
 	# ── A genuine absence, versus a day nobody can measure ───────────────────
 	# Three cases look alike from a distance and must not be treated alike.

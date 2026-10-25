@@ -62,30 +62,31 @@ class TestLeaveOnBehalfPermissions(FrappeTestCase):
 		"""The box is hidden for staff, but the API is reachable directly.
 
 		A non-HR caller passing on_behalf_of must NOT create leave for that person.
-		hr_api falls back to the caller's own record, so the application belongs to
-		the caller - never to the employee they named.
+		Slice 063 (SEC-7, every tenant, Surbhi 21 Oct 2026): refused outright. It
+		used to fall back to the caller's own record, which silently filed a
+		leave - and used up a limit - on the wrong person.
 		"""
 		frappe.set_user(self.staff_user)
-		res = hr_api.apply_leave(
-			leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_TUE,
-			on_behalf_of=self.other_emp,
-		)
-		doc = frappe.get_doc("Leave Application", res["name"])
-		self.assertEqual(
-			doc.employee, self.staff_emp,
-			"a non-HR user managed to file leave against another employee",
-		)
-		self.assertNotEqual(doc.employee, self.other_emp)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.apply_leave(
+				leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_TUE,
+				on_behalf_of=self.other_emp,
+			)
+		frappe.set_user("Administrator")
+		for emp in (self.staff_emp, self.other_emp):
+			self.assertFalse(frappe.db.exists("Leave Application", {"employee": emp}),
+			                 "a refused request must write nothing")
 
-	def test_non_hr_preview_ignores_on_behalf_of(self):
-		"""The preview must not leak another employee's balance to a non-HR user."""
+	def test_non_hr_preview_refuses_on_behalf_of(self):
+		"""The preview must not leak another employee's balance to a non-HR user,
+		and since slice 063 it refuses the attempt rather than answering for the
+		caller instead."""
 		frappe.set_user(self.staff_user)
-		r = hr_api.preview_leave_request(
-			leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_TUE,
-			on_behalf_of=self.other_emp,
-		)
-		own_name = frappe.db.get_value("Employee", self.staff_emp, "employee_name")
-		self.assertEqual(r["employee_name"], own_name)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.preview_leave_request(
+				leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_TUE,
+				on_behalf_of=self.other_emp,
+			)
 
 	def test_hr_preview_reads_the_named_employee(self):
 		frappe.set_user(self.hr_user)
@@ -95,6 +96,28 @@ class TestLeaveOnBehalfPermissions(FrappeTestCase):
 		)
 		other_name = frappe.db.get_value("Employee", self.other_emp, "employee_name")
 		self.assertEqual(r["employee_name"], other_name)
+
+	def test_sec3_ac48_staff_check_with_another_id_reads_only_their_own_leave(self):
+		"""Slice 070: the resend check reads get_leave_summary. A staff caller who
+		adds someone else's employee_id must get their own record back, never the
+		other person's leave."""
+		frappe.set_user(self.hr_user)
+		hr_api.apply_leave(leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_TUE,
+		                   on_behalf_of=self.other_emp)
+		frappe.set_user(self.staff_user)
+		res = hr_api.get_leave_summary(employee_id=self.other_emp)
+		self.assertEqual(res["employee"]["name"], self.staff_emp)
+		self.assertEqual(res["applications"], [])
+
+	def test_sec1_ac39_a_resent_leave_for_the_same_days_is_refused_one_record_stays(self):
+		"""Slice 070: after a lost answer the phone checks before it resends. If that
+		check ever missed, the server must still refuse the second copy."""
+		frappe.set_user(self.staff_user)
+		hr_api.apply_leave(leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_TUE)
+		with self.assertRaises(frappe.ValidationError):
+			hr_api.apply_leave(leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_TUE)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count("Leave Application", {"employee": self.staff_emp}), 1)
 
 
 class TestOnlyTheApproverMayApprove(FrappeTestCase):

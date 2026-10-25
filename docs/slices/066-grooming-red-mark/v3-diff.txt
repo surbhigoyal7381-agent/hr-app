@@ -1,0 +1,607 @@
+Slice 066 - prototype v3 against v2 (hrms-ux-designer, 25 Oct 2026)
+=====================================================================
+
+WHAT CHANGED
+- v3 draws the three things Surbhi decided on 24 Oct that v2 lacked: D-6 "Other" with its box,
+  D-7 "Raise it with HR", D-8 the 3-mark limit. Nothing else was redesigned.
+- Every new word is in ONE table, `V3`, at the top of the script, in the same shape as the
+  build's GM_RAISE_WORDS. Where the build and spec 03 differ, the table holds the drawn choice and
+  the list below says which one and why.
+- Proof that v2 did not move: every v2 state (82 renders: 4 people x all states x English and
+  Hindi) was drawn in both files and compared. 68 are byte-for-byte the same. The 14 that differ
+  are the ones the decisions change, and only those:
+    mgr/capped (en, hi)      the stop now ends "...If it carries on, you can raise it with HR." + button (D-7)
+    hr/marked, questioned, error (en, hi)   "Uniform incomplete or unclean" -> "Uniform incomplete"
+                             (her decision D4; parity D-1 was already closed)
+    hr/vmarks (en, hi)       sample counts: nobody above 3 now (Kiran 4 -> 3, Aman 1 -> 3)
+    hr/vflag (en, hi)        "4th grooming red" row replaced by "3 grooming reds, the most allowed"
+                             and "Raised again by Ravi Kumar" (D-7, D-8)
+    emp/flag4                removed: a 4th grooming red can no longer happen (D-8). Replaced by
+                             "v3 · Review pending (3 reds)".
+  The mark sheet (open, so not in the base renders) changes as decided: five reasons with "Other",
+  and the help line (Z3).
+- Added 13 states, each labelled "v3 ·":
+  Manager:  Kiran at 3 reds: Raise it with HR (start here); same, Kiran has no login; already
+            raised this month; raised, then HR reviewed (Mon 26 Oct); Kiran's month: review
+            pending (3 reds), I raised it with HR, I read HR's note.
+  HR:       Kiran at 3 reds: review pending, record it (day box refuses a 4th); raised again by
+            Ravi Kumar: record the review (the same "Record the review" sheet).
+  Employee: review pending with 3 reds; bell + day with reason Other; my manager raised it with
+            HR (bell N8 + flag line); after the raise: "Action agreed on Mon 26 Oct".
+- Click-throughs that pass (phone and desk, light and dark): Other -> focus moves into the box;
+  blank -> "Write what was wrong first."; a word about the person -> the build's refusal; 130
+  characters typed -> 100 kept, counter "100 of 100 characters"; saved row reads "Other: Shirt not
+  tucked in, apron missing". Raise: 4 reasons, no Other, no text box; none chosen -> "Choose a
+  reason first."; confirm -> the button is gone, "Raised with HR on Sat 24 Oct. HR will talk to
+  Kiran." shows and takes focus. HR records the review after the raise -> "Recorded by you on Mon
+  26 Oct"; the sheet says "Kiran sees only 'Action agreed on Mon 26 Oct'".
+- Measured with Playwright (Chrome): 212 renders (every state, 390 and 1440, light and dark) plus
+  three open sheets: no sideways scroll, no text under 12 px, no phone target under 44 px, no
+  desk target under 24 px, both text boxes at 16 px, no "undefined" on screen, no script errors.
+  The first pass found the review bar scrolling sideways at 390 (my long state names) and an
+  "undefined" in HR's day box; both fixed. Screens: C:/Surbhi-Git/hrlocal-data/ux-review/2026-10-25-slice066-v3/
+- English only (D-4/D8). The old Hindi strings are left as approved; the Hindi help line still
+  says "you cannot add your own words", which does not matter because Hindi is out of the slice.
+
+DIFFERENCES THAT NEED SURBHI'S YES
+(B = the build in worktree 066-grooming-build must change to match the drawing.)
+
+D-6 "Other"
+Z1  Box label "What was wrong" and blank error "Write what was wrong first." (spec C-1). The build
+    says "Your reason" / "Write your reason in a few words." I drew the spec: the label steers the
+    writer to the clothes, not the person. B: two strings.
+Z2  A counter under the box, "37 of 100 characters". In neither spec nor build; you asked for it.
+    The box stops at 100. The counter is read with the box (aria-describedby), not announced on
+    every key. B: one line.
+Z3  Mark-sheet help "Choose the one reason that fits. Choose Other only if none fits." (spec C-2).
+    The build still says "You cannot add your own words." - untrue now. B: one string.
+Z4  NEW words: with Other chosen, the sheet's info line says "Kiran will be told now, with your
+    name. Your words stay on the day, not in the notice." Build and spec both say "with your name
+    and this reason", which is untrue for Other because the notice never carries the text. B.
+Z5  The bell for Other uses spec N1-O: "...marked a grooming red for you today (Sat 24 Oct). Open
+    the day in your Attendance month to read the reason. It takes ₹200 off your October pay..."
+    The build sends "...today (Sat 24 Oct): Other. It takes ₹200..." - safe, but "Other" alone
+    tells the person nothing. Recommend N1-O. B: grooming.py notify_marked.
+Z6  Drawn as BUILT, not decided by you: the server refuses "Other" text that names health, family,
+    religion, caste, the body and so on: "Keep the reason to clothing or grooming. Nothing about
+    health, family, religion or the person's body." It is a floor, not a filter: a word not on the
+    list still gets through. Keep it? Counsel and security own the list.
+
+D-7 "Raise it with HR"
+Z7  Raise sheet info as built: "HR will be told and will talk to Kiran. Kiran will be told you
+    raised it. This adds no fine and no grooming red." Plus a NO-LOGIN variant the build lacks:
+    "...Kiran has no login, so HR will tell Kiran. This adds no fine and no grooming red." Spec R-1
+    has other words ("HR will be asked to talk to..."); the built ones tell the manager the person
+    will hear their name, which they should know. Help line as built ("...You cannot add your own
+    words." - true in this sheet). B: the no-login variant.
+Z8  After the raise the row shows the stop sentence alone, then "Raised with HR on Sat 24 Oct. HR
+    will talk to Kiran." (spec R-2), and no button. The build keeps the whole warning, so the row
+    says "If it carries on, you can raise it with HR." right above "Raised with HR on Sat 24 Oct."
+    - a contradiction - and has neither "HR will talk to Kiran." nor the no-login line (AC-87e).
+    B: drop the warning's last sentence once raised (grooming.py) and use V3.raisedOn.
+Z9  After "Raise it with HR" focus lands on the new "Raised with HR..." line. The build returns
+    focus to the button, which no longer exists, so a screen-reader user is dropped at the top. B.
+Z10 HR's line after a raise: "Ravi Kumar raised it with HR on Sat 24 Oct: Not in uniform." (spec
+    R-3). The build says "raised it again on". The list keeps your "Raised again by Ravi Kumar".
+    HR's bell N7 in the build also says "raised it again on" (spec: "Ravi Kumar, the manager,
+    raised it with HR on..."). Words only. B: two strings.
+Z11 Colour: the limit row stays neutral grey, as approved in v2. The build paints it amber. Nothing
+    is wrong with the person's day; amber should mean "check this". B: one class.
+Z12 Not drawn (words only): the raise network failure. Spec "Could not raise it. Nothing was sent.
+    Check your connection and try again." Build "Could not save that. Nothing changed...".
+    Recommend the spec's.
+Z13 Built and drawn: while a raise is pending, HR's line shows only the raise; after any review
+    only the LATEST review shows. AC-86 asks HR's line to show both reasons when the limit review
+    is also still pending. Is the raise line alone enough? Recommend yes.
+Z14 Manager's month after a raise (built words, in no spec table): "You raised it with HR on Sat
+    24 Oct. HR will talk to Kiran. You do not need to do anything."
+
+D-8 three marks
+Z15 Drawn as BUILT where the spec differs: HR day box "...the most allowed, so no more can be
+    marked." (spec W2: "so this one cannot be marked."); HR and employee flag lines say "the most
+    allowed in a month" (spec: "the most allowed"); the manager's says "the most allowed". Say yes
+    to the built words, or pick one phrase for all three.
+Z16 A sentence that is now UNTRUE, in v2 and in the build: after a review HR reads "The review will
+    not be raised again for Rahul in October." With D-7 the manager can still raise it once. Not
+    changed in the drawing. Proposed: "More grooming reds in October will not raise it again.
+    Rahul's manager can still raise it with HR once this month." (After the raise review the old
+    sentence is true.)
+Z17 Samples: the employee 3-red state imagines Rahul on Basic ₹20,000 (a Senior needs that to reach
+    3); the "people with grooming reds" view now has nobody above 3.
+
+STILL OPEN FROM BEFORE
+- D-3 (v1's employee "Legal limit reached" with 5 marks) is untouched and still needs your yes.
+
+SUBTRACT PASS
+- Removed v2's "4th grooming red" employee state and list row.
+- Not drawn: the raise failure (Z12), HR's bells N6-3 and N7, the bell when HR records a review.
+  Their words are in spec section 14 and the build.
+- Kept one no-login raise state, because without it the built info line would be untrue (Z7).
+
+=====================================================================
+--- prototype-v2.html	2026-10-24 20:19:41.417468400 +0530
++++ prototype-v3.html	2026-10-25 10:10:37.121050700 +0530
+@@ -3,8 +3,12 @@
+ <head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1">
+-<title>Grooming red - prototype v2 (slice 066)</title>
++<title>Grooming red - prototype v3 (slice 066)</title>
+ <!--
++  Slice 066 prototype v3, 25 Oct 2026. hrms-ux-designer. A copy of v2 (accepted as drawn) with
++  only what Surbhi decided on 24 Oct and v2 lacks: the "Other" reason and its box (D-6), "Raise it
++  with HR" (D-7), and the 3-mark limit words (D-8). Every new word is in the V3 table below.
++  See v3-diff.txt.
+   Slice 066 prototype v2, 24 Oct 2026. hrms-ux-designer. A copy of the approved v1 with only
+   these additions: the "Grooming review pending" line and its clearing sheet, the "limit
+   reached" refusal, HR's "told in person" tick, and two HR list views. See v2-diff.txt.
+@@ -132,6 +136,9 @@
+ .flag blockquote{margin:8px 0;padding:8px 10px;background:var(--surface2);border-radius:var(--r-sm);white-space:pre-wrap}
+ .fld{display:block;font-weight:700;margin:10px 0 4px}
+ .sheet textarea{width:100%;min-height:120px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:16px;font-family:inherit;resize:vertical}
++/* v3: the "Other" box (one line, 16 px) and its counter */
++.sheet input[type="text"]{width:100%;min-height:44px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:16px}
++.counter{color:var(--text3);font-size:var(--fs-sm);margin:4px 0 0}
+ 
+ /* phone frame: the same rules as the portal's @media (max-width: 768px) */
+ .phone .side{display:none}
+@@ -172,7 +179,7 @@
+     <select id="r-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+   <label>Language
+     <select id="r-lang"><option value="en">English</option><option value="hi">हिंदी (machine draft)</option></select></label>
+-  <span class="hint">Review controls only. Every name, time and amount is invented <span class="sample">Sample</span>. The reason list is a draft until DTC gives theirs and counsel checks it. Hindi is a machine draft for native review and covers the manager's Today card, the reason sheet and the employee's notice and day. States starting "v2 ·" are new in this version and are English only.</span>
++  <span class="hint">Review controls only. Every name, time and amount is invented <span class="sample">Sample</span>. The reason list is a draft until DTC gives theirs and counsel checks it. Hindi is a machine draft for native review and covers the manager's Today card, the reason sheet and the employee's notice and day. States starting "v2 ·" are new in this version and are English only. States starting "v3 ·" are new in v3 (English only): the "Other" reason, "Raise it with HR" and the 3-mark limit. In v3 Rahul is a Senior on Basic ₹18,000, so the legal limit stops him at 2 marks; Kiran is a Junior on ₹15,000, so the 3-mark limit stops her first.</span>
+ </div>
+ 
+ <div class="stage phone" id="stage"></div>
+@@ -186,7 +193,7 @@
+     todayHelp: "Off unless you mark it. Mark someone only if they are not groomed well today. They are told at once, with your name and the reason.",
+     clocked: "Clocked in", undo: "Undo",
+     sheetT: function (n, d) { return "Grooming red for " + n + " " + d + "?"; },
+-    sheetHelp: "Choose the one reason that fits. You cannot add your own words.",
++    sheetHelp: "Choose the one reason that fits. Choose Other only if none fits.",   // v3 (D-6): "You cannot add your own words" is no longer true
+     sheetInfo: function (n, hr) { return n + " will be told now, with your name and this reason." + (hr ? " You are marking as HR." : " You can undo this until midnight."); },
+     confirm: "Mark grooming red", cancel: "Cancel",
+     chooseFirst: "Choose a reason first.",
+@@ -221,25 +228,70 @@
+ };
+ var REASONS = [
+   {k: "uniform", en: "Not in uniform", hi: "वर्दी में नहीं"},
+-  {k: "unclean", en: "Uniform incomplete or unclean", hi: "वर्दी अधूरी या गंदी"},
++  {k: "unclean", en: "Uniform incomplete", hi: "वर्दी अधूरी"},   // v3: decision D4 ("unclean" dropped), as built
+   {k: "badge", en: "No name badge", hi: "नाम का बैज नहीं"},
+-  {k: "footwear", en: "Wrong footwear", hi: "गलत जूते-चप्पल"}
++  {k: "footwear", en: "Wrong footwear", hi: "गलत जूते-चप्पल"},
++  {k: "other", en: "Other"}                                     // v3 (D-6); not offered in the raise sheet
+ ];
++
++/* ── v3: every new word in one place (D-6 Other, D-7 raise, D-8 three marks).
++   Built words are used where they are true; where the build and the spec differ,
++   v3-diff.txt says which one is drawn and why. ── */
++var V3 = {
++  // D-6: "Other"
++  otherLabel: "What was wrong",
++  otherHint: "Clothing or grooming only. Nothing about health or family.",
++  otherMax: 100,
++  otherCount: function (n) { return n + " of 100 characters"; },
++  otherBlank: "Write what was wrong first.",
++  otherAboutPerson: "Keep the reason to clothing or grooming. Nothing about health, family, religion or the person's body.",
++  otherInfo: function (n, hr) { return n + " will be told now, with your name. Your words stay on the day, not in the notice." + (hr ? " You are marking as HR." : " You can undo this until midnight."); },
++  otherShown: function (txt) { return "Other: " + txt; },
++  otherSample: "Shirt not tucked in, apron missing",
++  noticeOther: function (who, day, amt, month) { return who + " marked a grooming red for you " + day + ". Open the day in your Attendance month to read the reason. It takes " + amt + " off your " + month + " pay. If you think it is wrong, open the day and tap “Ask HR to look at this”."; },
++  // D-7: "Raise it with HR"
++  raiseWarn: function (first) { return " HR has been told and will talk to " + first + ". If it carries on, you can raise it with HR."; },
++  raiseBtn: "Raise it with HR",
++  raiseSpoken: function (name) { return "Raise " + name + "’s grooming with HR"; },
++  raiseTitle: function (name) { return "Raise " + name + "’s grooming with HR?"; },
++  raiseHelp: "Choose the one reason that fits. You cannot add your own words.",
++  raiseInfo: function (first, login) { return "HR will be told and will talk to " + first + ". " + (login ? first + " will be told you raised it." : first + " has no login, so HR will tell " + first + ".") + " This adds no fine and no grooming red."; },
++  raisedOn: function (on, first, login, reviewed) { return "Raised with HR on " + on + ". " + (reviewed ? "HR recorded a review on " + reviewed + "." : login ? "HR will talk to " + first + "." : first + " has no login, so HR will tell " + first + "."); },
++  employeeLine: function (by) { return by + ", your manager, has asked HR to talk to you about grooming. This adds no fine."; },
++  managerLine: function (who, on, first) { return who + " raised it with HR on " + on + ". HR will talk to " + first + ". You do not need to do anything."; },
++  hrLine: function (by, on, reason) { return by + " raised it with HR on " + on + ": " + reason + "."; },
++  listRaised: function (by) { return "Raised again by " + by; },
++  // D-8: at most 3 marks a month
++  maxMgr: function (first) { return first + " has had 3 grooming reds this month, the most allowed."; },
++  maxHrDay: function (first) { return first + " has had 3 grooming reds this month, the most allowed, so no more can be marked."; },
++  maxFlagMgr: function (first, month) { return first + " has had 3 grooming reds in " + month + ", the most allowed, so HR will talk to " + first + " about it. You do not need to do anything."; },
++  maxFlagHr: function (on, first, month) { return "Raised on " + on + ": " + first + " reached 3 grooming reds in " + month + ", the most allowed in a month."; },
++  maxFlagEmp: function (month) { return "You have 3 grooming reds in " + month + ", the most allowed in a month, so HR will talk to you about it."; },
++  listMax: "3 grooming reds, the most allowed"
++};
++/* A few words from the server's list (grooming.py NOT_ABOUT_CLOTHES), enough to click the refusal. */
++var ABOUT_PERSON = /\b(health\w*|sick\w*|family|religio\w*|pregnan\w*|turban\w*|hijab\w*|bindi\w*)\b/i;
++var NOTE_K = "Talked again after the raise. Kiran will keep the spare apron in her locker and check her uniform with the shift lead at the start of each shift for the rest of October.";
+ var REMOVE_WHY = ["Marked by mistake", "Marked on the wrong person", "The employee showed it was wrong"];
+ 
+ var STATES = {
+   mgr: [["today", "Today: mark someone (start here)"], ["loading", "Loading"], ["nonein", "Nobody clocked in yet"],
+         ["nologin", "No login (every DTC staff member today)"], ["nograde", "Grade not set: cannot be priced"], ["error", "Save fails (network)"], ["midnight", "After midnight: own mark locked"],
+         ["byhr", "Already marked by HR"], ["nobody", "Nobody reports to me"], ["month", "Rahul's month (no money shown)"],
+-        ["capped", "v2 · Limit reached: Rahul cannot be marked"], ["flag", "v2 · Rahul's month: review pending"], ["cleared", "v2 · Rahul's month: review recorded"]],
++        ["capped", "v2 · Limit reached: Rahul (v3: + raise)"], ["flag", "v2 · Rahul's month: review pending"], ["cleared", "v2 · Rahul's month: review recorded"],
++        ["max", "v3 · Kiran at 3 reds: Raise it with HR"], ["maxnl", "v3 · Same, Kiran has no login"],
++        ["raised", "v3 · Already raised this month"], ["raisedrv", "v3 · Raised, then HR reviewed (Mon 26)"],
++        ["kflag", "v3 · Kiran's month: review pending"], ["kpend", "v3 · Kiran's month: I raised it with HR"], ["kcleared", "v3 · Kiran's month: I read HR's note"]],
+   hr: [["unmarked", "A day with no mark: mark it"], ["marked", "A day marked by the manager: remove"], ["questioned", "Employee asked HR to look"],
+        ["nomanager", "Person has no reporting manager"], ["lastmonth", "A day last month"], ["nograde", "Grade not set"], ["contract", "Contract staff"], ["closed", "Month closed (slip submitted)"],
+        ["leave", "Day on leave"], ["nopunch", "Day with no punch"], ["error", "Remove fails"], ["report", "Monthly view per marker (desk)"],
+        ["nologin", "v2 · No login: HR ticks 'told in person'"], ["capped", "v2 · Limit reached + review pending: record it"], ["cleared", "v2 · Review recorded"],
+-       ["vmarks", "v2 · View: people with grooming reds this month (desk)"], ["vflag", "v2 · View: grooming review pending (desk)"]],
++       ["vmarks", "v2 · View: people with grooming reds this month (desk)"], ["vflag", "v2 · View: review pending (desk; v3 words)"],
++       ["kmax", "v3 · Kiran at 3 reds: record the review"], ["kraised", "v3 · Raised again: record the review"]],
+   emp: [["notice", "The bell notice (start here)"], ["day", "The day in my month"], ["asked", "I asked HR to look"],
+         ["kept", "HR kept it"], ["removed", "HR removed it"], ["undone", "My manager undid it the same day"], ["capped", "Legal limit reached this month"],
+-        ["flag", "v2 · Review pending (legal limit reached)"], ["flag4", "v2 · Review pending (4th grooming red)"], ["cleared", "v2 · Review done: action agreed"]],
++        ["flag", "v2 · Review pending (legal limit reached)"], ["flag3", "v3 · Review pending (3 reds; was v2's 4th)"], ["cleared", "v2 · Review done: action agreed"],
++        ["other", "v3 · Bell and day: reason Other"], ["eraised", "v3 · My manager raised it with HR"], ["eagreed", "v3 · After the raise: action agreed"]],
+   con: [["month", "My month: nothing about grooming"]]
+ };
+ 
+@@ -260,17 +312,24 @@
+        mark: S.state === "byhr" ? {k: "uniform", by: "Ritika Mehra (HR)", at: "11:05", mine: false} : null},
+       {id: "aman", name: "Aman Verma", job: "Cashier", inAt: "09:58",
+        mark: {k: "badge", by: "you", at: "10:31", mine: true}},
+-      {id: "kiran", name: "Kiran Bala", job: "Sales Associate", inAt: "10:40", sub: "Half-day leave this afternoon", mark: null},
++      {id: "kiran", name: "Kiran Bala", job: "Sales Associate", inAt: "10:40", sub: "Half-day leave this afternoon", mark: null,
++       login: S.state !== "maxnl",   // v3
++       raised: S.state === "raised" ? {on: "Sat 24 Oct"} : S.state === "raisedrv" ? {on: "Sat 24 Oct", rv: "Mon 26 Oct"} : null},
+       {id: "geeta", name: "Geeta Devi", job: "Housekeeping", inAt: "09:30", contract: true}
+     ],
+     base: 2,               // this month's marks before today
+     flash: {},             // one-line message per row after an action
+-    review: S.state === "cleared" ? "cleared" : ((["flag", "flag4"].indexOf(S.state) > -1 || (S.person === "hr" && S.state === "capped")) ? "pending" : null),   // v2; the employee's v1 "capped" state is untouched
+-    hrMark: (["unmarked", "nomanager", "lastmonth", "nograde", "nologin", "capped", "cleared"].indexOf(S.state) > -1) ? null
++    review: (["cleared", "kcleared", "eagreed"].indexOf(S.state) > -1) ? "cleared" : ((["flag", "flag3", "kflag", "kpend", "kmax", "kraised", "eraised"].indexOf(S.state) > -1 || (S.person === "hr" && S.state === "capped")) ? "pending" : null),   // v2 + v3; the employee's v1 "capped" state is untouched
++    /* v3: whose review, why it was raised, the review date and "today" */
++    subj: (["kflag", "kpend", "kcleared", "kmax", "kraised"].indexOf(S.state) > -1) ? {name: "Kiran Bala", first: "Kiran", note: NOTE_K} : {name: "Rahul Sharma", first: "Rahul", note: NOTE},
++    why: (["kpend", "kraised", "eraised"].indexOf(S.state) > -1) ? "raised" : (["kflag", "kmax", "flag3"].indexOf(S.state) > -1) ? "max" : "legal",
++    rvOn: S.state === "kmax" ? "Fri 23 Oct" : (["kraised", "kcleared", "eagreed"].indexOf(S.state) > -1) ? "Mon 26 Oct" : "Sat 24 Oct",
++    today: S.state === "raisedrv" ? "Mon 26 Oct" : "Sat 24 Oct",
++    hrMark: (["unmarked", "nomanager", "lastmonth", "nograde", "nologin", "capped", "cleared", "kmax", "kraised"].indexOf(S.state) > -1) ? null
+            : {k: "unclean", by: "Ravi Kumar", as: "manager", at: "Wed 21 Oct at 10:31"},
+     asked: S.state === "questioned",
+     empAsked: S.state === "asked",
+-    bellOpen: S.state === "notice"
++    bellOpen: S.state === "notice" || S.state === "other" || S.state === "eraised"   // v3: two more bell states
+   };
+ }
+ 
+@@ -304,11 +363,14 @@
+   if (S.state === "nograde" && p.id === "rahul") {
+     return h + '<div class="msg">Rahul’s grade is not set, so a grooming red cannot be priced. Ask HR to set it.</div></div>';
+   }
+-  if (S.state === "capped" && p.id === "rahul") {   /* v2: R12 stop, no rupees for a manager */
+-    return h + '<div class="msg">Rahul has reached the most grooming reds the law allows this month, so this one cannot be marked.</div></div>';
++  if (S.state === "capped" && p.id === "rahul") {   /* v2: R12 stop, no rupees for a manager; v3: + raise */
++    return h + capRow(p, "Rahul has reached the most grooming reds the law allows this month, so this one cannot be marked.") + "</div>";
++  }
++  if (["max", "maxnl", "raised", "raisedrv"].indexOf(S.state) > -1 && p.id === "kiran") {   /* v3: the 3-mark limit (D-8) */
++    return h + capRow(p, V3.maxMgr("Kiran")) + "</div>";
+   }
+   if (p.mark) {
+-    var r = rs(reasonBy(p.mark.k));
++    var r = reasonText(p.mark);
+     var line;
+     if (p.mark.mine && S.state === "midnight" && p.id === "aman") {
+       line = "Marked by you yesterday at " + p.mark.at + ". The undo closed at midnight. To remove it now, ask HR.";
+@@ -331,6 +393,19 @@
+   return h + "</div>";
+ }
+ 
++/* v3: a row at either limit. Before a raise: the stop, the raise sentence and the button (D-7).
++   After it: the stop, then when it was raised and what happens next - no button, once a month. */
++function capRow(p, stop) {
++  var first = p.name.split(" ")[0];
++  if (p.raised) {
++    return '<div class="msg">' + esc(stop) + "</div>"
++      + '<div class="msg" role="status" tabindex="-1">' + esc(V3.raisedOn(p.raised.on, first, p.login !== false, p.raised.rv)) + "</div>";
++  }
++  return '<div class="msg">' + esc(stop + V3.raiseWarn(first)) + "</div>"
++    + '<button class="btn" onclick="openRaise(\'' + p.id + '\')" aria-label="' + esc(V3.raiseSpoken(p.name)) + '">' + esc(V3.raiseBtn) + "</button>";
++}
++function reasonText(mk) { return mk.k === "other" ? V3.otherShown(mk.other) : rs(reasonBy(mk.k)); }   // v3
++
+ function mgrTeam() {
+   var sub = "Whole team · today first, then days that need a look";
+   var body = "";
+@@ -340,7 +415,7 @@
+     return shell("Attendance", "Whole team · days that need a look", body);
+   }
+   var card = '<section class="card" aria-labelledby="today-h"><div class="card-h"><h2 class="card-t" id="today-h" style="margin:0">'
+-    + esc(t("today")) + " · Sat 24 Oct · " + esc(t("groom")) + '</h2><span class="card-s">Your direct reports who have clocked in</span></div><div class="card-b">'
++    + esc(t("today")) + " · " + M.today + " · " + esc(t("groom")) + '</h2><span class="card-s">Your direct reports who have clocked in</span></div><div class="card-b">'
+     + '<p class="help">' + esc(t("todayHelp")) + "</p>";
+   if (S.state === "loading") {
+     card += '<div class="skel"></div><div class="skel"></div><div class="skel"></div><p class="muted" role="status">Loading today’s people…</p>';
+@@ -375,35 +450,41 @@
+   if (!M.review) return "";
+   var h = '<section class="flag" aria-labelledby="rv-h">';
+   if (M.flash.review) h += '<p role="status"><b>' + esc(M.flash.review) + "</b></p>";
++  var f = M.subj.first, on = M.rvOn;   // v3: Rahul (v2) or Kiran
+   if (M.review === "pending") {
+     h += '<h2 id="rv-h">Grooming review pending</h2>';
+     if (viewer === "emp") {
+-      h += (S.state === "flag4"
+-          ? "<p>You have 4 grooming reds in October, so HR will talk to you about it.</p>"
++      h += M.why === "raised" ? "<p>" + esc(V3.employeeLine("Ravi Kumar")) + "</p>"   // v3 (D-7): fixed words, no reason
++        : (S.state === "flag3"
++          ? "<p>" + esc(V3.maxFlagEmp("October")) + "</p>"   // v3 (D-8)
+           : "<p>You have 2 grooming reds in October (₹400). One more would pass the legal limit of ₹540 (3% of your wages), so no more can be marked this month. HR will talk to you about it.</p>")
+         + "<p>The review does not change your fines.</p>";
+     } else if (viewer === "mgr") {
+-      h += "<p>Rahul has reached the most grooming reds the law allows in October, so HR will talk to Rahul about it. You do not need to do anything.</p>";
++      h += M.why === "raised" ? "<p>" + esc(V3.managerLine("You", "Sat 24 Oct", f)) + "</p>"
++        : M.why === "max" ? "<p>" + esc(V3.maxFlagMgr(f, "October")) + "</p>"
++        : "<p>Rahul has reached the most grooming reds the law allows in October, so HR will talk to Rahul about it. You do not need to do anything.</p>";
+     } else {
+-      h += "<p>Raised on Thu 22 Oct: Rahul reached the legal limit for grooming reds in October (2 marks; limit ₹540 = 3% of Basic ₹18,000).</p>"
+-        + "<p>Talk to Rahul about dress, agree an action, then record it here.</p>"
+-        + '<div class="acts"><button class="btn btn-primary" onclick="openReview()" aria-label="Record the grooming review for Rahul Sharma">Record the review</button></div>';
++      h += (M.why === "raised" ? "<p>" + esc(V3.hrLine("Ravi Kumar", "Sat 24 Oct", "Not in uniform")) + "</p>"
++          : M.why === "max" ? "<p>" + esc(V3.maxFlagHr("Thu 22 Oct", f, "October")) + "</p>"
++          : "<p>Raised on Thu 22 Oct: Rahul reached the legal limit for grooming reds in October (2 marks; limit ₹540 = 3% of Basic ₹18,000).</p>")
++        + "<p>Talk to " + f + " about dress, agree an action, then record it here.</p>"
++        + '<div class="acts"><button class="btn btn-primary" onclick="openReview()" aria-label="Record the grooming review for ' + M.subj.name + '">Record the review</button></div>';
+     }
+     return h + "</section>";
+   }
+   /* cleared */
+-  if (viewer === "emp") return h + '<h2 id="rv-h">Grooming review</h2><p>Action agreed on Sat 24 Oct.</p></section>';
++  if (viewer === "emp") return h + '<h2 id="rv-h">Grooming review</h2><p>Action agreed on ' + on + ".</p></section>";
+   h += '<h2 id="rv-h">Grooming review recorded</h2>'
+-    + "<p>" + (viewer === "hr" ? "Recorded by you" : "Recorded by Ritika Mehra (HR)") + " on Sat 24 Oct.</p>"
+-    + "<blockquote>" + esc(M.note || NOTE) + "</blockquote>";
+-  if (viewer === "hr") h += "<p>The grooming reds this month still stand. The review will not be raised again for Rahul in October.</p>"
+-    + '<p class="muted">This note cannot be changed or deleted. Only HR and Rahul’s manager can read it. Rahul sees only “Action agreed on Sat 24 Oct”.</p>';
+-  else h += '<p class="muted">Only HR and you, as Rahul’s manager, can read this. Rahul sees only “Action agreed on Sat 24 Oct”.</p>';
++    + "<p>" + (viewer === "hr" ? "Recorded by you" : "Recorded by Ritika Mehra (HR)") + " on " + on + ".</p>"
++    + "<blockquote>" + esc(M.note || M.subj.note) + "</blockquote>";
++  if (viewer === "hr") h += "<p>The grooming reds this month still stand. The review will not be raised again for " + f + " in October.</p>"
++    + '<p class="muted">This note cannot be changed or deleted. Only HR and ' + f + "’s manager can read it. " + f + " sees only “Action agreed on " + on + "”.</p>";
++  else h += '<p class="muted">Only HR and you, as ' + f + "’s manager, can read this. " + f + " sees only “Action agreed on " + on + "”.</p>";
+   return h + "</section>";
+ }
+ 
+ function mgrMonth() {
+-  if (S.state === "flag" || S.state === "cleared") return mgrMonthReview();
++  if (["flag", "cleared", "kflag", "kpend", "kcleared"].indexOf(S.state) > -1) return mgrMonthReview();   // v3: + Kiran
+   var rows = [
+     {d: "22 Oct", w: "Thu", tags: '<span class="tag">Present</span>', h: "9.5h"},
+     {d: "23 Oct", w: "Fri", tags: '<span class="tag">Present</span>', h: "9.8h"},
+@@ -433,21 +514,22 @@
+   var detail = function () {
+     return '<div class="detail"><div class="facts"><div>Shift<span>10:00 - 20:00</span></div><div>Worked<span>9.5h</span></div></div>'
+       + '<div class="gblock on"><h3>' + esc(t("groom")) + '</h3><p><span class="tag gr">' + esc(t("groom")) + "</span> No name badge.</p>"
+-      + "<p>Marked by you on Thu 22 Oct at 10:12. Rahul has been told.</p></div></div>";
++      + "<p>Marked by you on Thu 22 Oct at 10:12. " + M.subj.first + " has been told.</p></div></div>";
+   };
+-  var body = '<div class="filters" aria-hidden="true"><span>Whose record: Rahul Sharma</span><span>October 2026</span></div>'
++  var body = '<div class="filters" aria-hidden="true"><span>Whose record: ' + M.subj.name + "</span><span>October 2026</span></div>"
+     + reviewLine("mgr")
+     + '<div class="tiles"><div class="tile"><div class="n">20</div><div class="l">Days present</div></div><div class="tile"><div class="n">1</div><div class="l">Late arrivals</div></div></div>'
+     + monthTable(rows, "22 Oct", detail);
+-  return shell("Attendance", "Rahul Sharma · October 2026", body);
++  return shell("Attendance", M.subj.name + " · October 2026", body);
+ }
+ 
+ /* ── HR: a person's day ───────────────────────────────────────────────── */
+ function hrBlock() {
+   var st = S.state, m = M.hrMark;
+-  var name = st === "contract" ? "Geeta Devi" : st === "nomanager" ? "Kiran Bala" : "Rahul Sharma";
++  var name = st === "contract" ? "Geeta Devi" : (st === "nomanager" || M.subj.first === "Kiran") ? "Kiran Bala" : "Rahul Sharma";
+   var first = name.split(" ")[0];
+   var h = '<div class="gblock' + (m && ["marked", "questioned", "error"].indexOf(st) > -1 ? " on" : "") + '"><h3>' + esc(t("groom")) + "</h3>";
++  if ((st === "kmax" || st === "kraised") && !m) return h + "<p>No grooming red on this day.</p><p>" + esc(V3.maxHrDay(first)) + "</p></div>";   // v3 (D-8); HR can never add a 4th
+   if (st === "contract") return h + "<p>Geeta is Contract staff. Contract staff are not given grooming reds, so there is nothing to mark.</p></div>";
+   if (st === "closed") return h + "<p>Rahul’s pay slip for September is submitted, so grooming reds for September are closed. They cannot be added or removed now.</p></div>";
+   if (st === "lastmonth") return h + "<p>No grooming red on this day.</p><p>Marks can be added only for days in this month. A September mark that already exists can still be removed until September’s pay slip is submitted.</p></div>";
+@@ -461,7 +543,7 @@
+     h += "<p>No grooming red on this day.</p>";
+     return h + '<div class="acts"><button class="btn" onclick="openMark(\'hr\')">Mark grooming red</button></div></div>';
+   }
+-  h += '<p><span class="tag gr">' + esc(t("groom")) + "</span> " + esc(reasonBy(m.k).en) + ".</p>"
++  h += '<p><span class="tag gr">' + esc(t("groom")) + "</span> " + esc(m.k === "other" ? V3.otherShown(m.other) : reasonBy(m.k).en) + ".</p>"
+     + "<p>Marked by " + esc(m.by) + " (" + esc(m.as) + ") on " + esc(m.at) + ".</p>";
+   if (M.asked) h += '<p class="msg warn" style="padding:8px 10px;border-radius:6px;background:var(--amber-lt)">' + first + " asked HR to look at this on Wed 21 Oct at 14:02.</p>";
+   if (M.kept) h += "<p>You checked it on Sat 24 Oct and kept it. " + first + " has been told.</p>";
+@@ -473,7 +555,7 @@
+ function hrDay() {
+   if (S.state === "report") return hrReport();
+   if (S.state === "vmarks" || S.state === "vflag") return hrViewV2();   // v2
+-  var who = S.state === "contract" ? "Geeta Devi" : S.state === "nomanager" ? "Kiran Bala" : "Rahul Sharma";
++  var who = S.state === "contract" ? "Geeta Devi" : (S.state === "nomanager" || M.subj.first === "Kiran") ? "Kiran Bala" : "Rahul Sharma";
+   var month = (S.state === "closed" || S.state === "lastmonth") ? "September 2026" : "October 2026";
+   var dd = (S.state === "closed" || S.state === "lastmonth") ? ["17 Sep", "18 Sep", "19 Sep"] : ["20 Oct", "21 Oct", "22 Oct"];
+   var tagOn = M.hrMark && ["marked", "questioned", "error"].indexOf(S.state) > -1;
+@@ -503,8 +585,8 @@
+     + (marks ? "<th>Employee</th><th>Grooming reds this month</th>"
+              : "<th>Employee</th><th>Why it was raised</th><th>Raised on</th><th>Grooming reds this month</th>")
+     + "</tr></thead><tbody>"
+-    + (marks ? '<tr><td>Kiran Bala</td><td class="n">4</td></tr><tr><td>Rahul Sharma</td><td class="n">2</td></tr><tr><td>Aman Verma</td><td class="n">1</td></tr><tr><td>Pooja Nair</td><td class="n">1</td></tr><tr><td>Sunita Rawat</td><td class="n">1</td></tr>'
+-             : '<tr><td>Rahul Sharma</td><td>Legal limit reached</td><td>Thu 22 Oct</td><td class="n">2</td></tr><tr><td>Kiran Bala</td><td>4th grooming red</td><td>Fri 23 Oct</td><td class="n">4</td></tr>')
++    + (marks ? '<tr><td>Aman Verma</td><td class="n">3</td></tr><tr><td>Kiran Bala</td><td class="n">3</td></tr><tr><td>Rahul Sharma</td><td class="n">2</td></tr><tr><td>Pooja Nair</td><td class="n">1</td></tr><tr><td>Sunita Rawat</td><td class="n">1</td></tr>'   /* v3: nobody above 3 */
++             : '<tr><td>Rahul Sharma</td><td>Legal limit reached</td><td>Thu 22 Oct</td><td class="n">2</td></tr><tr><td>Aman Verma</td><td>' + esc(V3.listMax) + '</td><td>Fri 23 Oct</td><td class="n">3</td></tr><tr><td>Kiran Bala</td><td>' + esc(V3.listRaised("Ravi Kumar")) + '</td><td>Sat 24 Oct</td><td class="n">3</td></tr>')   /* v3 (D-7, D-8) */
+     + "</tbody></table></div>"
+     + (marks ? '<p class="help">Only people with at least one live grooming red this month. Removed marks are not counted. Click a row to see that person’s marks. You see only the people you look after as HR.</p>'
+              : '<p class="help">To record a review, open the person’s Attendance month. A person leaves this list when their review is recorded, or when a mark is removed and the reason no longer holds. When nobody is waiting, the list says “No grooming review is pending.”</p>')
+@@ -536,7 +618,7 @@
+   if (st === "removed" || st === "undone") {
+     return '<div class="gblock"><h3>' + esc(t("groom")) + "</h3><p>No grooming red on this day.</p></div>";
+   }
+-  var h = '<div class="gblock on"><h3>' + esc(t("groom")) + '</h3><p><span class="tag gr">' + esc(t("groom")) + "</span> " + esc(rs(REASONS[0])) + ".</p>"
++  var h = '<div class="gblock on"><h3>' + esc(t("groom")) + '</h3><p><span class="tag gr">' + esc(t("groom")) + "</span> " + esc(st === "other" ? V3.otherShown(V3.otherSample) : rs(REASONS[0])) + ".</p>"   // v3: Other shows its words here, never in the notice
+     + "<p>Marked by Ravi Kumar, your manager, on Sat 24 Oct at 10:24.</p>"
+     + (st === "capped"
+         ? "<p>A grooming red costs ₹200 a day (the Senior rate). You have 5 this month, which would be ₹1,000. The law limits fines to 3% of your wages, so <b>₹540</b> comes off your October pay.</p>"
+@@ -560,13 +642,13 @@
+     {d: "23 Oct", w: "Fri", tags: '<span class="tag">Present</span>', h: "9.8h"},
+     {d: "24 Oct", w: "Sat", tags: marked ? GTAG() : '<span class="tag">Present</span>', h: "--"}
+   ];
+-  var gN = S.state === "capped" ? "5" : S.state === "flag4" ? "4" : rv ? "2" : "1";
+-  var gA = S.state === "capped" ? "₹540, the legal limit" : S.state === "flag4" ? "₹800" : rv ? "₹400" : "₹200";
++  var gN = S.state === "capped" ? "5" : S.state === "flag3" ? "3" : rv ? "2" : "1";
++  var gA = S.state === "capped" ? "₹540, the legal limit" : S.state === "flag3" ? "₹600" : rv ? "₹400" : "₹200";
+   var tiles = (rv ? reviewLine("emp") : "")
+     + '<div class="tiles"><div class="tile"><div class="n">20</div><div class="l">Days present</div></div><div class="tile"><div class="n">1</div><div class="l">Late arrivals</div></div>'
+     + (marked ? '<div class="tile gr"><div class="n">' + gN + ' <small style="font-size:var(--fs-md)">· ' + gA + '</small></div><div class="l">' + esc(t("groom")) + " · off October pay</div></div>" : "")
+     + "</div>"
+-    + (S.state === "flag4" ? '<div class="note"><b>Sample.</b> For a Senior to reach a 4th mark, Basic must be at least ₹26,667. This state imagines Rahul on ₹30,000; the other v2 states use ₹18,000.</div>' : "");
++    + (S.state === "flag3" ? '<div class="note"><b>Sample.</b> For a Senior to reach a 3rd mark, Basic must be at least ₹20,000 (3 × ₹200 = ₹600 = 3%). This state imagines Rahul on ₹20,000; the other states use ₹18,000.</div>' : "");
+   var detail = function () {
+     return '<div class="detail"><div class="facts"><div>Shift<span>10:00 - 20:00</span></div><div>Worked<span>--</span></div></div>'
+       + (con ? '<p class="muted" style="margin-top:10px">The correction section below the day is unchanged.</p>' : empDayBlock()) + "</div>";
+@@ -576,7 +658,7 @@
+   var after = "";
+   if (M.bellOpen || ["kept", "removed", "undone"].indexOf(S.state) > -1) after = bellPanel();
+   return shell("Attendance", (con ? "Your record" : "Your record") + " · October 2026", body,
+-    {unread: (!con && (S.state === "notice" || S.state === "kept" || S.state === "removed" || S.state === "undone")) ? 1 : 0, after: after});
++    {unread: (!con && (["notice", "kept", "removed", "undone", "other", "eraised"].indexOf(S.state) > -1)) ? 1 : 0, after: after});
+ }
+ 
+ function bellPanel() {
+@@ -584,7 +666,9 @@
+   if (S.state === "undone") items.push("Ravi Kumar, your manager, removed the grooming red he marked for you today (Sat 24 Oct). Nothing will come off your pay for it.");
+   if (S.state === "removed") items.push("Ritika Mehra (HR) removed the grooming red on Sat 24 Oct: Marked by mistake. Nothing will come off your pay for it.");
+   if (S.state === "kept") items.push("Ritika Mehra (HR) checked the grooming red on Sat 24 Oct and kept it. ₹200 still comes off your October pay.");
+-  items.push(t("eNotice")(S.lang === "hi" ? "रवि कुमार (आपके मैनेजर)" : "Ravi Kumar, your manager,", S.lang === "hi" ? "आज (शनि 24 अक्टू)" : "today (Sat 24 Oct)", rs(REASONS[0]), "₹200", S.lang === "hi" ? "अक्टूबर" : "October"));
++  if (S.state === "eraised") items.push(V3.employeeLine("Ravi Kumar"));   // v3 (D-7): N8, fixed words
++  if (S.state === "other") items.push(V3.noticeOther("Ravi Kumar, your manager,", "today (Sat 24 Oct)", "₹200", "October"));   // v3 (D-6): N1-O, never the typed words
++  else items.push(t("eNotice")(S.lang === "hi" ? "रवि कुमार (आपके मैनेजर)" : "Ravi Kumar, your manager,", S.lang === "hi" ? "आज (शनि 24 अक्टू)" : "today (Sat 24 Oct)", rs(REASONS[0]), "₹200", S.lang === "hi" ? "अक्टूबर" : "October"));
+   return '<div class="notes" role="dialog" aria-label="Notifications"><h2>Notifications</h2>'
+     + items.map(function (x, i) { return '<button class="nitem' + (i === 0 ? " unread" : "") + '" onclick="toDay()">' + esc(x) + '<span class="when">' + (i === 0 && items.length > 1 ? "Today, 15:40" : "Today, 10:24") + "</span></button>"; }).join("")
+     + "</div>";
+@@ -602,24 +686,41 @@
+       + '<div role="radiogroup" aria-labelledby="sh-t" aria-describedby="sh-help">'
+       + REASONS.map(function (r) {
+           var on = SH.chosen === r.k;
+-          return '<label class="opt' + (on ? " sel" : "") + '"><input type="radio" name="gr" value="' + r.k + '"' + (on ? " checked" : "") + ' onchange="SH.chosen=this.value;SH.error=null;paint(true)"> ' + esc(rs(r)) + "</label>";
++          return '<label class="opt' + (on ? " sel" : "") + '"><input type="radio" name="gr" value="' + r.k + '"' + (on ? " checked" : "") + ' onchange="pickReason(this.value)"> ' + esc(rs(r)) + "</label>";
+         }).join("") + "</div>"
++      + (SH.chosen === "other"   /* v3 (D-6): the box appears only for Other */
++          ? '<label class="fld" for="ot-text">' + esc(V3.otherLabel) + "</label>"
++            + '<p class="help" id="ot-help">' + esc(V3.otherHint) + "</p>"
++            + '<input type="text" id="ot-text" maxlength="' + V3.otherMax + '" autocomplete="off" aria-describedby="ot-help ot-count" value="' + esc(SH.other || "") + '" oninput="SH.other=this.value;document.getElementById(\'ot-count\').textContent=V3.otherCount(this.value.length)">'
++            + '<p class="counter" id="ot-count">' + esc(V3.otherCount((SH.other || "").length)) + "</p>"
++          : "")
+       + (noLogin(SH)
+           ? '<div class="info">' + esc(name.split(" ")[0]) + (hr
+               ? ' has no login and will not get a notice from the app. Tell ' + esc(name.split(" ")[0]) + ' in person, with the reason, before you mark it.</div>'   /* v2: HR tick */
+               : ' has no login and will not get a notice from the app. Tell them today, and tell them they can speak to HR.</div>')
+             + '<label class="opt' + (SH.told ? " sel" : "") + '"><input type="checkbox"' + (SH.told ? " checked" : "") + ' onchange="SH.told=this.checked;SH.error=null;paint(true)"> I have told ' + esc(name.split(" ")[0]) + (hr ? " in person" : " in person today") + "</label>"
+-          : '<div class="info">' + esc(t("sheetInfo")(name.split(" ")[0], hr)) + "</div>");
++          : '<div class="info">' + esc((SH.chosen === "other" ? V3.otherInfo : t("sheetInfo"))(name.split(" ")[0], hr)) + "</div>");   // v3: with Other the notice does not carry the reason
+   } else if (SH.kind === "remove") {
+     h += '<h2 id="sh-t" tabindex="-1">Remove this grooming red?</h2><p class="help">Why are you removing it?</p><div role="radiogroup" aria-labelledby="sh-t">'
+       + REMOVE_WHY.map(function (r) { var on = SH.chosen === r; return '<label class="opt' + (on ? " sel" : "") + '"><input type="radio" name="rw" value="' + esc(r) + '"' + (on ? " checked" : "") + ' onchange="SH.chosen=this.value;SH.error=null;paint(true)"> ' + esc(r) + "</label>"; }).join("")
+       + '</div><div class="info">' + hrFirst() + (S.state === "nologin" ? " has no login, so tell them it was removed, by you, and why." : " will be told it was removed, by you, and why.") + ' The person who marked it will see it is gone. A record of the mark and of its removal is kept.</div>';
+-  } else if (SH.kind === "review") {   /* v2: the clearing sheet */
+-    h += '<h2 id="sh-t" tabindex="-1">Record the grooming review for Rahul Sharma</h2>'
++  } else if (SH.kind === "raise") {   /* v3 (D-7): one reason from the fixed list, no Other, no text */
++    var rp = personById(SH.target), rf = rp.name.split(" ")[0];
++    h += '<h2 id="sh-t" tabindex="-1">' + esc(V3.raiseTitle(rp.name)) + "</h2>"
++      + '<p class="help" id="sh-help">' + esc(V3.raiseHelp) + "</p>"
++      + '<div role="radiogroup" aria-labelledby="sh-t" aria-describedby="sh-help">'
++      + REASONS.filter(function (r) { return r.k !== "other"; }).map(function (r) {
++          var on = SH.chosen === r.k;
++          return '<label class="opt' + (on ? " sel" : "") + '"><input type="radio" name="rx" value="' + r.k + '"' + (on ? " checked" : "") + ' onchange="SH.chosen=this.value;SH.error=null;paint(true)"> ' + esc(r.en) + "</label>";
++        }).join("") + "</div>"
++      + '<div class="info">' + esc(V3.raiseInfo(rf, rp.login !== false)) + "</div>";
++  } else if (SH.kind === "review") {   /* v2: the clearing sheet (v3: whose review and the date follow the state) */
++    var f = M.subj.first;
++    h += '<h2 id="sh-t" tabindex="-1">Record the grooming review for ' + M.subj.name + "</h2>"
+       + '<label class="fld" for="rv-text">What you talked about and the action plan</label>'
+       + '<p class="help" id="rv-help">Keep it to dress and the action you agreed. Do not write about health, family, religion or anything else personal.</p>'
+       + '<textarea id="rv-text" aria-describedby="rv-help rv-info" oninput="SH.text=this.value">' + esc(SH.text || "") + "</textarea>"
+-      + '<div class="info" id="rv-info">Only HR and Rahul’s manager can read this. Rahul sees only “Action agreed on Sat 24 Oct”. You cannot change or delete it after saving. It clears the review. It does not remove any grooming red or change any fine.</div>';
++      + '<div class="info" id="rv-info">Only HR and ' + f + "’s manager can read this. " + f + " sees only “Action agreed on " + M.rvOn + "”. You cannot change or delete it after saving. It clears the review. It does not remove any grooming red or change any fine.</div>";
+   } else if (SH.kind === "keep") {
+     h += '<h2 id="sh-t" tabindex="-1">Keep the grooming red?</h2><div class="info">Rahul will be told that HR has checked it and the mark stays. ₹200 still comes off his October pay.</div>';
+   } else if (SH.kind === "ask") {
+@@ -627,7 +728,7 @@
+       + '<div class="info">' + (S.lang === "hi" ? "HR आपका अनुरोध देखेगा और फ़ैसला करेगा। फ़ैसला आपको बेल पर बताया जाएगा। तब तक मार्क बना रहेगा।" : "HR will see your request and decide. You will be told on the bell. Until then the mark stays.") + "</div>";
+   }
+   if (SH.error) h += '<p class="err" role="alert">' + esc(SH.error) + "</p>";
+-  var go = SH.kind === "mark" ? t("confirm") : SH.kind === "remove" ? "Remove it" : SH.kind === "keep" ? "Keep it and tell Rahul" : SH.kind === "review" ? "Save and clear" : (S.lang === "hi" ? "HR को भेजें" : "Send to HR");
++  var go = SH.kind === "mark" ? t("confirm") : SH.kind === "remove" ? "Remove it" : SH.kind === "keep" ? "Keep it and tell Rahul" : SH.kind === "review" ? "Save and clear" : SH.kind === "raise" ? V3.raiseBtn : (S.lang === "hi" ? "HR को भेजें" : "Send to HR");
+   var no = SH.kind === "remove" ? "Keep the mark" : t("cancel");
+   if (SH.failed) go = t("tryAgain");
+   h += '<div class="acts"><button class="btn btn-primary" onclick="confirmSheet()"' + (SH.busy ? " disabled" : "") + ">" + esc(SH.busy ? "Saving…" : go) + '</button><button class="btn" onclick="closeSheet()">' + esc(no) + "</button></div>";
+@@ -638,6 +739,12 @@
+ /* v2: the "told in person" tick, now for HR too (state "nologin") */
+ function noLogin(sh) { return sh.target === "hr" ? S.state === "nologin" : personById(sh.target).login === false; }
+ window.openReview = function () { lastFocus = document.activeElement; SH = {kind: "review", text: ""}; paint(); };
++/* v3: the raise sheet, and Other moving focus into its box (AC-9a) */
++window.openRaise = function (id) { lastFocus = document.activeElement; SH = {kind: "raise", target: id, chosen: null}; paint(); };
++window.pickReason = function (v) {
++  SH.chosen = v; SH.error = null; paint(true);
++  if (v === "other") { var o = document.getElementById("ot-text"); if (o) o.focus(); }
++};
+ function personById(id) { for (var i = 0; i < M.team.length; i++) if (M.team[i].id === id) return M.team[i]; return null; }
+ 
+ window.openMark = function (id) { lastFocus = document.activeElement; SH = {kind: "mark", target: id, chosen: null}; paint(); };
+@@ -647,13 +754,24 @@
+ window.closeSheet = function () { SH = null; paint(); if (lastFocus && document.body.contains(lastFocus)) lastFocus.focus(); };
+ 
+ window.confirmSheet = function () {
+-  if ((SH.kind === "mark" || SH.kind === "remove") && !SH.chosen) {
+-    SH.error = SH.kind === "mark" ? t("chooseFirst") : "Choose why you are removing it.";
++  if ((SH.kind === "mark" || SH.kind === "remove" || SH.kind === "raise") && !SH.chosen) {   // v3: + raise
++    SH.error = SH.kind === "remove" ? "Choose why you are removing it." : t("chooseFirst");
+     paint(true);
+     var first = document.querySelector('.sheet input[type="radio"]');
+     if (first) first.focus();
+     return;
+   }
++  if (SH.kind === "mark" && SH.chosen === "other") {   // v3 (D-6): blank, or about the person
++    var ot = (SH.other || "").trim();
++    var bad = !ot ? V3.otherBlank : ABOUT_PERSON.test(ot) ? V3.otherAboutPerson : null;
++    if (bad) {
++      SH.error = bad;
++      paint(true);
++      var ob = document.getElementById("ot-text");
++      if (ob) ob.focus();
++      return;
++    }
++  }
+   if (SH.kind === "review" && !(SH.text || "").trim()) {   // v2
+     SH.error = "Write what you talked about and the action plan first.";
+     paint(true);
+@@ -679,7 +797,7 @@
+   setTimeout(function () {
+     var s = SH; SH = null;
+     if (s.kind === "mark" && s.target === "hr") {
+-      M.hrMark = {k: s.chosen, by: "you, Ritika Mehra", as: "HR", at: "Sat 24 Oct at 15:12"};
++      M.hrMark = {k: s.chosen, other: (s.other || "").trim(), by: "you, Ritika Mehra", as: "HR", at: "Sat 24 Oct at 15:12"};
+       M.flash.hr = S.state === "nologin"
+         ? "Saved. " + hrFirst() + " has no login and will not get a notice. You confirmed you told them in person."
+         : "Saved. " + hrFirst() + " has been told, with your name and the reason.";
+@@ -688,7 +806,9 @@
+       M.flash.review = "Review recorded. The grooming reds this month still stand.";
+     } else if (s.kind === "mark") {
+       var p = personById(s.target);
+-      p.mark = {k: s.chosen, by: "you", at: "10:31", mine: true};
++      p.mark = {k: s.chosen, other: (s.other || "").trim(), by: "you", at: "10:31", mine: true};
++    } else if (s.kind === "raise") {   // v3: three fields on the mark; no new mark, no fine
++      personById(s.target).raised = {on: M.today};
+     } else if (s.kind === "remove") {
+       M.hrMark = null; M.asked = false;
+       M.flash.hr = "Removed. " + hrFirst() + " has been told it was removed, by you: " + s.chosen + ".";
+@@ -698,6 +818,7 @@
+       M.empAsked = true;
+     }
+     paint();
++    if (s.kind === "raise") { var said = document.querySelector("#row-" + s.target + ' [role="status"]'); if (said) said.focus(); }   // v3: focus lands on the answer
+   }, 450);
+ };
+ 
+@@ -719,7 +840,7 @@
+   document.documentElement.setAttribute("data-theme", S.theme);
+   document.documentElement.setAttribute("lang", S.lang);
+   var html;
+-  if (S.person === "mgr") html = (S.state === "month" || S.state === "flag" || S.state === "cleared") ? mgrMonth() : mgrTeam();
++  if (S.person === "mgr") html = (["month", "flag", "cleared", "kflag", "kpend", "kcleared"].indexOf(S.state) > -1) ? mgrMonth() : mgrTeam();
+   else if (S.person === "hr") html = hrDay();
+   else html = empMonth();
+   st.innerHTML = html + sheetHtml();

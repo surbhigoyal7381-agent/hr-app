@@ -58,19 +58,9 @@ DEFAULTS = {
 	# who cannot see past their own team cannot plan around the one next door.
 	"alvoraa_org_managers_see_all": 1,
 
-	# Who owns the shape of the organisation - who may create a seat, change how
-	# many it holds, or move it under a different one. HR by default, because
-	# that is the common case, but it genuinely differs: at the first customer
-	# the owners keep the structure themselves and HR does not touch it. Anybody
-	# named here may also open the Positions page, whatever the next key says.
-	"alvoraa_org_position_editor_roles": "HR Manager,System Manager",
-
-	# Who may open the Positions page at all. Surbhi, 19 Oct 2026: "not all
-	# should be able to see this page. for them the organisation page is
-	# there." HR Manager by default; everybody else uses the Organisation page.
-	# The editor roles above count as well (see `register.may_view`), so the
-	# two keys can never leave somebody able to change seats they cannot see.
-	"alvoraa_org_positions_view_roles": "HR Manager",
+	# Who may open or change the Positions page is not here. It is Frappe's own
+	# permission on Alvoraa Position, set in Role Permissions Manager
+	# (`register.may_view` / `may_edit`, Surbhi, 19 Oct 2026).
 
 	# Span of control. Past about nine, a manager cannot give anybody real
 	# attention - one-to-ones stop and appraisals become a form to fill in.
@@ -93,9 +83,7 @@ DEFAULTS = {
 # before, or let them rewrite its structure, so only a System Manager changes
 # them, and every change leaves a record.
 # The reach levels are here too: raising them to 99 gives every employee close to
-# the whole chart, just as adding "Employee" to the roles does. The editor roles
-# are here because somebody who can move seats can redraw the company, which is
-# as serious as being able to read it.
+# the whole chart, just as adding "Employee" to the roles does.
 # The cover and span keys stay with HR - they change alerts and pay rules, not
 # who can see or change anybody.
 ACCESS_GRANTING = frozenset({
@@ -103,8 +91,6 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_org_managers_see_all",
 	"alvoraa_org_reach_up",
 	"alvoraa_org_reach_down",
-	"alvoraa_org_position_editor_roles",
-	"alvoraa_org_positions_view_roles",
 })
 
 # Kept apart from the numbers so the Org Setup page can render a label and an
@@ -132,12 +118,6 @@ LABELS = {
 		"Comma separated. HR and system administrators by default."),
 	"alvoraa_org_managers_see_all": ("Anybody with direct reports sees the whole chart",
 		"Off means a manager is bounded like everybody else."),
-	"alvoraa_org_position_editor_roles": ("Roles that may change the position structure",
-		"Comma separated. Who may add a seat, change how many it holds, or move "
-		"it. These roles may also open the Positions page."),
-	"alvoraa_org_positions_view_roles": ("Roles that may open the Positions page",
-		"Comma separated. Everybody else uses the Organisation page. The roles "
-		"that may change positions can always open it too."),
 	"alvoraa_org_span_wide": ("Flag a manager with this many reports or more",
 		"Past about nine, one-to-ones stop happening. Usually a missing layer."),
 	"alvoraa_org_span_narrow": ("Flag a manager with this many reports",

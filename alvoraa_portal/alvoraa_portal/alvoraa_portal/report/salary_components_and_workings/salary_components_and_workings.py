@@ -155,6 +155,8 @@ def _row(emp, s):
 		"free_reds": s.free_reds,
 		"deductible_reds": s.deductible_reds,
 		"red_deduction": flt(s.red_deduction, 2),
+		"grooming_days": s.grooming_days,
+		"grooming_deduction": flt(s.grooming_deduction, 2),
 
 		"incentive": flt(s.incentive, 2),
 		"gross": flt(s.gross, 2),
@@ -219,10 +221,11 @@ def _columns():
 		c("employment_type", "Type", 90, "Data"),
 
 		c("days_with_record", "Days recorded", 110, "Int"),
-		c("days_worked", "Worked", 80, "Int"),
-		c("days_on_leave", "On leave", 85, "Int"),
-		c("days_absent", "Absent", 80, "Int"),
-		c("days_held", "Held", 70, "Int"),
+		# Float since slice 063: a half-day leave is half worked, half on leave.
+		c("days_worked", "Worked", 80, "Float"),
+		c("days_on_leave", "On leave", 85, "Float"),
+		c("days_absent", "Absent", 80, "Float"),
+		c("days_held", "Held", 70, "Float"),
 
 		c("quarters", "Quarters off", 100, "Int"),
 		c("quarter_days", "= days", 80),
@@ -241,6 +244,9 @@ def _columns():
 		c("free_reds", "Free reds", 85, "Int"),
 		c("deductible_reds", "Reds charged", 110, "Int"),
 		c("red_deduction", "Red deduction", 115, "Currency"),
+		# Slice 066: the month's grooming reds and what they cost, after the cap.
+		c("grooming_days", "Grooming reds", 110, "Int"),
+		c("grooming_deduction", "Grooming deduction", 140, "Currency"),
 
 		c("incentive", "Incentive", 95, "Currency"),
 		c("gross", "Gross", 110, "Currency"),

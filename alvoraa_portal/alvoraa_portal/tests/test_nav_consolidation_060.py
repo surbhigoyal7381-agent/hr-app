@@ -173,26 +173,27 @@ class TestThePhoneBarPointsAtTheRightPage(FrappeTestCase):
 
 
 class TestThePositionsItemFollowsTheServer(FrappeTestCase):
-	"""Surbhi, 19 Oct 2026: "positions page access should also be permission
-	based. not all should be able to see this page. for them the organisation
-	page is there." HR Manager by default.
+	"""Surbhi, 19 Oct 2026: "I want the position access to be provided through
+	the Frappe interface like other standard Frappe modules".
 
-	The menu showed Positions to every manager. The server now refuses them,
-	and the menu reads the server's answer rather than a copy of the rule.
+	The menu reads the server's answer - Frappe's Read on Alvoraa Position -
+	rather than a copy of the rule.
 	"""
 
-	VIEW_KEY = "alvoraa_org_positions_view_roles"
+	ROLE = "Nav061 Positions Reader"
 
 	def setUp(self):
-		self._saved = {k: frappe.db.get_default(k) for k in
-		               (self.VIEW_KEY, "alvoraa_org_position_editor_roles",
-		                "alvoraa_org_managers_see_all")}
-		for k in self._saved:
-			frappe.db.set_default(k, "")   # blank reads as the shipped default
+		from hrms.alvoraa_org_structure.tests.test_register_194 import _trail
+
+		self._saved = {"alvoraa_org_managers_see_all":
+		               frappe.db.get_default("alvoraa_org_managers_see_all")}
+		frappe.db.set_default("alvoraa_org_managers_see_all", "")
 		self._made = []
+		self._before = _trail()
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		self._drop_rows()
 		for doctype, name in reversed(self._made):
 			try:
 				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
@@ -200,6 +201,31 @@ class TestThePositionsItemFollowsTheServer(FrappeTestCase):
 				pass
 		for k, v in self._saved.items():
 			frappe.db.set_default(k, v if v is not None else "")
+		frappe.db.commit()
+
+	def _drop_rows(self):
+		"""Every permission row, change record and Permission Log row this test
+		made goes, committed, so nothing leaks onto test_site."""
+		from hrms.alvoraa_org_structure.tests.test_register_194 import _forget_permissions, _trail
+
+		for doctype, names in _trail().items():
+			for name in names - self._before[doctype]:
+				frappe.db.delete(doctype, {"name": name})
+		frappe.db.commit()
+		_forget_permissions()
+
+	def _grant_read(self, role):
+		"""Through Role Permissions Manager's own function, as an admin would.
+		Once any Custom DocPerm row exists for a doctype, Frappe uses those rows
+		and not the shipped ones."""
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		if not frappe.db.exists("Role", role):
+			# Kept, like the users ensure_user makes: a role still held by a
+			# user cannot be deleted, and it grants nothing once the row goes.
+			frappe.get_doc({"doctype": "Role", "role_name": role,
+			                "desk_access": 0}).insert(ignore_permissions=True)
+		screen.add("Alvoraa Position", role, 0)
 		frappe.db.commit()
 
 	def _employee(self, name, user=None, reports_to=None):
@@ -250,3 +276,43 @@ class TestThePositionsItemFollowsTheServer(FrappeTestCase):
 		user = ensure_user("nav060.hrm@example.com", roles=("Employee", "HR Manager"))
 		self._employee("Nav060 HRM", user=user)
 		self.assertIs(self._context_as(user)["positions"], True)
+
+	def _context_cached(self, user):
+		"""What the menu would get on the user's next page load: the cached
+		context if there is one. Nothing here clears it by hand."""
+		from alvoraa_portal import hr_api
+
+		frappe.set_user(user)
+		frappe.local._alvoraa_leads = {}
+		frappe.local.role_permissions = {}
+		return hr_api.get_portal_context()
+
+	def test_the_flag_follows_a_row_added_and_taken_away_at_once(self):
+		"""Surbhi asked when the menu can lag. Without a hook, for up to the
+		hour the context is cached. Now a change in Role Permissions Manager
+		clears it for every holder of that role, so the next page load is
+		right. Nothing in this test deletes the cache itself."""
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		user = ensure_user("nav061.reader@example.com", roles=("Employee",))
+		self._employee("Nav061 Reader", user=user)
+		if not frappe.db.exists("Role", self.ROLE):
+			frappe.get_doc({"doctype": "Role", "role_name": self.ROLE,
+			                "desk_access": 0}).insert(ignore_permissions=True)
+		u = frappe.get_doc("User", user)
+		u.flags.ignore_permissions = True
+		u.add_roles(self.ROLE)
+		frappe.db.commit()
+		self.assertIs(self._context_as(user)["positions"], False)
+		key = f"portal_ctx_{user}"
+		self.assertIsNotNone(frappe.cache().get_value(key), "the case needs a cached menu")
+
+		frappe.set_user("Administrator")
+		self._grant_read(self.ROLE)
+		self.assertIsNone(frappe.cache().get_value(key), "the hook should have cleared it")
+		self.assertIs(self._context_cached(user)["positions"], True)
+
+		frappe.set_user("Administrator")
+		screen.remove("Alvoraa Position", self.ROLE, 0)
+		frappe.db.commit()
+		self.assertIs(self._context_cached(user)["positions"], False)

@@ -67,7 +67,9 @@
         <div class="sec-divider">Team Leaves This Month</div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th></tr></thead>
+            <!-- Slice 063 (S3, PRIV-2): no leave type on a team screen. The column
+                 was already empty (045 AC-76); it is removed. -->
+            <thead><tr><th>Employee</th><th>From</th><th>To</th><th>Days</th></tr></thead>
             <tbody id="team-month-tbody">
               <tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading...</td></tr>
             </tbody>

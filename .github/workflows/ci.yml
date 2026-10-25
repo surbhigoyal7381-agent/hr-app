@@ -120,6 +120,14 @@ jobs:
       - name: Portal buttons are wired up
         run: node scripts/check_portal_handlers.js
 
+      # Trays, drawers and dialogs must open against the window, not inside a
+      # panel. A panel fade-in that kept its end transform made every tray inside
+      # a panel open as a box inside the page (22 Oct 2026). This lists every
+      # position:fixed element and fails on one it does not know, or on an
+      # animation that leaves a transform behind. The browser half runs locally.
+      - name: Trays and dialogs open against the window
+        run: node scripts/check_portal_trays.js --static
+
       # Finds identifiers a page reads but nothing ever creates. The handler check
       # above calls buttons, but it cannot reach code behind form validation, and a
       # page that catches its own errors turns the failure into a banner. That is how

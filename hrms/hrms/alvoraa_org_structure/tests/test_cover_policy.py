@@ -229,7 +229,6 @@ class TestDelegatedAuthority(CoverCase):
 		self.assertEqual(frappe.db.get_value("Employee", under, "leave_approver"),
 		                 email, "the cover should hold the approvals to begin with")
 
-		frappe.db.set_default(register.EDITOR_ROLES_KEY, "System Manager")
 		out = register.end_assignment(row.name)
 
 		self.assertEqual(out["approvals_handed_back"], 1)
@@ -246,7 +245,6 @@ class TestDelegatedAuthority(CoverCase):
 		ravi, email = self._ravi_with_login()
 		row = self._cover(boss, ravi, delegate_authority=1)
 
-		frappe.db.set_default(register.EDITOR_ROLES_KEY, "System Manager")
 		out = register.end_assignment(row.name,
 		                              on_date=add_days(nowdate(), 30))
 

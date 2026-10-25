@@ -34,12 +34,14 @@ manager, per report, scoped to four doctypes and never to all of them.
 """
 
 import calendar as _calendar
+from datetime import datetime, time, timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, nowdate
+from frappe.utils import cint, flt, get_datetime, getdate, nowdate
 
-from alvoraa_portal.call_cache import holiday_list_for
+from alvoraa_portal.call_cache import close_cache, holiday_list_for, is_open, once, open_cache
+from alvoraa_portal.grooming import month_lines
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -51,6 +53,17 @@ from alvoraa_portal.attendance_analytics import (
 )
 
 REQUEST = "Attendance Request"
+
+# Who files punches for the biometric machines (ALV-210): DTC's hand-made
+# `biometric.sync@...` account and the product's own `attendance.sync@<site>`
+# (slice 041). Administrator runs the imports. Anybody else filed it by hand.
+MACHINE_OWNERS = ("biometric.sync@", "attendance.sync@")
+
+# ALV-211. Surbhi's rule: every client's shift accepts punches 3 hours before
+# it starts and 3 hours after it ends. Frappe's 1-hour default left a late
+# out-punch unlinked, the day counted 0 hours and was marked Absent (DTC, 535
+# days).
+SHIFT_WINDOW_MINS = 180
 
 # The reasons an employee can give, in the order they are offered.
 #
@@ -101,6 +114,16 @@ def _becomes(reason):
 
 
 # ── setup: widen the field's own option list ─────────────────────────────────
+
+def default_shift_window(doc, method=None):
+	"""Shift Type before_insert (ALV-211): Frappe's 60-minute default, or an
+	empty field, becomes SHIFT_WINDOW_MINS. Any other figure somebody typed is
+	kept."""
+	for field in ("begin_check_in_before_shift_start_time",
+	              "allow_check_out_after_shift_end_time"):
+		if doc.get(field) in (None, "") or cint(doc.get(field)) == 60:
+			doc.set(field, SHIFT_WINDOW_MINS)
+
 
 def install_reasons():
 	"""Put our reasons on the Attendance Request field.
@@ -437,15 +460,25 @@ def month(year=None, month=None, employee=None):
 	# one attendance day. Only punches with no link fall back to their own date.
 	punches = {}
 	by_attendance = {}
+	# ALV-210. A punch HR typed in carries the person's own badge number as its
+	# "device" (HR-EMP-00171 on 14 Oct showed "830"), which reads as a machine
+	# nobody owns. Such a punch, or one filed by somebody other than the
+	# machines and the person themselves, says "added by HR" instead.
+	own = frappe.db.get_value("Employee", me.name,
+	                          ["attendance_device_id", "user_id"], as_dict=True) or {}
 	for c in frappe.get_list(
 			"Employee Checkin",
 			filters={"employee": me.name,
 			         "time": ("between", [start + " 00:00:00",
 			                              frappe.utils.add_days(end, 1) + " 23:59:59"])},
-			fields=["name", "log_type", "time", "attendance", "device_id"],
+			fields=["name", "log_type", "time", "attendance", "device_id", "owner"],
 			order_by="time asc", limit_page_length=0):
+		by_hand = ((c.device_id and c.device_id == own.get("attendance_device_id"))
+		           or (c.owner not in ("Administrator", own.get("user_id"))
+		               and not (c.owner or "").startswith(MACHINE_OWNERS)))
 		mark = {"log_type": c.log_type, "at": str(c.time)[11:16],
-		        "where": c.device_id, "on": str(c.time)[:10]}
+		        "where": _("added by HR") if by_hand else c.device_id,
+		        "on": str(c.time)[:10]}
 		if c.attendance:
 			by_attendance.setdefault(c.attendance, []).append(mark)
 		else:
@@ -537,7 +570,7 @@ def month(year=None, month=None, employee=None):
 	filing_from, filing_basis = None, None
 	if can_request and not is_self:
 		filing_from, filing_basis = manager_filing_from(me.name)
-	return {
+	out = {
 		"employee": me.name, "employee_name": me.employee_name,
 		"year": year, "month": month, "last_day": last,
 		"tolerance_mins": tolerance,
@@ -599,6 +632,12 @@ def month(year=None, month=None, employee=None):
 		# with the switch off, because then their manager cannot either.
 		"on_behalf_enabled": manager_on_behalf_on(),
 	}
+	# Slice 066: the grooming red on this month, only for a viewer its own read
+	# gate lets in. Anybody else gets no `grooming` key at all, not an empty one.
+	grooming = month_lines(me.name, start, end)
+	if grooming is not None:
+		out["grooming"] = grooming
+	return out
 
 
 def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, today,
@@ -681,9 +720,21 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 	# An odd number of punches means one never registered. That is the single
 	# commonest cause of a short day and the reason this screen exists, so it
 	# is named rather than left for the employee to infer from the total.
-	ins = len([m for m in marks if m["log_type"] == "IN"])
-	outs = len([m for m in marks if m["log_type"] == "OUT"])
-	out["missing_punch"] = bool(marks) and ins != outs
+	#
+	# ALV-210. DTC's biometric sync sends no In/Out at all, so every punch read
+	# as "Out" and a clean in-and-out day was called a missing punch. Where any
+	# punch of the day has no label, the day is read in order - first In, next
+	# Out - the same way the shift itself pairs them ("Alternating entries"),
+	# and a missing punch is simply an odd count.
+	if any(not m["log_type"] for m in marks):
+		marks = [dict(m, log_type="IN" if i % 2 == 0 else "OUT")
+		         for i, m in enumerate(marks)]
+		out["punches"] = marks
+		out["missing_punch"] = len(marks) % 2 == 1
+	else:
+		ins = len([m for m in marks if m["log_type"] == "IN"])
+		outs = len([m for m in marks if m["log_type"] == "OUT"])
+		out["missing_punch"] = bool(marks) and ins != outs
 	if not marks and att.in_time and not att.out_time:
 		out["missing_punch"] = True
 
@@ -1171,8 +1222,7 @@ def _manager_user_for(employee):
 	"""
 	if not employee:
 		return None
-	mgr = frappe.db.get_value("Employee", employee, "reports_to")
-	return frappe.db.get_value("Employee", mgr, "user_id") if mgr else None
+	return _manager_of(employee)[0]
 
 
 def _manager_name_for(employee):
@@ -1187,14 +1237,55 @@ def _manager_name_for(employee):
 	Only the manager's NAME comes back. No contact detail, no id, nothing else
 	off that row: a refusal needs one word, not a record.
 	"""
-	mgr = frappe.db.get_value("Employee", employee, "reports_to")
-	if not mgr:
-		return None
-	row = frappe.db.get_value("Employee", mgr, ["employee_name", "user_id"],
-	                          as_dict=True) or {}
-	return (row.get("employee_name")
-	        or frappe.db.get_value("User", row.get("user_id"), "full_name")
-	        or None)
+	return _manager_of(employee)[1]
+
+
+def _manager_of(employee):
+	"""(login, name) of this employee's `reports_to`, or (None, None).
+
+	Asked once per call when a call memo is open (`_load_managers` fills it for
+	a whole list at once), and fresh every time otherwise.
+	"""
+	def read():
+		mgr = frappe.db.get_value("Employee", employee, "reports_to")
+		if not mgr:
+			return (None, None)
+		row = frappe.db.get_value("Employee", mgr, ["employee_name", "user_id"],
+		                          as_dict=True) or {}
+		return (row.get("user_id"),
+		        row.get("employee_name")
+		        or frappe.db.get_value("User", row.get("user_id"), "full_name")
+		        or None)
+
+	return once(("ac_manager", employee), read)
+
+
+def _load_managers(employees):
+	"""Fill the call memo with every listed employee's manager in two queries.
+
+	The bell counts the whole queue on every page load, and asking per row
+	would make that grow with the number of people. Only `_manager_of`'s own
+	answers are stored, so nothing here can disagree with it. A manager with no
+	`employee_name` is left for `_manager_of` to read, so its fallback to the
+	login's full name still applies.
+	"""
+	employees = [e for e in set(employees) if e]
+	if not employees or not is_open():
+		return
+	reports = dict(frappe.get_all("Employee", filters={"name": ("in", employees)},
+	                              fields=["name", "reports_to"], as_list=True))
+	mgr_ids = sorted({m for m in reports.values() if m})
+	mgrs = {m.name: m for m in frappe.get_all(
+		"Employee", filters={"name": ("in", mgr_ids)},
+		fields=["name", "user_id", "employee_name"])} if mgr_ids else {}
+	for e in employees:
+		m = mgrs.get(reports.get(e))
+		if m is None and reports.get(e):
+			continue        # their manager's record is unreadable here; ask later
+		if m is not None and not m.employee_name:
+			continue
+		answer = (m.user_id, m.employee_name) if m else (None, None)
+		once(("ac_manager", e), lambda answer=answer: answer)
 
 
 def decided_as(doc, user=None):
@@ -1226,7 +1317,8 @@ def decided_as(doc, user=None):
 	# product has never had a word for it.
 	from hrms.alvoraa_hr_core.access import permitted_companies
 
-	return "HR" if permitted_companies(user) else None
+	return "HR" if once(("ac_permitted_companies", user),
+	                    lambda: permitted_companies(user)) else None
 
 
 def _decided_as_is_storable():
@@ -1248,6 +1340,113 @@ def _decided_as_is_storable():
 		return False
 
 
+def not_yours_yet(doc, capacity, user=None):
+	"""Why this caller may not decide this request today, in words, or None.
+
+	ONE ANSWER FOR `decide` AND FOR EVERY ROW THAT OFFERS THE BUTTONS. DTC,
+	22 Oct 2026: HR pressed Approve on a request inside the wait below, and
+	the server refused with a 403. The refusal was right; offering the button
+	was not. So the row now asks this same function and draws the sentence
+	instead of the buttons - the screen holds no copy of the rule.
+
+	`capacity` is `decided_as(doc)` for the caller; passed in because both
+	callers already have it.
+	"""
+	# **Whoever raised it does not decide it.** The note on `month()` says
+	# the raiser should not be the decider, but `decide` only ever refused a
+	# person deciding their OWN record. A manager who also holds an HR role
+	# could raise a correction for their report and then approve it, which
+	# is one person vouching for a day and accepting their own word for it.
+	# The raiser is the document's owner: `raise_for_report` and
+	# `raise_correction` both insert as the caller.
+	user = user or frappe.session.user
+	if doc.get("owner") and doc.get("owner") == user:
+		return _("You raised this request, so someone else decides it.")
+	# **The wait applies only where there is a manager who could act.**
+	#
+	# 045 AC-81, the no-manager clause. The two working days exist to give
+	# the employee's own manager first refusal. Somebody with no
+	# `reports_to`, or whose `reports_to` has no login, has nobody to give
+	# it to - so there is nothing to wait for, and HR decides straight
+	# away, which is what HR does today. Most people in a shop have no
+	# manager recorded; without this clause the window stops a working flow
+	# for all of them and tells them to wait for a person the product
+	# cannot name.
+	#
+	# **This restores what HR does today. It is not a new policy.** The
+	# answer behind the window was "HR sees from day one, acts from day
+	# three", and it was about waiting for a MANAGER. It was never about
+	# waiting for nobody.
+	#
+	# `_manager_user_for` is the same derivation `decided_as` uses, so the
+	# two cannot drift: whoever counts as the manager for the capacity is
+	# exactly whoever the wait is for.
+	if capacity != "HR":
+		return None
+	mgr_user = _manager_user_for(doc.employee)
+	if not mgr_user:
+		return None
+	# **A request the manager raised is not waited on.** Surbhi, 22 Oct 2026,
+	# amending 045 AC-81: when the employee's own manager raised it (through
+	# `raise_for_report`, which inserts as the manager), HR may decide at
+	# once. The wait gives the manager first refusal, and the manager cannot
+	# decide what they raised themselves - so HR would be waiting for nobody.
+	if doc.get("owner") == mgr_user:
+		return None
+	# **And only when that manager can decide at all.** Surbhi, 23 Oct 2026:
+	# approving is submitting, and on standard permissions only HR User, HR
+	# Manager and System Manager may submit an Attendance Request. A manager
+	# with just the Employee role - most line managers, Vaneet at DTC
+	# included - can never decide, so HR waiting two days for them was
+	# waiting for nobody. The wait gives first refusal only to a manager the
+	# permission system lets decide.
+	if not frappe.has_permission(REQUEST, "submit", user=mgr_user):
+		return None
+	may_act_from, basis = hr_may_act_from(doc)
+	if getdate(nowdate()) >= getdate(may_act_from):
+		return None
+	mgr = _manager_name_for(doc.employee)
+	# Says what happened, why, and what to do next - never "not allowed".
+	# **And it names the person.** Where the record holds no name at all it
+	# says plainly who to go to, instead of an anonymous "their manager".
+	if mgr:
+		return _("This is still with {0} until {1}. You can decide it as HR "
+		         "from then, counted as two {2}.").format(
+			mgr, frappe.utils.formatdate(may_act_from), basis)
+	return _("This is still with the manager on this person's record until "
+	         "{0} - the record has no name for them. You can decide it as HR "
+	         "from then, counted as two {1}. To act sooner, ask HR to check "
+	         "who this person reports to.").format(
+		frappe.utils.formatdate(may_act_from), basis)
+
+
+def _with_decide_flag(rows, user=None):
+	"""Add `can_decide` and `not_yet` to each waiting row, from `not_yours_yet`.
+
+	Asked once per person, day raised and raiser, not once per row. The
+	managers behind the whole list are read in two queries into a memo that
+	lives for this call only, so the bell can count the whole queue without
+	growing with the number of people.
+	"""
+	mine = not is_open()
+	if mine:
+		open_cache()
+	try:
+		_load_managers(r.get("employee") for r in rows)
+		seen = {}
+		for r in rows:
+			key = (r.get("employee"), str(r.get("creation") or "")[:10], r.get("owner"))
+			if key not in seen:
+				doc = frappe._dict(r)
+				seen[key] = not_yours_yet(doc, decided_as(doc, user), user)
+			r["not_yet"] = seen[key]
+			r["can_decide"] = not seen[key]
+	finally:
+		if mine:
+			close_cache()
+	return rows
+
+
 @frappe.whitelist()
 def to_review(limit=50):
 	"""What is waiting on this caller to decide.
@@ -1265,12 +1464,18 @@ def to_review(limit=50):
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
 	filters, _is_hr = review_queue_filters()
 	rows = frappe.get_list(
-		REQUEST, filters=filters, fields=request_fields(),
+		REQUEST, filters=filters, fields=request_fields() + ["owner"],
 		order_by="creation asc", limit_page_length=cint(limit) or 50)
 	# The state filter is in the query now, so nothing should fall out here.
 	# The line stays as a second lock: `_state` is the screen's own definition
 	# of waiting, and if the two ever disagree the screen must win.
-	return [r for r in (_shape(x) for x in rows) if r["state"] == "waiting"]
+	rows = _with_decide_flag(
+		[r for r in (_shape(x) for x in rows) if r["state"] == "waiting"])
+	# Read only to decide who raised it. The raiser's login is not part of
+	# the row, so it is not sent.
+	for r in rows:
+		r.pop("owner", None)
+	return rows
 
 
 @frappe.whitelist()
@@ -1300,50 +1505,9 @@ def decide(name, approve, note=None):
 	# body can influence it - `decide()` takes no `decided_as` argument, and
 	# adding one later would be a change somebody has to make on purpose.
 	capacity = decided_as(doc)
-	# **The wait applies only where there is a manager who could act.**
-	#
-	# 045 AC-81, the no-manager clause. The two working days exist to give
-	# the employee's own manager first refusal. Somebody with no
-	# `reports_to`, or whose `reports_to` has no login, has nobody to give
-	# it to - so there is nothing to wait for, and HR decides straight
-	# away, which is what HR does today. Most people in a shop have no
-	# manager recorded; without this clause the window stops a working flow
-	# for all of them and tells them to wait for a person the product
-	# cannot name.
-	#
-	# **This restores what HR does today. It is not a new policy.** The
-	# answer behind the window was "HR sees from day one, acts from day
-	# three", and it was about waiting for a MANAGER. It was never about
-	# waiting for nobody.
-	#
-	# `_manager_user_for` is the same derivation `decided_as` uses, so the
-	# two cannot drift: whoever counts as the manager for the capacity is
-	# exactly whoever the wait is for.
-	mgr_user = _manager_user_for(doc.employee) if capacity == "HR" else None
-	if capacity == "HR" and mgr_user:
-		may_act_from, basis = hr_may_act_from(doc)
-		if frappe.utils.getdate(frappe.utils.nowdate()) < frappe.utils.getdate(may_act_from):
-			mgr = _manager_name_for(doc.employee)
-			# Says what happened, why, and what to do next - never "not
-			# allowed". The date is the one the row shows, so the screen and
-			# the refusal agree. **And it names the person.** Where the
-			# record holds no name at all it says plainly who to go to,
-			# instead of leaving the reader with an anonymous "their manager".
-			if mgr:
-				frappe.throw(
-					_("This is still with {0} until {1}. You can decide it as HR "
-					  "from then, counted as two {2}.").format(
-						mgr,
-						frappe.utils.formatdate(may_act_from),
-						basis),
-					frappe.PermissionError)
-			frappe.throw(
-				_("This is still with the manager on this person's record until "
-				  "{0} - the record has no name for them. You can decide it as HR "
-				  "from then, counted as two {1}. To act sooner, ask HR to check "
-				  "who this person reports to.").format(
-					frappe.utils.formatdate(may_act_from), basis),
-				frappe.PermissionError)
+	not_yet = not_yours_yet(doc, capacity)
+	if not_yet:
+		frappe.throw(not_yet, frappe.PermissionError)
 
 	stamp = {"alvoraa_review_note": (note or "").strip() or None,
 	         "alvoraa_reviewed_by": frappe.session.user,
@@ -1387,47 +1551,69 @@ def decide(name, approve, note=None):
 
 # What a day needs, worst first. The order IS the value of the page: a manager
 # opening it should meet the days somebody must act on, not scroll to them.
-NEEDS = ("no_clock_out", "absent_but_punched", "absent", "short", "ok")
+#
+# ALV-211 split "absent but badged in" in two, because they need different
+# answers. "absent_not_counted": a punch fell outside the shift's window (or
+# was never linked to a shift), so the system did not count it - a setup
+# fault. "absent_short": every punch counted and the hours were still under
+# the shift's absent threshold - a real short day.
+NEEDS = ("no_clock_out", "absent_not_counted", "absent_short", "absent", "short", "ok")
 
 
-def _flag(row, punches):
+def _flag(row, punches, shift):
 	"""What is wrong with this day, in one word.
 
-	Judged from the attendance record and the punch count, NOT from the pay
-	engine - this screen reads the same whether or not a rule set is switched
-	on.
+	Judged from the attendance record, the day's punches and the shift row,
+	NOT from the pay engine - this screen reads the same whether or not a rule
+	set is switched on.
 	"""
 	status = (row.get("status") or "").strip()
-	if punches == 1:
+	if len(punches) == 1:
 		# ATT-06. One punch is not a short day, it is an unfinished one, and it
 		# is the single commonest thing a manager is asked about.
 		return "no_clock_out"
 	if status == "Absent":
-		return "absent_but_punched" if punches else "absent"
+		if not punches:
+			return "absent"
+		if any(not p.shift_start for p in punches):
+			return "absent_not_counted"
+		if shift and shift.start_time is not None and shift.end_time is not None:
+			# The shift's own window: from its start less the early allowance to
+			# its end plus the late one. A night shift ends the next day.
+			day = datetime.combine(getdate(row.get("attendance_date")), time())
+			opens = day + shift.start_time - timedelta(
+				minutes=cint(shift.begin_check_in_before_shift_start_time))
+			closes = day + shift.end_time + timedelta(
+				minutes=cint(shift.allow_check_out_after_shift_end_time))
+			if shift.end_time <= shift.start_time:
+				closes += timedelta(days=1)
+			if any(not opens <= get_datetime(p.time) <= closes for p in punches):
+				return "absent_not_counted"
+		return "absent_short"
 	if status == "Half Day":
 		return "short"
 	return "ok"
 
 
-def _punch_counts(people_ids, from_date, to_date):
-	"""How many times each person badged on each day.
+def _punches_by_day(people_ids, from_date, to_date):
+	"""Each person's punches on each day, in one read.
 
 	One punch is the signal this page exists for, and it cannot be read off the
 	Attendance row: a day with one punch and a day with none both show no
 	out-time and nought hours, and they need opposite answers from a manager.
+	`shift_start` says whether Frappe linked the punch to a shift at all.
 	"""
-	counts = {}
+	days = {}
 	if not people_ids:
-		return counts
+		return days
 	for p in frappe.get_all(
 			"Employee Checkin",
 			filters={"employee": ("in", people_ids),
 			         "time": ("between", [str(from_date) + " 00:00:00",
 			                              str(to_date) + " 23:59:59"])},
-			fields=["employee", "time"], limit_page_length=0):
-		key = (p.employee, str(p.time)[:10])
-		counts[key] = counts.get(key, 0) + 1
-	return counts
+			fields=["employee", "time", "shift_start"], limit_page_length=0):
+		days.setdefault((p.employee, str(p.time)[:10]), []).append(p)
+	return days
 
 
 @frappe.whitelist()
@@ -1519,7 +1705,16 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 		        "shift", "in_time", "out_time", "late_entry", "early_exit"],
 		order_by="attendance_date desc", limit_page_length=0)
 
-	punch_count = _punch_counts(people_ids, from_date, to_date)
+	punches_on = _punches_by_day(people_ids, from_date, to_date)
+	# Every shift on these rows, read once - never once per row.
+	shifts = {s.name: s for s in frappe.get_all(
+		"Shift Type",
+		filters={"name": ("in", list({r.shift for r in rows if r.shift}) or [""])},
+		fields=["name", "start_time", "end_time",
+		        "begin_check_in_before_shift_start_time",
+		        "allow_check_out_after_shift_end_time",
+		        "working_hours_threshold_for_absent"],
+		limit_page_length=0)}
 
 	# Which rows this caller may actually ACT on, answered with the same two
 	# questions `month()` asks and the same two the guard enforces.
@@ -1551,8 +1746,10 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 		who = people.get(r.employee)
 		if not who:
 			continue
-		n = punch_count.get((r.employee, str(r.attendance_date)), 0)
-		flag = _flag(r, n)
+		day_punches = punches_on.get((r.employee, str(r.attendance_date)), [])
+		n = len(day_punches)
+		shift = shifts.get(r.shift)
+		flag = _flag(r, day_punches, shift)
 		counts[flag] = counts.get(flag, 0) + 1
 		if only and flag != only:
 			continue
@@ -1571,6 +1768,11 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 			"out_time": str(r.out_time)[11:16] if r.out_time else None,
 			"punches": n,
 			"flag": flag,
+			# The hours below which the shift marks a day Absent, so the
+			# screen can say "under 2 hours worked". None when the shift sets
+			# none.
+			"absent_under": (flt(shift.working_hours_threshold_for_absent) or None
+			                 if flag == "absent_short" and shift else None),
 			"late": bool(r.late_entry),
 			"early": bool(r.early_exit),
 			# The day as well as the person: a day older than the window

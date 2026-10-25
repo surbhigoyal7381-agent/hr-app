@@ -1,0 +1,70 @@
+{
+ "actions": [],
+ "allow_import": 0,
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-24 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "review_month",
+  "review_note"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The first day of the month this review clears.",
+   "fieldname": "review_month",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Month",
+   "reqd": 1
+  },
+  {
+   "fieldname": "review_note",
+   "fieldtype": "Small Text",
+   "label": "What you talked about and the action plan",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-25 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Grooming Review",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "Employee"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "HR User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "HR Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "track_views": 0
+}

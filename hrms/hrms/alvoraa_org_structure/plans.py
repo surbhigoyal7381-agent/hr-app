@@ -358,6 +358,10 @@ def erase(name, reason):
 	"""
 	from frappe.model.delete_doc import delete_dynamic_links
 
+	# A calendar Event's participant row can point at a plan (06b m3). It goes
+	# first: while it exists Frappe refuses the delete ("linked with Event"),
+	# so the plan could never be erased, by HR or by the daily job.
+	frappe.db.delete("Event Participants", {"reference_doctype": DOCTYPE, "reference_docname": name})
 	frappe.delete_doc(DOCTYPE, name, delete_permanently=True, flags={ERASE_FLAG: True})
 	delete_dynamic_links(DOCTYPE, name)
 	_log(reason, name)
@@ -385,7 +389,9 @@ def set_plan(assignment, note=None, reason=None, improvement_ends_on=None, told=
 		_refuse(_("Only HR Managers can plan a replacement."), "plans.set_plan")
 	if note and len(note) > NOTE_MAX:
 		frappe.throw(_("The note can be at most {0} characters. Shorten it and save again.").format(NOTE_MAX))
-	if reason == "Performance" and not cint(told):
+	# A screen sends true, "true", 1 or "1" (frappe.call form-encodes a JS true
+	# as "true"). Anything else, including nothing, is "not ticked".
+	if reason == "Performance" and str(told).strip().lower() not in ("1", "true"):
 		frappe.throw(_("Tick that you have told the person about the improvement period and given "
 		               "written goals, then save again."))
 	check_assignment(assignment)
@@ -446,7 +452,9 @@ def record_outcome(plan, outcome):
 	if not _visible(plan):
 		frappe.throw(_changed())
 	right = "delete" if outcome == "improved" else "write"
-	if not frappe.has_permission(DOCTYPE, right, doc=plan):
+	# HR Manager by role, not only by right: a tenant can give another role
+	# Write on plans, but the outcome stays with HR (decision 10; 06b m2).
+	if "HR Manager" not in frappe.get_roles() or not frappe.has_permission(DOCTYPE, right, doc=plan):
 		_refuse(_("Only HR Managers can record the outcome."), "plans.record_outcome")
 	doc = frappe.get_doc(DOCTYPE, plan, for_update=True)
 	if doc.not_improved_on:
@@ -556,6 +564,7 @@ TRACE_TABLES = (
 	("ToDo", "reference_type"), ("Document Follow", "ref_doctype"), ("Tag Link", "document_type"),
 	("File", "attached_to_doctype"), ("View Log", "reference_doctype"),
 	("Notification Log", "document_type"), ("Deleted Document", "deleted_doctype"),
+	("Event Participants", "reference_doctype"),
 )
 # Desk-made things that would read plans or send them somewhere (question 6).
 READER_TABLES = (

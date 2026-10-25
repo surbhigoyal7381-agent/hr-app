@@ -1320,3 +1320,102 @@ class TestOptionA(Plan065Case):
 			for p in (p6, p7):
 				self.as_user(self.hrA, plans.remove_plan, p)
 		self.assertEqual(state(), before_state)
+
+	# Fixes from the review (06-review.md) and the security verification (06b).
+	# Each test here fails when its fix is taken out.
+
+	def test_06b_m1_saving_or_erasing_a_plan_sends_no_live_update(self):
+		"""Frappe's list_update went to everyone with Read in the role table -
+		the subject and a leaver too - carrying the plan's name and the saver's
+		e-mail. Every way a plan changes is checked, plus a control that the
+		recorder does see an ordinary record's update."""
+		sent = []
+		real = frappe.publish_realtime
+
+		def record(event=None, message=None, *args, **kw):
+			sent.append((event, message or {}, kw))
+			return real(event, message, *args, **kw)
+
+		def about_plans():
+			return [s for s in sent if (s[1].get("doctype") == PLAN or s[2].get("doctype") == PLAN)]
+
+		with patch("frappe.publish_realtime", side_effect=record), patch("frappe.enqueue"):
+			p = self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Personal reasons")["name"]
+			self.as_user(self.hrA2, plans.confirm_plan, p)
+			self.as_user(self.hrA, plans.remove_plan, p)
+			p7 = self.performance_plan(self.a_karan, ended_days_ago=0)
+			self.as_user(self.hrA, plans.record_outcome, p7, "not_improved")
+			p8 = self.performance_plan(self.a_ritu, ended_days_ago=0)
+			self.as_user(self.hrA, plans.record_outcome, p8, "improved")
+			self.assertEqual(about_plans(), [])
+			# Control: an ordinary record still announces itself.
+			frappe.get_doc("Alvoraa Position", self.store.name).save(ignore_permissions=True)
+		self.assertTrue([s for s in sent if s[0] == "list_update" and s[1].get("doctype") == "Alvoraa Position"])
+
+	def test_r1_reopening_a_closed_opening_on_a_held_seat_is_refused(self):
+		opening = self.as_user(self.hrA, register.post_job, self.store.name)["name"]
+		frappe.db.set_value("Job Opening", opening, "status", "Closed")
+		frappe.db.commit()
+		self.performance_plan(self.a_karan)
+		frappe.set_user(self.hrA)
+		doc = frappe.get_doc("Job Opening", opening)
+		doc.status = "Open"
+		with self.assertRaises(frappe.ValidationError) as caught:
+			doc.save()
+		self.assertIn("Hiring for this seat is on hold", str(caught.exception))
+		frappe.db.rollback()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Job Opening", opening, "status"), "Closed")
+		# Re-opening it with no hold on the seat still works.
+		_wipe_plans()
+		frappe.db.commit()
+		frappe.set_user(self.hrA)
+		doc = frappe.get_doc("Job Opening", opening)
+		doc.status = "Open"
+		doc.save()
+		frappe.set_user("Administrator")
+
+	def test_review_m3_the_told_tick_takes_what_a_screen_sends(self):
+		ends = add_days(nowdate(), 45)
+		for told in (None, "", 0, "0", "false", False, "yes"):
+			with self.assertRaises(frappe.ValidationError, msg=repr(told)):
+				self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Performance", ends, told)
+		self.assertFalse(frappe.db.count(PLAN))
+		for told in (True, "true", "True", 1, "1"):
+			self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Performance", ends, told)
+			self.assertEqual(frappe.db.count(PLAN), 1, repr(told))
+			_wipe_plans()
+
+	def test_06b_m3_an_event_row_pointing_at_a_plan_goes_with_the_erase(self):
+		p = self.make_plan(self.a_ritu)
+		event = frappe.get_doc({"doctype": "Event", "subject": "Catch-up 065", "event_type": "Private",
+		                        "starts_on": frappe.utils.now_datetime(),
+		                        "event_participants": [{"reference_doctype": PLAN, "reference_docname": p}]})
+		event.flags.ignore_links = True
+		event.insert(ignore_permissions=True)
+		frappe.db.commit()
+		self.addCleanup(lambda: (frappe.set_user("Administrator"), frappe.db.delete("Event", {"name": event.name}),
+		                         frappe.db.commit()))
+		self.assertEqual(frappe.db.count("Event Participants", {"reference_doctype": PLAN}), 1)
+		with patch("frappe.enqueue"):
+			self.as_user(self.hrA, plans.remove_plan, p)
+		self.assertEqual(frappe.db.count("Event Participants", {"reference_doctype": PLAN}), 0)
+		self.assertEqual(plans.self_check()["Event Participants"], 0)
+
+	def test_06b_m2_a_role_given_write_still_cannot_record_the_outcome(self):
+		frappe.db.delete("Custom DocPerm", {"parent": PLAN})
+		for role, rights in (("HR Manager", dict(read=1, write=1, create=1, delete=1)),
+		                     ("System Manager", dict(read=1)), (OWNERS, dict(read=1, write=1, delete=1))):
+			d = frappe.get_doc({"doctype": "Custom DocPerm", "parent": PLAN, "parenttype": "DocType",
+			                    "parentfield": "permissions", "role": role, "permlevel": 0, **rights})
+			d.db_insert()
+		frappe.clear_cache(doctype=PLAN)
+		frappe.local.role_permissions = {}
+		frappe.db.commit()
+		p7 = self.performance_plan(self.a_karan, ended_days_ago=1)
+		for outcome in ("not_improved", "improved"):
+			with self.assertRaises(frappe.PermissionError, msg=outcome):
+				self.as_user(self.own, plans.record_outcome, p7, outcome)
+			frappe.db.rollback()
+		self.assertTrue(frappe.db.exists(PLAN, p7))
+		self.assertFalse(frappe.db.get_value(PLAN, p7, "not_improved_on"))

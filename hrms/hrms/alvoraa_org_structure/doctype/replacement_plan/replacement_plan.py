@@ -18,6 +18,12 @@ class ReplacementPlan(Document):
 	# every delete unless this is set. That comment would outlive the erase.
 	no_feed_on_delete = True
 
+	def notify_update(self):
+		"""Send nothing. Frappe's live list update goes to everyone holding Read
+		in the role table - including the person the plan is about, whom our
+		permission hook hides it from - with the plan's name and the saver's
+		e-mail (06b M1). The Positions page reloads by itself."""
+
 	def validate(self):
 		note = self.note or ""
 		if len(note) > plans.NOTE_MAX:

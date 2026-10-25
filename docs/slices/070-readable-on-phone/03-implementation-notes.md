@@ -136,3 +136,8 @@ Built as drawn: P2–P4, P6–P25, P27–P36. P1, P5 prototype-only. P26 unchang
 Removed: a second message helper for the leave form (it now uses `sendSay`); a tautological test
 line; a plan for per-panel failure helpers. Kept the per-call `<template>` sink — without it the
 5xx pop-up (AC-47) cannot be stopped.
+
+## Decisions — Surbhi, 25 Oct 2026 ("1 keep, 2 accept")
+
+1. **Late answer after the 15 s message: keep as built.** It replaces the message once, as the approved prototype shows; no time-out ever unlocks a write button (OPS-S3). This supersedes "a late answer is ignored" in the strategy-approval note of 00-impact-analysis.md.
+2. **The five undrawn screens above: accepted as built.**

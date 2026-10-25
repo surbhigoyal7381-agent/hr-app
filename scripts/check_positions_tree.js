@@ -995,6 +995,14 @@ async function unChecks() {
        E["pos-person"].classList.contains("open") && E["pos-p-q"].value === "" && E["pos-p-ctx"].style.display === "none"
        && t.ctx.POS.picked === null && t.calls[0][1].position === "P-Cashier");
   }
+  {
+    // Review m2: half a place free starts the share at 50, so it fills first time.
+    const t = withCands(unContext(true)), E = t.ctx.__els;
+    t.ctx.POS.rows = UNROWS2.map((r) => (r.id === "P-Cashier" ? Object.assign({}, r, { filled: 2.5, open: 0.5 }) : r));
+    t.ctx.posUnPlace("HR-EMP-00381", "P-Cashier", { focus() {} });
+    await tick();
+    ok("071 m2: half a place free starts the share at 50", E["pos-p-weight"].value === 50);
+  }
   /* step 6: saving */
   const after = (gone, seatId) => ({
     rows: UNROWS2.map((r) => (r.id === seatId ? Object.assign({}, r, { filled: r.filled + 1, seats: Math.max(r.seats, r.filled + 1),

@@ -1817,7 +1817,10 @@ window.posPickPerson = function (from) {
   var seat = posPickSeat();
   if (!POS.may_edit || !seat) return;
   document.getElementById("pos-p-q").value = from ? from.name : "";
-  document.getElementById("pos-p-weight").value = 100;
+  // From the tray, the share starts at the free part of the seat, so half a
+  // place free fills first time (review m2). Otherwise 100, as before.
+  document.getElementById("pos-p-weight").value = from && !from.raise && seat.seats
+    ? Math.min(100, Math.round(seat.open * 100)) : 100;
   document.getElementById("pos-p-type").value = "Permanent";
   document.getElementById("pos-p-until").value = "";
   document.getElementById("pos-p-delegate").checked = false;

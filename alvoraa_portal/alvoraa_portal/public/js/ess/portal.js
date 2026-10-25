@@ -327,7 +327,17 @@ function ocNodeCard(n, isRoot, opts) {
     // thing this chart exists to show.
     : (n.people === null ? ""
        : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
-         + "<span>Nobody in this seat</span></div>");
+         + "<span>" + (n.empty ? ocEsc(n.empty) : "Nobody in this seat") + "</span></div>");
+  // Slice 070, Positions only: one grey line inside the box saying where the
+  // rest of a shared seat is ("Same seat as under Owner · 6 in all"). Inside
+  // the button, so it is part of the box's spoken name. The Organisation page
+  // never sets `quiet`, `empty` or `cls`, so its cards are unchanged.
+  if (n.quiet) {
+    who += '<div class="oc-same"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">'
+      + '<rect x="0.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor"/>'
+      + '<rect x="4.5" y="0.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-dasharray="2 1.5"/>'
+      + "</svg><span>" + ocEsc(n.quiet) + "</span></div>";
+  }
 
   var open = "";
   if (n.open >= 0.5) {
@@ -387,7 +397,7 @@ function ocNodeCard(n, isRoot, opts) {
   // hierarchy, one set of semantics.
   return '<div class="oc-node' + (isRoot ? " root" : "") + '"'
     + (opts.dim && opts.dim(n) ? ' style="opacity:.45"' : "") + ">"
-    + '<button type="button" class="oc-box' + (tone ? " tone-" + tone : "")
+    + '<button type="button" class="oc-box' + (tone ? " tone-" + tone : "") + (n.cls ? " " + n.cls : "")
     + '" style="text-align:left;font:inherit;width:100%;cursor:pointer"'
     + ' onclick="' + focusFn + '(\'' + ocEsc(n.id) + '\')">'
     + '<div class="oc-box-hd"><span class="ti">' + ocEsc(n.title) + "</span>" + open + "</div>"
@@ -782,13 +792,15 @@ function posOne(p) {
            note: p.leaving ? "leaving " + posDay(p.leaving) : null };
 }
 
-function posFew(people) {
+// `here` (slice 070): the seat is drawn in more than one box, so the rest are
+// "more here", not "more in this seat" - some of the seat is elsewhere.
+function posFew(people, here) {
   var out = people.slice(0, POS_NAMES_SHOWN).map(posOne);
   var rest = people.length - out.length;
   if (rest > 0) {
     // Said as a person, not as a cut-off list. Clicking the box opens the
     // seat, which is where all of them are.
-    out.push({ name: "+" + rest + " more in this seat" });
+    out.push({ name: "+" + rest + (here ? " more here" : " more in this seat") });
   }
   return out;
 }
@@ -903,9 +915,22 @@ function posReach(t) {
 }
 
 /* One seat as the chart's card wants it. The shapes almost match already -
-   only `covering` has to become `cover`. */
-function posNode(r, t, depth) {
+   only `covering` has to become `cover`.
+
+   `pl` (slice 070) is posPlace's answer, in the Reporting lines view only:
+   the box then lists the people placed at home, its children are the real
+   seats still drawn plus the copies hanging here, and it says where the rest
+   of a shared seat is. Without it the box is exactly as before. */
+function posNode(r, t, depth, pl) {
   var kids = t.kids[r.id] || [];
+  var here = r.people, copies = [], mine = [];
+  if (pl) {
+    kids = kids.filter(function (k) { return !pl.hidden[k.id]; });
+    here = pl.home[r.id];
+    copies = pl.under[r.id] || [];
+    mine = pl.copies[r.id];
+  }
+  var count = kids.length + copies.length;
   // Open to two levels, then folded. Drawing everything laid 15 seats - and
   // at the first tenant it would be 120 - in one row several thousand pixels
   // wide, with the card scrolling sideways and a tall empty gap above it.
@@ -931,17 +956,10 @@ function posNode(r, t, depth) {
     sub = sub ? sub + " · reports above your view" : "reports above your view";
   }
 
-  var flags = [];
   // Said before the vacancy flags, because it is the earlier warning: a seat
   // losing its only person in three weeks is not yet empty and will be.
-  if (r.leaving_on) {
-    flags.push({
-      severity: r.key ? "high" : "medium",
-      label: "leaving " + posDay(r.leaving_on),
-      why: "Somebody in this seat is working their notice. Their last day is "
-           + r.leaving_on + ".",
-    });
-  }
+  // Slice 070: on a shared seat, only for the people drawn in this box.
+  var flags = posLeavingFlag(pl ? posSoonest(here) : r.leaving_on, r.key);
   if (r.key) {
     flags.push({ severity: r.open >= 0.5 ? "high" : "low", label: "key seat",
                  why: "An empty key seat is flagged red rather than amber." });
@@ -950,23 +968,43 @@ function posNode(r, t, depth) {
     flags.push({ severity: "low", label: r.status, why: "Not an active seat." });
   }
 
-  return {
+  var node = {
     id: r.id,
     title: r.title,
     subtitle: sub,
     open: r.open,
     flags: flags,
-    child_count: kids.length,
-    has_more: shut && kids.length > 0,
-    people: posFew(r.people),
+    child_count: count,
+    has_more: shut && count > 0,
+    people: posFew(here, mine.length > 0),
     children: (shut || depth + 1 >= POS_MAX_DEPTH)
       ? []
-      : posGroupSiblings(kids, t).map(function (g) {
+      : posGroupSiblings(kids, t, false, pl).map(function (g) {
           return g.group
             ? posGroupNode(g.group, g.members)
-            : posNode(g.solo, t, depth + 1);
-        }),
+            : posNode(g.solo, t, depth + 1, pl);
+        }).concat(copies.map(function (c) { return posCopyNode(c, pl); })),
   };
+  if (mine.length) {
+    // The home of a shared seat: where the rest are (Q6 words).
+    node.cls = "pos-split";
+    if (!here.length) node.empty = drT("None here: all {0} shown under {1}", [r.people.length, posElsewhere(mine)]);
+    else node.quiet = drT("{0} more shown under {1}", [r.people.length - here.length, posElsewhere(mine)]);
+  }
+  return node;
+}
+
+/* The "leaving" flag for the people drawn in one box. */
+function posLeavingFlag(day, key) {
+  if (!day) return [];
+  return [{
+    severity: key ? "high" : "medium",
+    label: "leaving " + posDay(day),
+    why: "Somebody in this seat is working their notice. Their last day is " + day + ".",
+  }];
+}
+function posSoonest(people) {
+  return people.map(function (p) { return p.leaving; }).filter(Boolean).sort()[0] || null;
 }
 
 /* Twenty-five people doing the same job in the same shop are twenty-five
@@ -989,11 +1027,15 @@ function posGroupKey(r) {
 
 // `all` (slice 069): group every identical set, ignoring what somebody opened
 // with "Show the N" on screen - the wall chart follows the data, not the view.
-function posGroupSiblings(kids, t, all) {
+// `pl` (slice 070): a seat drawn in more than one box - a copy of it elsewhere,
+// or a copy hanging under it - is never grouped, or the group would list
+// people who are drawn somewhere else too (C4).
+function posGroupSiblings(kids, t, all, pl) {
   var groups = {}, order = [], out = [];
   kids.forEach(function (r) {
     // A seat with reports under it is never folded in with another.
     if ((t.kids[r.id] || []).length) { out.push({ solo: r }); return; }
+    if (pl && (pl.copies[r.id].length || (pl.under[r.id] || []).length)) { out.push({ solo: r }); return; }
     var k = posGroupKey(r);
     if (!groups[k]) { groups[k] = []; order.push(k); }
     groups[k].push(r);
@@ -1055,6 +1097,118 @@ function posGroupNode(key, members) {
     children: [],
     _group: key,
     _members: members.length,
+  };
+}
+
+/* ── slice 070: seats follow the reporting line ─────────────────────────
+ *
+ * In the Reporting lines view each person is drawn under the seat of their
+ * manager - Reports To on their employee record, which the server sends as
+ * `manager` - not under the seat's own parent. A seat whose people report to
+ * different managers is drawn once per manager: its own box ("home") under its
+ * parent, and a COPY under each other manager's seat holding only that
+ * manager's people.
+ *
+ *   - A copy is an end box: no fold, nothing under it, ever. So no loop.
+ *   - Open slots, the job opening and the seats under it stay on the home.
+ *   - The home is left out only when it has nobody at home, no open slot and
+ *     nothing under it (a copy hanging under it counts).
+ *   - Each person is drawn exactly once. Counts never change.
+ *
+ * ONE FUNCTION for the screen and the wall chart, so the two cannot disagree.
+ * It works from the seats being drawn, because what may hold a copy depends
+ * on the view, the filter and the paper's start. Branch and Department never
+ * call it.
+ *
+ * Where person P of seat S is drawn, among the drawn seats (spec §7):
+ *   R1/R2  the manager sits in S's parent or in S itself  -> home
+ *   R3/R4  the manager sits in other drawn seats          -> a copy under one
+ *          (Permanent first, then weight, then title, then id)
+ *   R5     no manager sent, or not in a drawn seat        -> home
+ *   Q6     a manager seat in another company never holds a copy
+ *   G1     with a filter on, only seats that match get copies
+ */
+function posPlace(t, filtered) {
+  var reach = posReach(t).seen, seatsOf = {};
+  Object.keys(t.byId).forEach(function (id) {
+    if (!reach[id]) return;
+    t.byId[id].people.forEach(function (p) {
+      (seatsOf[p.employee] = seatsOf[p.employee] || []).push({ r: t.byId[id], p: p });
+    });
+  });
+  var pl = { home: {}, copies: {}, under: {}, byId: {}, hidden: {} };
+  Object.keys(t.byId).forEach(function (id) {
+    var r = t.byId[id], home = [], by = {}, order = [];
+    var may = reach[id] && (!filtered || posMatches(r));
+    r.people.forEach(function (p) {
+      var m = may ? posManagerSeat(p, r, seatsOf) : null;
+      if (!m) { home.push(p); return; }
+      if (!by[m.id]) { by[m.id] = []; order.push(m); }
+      by[m.id].push(p);
+    });
+    pl.home[id] = home;
+    pl.copies[id] = order.map(function (m) {
+      var c = { id: "copy:" + id + "@" + m.id, seat: r, under: m.id, people: by[m.id] };
+      pl.byId[c.id] = c;
+      (pl.under[m.id] = pl.under[m.id] || []).push(c);
+      return c;
+    });
+  });
+  // Left out only with nobody at home, no open slot and nothing drawn under
+  // it - worked out from the bottom, since a child left out is not "under".
+  var seen = {};
+  function hidden(id, d) {
+    if (id in seen) return seen[id];
+    seen[id] = false;
+    var r = t.byId[id];
+    return (seen[id] = pl.copies[id].length > 0 && !pl.home[id].length && !posOpen(r)
+      && !(pl.under[id] || []).length
+      && !(t.kids[id] || []).some(function (k) { return d >= POS_MAX_DEPTH || !hidden(k.id, d + 1); }));
+  }
+  Object.keys(t.byId).forEach(function (id) { if (hidden(id, 0)) pl.hidden[id] = true; });
+  return pl;
+}
+
+/* The drawn seat a copy of `r` hangs under for this person, or null (home). */
+function posManagerSeat(p, r, seatsOf) {
+  if (!p.manager) return null;
+  var held = (seatsOf[p.manager] || []).filter(function (x) { return x.r.company === r.company; });
+  if (!held.length || held.some(function (x) { return x.r.id === r.id || x.r.id === r.reports_to; })) return null;
+  held.sort(function (a, b) {
+    var pa = a.p.type === "Permanent" ? 0 : 1, pb = b.p.type === "Permanent" ? 0 : 1;
+    return (pa - pb) || ((b.p.weight || 0) - (a.p.weight || 0))
+      || (a.r.title < b.r.title ? -1 : a.r.title > b.r.title ? 1 : 0)
+      || (a.r.id < b.r.id ? -1 : a.r.id > b.r.id ? 1 : 0);
+  });
+  return held[0].r;
+}
+
+/* The words about a seat's parent, never naming one outside the reader's view. */
+function posParentWords(r) {
+  if (!r.reports_to) return drT("the top of the chart");
+  var up = posById(r.reports_to);
+  return up ? up.title : drT("a seat above your view");
+}
+
+/* Where the rest of a seat are: one manager's seat, or how many. */
+function posElsewhere(copies) {
+  return copies.length === 1 ? (posById(copies[0].under) || {}).title || ""
+    : drT("{0} other managers", [copies.length]);
+}
+
+/* A copy as the chart's card wants it: an end box, dashed, with its line. */
+function posCopyNode(c, pl) {
+  var r = c.seat, n = c.people.length, all = r.people.length;
+  var line = pl.hidden[r.id]
+    ? drT("Set up under {0}", [posParentWords(r)]) + (all > n ? " · " + drT("{0} in all", [all]) : "")
+    : drT("Same seat as under {0}", [posParentWords(r)]) + " · " + drT("{0} in all", [all]);
+  return {
+    id: c.id, title: r.title,
+    subtitle: [r.branch, n === 1 ? drT("1 person") : drT("{0} people", [n])].filter(Boolean).join(" · "),
+    open: 0, flags: posLeavingFlag(posSoonest(c.people), r.key),
+    child_count: 0, has_more: false, children: [],
+    people: posFew(c.people, true),
+    cls: "copy pos-split", quiet: line,
   };
 }
 
@@ -1285,11 +1439,15 @@ function posPaintTree() {
   }
 
   var how = posArrange();
+  // Slice 070: in Reporting lines each person is drawn under their manager's
+  // seat. Kept on POS so the tray, Find and the outline can read it.
+  var pl = POS.place = how === "reporting" ? posPlace(t, posAnyFilter()) : null;
   var nodes = how === "branch"
     ? posByBranch(rows)
     : (how === "department"
         ? posByDepartment(rows)
-        : t.roots.map(function (r) { return posNode(r, t, 0); }));
+        : t.roots.filter(function (r) { return !pl.hidden[r.id]; })
+            .map(function (r) { return posNode(r, t, 0, pl); }));
 
   var by = {};
   POS.rows.forEach(function (r) { by[r.id] = r; });

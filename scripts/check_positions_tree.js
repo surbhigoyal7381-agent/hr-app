@@ -1134,7 +1134,236 @@ async function unChecks() {
   }
 }
 
-deleteChecks().then(unChecks).then(() => {
+/* ── 23. slice 070: seats follow the reporting line ──────────────────────
+ *
+ * In Reporting lines each person is drawn under the seat of their Reports To
+ * manager (`manager` on the person). These run the REAL page in jsdom, so the
+ * drawn markup is what a browser gets. The oracle below works out where each
+ * person belongs from the rows and the manager keys alone - it never asks the
+ * page's own placement code (SEC-4 a). */
+const S70 = (() => {
+  const P = (employee, manager, extra) => Object.assign({ employee, assignment: "A-" + employee, name: "N " + employee,
+    weight: 100, type: "Permanent", covering: false, hired_on: null, leaving: null }, manager === undefined ? {} : { manager }, extra || {});
+  const R = (id, title, parent, people, extra) => Object.assign({ id, title, reports_to: parent || "", reports_to_title: "",
+    branch: "Head Office", department: "Accounts", designation: title, grade: "", company: "DTC", status: "Active",
+    key: false, seats: people.length || 1, filled: people.length, open: people.length ? 0 : 1, opening: null,
+    leaving_on: null, people }, extra || {});
+  return () => [
+    R("OWN", "Owner", "", [P("E-OWN", "")]),
+    R("CFO", "Chief Financial Officer", "OWN", [P("E-CFO", "E-OWN")]),
+    R("RH", "Retail Head", "OWN", [P("E-RH", "E-OWN")]),
+    R("OE", "Office Executive", "OWN", [P("OE1", "E-OWN"), P("OE2", "E-OWN"), P("OE3", "E-CFO"), P("OE4", "E-CFO"),
+                                        P("OE5", "E-CFO"), P("OE6", "E-CFO")]),
+    R("BO", "Back Office", "OWN", [P("B1", "E-OWN"), P("B2", "E-CFO"), P("B3", "E-BX")], { seats: 4, open: 1 }),
+    R("BX", "Backoffice Executive", "BO", [P("E-BX", "B1")]),
+    R("MIS", "MIS", "OWN", [P("M1", "E-CFO")], { seats: 2, open: 1 }),
+    R("AUD", "Store Auditor", "OWN", [P("A1", "E-RH")]),
+    R("PK", "Packing", "RH", [P("K1", "E-NOSEAT"), P("K2"), P("K3", "E-GCFO")]),
+    R("FS", "Floor Supervisor", "RH", [P("F1", "E-RH"), P("F2", "F1")]),
+    R("AMN", "Area Manager North", "RH", [P("E-AM", "E-RH", { weight: 50 })]),
+    R("AME", "Area Manager East", "RH", [P("E-AM", "E-RH", { weight: 50, assignment: "A-E-AM-2" })]),
+    R("ST", "Store Staff", "RH", [P("S1", "E-AM")]),
+    R("XP", "X Permanent", "RH", [P("E-X", "E-RH", { weight: 60 })]),
+    R("XC", "X Covering", "RH", [P("E-X", "E-RH", { type: "Covering", covering: true, assignment: "A-E-X-2" })]),
+    R("XS", "X Staff", "RH", [P("X1", "E-X")]),
+    R("SEC", "Secretary Desk", "CFO", [P("E-OWN", "", { assignment: "A-E-OWN-2" })]),
+    R("CA1", "Cashier", "RH", [P("C1", "E-CFO"), P("C1b", "E-RH")]),
+    R("CA2", "Cashier", "RH", [P("C2", "E-RH")]),
+    R("GRP", "Group CFO", "", [P("E-GCFO", "")], { company: "Other Co" }),
+    R("HID", "Area Manager", "SEAT-HIDDEN-SNTL", [P("H1", "MGR-ABSENT-SNTL"), P("H2", "E-CFO")]),
+  ];
+})();
+
+/* The oracle (spec §7), from rows and manager keys only. Returns, per
+   assignment, the seat whose box the person should be drawn in and the box
+   kind: { seat, copyUnder } - copyUnder null means the seat's own box. */
+function oracle070(rows, filtered) {
+  const byEmp = {};
+  rows.forEach((r) => r.people.forEach((p) => { (byEmp[p.employee] = byEmp[p.employee] || []).push({ r, p }); }));
+  const want = {};
+  rows.forEach((r) => r.people.forEach((p) => {
+    let under = null;
+    const held = (p.manager ? byEmp[p.manager] || [] : []).filter((x) => x.r.company === r.company);
+    if (held.length && !held.some((x) => x.r.id === r.id || x.r.id === r.reports_to) && (!filtered || filtered(r))) {
+      const perm = held.filter((x) => x.p.type === "Permanent");
+      const pool = perm.length ? perm : held;
+      const top = Math.max(...pool.map((x) => x.p.weight));
+      under = pool.filter((x) => x.p.weight === top).map((x) => x.r).sort((a, b) => (a.title + a.id < b.title + b.id ? -1 : 1))[0].id;
+    }
+    want[p.assignment] = { seat: r.id, copyUnder: under };
+  }));
+  return want;
+}
+
+async function seats070() {
+  let JSDOM, VirtualConsole;
+  try { ({ JSDOM, VirtualConsole } = require("jsdom")); }
+  catch (e) { problems.push("slice 070 checks need jsdom (npm ci): " + e.message); return; }
+  const { readPortalSource } = require("./lib/portal_source");
+  const vc = new VirtualConsole();
+  vc.on("jsdomError", (e) => { if (!/Unexpected token '\{'/.test(String(e && e.message))) console.error(e); });
+  const dom = new JSDOM(readPortalSource(), {
+    virtualConsole: vc, runScripts: "dangerously", pretendToBeVisual: true, url: "http://grace.localhost/hrms-employee",
+    beforeParse(w) {
+      w.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ message: {} }), text: () => Promise.resolve("") });
+      w.frappe = { call: () => Promise.resolve({ message: {} }), csrf_token: "x", boot: {}, ui: {}, _messages: {}, utils: { escape_html: (s) => s } };
+    },
+  });
+  const { window } = dom, doc = window.document;
+  window.Element.prototype.scrollIntoView = function () {};
+  await new Promise((r) => setTimeout(r, 300));
+  const W = window;
+  const body = () => doc.getElementById("pos-body");
+  const idOf = (b) => { const m = (b.getAttribute("onclick") || "").match(/\('([^']+)'\)/); return m ? m[1] : null; };
+
+  /* Draw `rows` with every fold open, in the given arrangement. */
+  function draw(rows, arrange, opts) {
+    opts = opts || {};
+    const P = W.POS;
+    P.rows = rows; P.may_edit = true; P.unseated = opts.unseated === undefined ? [{ employee: "E-NOSEAT", name: "Neeraj Sood", no_manager: false }] : opts.unseated;
+    P.collapsed = {}; P.expanded = {}; P.ungrouped = {}; P._saved = null; P._findId = null; P._focusNext = false;
+    rows.forEach((r) => { P.expanded[r.id] = true; });
+    doc.getElementById("pos-f-view").value = "tree";
+    doc.getElementById("pos-f-arrange").value = arrange || "reporting";
+    ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach((id) => { doc.getElementById(id).value = (opts.filter || {})[id] || ""; });
+    W.POS_NAMES_SHOWN = opts.names || 1000;
+    W.posPaint();
+    W.POS_NAMES_SHOWN = 3;
+    return body().innerHTML;
+  }
+  /* Every drawn seat box: its id, its names, the box it hangs under. */
+  function boxes() {
+    return [...body().querySelectorAll(".oc-tree .oc-box")].map((b) => {
+      const node = b.closest(".oc-node");
+      let br = node.parentElement.closest(".oc-branch");
+      if (br && br.querySelector(":scope > .oc-node") === node) br = br.parentElement.closest(".oc-branch");
+      while (br && br.classList.contains("oc-hang-slot")) br = br.parentElement.closest(".oc-branch");
+      const pbox = br && br.querySelector(":scope > .oc-node > .oc-box");
+      return { el: b, id: idOf(b), copy: b.classList.contains("copy"), parent: pbox ? idOf(pbox) : null,
+               title: b.querySelector(".ti").textContent,
+               names: [...b.querySelectorAll(".oc-who:not(.oc-empty) > span:last-child")].map((s) => s.firstChild.textContent)
+                 .filter((t) => !/^\+\d+ more/.test(t)),
+               node };
+    });
+  }
+  const seatOfCopy = (id) => (W.POS.place.byId[id] || {}).seat;
+
+  /* 22a. every person is where the oracle says, exactly once (SEC-4 a, N1, AC-19) */
+  {
+    const rows = S70();
+    draw(rows);
+    const drawn = boxes(), want = oracle070(rows), seen = {};
+    drawn.forEach((b) => b.names.forEach((nm) => {
+      const r = rows.find((x) => x.id === (b.copy ? seatOfCopy(b.id).id : b.id));
+      const p = r && r.people.find((q) => q.name === nm);
+      if (!p) { ok("070: a drawn name belongs to the box's seat", false, nm + " in " + b.id); return; }
+      seen[p.assignment] = (seen[p.assignment] || 0) + 1;
+      const w = want[p.assignment];
+      ok("070: " + nm + " is in the box the oracle says",
+         w.copyUnder ? (b.copy && b.parent === w.copyUnder) : (!b.copy && b.id === w.seat), JSON.stringify([b.id, b.parent, w]));
+    }));
+    const all = rows.reduce((a, r) => a + r.people.length, 0);
+    ok("070 N1: every assignment drawn exactly once", Object.keys(seen).length === all && Object.values(seen).every((n) => n === 1),
+       Object.keys(seen).length + " of " + all);
+    // The oracle must be able to fail: swap two managers and it disagrees.
+    const swapped = S70();
+    swapped.find((r) => r.id === "OE").people[0].manager = "E-CFO";
+    const w2 = oracle070(swapped);
+    ok("070: the oracle notices a swapped manager", w2["A-OE1"].copyUnder === "CFO" && want["A-OE1"].copyUnder === null);
+
+    const by = (id) => drawn.filter((b) => b.id === id);
+    const one = (id) => by(id)[0] || { names: [], el: doc.createElement("i"), parent: null };
+    const copies = drawn.filter((b) => b.copy);
+    ok("070 AC-12: Office Executive home has 2, a copy under the CFO has the 4",
+       one("OE").names.length === 2 && copies.some((c) => seatOfCopy(c.id).id === "OE" && c.parent === "CFO" && c.names.length === 4));
+    ok("070 AC-13 (Q5): a head and team in one seat stay home", one("FS").names.length === 2 && !copies.some((c) => seatOfCopy(c.id).id === "FS"));
+    ok("070 AC-14: a manager in no seat, or not sent, keeps them home", one("PK").names.length === 3);
+    ok("070 Q6: a manager in another company keeps them home", one("PK").names.includes("N K3"));
+    ok("070 AC-15 (G3): a manager in two seats, one the parent, keeps them home", one("OE").names.includes("N OE1"));
+    ok("070 AC-16: Permanent beats covering, then title A-Z",
+       copies.some((c) => seatOfCopy(c.id).id === "XS" && c.parent === "XP")
+       && copies.some((c) => seatOfCopy(c.id).id === "ST" && c.parent === "AME"));
+    ok("070 AC-23: a home with nothing left is not drawn", !by("AUD").length && copies.some((c) => seatOfCopy(c.id).id === "AUD" && c.parent === "RH"));
+    ok("070 AC-24: a home with an open slot stays, saying where its people are",
+       by("MIS").length === 1 && /None here: all 1 shown under Chief Financial Officer/.test(one("MIS").el.textContent)
+       && /open/.test(one("MIS").el.querySelector(".oc-box-hd").textContent));
+    ok("070 AC-22: the open tag is on the home only", copies.every((c) => !c.el.querySelector(".oc-tag.v"))
+       && one("BO").el.querySelector(".oc-tag.v"));
+    ok("070 AC-26: the seat under Back Office hangs under its home", one("BX").parent === "BO");
+    ok("070 the 64 case: a copy of Back Office hangs under the seat below it",
+       copies.some((c) => seatOfCopy(c.id).id === "BO" && c.parent === "BX"));
+    ok("070 AC-18 (C1): no copy has a fold button or anything under it",
+       copies.every((c) => !c.node.querySelector(".oc-toggle") && !c.node.parentElement.querySelector(":scope > .oc-kids, :scope > .oc-fam")));
+    const cfoKids = drawn.filter((b) => b.parent === "CFO").map((b) => b.copy);
+    ok("070 AC-18 (C3): under the CFO the real seats come before the copies",
+       cfoKids.length > 2 && cfoKids.indexOf(true) > cfoKids.lastIndexOf(false), JSON.stringify(cfoKids));
+    ok("070 AC-20 (C4): a seat with a copy is never grouped", !body().innerHTML.includes("grp:") && by("CA1").length === 1 && by("CA2").length === 1);
+    const pd = W.POS.place.byId[copies.find((c) => seatOfCopy(c.id).id === "OE").id].people[0];
+    ok("070 PRIV-1/G: a copy holds the same person objects, so a plan key travels with the person",
+       rows.find((r) => r.id === "OE").people.indexOf(pd) >= 0);
+  }
+
+  /* 22b. a Reports To loop draws and stops (AC-21) */
+  {
+    const P = (e, m) => ({ employee: e, assignment: "A-" + e, name: "N " + e, weight: 100, type: "Permanent", manager: m });
+    const rows = [Object.assign({}, S70()[0]), { id: "X", title: "Seat X", reports_to: "OWN", branch: "", department: "", company: "DTC",
+      status: "Active", seats: 1, filled: 1, open: 0, people: [P("PX", "PY")] },
+      { id: "Y", title: "Seat Y", reports_to: "OWN", branch: "", department: "", company: "DTC", status: "Active", seats: 1, filled: 1, open: 0,
+        people: [P("PY", "PX")] }];
+    draw(rows);
+    const c = boxes().filter((b) => b.copy);
+    ok("070 AC-21: a loop gives a copy each way and drawing ends",
+       c.length === 2 && c.some((b) => b.parent === "Y") && c.some((b) => b.parent === "X"));
+  }
+
+  /* 22c. the words on the boxes (AC-27 - AC-31, Q6 words) */
+  {
+    draw(S70(), "reporting", { names: 3 });
+    const drawn = boxes(), copies = drawn.filter((b) => b.copy);
+    const copyOf = (seat) => copies.find((c) => seatOfCopy(c.id).id === seat);
+    const txt = (b) => (b ? b.el.textContent.replace(/\s+/g, " ") : "");
+    ok("070 AC-27: a copy reads branch and its people, then the same-seat line",
+       /Head Office · 4 people/.test(txt(copyOf("OE"))) && /\+1 more here/.test(txt(copyOf("OE")))
+       && /Same seat as under Owner · 6 in all/.test(txt(copyOf("OE"))), txt(copyOf("OE")));
+    ok("070 AC-28: a copy whose home is not drawn reads Set up under", /Set up under Owner$/.test(txt(copyOf("AUD")).trim()), txt(copyOf("AUD")));
+    ok("070 AC-29: a home says how many are shown elsewhere",
+       /4 more shown under Chief Financial Officer/.test(txt(drawn.find((b) => b.id === "OE")))
+       && /2 more shown under 2 other managers/.test(txt(drawn.find((b) => b.id === "BO"))));
+    ok("070 AC-31: a parent outside the view is never named",
+       /Same seat as under a seat above your view · 2 in all/.test(txt(copyOf("HID"))));
+    const html = body().innerHTML;
+    ok("070 SEC-3: no hidden seat id or unknown manager id is echoed", !html.includes("SEAT-HIDDEN-SNTL") && !html.includes("MGR-ABSENT-SNTL"));
+    ok("070 AC-32: a copy is dashed and its line is inside the button",
+       copies.every((c) => c.el.tagName === "BUTTON" && c.el.querySelector(".oc-same")) && copies.every((c) => c.el.querySelector(".oc-same svg[aria-hidden=true]")));
+  }
+
+  /* 22d. nothing else moves (AC-34, AC-52, AC-53, AC-54) */
+  {
+    const bare = () => S70().map((r) => Object.assign({}, r, { people: r.people.map((p) => { const q = Object.assign({}, p); delete q.manager; return q; }) }));
+    for (const arr of ["branch", "department"]) {
+      ok("070 AC-52: " + arr + " view is byte-identical with and without manager keys", draw(S70(), arr) === draw(bare(), arr));
+    }
+    draw(S70()); const t1 = doc.getElementById("pos-tiles").innerHTML;
+    draw(bare()); const t2 = doc.getElementById("pos-tiles").innerHTML;
+    ok("070 AC-34: the tiles do not change with manager keys", t1 === t2);
+    const plain = draw(bare());
+    ok("070 AC-54: no manager keys, no copies and no grey lines", !/class="oc-box[^"]* copy/.test(plain) && !plain.includes("oc-same"));
+    const card = W.ocNodeCard({ id: "x", title: "T", subtitle: "S", open: 1, people: [{ name: "Ann Bee" }], flags: [] }, false);
+    ok("070 AC-53: the Organisation card is unchanged without the new fields",
+       card === '<div class="oc-node"><button type="button" class="oc-box" style="text-align:left;font:inherit;width:100%;cursor:pointer"'
+         + ' onclick="ocFocus(\'x\')"><div class="oc-box-hd"><span class="ti">T</span><span class="oc-tag v">open</span></div>'
+         + '<div class="sub">S</div><div class="oc-who"><span class="av">AB</span><span>Ann Bee</span></div></button></div>', card);
+    // PRIV-1 (b): private keys on a person in a copy change no box.
+    const shape = () => boxes().map((b) => [b.id, b.copy, b.parent, b.names.join("|"), (b.el.querySelector(".oc-same") || {}).textContent || ""].join("~")).join("\n");
+    draw(S70()); const s1 = shape();
+    const priv = S70();
+    priv.forEach((r) => { r.opening = "OPN-SNTL"; r.people.forEach((p) => { p.plan = { note: "PLAN-SNTL" }; p.hired_on = "2026-10-01"; }); });
+    draw(priv); const s2 = shape();
+    ok("070 PRIV-1 b: plans, openings and hire dates do not move, add or remove a box", s1 === s2);
+  }
+}
+
+deleteChecks().then(unChecks).then(seats070).then(() => {
   if (problems.length) {
     console.error("positions tree: " + problems.length + " problem(s)");
     problems.forEach((p) => console.error("  FAIL " + p));
@@ -1144,5 +1373,6 @@ deleteChecks().then(unChecks).then(() => {
               + "identical siblings grouped without losing anybody, filters "
               + "show matches with the seats above faded, loops and deep chains survive, a seat is deleted only "
               + "when the server says so, a seat opens its tray, the people "
-              + "trays only for HR");
+              + "trays only for HR; slice 070: people under their manager's seat");
+  process.exit(0);   // the jsdom window of section 22 would keep Node waiting
 });

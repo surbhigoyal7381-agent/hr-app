@@ -2184,6 +2184,13 @@ body.panel-fullscreen{overflow:hidden}
   .oc-fam > .oc-kids::after,.oc-fam > .oc-kids > .oc-branch::after,.oc-hang::before,.oc-hang::after,.oc-hang-item::before,.oc-hang-item::after{display:none !important}
   .oc-zoom{flex-direction:column;align-items:stretch;flex:1 1 auto}
 }
+/* Slice 070 (prototype-v1): a seat drawn under each manager. A copy has a
+   dashed border; its grey line, not the dash, says what it is. Pointing at
+   any box of a shared seat outlines its other boxes (desktop only). */
+.oc-box.copy{border-style:dashed;border-left-style:dashed;border-left-width:1px}
+.oc-same{display:flex;gap:6px;align-items:flex-start;margin-top:8px;font-size:var(--fs-sm);color:var(--text3);line-height:1.35}
+.oc-same svg{flex:none;margin-top:2px}
+.oc-box.rel{outline:2px dashed var(--primary);outline-offset:2px}
 /* Print what is on screen: A4 landscape, one page wide, pages down (Q8).
    The portal frame is left out only while Positions is the open panel. */
 @page{size:A4 landscape;margin:10mm}

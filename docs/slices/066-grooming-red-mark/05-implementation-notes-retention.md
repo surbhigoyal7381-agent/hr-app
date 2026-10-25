@@ -203,3 +203,16 @@ Removed: a `this_run_would_erase` count in the dry run (the cap is documented); 
 to check orphan Version rows in the self-check (the erase deletes them in the same
 transaction, and a test proves it). Kept: the switch and the dry run (asked for), the
 batch cap, D-1.
+
+## 12 · Rebase, 26 Oct 2026
+
+Rebased onto origin/dev 52fc3451. What came in, 25 commits: slice 071 (In no seat tray,
+ALV-228 scope fix: portal.js, positions.html, panels.css, register.py, test_unseated_071.py),
+ALV-217 / slice 070 (phone readability: portal.js, frame.css, portal parts,
+test_leave_permissions.py), and 52fc3451 (066 grooming network-error message: portal.js and
+portal_grooming_066_test.js). None touches my files. No conflicts.
+
+Re-run on test066r in hrlocal-066r after the rebase: test_grooming_erase_066 18 OK;
+test_grooming_066 64 + 1 OK; test_grooming_cap_066 42 OK; test_pay_slip_marks_067 18 + 2 OK;
+test_payroll_flags 9, test_payroll_month 29, test_payroll_reprocess 12, test_payroll_rules
+76, all OK; check_app_integrity 823 checks OK. The job was not switched on anywhere.

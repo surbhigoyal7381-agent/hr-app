@@ -13,3 +13,4 @@ alvoraa_portal.patches.v1_0.alvora_splash_lockup
 alvoraa_portal.patches.v1_0.alvora_email_brand
 alvoraa_portal.patches.v1_0.crm_task_lead_deal_label
 alvoraa_portal.patches.v1_0.employee_payable_account
+alvoraa_portal.patches.v1_0.dtc_pay_fields_level_2

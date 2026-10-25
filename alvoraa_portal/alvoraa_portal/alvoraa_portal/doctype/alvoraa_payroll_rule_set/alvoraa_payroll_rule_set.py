@@ -51,6 +51,13 @@ class AlvoraaPayrollRuleSet(Document):
 		self._check_categories()
 		self._check_special_day_list()
 
+	def on_update(self):
+		# ALV-215: an Employee field this rule set names sets pay, so only HR may
+		# change it - locked the moment the rule set names it, not at next migrate.
+		from alvoraa_portal.employee_field_rights import lock_fields
+
+		lock_fields()
+
 	def _normalise(self):
 		"""Blank number fields arrive as None, not 0.
 

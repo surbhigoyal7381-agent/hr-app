@@ -174,6 +174,14 @@ doc_events = {
             "alvoraa_portal.manager_scope.on_employee_update",
         ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+        # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank
+        # field on their own record, HR included. See employee_field_rights.py.
+        "validate": "alvoraa_portal.employee_field_rights.refuse_own_locked_change",
+    },
+    # ALV-215: an Employee import with a column the importer may not change is
+    # refused with a message, instead of Frappe dropping the values silently.
+    "Data Import": {
+        "validate": "alvoraa_portal.employee_field_rights.refuse_import_of_locked_columns",
     },
     # ── Module access follows the plan, for the whole life of the tenant ──
     # A plan is chosen once; users arrive and change roles for years afterwards.
@@ -492,6 +500,10 @@ after_migrate = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.crm_steps.ensure_task_label_field",
+    # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
+    # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
+    # reset in Role Permission Manager is put right. See employee_field_rights.py.
+    "alvoraa_portal.employee_field_rights.after_migrate",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
@@ -543,6 +555,8 @@ after_install = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.email_brand.after_install",
+    # ALV-215: same as after_migrate - a new tenant must not start open.
+    "alvoraa_portal.employee_field_rights.after_migrate",
 ]
 
 # ── Replace one upstream method wholesale, not monkeypatch it (ALV-174) ────

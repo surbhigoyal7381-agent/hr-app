@@ -83,6 +83,91 @@ function sayMayHaveGone() {
   toast(drT("No answer from the office. It may have gone through.") + " "
         + drT("Look in your list before you send it again."), "err");
 }
+
+/* Slice 070 (01b §6): the box that takes the place of "Loading..." when a
+   load fails. Try again puts "Loading..." back and calls the panel's own
+   loader once - nothing ever retries by itself (OPS-R3). A late answer to an
+   api() load reaches the loader's own success path and paints over the box;
+   for a gpFetch load, `onLate` gets the data instead. `head` replaces the
+   first heading (the leave-type list). A <select> gets the box after it. */
+function failBox(el, err, retry, onLate, head) {
+  if (typeof el === "string") el = document.getElementById(el);
+  if (!el) return;
+  var kind = (err && err.kind) || "server";
+  var again = !!el._failRetried;
+  el._failRetried = false;
+  if (el._loadingHtml === undefined) el._loadingHtml = el.innerHTML;
+  var sick = kind === "server" || kind === "refused";
+  var h = head || (sick ? "Something went wrong at the office."
+                        : (again ? "Still could not reach the office." : "We could not reach the office."));
+  var p = sick ? "Tap Try again in a minute. If it keeps happening, tell HR."
+               : kind === "timeout" ? "The office did not answer in 15 seconds. Tap Try again."
+               : "Check your signal, then tap Try again.";
+  var box = document.createElement("div");
+  box.className = "fail";
+  box.setAttribute("role", "alert");
+  box.innerHTML = "<h3>" + esc(drT(h)) + "</h3><p>" + esc(drT(p)) + "</p>"
+    + '<button type="button" class="btn btn-outline">' + esc(drT("Try again")) + "</button>";
+  box.querySelector("button").addEventListener("click", function () {
+    if (el.tagName === "SELECT") { if (box.parentNode) box.parentNode.removeChild(box); }
+    else el.innerHTML = el._loadingHtml;
+    el._failRetried = true;
+    retry();
+  });
+  if (el.tagName === "SELECT") {
+    var old = el.parentNode.querySelector(".fail");
+    if (old) old.parentNode.removeChild(old);
+    el.insertAdjacentElement("afterend", box);
+  } else if (el.tagName === "TBODY") {
+    var cols = (el.closest("table").querySelectorAll("thead th") || []).length || 1;
+    el.innerHTML = "";
+    var tr = el.insertRow(), td = tr.insertCell();
+    td.colSpan = cols;
+    td.appendChild(box);
+  } else {
+    el.innerHTML = "";
+    el.appendChild(box);
+  }
+  if (onLate && err && err.late) {
+    err.late.then(function (d) { if (box.isConnected) onLate(d); }, function () {});
+  }
+}
+
+/* Slice 070 (ALV-217, D4): one date format everywhere - "6 Nov 2026". Built
+   from the ISO parts, never `new Date(iso)` + a locale, so the day cannot move
+   with the browser's time zone and September is never "Sept". */
+var MON3 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function isoParts(d) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+/* Today on the phone's own calendar (todayISO() is UTC, a day behind in
+   India before 05:30). */
+function localToday() {
+  var n = new Date();
+  return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-"
+    + String(n.getDate()).padStart(2, "0");
+}
+/* "Friday, 6 Nov 2026" - under each date box (AC-15). */
+function dateInWords(iso) {
+  var p = isoParts(iso);
+  if (!p) return "";
+  return drT(DAY_NAMES[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()]) + ", " + fmtDate(iso);
+}
+function refreshDateWords() {
+  document.querySelectorAll(".date-words").forEach(function (w) {
+    var box = w.previousElementSibling;
+    w.textContent = box && box.type === "date" ? dateInWords(box.value) : "";
+  });
+}
+["input", "change"].forEach(function (ev) {
+  document.addEventListener(ev, function (e) {
+    var w = e.target && e.target.type === "date" && e.target.nextElementSibling;
+    if (w && w.classList.contains("date-words")) w.textContent = dateInWords(e.target.value);
+  });
+});
+
 function showLoad(){ document.getElementById("loading-overlay").classList.add("show") }
 function hideLoad(){ document.getElementById("loading-overlay").classList.remove("show") }
 
@@ -99,8 +184,13 @@ function openFrappe(url) { window.open(url, "_blank"); }
 
 function fmtDate(d) {
   if (!d) return "";
-  const dt = new Date(d);
-  return dt.toLocaleDateString("en-IN", {day:"2-digit",month:"short",year:"numeric"});
+  var p = isoParts(d);
+  if (!p) {
+    var dt = new Date(d);
+    if (isNaN(dt)) return "";
+    p = [dt.getFullYear(), dt.getMonth() + 1, dt.getDate()];
+  }
+  return p[2] + " " + MON3[p[1] - 1] + " " + p[0];
 }
 
 function fmtMoney(n) {
@@ -3461,6 +3551,18 @@ function switchPanel(name, triggerEl) {
     if (el) el.classList.add("active");
   }
 
+  /* Slice 070 (G1, AC-58): the desktop top bar - Frappe's navbar brand - names
+     the page that is open, in the sidebar's own words, not "Home" always. */
+  const brand = document.querySelector("a.navbar-brand span");
+  const navEl = document.querySelector('.sidebar .nav-item[data-panel="' + name + '"]');
+  if (brand && navEl) {
+    const lbl = navEl.querySelector(".nav-label");
+    /* The label, never the count badge beside it. */
+    const words = (lbl ? lbl.textContent : [...navEl.childNodes]
+      .filter(n => n.nodeType === 3).map(n => n.textContent).join("")).trim();
+    if (words) brand.textContent = words;
+  }
+
   document.querySelectorAll(".bnav-item").forEach(n => n.classList.remove("active"));
   const bn = document.querySelector('.bnav-item[data-panel="' + name + '"]');
   if (bn) bn.classList.add("active");
@@ -3957,14 +4059,13 @@ function aiWho(d) {
 function aiWhen(from, to) {
   if (!from || !to) return "";
   var a = new Date(from + "T00:00:00"), b = new Date(to + "T00:00:00");
-  var opts = {day: "numeric", month: "short", year: "numeric"};
   var wholeMonth = a.getDate() === 1
     && b.getFullYear() === a.getFullYear() && b.getMonth() === a.getMonth()
     && b.getDate() === new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
   if (wholeMonth) {
     return a.toLocaleDateString("en-IN", {month: "long", year: "numeric"});
   }
-  return a.toLocaleDateString("en-IN", opts) + " to " + b.toLocaleDateString("en-IN", opts);
+  return fmtDate(from) + " to " + fmtDate(to);   /* slice 070: one date format */
 }
 
 function aiPaint() {
@@ -4197,18 +4298,22 @@ async function acLoad() {
   team.style.display = "none";
   body.style.display = "";
   body.innerHTML = '<p class="ac-empty">Loading&hellip;</p>';
-  try {
-    var d = await acApi("month", {year: acState.year, month: acState.month,
-                                  employee: acState.employee});
+  async function show(d) {
     acState.data = d;
     if (!acState.reasons) acState.reasons = await acApi("reasons");
     acBar();
     acPaint();
     acMine();
     if (d.can_review) acReviewQueue();
+  }
+  try {
+    await show(await acApi("month", {year: acState.year, month: acState.month,
+                                     employee: acState.employee}));
   } catch (e) {
-    body.innerHTML = '<p class="ac-empty">' + gpEsc(e.message || "Could not load your attendance.") + "</p>";
     document.getElementById("ac-bar").innerHTML = "";
+    /* Slice 070: the box, Try again, and a late answer that paints the month
+       by itself (AC-17 to AC-21). */
+    failBox(body, e, acLoad, function (d) { show(d).catch(function () {}); });
   }
 }
 
@@ -4478,7 +4583,7 @@ function acPaint() {
   }).join("") + gmTile() + "</div>";
 
   html += '<div class="tbl-wrap"><table class="ac-tbl"><thead><tr>'
-    + '<th>Day</th><th class="t">The day</th><th>In</th><th>Out</th>'
+    + '<th class="ac-ph"></th><th>Day</th><th class="t">The day</th><th>In</th><th>Out</th>'
     + "<th>Worked</th><th>Expected</th><th>Arrival</th><th></th>"
     + "</tr></thead><tbody>";
 
@@ -4510,7 +4615,9 @@ function acRow(x) {
   var pick = !!x.attendance || (!x.future && x.state === "no_record");
 
   var label = "";
-  if (x.holiday) label = '<span class="ac-tag">Holiday</span>';
+  /* Slice 070 (AC-8 to AC-10): a weekly off says so, and a named holiday shows
+     its own name - as plain text, whatever markup the description carries. */
+  if (x.holiday) label = '<span class="ac-tag">' + gpEsc(x.weekly_off ? drT("Weekly off") : acPlain(x.holiday)) + "</span>";
   else if (x.leave_type) label = '<span class="ac-tag">' + gpEsc(x.leave_type) + "</span>";
   else if (x.state === "future") label = '<span class="ac-tag">To come</span>';
   else if (!x.attendance) label = '<span class="ac-tag">No record</span>';
@@ -4529,11 +4636,31 @@ function acRow(x) {
   if (x.is_late) arrival = '<span class="hi">' + acMins(x.late_by_mins) + " late</span>";
   else if (x.in_time) arrival = "On time";
 
-  var mon = AC_MONTHS[parseInt(x.date.slice(5, 7), 10) - 1].slice(0, 3);
-  return '<tr class="' + (quiet ? "off " : "") + (pick ? "pick" : "") + '"'
+  /* "5 Oct", no leading zero; the month heading carries the year (AC-16). */
+  var day = gpEsc(lpShort(x.date)) + '<span class="dow">' + gpEsc(x.weekday.slice(0, 3)) + "</span>";
+
+  /* Slice 070 (D3, AC-52): on a phone the day is one block of two lines and
+     the strip is not drawn; this cell is hidden on a desktop, and the other
+     cells are hidden on a phone. An openable day is a real button, so it can
+     be reached and opened from the keyboard; its click reaches the row. */
+  var line2 = [];
+  if (x.attendance) {
+    if (x.in_time) line2.push(gpEsc(drT("In {0}", [x.in_time])));
+    if (x.out_time) line2.push(gpEsc(drT("Out {0}", [x.out_time])));
+    if (x.hours !== null && x.hours !== undefined) line2.push(gpEsc(drT("{0}h worked", [x.hours])));
+    if (x.in_time) line2.push(arrival);
+  }
+  var block = '<span class="ac-l1"><span class="ac-d">' + day + '</span><span class="ac-tags">' + label + "</span>"
+    + (pick ? '<span class="ac-go" aria-hidden="true">&rsaquo;</span>' : "") + "</span>"
+    + (line2.length ? '<span class="ac-l2">' + line2.join(" &middot; ") + "</span>" : "");
+  var phone = pick
+    ? '<button type="button" class="ac-day" aria-label="' + gpEsc(drT("{0}, open the day", [dateInWords(x.date)])) + '">' + block + "</button>"
+    : '<div class="ac-day">' + block + "</div>";
+
+  return '<tr class="ac-row ' + (quiet ? "off " : "") + (pick ? "pick" : "") + '"'
     + (pick ? ' onclick="acToggle(&quot;' + x.date + '&quot;)"' : "") + ">"
-    + '<td class="day">' + gpEsc(x.date.slice(8)) + " " + gpEsc(mon)
-    + '<span class="dow">' + gpEsc(x.weekday.slice(0, 3)) + "</span></td>"
+    + '<td class="ac-ph">' + phone + "</td>"
+    + '<td class="day">' + day + "</td>"
     + '<td class="t">' + acStrip(x) + label + "</td>"
     + "<td>" + gpEsc(x.in_time || "—") + "</td>"
     + "<td>" + gpEsc(x.out_time || "—") + "</td>"
@@ -4542,6 +4669,13 @@ function acRow(x) {
     + "<td>" + (x.expected_hours ? x.expected_hours + "h" : "—") + "</td>"
     + "<td>" + arrival + "</td>"
     + "<td>" + (pick ? "&rsaquo;" : "") + "</td></tr>";
+}
+
+/* A holiday's description as plain text. DOMParser builds an inert
+   document: nothing in it runs and no image in it loads. */
+function acPlain(s) {
+  try { return new DOMParser().parseFromString(String(s), "text/html").body.textContent.trim(); }
+  catch (e) { return String(s); }
 }
 
 /* The strip: the shift as the track, the punches laid over it. Where
@@ -4638,7 +4772,7 @@ window.acToggle = function (date) {
    can still be compared with the days around it. */
 function acDetail(x) {
   var d = acState.data;
-  var html = '<tr class="ac-open"><td colspan="8"><div class="ac-detail">';
+  var html = '<tr class="ac-open"><td colspan="9"><div class="ac-detail">';
 
   html += '<div class="ac-facts">'
     + "<div>Shift<span>"
@@ -4996,14 +5130,23 @@ function loadHome() {
     document.getElementById("sb-desig").textContent = "";
   });
 
-  // Activity feed — last 7 days of portal actions
+  homeActivity();
+  homeDashboard();
+}
+
+// Activity feed — last 7 days of portal actions
+function homeActivity() {
   api("get_portal_activity", {days: 7}, function(data) {
     renderActivityFeed(data.activities || []);
-  }, function() {
-    var el = document.getElementById("home-activity-feed");
-    if (el) el.innerHTML = '<div class="empty-state"><div class="empty-state-text">Could not load activity.</div></div>';
+  }, function(e) {
+    homeBlock("home-activity-card", true);
+    failBox("home-activity-feed", e, homeActivity);
   });
+}
 
+/* Slice 070: a failed read used to draw an empty holiday list - which reads
+   as "no holidays" rather than "not loaded". */
+function homeDashboard() {
   api("get_employee_dashboard", {}, function(data) {
     if (data.no_employee) { renderHolidays([]); return; }
     loadHomeLeave(data.leave_balances);
@@ -5041,12 +5184,14 @@ function loadHome() {
     }
 
     renderHolidays(data.holidays || [], data.holiday_note);
-  }, function() { renderHolidays([]); });
+  }, function(e) { failBox("holidays-list", e, homeDashboard); });
 }
 
 function renderActivityFeed(activities) {
   var el = document.getElementById("home-activity-feed");
   if (!el) return;
+  /* Slice 070 (N7, AC-56): an empty Activity card is not shown at all. */
+  homeBlock("home-activity-card", activities && activities.length);
   if (!activities || !activities.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No activity recorded yet.</div></div>';
     return;
@@ -5645,8 +5790,11 @@ function _renderHolYear() {
 
   if (lbl) lbl.textContent = _holYear + " Holidays";
 
+  /* Slice 070 (H5, AC-57): only holidays still to come; today counts. */
+  var today = localToday();
   var yearHols = _holAll.filter(function(h) {
-    return new Date(h.holiday_date + "T00:00:00").getFullYear() === _holYear;
+    return new Date(h.holiday_date + "T00:00:00").getFullYear() === _holYear
+      && String(h.holiday_date).slice(0, 10) >= today;
   });
   if (!yearHols.length) {
     el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No holidays this year.</div></div>';
@@ -5687,13 +5835,21 @@ function _renderHolMonth() {
   if (prev) prev.style.opacity = (_holYear === firstHolDate.getFullYear() && _holMonth <= firstHolDate.getMonth()) ? "0.3" : "1";
   if (next) next.style.opacity = _holMonth >= 11 ? "0.3" : "1";
 
+  /* Slice 070 (H5, AC-57): only holidays still to come; today counts. */
+  var today = localToday();
   var filtered = _holAll.filter(function(h) {
     var d = new Date(h.holiday_date + "T00:00:00");
-    return d.getFullYear() === _holYear && d.getMonth() === _holMonth;
+    return d.getFullYear() === _holYear && d.getMonth() === _holMonth
+      && String(h.holiday_date).slice(0, 10) >= today;
   });
 
   if (!filtered.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No public holidays in ' + MONTHS[_holMonth] + '.</div></div>';
+    var now = new Date();
+    var passed = _holYear < now.getFullYear()
+      || (_holYear === now.getFullYear() && _holMonth <= now.getMonth());
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
+      + esc(passed ? drT("No more holidays in {0}.", [MONTHS[_holMonth]])
+                   : drT("No public holidays in {0}.", [MONTHS[_holMonth]])) + '</div></div>';
     return;
   }
   el.innerHTML = filtered.map(function(h) {
@@ -5721,7 +5877,7 @@ function loadAttendance() {
 
 /* ── Late-coming rule (build B1) ─────────────────────────────────── */
 function _lateViolationText(v) {
-  return v.attendance_date.slice(5) + " " + v.violation_type + " " + v.actual_time + (v.counted === 0 ? " (free)" : "");
+  return lpShort(v.attendance_date) + " " + v.violation_type + " " + v.actual_time + (v.counted === 0 ? " (free)" : "");
 }
 function loadMyLateDeductions() {
   api("get_my_attendance_deductions", {months: 3}, function(d) {
@@ -5741,13 +5897,13 @@ function loadMyLateDeductions() {
       " · first " + r.free_violations_per_week + " free · " + r.deduction_per_violation_days + " day each · " + r.round_up_from_days + " day becomes " + r.round_up_to_days;
     const tw = d.this_week || {violations: []};
     document.getElementById("late-this-week").innerHTML = tw.violations.length
-      ? "<b>This week (from " + tw.week_start + "):</b> " + tw.violations.map(_lateViolationText).join(", ") +
+      ? "<b>This week (from " + fmtDate(tw.week_start) + "):</b> " + tw.violations.map(_lateViolationText).join(", ") +
         " → " + tw.counted + " counted, " + tw.projected_days + " day projected"
       : "<b>This week:</b> no violations so far";
     }
     const tb = document.getElementById("late-tbody");
     tb.innerHTML = d.rows.length ? d.rows.map(function(x) {
-      return "<tr><td>" + x.week_start + "</td><td>" + x.total_violations + "</td><td>" + x.counted_violations + "</td><td><b>" + x.deduction_days + "</b></td><td>" +
+      return "<tr><td>" + fmtDate(x.week_start) + "</td><td>" + x.total_violations + "</td><td>" + x.counted_violations + "</td><td><b>" + x.deduction_days + "</b></td><td>" +
         x.leave_days + "</td><td>" + (x.lwp_days ? x.lwp_days + " (₹" + Math.round(x.lwp_amount) + ")" : "0") + "</td><td style=\"font-size:var(--fs-xs);color:var(--text3)\">" + frappe.utils.escape_html(x.explanation || "") + "</td></tr>";
     }).join("") : "<tr><td colspan=\"7\" style=\"text-align:center;color:var(--text3)\">No deductions in the last 3 months</td></tr>";
   }, function() {});
@@ -5757,14 +5913,14 @@ function loadTeamLateList() {
     const card = document.getElementById("team-late-card");
     if (!d || !d.enabled) { card.style.display = "none"; return; }
     card.style.display = "";
-    document.getElementById("team-late-week").textContent = "week of " + d.week_start;
+    document.getElementById("team-late-week").textContent = "week of " + fmtDate(d.week_start);
     document.getElementById("team-late-tbody").innerHTML = d.team.map(function(m) {
       const warn = m.projected_days > 0 ? " style=\"color:var(--red);font-weight:700\"" : "";
       return "<tr><td>" + frappe.utils.escape_html(m.employee_name) + "<div style=\"font-size:var(--fs-xs);color:var(--text3)\">" + frappe.utils.escape_html(m.designation || "") + "</div></td><td>" + m.violations + "</td><td>" + m.counted + "</td><td" + warn + ">" + m.projected_days + "</td><td style=\"font-size:var(--fs-xs);color:var(--text3)\">" + m.detail.join(", ") + "</td></tr>";
     }).join("");
     const rec = d.recent || [];
     document.getElementById("team-late-recent").innerHTML = rec.length
-      ? "<b>Last 4 weeks:</b> " + rec.map(function(x) { return frappe.utils.escape_html(x.employee_name) + " " + x.week_start + " → " + x.deduction_days + " day" + (x.lwp_days ? " (" + x.lwp_days + " loss of pay)" : ""); }).join(" · ")
+      ? "<b>Last 4 weeks:</b> " + rec.map(function(x) { return frappe.utils.escape_html(x.employee_name) + " " + fmtDate(x.week_start) + " → " + x.deduction_days + " day" + (x.lwp_days ? " (" + x.lwp_days + " loss of pay)" : ""); }).join(" · ")
       : "<b>Last 4 weeks:</b> no deductions in your team";
   }, function() {});
 }
@@ -5791,9 +5947,14 @@ function loadLeaves() {
     const badge = document.getElementById("sb-leave-badge");
     if (pending > 0) { badge.textContent = pending; badge.style.display = "flex"; }
     else { badge.style.display = "none"; }
-  }, function() {
+  }, function(e) {
+    /* Slice 070: one box at the top says why; the list under it stops
+       saying "Loading...". */
+    var tb = document.getElementById("leave-apps-tbody"), cards = document.getElementById("leave-apps-cards");
+    if (tb) tb.innerHTML = "";
+    if (cards) cards.innerHTML = "";
     if (LP.dtc) { lpRenderCard({error: 1}); return; }
-    toast("Failed to load leave data", "err");
+    failBox("leave-rings", e, loadLeaves);
   });
 }
 
@@ -5859,24 +6020,39 @@ function openLeaveModal() {
                      window._me.department || "");
   }
 
-  if (_leaveSummaryCache) {
-    LP.dtc = lpIsDtc(_leaveSummaryCache);
-    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated,
-                             _leaveSummaryCache.types_offered);
-  } else {
-    api("get_leave_summary", {}, function(data) {
-      _leaveSummaryCache = data;
-      LP.dtc = lpIsDtc(data);
-      lpModalWords();
-      _populateLeaveTypeSelect(data.balances || [], data.ever_allocated, data.types_offered);
-    }, function() {
-      sel.innerHTML = '<option value="">Could not load leave types</option>';
-    });
-  }
+  lsReset();
+  refreshDateWords();
+  laLoadTypes();
   lpModalWords();
 
   pfOpenModal("la-modal");
   if (LP.dtc) { var t = document.getElementById("la-title"); if (t) t.focus(); }
+}
+
+/* The leave-type list for the pop-up. Slice 070 (AC-23): when it cannot load,
+   the box under it says so, and Try again reloads only this list. */
+function laLoadTypes() {
+  var sel = document.getElementById("la-leave-type");
+  var old = sel.parentNode.querySelector(".fail");
+  if (old) old.parentNode.removeChild(old);
+  if (_leaveSummaryCache) {
+    LP.dtc = lpIsDtc(_leaveSummaryCache);
+    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated,
+                             _leaveSummaryCache.types_offered);
+    return;
+  }
+  sel.innerHTML = '<option value="">' + esc(drT("Loading…")) + '</option>';
+  api("get_leave_summary", {}, function(data) {
+    _leaveSummaryCache = data;
+    LP.dtc = lpIsDtc(data);
+    lpModalWords();
+    var f = sel.parentNode.querySelector(".fail");
+    if (f) f.parentNode.removeChild(f);
+    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated, data.types_offered);
+  }, function(e) {
+    sel.innerHTML = '<option value="">' + esc(drT("Could not load leave types")) + '</option>';
+    failBox(sel, e, laLoadTypes, null, "We could not load the leave types.");
+  });
 }
 
 var _laEmpSearchTimer = null;
@@ -5936,11 +6112,17 @@ function laSelectEmployee(id, name, dept) {
   LP.subject = isMe ? null : {name: id, label: name};
   /* Slice 063: HR's own leave reads their own summary, so their own Paid
      Leaves figures come with it (SEC-1 gives none for anyone else). */
+  var old = leaveTypeSel.parentNode.querySelector(".fail");
+  if (old) old.parentNode.removeChild(old);
   api("get_leave_summary", isMe ? {} : {employee_id: id}, function(data) {
+    var f = leaveTypeSel.parentNode.querySelector(".fail");
+    if (f) f.parentNode.removeChild(f);
     _populateLeaveTypeSelect(data.balances || [], data.ever_allocated, data.types_offered);
     laPreview();          // balance differs per employee
-  }, function() {
-    leaveTypeSel.innerHTML = '<option value="">Could not load leave types</option>';
+  }, function(e) {
+    leaveTypeSel.innerHTML = '<option value="">' + esc(drT("Could not load leave types")) + '</option>';
+    failBox(leaveTypeSel, e, function () { laSelectEmployee(id, name, dept); }, null,
+            "We could not load the leave types.");
   });
 }
 
@@ -6059,12 +6241,8 @@ function submitLeaveApp() {
     return;
   }
 
-  var btn = document.getElementById("la-submit-btn");
-  btn.disabled = true;
-  btn.textContent = "Submitting…";
-
   var onBehalf = (document.getElementById("la-behalf-employee") || {}).value || null;
-  api("apply_leave", {
+  lsSend({
     leave_type: lt,
     from_date: fd,
     to_date: td,
@@ -6073,15 +6251,92 @@ function submitLeaveApp() {
     reason: rsn || null,
     on_behalf_of: onBehalf || undefined,
   }, function() {
+    document.getElementById("la-submit-btn").textContent = drT("Submit Application");
+  }, function() {
     pfCloseModal("la-modal");
-    toast("Leave application submitted.", "ok");
+    toast(drT("Leave application submitted."), "ok");
     loadLeaves();
-  }, function(r) {
-    var msg = "Failed to submit leave application.";
-    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch(e) {}
-    pfShowErr("la-error", msg);
+  });
+}
+
+/* ── Slice 070 (ALV-217): sending a leave request, for both leave forms ──
+   The states are 02 §6. No signal: nothing leaves the phone and it says so.
+   No answer in 15 s, a dropped connection or a 5xx after sending: the office
+   may already have saved it, so it says that - and Try again first reads the
+   person's own leave list (get_leave_summary, unchanged; `employee_id` only
+   when HR applies for someone else, SEC-3) and sends again only when nothing
+   with the same type, dates and an Open or Approved status is there.
+   `half_day` is not compared: most tenants never get it back from that read,
+   and Frappe HR's own overlap check refuses a second record anyway (SEC-1).
+   The button is locked while Sending... or Checking..., so a double tap sends
+   once. A server refusal shows its own words at the top of the form (E1) and
+   is never resent (SEC-5). A late answer still counts, once (AC-33). The
+   typed values stay in the form, in page memory only (PRIV-1). */
+var LS = {gen: 0, busy: false, maybeSent: false, fails: 0, done: false};
+function lsReset() {
+  LS.gen++;
+  LS.busy = false; LS.maybeSent = false; LS.fails = 0; LS.done = false;
+  lsSay(null);
+}
+function lsSay(head, line) { sendSay("la-send-fail", head, line); }
+function lsSend(args, restore, onSuccess) {
+  if (LS.busy || LS.done) return;
+  var gen = LS.gen, btn = document.getElementById("la-submit-btn");
+  var who = LP.subject ? LP.subject.name : null;
+  pfClearErr("la-error");
+  function live() { return gen === LS.gen && !LS.done; }
+  function busy(words) { LS.busy = true; btn.disabled = true; btn.textContent = drT(words); }
+  function succeed() {
+    if (!live()) return;
+    LS.done = true; LS.busy = false;
+    lsSay(null);
+    onSuccess();
+  }
+  function failed(e) {
+    if (!live()) return;
+    LS.busy = false;
     btn.disabled = false;
-    btn.textContent = "Submit Application";
+    if (e.kind === "refused") {
+      LS.maybeSent = false; LS.fails = 0;
+      lsSay(null);
+      restore();
+      pfShowErr("la-error", e.message);
+      return;
+    }
+    var again = LS.fails++ > 0;
+    if (e.kind === "offline" && LS.maybeSent) {
+      lsSay("Still no signal.", "Your details are still here. Tap Try again when you have signal. We check first, so it is never sent twice.");
+    } else if (e.kind === "offline") {
+      lsSay(again ? "Still no signal. Nothing was sent." : "We could not reach the office. Nothing was sent.",
+            "Your details are still here. When you have signal, tap Try again.");
+    } else {
+      LS.maybeSent = true;
+      lsSay(again ? "Still no answer from the office." : "No answer from the office. It may have gone through.",
+            "Tap Try again. We check first, so it is never sent twice.");
+    }
+    btn.textContent = drT("Try again");
+    btn.focus();
+  }
+  function send() {
+    busy("Sending…");
+    gpFetch("alvoraa_portal.hr_api.apply_leave", args).then(succeed, function (e) {
+      if (e.late) e.late.then(succeed, function () {});
+      failed(e);
+    });
+  }
+  if (!LS.maybeSent) { send(); return; }
+  busy("Checking…");
+  gpFetch("alvoraa_portal.hr_api.get_leave_summary", who ? {employee_id: who} : {}).then(function (d) {
+    if (!live()) return;
+    var hit = ((d && d.applications) || []).some(function (a) {
+      return a.leave_type === args.leave_type
+        && String(a.from_date).slice(0, 10) === args.from_date
+        && String(a.to_date).slice(0, 10) === args.to_date
+        && (a.status === "Open" || a.status === "Approved");
+    });
+    if (hit) succeed(); else send();
+  }, function (e) {
+    failed(e.kind === "offline" ? e : {kind: "timeout"});
   });
 }
 
@@ -6119,7 +6374,7 @@ function renderLeaveApps(apps) {
     var from = String(a.from_date).slice(0, 10), to = String(a.to_date || a.from_date).slice(0, 10);
     var dates = from === to ? fmtDate(from)
       : (from.slice(0, 4) === to.slice(0, 4)
-          ? new Date(from).toLocaleDateString("en-IN", {day: "2-digit", month: "short"})
+          ? fmtDate(from).replace(/ \d{4}$/, "")      /* slice 070 (D4): "6 Nov – 7 Nov 2026" */
           : fmtDate(from)) + " – " + fmtDate(to);
     return '<div class="lv-card"><div class="lv-top"><span class="lv-type">' + esc(a.leave_type) + '</span>' +
       leaveStatusBadge(a.status, a.docstatus) + '</div><div class="lv-meta">' + dates + ' · ' + esc(lpDays(a.total_leave_days)) + '</div></div>';
@@ -6131,7 +6386,7 @@ function renderLeaveApps(apps) {
    DTC fields in the Apply list); every other tenant keeps the rings and the
    old table above. The server decides every figure, every refusal and who is
    told - this file words what it is sent (prototype v3 is the contract). */
-var LP = {dtc: false, subject: null, preview: null, sending: false, orig: null};
+var LP = {dtc: false, subject: null, preview: null, orig: null};
 
 function lpIsDtc(d) {
   return !!d && (d.paid_leaves !== undefined || (d.types_offered || []).some(function(t) {
@@ -6140,11 +6395,15 @@ function lpIsDtc(d) {
 }
 function lpNum(n) { n = parseFloat(n || 0); return String(Math.round(n * 100) / 100); }
 function lpDays(n) { return n == 1 ? drT("{0} day", [lpNum(n)]) : drT("{0} days", [lpNum(n)]); }
-function lpDay(iso) {
-  return new Date(String(iso).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", {weekday: "short", day: "numeric", month: "short"});
-}
+/* Slice 070: built from the ISO parts like fmtDate, so September is never
+   "Sept" and the day never moves with the browser's time zone. */
 function lpShort(iso) {
-  return new Date(String(iso).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", {day: "numeric", month: "short"});
+  return fmtDate(iso).replace(/ \d{4}$/, "");
+}
+function lpDay(iso) {
+  var p = isoParts(iso);
+  if (!p) return "";
+  return drT(DAY_NAMES[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()].slice(0, 3)) + " " + lpShort(iso);
 }
 function lpRange(a, b) { return (!b || String(a) === String(b)) ? lpDay(a) : drT("{0} to {1}", [lpDay(a), lpDay(b)]); }
 function lpMonthOf(iso) {
@@ -6338,7 +6597,7 @@ window.lpDoCancel = function(name) {
         : (r.told_n ? drT("HR has been told. You are expected at work.") : drT("You are expected at work."))) + "</p></div>",
       '<button class="btn btn-primary" type="button" onclick="lpCloseDialog()">' + gpEsc(drT("Done")) + "</button>");
     loadLeaves();
-  }, function(r) {
+  }, function(r) { if (mayHaveGone(r)) { sayMayHaveGone(); return; }
     if (btn) btn.disabled = false;
     var msg = drT("Not cancelled: the connection dropped. Try again.");
     try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
@@ -6546,26 +6805,15 @@ function lpSubmit() {
   var rsn = document.getElementById("la-reason").value.trim();
   if (!lt) { pfShowErr("la-error", drT("Choose a leave type first.")); document.getElementById("la-leave-type").focus(); return; }
   if (!fd) { pfShowErr("la-error", drT("Choose the date the leave starts.")); document.getElementById("la-from-date").focus(); return; }
-  if (LP.sending) return;
   var r = LP.preview || {};
-  var btn = document.getElementById("la-submit-btn");
-  LP.sending = true;
-  btn.disabled = true;
-  btn.textContent = drT("Sending...");
-  api("apply_leave", {
+  lsSend({
     leave_type: lt, from_date: fd, to_date: td || fd, half_day: hd ? 1 : 0, half_day_date: hd ? fd : null,
     reason: rsn || null, on_behalf_of: LP.subject ? LP.subject.name : undefined,
   }, function() {
-    LP.sending = false;
+    lpSendWords(false, (lpTypeRow(lt).lwp_limit !== undefined) ? "HR" : r.approver_label);
+  }, function() {
     lpShowResult(r, lt, fd, td || fd, hd);
     loadLeaves();
-  }, function(e) {
-    LP.sending = false;
-    btn.disabled = false;
-    lpSendWords(false, (lpTypeRow(lt).lwp_limit !== undefined) ? "HR" : r.approver_label);
-    var msg = drT("Not sent: the connection dropped. Nothing was saved. Your choices are still here - try again.");
-    try { if (e && e._server_messages) msg = JSON.parse(JSON.parse(e._server_messages)[0]).message; } catch (x) {}
-    pfShowErr("la-error", msg);
   });
 }
 
@@ -6659,7 +6907,7 @@ function loadExpenses() {
     el.innerHTML = '<div style="display:flex;flex-direction:column;gap:10px">' + claims.map(function(c) {
       return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div></div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
-  }, function() { toast("Failed to load expenses", "err"); });
+  }, function(e) { failBox("expense-list", e, loadExpenses); });
 }
 
 var _expenseTypesCache = null;
@@ -6683,7 +6931,13 @@ function openExpenseModal() {
   pfClearErr("ec-error");
   var btn = document.getElementById("ec-submit-btn");
   btn.disabled = false;
-  btn.textContent = "Submit Claim";
+  btn.style.display = "";
+  btn.textContent = drT("Submit Claim");
+  EC_GEN++;
+  sendSay("ec-send-fail", null);
+  var close = document.getElementById("ec-close-btn");
+  close.textContent = drT("Cancel");
+  close.onclick = function() { pfCloseModal("ec-modal"); };
 
   // Default to today
   var d = new Date();
@@ -6691,19 +6945,40 @@ function openExpenseModal() {
     String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");
 
-  if (_expenseTypesCache) {
-    _populateExpenseTypeSelect(_expenseTypesCache);
-  } else {
-    api("get_expense_types", {}, function(types) {
-      _expenseTypesCache = types;
-      _populateExpenseTypeSelect(types);
-    }, function() {
-      sel.innerHTML = '<option value="">Could not load expense types</option>';
-    });
-  }
-
+  ecLoadTypes();
+  refreshDateWords();
   pfOpenModal("ec-modal");
 }
+
+function ecLoadTypes() {
+  var sel = document.getElementById("ec-expense-type");
+  var old = sel.parentNode.querySelector(".fail");
+  if (old) old.parentNode.removeChild(old);
+  if (_expenseTypesCache) { _populateExpenseTypeSelect(_expenseTypesCache); return; }
+  sel.innerHTML = '<option value="">' + esc(drT("Loading…")) + '</option>';
+  api("get_expense_types", {}, function(types) {
+    _expenseTypesCache = types;
+    var f = sel.parentNode.querySelector(".fail");
+    if (f) f.parentNode.removeChild(f);
+    _populateExpenseTypeSelect(types);
+  }, function(e) {
+    sel.innerHTML = '<option value="">' + esc(drT("Could not load expense types")) + '</option>';
+    failBox(sel, e, ecLoadTypes);
+  });
+}
+
+/* Slice 070: the message above the buttons of a send that did not finish.
+   `close`, when given, is a Close button inside the message. */
+function sendSay(id, head, line, close) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (!head) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.innerHTML = "<b>" + esc(drT(head)) + "</b><span>" + esc(drT(line)) + "</span>"
+    + (close ? '<button type="button" class="btn btn-outline">' + esc(drT("Close")) + "</button>" : "");
+  if (close) el.querySelector("button").addEventListener("click", close);
+  el.style.display = "";
+}
+var EC_GEN = 0, ADV_GEN = 0;
 
 function submitExpenseClaim() {
   pfClearErr("ec-error");
@@ -6717,25 +6992,52 @@ function submitExpenseClaim() {
   if (!ed)            { pfShowErr("ec-error", "Please enter the expense date."); return; }
   if (!amtS || !(amt > 0)) { pfShowErr("ec-error", "Please enter a valid amount greater than zero."); return; }
 
+  /* Slice 070 (D2, SEC-2, OPS-R4): there is no duplicate guard on the server
+     for an expense claim, so after a lost answer nothing here sends again -
+     the person is told to look in their list, and the footer shows only
+     Close. With no signal nothing was sent, so Try again is safe. */
   var btn = document.getElementById("ec-submit-btn");
+  if (btn.disabled) return;
   btn.disabled = true;
-  btn.textContent = "Submitting…";
-
-  api("apply_expense_claim", {
+  btn.textContent = drT("Sending…");
+  sendSay("ec-send-fail", null);
+  var gen = ++EC_GEN;
+  function done() {
+    if (gen !== EC_GEN) return;
+    EC_GEN++;
+    pfCloseModal("ec-modal");
+    toast(drT("Expense claim submitted."), "ok");
+    loadExpenses();
+  }
+  gpFetch("alvoraa_portal.hr_api.apply_expense_claim", {
     expense_type: et,
     expense_date: ed,
     amount: amt,
     description: desc || null,
-  }, function() {
-    pfCloseModal("ec-modal");
-    toast("Expense claim submitted.", "ok");
-    loadExpenses();
-  }, function(r) { if (mayHaveGone(r)) { sayMayHaveGone(); return; }
-    var msg = "Failed to submit expense claim.";
-    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch(e) {}
-    pfShowErr("ec-error", msg);
-    btn.disabled = false;
-    btn.textContent = "Submit Claim";
+  }).then(done, function(e) {
+    if (gen !== EC_GEN) return;
+    if (e.late) e.late.then(done, function() {});
+    if (e.kind === "refused") {
+      pfShowErr("ec-error", e.message);
+      btn.disabled = false;
+      btn.textContent = drT("Submit Claim");
+      return;
+    }
+    if (e.kind === "offline") {
+      sendSay("ec-send-fail", "We could not reach the office. Nothing was sent.",
+              "Your details are still here. When you have signal, tap Try again.");
+      btn.disabled = false;
+      btn.textContent = drT("Try again");
+      btn.focus();
+      return;
+    }
+    sendSay("ec-send-fail", "No answer from the office. It may have gone through.",
+            "Look in your list before you send it again.");
+    btn.style.display = "none";
+    var close = document.getElementById("ec-close-btn");
+    close.textContent = drT("Close");
+    close.onclick = function() { EC_GEN++; pfCloseModal("ec-modal"); loadExpenses(); };
+    close.focus();
   });
 }
 
@@ -6768,7 +7070,7 @@ function loadSalary() {
       const label = months[sd.getMonth()] + " " + sd.getFullYear();
       return '<div class="payslip-row" role="button" tabindex="0" onclick="openPayslip(' + esc(JSON.stringify(s.name)) + ')"><div><div class="payslip-month">' + label + '</div><div style="font-size:var(--fs-xs);color:var(--text3);margin-top:3px">' + fmtDate(s.start_date) + ' – ' + fmtDate(s.end_date) + '</div></div><div style="text-align:right"><div class="payslip-net">' + fmtMoney(s.net_pay) + '</div><div class="payslip-deductions">Deductions: ' + fmtMoney(s.total_deduction) + '</div></div><div class="payslip-arrow">›</div></div>';
     }).join("");
-  }, function() { toast("Failed to load payslips", "err"); });
+  }, function(e) { failBox("payslip-list", e, loadSalary); });
 }
 
   // On window, because the payslip rows call it from an inline onclick and this
@@ -7169,6 +7471,7 @@ function clearForm(ids) {
     if (el.tagName === "SELECT") el.selectedIndex = 0;
     else el.value = "";
   });
+  refreshDateWords();   /* slice 070: an emptied date box has no words under it */
 }
 
 function todayISO() { return new Date().toISOString().slice(0,10); }
@@ -7197,7 +7500,7 @@ function loadShiftReqPanel() {
           return '<option value="' + t.name + '">' + lbl + '</option>';
         }).join("");
     }
-  });
+  }, function(e) { var sel = document.getElementById("sr-shift-type"); sel.innerHTML = '<option value="">' + esc(drT("Could not load shift types")) + '</option>'; failBox(sel, e, loadShiftReqPanel); });
   const td = todayISO();
   document.getElementById("sr-from-date").value = td;
   document.getElementById("sr-to-date").value   = td;
@@ -7211,7 +7514,7 @@ function reloadShiftHistory() {
       const cls = statusMap[r.status] || "badge-gray";
       return '<div class="req-item"><div class="req-icon"><i class=ic-refresh></i></div><div class="req-body"><div class="req-title">' + r.shift_type + '</div><div class="req-meta">' + fmtDate(r.from_date) + ' – ' + fmtDate(r.to_date) + '</div></div><div class="req-status"><span class="badge ' + cls + '">' + (r.status||"Draft") + '</span></div></div>';
     });
-  });
+  }, function(e) { failBox("sr-history", e, reloadShiftHistory); });
 }
 
 function submitShiftRequest() {
@@ -7244,7 +7547,7 @@ function reloadAttReqHistory() {
       const status = r.docstatus == 1 ? '<span class="badge badge-green">Submitted</span>' : '<span class="badge badge-amber">Draft</span>';
       return '<div class="req-item"><div class="req-icon"><i class=ic-clipboard></i></div><div class="req-body"><div class="req-title">' + (r.reason||"Attendance Request") + '</div><div class="req-meta">' + fmtDate(r.from_date) + ' – ' + fmtDate(r.to_date) + '</div></div><div class="req-status">' + status + '</div></div>';
     });
-  });
+  }, function(e) { failBox("ar-history", e, reloadAttReqHistory); });
 }
 
 function submitAttendanceRequest() {
@@ -7278,7 +7581,7 @@ function loadLeaveEncPanel() {
         }).join("");
       sel.disabled = false;
     }
-  });
+  }, function(e) { var sel = document.getElementById("le-leave-type"); sel.innerHTML = '<option value="">' + esc(drT("Could not load leave types")) + '</option>'; failBox(sel, e, loadLeaveEncPanel); });
   document.getElementById("le-date").value = todayISO();
   reloadLeaveEncHistory();
 }
@@ -7288,7 +7591,7 @@ function reloadLeaveEncHistory() {
     renderReqHistory("le-history", h.encashments, "No leave encashments submitted yet.", function(r) {
       return '<div class="req-item"><div class="req-icon"><i class=ic-money></i></div><div class="req-body"><div class="req-title">' + r.leave_type + '</div><div class="req-meta">' + fmtDate(r.encashment_date) + (r.encashment_amount ? ' · ₹' + parseFloat(r.encashment_amount).toLocaleString("en-IN") : '') + '</div></div><div class="req-status"><span class="badge badge-gray">' + (r.status||"Pending") + '</span></div></div>';
     });
-  });
+  }, function(e) { failBox("le-history", e, reloadLeaveEncHistory); });
 }
 
 function submitLeaveEncashment() {
@@ -7314,7 +7617,7 @@ function reloadAdvHistory() {
       const cls = statusMap[r.status] || "badge-amber";
       return '<div class="req-item"><div class="req-icon"><i class=ic-cash-out></i></div><div class="req-body"><div class="req-title">' + (r.purpose||"Advance Request").substring(0,70) + '</div><div class="req-meta">' + fmtDate(r.posting_date) + ' · ' + fmtMoney(r.advance_amount) + '</div></div><div class="req-status"><span class="badge ' + cls + '">' + (r.status||"Pending") + '</span></div></div>';
     });
-  });
+  }, function(e) { failBox("adv-history", e, reloadAdvHistory); });
 }
 
 function submitAdvanceRequest() {
@@ -7324,12 +7627,42 @@ function submitAdvanceRequest() {
   if (!purpose)          { showErr("adv-purpose-err"); ok=false; } else hideErr("adv-purpose-err");
   if (!amount||amount<=0){ showErr("adv-amount-err");  ok=false; } else hideErr("adv-amount-err");
   if (!ok) return;
-  showLoad();
-  api("submit_advance_request", {purpose: purpose, amount: amount}, function(d) {
-    hideLoad(); toast("Advance request submitted: " + d.name, "ok");
+  /* Slice 070 (D2, SEC-2, OPS-R4): as the expense claim - no server guard,
+     so no resend after a lost answer; Submit stays off until Close. */
+  var btn = document.getElementById("adv-submit-btn");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = drT("Sending…");
+  sendSay("adv-send-fail", null);
+  var gen = ++ADV_GEN;
+  function unlock(words) { btn.disabled = false; btn.textContent = drT(words || "Submit Request"); }
+  function done(d) {
+    if (gen !== ADV_GEN) return;
+    ADV_GEN++;
+    sendSay("adv-send-fail", null);
+    unlock();
+    toast(drT("Advance request submitted: {0}", [(d && d.name) || ""]), "ok");
     clearForm(["adv-purpose","adv-amount"]);
     loadedPanels.delete("adv-req"); reloadAdvHistory();
-  }, function(e) { hideLoad(); toast((e.message||"Failed to submit advance request"), "err"); });
+  }
+  gpFetch("alvoraa_portal.hr_api.submit_advance_request", {purpose: purpose, amount: amount}).then(done, function(e) {
+    if (gen !== ADV_GEN) return;
+    if (e.late) e.late.then(done, function() {});
+    if (e.kind === "refused") { unlock(); toast(e.message, "err"); return; }
+    if (e.kind === "offline") {
+      sendSay("adv-send-fail", "We could not reach the office. Nothing was sent.",
+              "Your details are still here. When you have signal, tap Try again.");
+      unlock("Try again");
+      return;
+    }
+    sendSay("adv-send-fail", "No answer from the office. It may have gone through.",
+            "Look in your list before you send it again.", function() {
+      ADV_GEN++;
+      sendSay("adv-send-fail", null);
+      unlock();
+      reloadAdvHistory();
+    });
+  });
 }
 
 /* ── Employee detail drawer ──────────────────────── */
@@ -7741,7 +8074,7 @@ function edActionLeave(leaveId, action) {
       const n = Math.max(0, (parseInt(badge.textContent)||0) - 1);
       badge.textContent = n; badge.style.display = n ? "flex" : "none";
     }
-  }, function(e) {
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e.message || "Failed to " + action + " leave"), "err");
   });
@@ -7800,7 +8133,7 @@ function loadTeamPanel() {
       return;
     }
     renderTeamData(d);
-  }, function() { toast("Failed to load team data", "err"); });
+  }, function(e) { ["on-leave-body", "team-pending-list", "team-progress-approvals", "team-month-tbody"].forEach(function (id) { var el = document.getElementById(id); if (el) el.innerHTML = ""; }); failBox("team-grid", e, loadTeamPanel); });
   gpFetch("alvoraa_portal.hr_api.get_pending_approvals", {}).then(function(r) {
     renderProgressApprovals(r || {});
   }).catch(function() {
@@ -8407,7 +8740,7 @@ function openTeamGoalDrawer(goalId) {
     '<div style="padding:40px;text-align:center;color:var(--text3)">Loading...</div>';
   api("get_goal_detail", {goal_id: goalId}, function(d) {
     renderGoalDrawer(d.goal, d.cascade || {}, d.is_owner, d.can_edit);
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+  }, function(e) {
     document.getElementById("gd-body").innerHTML =
       '<div class="callout callout-warn">' + esc((e && e.message) || "Failed to load goal details.") + '</div>';
   });
@@ -10297,12 +10630,7 @@ function deleteDrawerNote(noteId, empId) {
   window.gpEsc = function gpEsc(s) { return esc(s); };
 
   function gpFmtDate(d) {
-    if (!d) return "—";
-    try {
-      var parts = String(d).split("T")[0].split("-");
-      return new Date(parts[0], parseInt(parts[1])-1, parts[2])
-        .toLocaleDateString("en-IN", {day:"numeric", month:"short", year:"numeric"});
-    } catch(e) { return String(d); }
+    return d ? (fmtDate(d) || String(d)) : "—";
   }
 
   /* Pull a readable sentence out of whatever Frappe returned.
@@ -10387,6 +10715,11 @@ function deleteDrawerNote(noteId, empId) {
     });
   }
 
+  /* Slice 070: no signal -> rejects at once, nothing sent. No answer in 15 s
+     -> rejects with kind "timeout"; the request is not cancelled, and the
+     error carries `late`, a promise of the answer still on its way, so a panel
+     can replace its message with the data when it lands. A dropped connection
+     or an unreadable answer (an nginx 502 page) -> "network". */
   function gpFetch(method, args) {
     if (navigator.onLine === false) return Promise.reject(gpCallErr("offline"));
     var call = new Promise(function(resolve, reject) {

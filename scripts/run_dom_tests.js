@@ -85,6 +85,10 @@ const RUN = [
      copy off and on; every seat and name prints; the panel makes no server
      call; the page size and title are set for the print and taken away. */
   { file: "portal_wall_chart_test.js" },
+  /* Slice 070 (ALV-217): every wait ends at 15 s, the honest leave send and
+     its check before a resend, one date format, Weekly off. Waits 16 s once,
+     for OPS-S4's slow answers. */
+  { file: "portal_phone_070_test.js", args: [PAGE] },
 ];
 
 /* **Empty, and it stays empty.** AC-62: an entry here needs a ticket and a
@@ -93,7 +97,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 13;   // 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js
+const EXPECTED_BROWSER_TESTS = 14;   // 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

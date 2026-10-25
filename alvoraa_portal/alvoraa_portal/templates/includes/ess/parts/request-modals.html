@@ -31,24 +31,29 @@
             <div class="gp-field">
               <label class="gp-label" for="la-from-date" id="la-lbl-from">From Date *</label>
               <input class="gp-input" id="la-from-date" type="date" onchange="laPreview()">
+              <div class="date-words" aria-live="polite"></div>
             </div>
             <div class="gp-field" id="la-to-date-row">
               <label class="gp-label" for="la-to-date" id="la-lbl-to">To Date *</label>
               <input class="gp-input" id="la-to-date" type="date" onchange="laPreview()">
+              <div class="date-words" aria-live="polite"></div>
             </div>
           </div>
           <!-- Balance preview. Filled by laPreview() from preview_leave_request, which
                reuses Frappe HR's own day-count and balance functions. -->
           <div id="la-preview" role="status" aria-live="polite" style="display:none;margin:2px 0 10px;padding:9px 12px;border-radius:var(--r-sm);font-size:var(--fs-sm);line-height:1.5"></div>
-          <div class="gp-field" style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-            <input type="checkbox" id="la-half-day" onchange="laToggleHalfDay(); laPreview()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
-            <label for="la-half-day" style="font-size:var(--fs-base);font-weight:500;color:var(--text);cursor:pointer;margin:0">Half Day</label>
-          </div>
+          <!-- Slice 070: the whole row is the label, so the whole row is the tap target. -->
+          <label class="gp-field hd-row" for="la-half-day" style="display:flex;align-items:center;gap:10px;margin-bottom:4px;font-size:var(--fs-base);font-weight:500;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="la-half-day" onchange="laToggleHalfDay(); laPreview()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer;margin:0">
+            Half Day
+          </label>
           <div class="gp-field">
             <label class="gp-label" for="la-reason" id="la-lbl-reason">Reason</label>
             <textarea class="gp-input" id="la-reason" rows="3" placeholder="Optional – describe the reason for your leave…" style="resize:vertical;min-height:72px"></textarea>
             <div class="lp-help" id="la-reason-help" style="display:none"></div>
           </div>
+          <!-- Slice 070: why a send did not finish, just above the buttons. -->
+          <div class="send-fail" id="la-send-fail" role="alert" style="display:none"></div>
         </div>
         <div class="gp-modal-footer">
           <button class="btn btn-outline" id="la-close-btn" onclick="pfCloseModal('la-modal')">Cancel</button>
@@ -76,6 +81,7 @@
             <div class="gp-field">
               <div class="gp-label">Expense Date *</div>
               <input class="gp-input" id="ec-expense-date" type="date">
+              <div class="date-words" aria-live="polite"></div>
             </div>
             <div class="gp-field">
               <div class="gp-label">Amount (₹) *</div>
@@ -86,9 +92,10 @@
             <div class="gp-label">Purpose / Description</div>
             <textarea class="gp-input" id="ec-description" rows="3" placeholder="Brief description of the expense…" style="resize:vertical;min-height:72px"></textarea>
           </div>
+          <div class="send-fail" id="ec-send-fail" role="alert" style="display:none"></div>
         </div>
         <div class="gp-modal-footer">
-          <button class="btn btn-outline" onclick="pfCloseModal('ec-modal')">Cancel</button>
+          <button class="btn btn-outline" id="ec-close-btn" onclick="pfCloseModal('ec-modal')">Cancel</button>
           <button class="btn btn-primary" id="ec-submit-btn" onclick="submitExpenseClaim()">Submit Claim</button>
         </div>
       </div>

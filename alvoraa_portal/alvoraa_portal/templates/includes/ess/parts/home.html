@@ -11,7 +11,6 @@
         <!-- Check-in hero -->
         <div class="checkin-hero">
           <div class="checkin-left">
-            <div class="checkin-greeting">Hey there,</div>
             <div class="checkin-name" id="ci-emp-name">...</div>
             <div class="checkin-dept" id="ci-emp-dept"></div>
             <div class="checkin-status-line">
@@ -24,7 +23,6 @@
           <div class="checkin-right">
             <div>
               <div class="clock-display" id="live-clock">--:--:--</div>
-              <div class="clock-date" id="live-date"></div>
             </div>
             <button class="btn-checkin check-in" id="ci-btn" onclick="doCheckin()" data-action="IN">Check In</button>
           </div>
@@ -41,7 +39,7 @@
                  same payload as the banner's one-line summary. -->
             <div id="day-widget"></div>
 
-            <div class="card">
+            <div class="card" id="home-activity-card">
               <div class="card-header">
                 <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="opacity:.6"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 <span class="card-title" style="margin-left:6px">Activity</span>

@@ -20,8 +20,11 @@ const hasNot = (text, want, row) => (String(text).indexOf(want) < 0
 const iso = d => d.toISOString().slice(0, 10);
 const shift = n => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
 const TODAY = iso(new Date()), FUT = shift(6), PAST = shift(-2), PAST2 = shift(-9);
-const day = s => new Date(s + "T00:00:00").toLocaleDateString("en-GB", {weekday: "short", day: "numeric", month: "short"});
-const short = s => new Date(s + "T00:00:00").toLocaleDateString("en-GB", {day: "numeric", month: "short"});
+/* Slice 070: one date format, built from the ISO parts - "Fri 6 Nov", and
+   September is "Sep", never the "Sept" en-GB now prints. */
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const short = s => +s.slice(8, 10) + " " + MON[+s.slice(5, 7) - 1];
+const day = s => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(s + "T00:00:00Z").getUTCDay()] + " " + short(s);
 
 const PRIYA_CARD = {month: "October", "class": "A", earns: true, credited: 4, used: 1.5,
   used_dates: [{date: PAST, to: PAST, half: true}, {date: PAST2, to: PAST2, half: false}],
@@ -64,9 +67,17 @@ const dom = new JSDOM(html, {
   runScripts: "dangerously", pretendToBeVisual: true,
   url: "http://grace.localhost/hrms-employee",
   beforeParse(w) {
-    w.fetch = (url, opts) => Promise.resolve({ok: true, status: 200,
-      json: () => Promise.resolve({message: reply(String(url), opts && opts.body)}),
-      text: () => Promise.resolve("")});
+    /* Slice 070 (OPS-S2): the leave send goes through gpFetch now, so a
+       failed send is a failed fetch - a dropped connection. */
+    w.fetch = (url, opts) => {
+      if (FAIL_NEXT && String(url).indexOf(FAIL_NEXT.fn) >= 0) {
+        FAIL_NEXT = null;
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.resolve({ok: true, status: 200,
+        json: () => Promise.resolve({message: reply(String(url), opts && opts.body)}),
+        text: () => Promise.resolve("")});
+    };
     const call = (o) => {
       const out = reply(String(o.method || ""), JSON.stringify(o.args || {}));
       if (FAIL_NEXT && String(o.method).indexOf(FAIL_NEXT.fn) >= 0) {
@@ -278,7 +289,13 @@ const txt = id => (doc.getElementById(id) || {}).textContent || "";
   FAIL_NEXT = {fn: "apply_leave", r: {}};
   window.submitLeaveApp();
   await settle(40);
-  has(txt("la-error"), "Not sent: the connection dropped. Nothing was saved. Your choices are still here - try again.", "R-48");
+  /* Slice 070 (D1, AC-27, AC-34): a dropped connection after sending may
+     have reached the office, so it says that - the old "Nothing was saved"
+     was not always true. */
+  has(txt("la-send-fail"), "No answer from the office. It may have gone through.", "R-48 / 070 AC-27");
+  has(txt("la-send-fail"), "Tap Try again. We check first, so it is never sent twice.", "R-48 / 070 AC-27");
+  has(txt("la-submit-btn"), "Try again", "R-48 / 070 AC-27");
+  hasNot(doc.body.textContent, "Not sent: the connection dropped", "070 AC-34");
   doc.getElementById("la-leave-type").value === "Leave Without Pay" ? ok("R-48: choices kept") : bad("R-48: form was cleared");
 
   // ── the approver's and HR's rows ──────────────────────────────────────

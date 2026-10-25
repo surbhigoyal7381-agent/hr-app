@@ -732,7 +732,7 @@ def _let_go_of(assignment):
 @frappe.whitelist()
 def assign_person(position, employee, weight=100, assignment_type="Permanent",
                   from_date=None, to_date=None, delegate_authority=0,
-                  covering_for=None, reason=None, resolve=None):
+                  covering_for=None, reason=None, resolve=None, add_place=0):
 	"""Put somebody in a seat, for a share of it.
 
 	`weight` is what makes part time expressible: two people at 50 each fill a
@@ -774,6 +774,15 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 			frappe.throw(_("Cover is carried on top of somebody's own job, so "
 			               "there is nothing to move them out of."))
 		moved = _make_room(employee, doc.name, weight, resolve)
+
+	# Slice 071, "Place anyway" on a full seat: one more place first, in this
+	# same request, so the seat count and the person go in together or not at
+	# all. Read fresh here, never trusted from the browser. A seat with no
+	# limit (0) or one that has room by now gets nothing added.
+	if frappe.utils.cint(add_place):
+		seats = flt(doc.seats)
+		if seats and doc.filled_weight() + weight / 100.0 > seats + 0.01:
+			save_position(name=doc.name, seats=seats + 1)
 
 	a = frappe.new_doc(ASSIGNMENT)
 	a.update({

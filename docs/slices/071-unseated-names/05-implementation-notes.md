@@ -112,9 +112,12 @@ full run on a clean container, is still owed before a push.**
 
 ## What else moved while I worked
 
-`origin/dev` stayed at `af0b7cdf` from start to finish (fetched before each commit). Nothing
-came in, no rebase was needed, no conflicts. Branches 066-grooming, 065-option-a, 070-* are
-not on `dev`; when they land, 071 rebases onto them (plan in 04 §11).
+`origin/dev` stayed at `af0b7cdf` through every step. At the end 20 commits came in, all slice
+066 grooming (its docs, `grooming.py`, `payroll_slip.py`, its tests, a `gm*` block in
+`portal.js` and its own block in `panels.css`). Rebased onto `f207e82c` with no conflicts.
+Their 33 `gm` functions are still in `portal.js`. After the rebase: positions tree 219,
+wall chart 183, DOM 13/13, handlers, undefined, tags, design, integrity all OK, and
+`test_unseated_071` 8 OK. 065-option-a and 070-* are still not on `dev`.
 
 ## Environment
 

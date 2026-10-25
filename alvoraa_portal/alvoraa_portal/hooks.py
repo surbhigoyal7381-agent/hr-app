@@ -185,11 +185,19 @@ doc_events = {
     },
     # ALV-215: a Promotion or Transfer that changes a field the submitter may
     # not change is refused, instead of Frappe silently putting the value back.
+    # Cancel too: it writes the old values back the same way.
     "Employee Promotion": {
         "before_submit": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+        "before_cancel": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
     },
     "Employee Transfer": {
         "before_submit": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+        "before_cancel": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+    },
+    # ALV-215: PAN, ESI, PF, IFSC and MICR are created when the first Indian
+    # company is set up, after install. Lock them the moment they exist.
+    "Custom Field": {
+        "after_insert": "alvoraa_portal.employee_field_rights.lock_new_custom_field",
     },
     # ── Module access follows the plan, for the whole life of the tenant ──
     # A plan is chosen once; users arrive and change roles for years afterwards.

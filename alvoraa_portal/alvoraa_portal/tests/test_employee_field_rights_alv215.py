@@ -86,6 +86,9 @@ class FieldRightsAlv215(IntegrationTestCase):
 		cls.hr_user_emp = _employee("HrUser", cls.hr_user)
 		cls.hr_mgr_emp = _employee("HrMgr", cls.hr_mgr)
 		cls.colleague = _employee("Colleague")
+		# ERPNext strips Employee Self Service from a user with no Employee yet, which
+		# is what the user was a moment ago on a fresh site. Give it back now it has one.
+		frappe.get_doc("User", cls.ess).add_roles("Employee Self Service")
 		# ERPNext ties every login to its own Employee and Company by User Permission.
 		# HR people work across records, so a tenant switches that off for them.
 		frappe.db.delete("User Permission", {"user": ["in", [cls.hr_user, cls.hr_mgr]]})
@@ -331,3 +334,77 @@ class FieldRightsAlv215(IntegrationTestCase):
 		p.submit()
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Employee", self.colleague, "ctc"), 3000)
+
+	def test_alv215_cancelling_a_ctc_promotion_is_refused_not_left_half_undone(self):
+		self.assertIn("alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+		              frappe.get_hooks("doc_events")["Employee Promotion"]["before_cancel"])
+		frappe.db.set_value("Employee", self.colleague, "ctc", 1000)
+		p = self._promotion(self.hr_mgr, self.colleague, revised_ctc=2000)
+		p.current_ctc = 1000
+		p.submit()
+		frappe.set_user(self.hr_user)
+		p = frappe.get_doc("Employee Promotion", p.name)
+		p.flags.ignore_permissions = True  # the field rule is the point, not the cancel right
+		with self.assertRaises(frappe.PermissionError):
+			p.cancel()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Employee Promotion", p.name, "docstatus"), 1)
+		self.assertEqual(frappe.db.get_value("Employee", self.colleague, "ctc"), 2000)
+		frappe.set_user(self.hr_mgr)
+		p = frappe.get_doc("Employee Promotion", p.name)
+		p.cancel()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Employee", self.colleague, "ctc"), 1000)
+
+	def test_alv215_transfer_to_a_new_employee_id_is_refused_before_anything_moves(self):
+		self.assertIn("alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+		              frappe.get_hooks("doc_events")["Employee Transfer"]["before_cancel"])
+		mover = _employee("Mover")
+		frappe.db.set_value("Employee", mover, {"bank_ac_no": "BANK-215", "ctc": 50000, "status": "Active"})
+		before = frappe.db.count("Employee")
+
+		def transfer(user):
+			frappe.set_user(user)
+			t = frappe.get_doc({"doctype": "Employee Transfer", "employee": mover,
+			                    "transfer_date": add_days(nowdate(), -1), "create_new_employee_id": 1,
+			                    "transfer_details": [{"property": "Designation", "fieldname": "designation",
+			                                          "current": "", "new": "Alv215 Lead"}]})
+			t.flags.ignore_permissions = True
+			t.insert()
+			return t
+
+		t = transfer(self.hr_user)
+		with self.assertRaises(frappe.PermissionError):
+			t.submit()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count("Employee"), before, "no new record")
+		self.assertEqual(frappe.db.get_value("Employee", mover, ["status", "bank_ac_no"]), ("Active", "BANK-215"))
+
+		t = transfer(self.hr_mgr)
+		t.submit()
+		frappe.set_user("Administrator")
+		new = frappe.db.get_value("Employee Transfer", t.name, "new_employee_id")
+		self.assertEqual(frappe.db.get_value("Employee", new, ["bank_ac_no", "ctc"]), ("BANK-215", 50000))
+
+	# A new tenant ---------------------------------------------------------
+	def test_alv215_indian_fields_created_after_install_are_locked_at_once(self):
+		"""Frappe HR makes PAN, ESI, PF, IFSC and MICR when the first Indian company
+		is set up - after install. Removed and made again here through that same code."""
+		from hrms.regional.india.setup import make_custom_fields
+
+		self.assertIn("alvoraa_portal.employee_field_rights.lock_new_custom_field",
+		              frappe.get_hooks("doc_events")["Custom Field"]["after_insert"])
+		five = ("pan_number", "esi_number", "provident_fund_account", "ifsc_code", "micr_code")
+		try:
+			for f in five:
+				frappe.db.delete("Property Setter", {"doc_type": "Employee", "field_name": f, "property": "permlevel"})
+				for name in frappe.get_all("Custom Field", filters={"dt": "Employee", "fieldname": f}, pluck="name"):
+					frappe.delete_doc("Custom Field", name, force=True, ignore_permissions=True)
+			frappe.clear_cache(doctype="Employee")
+			make_custom_fields()
+			frappe.clear_cache(doctype="Employee")
+			for f in five:
+				self.assertEqual(_level(f), 1, f)
+		finally:
+			ef.apply()
+			frappe.db.commit()  # the fields' DDL is committed; keep the site whole

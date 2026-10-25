@@ -133,6 +133,10 @@ def rule_set_fields():
 	return tuple(sorted(names))
 
 
+def own_record_message():
+	return _("You cannot change your own job, pay or bank details. Ask another HR person to make this change.")
+
+
 def refuse_own_locked_change(doc, method=None):
 	"""Employee validate (R4): nobody changes a locked field on their own record.
 
@@ -145,7 +149,7 @@ def refuse_own_locked_change(doc, method=None):
 		return
 	if is_own_record(doc.name):
 		refuse(
-			_("You cannot change your own job, pay or bank details. Ask another HR person to make this change."),
+			own_record_message(),
 			"SEC-17",
 			"Employee save",
 			doc.doctype,
@@ -176,25 +180,54 @@ def refuse_import_of_locked_columns(doc, method=None):
 
 
 def refuse_locked_promotion_fields(doc, method=None):
-	"""Employee Promotion / Transfer before_submit: say so, instead of Frappe putting values back.
+	"""Employee Promotion / Transfer before_submit and before_cancel: refuse before anything is written.
 
-	Submitting writes the changes onto the Employee as the submitter, and Frappe
-	silently restores any field the submitter may not write - an HR User's
-	revised CTC would vanish while the Promotion shows it as done.
+	Both write onto the Employee as the person clicking, and Frappe silently puts
+	back - or, on a new record, blanks - any field they may not write. So an HR
+	User's revised CTC vanished, a cancelled Promotion kept its CTC, and a Transfer
+	with a new employee ID gave the new record no bank account while the old one
+	was marked Left. Every field the action would write is checked here instead.
 	"""
+	if is_own_record(doc.employee):
+		refuse(own_record_message(), "SEC-17", f"{doc.doctype} {method}", doc.doctype, doc.name)
+
 	meta = frappe.get_meta(EMPLOYEE)
 	can_write = set(meta.get_permlevel_access("write"))
 	fields = [d.fieldname for d in doc.get("promotion_details") or doc.get("transfer_details") or []]
 	if doc.get("revised_ctc"):
 		fields.append("ctc")
-	locked = [meta.get_label(f) for f in fields
-	          if meta.get_field(f) and (meta.get_field(f).permlevel or 0) not in can_write]
+	if doc.get("new_company") and doc.new_company != doc.company:
+		fields += ["company", "date_of_joining"]
+	if doc.get("create_new_employee_id"):
+		# Submit copies every field into a new record and relieves the old one;
+		# cancel makes the old one Active again.
+		source = frappe.get_doc(EMPLOYEE, doc.employee)
+		fields += [df.fieldname for df in meta.get_high_permlevel_fields() if source.get(df.fieldname)]
+		fields += ["status", "relieving_date"]
+	locked = sorted({meta.get_label(f) for f in fields
+	                 if meta.get_field(f) and (meta.get_field(f).permlevel or 0) not in can_write})
 	if locked:
 		frappe.throw(
-			_("You are not allowed to change {0}, so this cannot be submitted. "
-			  "Ask an HR Manager to submit it.").format(", ".join(locked)),
+			_("You are not allowed to change {0}, so this cannot be submitted or cancelled. "
+			  "Nothing has been changed. Ask an HR Manager to do it.").format(", ".join(locked)),
 			frappe.PermissionError,
 		)
+
+
+def lock_new_custom_field(doc, method=None):
+	"""Custom Field after_insert: a locked field created after install is locked at once.
+
+	Frappe HR creates PAN, ESI, PF, IFSC and MICR when the first Indian company
+	is set up - after install - so without this they stay open until the next
+	migrate. Same for a pay field a rule set already names.
+	"""
+	if doc.dt != EMPLOYEE or doc.permlevel:
+		return
+	level = 1 if doc.fieldname in LEVEL_1 else 2 if doc.fieldname in LEVEL_2 + rule_set_fields() else 0
+	if level:
+		make_property_setter(EMPLOYEE, doc.fieldname, "permlevel", level, "Int",
+		                     validate_fields_for_doctype=False)
+		frappe.clear_cache(doctype=EMPLOYEE)
 
 
 @frappe.whitelist()

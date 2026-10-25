@@ -33,7 +33,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import add_months, cint, flt, get_first_day, get_last_day, getdate, now_datetime, nowdate
+from frappe.utils import add_days, add_months, cint, flt, get_first_day, get_last_day, getdate, now_datetime, nowdate
 from frappe.utils.caching import request_cache
 
 import hrms.alvoraa_hr_core.access as access
@@ -1488,3 +1488,179 @@ def _review_payload(fl, carried, is_self, is_manager, is_hr, user, first):
 		out["amount"] = _rupees(fl.live * fl.rate)
 		out["limit"] = _rupees(fl.limit)
 	return out
+
+
+# ── Retention: erase a leaver's marks and reviews (04b strategy) ─────────────
+#
+# Counsel: kept for the employment plus 6 months, then ERASED - no Deleted
+# Document copy, no soft delete. The clock is the Employee's relieving date.
+#
+# OFF UNTIL SURBHI SAYS SO. Nothing is erased unless the site config holds
+#     "grooming_erase_enabled": 1
+# (bench --site <site> set-config -p grooming_erase_enabled 1; back off with
+# set-config -p grooming_erase_enabled 0). Counsel has still to confirm Q-1
+# (the fines register at 6 months) and D-3 (a hold for open disputes).
+# The dry run works with the switch off, and erases nothing:
+#     bench --site <site> execute alvoraa_portal.grooming.erase_due --kwargs "{'dry_run': 1}"
+
+ERASE_FLAG = "grooming_erase"
+ERASE_FAILED = "Grooming erase failed"
+CHECK_FAILED = "Grooming erase self-check failed"
+ERASE_BATCH = 50      # people per run; a first big run must fit the queue timeout
+EDIT_WAIT_DAYS = 30   # D-1: a just-edited Employee (a mistyped date?) waits
+
+
+def erase_switched_on():
+	return cint(frappe.conf.get("grooming_erase_enabled")) == 1
+
+
+def _with_records():
+	return set(frappe.get_all(MARK, distinct=True, pluck="employee")) | set(
+		frappe.get_all(REVIEW, distinct=True, pluck="employee"))
+
+
+def _due_filters(on, names):
+	"""THE RULE, in one place. Due when Left, the relieving date is set and
+	earlier than the same day 6 months before `on`, and the Employee has not
+	been edited in the last 30 days (D-1: it can only delay an erase, never
+	hasten one). "is set" matters: Frappe reads a blank date as 0001-01-01,
+	which is earlier than everything."""
+	on = getdate(on)
+	return [["status", "=", "Left"], ["relieving_date", "is", "set"],
+	        ["relieving_date", "<", add_months(on, -6)],
+	        ["modified", "<", add_days(on, -EDIT_WAIT_DAYS)], ["name", "in", list(names)]]
+
+
+def _due(on, limit=None):
+	people = _with_records()
+	if not people:
+		return []
+	return frappe.get_all("Employee", filters=_due_filters(on, people), pluck="name",
+	                      order_by="relieving_date asc", limit=limit)
+
+
+def _draft_slip(employee):
+	"""A draft slip would be priced differently after the erase: skip the
+	person and let the self-check show them to HR."""
+	return frappe.db.exists("Salary Slip", {"employee": employee, "docstatus": 0})
+
+
+def _erase_one(doctype, name):
+	from frappe.model.delete_doc import delete_dynamic_links
+
+	# While an Event participant row points at it, Frappe refuses the delete.
+	frappe.db.delete("Event Participants", {"reference_doctype": doctype, "reference_docname": name})
+	if doctype == MARK:
+		# Frappe deletes no submitted record, and a cancel would run the mark's
+		# own rules and tell the person. Only this function does this, and the
+		# record is gone a moment later in the same transaction.
+		frappe.db.set_value(MARK, name, "docstatus", 2, update_modified=False)
+	frappe.delete_doc(doctype, name, delete_permanently=True, flags={ERASE_FLAG: True})
+	# Now, in this transaction: Frappe only queues it for after the commit.
+	delete_dynamic_links(doctype, name)
+
+
+def _erase_person(employee, today):
+	"""Erase one person's marks and reviews, if they are still due once their
+	Employee row is locked (the lock a new mark takes). Returns the counts, or
+	None when nothing was done."""
+	frappe.db.get_value("Employee", employee, "name", for_update=True)
+	if not frappe.get_all("Employee", filters=_due_filters(today, [employee]), pluck="name"):
+		return None
+	if _draft_slip(employee):
+		return None
+	marks = frappe.get_all(MARK, filters={"employee": employee}, pluck="name")
+	reviews = frappe.get_all(REVIEW, filters={"employee": employee}, pluck="name")
+	for name in marks:
+		_erase_one(MARK, name)
+	for name in reviews:
+		_erase_one(REVIEW, name)
+	return len(marks), len(reviews)
+
+
+def erase_due(dry_run=0):
+	"""DAILY (hooks.py), and by hand for the dry run. Not whitelisted.
+
+	With the switch off the daily run returns at once. A real run erases at
+	most ERASE_BATCH people, each in its own savepoint, then runs the
+	self-check. Runs as the scheduler's user, Administrator.
+
+	The dry run erases nothing and returns counts and employee ids to the
+	operator's terminal. They are never logged."""
+	if not cint(dry_run):
+		if not erase_switched_on():
+			return {"switched_on": 0}
+		try:
+			return _erase_run()
+		except Exception:
+			# A traceback here would carry local variables into the
+			# Scheduled Job Log. A title and nothing else.
+			frappe.log_error(title=ERASE_FAILED, message="The daily erase stopped before it finished.")
+			return None
+	today = getdate(nowdate())
+	due = _due(today)
+	people = [e for e in due if not _draft_slip(e)]
+	marks = frappe.get_all(MARK, filters={"employee": ("in", people or [""])}, pluck="name")
+	reviews = frappe.get_all(REVIEW, filters={"employee": ("in", people or [""])}, pluck="name")
+	names = marks + reviews or [""]
+	return {
+		"switched_on": int(erase_switched_on()),
+		"people": len(people), "marks": len(marks), "reviews": len(reviews),
+		"notices": frappe.db.count("Notification Log", {"document_name": ("in", names),
+		                                                 "document_type": ("in", [MARK, REVIEW])}),
+		"versions": frappe.db.count("Version", {"docname": ("in", names), "ref_doctype": MARK}),
+		"skipped_draft_slip": len(due) - len(people),
+		"left_without_date": len(_left_without_date()),
+		"employees": people,
+	}
+
+
+def _erase_run():
+	today = getdate(nowdate())
+	out = {"switched_on": 1, "people": 0, "marks": 0, "reviews": 0}
+	for employee in _due(today, limit=ERASE_BATCH):
+		point = "gm_erase_" + frappe.generate_hash(length=10)
+		frappe.db.savepoint(point)
+		try:
+			done = _erase_person(employee, today)
+			frappe.db.release_savepoint(point)
+		except Exception:
+			frappe.db.rollback(save_point=point)
+			# The person's id only: never a name, a reason or the "Other" text.
+			frappe.log_error(title=ERASE_FAILED, message="Employee {0}".format(employee))
+			continue
+		if done:
+			out["people"] += 1
+			out["marks"] += done[0]
+			out["reviews"] += done[1]
+	erase_self_check()
+	return out
+
+
+def _left_without_date():
+	people = _with_records()
+	if not people:
+		return []
+	return frappe.get_all("Employee", filters={"status": "Left", "relieving_date": ("is", "not set"),
+	                                           "name": ("in", list(people))}, pluck="name")
+
+
+def erase_self_check():
+	"""Counts what should not exist, and raises one titled Error Log (counts
+	only) if any is not zero. Runs after every real erase; by hand:
+	    bench --site <site> execute alvoraa_portal.grooming.erase_self_check
+	"""
+	counts = {
+		# Due for more than 2 days and still here: the job stopped, a record
+		# would not erase, or a draft slip holds the person.
+		"people past due": len(_due(add_days(getdate(nowdate()), -2))),
+		# Left with no relieving date: never due. HR must fill the date.
+		"left without a relieving date": len(_left_without_date()),
+		# A soft-deleted copy that should never exist.
+		"deleted document copies": frappe.db.count("Deleted Document",
+		                                           {"deleted_doctype": ("in", [MARK, REVIEW])}),
+	}
+	problems = {k: v for k, v in counts.items() if v}
+	if problems:
+		frappe.log_error(title=CHECK_FAILED, message=json.dumps(problems, sort_keys=True))
+	return counts

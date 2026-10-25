@@ -408,3 +408,19 @@ class FieldRightsAlv215(IntegrationTestCase):
 		finally:
 			ef.apply()
 			frappe.db.commit()  # the fields' DDL is committed; keep the site whole
+
+	def test_alv215_hr_cannot_move_themselves_to_another_company_by_transfer(self):
+		"""The new-employee-ID path never saves your own record, so the Employee
+		check cannot see it. Without this, an HR User becomes HR in another company."""
+		frappe.set_user(self.hr_user)
+		t = frappe.get_doc({"doctype": "Employee Transfer", "employee": self.hr_user_emp,
+		                    "transfer_date": add_days(nowdate(), -1), "create_new_employee_id": 1,
+		                    "new_company": OTHER_COMPANY,
+		                    "transfer_details": [{"property": "Designation", "fieldname": "designation",
+		                                          "current": "", "new": "Alv215 Lead"}]})
+		t.flags.ignore_permissions = True
+		t.insert()
+		with self.assertRaises(frappe.PermissionError):
+			t.submit()
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("Employee", {"user_id": self.hr_user, "company": OTHER_COMPANY}))

@@ -3,7 +3,8 @@ slice: 071-unseated-names
 artifact: 06b-security-verification
 author: hrms-security-privacy-engineer
 date: 2026-10-25
-status: verdict - NOT READY TO SWITCH ON. One P0, found in code this slice extends (it is already on main).
+status: 26 Oct re-verification at 71c25de4 - F1 and F2 MET on the branch. No security blocker for the push to dev. Main still carries the gap until this lands there (see Re-verification).
+first verdict (25 Oct, bec85cb9): NOT READY TO SWITCH ON. One P0, found in code this slice extends (it is already on main).
 code: branch slice/071-unseated-names (bec85cb9) in .claude/worktrees/071-unseated-names, compared with origin/dev
 ran on: container hrlocal-071, site test071 only. Every probe was rolled back. Nothing pushed, no code edited.
 ---
@@ -224,3 +225,47 @@ Not run: `browser_check_positions.js` (needs the probe password); the full `alvo
 Removed from my draft: a request for a "reason" on every Place-anyway assignment (the Version row and
 the assignment owner already answer the audit question); a rate-limit suggestion (no real abuse
 case); a separate finding for the error-message lookup (it is part of F1, fixed by the same check).
+
+---
+
+## Re-verification — 26 Oct 2026, tip 71c25de4 (ALV-228)
+
+**Result: F1 met, F2 met.** The fix is the smallest one that works: one helper, `_person_in_scope`
+(`register.py:624-637`), called right after the seat check in `assign_person` (`:767`) and after
+`may_view` in `what_they_hold` (`:656`). It reads the person's company and branch and compares them
+with `_scope()`, the same rule the seat uses. An unknown ID and an outsider get the same refusal,
+with no name and no person ID in the message or in the refusal log (`name=None`). It runs before
+`add_place` and before any insert, so nothing is written first.
+
+Checked on hrlocal-071 / test071, nobody else on the site, every probe rolled back (afterwards: no
+`SEC071` seat or Version row left). Container code matched the worktree (md5).
+
+| Attack (from 25 Oct) | Before | Now | How shown |
+|---|---|---|---|
+| HR for Demo071 Retail puts an Alvoraa Test Company person in own full seat, `add_place=1` | Placed, seat 1 → 2, name on their chart | **PermissionError.** Seat stays 1, no Assignment row | Verified by running it; test `test_another_companys_person_is_refused_with_and_without_add_place` |
+| Same, with a start date before joining (the lookup) | Message gave name and joining date | **PermissionError, no name, date or ID in the message** | Verified by running it; test `test_the_refusal_names_nobody` (marker name `SNTL-OTHERCO-NAME`) |
+| Unknown ID vs outsider: same words? | — | **Identical text** | Verified by running it; same test |
+| Unknown ID vs outsider: same time? | — | Median 3.33 ms vs 3.70 ms over 30 calls each (in-process, no network). The gap is far below normal network noise; I do not count it as a usable signal | Verified by running it |
+| `what_they_hold` for another company's person | Returned their seat title | **PermissionError**; an in-scope person still answered | Verified by running it; test `test_what_they_hold_refuses_an_outsider_and_answers_for_an_insider` |
+| Store-limited HR (Branch permission added to the probe login), person from another store, `add_place=1` | (Inference: placed) | **PermissionError**; `what_they_hold` also refused; own-store person placed fine | Verified by running it; test `test_another_branchs_person_is_refused` |
+| In-scope "Place anyway" still works | Worked | Works | Verified by running it |
+| Atomic | Yes | Yes; the person check runs before any write, and the earlier rollback test still passes | Code `:767` before `:778-785`; test run below |
+| New `ignore_permissions` | — | None. `register.py` still 4 = CEILINGS | `grep -c` |
+
+The only internal caller, `_make_room` → `what_they_hold` (`:700`), runs after the person was already
+checked, so it does not refuse anything new.
+
+**Tests:** `bench --site test071 run-tests --module alvoraa_portal.tests.test_unseated_071`:
+**12 run, OK** (8 earlier + 4 new). The leftover test logins from 25 Oct are gone. I did not re-run
+`test_portal_security_010` (8 minutes); the ceiling is checked by the grep above, and it passed
+45 + 5 on 25 Oct.
+
+**Still open (not blockers for the push to dev):**
+- **Main still has F1 and F2** until this branch reaches main. Whether a production tenant can be hurt
+  today depends on whether any has several companies or store-limited HR. I still cannot check that.
+  Surbhi decides whether the fix goes to main on its own, ahead of 071.
+- Browser print check: not re-run by me (no probe password). Test engineer, before switch-on.
+- No 01c for this slice (process debt, F4).
+
+**Residual risk now:** F1/F2 on main — dangerous debt until the fix lands there; owner Surbhi
+(decision); not accepted by anyone yet. On the branch: none open from security.

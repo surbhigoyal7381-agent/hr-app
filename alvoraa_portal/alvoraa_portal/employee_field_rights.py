@@ -64,8 +64,9 @@ def apply():
 	if not frappe.db.exists("DocType", EMPLOYEE):
 		return
 
-	changed = lock_fields()
-	rows =frappe.get_all("Custom DocPerm", filters={"parent": EMPLOYEE, "if_owner": 0},
+	lock_fields()
+	changed = False
+	rows = frappe.get_all("Custom DocPerm", filters={"parent": EMPLOYEE, "if_owner": 0},
 	                      fields=["name", "role", "permlevel", "read", "write"])
 	if not rows:
 		# Standard rows only. add_permission copies them in first, so nobody loses access.
@@ -130,10 +131,6 @@ def rule_set_fields():
 	for row in frappe.get_all(RULE_SET, fields=settings):
 		names.update(v.strip() for v in row.values() if v and v.strip())
 	return tuple(sorted(names))
-
-
-def after_migrate():
-	apply()
 
 
 def refuse_own_locked_change(doc, method=None):

@@ -503,7 +503,7 @@ after_migrate = [
     # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
     # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
     # reset in Role Permission Manager is put right. See employee_field_rights.py.
-    "alvoraa_portal.employee_field_rights.after_migrate",
+    "alvoraa_portal.employee_field_rights.apply",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
@@ -556,7 +556,7 @@ after_install = [
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.email_brand.after_install",
     # ALV-215: same as after_migrate - a new tenant must not start open.
-    "alvoraa_portal.employee_field_rights.after_migrate",
+    "alvoraa_portal.employee_field_rights.apply",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

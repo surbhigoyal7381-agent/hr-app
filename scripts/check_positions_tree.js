@@ -1225,7 +1225,11 @@ async function seats070() {
     rows.forEach((r) => { P.expanded[r.id] = true; });
     doc.getElementById("pos-f-view").value = "tree";
     doc.getElementById("pos-f-arrange").value = arrange || "reporting";
-    ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach((id) => { doc.getElementById(id).value = (opts.filter || {})[id] || ""; });
+    ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach((id) => {
+      const el = doc.getElementById(id), v = (opts.filter || {})[id] || "";
+      if (v && ![...el.options].some((o) => o.value === v)) el.insertAdjacentHTML("beforeend", '<option value="' + v + '">' + v + "</option>");
+      el.value = v;
+    });
     W.POS_NAMES_SHOWN = opts.names || 1000;
     W.posPaint();
     W.POS_NAMES_SHOWN = 3;
@@ -1436,6 +1440,66 @@ async function seats070() {
        t.includes("This seat holds the people of 2 managers") && !t.includes("Where it shows") && !t.includes("Reports to N"));
     W.POS.records = null;
     W.posCloseSheet(true);
+  }
+
+  /* 22g. Find, filters and the outline (AC-43 - AC-48, G1, G2) */
+  {
+    const pick = (q) => {
+      W.posFind(q);
+      const b = doc.querySelector("#pos-find-res .pos-hit");
+      if (b) b.click();
+      return doc.activeElement;
+    };
+    draw(S70()); W.POS.expanded = {}; W.POS.collapsed = {}; W.posPaint();
+    let f = pick("N OE3");
+    ok("070 AC-44: a person in a copy is found in the copy", f && f.classList.contains("copy") && f.classList.contains("pos-first")
+       && /Office Executive/.test(f.textContent) && W.POS.expanded.CFO);
+    draw(S70()); W.POS.expanded = {}; W.posPaint();
+    f = pick("N OE1");
+    ok("070 AC-45: a person at home is found at home", f && !f.classList.contains("copy") && /Office Executive/.test(f.textContent));
+    draw(S70()); W.POS.expanded = {}; W.posPaint();
+    f = pick("Store Auditor");
+    ok("070 AC-45/G2: a seat whose own box is not drawn is found at its copy", f && f.classList.contains("copy") && /Store Auditor/.test(f.textContent));
+
+    // G1: a branch filter that keeps a manager seat and a shared seat.
+    const noida = () => S70().map((r) => (["OWN", "CFO", "OE"].includes(r.id) ? Object.assign(r, { branch: "Noida" }) : r));
+    draw(noida(), "reporting", { filter: { "pos-f-branch": "Noida" } });
+    let drawn = boxes();
+    const seatId = (b) => (b.copy ? seatOfCopy(b.id).id : b.id);
+    ok("070 AC-46: with a filter, a matching seat still gets its copy under a drawn manager seat",
+       drawn.some((b) => b.copy && seatOfCopy(b.id).id === "OE" && b.parent === "CFO"));
+    ok("070 AC-46: and nothing is copied under a seat the filter left out", !drawn.some((b) => b.copy && !["OE"].includes(seatOfCopy(b.id).id)));
+    const rowsN = noida(), byId = {};
+    rowsN.forEach((r) => { byId[r.id] = r; });
+    const match = (r) => r.branch === "Noida";
+    const above = (id) => rowsN.some((r) => { if (!match(r)) return false; for (let a = byId[r.reports_to], k = 0; a && k < 40; a = byId[a.reports_to], k++) if (a.id === id) return true; return false; });
+    ok("070 AC-47: every drawn box is a match or above one", drawn.every((b) => match(byId[seatId(b)]) || above(seatId(b))),
+       drawn.filter((b) => !(match(byId[seatId(b)]) || above(seatId(b)))).map((b) => b.id).join(","));
+    W.posFocusFirst();
+    ok("070 AC-48: the matching line counts seats, not boxes", /^3 matching/.test(doc.getElementById("pos-fline-txt").textContent),
+       doc.getElementById("pos-fline-txt").textContent);
+    draw(S70(), "reporting", { filter: { "pos-f-role": "Backoffice Executive" } });
+    drawn = boxes();
+    ok("070 AC-46: a faded seat above a match keeps all its people home",
+       drawn.find((b) => b.id === "BO").names.length === 3 && !drawn.some((b) => b.copy));
+
+    // AC-43: the outline, desktop only.
+    draw(S70());
+    const split = () => [...body().querySelectorAll(".oc-box.pos-split")];
+    const ofBO = split().filter((b) => /Back Office<|Back Office$/.test(b.querySelector(".ti").textContent));
+    W.posWire();
+    W.matchMedia = () => ({ matches: true, addEventListener() {}, addListener() {} });
+    ofBO[0].dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
+    ok("070 AC-43: pointing at one box of a shared seat outlines its other boxes",
+       ofBO.length === 3 && ofBO.slice(1).every((b) => b.classList.contains("rel")) && !ofBO[0].classList.contains("rel")
+       && body().querySelectorAll(".oc-box.rel").length === 2);
+    ofBO[1].dispatchEvent(new W.FocusEvent("focusin", { bubbles: true }));
+    ok("070 AC-43: keyboard focus does the same", ofBO[0].classList.contains("rel") && !ofBO[1].classList.contains("rel"));
+    body().querySelector(".oc-box:not(.pos-split)").dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
+    ok("070 AC-43: leaving takes the outline away", !body().querySelectorAll(".oc-box.rel").length);
+    W.matchMedia = () => ({ matches: false, addEventListener() {}, addListener() {} });
+    ofBO[0].dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
+    ok("070 AC-43: nothing happens on touch", !body().querySelectorAll(".oc-box.rel").length);
   }
 }
 

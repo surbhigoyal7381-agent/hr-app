@@ -1700,8 +1700,12 @@ function posMarkFirst(hit) {
   return boxes.length;
 }
 function posFocusFirst() {
-  var hit = {};
-  POS.rows.filter(posMatches).forEach(function (r) { hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1; });
+  var hit = {}, pl = posPlaced();
+  POS.rows.filter(posMatches).forEach(function (r) {
+    hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
+    // Slice 070 (AC-48): a copy of a matching seat is a box of that seat too.
+    if (pl) pl.copies[r.id].forEach(function (c) { hit[c.id] = 1; });
+  });
   var found = posMarkFirst(hit);
   var n = POS.rows.filter(posMatches).length, txt = document.getElementById("pos-fline-txt");
   if (txt) txt.textContent = n + " matching" + (found ? ", showing the first" : "");
@@ -1717,14 +1721,16 @@ window.posFind = function (q) {
   if (!res) return;
   q = String(q || "").trim().toLowerCase();
   if (q.length < 2) { res.classList.remove("open"); res.innerHTML = ""; return; }
-  var hits = [];
+  var hits = [], fpl = posFindPlace();
   POS.rows.forEach(function (r) {
     if (hits.length < POS_FIND_MAX && String(r.title || "").toLowerCase().indexOf(q) >= 0) {
       hits.push({ id: r.id, main: r.title, sub: [r.branch, r.department].filter(Boolean).join(" · ") });
     }
     r.people.forEach(function (p) {
       if (hits.length < POS_FIND_MAX && String(p.name || "").toLowerCase().indexOf(q) >= 0) {
-        hits.push({ id: r.id, main: p.name, sub: r.title + (r.branch ? " · " + r.branch : "") });
+        // Slice 070 (G2): somebody drawn in a copy is found in the copy.
+        var c = fpl && fpl.copies[r.id].filter(function (x) { return x.people.indexOf(p) >= 0; })[0];
+        hits.push({ id: c ? c.id : r.id, main: p.name, sub: r.title + (r.branch ? " · " + r.branch : "") });
       }
     });
   });
@@ -1744,8 +1750,14 @@ window.posFindKey = function (e) {
     e.target.value = ""; posFind("");
   }
 };
+/* Slice 070: where things are drawn once Find has cleared the filters - the
+   whole chart, in Reporting lines. Null in the other two views. */
+function posFindPlace() {
+  return posArrange() === "reporting" ? posPlace(posKids(POS.rows), false) : null;
+}
 window.posFindPick = function (id) {
-  var r = posById(id);
+  var fpl = posFindPlace(), copy = fpl && fpl.byId[id];
+  var r = copy ? copy.seat : posById(id);
   var res = document.getElementById("pos-find-res"), box = document.getElementById("pos-find");
   if (res) { res.classList.remove("open"); res.innerHTML = ""; }
   if (box) box.value = "";
@@ -1760,7 +1772,13 @@ window.posFindPick = function (id) {
   var how = posArrange(), by = {};
   POS.rows.forEach(function (x) { by[x.id] = x; });
   function open(k) { delete POS.collapsed[k]; POS.expanded[k] = true; }
-  var at = by[r.reports_to], hops = 0;
+  // Slice 070: a copy - or every copy of a seat whose own box is not drawn -
+  // hangs under its manager's seat, so that is the way to open.
+  var under = copy ? [copy.under] : (fpl && fpl.hidden[r.id] ? fpl.copies[r.id].map(function (c) { return c.under; }) : []);
+  under.forEach(function (u) {
+    for (var a = by[u], k = 0; a && k < POS_MAX_DEPTH; a = by[a.reports_to], k++) open(a.id);
+  });
+  var at = under.length ? null : by[r.reports_to], hops = 0;
   while (at && hops < POS_MAX_DEPTH) {
     if ((how === "branch" && at.branch !== r.branch) || (how === "department" && at.department !== r.department)) break;
     open(at.id); at = by[at.reports_to]; hops += 1;
@@ -1779,6 +1797,8 @@ function posFindFocus(id) {
   // Slice 070: a copy is outlined itself.
   if (pl && pl.byId[id]) { hit[id] = 1; posMarkFirst(hit); return; }
   if (!r) return;
+  // A seat whose own box is not drawn is found at its first copy (G2).
+  if (pl && pl.hidden[r.id]) { pl.copies[r.id].forEach(function (c) { hit[c.id] = 1; }); posMarkFirst(hit); return; }
   hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
   posMarkFirst(hit);
 }
@@ -2736,6 +2756,22 @@ function posWire() {
     if (e.defaultPrevented || document.querySelector(".gp-backdrop.open")) return;
     if (POS.sheet) posCloseSheet();
   });
+  // Slice 070 (AC-43): pointing at, or tabbing to, a box of a seat drawn more
+  // than once outlines its other boxes. Desktop only; nothing moves.
+  var relate = function (e) {
+    var rel = document.querySelectorAll("#pos-body .oc-box.rel");
+    for (var i = 0; i < rel.length; i++) rel[i].classList.remove("rel");
+    var pl = posPlaced(), b = e.target && e.target.closest && e.target.closest("#pos-body .oc-box.pos-split");
+    if (!pl || !b || !(window.matchMedia && window.matchMedia("(hover: hover)").matches)) return;
+    var seatOf = function (el) {
+      var m = (el.getAttribute("onclick") || "").match(/\('([^']+)'\)/), id = m && m[1];
+      return pl.byId[id] ? pl.byId[id].seat.id : id;
+    };
+    var seat = seatOf(b), all = document.querySelectorAll("#pos-body .oc-box.pos-split");
+    for (var j = 0; j < all.length; j++) if (all[j] !== b && seatOf(all[j]) === seat) all[j].classList.add("rel");
+  };
+  document.addEventListener("mouseover", relate);
+  document.addEventListener("focusin", relate);
   // Slice 069 (review m2): a browser that never fired afterprint must not
   // leave the wall chart - possibly an HR copy - as the next panel's print.
   window.addEventListener("beforeprint", function () {

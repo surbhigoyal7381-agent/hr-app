@@ -63,6 +63,14 @@ Target tenant: **50–1,000 employees.** Indian mid-market first. Highly securit
 privacy-conscious buyers — security review is a real gate in the sales cycle, not a
 formality.
 
+**Primary segment (Surbhi, 24 Oct 2026): non-tech industries — Indian manufacturing,
+distribution and trading MSMEs** (today: DTC, Grace Drinks, PP Jewellers, Sargam Metals).
+Most of their people are shop-floor and field staff, drivers, helpers and agency workers
+on cheap Android phones, often Hindi-first; HR is usually one person who also does the
+accounts; owners check things on WhatsApp. **On employee screens, the frontline worker
+wins any design trade-off** — big text and buttons, plain words, few taps, works on a
+poor network.
+
 | Persona | Their day | What they need from us | Device / context |
 |---|---|---|---|
 | **HR Manager / HR head** (economic buyer's proxy, our densest user) | Runs cycles for the whole company with a team of two or three. Chases completion, defends ratings, answers "why is my number wrong". | Configure a cycle once and have it run. Bulk-assign to hundreds. See who is not ready *before* the cycle opens. Defend a rating with a record, not a recollection. | Laptop, many tabs, month-end pressure |

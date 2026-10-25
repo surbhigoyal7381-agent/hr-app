@@ -10741,7 +10741,7 @@ function deleteDrawerNote(noteId, empId) {
   var WRITE_CALL = new RegExp("^(save|create|update|delete|submit|approve|reject|set|assign|end|post|"
     + "propose|add|remove|archive|send|invite|log|relink|return|advance|answer|acknowledge|hr_create|"
     + "hr_generate|hr_set|hr_start|raise|withdraw|decide|undo|mark|keep|ask|record|apply|cancel|"
-    + "action|attach|publish|sync|unarchive)(_|$)|^(data_review_confirm|to_review|my_notices_seen)$");
+    + "action|attach|publish|sync|unarchive)(_|$)|^(data_review_confirm|my_notices_seen)$");
   function gpFetch(method, args, opts) {
     if (navigator.onLine === false) return Promise.reject(gpCallErr("offline"));
     var call = new Promise(function(resolve, reject) {

@@ -133,6 +133,8 @@ def _wipe():
 	frappe.db.delete("Salary Detail", {"parenttype": "Salary Slip", "parent": ("in", slips or [""])})
 	frappe.db.delete("Salary Slip", {"employee": ("in", people)})
 	frappe.db.delete("Additional Salary", {"employee": ("in", people)})
+	# Test site only: a copy here would come from a test (or a guard broken on purpose).
+	frappe.db.delete("Deleted Document", {"deleted_doctype": ("in", [grooming.MARK, grooming.REVIEW])})
 	frappe.db.delete("Error Log", {"method": ("in", [grooming.ERASE_FAILED, grooming.CHECK_FAILED])})
 
 
@@ -340,6 +342,14 @@ class TestSelfCheck(Case):
 		self.assertEqual(grooming.erase_due(dry_run=1)["left_without_date"], 1)
 		self.erase()
 		self.assertEqual((_records(overdue), _records(nodate)), (0, 1))
+		# The real run checks itself afterwards: the leaver without a date again.
+		self.assertEqual(len(_alerts(grooming.CHECK_FAILED)), 2)
+
+	def test_a_deleted_document_copy_raises_the_alert(self):
+		frappe.get_doc({"doctype": "Deleted Document", "deleted_doctype": grooming.MARK,
+		                "deleted_name": "R066", "data": "{}"}).db_insert()
+		self.assertEqual(grooming.erase_self_check()["deleted document copies"], 1)
+		self.assertEqual(len(_alerts(grooming.CHECK_FAILED)), 1)
 
 	def test_a_clean_site_raises_nothing(self):
 		emp = _person("Clean", status="Active", relieved=None)

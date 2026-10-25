@@ -37,11 +37,12 @@ dropped an imported value.
 
 | # | 04c said | Built | Why |
 |---|---|---|---|
-| 1 | "Nothing removed" from level 1 | Every level-1 row that is not HR Manager is **removed** | Surbhi's D2 and D3 ("HR Manager only"). **This includes PPJ's System Manager level-1 row**, not only Payroll User. A CXO who holds System Manager but not HR Manager no longer sees bank, PAN, ESI, PF or CTC on the Employee form. Say if System Manager should keep it - one line |
+| 1 | "Nothing removed" from level 1 | Every level-1 row that is not HR Manager is **removed** | Surbhi's D2 and D3 ("HR Manager only"). **This includes PPJ's System Manager level-1 row**, not only Payroll User. Confirmed by the coordinator on 25 Oct: keep as built. A CXO who needs bank, PAN or CTC is given the HR Manager role on purpose (release step below) |
 | 2 | DTC-only fields by three hand-made Property Setters on the day | A **patch** that does the same, no-op elsewhere | The lead's instruction for this build. It puts three DTC field names into product code, which 04c had avoided. It still needs DTC to migrate, i.e. a release |
 | 3 | `on_update` on the rule set calls `apply()` | It calls `lock_fields()` only | `add_permission` saves its row with the caller's own permissions, so an HR Manager saving a rule set would be refused if rows were ever missing. Rows are migrate's job; the rule-set save only locks fields |
 | 4 | Step B in the hrms fork (B1) | Override in our app (B2) | Surbhi's D4. It wraps upstream (check, then call it), so it is not a copy that can drift |
 | 5 | Data Import "silently ignored" was an accepted trade-off | Made loud | The lead's instruction. Refused at the Data Import save, before anything is imported |
+| 5b | (not in 04c) | A Promotion or Transfer whose changes include a field the submitter may not change - for an HR User, a revised CTC or any level-1 field - is **refused at submit** with "You are not allowed to change {fields}, so this cannot be submitted. Ask an HR Manager to submit it." | The coordinator's decision of 25 Oct: never let Frappe put the CTC back silently. Employee Promotion and Employee Transfer `before_submit` -> `refuse_locked_promotion_fields`. Tests: `test_alv215_promotion_with_a_locked_field_is_refused_not_silently_undone` (broken once: FAILED, "PermissionError not raised") and `test_alv215_promotion_hr_may_make_still_goes_through` |
 | 6 | Survey: System Manager gets level-2 write | Same, but only where System Manager already writes Employee at level 0 | On a fresh site System Manager has no Employee row at all, so nothing is added for it |
 
 ## Acceptance - rule by rule
@@ -91,7 +92,7 @@ was put back by running the real `apply()`.
 | One-person HR team cannot change its own locked fields | **Supported path:** log in as Administrator (who has no Employee record, so R4 never applies), or a second HR person. A System Manager who is also an employee is bound by R4 like everyone. Intentional trade-off (R4) |
 | Portal self-service edits | No portal screen writes Employee. A REST write by an employee to a locked field is put back silently (R1, as 01g). Phone, email, address, emergency contact still save |
 | Positions chart and manager_scope | manager_scope: test passes (12); a self-edit of `reports_to` is put back before `on_update`, so the real manager keeps access (asserted in the R1 test). Positions: reads Employee only; its tests run below |
-| Hooks that write these fields | Position cover writes `leave_approver`/`expense_approver` with `frappe.db.set_value` - skips levels and R4, no Version row (existing debt, 01g). `employee_documents` writes its own child rows with `db_insert`. Employee Promotion's submit saves the Employee as the submitter: works for HR on someone else, refused for yourself (tested). **New consequence:** an HR User submitting a Promotion with a revised CTC has the CTC silently put back (CTC is level 1) |
+| Hooks that write these fields | Position cover writes `leave_approver`/`expense_approver` with `frappe.db.set_value` - skips levels and R4, no Version row (existing debt, 01g). `employee_documents` writes its own child rows with `db_insert`. Employee Promotion's submit saves the Employee as the submitter: works for HR on someone else, refused for yourself (tested). A Promotion or Transfer with a field the submitter may not change (for an HR User, a revised CTC) is refused at submit with a message (5b above) |
 
 ## NFR - before vs after, against the code written
 
@@ -118,7 +119,7 @@ level-1 fields - only who may read/write them, never their values. Nothing perso
 | `alvoraa_portal/alvoraa_portal/hooks.py` | Employee `validate`; Data Import `validate`; one line at the end of `after_migrate` and `after_install`; `override_whitelisted_methods` (new block) |
 | `alvoraa_payroll_rule_set.py` | new `on_update` (calls `lock_fields`) |
 | NEW `patches/v1_0/dtc_pay_fields_level_2.py` + one line at the end of `patches.txt` | DTC-only fields |
-| NEW `tests/test_employee_field_rights_alv215.py` | 14 tests |
+| NEW `tests/test_employee_field_rights_alv215.py` | 16 tests |
 
 ## What else moved while I worked
 
@@ -145,7 +146,7 @@ worktree apps mounted). Fresh install as CI does it: erpnext, hrms, alvoraa_port
 |---|---|
 | After the install, before any test: Employee Custom DocPerm rows | Level 2 read for Employee and Employee Self Service; level 2 read+write for HR User and HR Manager; level 1 read+write for HR Manager only. So a new tenant starts locked |
 | `test_employee_field_rights_alv215` | 14 tests OK (after the subtract pass, again OK) |
-| Guards broken on purpose | 10 breaks, 10 failing tests (table above) |
+| Guards broken on purpose | 11 breaks, 11 failing tests (table above, plus the Promotion check in 5b) |
 | Affected modules, one at a time | `test_manager_scope` 12 OK; `test_positions_064` 17 OK (1,459 s - it builds ~400 employees); `test_payroll_flags` 9 OK; `test_leave_063_rules` 38 OK; `test_permission_health_048` 16 OK; `test_personas_012` 17 OK; hrms `alvoraa_org_structure.test_org_structure` 33 OK; `test_cover_policy` 25 OK |
 | `scripts/check_app_integrity.py` | OK - 806 checks |
 | **Full suite, once, after rebasing on origin/dev af0b7cdf** | `alvoraa_goals`: 18 OK (2 skipped). `alvoraa_portal`: three batches - 30 OK; 962 OK (19 skipped); 2,168 OK (40 skipped). No failure, no error |
@@ -159,6 +160,11 @@ Not run: the hrms per-doctype CI job (`hrms_test_site`); `bench migrate` (on the
    Custom DocPerm rows; HR Manager and Payroll User counts). **Stop if a site already uses
    level 1 for anything other than the 13, or level 2 at all** - `apply()` would remove other
    roles' level-1 rows and add level-2 readers.
+1b. **PPJ release checklist:** after the release, PPJ's 6 Payroll Users and its System
+   Manager no longer see or change bank, PAN, ESI, PF, CTC, salary mode or the two accounts.
+   Before release, list who at PPJ (and DTC, Grace) holds System Manager or Payroll User without
+   HR Manager, and ask the client which of them need these fields. Give those people the
+   **HR Manager role deliberately**; nobody else. Same for any CXO at any tenant.
 2. Push to dev, migrate runs `apply()` and the DTC patch (no-op on dev tenants without the
    fields). Check one dev tenant by the same query.
 3. Rollback: revert the commits first (or the next migrate re-applies), then delete Property
@@ -176,7 +182,7 @@ Not run: the hrms per-doctype CI job (`hrms_test_site`); `bench migrate` (on the
 | Position cover writes approvers with no Version row and outside R4 | Existing debt, separate ticket (01g) |
 | An HR User could set a colleague's `user_id` to their own login. Afterwards R4 treats that record as theirs and refuses their edits to it, but the `user_id` change itself is one person's, recorded only in Version history | Acceptable simplification (as 04c) |
 | A tenant's custom HR role (not HR User / HR Manager / System Manager) that writes Employee gets level-2 **read** only | Intentional - fail closed. Say so to any tenant with such a role |
-| HR User Promotion with revised CTC: CTC silently put back | Intentional trade-off (D3); HR Manager submits those |
+| HR User Promotion with revised CTC | Fixed: refused at submit with a message (decision 4, 25 Oct) |
 | DTC field names in product code (patch) | Acceptable simplification, lead's instruction |
 
 ## Subtract pass

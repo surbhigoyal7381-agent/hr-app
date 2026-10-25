@@ -2126,6 +2126,26 @@ body.panel-fullscreen{overflow:hidden}
   .pos-sheet{left:0;right:0;top:auto;width:100%;max-height:88vh;border-radius:var(--r) var(--r) 0 0}
   .pos-sheet .btn{min-height:44px}
 }
+/* Slice 071: one row per person in the In no seat tray, and the person
+   dialog and full-seat confirm, now reached from a phone list: 44 px targets
+   and no text under 12 px, scoped to those two dialogs. Both are
+   .gp-backdrop, so the print rule below leaves them off paper. */
+.pos-un{list-style:none;margin:0 0 6px;padding:0}
+.pos-un-role{margin:10px 0 2px;color:var(--text)}
+.pos-un-p{padding:8px 0 8px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px}
+.pos-un-who{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+.pos-un-who a.pos-link{padding:2px 0;min-height:24px;display:inline-flex;align-items:center;font-weight:600}
+.pos-un-meta{display:block}
+.pos-un-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.pos-sheet h2:focus{outline:none}
+#pos-person .gp-label,#pos-person .pf-card-meta,#pos-full .pf-card-meta{font-size:var(--fs-sm)}
+@media (max-width:640px){
+  #pos-person .btn,#pos-full .btn{min-height:44px}
+  #pos-person .gp-modal-close{width:44px;height:44px}
+  #pos-person .gp-input{font-size:16px;min-height:44px}
+  .pos-un-who a.pos-link{min-height:44px}
+  .pos-cand{min-height:44px}
+}
 
 /* ── Positions chart improvements (slice 064, prototype-old-v2, 23 Oct 2026) ──
    The hanging column (I3, Q2), the No reporting manager box (I4), zoom,

@@ -761,3 +761,45 @@ class TestGroomingSwitch(Case):
 		                 .grooming_days, 3)
 		self.assertRaises(frappe.ValidationError, payroll_slip.check_grooming_before_submit, slip)
 
+	def test_s1_a_slip_saved_while_on_is_not_submitted_with_its_fine_while_off(self):
+		"""Switch review S-1: nobody can contest a fine while grooming is off, so
+		a draft still carrying the engine's grooming line is refused until it
+		is saved again, and the re-save drops the line."""
+		with patch.object(payroll_slip, "month_summary",
+		                  return_value=MonthSummary(paid_days=30, grooming_deduction=300)):
+			doc = frappe.get_doc({"doctype": "Salary Slip", "employee": P["Kiran"],
+			                      "company": COMPANY, "start_date": M_START, "end_date": M_END,
+			                      "posting_date": M_END, "payroll_frequency": "Monthly",
+			                      "currency": "INR"})
+			doc.flags.ignore_permissions = True
+			doc.insert()
+		grv = [r for r in doc.deductions if r.salary_component == payroll_slip.GROOMING_COMPONENT]
+		self.assertTrue(grv and grv[0].additional_salary, grv)
+		with grooming_off():
+			with self.assertRaises(frappe.ValidationError) as caught:
+				payroll_slip.check_grooming_before_submit(doc)
+			self.assertIn("Save this slip again to drop the grooming line", str(caught.exception))
+			doc.save()
+			self.assertEqual([r for r in doc.deductions
+			                  if r.salary_component == payroll_slip.GROOMING_COMPONENT], [])
+			payroll_slip.check_grooming_before_submit(doc)            # now it goes through
+
+	def test_s2_s3_off_says_so_in_the_report_and_old_notices_open_nothing(self):
+		from alvoraa_portal.alvoraa_portal.report.grooming_review_pending import (
+			grooming_review_pending as report,
+		)
+		_mark("Ravi", "Rahul")
+		with as_user("Rahul"):
+			self.assertTrue(grooming.my_notices()["items"][0]["link"])
+		with as_user("Ritika"):
+			self.assertEqual(report.execute({"month": str(M_START)})[2],
+			                 "No grooming review is pending.")
+		with grooming_off():
+			with as_user("Rahul"):
+				items = grooming.my_notices()["items"]
+			self.assertTrue(items)                                    # still readable
+			self.assertEqual([i["link"] for i in items], [None] * len(items))
+			with as_user("Ritika"):
+				self.assertEqual(report.execute({"month": str(M_START)})[2],
+				                 "Grooming reds are switched off.")
+

@@ -323,8 +323,19 @@ def check_grooming_before_submit(doc, method=None):
 	Payroll Entry submits slips one by one and carries on past a refused one.
 	"""
 	rule_set = rule_set_for(doc.company)
-	if not rule_set or not grooming.is_on():
-		# Off: no grooming line is priced, so an open "Ask HR" holds nothing.
+	if not rule_set:
+		return
+	if not grooming.is_on():
+		# Off: no grooming line is priced, so an open "Ask HR" holds nothing. But
+		# a draft saved while grooming was on still carries the engine's line,
+		# and nobody can contest that fine now (switch review S-1). Saving the
+		# slip again drops it.
+		lines = [r.additional_salary for r in doc.get("deductions") or []
+		         if r.salary_component == GROOMING_COMPONENT and r.additional_salary]
+		if lines and frappe.db.exists("Additional Salary", {"name": ("in", lines),
+		                                                   "ref_doctype": ENGINE_REF}):
+			frappe.throw(_("Grooming reds are switched off. Save this slip again to drop the "
+			               "grooming line."))
 		return
 	# A fine deducted with the person's question unread is the show-cause risk
 	# (brief, Decisions (3)). A manager's raise adds no money and holds nothing.

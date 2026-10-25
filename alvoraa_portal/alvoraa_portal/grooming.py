@@ -1022,8 +1022,11 @@ def my_notices(limit=20):
 	                      order_by="creation desc", limit_page_length=50)
 	allowed = _readable(user, rows)
 	shown = [r for r in rows if (r.document_type, r.document_name) in allowed]
+	# Off: old notices stay readable, but open nothing - the month they point
+	# at has no grooming section while off (switch review S-3).
+	on = is_on()
 	return {"unread": sum(1 for r in shown if not r.read),
-	        "items": [{"text": r.subject, "link": r.link if str(r.link or "").startswith(
+	        "items": [{"text": r.subject, "link": r.link if on and str(r.link or "").startswith(
 	                       "/hrms-employee?grooming=") else None,
 	                   "when": "{0} {1}".format(_day(r.creation), str(r.creation)[11:16]),
 	                   "read": int(r.read or 0)} for r in shown[:max(1, min(cint(limit), 50))]]}

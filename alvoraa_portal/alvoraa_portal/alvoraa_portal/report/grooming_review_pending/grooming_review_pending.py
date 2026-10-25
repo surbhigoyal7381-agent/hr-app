@@ -31,7 +31,9 @@ def execute(filters=None):
 	rows = [{"employee": r.employee, "employee_name": r.employee_name, "why": _why(r),
 	         "raised_on": getdate(r.raised_on), "live": r.live}
 	        for r in grooming.pending_reviews(frappe.session.user, month)]
-	message = None if rows else _("No grooming review is pending.")
+	# Off is not "all clear" (switch review S-2): say which it is.
+	message = None if rows else (_("No grooming review is pending.") if grooming.is_on()
+	                             else _("Grooming reds are switched off."))
 	return columns, rows, message
 
 

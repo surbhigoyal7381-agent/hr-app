@@ -28,6 +28,31 @@ base: slice/070-readable-on-phone on origin/dev 6aaf9ffd (fetched again 25 Oct: 
 - **Size: M, top end.** ~580 lines added in `portal.js` (estimate was ~430). The extra is the
   OPS-S3 guard on 23 write callbacks and comments.
 
+## Review round 1 fixes (25 Oct 2026)
+
+| Finding | Fix | Proof |
+|---|---|---|
+| Reviewer M1 — Try again while the first leave send is still running could file two | `lsSend` keeps the timed-out request (`LS.inFlight`). While it runs, Try again only checks; nothing found → "Still no answer from the office.", no second send. It sends again only after that request has failed | jsdom: send held 17 s, Try again at 15.3 s with an empty list → 1 `apply_leave` |
+| Reviewer M2 — ~20 `gpFetch` saves unlocked at 15 s | **One rule in `gpFetch`, not 60 edits:** a write (named by its verb: save, create, update, delete, submit, approve, set, assign, post, mark …; full list in `WRITE_CALL`) never ends at 15 s. It waits for its real answer, exactly as before 070, so no `catch` can turn a button back on. The leave, expense and advance forms opt back in (`{lostAnswerHandled: true}`) because they handle a lost answer themselves. No signal still ends at once (nothing was sent). I printed how every `gpFetch` / `pf` / `acApi` / `aiApi` call is classed and checked the read list by hand; `sync_` and `unarchive_` were added after that check | jsdom: `set_org_setting` held 17 s does not end at 15 s and gets its real answer |
+| Reviewer m1 — the OPS-S3 test checked its own handler | The test taps the real "Submit Request" button of the attendance request and holds the answer 17 s. Removing the guards fails it (checked: 7 checks fail with the guards and the M1/M2 fixes removed) | jsdom |
+| Reviewer m2 — only a 3 s toast after a lost save | `sayMayHaveGone(r, button)` keeps the button off and puts a line beside it: "No answer from the office. It may have gone through. Look in your list before you send it again." `api()` remembers the button that was tapped; Check In passes its own button. A toast is left only where no button is known | jsdom + Chrome |
+| Security M1 — the check could read a stale pick | The check reads `args.on_behalf_of`, the id actually sent. `laSearchEmployee` also clears `LP.subject`, so the DTC form no longer sends for an employee the HR user searched away from | jsdom |
+| Security M2 — "inert" comment | Rewritten: the `<template>` only stops Frappe's own pop-up; it is not a safety boundary | — |
+| Dead `#live-date` lines; long comments | Removed; the `api()` and leave-send comments cut to the reasons | — |
+| D1 — squeezed failure box on the phone Leave page | `.leave-rings > .fail{grid-column:1 / -1}` | Chrome |
+
+**Round 1 checks run:** `git fetch origin dev` — nothing new. `check_app_integrity.py` OK.
+`check_attendance_strip.js` clean. All 14 jsdom suites pass (phone 070: 93 checks). Bench on
+test070: `test_leave_permissions` 12 OK, `test_portal_split_034` 12 OK, `test_panel_source_042`
+7 OK. Chrome at 390 px: leave send held past 15 s → Try again → "Still no answer from the
+office.", one `apply_leave` only; attendance request held past 15 s → button stays off with the
+lasting line under it; the Leave page box is the full 305 px width.
+
+**Trade-off to note:** `api()` writes keep the per-call guard (23 sites, already reviewed);
+`gpFetch` writes use the name rule. Two mechanisms for one rule — chosen so the reviewed
+`api()` code did not move again. A write whose name does not start with a listed verb would
+still end at 15 s; the list was checked against every call in `portal.js` today.
+
 ## What I built, file by file
 
 | File | What | Rung / why |

@@ -410,4 +410,9 @@ each). Flipping the box takes effect on the next request; no `clear-cache` is ne
 - **Release checklist: do not untick Disabled until ALV-215 is fixed, counsel has signed off the
   "Other" text, the fines and the retention periods, and Surbhi has said yes in writing.**
 
-**Tests.** See the run below.
+**Tests (test066g).** test_grooming_cap_066 40 OK (35 + the 5 switch tests); test_grooming_066
+64 + 1 OK (one run hit a single database deadlock error, most likely a background job on the same
+site; two re-runs were clean); test_pay_slip_marks_067 18 + 2, test_payroll_flags 9,
+test_payroll_reprocess 12, test_salary_report 12 + 4, test_portal_security_010 45 + 5: all OK.
+**The tests fail when the switch is broken:** with `is_on()` forced to True, all 5 switch tests
+failed. Integrity check OK.

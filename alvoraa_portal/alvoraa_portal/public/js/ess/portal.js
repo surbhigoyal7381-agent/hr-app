@@ -9443,9 +9443,10 @@ window.gmBellLoad = async function (open) {
   }
 };
 
-/* A network failure is a TypeError from fetch; anything else is the server
-   refusing, in a sentence worth showing as it is. */
-function gmIsNet(e) { return !e || e.name === "TypeError"; }
+/* No answer: gpFetch's lost calls carry `kind` (slice 070) - offline, network
+   or timeout. Anything else ("refused", "server") is the office answering, in
+   a sentence worth showing as it is. */
+function gmIsNet(e) { return !e || e.kind === "offline" || e.kind === "network" || e.kind === "timeout"; }
 
 function gmName(first) { return gpEsc(first || ""); }
 
@@ -9459,7 +9460,9 @@ window.gmToday = async function () {
   try {
     gmState.today = await gpFetch(GM + "today", {});
   } catch (e) {
-    el.innerHTML = "";
+    /* No answer: say so, with Try again - never a card that just vanishes. */
+    if (gmIsNet(e)) failBox(el, e, gmToday, function (d) { gmState.today = d; gmPaintToday(); });
+    else el.innerHTML = "";
     return;
   }
   gmPaintToday();

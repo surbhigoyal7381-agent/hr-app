@@ -119,6 +119,23 @@ Their 33 `gm` functions are still in `portal.js`. After the rebase: positions tr
 wall chart 183, DOM 13/13, handlers, undefined, tags, design, integrity all OK, and
 `test_unseated_071` 8 OK. 065-option-a and 072-seats-follow-reporting (renumbered from 070) are still not on `dev`.
 
+## After review (26 Oct)
+
+- Security F1/F2 fixed: `assign_person` and `what_they_hold` check the person's company and
+  branch as the seat's; one neutral refusal. 4 tests, all fail with the check removed.
+  Statements now 11 plain, 27 with a place (one read for the person).
+- Review m2 fixed: from the tray the share starts at the free part of the seat. m1 (two HR
+  people filling the last place at once) left as noted: temporary debt, Surbhi's call.
+- Rebased onto `57d1a157` (ALV-217 readable on phone, 9 commits: portal.js +785, frame.css,
+  three templates, leave tests, DOM runner). No conflicts. `gpFetch` now marks a lost call with
+  `kind` instead of a raw TypeError, so the "no answer" check reads `e.kind` (any kind but
+  `refused`); its checks were updated and fail when broken. 066's `gmIsNet` still tests
+  `TypeError` and may no longer see network errors: 066's to check, not changed here.
+- After the rebase: tree 220, wall chart 183, DOM 14/14 (incl. `portal_phone_070_test.js`),
+  handlers, undefined, integrity, tags, design OK; browser 56/56, trays 342/0, wall chart
+  browser passed; `test_unseated_071` 12 OK alone. Earlier on this code: fill_194 62,
+  register_194 38, security_010 45+5 OK.
+
 ## Environment
 
 Own containers `hrlocal-071` (bench), `hrlocal-071-redis`, `hrlocal-071-proxy`

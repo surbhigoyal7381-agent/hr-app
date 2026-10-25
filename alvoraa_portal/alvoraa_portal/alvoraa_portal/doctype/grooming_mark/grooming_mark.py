@@ -33,8 +33,10 @@ class GroomingMark(Document):
 	def validate(self):
 		# Two markers at the same moment (the manager today, HR on a past day)
 		# would both count 2 live marks and both pass the 3-mark stop. Locking
-		# the person's Employee row until this transaction ends makes the second
-		# wait and then count 3 (security verification M1).
+		# the person's Employee row makes the second wait; may_mark(locking=True)
+		# then counts the marks with a locking read, which sees the first one's
+		# committed mark (security M1 and its second look: a plain read used the
+		# transaction's older snapshot and let a 4th through).
 		frappe.db.get_value("Employee", self.employee, "name", for_update=True)
 		if self.reason not in grooming.REASONS:
 			refuse(_("Choose one of the reasons on the list."), "SEC-11", "Grooming Mark save",
@@ -43,7 +45,8 @@ class GroomingMark(Document):
 		self.other_reason = (grooming.clean_other(self.other_reason)
 		                     if self.reason == grooming.OTHER else None)
 		verdict = grooming.may_mark(self.employee, self.mark_date,
-		                            told_in_person=self.told_in_person or 0, exclude=self.name)
+		                            told_in_person=self.told_in_person or 0, exclude=self.name,
+		                            locking=True)
 		if not verdict.ok:
 			refuse(verdict.message, verdict.code, "Grooming Mark save", self.doctype, self.name)
 		self.marked_as = verdict.capacity

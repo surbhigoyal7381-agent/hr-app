@@ -281,7 +281,7 @@ def _hr_sql(user):
 
 # ── the facts the rules need, read once for many people ─────────────────────
 
-def _facts(employees, from_date, to_date, user):
+def _facts(employees, from_date, to_date, user, locking=False):
 	"""Everything `_decide` reads, for these people over these days, in a flat
 	number of queries (about eleven whether it is 1 person or 60).
 
@@ -320,9 +320,15 @@ def _facts(employees, from_date, to_date, user):
 	                                  "start_date": ("<=", to_date), "end_date": (">=", from_date)},
 	                         fields=["employee", "start_date", "end_date"])
 
-	f.marks = frappe.get_all(MARK, filters={"employee": ("in", ids), "docstatus": ("<", 2),
-	                                        "mark_date": ("between", [m_from, m_to])},
-	                         fields=["name", "employee", "mark_date", "docstatus"])
+	# `locking` when the record itself is being saved (security M1, second
+	# look): a locking read sees every COMMITTED mark, not the snapshot MariaDB
+	# froze at this transaction's first read - which was taken before the
+	# person's row lock was granted, so a mark committed while we waited was
+	# invisible and a 4th got through.
+	f.marks = frappe.db.get_values(MARK, {"employee": ("in", ids), "docstatus": ("<", 2),
+	                                      "mark_date": ("between", [m_from, m_to])},
+	                               ["name", "employee", "mark_date", "docstatus"], as_dict=True,
+	                               for_update=locking)
 
 	f.bases = {}
 	for a in frappe.get_all("Salary Structure Assignment",
@@ -456,14 +462,14 @@ def _decide(f, employee, d, told_in_person=None, exclude=None):
 	                    rate=rate, grade=grade, live=live, limit=limit, base=base, **out)
 
 
-def may_mark(employee, date, user=None, told_in_person=None, exclude=None):
+def may_mark(employee, date, user=None, told_in_person=None, exclude=None, locking=False):
 	"""May `user` mark `employee` for `date`? The only definition (SEC-1).
 
 	Returns a dict: `ok`, `capacity` ("Manager" or "HR") when there is one,
 	`code` and `message` when refused, and `has_login` when allowed.
 	"""
 	user = user or frappe.session.user
-	f = _facts([employee], date, date, user)
+	f = _facts([employee], date, date, user, locking=locking)
 	return _decide(f, employee, date, told_in_person=told_in_person, exclude=exclude)
 
 

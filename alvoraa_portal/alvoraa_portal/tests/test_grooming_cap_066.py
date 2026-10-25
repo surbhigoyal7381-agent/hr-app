@@ -557,3 +557,46 @@ class TestArchitectReviewFixes(Case):
 			frappe.db.set_value("Salary Component", payroll_slip.GROOMING_COMPONENT,
 			                    "depends_on_payment_days", 0)
 
+
+class TestTwoMarkersAtOnce(Case):
+	"""Security M1, second look (25 Oct 2026): a REAL race between two
+	processes. This process makes the 3rd mark and keeps its transaction open;
+	a second bench process reads (fixing its snapshot), then tries a 4th and
+	waits on the person's row lock. When this one commits, the second must see
+	the 3rd mark and be refused - not save a 4th from its old snapshot."""
+
+	def test_m1_the_second_of_two_simultaneous_marks_sees_the_first_and_stops(self):
+		import subprocess
+		import time
+		if TODAY.day < 4 or YESTERDAY in (M_START, add_days(M_START, 1)):
+			self.skipTest("needs two earlier days and yesterday in this month")
+		for i in range(2):
+			_raw_mark(P["Kiran"], add_days(M_START, i))
+		frappe.db.commit()                              # 2 live marks, seen by everyone
+		with as_user("Ritika"):                         # A: the 3rd, transaction left open
+			grooming.mark(P["Kiran"], "Not in uniform", told_in_person=1, date=str(YESTERDAY))
+		args = json.dumps({"user": user("Ravi"), "employee": P["Kiran"], "date": str(TODAY)})
+		b = subprocess.Popen(
+			["bench", "--site", frappe.local.site, "execute",
+			 "alvoraa_portal.tests.grooming_race_066.mark_as", "--kwargs", args],
+			cwd=frappe.utils.get_bench_path(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+			text=True)
+		lines = []
+		try:
+			for line in b.stdout:                       # wait until B has its snapshot
+				lines.append(line)
+				if "READY" in line:
+					break
+			time.sleep(3)                               # B is now waiting on the lock
+			frappe.db.commit()                          # A commits the 3rd mark
+			out, _err = b.communicate(timeout=180)
+		finally:
+			if b.poll() is None:
+				b.kill()
+		said = "".join(lines) + (out or "")
+		self.assertIn("RESULT refused", said, said[-600:])
+		live = frappe.db.sql("""select count(distinct mark_date) from `tabGrooming Mark`
+			where employee=%s and docstatus=1 and mark_date between %s and %s""",
+			(P["Kiran"], M_START, M_END))[0][0]
+		self.assertEqual(live, 3)
+

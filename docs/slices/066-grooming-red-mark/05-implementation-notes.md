@@ -416,3 +416,25 @@ site; two re-runs were clean); test_pay_slip_marks_067 18 + 2, test_payroll_flag
 test_payroll_reprocess 12, test_salary_report 12 + 4, test_portal_security_010 45 + 5: all OK.
 **The tests fail when the switch is broken:** with `is_on()` forced to True, all 5 switch tests
 failed. Integrity check OK.
+
+### Switch review fixes (25 Oct 2026)
+
+- **S-1 (P2).** A draft slip saved while grooming was on kept its grooming line and could be
+  submitted after the switch went off, with the person's Ask HR unanswerable. Now, while off,
+  the submit check refuses a slip that still carries the engine's grooming line: "Grooming reds
+  are switched off. Save this slip again to drop the grooming line." Saving again drops it (the
+  test proves both). An open Ask HR alone still holds nothing. A grooming line HR typed by hand
+  is not the engine's and is left alone. Surbhi's reading: a fine nobody can contest must not
+  slip through.
+- **S-2 (P3).** While off, the Grooming Review Pending report says "Grooming reds are switched
+  off." instead of "No grooming review is pending."
+- **S-3 (P3).** While off, old portal bell notices still show their words but open nothing.
+  *Left as is:* the same notices in the desk bell keep their link and open a month with no
+  grooming section; changing them would mean editing old Notification Log rows.
+
+Each fix has a test (`test_s1_...`, `test_s2_s3_...`); with the three fixes removed, both tests
+failed; restored, all 7 switch tests pass.
+
+Re-run on test066g, one module at a time: cap 42, grooming 64 + 1, 067 18 + 2, payroll month 29,
+rules 76, flags 9, reprocess 12, salary report 12 + 4, portal security 45 + 5. **319 run, 0
+failed, no deadlock.** Integrity check OK.

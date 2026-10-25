@@ -30,6 +30,16 @@ AFTER_SUBMIT = ("asked_on", "kept_by", "kept_on", "removal_reason", "raised_on",
 
 
 class GroomingMark(Document):
+	# The erase writes no "Deleted" comment (the side-record guard refuses one).
+	no_feed_on_delete = True
+
+	def on_trash(self):
+		# Only the retention erase deletes a mark. Any other delete, even the
+		# Administrator's from the desk, would keep a full copy in Deleted Document.
+		if not self.flags.get(grooming.ERASE_FLAG):
+			frappe.throw(_("Grooming records are erased automatically 6 months after the person "
+			               "leaves. They cannot be deleted by hand."))
+
 	def validate(self):
 		# Two markers at the same moment (the manager today, HR on a past day)
 		# would both count 2 live marks and both pass the 3-mark stop. Locking

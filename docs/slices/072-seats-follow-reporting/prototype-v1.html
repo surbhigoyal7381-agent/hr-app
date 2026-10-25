@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>072 seats follow reporting - prototype v1 (sample data)</title>
+<!--
+  Slice 072 - Seats follow the reporting line. Prototype v1, 25 Oct 2026, hrms-ux-designer.
+  INVENTED DATA ONLY: invented names and company on DTC's shape (Owner, CFO, the shared
+  Back Office / Office Executive / MIS / Accountant seats, a deep store chain).
+  Not production code. The chart markup copies ocNodeCard/ocRender from portal.js and the
+  chart CSS from panels.css (slice 064, approved look prototype-old-v2), by way of the 069
+  prototype, so copies are drawn with the same boxes and lines as everything else.
+-->
+<style>
+/* ── Design-system tokens (design_system.html), light and dark ───────────── */
+:root{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);
+  --font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--r-full:999px;
+  /* --fs-xs is 11px in design_system.html; raised to 12 here for the 12 px floor (slice 009 decision 5, still open) */
+  --fs-xs:12px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px;
+  --r-xs:var(--r-sm);--accent:var(--primary);
+}
+:root[data-theme="dark"]{
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+  --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:var(--fs-base)}
+
+/* ── Review scaffolding (not part of the product). Wraps, never sticky. ──── */
+.rv{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 12px;background:#2D2622;color:#fff;font-size:13px}
+.rv b{font-weight:700}
+.rv label{display:inline-flex;gap:6px;align-items:center}
+.rv select{font:inherit;font-size:14px;min-height:36px;border-radius:6px;padding:2px 6px}
+.rv .tag{background:#FBF1E0;color:#94600F;border-radius:999px;padding:2px 8px;font-weight:700}
+
+/* ── Portal pieces used on Positions (panels.css, copied) ──────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--r-sm);font-size:var(--fs-base);font-weight:600;cursor:pointer;border:none;font-family:inherit;white-space:nowrap}
+.btn-primary{background:var(--primary);color:var(--surface);box-shadow:var(--sh2)}
+.btn-primary:hover{background:var(--primary-h)}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}
+.btn-outline:hover{background:var(--primary-lt)}
+.btn-sm{padding:6px 13px;font-size:var(--fs-sm);border-radius:var(--r-xs)}
+.btn:focus-visible,.pos-link:focus-visible,select:focus-visible,input:focus-visible+span{outline:3px solid var(--primary);outline-offset:2px}
+.pf-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.pf-h{font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.pf-sub{font-size:var(--fs-sm);color:var(--text3);margin-top:2px}
+.pf-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);box-shadow:var(--sh1);padding:16px 18px;margin-bottom:12px}
+.gp-label{display:block;font-size:var(--fs-xs);font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.gp-input{width:100%;padding:9px 12px;border:1.5px solid var(--border2);border-radius:var(--r-xs);background:var(--surface);color:var(--text);font-size:var(--fs-base);font-family:inherit}
+.oc-stats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.oc-stat{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r);padding:8px 14px;min-width:112px;background:var(--surface)}
+.oc-stat .n{font-size:var(--fs-lg);font-weight:700;line-height:1.1}
+.oc-stat .l{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-top:3px}
+.oc-stat.tone-medium{border-left-color:var(--amber);background:rgba(217,119,6,.05)}
+.pos-link{border:0;background:none;color:var(--primary);padding:4px 2px;text-decoration:underline;min-height:28px;cursor:pointer;font:inherit}
+
+/* the chart (panels.css 2023-2069, 2115-2140, 2177-2193) */
+.oc-tree{overflow-x:auto;padding:4px 2px 24px;display:flex;justify-content:flex-start}
+.oc-tree > .oc-branch{margin-inline:auto}
+.oc-branch{display:flex;flex-direction:column;align-items:center;position:relative}
+.oc-kids{display:flex;gap:18px;padding-top:22px;position:relative}
+.oc-kids::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;background:var(--border)}
+.oc-kids > .oc-branch::before{content:"";position:absolute;top:-22px;left:50%;width:1px;height:22px;background:var(--border)}
+.oc-kids > .oc-branch::after{content:"";position:absolute;top:-22px;left:-9px;right:-9px;height:1px;background:var(--border)}
+.oc-kids > .oc-branch:first-child::after{left:50%}
+.oc-kids > .oc-branch:last-child::after{right:50%}
+.oc-kids > .oc-branch:only-child::after{display:none}
+.oc-node{position:relative;display:flex;flex-direction:column;align-items:center}
+.oc-box{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r);padding:10px 12px;min-width:196px;max-width:240px;cursor:pointer;color:var(--text)}
+.oc-node.root > .oc-box{border-color:var(--accent);box-shadow:var(--sh1)}
+.oc-box-hd{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.oc-box-hd .ti{font-size:var(--fs-base);font-weight:650;color:var(--text);line-height:1.3}
+.oc-box .sub{font-size:var(--fs-xs);color:var(--text3);margin-top:1px}
+.oc-who{display:flex;gap:7px;align-items:center;margin-top:8px;font-size:var(--fs-sm);color:var(--text)}
+.oc-who .av{width:24px;height:24px;border-radius:50%;flex:none;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);font-weight:700;color:var(--text3)}
+.oc-who.oc-empty{color:var(--text3);font-style:italic}
+.oc-toggle{margin-top:-1px;position:relative;z-index:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-full);color:var(--text3);font:inherit;font-size:var(--fs-sm);line-height:1;padding:3px 9px;cursor:pointer;display:flex;gap:5px;align-items:center;min-height:24px}
+.oc-tag{display:inline-block;font-size:var(--fs-xs);font-weight:700;letter-spacing:.03em;padding:1px 6px;border-radius:var(--r);margin-left:6px;vertical-align:middle}
+.oc-tag.v{background:var(--red-lt);color:var(--red)}
+.oc-hang{position:relative;display:flex;flex-direction:column}
+.oc-hang::after{content:"";position:absolute;top:0;left:10px;right:50%;height:1px;background:var(--border)}
+.oc-hang-item{position:relative;padding:8px 0 0 24px}
+.oc-hang-item::before{content:"";position:absolute;top:0;left:10px;width:1px;height:100%;background:var(--border)}
+.oc-hang-item:last-child::before{height:calc(50% + 4px)}
+.oc-hang-item::after{content:"";position:absolute;top:calc(50% + 4px);left:10px;width:14px;height:1px;background:var(--border)}
+.pos-nomgr-row{display:flex;justify-content:flex-end;margin:0 0 8px}
+.pos-nomgr{border-style:dashed;max-width:260px}
+.oc-fam{position:relative;display:flex;flex-direction:column;align-items:flex-start;padding:0 20px}
+.oc-fam > .oc-kids::after{content:"";position:absolute;left:-10px;top:0;bottom:0;width:1px;background:var(--border)}
+.oc-fam > .oc-kids > .oc-branch:first-child::after{left:-10px}
+.oc-fam > .oc-kids > .oc-branch:only-child::after{display:block;left:-10px;right:50%}
+.oc-hang.under{margin-left:-20px;padding-top:14px}
+.oc-hang.under::after{display:none}
+.oc-hang.under::before{content:"";position:absolute;top:0;left:10px;width:1px;height:14px;background:var(--border)}
+.oc-zoom{display:flex;flex:none;margin-inline:auto}
+.oc-zoom > .oc-branch{margin-inline:auto}
+.pos-ztools{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:0 0 10px}
+.pos-zpct{min-width:44px;text-align:center;font-weight:600}
+.pos-ztools .btn{min-height:30px}
+.oc-box.tone-medium{border-left-color:var(--amber);background:rgba(217,119,6,.05)}
+.oc-flags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.oc-flag{font-size:var(--fs-xs);font-weight:650;letter-spacing:.02em;padding:1px 6px;border-radius:var(--r-full);border:1px solid transparent}
+.oc-flag.medium{background:rgba(217,119,6,.12);color:var(--amber);border-color:rgba(217,119,6,.24)}
+
+/* the existing tray component (.pos-sheet), reused for the panel */
+.pos-scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1149}
+.pos-sheet{position:fixed;top:0;right:0;bottom:0;width:460px;max-width:100%;background:var(--surface);z-index:1150;box-shadow:var(--sh3);display:flex;flex-direction:column;color:var(--text)}
+.pos-sheet .sh-h{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.pos-sheet h2{font-size:var(--fs-lg);margin:0}
+.pos-sheet .sh-b{padding:14px 16px;overflow:auto;flex:1}
+.pos-sheet .sh-f{padding:12px 16px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.pos-sheet .su{color:var(--text3);font-size:var(--fs-sm)}
+.pos-note{background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px;margin:10px 0;font-size:var(--fs-base);line-height:1.45}
+.pos-note.amber{background:var(--amber-lt)}
+.pos-note.info{background:var(--primary-lt)}
+.pos-note p{margin:0}
+.pos-note p + p{margin-top:6px}
+
+/* ── New for 069: only what the panel needs ──────────────────────────────
+   Native selects and radios; the paper choice is a row of radio "chips". */
+.wcp-field{margin:14px 0 0}
+.wcp-field > .gp-label{margin-bottom:6px}
+.wcp-field select{min-height:36px}
+.wcp-chips{display:flex;flex-wrap:wrap;gap:6px}
+.wcp-chip{position:relative}
+.wcp-chip input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.wcp-chip span{display:inline-flex;align-items:center;justify-content:center;min-width:52px;min-height:36px;padding:0 12px;border:1.5px solid var(--border2);border-radius:var(--r-sm);font-weight:600;background:var(--surface);color:var(--text)}
+.wcp-chip input:checked + span{border-color:var(--primary);background:var(--primary-lt);color:var(--primary)}
+.wcp-radio{display:flex;gap:10px;align-items:flex-start;padding:8px 0;min-height:36px;cursor:pointer}
+.wcp-radio input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--primary);flex:none}
+.wcp-radio small{display:block;color:var(--text3);font-size:var(--fs-sm)}
+.wcp-hint{color:var(--text3);font-size:var(--fs-sm);margin-top:4px}
+.wcp-result{border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-top:16px;background:var(--surface2)}
+.wcp-result .big{font-size:var(--fs-md);font-weight:700}
+.wcp-result.warn{border-color:var(--amber);background:var(--amber-lt)}
+.wcp-result .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.wcp-mark{font-weight:700}
+.wcp-sample{display:inline-block;font-size:var(--fs-xs);font-weight:700;background:var(--amber-lt);color:var(--amber);border-radius:var(--r-full);padding:1px 8px;margin-left:6px;vertical-align:middle}
+
+/* print preview stand-in (in the product: the browser's own window) */
+.pv{position:fixed;inset:0;z-index:1300;background:#525659;display:flex;flex-direction:column;color:#fff}
+.pv-top{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:10px 14px;background:#323639;font-size:13px}
+.pv-top b{font-size:14px}
+.pv-main{flex:1;display:flex;min-height:0}
+.pv-stage{flex:1;overflow:auto;padding:16px;min-width:0}
+.pv-side{width:300px;flex:none;background:#fff;color:#2D2622;padding:16px;overflow:auto;font-size:13px}
+.pv-side dl{margin:0 0 12px;display:grid;grid-template-columns:auto 1fr;gap:8px 12px}
+.pv-side dt{color:#5A544E}
+.pv-side dd{margin:0;font-weight:600}
+.pv-side .note{background:#EDEAF4;border-radius:6px;padding:8px 10px;margin:10px 0;line-height:1.45}
+.pv-side .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pv-side .btn-outline{color:#5B4B8A;border-color:#5B4B8A}
+.pv-side .btn-primary{background:#5B4B8A;color:#fff}
+.pv-grid{display:grid;gap:14px;width:max-content;margin:0 auto}
+.paper{background:#fff;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.5)}
+.paper .clip{position:absolute;overflow:hidden}
+.paper .foot{position:absolute;left:0;right:0;color:#2D2622;font-family:var(--font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pv-label{color:#fff;font-size:12px;margin-top:4px;text-align:center}
+.pv-toast{background:#1B7F5A;color:#fff;padding:10px 14px;font-size:13px}
+
+/* ── The paper. Always light: a wall chart is printed on white, whatever
+   the screen theme. Uses the SAME chart markup and lines as the screen. ── */
+.wc{--surface:#fff;--border:#8F8880;--text:#2D2622;--text3:#4A443F;--accent:#5B4B8A;--bg:#fff;background:#fff;color:#2D2622;font-family:var(--font);display:inline-block;width:max-content;padding:8px;font-size:13px;line-height:1.25}
+.wc .oc-box .sub{line-height:1.3}
+.wc .oc-box-hd{display:block}
+.wc .oc-box{cursor:default;box-shadow:none;border-left-width:1px;padding:7px 9px;width:200px;min-width:200px;max-width:none}
+.wc .oc-node.root > .oc-box{border:2px solid #5B4B8A}
+.wc .oc-box-hd .ti{font-size:14px}
+.wc .oc-box .sub{font-size:11px}
+.wc .nm{margin-top:4px;font-size:13px;line-height:1.25;column-gap:14px}
+.wc .nm div{break-inside:avoid}
+.wc .vac{margin-top:4px;font-size:13px;font-style:italic;color:#4A443F}
+.wc .below{margin-top:4px;padding-top:4px;border-top:1px solid #D8D3CC;font-size:11px;color:#4A443F}
+/* the wrap: a long column of seats with nobody under them becomes several
+   columns side by side, so the chart takes the paper's shape */
+.wc .oc-hang.wrap{display:grid;grid-auto-flow:column;column-gap:20px}
+.wc .oc-hang.wrap::after{display:none}
+.wc .oc-hang-item{padding-top:8px}
+.wc .oc-hang-item::after{top:25px}
+.wc .oc-hang-item.ce::before{height:26px}
+.wc .oc-hang-item:last-child::before{height:26px}
+.wc .wc-bar{position:absolute;height:1px;background:var(--border)}
+.wc .wc-roots{display:grid;grid-auto-flow:column;gap:12px 16px;align-items:start}
+
+/* ── Phone. In the product these are @media (max-width:640px) rules; the
+   script copies them under .phone for the Device switch (ux-learnings). ── */
+@media (max-width:640px){
+  #pos-body .oc-kids{flex-direction:column;align-items:center;gap:10px}
+  #pos-body .oc-kids::before,#pos-body .oc-kids > .oc-branch::before,#pos-body .oc-kids > .oc-branch::after{display:none}
+  #pos-body .oc-box{min-width:0;width:100%;max-width:none}
+  #pos-body .oc-node,#pos-body .oc-branch{align-items:stretch;width:100%}
+  #pos-body .oc-fam{padding:0;align-items:stretch;width:100%}
+  #pos-body .oc-hang.under{margin-left:0}
+  #pos-body .oc-hang-item{padding:10px 0 0}
+  #pos-body .oc-fam > .oc-kids::after,#pos-body .oc-fam > .oc-kids > .oc-branch::after,#pos-body .oc-hang::before,#pos-body .oc-hang::after,#pos-body .oc-hang-item::before,#pos-body .oc-hang-item::after{display:none}
+  #pos-body .oc-zoom{flex-direction:column;align-items:stretch;flex:1 1 auto}
+  #pos-body .pos-ztools .btn,#pos-body .oc-toggle{min-height:44px;min-width:44px}
+  #page{padding:12px}
+  .pf-toolbar .tb-acts{width:100%;flex-direction:column}
+  .pf-toolbar .tb-acts .btn{width:100%;min-height:44px}
+  .pos-link{min-height:44px}
+  #page .pf-card select{min-height:44px;font-size:16px}
+  .pos-sheet{left:0;right:0;top:auto;width:100%;max-height:88%;border-radius:var(--r) var(--r) 0 0}
+  .pos-sheet .btn{min-height:44px}
+  .pos-sheet select{min-height:44px;font-size:16px}
+  .wcp-chip span{min-height:44px;min-width:56px}
+  .wcp-radio{min-height:44px}
+  .rv select{min-height:44px}
+  .pv-main{flex-direction:column}
+  .pv-side{width:auto}
+  .pv-side .btn{min-height:44px}
+  .pv-top .btn{min-height:44px}
+}
+
+/* ── Page frame (simplified portal) ─────────────────────────────────────── */
+#app{position:relative}
+#app.phone{width:390px;height:844px;margin:16px auto;border:1px solid var(--border2);border-radius:18px;overflow:hidden;transform:translateZ(0)}
+#app.phone #scroll{height:100%;overflow:auto}
+.topbar{display:flex;align-items:center;gap:10px;height:56px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border);font-weight:700;font-size:var(--fs-md)}
+#page{padding:24px;max-width:1200px;margin:0 auto}
+.tb-acts{display:flex;gap:8px;flex-wrap:wrap}
+#measure{position:absolute;left:-100000px;top:0;visibility:hidden}
+
+/* ── New for 072: only what a copy needs ─────────────────────────────────
+   A copy is the same box with a dashed border and one quiet line of words.
+   Never colour alone: the words say it. */
+.oc-box.copy{border-style:dashed;border-left-style:dashed;border-left-width:1px}
+.oc-same{display:flex;gap:6px;align-items:flex-start;margin-top:8px;font-size:var(--fs-sm);color:var(--text3);line-height:1.35}
+.oc-same svg{flex:none;margin-top:2px}
+.oc-box.rel{outline:2px dashed var(--primary);outline-offset:2px}
+.view-note{font-size:var(--fs-sm);color:var(--text2);margin:0 0 10px;line-height:1.45;max-width:760px}
+.pos-places{list-style:none;margin:6px 0 0;padding:0}
+.pos-places li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}
+.pos-places li:first-child{border-top:0}
+.pos-places .this{font-size:var(--fs-xs);font-weight:700;color:var(--primary);background:var(--primary-lt);border-radius:var(--r-full);padding:1px 8px;margin-left:6px;white-space:nowrap}
+.pos-h3{font-size:var(--fs-md);margin:16px 0 4px}
+.pos-prow{padding:6px 0;border-top:1px solid var(--border)}
+.pos-prow .su{display:block}
+.pos-facts{display:flex;gap:24px;margin:10px 0}
+.pos-facts b{font-size:var(--fs-lg)}
+.empty-state{text-align:center;padding:32px 16px;color:var(--text2);line-height:1.5}
+.empty-state .btn{margin-top:12px}
+.wc .oc-same{font-size:11px;color:#4A443F;margin-top:4px;padding-top:4px;border-top:1px solid #D8D3CC}
+.wc .oc-box.copy{border-style:dashed}
+@media (max-width:640px){
+  .pos-places .btn,.empty-state .btn{min-height:44px}
+  .rv label{width:100%}
+}
+#page{padding:24px;max-width:1200px;margin:0 auto}
+</style>
+</head>
+<body>
+<div class="rv" aria-label="Review controls, not part of the product">
+  <b>072 seats follow reporting · prototype v1</b>
+  <span class="tag">Sample data: invented names on DTC's shape</span>
+  <label>Person <select id="rv-who">
+    <option value="hr">Ritika, HR Manager (whole company)</option>
+    <option value="noida">Store reader (Branch permission: Noida)</option>
+  </select></label>
+  <label>Device <select id="rv-dev"><option value="desk">Desktop 1440</option><option value="phone">Phone 390</option></select></label>
+  <label>Theme <select id="rv-theme"><option value="">Light</option><option value="dark">Dark</option></select></label>
+  <label>Jump to <select id="rv-state">
+    <option value="">Chart as it opens</option>
+    <option value="cfo">CFO opened: his own seats and the copies</option>
+    <option value="bo">Back Office opened: copy under a seat below it</option>
+    <option value="chain">Deep store chain opened</option>
+    <option value="hover">Hover on a copy: its other places light up</option>
+    <option value="tray-bo">Tray: Back Office (3 places)</option>
+    <option value="tray-mis">Tray: MIS (home has nobody, keeps the vacancy)</option>
+    <option value="tray-aud">Tray: Store Auditor (home not drawn)</option>
+    <option value="branch">Arrange by Branch (no copies)</option>
+    <option value="print">Wall chart: All on A1</option>
+    <option value="empty">Empty: no seats yet</option>
+    <option value="error">Error: chart could not load</option>
+  </select></label>
+</div>
+
+<div id="app"><div id="scroll">
+  <div class="topbar">Positions</div>
+  <div id="page">
+    <div class="pf-toolbar">
+      <div>
+        <div class="pf-h">Positions <span class="wcp-sample">Sample</span></div>
+        <div class="pf-sub">Every seat in the organisation, who is in it, and which are empty.</div>
+      </div>
+      <div class="tb-acts">
+        <button type="button" class="btn btn-outline btn-sm" id="wc-open" onclick="wcPreview()">Download wall chart (PDF)</button>
+        <button type="button" class="btn btn-primary btn-sm" id="add-btn">+ Add a seat</button>
+      </div>
+    </div>
+    <div id="pos-tiles" class="oc-stats"></div>
+    <div class="pf-card">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div><label class="gp-label" for="pos-f-arrange">Arrange by</label>
+          <select class="gp-input" id="pos-f-arrange" style="width:auto" onchange="VIEW=this.value;paintPage()">
+            <option value="reporting">Who reports to whom</option>
+            <option value="branch">Branch</option>
+            <option value="department">Department</option>
+          </select></div>
+      </div>
+    </div>
+    <div class="pf-card"><div id="pos-body"></div></div>
+  </div>
+</div>
+<div id="layer"></div>
+</div>
+<div id="measure"></div>
+
+<script>
+"use strict";
+/* ── Invented data on DTC's shape ─────────────────────────────────────────
+   A seat has a parent seat (reports_to_position) and a number of slots.
+   A person carries the seat their manager sits in, worked out by the server
+   from Employee "Reports To" (brief §4). That one field is all 072 adds. */
+var COMPANY = "Sample Retail Pvt Ltd", AS_AT = "25 Oct 2026";
+var FIRST = ["Aarav","Priya","Rohit","Neha","Vikram","Ananya","Karan","Sneha","Arjun","Pooja","Rahul","Kavya","Sanjay","Meera","Aditya","Divya","Manish","Ritu","Nikhil","Simran","Deepak","Isha","Amit","Nisha","Varun","Tanvi","Suresh","Anjali","Gaurav","Shreya","Harish","Payal","Mohit","Jyoti","Rakesh","Komal","Vivek","Swati","Ajay","Bhavna"];
+var LAST = ["Sharma","Verma","Gupta","Malhotra","Kapoor","Mehta","Arora","Bansal","Chopra","Saxena","Joshi","Khanna","Sethi","Bhatia","Agarwal","Tandon","Goel","Mittal","Sood","Grover","Ahuja","Bedi","Kohli","Nanda","Puri","Rana","Sahni","Taneja","Walia","Dhawan"];
+var pi = 0;
+function person() { var n = FIRST[(pi * 7) % FIRST.length] + " " + LAST[(pi * 11 + Math.floor(pi / 30)) % LAST.length]; pi++; return n; }
+var SEATS = [], BY = {}, SN = 0, SAME = { same: 1 };
+function seat(title, branch, dept, parent, slots) {
+  var s = { id: "S" + (++SN), title: title, branch: branch, dept: dept, parent: parent ? parent.id : null, slots: slots, people: [] };
+  SEATS.push(s); BY[s.id] = s; return s;
+}
+function add(s, n, mgr) {
+  for (var i = 0; i < n; i++) s.people.push({ name: person(), mgr: mgr === SAME ? s.id : (mgr && mgr.id) || null, noSeat: typeof mgr === "string" ? mgr : null });
+}
+(function build() {
+  var HO = "Head Office";
+  var top = seat("Owner", HO, "Management", null, 1); add(top, 1, null);
+  var cfo = seat("Chief Financial Officer", HO, "Accounts", top, 1); add(cfo, 1, top);
+  // Part A of the CFO fix: these 5 seats now hang under the CFO's seat as real seats.
+  [["Data Analyst", 1], ["Network Engineer", 1], ["Payroll Executive", 1], ["Payroll", 1], ["Reconcile", 2]].forEach(function (x) { var s = seat(x[0], HO, "Accounts", cfo, x[1]); add(s, x[1], cfo); });
+  var bo = seat("Back Office", HO, "Back Office", top, 36);
+  var boe = seat("Backoffice Executive", HO, "Back Office", bo, 1); add(boe, 1, bo);
+  add(bo, 22, top); add(bo, 6, cfo); add(bo, 7, boe);            // 35 people, 36 slots: 1 open
+  var acc = seat("Accountant", HO, "Accounts", bo, 5); add(acc, 4, bo); add(acc, 1, cfo);
+  [["Billing", 5], ["Data Entry", 8], ["Dispatch Clerk", 4], ["GST Executive", 3], ["Inventory Clerk", 4], ["Payroll Clerk", 2], ["Cash Handling", 2]].forEach(function (x) { var s = seat(x[0], HO, "Back Office", bo, x[1]); add(s, x[1], bo); });
+  seat("Audit Assistant", HO, "Back Office", bo, 1);              // vacant
+  var oe = seat("Office Executive", HO, "Back Office", top, 6); add(oe, 2, top); add(oe, 4, cfo);
+  var mis = seat("MIS", HO, "Back Office", top, 2); add(mis, 1, cfo); // 1 open, nobody at home
+  var rh = seat("Retail Head", "Noida", "Sales", top, 1); add(rh, 1, top);
+  var aud = seat("Store Auditor", "Noida", "Sales", top, 1); add(aud, 1, rh); // home not drawn
+  var smn = seat("Store Manager Noida", "Noida", "Sales", rh, 1); add(smn, 1, rh);
+  var smd = seat("Store Manager Delhi", "Delhi", "Sales", rh, 1); add(smd, 1, rh);
+  var cd = seat("Cashier Delhi", "Delhi", "Sales", smd, 4); add(cd, 4, smd);
+  var fs = seat("Floor Supervisor Noida", "Noida", "Sales", smn, 2); add(fs, 1, smn); add(fs, 1, SAME);
+  var sr = seat("Senior RSO Noida", "Noida", "Sales", fs, 6); add(sr, 6, fs);
+  var rso = seat("RSO Noida", "Noida", "Sales", sr, 31); add(rso, 23, sr); add(rso, 6, fs); add(rso, 1, smd); // 1 open
+  var ad = seat("Admin Head", HO, "Admin", top, 1); add(ad, 1, top);
+  [["Security Guard", 16], ["Housekeeping", 9], ["Driver", 2], ["Receptionist", 2]].forEach(function (x) { var s = seat(x[0], HO, "Admin", ad, x[1]); add(s, x[1], ad); });
+  var fm = seat("Facility Manager", HO, "Operations", top, 1); add(fm, 1, top);
+  var pk = seat("Packing", HO, "Operations", fm, 11); add(pk, 10, fm); add(pk, 1, "Neeraj Sood");
+  [["Alteration Tailor", 3], ["Stock Assistant", 6]].forEach(function (x) { var s = seat(x[0], HO, "Operations", fm, x[1]); add(s, x[1], fm); });
+  var hr = seat("HR Head", HO, "HR", top, 1); add(hr, 1, top);
+  var hre = seat("HR Executive", HO, "HR", hr, 2); add(hre, 2, hr);
+  ["Company Secretary", "IT Head", "Marketing Head"].forEach(function (t) { var s = seat(t, HO, "Management", top, 1); add(s, 1, top); });
+  seat("Legal Counsel", HO, "Management", top, 1);                // vacant
+})();
+var UNSEATED = { hr: 19, noida: 4 };
+
+/* ── State ─────────────────────────────────────────────────────────────── */
+var WHO = "hr", VIEW = "reporting", OPEN = {}, M = null, STATE = "";
+function mayEdit() { return WHO === "hr"; }
+function visibleRows() { return WHO === "hr" ? SEATS : SEATS.filter(function (s) { return s.branch === "Noida"; }); }
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function initials(n) { return n.split(" ").map(function (w) { return w[0]; }).join("").slice(0, 2); }
+function plural(n, one, many) { return n + " " + (n === 1 ? one : (many || one + "s")); }
+
+/* ── The model. The whole 072 rule is in this one function. ───────────────
+   Reporting view only: a person whose manager sits in a seat the reader can
+   see, other than this seat's parent and other than this seat itself, is
+   drawn in a COPY of the seat under the manager's seat. Everyone else stays
+   in the seat's own box ("home"). Copies never have children. Open slots and
+   child seats stay on the home box. The home box is not drawn only when it has
+   no people, no open slot and nothing under it. */
+function buildModel(rows, view) {
+  var vis = {}, N = {}, roots = [];
+  rows.forEach(function (r) { vis[r.id] = r; });
+  rows.forEach(function (r) { N[r.id] = { key: r.id, s: r, copy: false, people: [], kids: [], copies: [], open: Math.max(0, r.slots - r.people.length) }; });
+  rows.forEach(function (r) {
+    var g = {}, order = [];
+    r.people.forEach(function (p) {
+      var m = p.mgr;
+      if (view === "reporting" && m && m !== r.id && m !== r.parent && vis[m]) { if (!g[m]) { g[m] = []; order.push(m); } g[m].push(p); }
+      else N[r.id].people.push(p);
+    });
+    order.forEach(function (m) {
+      var c = { key: "c:" + r.id + ":" + m, s: r, copy: true, people: g[m], kids: [], copies: [], under: m, home: N[r.id] };
+      N[c.key] = c; N[r.id].copies.push(c);
+    });
+  });
+  rows.forEach(function (r) {
+    var n = N[r.id];
+    if (r.parent && vis[r.parent]) { n.up = r.parent; N[r.parent].kids.push(n); } else roots.push(n);
+    n.copies.forEach(function (c) { N[c.under].kids.push(c); });
+  });
+  rows.forEach(function (r) {
+    var n = N[r.id];
+    n.hidden = n.copies.length > 0 && !n.people.length && !n.open && !n.kids.length;
+  });
+  function drop(list) { return list.filter(function (k) { return !k.hidden; }); }
+  Object.keys(N).forEach(function (k) {
+    // Real seats first, then copies; each in the order the seat list has them.
+    N[k].kids = drop(N[k].kids).sort(function (a, b) { return (a.copy ? 1 : 0) - (b.copy ? 1 : 0); });
+  });
+  return { N: N, roots: drop(roots), vis: vis };
+}
+/* Branch and Department views: one box per seat, a reporting tree inside each
+   holder by seat parent only, exactly as today. */
+function buildHolders(rows, field) {
+  var m = buildModel(rows, "none"), by = {}, order = [];
+  rows.forEach(function (r) { var k = r[field] || ""; if (!(k in by)) { by[k] = []; order.push(k); } by[k].push(r); });
+  order.sort();
+  return order.map(function (k) {
+    var inside = {}; by[k].forEach(function (r) { inside[r.id] = 1; });
+    var kids = by[k].filter(function (r) { return !inside[r.parent]; }).map(function (r) { return m.N[r.id]; });
+    by[k].forEach(function (r) { m.N[r.id].kids = m.N[r.id].kids.filter(function (c) { return inside[c.s.id]; }); });
+    return { key: "h:" + k, holder: true, title: k, sub: (field === "branch" ? "Branch" : "Department") + " · " + plural(by[k].length, "seat"), kids: kids };
+  });
+}
+
+/* Words about where the rest of a seat is. Never names a seat the reader
+   cannot see (brief §3: a copy must not reveal a seat outside scope). */
+function parentWords(s) {
+  if (!s.parent) return "the top of the chart";
+  return M.vis[s.parent] ? BY[s.parent].title : "a seat above your view";
+}
+function elsewhere(home) {
+  return home.copies.length === 1 ? BY[home.copies[0].under].title : home.copies.length + " other managers";
+}
+function sameLine(text) {
+  return '<div class="oc-same"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor"/><rect x="4.5" y="0.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-dasharray="2 1.5"/></svg><span>' + esc(text) + "</span></div>";
+}
+function copyText(c) {
+  var all = c.s.people.length, home = c.home;
+  if (home.hidden) return "Set up under " + parentWords(c.s) + (all > c.people.length ? " · " + all + " in all" : "");
+  return "Same seat as under " + parentWords(c.s) + " · " + all + " in all";
+}
+function homeText(n) {
+  if (!n.copies.length || !n.people.length) return "";
+  var k = n.copies.reduce(function (a, c) { return a + c.people.length; }, 0);
+  return k + " more shown under " + elsewhere(n);
+}
+
+/* ── Screen card: ocNodeCard, with the two 072 lines added ──────────────── */
+var NAMES_SHOWN = 3;
+function card(n, root) {
+  if (n.holder) {
+    var o = !!OPEN[n.key];
+    return '<div class="oc-node"><button type="button" class="oc-box" style="text-align:left;font:inherit;width:100%" onclick="toggle(\'' + esc(n.key) + '\')">'
+      + '<div class="oc-box-hd"><span class="ti">' + esc(n.title) + '</span></div><div class="sub">' + esc(n.sub) + "</div></button>"
+      + '<button type="button" class="oc-toggle" aria-expanded="' + o + '" aria-label="' + (o ? "Hide" : "Show") + " the " + n.kids.length + " under " + esc(n.title) + '" onclick="toggle(\'' + esc(n.key) + '\')">' + (o ? "&minus;" : "+") + "<span>" + n.kids.length + "</span></button></div>";
+  }
+  var s = n.s, split = n.copy || n.copies.length > 0;
+  var shown = n.people.slice(0, NAMES_SHOWN), rest = n.people.length - shown.length;
+  var who;
+  if (n.people.length) {
+    who = shown.map(function (p) { return '<div class="oc-who"><span class="av" aria-hidden="true">' + esc(initials(p.name)) + "</span><span>" + esc(p.name) + "</span></div>"; }).join("")
+      + (rest > 0 ? '<div class="oc-who"><span class="av" aria-hidden="true">+</span><span>+' + rest + (split ? " more here" : " more in this seat") + "</span></div>" : "");
+  } else if (n.copies.length) {
+    who = '<div class="oc-who oc-empty"><span class="av" aria-hidden="true">&mdash;</span><span>None here: all ' + s.people.length + " shown under " + esc(elsewhere(n)) + "</span></div>";
+  } else {
+    who = '<div class="oc-who oc-empty"><span class="av" aria-hidden="true">&mdash;</span><span>Nobody in this seat</span></div>';
+  }
+  var sub = [s.branch];
+  if (!n.copy && s.slots > 1) sub.push((s.people.length) + " of " + s.slots + " filled");
+  if (n.copy) sub.push(plural(n.people.length, "person", "people"));   // Surbhi's words: "Office Executive - 4 people"
+  if (!n.copy && s.parent && !M.vis[s.parent]) sub.push("reports above your view");
+  var openTag = (!n.copy && n.open) ? '<span class="oc-tag v">' + (n.open === 1 ? "open" : n.open + " open") + "</span>" : "";
+  var line = n.copy ? sameLine(copyText(n)) : (homeText(n) ? sameLine(homeText(n)) : "");
+  var tog = "";
+  if (!n.copy && n.kids.length) {
+    var o = !!OPEN[n.key];
+    tog = '<button type="button" class="oc-toggle" aria-expanded="' + o + '" aria-label="' + (o ? "Hide" : "Show") + " the " + n.kids.length + " under " + esc(s.title) + '" onclick="toggle(\'' + n.key + '\')">' + (o ? "&minus;" : "+") + "<span>" + n.kids.length + "</span></button>";
+  }
+  return '<div class="oc-node' + (root ? " root" : "") + '"><button type="button" class="oc-box' + (n.copy ? " copy" : "") + '" data-key="' + esc(n.key) + '"' + (split && VIEW === "reporting" ? ' data-seat="' + s.id + '"' : "")
+    + ' style="text-align:left;font:inherit;width:100%" onclick="seatTray(\'' + esc(n.key) + '\')">'
+    + '<div class="oc-box-hd"><span class="ti">' + esc(s.title) + "</span>" + openTag + "</div>"
+    + '<div class="sub">' + esc(sub.join(" · ")) + "</div>" + who + line + "</button>" + tog + "</div>";
+}
+function render(n, root) {
+  var kids = "", list = n.kids || [];
+  if (OPEN[n.key] && list.length) {
+    var row = list.filter(function (k) { return k.kids && k.kids.length; }), hang = list.filter(function (k) { return !(k.kids && k.kids.length); });
+    if (hang.length < 3) { row = list; hang = []; }
+    var items = hang.map(function (c) { return '<div class="oc-hang-item">' + card(c, false) + "</div>"; }).join("");
+    kids = (hang.length && row.length)
+      ? '<div class="oc-fam"><div class="oc-kids">' + row.map(function (c) { return render(c, false); }).join("") + '</div><div class="oc-hang under">' + items + "</div></div>"
+      : '<div class="oc-kids">' + row.map(function (c) { return render(c, false); }).join("") + (hang.length ? '<div class="oc-branch oc-hang-slot"><div class="oc-hang">' + items + "</div></div>" : "") + "</div>";
+  }
+  return '<div class="oc-branch">' + card(n, root) + kids + "</div>";
+}
+
+/* ── Page ──────────────────────────────────────────────────────────────── */
+var NOTE = {
+  reporting: "Each person is shown under the seat of their manager, as set in Reports To on their employee record. A seat shared by people with different managers shows once under each manager. Open slots and the seats under it stay on the seat's own box.",
+  other: "One box per seat, with everyone in it. To see people under their managers, choose Arrange by: Who reports to whom."
+};
+window.paintPage = function () {
+  var rows = visibleRows();
+  M = buildModel(rows, "reporting");
+  var people = rows.reduce(function (a, r) { return a + r.people.length; }, 0);
+  var open = rows.reduce(function (a, r) { return a + Math.max(0, r.slots - r.people.length); }, 0);
+  document.getElementById("pos-tiles").innerHTML =
+    '<div class="oc-stat"><div class="n">' + rows.length + '</div><div class="l">Seats</div></div>'
+    + '<div class="oc-stat"><div class="n">' + people + '</div><div class="l">People in seats</div></div>'
+    + '<div class="oc-stat tone-medium"><div class="n">' + open + '</div><div class="l">To fill</div></div>'
+    + '<div class="oc-stat tone-medium"><div class="n">' + UNSEATED[WHO] + '</div><div class="l">In no seat</div></div>';
+  document.getElementById("add-btn").style.display = mayEdit() ? "" : "none";
+  var body = document.getElementById("pos-body");
+  if (STATE === "empty") { document.getElementById("pos-tiles").innerHTML = ""; body.innerHTML = emptyHtml(); return; }
+  if (STATE === "error") { document.getElementById("pos-tiles").innerHTML = ""; body.innerHTML = errorHtml(); return; }
+  var tools = '<div class="pos-ztools" role="group" aria-label="Zoom"><button type="button" class="btn btn-outline btn-sm" aria-label="Zoom out">&minus;</button><span class="pos-zpct">100%</span><button type="button" class="btn btn-outline btn-sm" aria-label="Zoom in">+</button><button type="button" class="btn btn-outline btn-sm">Reset</button><button type="button" class="btn btn-outline btn-sm">Fit to width</button></div>';
+  var chart;
+  if (VIEW === "reporting") {
+    M.roots.forEach(function (r) { if (OPEN[r.key] === undefined) OPEN[r.key] = true; });
+    chart = M.roots.length === 1 ? render(M.roots[0], true) : M.roots.map(function (n) { return render(n, false); }).join("");
+  } else {
+    chart = buildHolders(rows, VIEW === "branch" ? "branch" : "dept").map(function (h) { return render(h, true); }).join("");
+  }
+  var nm = WHO === "hr" && VIEW === "reporting" ? '<div class="pos-nomgr-row"><button type="button" class="oc-box pos-nomgr"><div class="oc-box-hd"><span class="ti">No reporting manager</span></div><div class="sub">Not in any seat, and no manager on their record</div><div class="oc-flags"><span class="oc-flag medium">' + UNSEATED.hr + ' people</span></div></button></div>' : "";
+  body.innerHTML = '<p class="view-note">' + esc(VIEW === "reporting" ? NOTE.reporting : NOTE.other) + "</p>" + tools + nm
+    + '<div style="overflow-x:auto" class="tree-wrap"><div class="oc-tree"><div class="oc-zoom"' + (M.roots.length > 1 && VIEW === "reporting" ? ' style="gap:16px;flex-wrap:wrap"' : "") + ">" + chart + "</div></div></div>";
+};
+window.toggle = function (key) { OPEN[key] = !OPEN[key]; paintPage(); var b = document.querySelector('[data-key="' + key + '"]'); if (b) b.focus(); };
+
+function emptyHtml() {
+  if (!mayEdit()) return '<div class="empty-state"><strong>No seats yet</strong><br>Nobody has set up your organisation\'s structure yet. Whoever maintains it in your organisation does that - ask them.</div>';
+  return '<div class="empty-state"><strong>No seats yet</strong><br>A seat is a job in your organisation - "Cashier, Noida" - whether somebody is in it or not. An empty seat is how a vacancy shows up here instead of in somebody\'s head.'
+    + '<div><button type="button" class="btn btn-primary btn-sm">Build it from your people</button></div></div>';
+}
+function errorHtml() {
+  return '<div class="empty-state" role="alert"><strong>The chart did not load</strong><br>Nothing has changed in your seats or your people. Check your connection, then try again. If it keeps happening, tell your administrator: code POS-LOAD.'
+    + '<div><button type="button" class="btn btn-outline btn-sm" onclick="STATE=\'\';paintPage()">Try again</button></div></div>';
+}
+
+/* ── Hover and focus: the other places of the same seat light up ────────── */
+function relate(e, on) {
+  var b = e.target.closest && e.target.closest(".oc-box[data-seat]");
+  [].forEach.call(document.querySelectorAll(".oc-box.rel"), function (x) { x.classList.remove("rel"); });
+  if (!b || !on) return;
+  [].forEach.call(document.querySelectorAll('.oc-box[data-seat="' + b.getAttribute("data-seat") + '"]'), function (x) { x.classList.add("rel"); });
+}
+document.addEventListener("mouseover", function (e) { relate(e, true); });
+document.addEventListener("focusin", function (e) { relate(e, true); });
+
+/* ── The seat tray (posSeatSheet), with "Where it shows on this chart" ──── */
+function mgrOf(p, s) {
+  if (p.noSeat) return p.noSeat + ", who is in no seat";
+  if (!p.mgr) return null;
+  var m = BY[p.mgr];
+  if (!M.vis[p.mgr]) return "a manager outside your view";
+  var cand = m.people.filter(function (q) { return q !== p; });
+  var who = cand.length ? cand[s.people.indexOf(p) % cand.length].name : "nobody";
+  return who + (p.mgr === s.id ? ", also in this seat" : " (" + m.title + ")");
+}
+window.seatTray = function (key, from) {
+  var n = M.N[key];
+  if (!n) return;
+  var s = n.s, home = n.copy ? n.home : n, open = home.open;
+  var b = '<div class="su">' + esc(s.branch + " · " + s.dept + " · " + (s.parent ? "set up under " + parentWords(s) : "top of the chart")) + "</div>"
+    + '<div class="pos-facts"><div><b>' + s.people.length + " of " + s.slots + '</b><div class="su">filled</div></div><div><b>' + (open || "None") + '</b><div class="su">to fill</div></div></div>';
+  if (VIEW === "reporting" && home.copies.length) {
+    var places = [];
+    if (!home.hidden) places.push({ key: home.key, text: "Under " + parentWords(s) + ": its own box, " + plural(home.people.length, "person", "people") + (open ? ", " + open + " open" : "") + (home.kids.length ? ", " + plural(home.kids.filter(function (k) { return !k.copy; }).length, "seat") + " under it" : "") });
+    home.copies.forEach(function (c) { places.push({ key: c.key, text: "Under " + BY[c.under].title + ": " + plural(c.people.length, "person", "people") }); });
+    b += '<h3 class="pos-h3" id="tray-places">Where it shows on this chart</h3><ul class="pos-places" aria-labelledby="tray-places">'
+      + places.map(function (p) { return "<li><span>" + esc(p.text) + (p.key === key ? '<span class="this">You opened this one</span>' : "") + '</span><button type="button" class="btn btn-outline btn-sm" onclick="showPlace(\'' + p.key + '\')" aria-label="Show it on the chart: ' + esc(p.text) + '">Show</button></li>'; }).join("") + "</ul>";
+    if (home.hidden) b += '<p class="su">Its own box under ' + esc(parentWords(s)) + " is not drawn: nobody there reports along that line, no slot is open and no seat hangs under it.</p>";
+    b += '<div class="pos-note info"><p>People are placed by Reports To on their employee record. To move someone, change their Reports To; the chart follows the next time it opens. The seat itself stays under ' + esc(parentWords(s)) + ".</p></div>";
+  }
+  b += '<h3 class="pos-h3">Who is in it</h3>';
+  if (!s.people.length) b += '<p class="su">Nobody is in this seat.</p>';
+  b += s.people.map(function (p) { var m = mgrOf(p, s); return '<div class="pos-prow">' + esc(p.name) + (m ? '<span class="su">Reports to ' + esc(m) + "</span>" : '<span class="su">No manager on their record</span>') + "</div>"; }).join("");
+  var f = mayEdit() ? '<button type="button" class="btn btn-outline btn-sm">Change this seat</button>' : "";
+  var layer = document.getElementById("layer");
+  layer.innerHTML = '<div class="pos-scrim" onclick="trayClose()"></div><div class="pos-sheet" role="dialog" aria-modal="true" aria-labelledby="tray-h">'
+    + '<div class="sh-h"><h2 id="tray-h" tabindex="-1">' + esc(s.title) + ' <span class="wcp-sample">Sample</span></h2><button type="button" class="btn btn-outline btn-sm" onclick="trayClose()">Close</button></div>'
+    + '<div class="sh-b">' + b + "</div>" + (f ? '<div class="sh-f">' + f + "</div>" : "") + "</div>";
+  TRAY_FROM = key;
+  document.getElementById("tray-h").focus();
+};
+var TRAY_FROM = null;
+window.trayClose = function () { document.getElementById("layer").innerHTML = ""; var x = document.querySelector('[data-key="' + TRAY_FROM + '"]'); if (x) x.focus(); };
+document.addEventListener("keydown", function (e) { if (e.key !== "Escape") return; if (document.querySelector(".pv")) pvClose(); else if (document.querySelector(".pos-sheet")) trayClose(); });
+/* "Show": open the folds down to that box, scroll to it, focus it. */
+window.showPlace = function (key) {
+  var n = M.N[key], up = n.copy ? n.under : n.up;
+  while (up) { OPEN[up] = true; up = M.N[up].up; }
+  if (n.copy) OPEN[n.under] = true;
+  document.getElementById("layer").innerHTML = "";
+  paintPage();
+  var el = document.querySelector('[data-key="' + key + '"]');
+  if (el) { el.scrollIntoView({ block: "center", inline: "center" }); el.focus(); }
+};
+
+/* ── Connector check (064 rule, with 072's meaning of "real parent") ─────
+   Home box: its real parent is its parent seat. Copy: the seat its people's
+   manager sits in. Every line on this chart is drawn by nesting, so the box
+   a card is nested under IS the box its line runs to. */
+window.connectorCheck = function (host) {
+  host = host || document.getElementById("pos-body");
+  var bad = [], n = 0;
+  [].forEach.call(host.querySelectorAll(".oc-box[data-key]"), function (box) {
+    var key = box.getAttribute("data-key"), node = M.N[key]; if (!node) return;
+    n++;
+    var want = node.copy ? node.under : (node.up || null);
+    var me = box.closest(".oc-node"), start = me.parentElement.classList.contains("oc-branch") ? me.parentElement.parentElement : me.parentElement;
+    var br = start && start.closest(".oc-branch:not(.oc-hang-slot)");
+    while (br && br.classList.contains("oc-hang-slot")) br = br.parentElement.closest(".oc-branch");
+    var pbox = br && br.querySelector(":scope > .oc-node > .oc-box");
+    var got = pbox ? pbox.getAttribute("data-key") : null;
+    if (got !== want) bad.push(box.textContent.slice(0, 30) + " under " + got + " wanted " + want);
+    if (node.copy && me.parentElement.querySelector(":scope > .oc-kids, :scope > .oc-fam")) bad.push("copy with boxes under it: " + key);
+    if (node.copy && me.querySelector(".oc-toggle")) bad.push("copy with a fold button: " + key);
+  });
+  return { boxes: n, bad: bad };
+};
+</script>
+
+<script>
+"use strict";
+/* ── Wall chart (069), with copies ───────────────────────────────────────
+   069's print card and layout, unchanged except: a copy prints with a dashed
+   border and its "Same seat as under ..." line; the home box prints its
+   "N more under ..." line and its open slots. Every person prints once. */
+var NAME_PX = 13, PT_PER_PX = 0.75, PX_PER_MM = 96 / 25.4, MARGIN_MM = 10, FOOT_MM = 8;
+var PAPER = { A1: [594, 841] };
+function printCard(n, root) {
+  var s = n.s, k = n.people.length;
+  var cols = Math.min(4, Math.max(1, Math.ceil(k / 10)));
+  var names = k ? '<div class="nm" style="columns:' + cols + '">' + n.people.map(function (p) { return "<div>" + esc(p.name) + "</div>"; }).join("") + "</div>"
+    : (n.copies.length ? '<div class="vac">None here: all ' + s.people.length + " under " + esc(elsewhere(n)) + "</div>" : '<div class="vac">Vacant</div>');
+  var open = (!n.copy && n.open && s.people.length) ? '<div class="vac">' + n.open + " open</div>" : "";
+  var line = n.copy ? copyText(n) : homeText(n);
+  var w = 200 + (cols - 1) * 140;
+  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box' + (n.copy ? " copy" : "") + '" data-key="' + esc(n.key) + '" style="width:' + w + "px;min-width:" + w + 'px">'
+    + '<div class="oc-box-hd"><span class="ti">' + esc(s.title) + "</span></div>"
+    + (root ? "" : '<div class="sub">' + esc(s.branch) + "</div>") + names + open
+    + (line ? '<div class="oc-same">' + esc(line) + "</div>" : "") + "</div></div>";
+}
+function hangHtml(list, K, under) {
+  var items = list.map(function (c, i) {
+    var ce = (i % K === K - 1) || i === list.length - 1;
+    return '<div class="oc-hang-item' + (ce ? " ce" : "") + '">' + printCard(c, false) + "</div>";
+  }).join("");
+  var wrap = list.length > K;
+  return '<div class="oc-hang' + (under ? " under" : "") + (wrap ? " wrap" : "") + '"' + (wrap ? ' style="grid-template-rows:repeat(' + K + ',auto)"' : "") + ">"
+    + items + (wrap ? '<i class="wc-bar"></i>' : "") + "</div>";
+}
+function printRender(n, root, K, KU) {
+  var kids = "";
+  if (n.kids.length) {
+    var row = n.kids.filter(function (k) { return k.kids.length; }), hang = n.kids.filter(function (k) { return !k.kids.length; });
+    if (hang.length < 3) { row = n.kids; hang = []; }
+    kids = (hang.length && row.length)
+      ? '<div class="oc-fam"><div class="oc-kids">' + row.map(function (c) { return printRender(c, false, K, KU); }).join("") + "</div>" + hangHtml(hang, KU, true) + "</div>"
+      : '<div class="oc-kids">' + row.map(function (c) { return printRender(c, false, K, KU); }).join("")
+        + (hang.length ? '<div class="oc-branch oc-hang-slot">' + hangHtml(hang, K, false) + "</div>" : "") + "</div>";
+  }
+  return '<div class="oc-branch">' + printCard(n, root) + kids + "</div>";
+}
+function drawBars(host) {
+  [].forEach.call(host.querySelectorAll(".oc-hang.wrap"), function (h) {
+    var items = h.querySelectorAll(":scope > .oc-hang-item"), lastLeft = 0;
+    [].forEach.call(items, function (it) { lastLeft = Math.max(lastLeft, it.offsetLeft); });
+    var bar = h.querySelector(":scope > .wc-bar"), under = h.classList.contains("under");
+    var right = Math.max(lastLeft + 10, under ? 10 : h.offsetWidth / 2);
+    bar.style.left = "10px"; bar.style.width = (right - 10 + 1) + "px"; bar.style.top = under ? "14px" : "0";
+  });
+}
+function layoutFor(K, KU) {
+  var host = document.getElementById("measure");
+  host.innerHTML = '<div class="wc">' + M.roots.map(function (r) { return printRender(r, M.roots.length === 1, K, KU); }).join("") + "</div>";
+  var wc = host.firstChild; drawBars(wc);
+  var rc = wc.getBoundingClientRect();
+  return { html: wc.outerHTML, w: Math.ceil(rc.width), h: Math.ceil(rc.height), K: K, KU: KU };
+}
+function bestLayout() {
+  var best = null;
+  for (var K = 4; K <= 16; K += 2) for (var KU = 2; KU <= Math.min(K, 5); KU++) {
+    var L = layoutFor(K, KU);
+    var fit = Math.max(Math.min(1.4142 / L.w, 1 / L.h), Math.min(1 / L.w, 1.4142 / L.h));
+    if (!best || fit > best.fit * 1.0001) { best = L; best.fit = fit; }
+  }
+  layoutFor(best.K, best.KU);   // leave the winner in #measure for the checks
+  return best;
+}
+function reads(pt) {
+  if (pt < 8) return "Too small to read.";
+  if (pt < 10) return "Readable close up.";
+  if (pt < 14) return "Readable at arm's length.";
+  return "Readable from about a metre away.";
+}
+var PV = {};
+window.wcPreview = function () {
+  var rows = visibleRows();
+  M = buildModel(rows, "reporting");
+  var L = bestLayout(), land = L.w >= L.h, p = PAPER.A1;
+  var wmm = land ? p[1] : p[0], hmm = land ? p[0] : p[1];
+  var pw = (wmm - 2 * MARGIN_MM) * PX_PER_MM, ph = (hmm - 2 * MARGIN_MM - FOOT_MM) * PX_PER_MM;
+  var scale = Math.min(pw / L.w, ph / L.h), pt = NAME_PX * PT_PER_PX * scale;
+  var boxes = Object.keys(M.N).filter(function (k) { return !M.N[k].hidden; }).length;
+  var shared = rows.filter(function (r) { return M.N[r.id].copies.length; }).length;
+  var people = rows.reduce(function (a, r) { return a + r.people.length; }, 0);
+  var foot = esc(COMPANY) + " &middot; " + (WHO === "hr" ? "whole company" : "Noida branch") + " &middot; all levels from the top &middot; as at " + AS_AT + " &middot; " + rows.length + " seats &middot; " + people + " people in seats";
+  PV = { L: L, scale: scale, wmm: wmm, hmm: hmm, pw: pw, ph: ph, foot: foot };
+  var pv = document.createElement("div");
+  pv.className = "pv"; pv.setAttribute("role", "dialog"); pv.setAttribute("aria-modal", "true"); pv.setAttribute("aria-labelledby", "pv-h");
+  pv.innerHTML = '<div class="pv-top"><b id="pv-h" tabindex="-1">Print preview <span class="wcp-sample">Sample</span></b><span>In the product this window is your browser\'s own. The 069 panel before it is unchanged.</span>'
+    + '<button type="button" class="btn btn-sm" style="background:#fff;color:#2D2622" onclick="pvClose()">Close</button></div>'
+    + '<div class="pv-main"><div class="pv-stage" id="pv-stage"><div class="pv-grid" id="pv-grid"></div></div>'
+    + '<div class="pv-side"><dl><dt>Paper size</dt><dd>A1 (set by Alvoraa)</dd><dt>Layout</dt><dd>' + (land ? "Landscape" : "Portrait") + "</dd><dt>Pages</dt><dd>1</dd><dt>Names</dt><dd>" + pt.toFixed(1) + " pt. " + reads(pt) + "</dd></dl>"
+    + '<div class="note">' + boxes + " boxes for " + rows.length + " seats. " + plural(shared, "seat is", "seats are") + " shared by people with different managers, so " + (shared === 1 ? "it prints" : "they print") + " once under each manager, with a dashed border. Each of the " + people + " people prints once.</div>"
+    + '<div class="row"><button type="button" class="btn btn-primary">Save</button><button type="button" class="btn btn-outline" onclick="pvClose()">Cancel</button></div></div></div>';
+  document.getElementById("app").appendChild(pv);
+  pvFit();
+  document.getElementById("pv-h").focus();
+};
+function pvFit() {
+  var g = document.getElementById("pv-grid"), st = document.getElementById("pv-stage");
+  if (!g || !st) return;
+  var d = Math.min(1, (st.clientWidth - 32) / (PV.wmm * PX_PER_MM)), mm = PX_PER_MM * d;
+  var cx = (PV.pw - PV.L.w * PV.scale) / 2, cy = (PV.ph - PV.L.h * PV.scale) / 2;
+  g.innerHTML = '<div class="paper" style="width:' + PV.wmm * mm + "px;height:" + PV.hmm * mm + 'px">'
+    + '<div class="clip" style="left:' + MARGIN_MM * mm + "px;top:" + MARGIN_MM * mm + "px;width:" + PV.pw * d + "px;height:" + PV.ph * d + 'px">'
+    + '<div style="position:absolute;left:' + cx * d + "px;top:" + cy * d + "px;transform:scale(" + PV.scale * d + ');transform-origin:0 0;width:' + (PV.L.w + 2) + 'px">' + PV.L.html + "</div></div>"
+    + '<div class="foot" style="bottom:' + MARGIN_MM * mm + "px;padding:0 " + MARGIN_MM * mm + "px;font-size:" + (9 / PT_PER_PX) * d + 'px">' + PV.foot + "</div></div>";
+}
+window.pvClose = function () { var p = document.querySelector(".pv"); if (p) p.remove(); var g = document.getElementById("wc-open"); if (g) g.focus(); };
+
+/* ── Review controls ───────────────────────────────────────────────────── */
+function copyPhoneRules() {
+  var out = [];
+  [].forEach.call(document.styleSheets, function (ss) {
+    var rules; try { rules = ss.cssRules; } catch (e) { return; }
+    [].forEach.call(rules, function (r) {
+      if (r.media && /max-width:\s*640px/.test(r.media.mediaText)) {
+        [].forEach.call(r.cssRules, function (x) { out.push(x.selectorText.split(",").map(function (s) { return "#app.phone " + s.trim(); }).join(",") + "{" + x.style.cssText + "}"); });
+      }
+    });
+  });
+  var st = document.createElement("style"); st.textContent = out.join("\n"); document.head.appendChild(st);
+}
+copyPhoneRules();
+function reset() { var p = document.querySelector(".pv"); if (p) p.remove(); document.getElementById("layer").innerHTML = ""; OPEN = {}; STATE = ""; VIEW = "reporting"; document.getElementById("pos-f-arrange").value = "reporting"; }
+document.getElementById("rv-who").onchange = function () { WHO = this.value; goState(document.getElementById("rv-state").value); };
+document.getElementById("rv-dev").onchange = function () { document.getElementById("app").classList.toggle("phone", this.value === "phone"); if (document.querySelector(".pv")) pvFit(); };
+document.getElementById("rv-theme").onchange = function () { if (this.value) document.documentElement.setAttribute("data-theme", this.value); else document.documentElement.removeAttribute("data-theme"); };
+document.getElementById("rv-state").onchange = function () { goState(this.value); };
+function key(title) { var s = SEATS.filter(function (x) { return x.title === title; })[0]; return s && s.id; }
+window.goState = function (v) {
+  reset();
+  if (v === "empty" || v === "error") STATE = v;
+  if (v === "branch") { VIEW = "branch"; document.getElementById("pos-f-arrange").value = "branch"; }
+  paintPage();
+  var open = function (t) { OPEN[key(t)] = true; };
+  if (v === "cfo" || v === "hover") open("Chief Financial Officer");
+  if (v === "bo") { open("Back Office"); open("Backoffice Executive"); }
+  if (v === "chain") { open("Retail Head"); open("Store Manager Noida"); open("Floor Supervisor Noida"); open("Senior RSO Noida"); open("Store Manager Delhi"); }
+  if (v === "branch") OPEN["h:Noida"] = true;
+  paintPage();
+  if (v === "hover") {
+    var b = document.querySelector('.oc-box.copy[data-seat="' + key("Office Executive") + '"]');
+    if (b) { b.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); b.scrollIntoView({ block: "center", inline: "center" }); }
+  }
+  // A branch reader cannot see the Head Office seats; show the Noida seat that is split for them.
+  if (v === "tray-bo") seatTray(WHO === "hr" ? key("Back Office") : key("RSO Noida"));
+  if (v === "tray-mis") seatTray(WHO === "hr" ? key("MIS") : key("Floor Supervisor Noida"));
+  if (v === "tray-aud") { var c = Object.keys(M.N).filter(function (k) { return M.N[k].copy && M.N[k].s.title === "Store Auditor"; })[0]; if (c) seatTray(c); }
+  if (v === "print") wcPreview();
+};
+paintPage();
+</script>
+</body>
+</html>

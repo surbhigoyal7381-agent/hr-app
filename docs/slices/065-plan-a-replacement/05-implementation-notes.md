@@ -280,13 +280,39 @@ desk form. So the controller checks the end date itself.
 
 The screen halves (AC-76, 79, 80, 82, 85, 89: dialog and copy) wait for the screens.
 
-## The four stated limits, as built
+## The stated limits, as built
 
 1. An opening saved with the seat link left empty is not held.
 2. Non-readers (HR Users, and owners when plans are off) are never held. Refusing them would tell
    them a plan exists.
 3. When a Performance plan lapses at day 90 with no outcome, the hold ends with it.
 4. Removing a Performance plan and setting one with another reason skips the period.
+5. **The "I have told the person" tick is checked only in `set_plan`.** A Performance plan made
+   through the desk form or a REST insert does not ask for it (review probe P5). The tick is a
+   reminder, not a record: nothing is stored.
+
+(Re-opening a closed opening on a held seat was a gap found at review, R-1. It is now held; see below.)
+
+## Review fixes (25 Oct 2026, after `06-review.md` and `06b-security-verification.md`)
+
+Each fix has a test. Each test was run with its fix taken out, and failed.
+
+| Finding | Fix | Test |
+|---|---|---|
+| 06b M1 (Major): Frappe's live list update sent each plan's name and the saver's e-mail to everyone with Read in the role table, including the subject and a leaver | `ReplacementPlan.notify_update` sends nothing. That one method sends both `doc_update` and `list_update`, on save, on `db_set(notify=True)` and on delete. Other paths checked: Version (none: `track_changes` 0), timeline and comments (refused, SEC-3), the delete feed (`no_feed_on_delete`), Notification Log and Notification rules (counted by the self-check). | `test_06b_m1_saving_or_erasing_a_plan_sends_no_live_update`: set, confirm, remove, "Not improved", "Improved" send nothing about a plan; a control shows an ordinary record still sends its update |
+| Review R-1: re-opening a Closed opening already linked to a held seat saved | `guard_seat_link` runs the hold check (not the SEC-8 seat check) when the status turns to Open and the link is unchanged | `test_r1_reopening_a_closed_opening_on_a_held_seat_is_refused` (and re-opening works once the plan is gone) |
+| Review m3: `told="true"` was refused | `told` accepted only as `true`, `"true"`, `1` or `"1"`; anything else, including nothing, is refused | `test_review_m3_the_told_tick_takes_what_a_screen_sends` |
+| 06b m3: an Event participant row pointing at a plan | **Worse than reported:** while that row exists, Frappe refuses the delete ("linked with Event"), so the plan could never be erased, by HR or by the daily job. The erase now deletes the row first; the self-check counts it too | `test_06b_m3_an_event_row_pointing_at_a_plan_goes_with_the_erase` |
+| 06b m2: a tenant could give another role Write and that role could record the outcome | `record_outcome` also requires the HR Manager role | `test_06b_m2_a_role_given_write_still_cannot_record_the_outcome` |
+| Review m2: four documents said the desk form is not held | Corrected in spec §0 item 4, 01c (abuse-case row and SEC-5 "What the hold does not cover"), 04 A1.0 item 1 | - |
+
+**Left as noted, for the screens or for Surbhi:** 06b m1 ("every save is a confirm" not built;
+the confirmer can be misnamed by a no-change save, and a REST confirm writes no log line) and 06b m4
+(the leaving-date half of SEC-4.3). 06b M2 (the subject sees the opening on their own seat) is
+Surbhi's decision.
+
+Leftover rows: 4 Custom DocPerm rows on Alvoraa Position in `test065` (07:30:36, the shape of
+`TestOptionA.setUp`, left by a run that stopped early) were deleted. Every test makes its own rows.
 
 ## The seven dimensions, against the code written
 

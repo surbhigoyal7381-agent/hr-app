@@ -2184,7 +2184,7 @@ body.panel-fullscreen{overflow:hidden}
   .oc-fam > .oc-kids::after,.oc-fam > .oc-kids > .oc-branch::after,.oc-hang::before,.oc-hang::after,.oc-hang-item::before,.oc-hang-item::after{display:none !important}
   .oc-zoom{flex-direction:column;align-items:stretch;flex:1 1 auto}
 }
-/* Slice 070 (prototype-v1): a seat drawn under each manager. A copy has a
+/* Slice 072 (prototype-v1): a seat drawn under each manager. A copy has a
    dashed border; its grey line, not the dash, says what it is. Pointing at
    any box of a shared seat outlines its other boxes (desktop only). */
 .oc-box.copy{border-style:dashed;border-left-style:dashed;border-left-width:1px}
@@ -2241,7 +2241,7 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall .nm div{break-inside:avoid}
 .pos-wall .vac{margin-top:4px;font-style:italic;color:var(--paper-ink2)}
 .pos-wall .opn{margin-top:4px;font-weight:700}
-/* Slice 070: a copy prints dashed, with its "Same seat as under ..." line */
+/* Slice 072: a copy prints dashed, with its "Same seat as under ..." line */
 .pos-wall .oc-box.copy{border-style:dashed}
 .pos-wall .oc-same{font-size:11px;color:var(--paper-ink2);margin-top:4px;padding-top:4px;border-top:1px solid var(--paper-rule);display:block}
 .pos-wall .below{margin-top:4px;padding-top:4px;border-top:1px solid var(--paper-rule);font-size:11px;color:var(--paper-ink2)}

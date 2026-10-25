@@ -1,4 +1,4 @@
-"""Slice 070: the `manager` key on each seated person in `position_table`.
+"""Slice 072: the `manager` key on each seated person in `position_table`.
 
 The Positions chart now draws people under the seat of their Reports To
 manager. The server says WHO the manager is; the page works out WHERE. This
@@ -18,17 +18,17 @@ import hrms.alvoraa_org_structure.register as register
 from alvoraa_portal.tests.test_positions_064 import Positions064Case, _second_company
 
 # Every key a seated person may carry, written out here rather than read from
-# the code, so a further key fails this test (SEC-2). `manager` is the one 070 adds.
+# the code, so a further key fails this test (SEC-2). `manager` is the one 072 adds.
 PERSON_KEYS = {"assignment", "employee", "name", "weight", "type", "covering",
                "hired_on", "leaving", "manager"}
 
 
-class ReportsTo070Case(Positions064Case):
+class ReportsTo072Case(Positions064Case):
 	def setUp(self):
 		super().setUp()
-		self.a, self.b = self.branch("Noida 070"), self.branch("Delhi 070")
-		top = self.pos("Top 070", branch=self.a, seats=3)
-		seat = self.pos("Shared 070", parent=top.name, branch=self.a, seats=10)
+		self.a, self.b = self.branch("Noida 072"), self.branch("Delhi 072")
+		top = self.pos("Top 072", branch=self.a, seats=3)
+		seat = self.pos("Shared 072", parent=top.name, branch=self.a, seats=10)
 		out = self.pos("SEAT-OUT-SNTL", parent=top.name, branch=self.b)
 		self.top, self.seat = top.name, seat.name
 
@@ -60,7 +60,7 @@ class ReportsTo070Case(Positions064Case):
 		for key, boss in (("ok", self.ok), ("out", self.out), ("left", self.left),
 		                  ("unseated", self.unseated), ("otherco", self.otherco), ("none", None),
 		                  ("gone", self.ok)):
-			e = self.person(f"P-{key}-070")
+			e = self.person(f"P-{key}-072")
 			self.assign(e, seat.name)
 			self.p[key] = e
 			if boss:
@@ -76,7 +76,7 @@ class ReportsTo070Case(Positions064Case):
 		frappe.set_user("Administrator")
 		for e in self.links:
 			frappe.db.set_value("Employee", e, "reports_to", None)
-		frappe.db.delete("User Permission", {"user": ("like", "%070@example.com")})
+		frappe.db.delete("User Permission", {"user": ("like", "%072@example.com")})
 		super().tearDown()
 
 	def people(self, out):
@@ -86,9 +86,9 @@ class ReportsTo070Case(Positions064Case):
 		return {e: p.get("manager", "ABSENT") for e, p in self.people(out).items()}
 
 
-class TestWhoGetsTheManager(ReportsTo070Case):
+class TestWhoGetsTheManager(ReportsTo072Case):
 	def test_company_wide_hr(self):
-		frappe.set_user(self.hr_user("hr.all070@example.com"))
+		frappe.set_user(self.hr_user("hr.all072@example.com"))
 		out = register.position_table()
 		got = self.managers(out)
 		# (a) a manager seated in view is sent: proves the test can see a key at all
@@ -106,7 +106,7 @@ class TestWhoGetsTheManager(ReportsTo070Case):
 		self.assertNotIn(self.left, {p.get("manager") for p in self.people(out).values()})
 
 	def test_store_hr_tied_to_one_branch(self):
-		frappe.set_user(self.hr_user("hr.noida070@example.com", branch=self.a))
+		frappe.set_user(self.hr_user("hr.noida072@example.com", branch=self.a))
 		out = register.position_table()
 		got = self.managers(out)
 		self.assertEqual(got[self.p["ok"]], self.ok)
@@ -119,7 +119,7 @@ class TestWhoGetsTheManager(ReportsTo070Case):
 
 	def test_hr_asking_for_one_branch_gets_no_manager_seated_only_in_another(self):
 		"""(e) "in THIS reply": the branch argument narrows what may be named."""
-		frappe.set_user(self.hr_user("hr.arg070@example.com"))
+		frappe.set_user(self.hr_user("hr.arg072@example.com"))
 		out = register.position_table(branch=self.a)
 		self.assertEqual(self.managers(out)[self.p["out"]], "ABSENT")
 		self.assertEqual(self.managers(out)[self.p["ok"]], self.ok)
@@ -127,7 +127,7 @@ class TestWhoGetsTheManager(ReportsTo070Case):
 	def test_an_owner_with_positions_read_and_no_hr_role(self):
 		"""Surbhi's yes (01c Q1): owners see the link when both people are on
 		their page. Never "", never an unseated manager, never outside their branch."""
-		frappe.set_user(self.plain_reader("owner.noida070@example.com", branch=self.a))
+		frappe.set_user(self.plain_reader("owner.noida072@example.com", branch=self.a))
 		out = register.position_table()
 		self.assertNotIn("unseated", out)
 		got = self.managers(out)
@@ -142,14 +142,14 @@ class TestWhoGetsTheManager(ReportsTo070Case):
 
 	def test_a_past_or_future_date_carries_no_manager_at_all(self):
 		"""Reports To keeps no history, so a past chart with today's line would be false."""
-		frappe.set_user(self.hr_user("hr.date070@example.com"))
+		frappe.set_user(self.hr_user("hr.date072@example.com"))
 		for day in (add_days(nowdate(), -1), add_days(nowdate(), 1)):
 			out = register.position_table(as_at=day)
 			self.assertFalse([p for p in self.people(out).values() if "manager" in p], day)
 
 	def test_each_person_carries_exactly_the_written_keys(self):
-		for user in (self.hr_user("hr.keys070@example.com"),
-		             self.plain_reader("owner.keys070@example.com", branch=self.a)):
+		for user in (self.hr_user("hr.keys072@example.com"),
+		             self.plain_reader("owner.keys072@example.com", branch=self.a)):
 			frappe.set_user(user)
 			for p in self.people(register.position_table()).values():
 				self.assertLessEqual(set(p), PERSON_KEYS)
@@ -157,26 +157,26 @@ class TestWhoGetsTheManager(ReportsTo070Case):
 			frappe.set_user("Administrator")
 
 
-class TestNoNewStatement(ReportsTo070Case):
+class TestNoNewStatement(ReportsTo072Case):
 	"""nfr-budget §2 and 04 Q2: the manager rides on the read the page already
 	makes. The number is recorded in the implementation notes."""
 
 	def test_the_count_is_flat_in_headcount_with_managers_on_record(self):
 		from alvoraa_portal.tests.leader_fixtures_012 import QueryCounter
 
-		frappe.set_user(self.hr_user("hr.flat070@example.com"))
+		frappe.set_user(self.hr_user("hr.flat072@example.com"))
 		register.position_table()
 		with QueryCounter() as small:
 			register.position_table()
 		frappe.set_user("Administrator")
-		big = self.pos("Big 070", parent=self.top, seats=300, branch=self.a)
+		big = self.pos("Big 072", parent=self.top, seats=300, branch=self.a)
 		for i in range(190):
-			e = self.person(f"Many{i}x070")
+			e = self.person(f"Many{i}x072")
 			self.assign(e, big.name)
 			frappe.db.set_value("Employee", e, "reports_to", self.ok)
 			self.links[e] = self.ok
 		frappe.db.commit()
-		frappe.set_user("hr.flat070@example.com")
+		frappe.set_user("hr.flat072@example.com")
 		register.position_table()
 		with QueryCounter() as large:
 			out = register.position_table()

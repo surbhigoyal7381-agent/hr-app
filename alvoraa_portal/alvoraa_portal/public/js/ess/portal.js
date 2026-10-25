@@ -328,7 +328,7 @@ function ocNodeCard(n, isRoot, opts) {
     : (n.people === null ? ""
        : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
          + "<span>" + (n.empty ? ocEsc(n.empty) : "Nobody in this seat") + "</span></div>");
-  // Slice 070, Positions only: one grey line inside the box saying where the
+  // Slice 072, Positions only: one grey line inside the box saying where the
   // rest of a shared seat is ("Same seat as under Owner · 6 in all"). Inside
   // the button, so it is part of the box's spoken name. The Organisation page
   // never sets `quiet`, `empty` or `cls`, so its cards are unchanged.
@@ -509,7 +509,7 @@ window.posLoad = async function () {
   try {
     out = await gpFetch("hrms.alvoraa_org_structure.register.position_table", {});
   } catch (e) {
-    // Slice 070 (design §5.6): what happened and what to do, never the
+    // Slice 072 (design §5.6): what happened and what to do, never the
     // server's own message.
     body.innerHTML = '<div class="empty-state" role="alert"><div class="empty-state-text"><strong>'
       + posEsc(drT("The chart did not load.")) + "</strong> "
@@ -797,7 +797,7 @@ function posOne(p) {
            note: p.leaving ? "leaving " + posDay(p.leaving) : null };
 }
 
-// `here` (slice 070): the seat is drawn in more than one box, so the rest are
+// `here` (slice 072): the seat is drawn in more than one box, so the rest are
 // "more here", not "more in this seat" - some of the seat is elsewhere.
 function posFew(people, here) {
   var out = people.slice(0, POS_NAMES_SHOWN).map(posOne);
@@ -922,7 +922,7 @@ function posReach(t) {
 /* One seat as the chart's card wants it. The shapes almost match already -
    only `covering` has to become `cover`.
 
-   `pl` (slice 070) is posPlace's answer, in the Reporting lines view only:
+   `pl` (slice 072) is posPlace's answer, in the Reporting lines view only:
    the box then lists the people placed at home, its children are the real
    seats still drawn plus the copies hanging here, and it says where the rest
    of a shared seat is. Without it the box is exactly as before. */
@@ -1026,7 +1026,7 @@ function posGroupKey(r) {
 
 // `all` (slice 069): group every identical set, ignoring what somebody opened
 // with "Show the N" on screen - the wall chart follows the data, not the view.
-// `pl` (slice 070): a seat drawn in more than one box - a copy of it elsewhere,
+// `pl` (slice 072): a seat drawn in more than one box - a copy of it elsewhere,
 // or a copy hanging under it - is never grouped, or the group would list
 // people who are drawn somewhere else too (C4).
 function posGroupSiblings(kids, t, all, pl) {
@@ -1099,7 +1099,7 @@ function posGroupNode(key, members) {
   };
 }
 
-/* ── slice 070: seats follow the reporting line ─────────────────────────
+/* ── slice 072: seats follow the reporting line ─────────────────────────
  *
  * In the Reporting lines view each person is drawn under the seat of their
  * manager - Reports To on their employee record, which the server sends as
@@ -1441,7 +1441,7 @@ function posPaintTree() {
   }
 
   var how = posArrange();
-  // Slice 070: in Reporting lines each person is drawn under their manager's
+  // Slice 072: in Reporting lines each person is drawn under their manager's
   // seat. Kept on POS so the tray, Find and the outline can read it.
   var pl = POS.place = how === "reporting" ? posPlace(t, posAnyFilter()) : null;
   var nodes = how === "branch"
@@ -1551,7 +1551,7 @@ function posPaintTree() {
     + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
       + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
     + "</div>";
-  // Slice 070 (design §5.4): one line, so nobody is surprised that a seat
+  // Slice 072 (design §5.4): one line, so nobody is surprised that a seat
   // holds fewer names in one view than in another.
   var viewNote = '<p class="pos-view-note noprint">' + posEsc(how === "reporting"
     ? drT("Each person is shown under the seat of their manager, as set in Reports To on their employee record. A seat shared by people with different managers shows once under each manager. Open slots and the seats under it stay on the seat's own box.")
@@ -1705,7 +1705,7 @@ function posFocusFirst() {
   var hit = {}, pl = posPlaced();
   POS.rows.filter(posMatches).forEach(function (r) {
     hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
-    // Slice 070 (AC-48): a copy of a matching seat is a box of that seat too.
+    // Slice 072 (AC-48): a copy of a matching seat is a box of that seat too.
     if (pl) pl.copies[r.id].forEach(function (c) { hit[c.id] = 1; });
   });
   var found = posMarkFirst(hit);
@@ -1730,7 +1730,7 @@ window.posFind = function (q) {
     }
     r.people.forEach(function (p) {
       if (hits.length < POS_FIND_MAX && String(p.name || "").toLowerCase().indexOf(q) >= 0) {
-        // Slice 070 (G2): somebody drawn in a copy is found in the copy.
+        // Slice 072 (G2): somebody drawn in a copy is found in the copy.
         var c = fpl && fpl.copies[r.id].filter(function (x) { return x.people.indexOf(p) >= 0; })[0];
         hits.push({ id: c ? c.id : r.id, main: p.name, sub: r.title + (r.branch ? " · " + r.branch : "") });
       }
@@ -1752,7 +1752,7 @@ window.posFindKey = function (e) {
     e.target.value = ""; posFind("");
   }
 };
-/* Slice 070: where things are drawn once Find has cleared the filters - the
+/* Slice 072: where things are drawn once Find has cleared the filters - the
    whole chart, in Reporting lines. Null in the other two views. */
 function posFindPlace() {
   return posArrange() === "reporting" ? posPlace(posKids(POS.rows), false) : null;
@@ -1774,7 +1774,7 @@ window.posFindPick = function (id) {
   var how = posArrange(), by = {};
   POS.rows.forEach(function (x) { by[x.id] = x; });
   function open(k) { delete POS.collapsed[k]; POS.expanded[k] = true; }
-  // Slice 070: a copy - or every copy of a seat whose own box is not drawn -
+  // Slice 072: a copy - or every copy of a seat whose own box is not drawn -
   // hangs under its manager's seat, so that is the way to open.
   var under = copy ? [copy.under] : (fpl && fpl.hidden[r.id] ? fpl.copies[r.id].map(function (c) { return c.under; }) : []);
   under.forEach(function (u) {
@@ -1796,7 +1796,7 @@ window.posFindPick = function (id) {
 };
 function posFindFocus(id) {
   var r = posById(id), hit = {}, pl = posPlaced();
-  // Slice 070: a copy is outlined itself.
+  // Slice 072: a copy is outlined itself.
   if (pl && pl.byId[id]) { hit[id] = 1; posMarkFirst(hit); return; }
   if (!r) return;
   // A seat whose own box is not drawn is found at its first copy (G2).
@@ -2758,7 +2758,7 @@ function posWire() {
     if (e.defaultPrevented || document.querySelector(".gp-backdrop.open")) return;
     if (POS.sheet) posCloseSheet();
   });
-  // Slice 070 (AC-43): pointing at, or tabbing to, a box of a seat drawn more
+  // Slice 072 (AC-43): pointing at, or tabbing to, a box of a seat drawn more
   // than once outlines its other boxes. Desktop only; nothing moves.
   var relate = function (e) {
     var rel = document.querySelectorAll("#pos-body .oc-box.rel");
@@ -2819,7 +2819,7 @@ function posWire() {
    avatars, flags and fold buttons. The markup and CSS classes are the
    screen chart's, so the boxes and lines are the same drawing. */
 
-/* Slice 070: the paper prints what Reporting lines draws with every fold
+/* Slice 072: the paper prints what Reporting lines draws with every fold
    open, so it walks the same placed model - posPlace over every seat, no
    filter. Worked out once per tree. */
 function posWallPl(t) { return t.pl || (t.pl = posPlace(t, false)); }
@@ -2871,7 +2871,7 @@ function posWallCopy(start, levels, vacant, hr) {
       branch: r.branch || "",
       department: r.department || "",
       names: names, vacant: false, below: null, kids: [],
-      // Slice 070 (PRIV-2): a copy's dashed border and its two possible lines -
+      // Slice 072 (PRIV-2): a copy's dashed border and its two possible lines -
       // seat titles and counts only.
       copy: false, same: "", more: "",
     };
@@ -3148,7 +3148,7 @@ function posWallTops(t, start) {
 }
 
 /* Seats and people in the chosen start and levels, as the paper counts
-   them: each seat record once however many boxes it has (slice 070), and
+   them: each seat record once however many boxes it has (slice 072), and
    every name line (a person in two seats counts twice). */
 function posWallCount(t, levels) {
   var pl = posWallPl(t), seats = {}, p = 0;
@@ -3395,7 +3395,7 @@ window.posWallPrint = function () {
   var foot = [co, branches.length === 1 ? drT("{0} branch", [branches[0]]) : drT("{0} branches", [branches.length]),
               levels + " " + (w.start === "top" ? drT("from the top") : drT("from {0}", [posWallTops(t)[0].title])),
               drT("as at {0}", [posDay(asat) + " " + String(asat).slice(0, 4)]),
-              // Slice 070 (AC-56): seat records and people, each once, however many boxes.
+              // Slice 072 (AC-56): seat records and people, each once, however many boxes.
               drT("{0} seats · {1} people in seats", [posWallCount(t, w.levels).seats, posWallCount(t, w.levels).people])].join(" · ");
   var hrTag = drT("HR use only - not for display");
   var n = P.cols * P.rows, html = "";
@@ -3430,7 +3430,7 @@ window.posWallPrint = function () {
 };
 
 window.posSeatSheet = function (id, flash) {
-  // Slice 070: a copy opens its seat's own tray (AC-42).
+  // Slice 072: a copy opens its seat's own tray (AC-42).
   var pl = posPlaced(), copy = pl && pl.byId[id];
   var r = copy ? copy.seat : posById(id);
   if (!r) return;
@@ -3454,7 +3454,7 @@ window.posSeatSheet = function (id, flash) {
     if (p.covering) c += ' <span class="su">' + posEsc(p.type) + "</span>";
     if (posHired(p)) c += ' <span class="pos-chip green">' + drT("Joined {0}, hired for this seat", [posDay(p.hired_on)]) + "</span>";
     if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
-    // Slice 070: whom they report to, on its own grey line, in Reporting lines only.
+    // Slice 072: whom they report to, on its own grey line, in Reporting lines only.
     var line = pl ? '<div class="su">' + posEsc(posReportsLine(p, r, pl)) + "</div>" : "";
     return '<div class="pos-prow">' + posEsc(p.name) + c + line + "</div>";
   }).join("") + "</div>";
@@ -3475,7 +3475,7 @@ window.posSeatSheet = function (id, flash) {
   POS.sheet = { kind: "seat", id: id };
 };
 
-/* Slice 070: posPlace's answer, but only while Reporting lines is the chart
+/* Slice 072: posPlace's answer, but only while Reporting lines is the chart
    on screen - the tray's new section and lines belong to that view alone. */
 function posPlaced() {
   return posVal("pos-f-view") === "tree" && posArrange() === "reporting" ? POS.place : null;

@@ -145,7 +145,7 @@ function scaled(n) {
   return Object.assign({}, one, { rows });
 }
 
-/* Slice 070: F-DTC90 with each person's `manager` (Reports To), shaped from
+/* Slice 072: F-DTC90 with each person's `manager` (Reports To), shaped from
  * the 24 Oct census (064 12-fix-cfo-reports-seats.md). INVENTED NAMES.
  *
  * Everybody reports to whoever sits in their seat's parent, except:

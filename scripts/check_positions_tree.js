@@ -1134,7 +1134,7 @@ async function unChecks() {
   }
 }
 
-/* ── 23. slice 070: seats follow the reporting line ──────────────────────
+/* ── 23. slice 072: seats follow the reporting line ──────────────────────
  *
  * In Reporting lines each person is drawn under the seat of their Reports To
  * manager (`manager` on the person). These run the REAL page in jsdom, so the
@@ -1177,7 +1177,7 @@ const S70 = (() => {
 /* The oracle (spec §7), from rows and manager keys only. Returns, per
    assignment, the seat whose box the person should be drawn in and the box
    kind: { seat, copyUnder } - copyUnder null means the seat's own box. */
-function oracle070(rows, filtered) {
+function oracle072(rows, filtered) {
   const byEmp = {};
   rows.forEach((r) => r.people.forEach((p) => { (byEmp[p.employee] = byEmp[p.employee] || []).push({ r, p }); }));
   const want = {};
@@ -1195,10 +1195,10 @@ function oracle070(rows, filtered) {
   return want;
 }
 
-async function seats070() {
+async function seats072() {
   let JSDOM, VirtualConsole;
   try { ({ JSDOM, VirtualConsole } = require("jsdom")); }
-  catch (e) { problems.push("slice 070 checks need jsdom (npm ci): " + e.message); return; }
+  catch (e) { problems.push("slice 072 checks need jsdom (npm ci): " + e.message); return; }
   const { readPortalSource } = require("./lib/portal_source");
   const vc = new VirtualConsole();
   vc.on("jsdomError", (e) => { if (!/Unexpected token '\{'/.test(String(e && e.message))) console.error(e); });
@@ -1256,54 +1256,54 @@ async function seats070() {
   {
     const rows = S70();
     draw(rows);
-    const drawn = boxes(), want = oracle070(rows), seen = {};
+    const drawn = boxes(), want = oracle072(rows), seen = {};
     drawn.forEach((b) => b.names.forEach((nm) => {
       const r = rows.find((x) => x.id === (b.copy ? seatOfCopy(b.id).id : b.id));
       const p = r && r.people.find((q) => q.name === nm);
-      if (!p) { ok("070: a drawn name belongs to the box's seat", false, nm + " in " + b.id); return; }
+      if (!p) { ok("072: a drawn name belongs to the box's seat", false, nm + " in " + b.id); return; }
       seen[p.assignment] = (seen[p.assignment] || 0) + 1;
       const w = want[p.assignment];
-      ok("070: " + nm + " is in the box the oracle says",
+      ok("072: " + nm + " is in the box the oracle says",
          w.copyUnder ? (b.copy && b.parent === w.copyUnder) : (!b.copy && b.id === w.seat), JSON.stringify([b.id, b.parent, w]));
     }));
     const all = rows.reduce((a, r) => a + r.people.length, 0);
-    ok("070 N1: every assignment drawn exactly once", Object.keys(seen).length === all && Object.values(seen).every((n) => n === 1),
+    ok("072 N1: every assignment drawn exactly once", Object.keys(seen).length === all && Object.values(seen).every((n) => n === 1),
        Object.keys(seen).length + " of " + all);
     // The oracle must be able to fail: swap two managers and it disagrees.
     const swapped = S70();
     swapped.find((r) => r.id === "OE").people[0].manager = "E-CFO";
-    const w2 = oracle070(swapped);
-    ok("070: the oracle notices a swapped manager", w2["A-OE1"].copyUnder === "CFO" && want["A-OE1"].copyUnder === null);
+    const w2 = oracle072(swapped);
+    ok("072: the oracle notices a swapped manager", w2["A-OE1"].copyUnder === "CFO" && want["A-OE1"].copyUnder === null);
 
     const by = (id) => drawn.filter((b) => b.id === id);
     const one = (id) => by(id)[0] || { names: [], el: doc.createElement("i"), parent: null };
     const copies = drawn.filter((b) => b.copy);
-    ok("070 AC-12: Office Executive home has 2, a copy under the CFO has the 4",
+    ok("072 AC-12: Office Executive home has 2, a copy under the CFO has the 4",
        one("OE").names.length === 2 && copies.some((c) => seatOfCopy(c.id).id === "OE" && c.parent === "CFO" && c.names.length === 4));
-    ok("070 AC-13 (Q5): a head and team in one seat stay home", one("FS").names.length === 2 && !copies.some((c) => seatOfCopy(c.id).id === "FS"));
-    ok("070 AC-14: a manager in no seat, or not sent, keeps them home", one("PK").names.length === 3);
-    ok("070 Q6: a manager in another company keeps them home", one("PK").names.includes("N K3"));
-    ok("070 AC-15 (G3): a manager in two seats, one the parent, keeps them home", one("OE").names.includes("N OE1"));
-    ok("070 AC-16: Permanent beats covering, then title A-Z",
+    ok("072 AC-13 (Q5): a head and team in one seat stay home", one("FS").names.length === 2 && !copies.some((c) => seatOfCopy(c.id).id === "FS"));
+    ok("072 AC-14: a manager in no seat, or not sent, keeps them home", one("PK").names.length === 3);
+    ok("072 Q6: a manager in another company keeps them home", one("PK").names.includes("N K3"));
+    ok("072 AC-15 (G3): a manager in two seats, one the parent, keeps them home", one("OE").names.includes("N OE1"));
+    ok("072 AC-16: Permanent beats covering, then title A-Z",
        copies.some((c) => seatOfCopy(c.id).id === "XS" && c.parent === "XP")
        && copies.some((c) => seatOfCopy(c.id).id === "ST" && c.parent === "AME"));
-    ok("070 AC-23: a home with nothing left is not drawn", !by("AUD").length && copies.some((c) => seatOfCopy(c.id).id === "AUD" && c.parent === "RH"));
-    ok("070 AC-24: a home with an open slot stays, saying where its people are",
+    ok("072 AC-23: a home with nothing left is not drawn", !by("AUD").length && copies.some((c) => seatOfCopy(c.id).id === "AUD" && c.parent === "RH"));
+    ok("072 AC-24: a home with an open slot stays, saying where its people are",
        by("MIS").length === 1 && /None here: all 1 shown under Chief Financial Officer/.test(one("MIS").el.textContent)
        && /open/.test(one("MIS").el.querySelector(".oc-box-hd").textContent));
-    ok("070 AC-22: the open tag is on the home only", copies.every((c) => !c.el.querySelector(".oc-tag.v"))
+    ok("072 AC-22: the open tag is on the home only", copies.every((c) => !c.el.querySelector(".oc-tag.v"))
        && one("BO").el.querySelector(".oc-tag.v"));
-    ok("070 AC-26: the seat under Back Office hangs under its home", one("BX").parent === "BO");
-    ok("070 the 64 case: a copy of Back Office hangs under the seat below it",
+    ok("072 AC-26: the seat under Back Office hangs under its home", one("BX").parent === "BO");
+    ok("072 the 64 case: a copy of Back Office hangs under the seat below it",
        copies.some((c) => seatOfCopy(c.id).id === "BO" && c.parent === "BX"));
-    ok("070 AC-18 (C1): no copy has a fold button or anything under it",
+    ok("072 AC-18 (C1): no copy has a fold button or anything under it",
        copies.every((c) => !c.node.querySelector(".oc-toggle") && !c.node.parentElement.querySelector(":scope > .oc-kids, :scope > .oc-fam")));
     const cfoKids = drawn.filter((b) => b.parent === "CFO").map((b) => b.copy);
-    ok("070 AC-18 (C3): under the CFO the real seats come before the copies",
+    ok("072 AC-18 (C3): under the CFO the real seats come before the copies",
        cfoKids.length > 2 && cfoKids.indexOf(true) > cfoKids.lastIndexOf(false), JSON.stringify(cfoKids));
-    ok("070 AC-20 (C4): a seat with a copy is never grouped", !body().innerHTML.includes("grp:") && by("CA1").length === 1 && by("CA2").length === 1);
+    ok("072 AC-20 (C4): a seat with a copy is never grouped", !body().innerHTML.includes("grp:") && by("CA1").length === 1 && by("CA2").length === 1);
     const pd = W.POS.place.byId[copies.find((c) => seatOfCopy(c.id).id === "OE").id].people[0];
-    ok("070 PRIV-1/G: a copy holds the same person objects, so a plan key travels with the person",
+    ok("072 PRIV-1/G: a copy holds the same person objects, so a plan key travels with the person",
        rows.find((r) => r.id === "OE").people.indexOf(pd) >= 0);
   }
 
@@ -1316,7 +1316,7 @@ async function seats070() {
         people: [P("PY", "PX")] }];
     draw(rows);
     const c = boxes().filter((b) => b.copy);
-    ok("070 AC-21: a loop gives a copy each way and drawing ends",
+    ok("072 AC-21: a loop gives a copy each way and drawing ends",
        c.length === 2 && c.some((b) => b.parent === "Y") && c.some((b) => b.parent === "X"));
   }
 
@@ -1326,18 +1326,18 @@ async function seats070() {
     const drawn = boxes(), copies = drawn.filter((b) => b.copy);
     const copyOf = (seat) => copies.find((c) => seatOfCopy(c.id).id === seat);
     const txt = (b) => (b ? b.el.textContent.replace(/\s+/g, " ") : "");
-    ok("070 AC-27: a copy reads branch and its people, then the same-seat line",
+    ok("072 AC-27: a copy reads branch and its people, then the same-seat line",
        /Head Office · 4 people/.test(txt(copyOf("OE"))) && /\+1 more here/.test(txt(copyOf("OE")))
        && /Same seat as under Owner · 6 in all/.test(txt(copyOf("OE"))), txt(copyOf("OE")));
-    ok("070 AC-28: a copy whose home is not drawn reads Set up under", /Set up under Owner$/.test(txt(copyOf("AUD")).trim()), txt(copyOf("AUD")));
-    ok("070 AC-29: a home says how many are shown elsewhere",
+    ok("072 AC-28: a copy whose home is not drawn reads Set up under", /Set up under Owner$/.test(txt(copyOf("AUD")).trim()), txt(copyOf("AUD")));
+    ok("072 AC-29: a home says how many are shown elsewhere",
        /4 more shown under Chief Financial Officer/.test(txt(drawn.find((b) => b.id === "OE")))
        && /2 more shown under 2 other managers/.test(txt(drawn.find((b) => b.id === "BO"))));
-    ok("070 AC-31: a parent outside the view is never named",
+    ok("072 AC-31: a parent outside the view is never named",
        /Same seat as under a seat above your view · 2 in all/.test(txt(copyOf("HID"))));
     const html = body().innerHTML;
-    ok("070 SEC-3: no hidden seat id or unknown manager id is echoed", !html.includes("SEAT-HIDDEN-SNTL") && !html.includes("MGR-ABSENT-SNTL"));
-    ok("070 AC-32: a copy is dashed and its line is inside the button",
+    ok("072 SEC-3: no hidden seat id or unknown manager id is echoed", !html.includes("SEAT-HIDDEN-SNTL") && !html.includes("MGR-ABSENT-SNTL"));
+    ok("072 AC-32: a copy is dashed and its line is inside the button",
        copies.every((c) => c.el.tagName === "BUTTON" && c.el.querySelector(".oc-same")) && copies.every((c) => c.el.querySelector(".oc-same svg[aria-hidden=true]")));
   }
 
@@ -1345,15 +1345,15 @@ async function seats070() {
   {
     const bare = () => S70().map((r) => Object.assign({}, r, { people: r.people.map((p) => { const q = Object.assign({}, p); delete q.manager; return q; }) }));
     for (const arr of ["branch", "department"]) {
-      ok("070 AC-52: " + arr + " view is byte-identical with and without manager keys", draw(S70(), arr) === draw(bare(), arr));
+      ok("072 AC-52: " + arr + " view is byte-identical with and without manager keys", draw(S70(), arr) === draw(bare(), arr));
     }
     draw(S70()); const t1 = doc.getElementById("pos-tiles").innerHTML;
     draw(bare()); const t2 = doc.getElementById("pos-tiles").innerHTML;
-    ok("070 AC-34: the tiles do not change with manager keys", t1 === t2);
+    ok("072 AC-34: the tiles do not change with manager keys", t1 === t2);
     const plain = draw(bare());
-    ok("070 AC-54: no manager keys, no copies and no grey lines", !/class="oc-box[^"]* copy/.test(plain) && !plain.includes("oc-same"));
+    ok("072 AC-54: no manager keys, no copies and no grey lines", !/class="oc-box[^"]* copy/.test(plain) && !plain.includes("oc-same"));
     const card = W.ocNodeCard({ id: "x", title: "T", subtitle: "S", open: 1, people: [{ name: "Ann Bee" }], flags: [] }, false);
-    ok("070 AC-53: the Organisation card is unchanged without the new fields",
+    ok("072 AC-53: the Organisation card is unchanged without the new fields",
        card === '<div class="oc-node"><button type="button" class="oc-box" style="text-align:left;font:inherit;width:100%;cursor:pointer"'
          + ' onclick="ocFocus(\'x\')"><div class="oc-box-hd"><span class="ti">T</span><span class="oc-tag v">open</span></div>'
          + '<div class="sub">S</div><div class="oc-who"><span class="av">AB</span><span>Ann Bee</span></div></button></div>', card);
@@ -1363,25 +1363,25 @@ async function seats070() {
     const priv = S70();
     priv.forEach((r) => { r.opening = "OPN-SNTL"; r.people.forEach((p) => { p.plan = { note: "PLAN-SNTL" }; p.hired_on = "2026-10-01"; }); });
     draw(priv); const s2 = shape();
-    ok("070 PRIV-1 b: plans, openings and hire dates do not move, add or remove a box", s1 === s2);
+    ok("072 PRIV-1 b: plans, openings and hire dates do not move, add or remove a box", s1 === s2);
   }
 
   /* 22e. the view's name and its note (AC-33, Q4) */
   {
     const note = () => (body().querySelector(".pos-view-note") || {}).textContent || "";
-    ok("070 AC-33: the Arrange by option reads Reporting lines",
+    ok("072 AC-33: the Arrange by option reads Reporting lines",
        doc.querySelector('#pos-f-arrange option[value="reporting"]').textContent === "Reporting lines");
     draw(S70());
-    ok("070 AC-33: the Reporting lines note, word for word", note() === "Each person is shown under the seat of their manager, as set in "
+    ok("072 AC-33: the Reporting lines note, word for word", note() === "Each person is shown under the seat of their manager, as set in "
        + "Reports To on their employee record. A seat shared by people with different managers shows once under each manager. "
        + "Open slots and the seats under it stay on the seat's own box.", note());
     for (const arr of ["branch", "department"]) {
       draw(S70(), arr);
-      ok("070 AC-33: the " + arr + " note, word for word",
+      ok("072 AC-33: the " + arr + " note, word for word",
          note() === "One box per seat, with everyone in it. To see people under their managers, choose Arrange by: Reporting lines.", note());
     }
-    ok("070 AC-33: the print heading says Reporting lines", W.posPrintHead("reporting").includes("Reporting lines"));
-    ok("070 Q4: the old name is gone from the page", !doc.documentElement.innerHTML.includes("Who reports to whom"));
+    ok("072 AC-33: the print heading says Reporting lines", W.posPrintHead("reporting").includes("Reporting lines"));
+    ok("072 Q4: the old name is gone from the page", !doc.documentElement.innerHTML.includes("Who reports to whom"));
   }
 
   /* 22f. the seat tray (AC-35 - AC-42, AC-50, SEC-3) */
@@ -1391,52 +1391,52 @@ async function seats070() {
     draw(S70());
     const copyId = (seat, under) => Object.keys(W.POS.place.byId).find((k) => W.POS.place.byId[k].seat.id === seat && W.POS.place.byId[k].under === under);
     let t = tray("BO");
-    ok("070 AC-35: Where it shows lists the home and each copy",
+    ok("072 AC-35: Where it shows lists the home and each copy",
        t.includes("Where it shows on this chart") && t.includes("Under Owner: its own box, 1 person, 1 open, 1 seat under it")
        && t.includes("Under Chief Financial Officer: 1 person") && t.includes("Under Backoffice Executive: 1 person"), t);
-    ok("070 AC-35: the box opened is marked", /its own box, 1 person, 1 open, 1 seat under itYou opened this one/.test(t));
-    ok("070 AC-37: the note says how people are placed",
+    ok("072 AC-35: the box opened is marked", /its own box, 1 person, 1 open, 1 seat under itYou opened this one/.test(t));
+    ok("072 AC-37: the note says how people are placed",
        t.includes("People are placed by Reports To on their employee record. To move someone, change their Reports To; "
                   + "the chart follows the next time it opens. The seat itself stays under Owner."));
-    ok("070 AC-66: each Show button says what it shows",
+    ok("072 AC-66: each Show button says what it shows",
        [...layer().querySelectorAll(".pos-places button")].every((b) => /^Show it on the chart: Under /.test(b.getAttribute("aria-label"))));
-    ok("070 AC-39: lines name the manager and their seat",
+    ok("072 AC-39: lines name the manager and their seat",
        t.includes("Reports to N E-OWN (Owner)") && t.includes("Reports to N E-CFO (Chief Financial Officer)") && t.includes("Reports to N E-BX (Backoffice Executive)"));
     t = tray(copyId("BO", "CFO"));
-    ok("070 AC-42: a copy opens the same seat's tray", t.includes("Back Office") && t.includes("3 of 4") && /Under Chief Financial Officer: 1 personYou opened this one/.test(t));
-    ok("070 AC-42: Change edits the seat, not the copy", layer().innerHTML.includes("posSheetChange('BO')"));
+    ok("072 AC-42: a copy opens the same seat's tray", t.includes("Back Office") && t.includes("3 of 4") && /Under Chief Financial Officer: 1 personYou opened this one/.test(t));
+    ok("072 AC-42: Change edits the seat, not the copy", layer().innerHTML.includes("posSheetChange('BO')"));
     t = tray(copyId("AUD", "RH"));
-    ok("070 AC-36: a home not drawn says why", t.includes("Its own box under Owner is not drawn: nobody there reports along that line, no slot is open and no seat hangs under it.") && !t.includes("its own box,"));
-    ok("070 AC-39: same seat", tray("FS").includes("Reports to N F1, also in this seat"));
+    ok("072 AC-36: a home not drawn says why", t.includes("Its own box under Owner is not drawn: nobody there reports along that line, no slot is open and no seat hangs under it.") && !t.includes("its own box,"));
+    ok("072 AC-39: same seat", tray("FS").includes("Reports to N F1, also in this seat"));
     t = tray("PK");
-    ok("070 AC-39/AC-50: an unseated manager is named for HR", t.includes("Reports to Neeraj Sood, who is in no seat"));
-    ok("070 AC-39: a manager the reply does not carry is not named", t.includes("Reports to a manager who is not on this chart"));
-    ok("070 AC-39: no manager on record", tray("OWN").includes("No manager on their record"));
-    ok("070 SEC-3: the tray never echoes an unknown manager or hidden seat", !layer().innerHTML.includes("MGR-ABSENT-SNTL")
+    ok("072 AC-39/AC-50: an unseated manager is named for HR", t.includes("Reports to Neeraj Sood, who is in no seat"));
+    ok("072 AC-39: a manager the reply does not carry is not named", t.includes("Reports to a manager who is not on this chart"));
+    ok("072 AC-39: no manager on record", tray("OWN").includes("No manager on their record"));
+    ok("072 SEC-3: the tray never echoes an unknown manager or hidden seat", !layer().innerHTML.includes("MGR-ABSENT-SNTL")
        && !tray("HID").includes("MGR-ABSENT-SNTL") && !layer().innerHTML.includes("SEAT-HIDDEN-SNTL"));
-    ok("070 AC-41: a seat drawn once has no Where it shows", !tray("CFO").includes("Where it shows"));
+    ok("072 AC-41: a seat drawn once has no Where it shows", !tray("CFO").includes("Where it shows"));
     // Show: closes the tray, opens the way, focuses the copy (AC-38).
     W.POS.collapsed = { CFO: true }; W.posPaint();
     tray("BO");
     const show = [...layer().querySelectorAll(".pos-places button")][1];
     show.click();
-    ok("070 AC-38: Show closes the tray", layer().innerHTML === "");
+    ok("072 AC-38: Show closes the tray", layer().innerHTML === "");
     const focused = doc.activeElement;
-    ok("070 AC-38: Show opens the fold and focuses the copy", focused && focused.classList.contains("copy")
+    ok("072 AC-38: Show opens the fold and focuses the copy", focused && focused.classList.contains("copy")
        && focused.classList.contains("pos-first") && /Back Office/.test(focused.textContent) && !W.POS.collapsed.CFO);
     // A reader without HR scope: never the unseated manager's name (AC-50).
     draw(S70(), "reporting", { unseated: null });
     t = tray("PK");
-    ok("070 AC-50: without HR scope the unseated manager is not named", !layer().innerHTML.includes("Neeraj") && t.includes("Reports to a manager who is not on this chart"));
+    ok("072 AC-50: without HR scope the unseated manager is not named", !layer().innerHTML.includes("Neeraj") && t.includes("Reports to a manager who is not on this chart"));
     // AC-40, Q2/P-25: the split advice is gone; the records notes only outside Reporting lines.
     const src = fs.readFileSync(PORTAL, "utf8");
-    ok("070 AC-40: the split advice is gone from every view", !src.includes("needs splitting first") && !src.includes("Give the head a seat of their own"));
+    ok("072 AC-40: the split advice is gone from every view", !src.includes("needs splitting first") && !src.includes("Give the head a seat of their own"));
     W.POS.records = { mismatches: [], mixed: [{ position: "BO", manager: "E-OWN", manager_name: "Own", count: 1 }, { position: "BO", manager: "E-CFO", manager_name: "Cfo", count: 1 }] };
     draw(S70());
-    ok("070 AC-40: in Reporting lines the records notes give way", !tray("BO").includes("This seat holds the people of"));
+    ok("072 AC-40: in Reporting lines the records notes give way", !tray("BO").includes("This seat holds the people of"));
     draw(S70(), "branch");
     t = tray("BO");
-    ok("070 AC-40/41: in Branch they show as before, without the new section or lines",
+    ok("072 AC-40/41: in Branch they show as before, without the new section or lines",
        t.includes("This seat holds the people of 2 managers") && !t.includes("Where it shows") && !t.includes("Reports to N"));
     W.POS.records = null;
     W.posCloseSheet(true);
@@ -1452,35 +1452,35 @@ async function seats070() {
     };
     draw(S70()); W.POS.expanded = {}; W.POS.collapsed = {}; W.posPaint();
     let f = pick("N OE3");
-    ok("070 AC-44: a person in a copy is found in the copy", f && f.classList.contains("copy") && f.classList.contains("pos-first")
+    ok("072 AC-44: a person in a copy is found in the copy", f && f.classList.contains("copy") && f.classList.contains("pos-first")
        && /Office Executive/.test(f.textContent) && W.POS.expanded.CFO);
     draw(S70()); W.POS.expanded = {}; W.posPaint();
     f = pick("N OE1");
-    ok("070 AC-45: a person at home is found at home", f && !f.classList.contains("copy") && /Office Executive/.test(f.textContent));
+    ok("072 AC-45: a person at home is found at home", f && !f.classList.contains("copy") && /Office Executive/.test(f.textContent));
     draw(S70()); W.POS.expanded = {}; W.posPaint();
     f = pick("Store Auditor");
-    ok("070 AC-45/G2: a seat whose own box is not drawn is found at its copy", f && f.classList.contains("copy") && /Store Auditor/.test(f.textContent));
+    ok("072 AC-45/G2: a seat whose own box is not drawn is found at its copy", f && f.classList.contains("copy") && /Store Auditor/.test(f.textContent));
 
     // G1: a branch filter that keeps a manager seat and a shared seat.
     const noida = () => S70().map((r) => (["OWN", "CFO", "OE"].includes(r.id) ? Object.assign(r, { branch: "Noida" }) : r));
     draw(noida(), "reporting", { filter: { "pos-f-branch": "Noida" } });
     let drawn = boxes();
     const seatId = (b) => (b.copy ? seatOfCopy(b.id).id : b.id);
-    ok("070 AC-46: with a filter, a matching seat still gets its copy under a drawn manager seat",
+    ok("072 AC-46: with a filter, a matching seat still gets its copy under a drawn manager seat",
        drawn.some((b) => b.copy && seatOfCopy(b.id).id === "OE" && b.parent === "CFO"));
-    ok("070 AC-46: and nothing is copied under a seat the filter left out", !drawn.some((b) => b.copy && !["OE"].includes(seatOfCopy(b.id).id)));
+    ok("072 AC-46: and nothing is copied under a seat the filter left out", !drawn.some((b) => b.copy && !["OE"].includes(seatOfCopy(b.id).id)));
     const rowsN = noida(), byId = {};
     rowsN.forEach((r) => { byId[r.id] = r; });
     const match = (r) => r.branch === "Noida";
     const above = (id) => rowsN.some((r) => { if (!match(r)) return false; for (let a = byId[r.reports_to], k = 0; a && k < 40; a = byId[a.reports_to], k++) if (a.id === id) return true; return false; });
-    ok("070 AC-47: every drawn box is a match or above one", drawn.every((b) => match(byId[seatId(b)]) || above(seatId(b))),
+    ok("072 AC-47: every drawn box is a match or above one", drawn.every((b) => match(byId[seatId(b)]) || above(seatId(b))),
        drawn.filter((b) => !(match(byId[seatId(b)]) || above(seatId(b)))).map((b) => b.id).join(","));
     W.posFocusFirst();
-    ok("070 AC-48: the matching line counts seats, not boxes", /^3 matching/.test(doc.getElementById("pos-fline-txt").textContent),
+    ok("072 AC-48: the matching line counts seats, not boxes", /^3 matching/.test(doc.getElementById("pos-fline-txt").textContent),
        doc.getElementById("pos-fline-txt").textContent);
     draw(S70(), "reporting", { filter: { "pos-f-role": "Backoffice Executive" } });
     drawn = boxes();
-    ok("070 AC-46: a faded seat above a match keeps all its people home",
+    ok("072 AC-46: a faded seat above a match keeps all its people home",
        drawn.find((b) => b.id === "BO").names.length === 3 && !drawn.some((b) => b.copy));
 
     // AC-43: the outline, desktop only.
@@ -1490,16 +1490,16 @@ async function seats070() {
     W.posWire();
     W.matchMedia = () => ({ matches: true, addEventListener() {}, addListener() {} });
     ofBO[0].dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
-    ok("070 AC-43: pointing at one box of a shared seat outlines its other boxes",
+    ok("072 AC-43: pointing at one box of a shared seat outlines its other boxes",
        ofBO.length === 3 && ofBO.slice(1).every((b) => b.classList.contains("rel")) && !ofBO[0].classList.contains("rel")
        && body().querySelectorAll(".oc-box.rel").length === 2);
     ofBO[1].dispatchEvent(new W.FocusEvent("focusin", { bubbles: true }));
-    ok("070 AC-43: keyboard focus does the same", ofBO[0].classList.contains("rel") && !ofBO[1].classList.contains("rel"));
+    ok("072 AC-43: keyboard focus does the same", ofBO[0].classList.contains("rel") && !ofBO[1].classList.contains("rel"));
     body().querySelector(".oc-box:not(.pos-split)").dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
-    ok("070 AC-43: leaving takes the outline away", !body().querySelectorAll(".oc-box.rel").length);
+    ok("072 AC-43: leaving takes the outline away", !body().querySelectorAll(".oc-box.rel").length);
     W.matchMedia = () => ({ matches: false, addEventListener() {}, addListener() {} });
     ofBO[0].dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
-    ok("070 AC-43: nothing happens on touch", !body().querySelectorAll(".oc-box.rel").length);
+    ok("072 AC-43: nothing happens on touch", !body().querySelectorAll(".oc-box.rel").length);
   }
 
   /* 22h. the error state (AC-63) */
@@ -1510,16 +1510,16 @@ async function seats070() {
     await W.posLoad();
     const alert = body().querySelector('[role="alert"]');
     const said = alert ? alert.textContent.replace(/\s+/g, " ").trim() : "";
-    ok("070 AC-63: a failed load says what to do, with the code", said === "The chart did not load. Nothing has changed in your seats or your people. "
+    ok("072 AC-63: a failed load says what to do, with the code", said === "The chart did not load. Nothing has changed in your seats or your people. "
        + "Check your connection, then try again. If it keeps happening, tell your administrator: code POS-LOAD.Try again", said);
-    ok("070 AC-63: never the server's own message", !body().innerHTML.includes("SERVER-SNTL"));
+    ok("072 AC-63: never the server's own message", !body().innerHTML.includes("SERVER-SNTL"));
     alert.querySelector("button").click();
     await new Promise((r) => setTimeout(r, 20));
-    ok("070 AC-63: Try again loads again", calls === 2);
+    ok("072 AC-63: Try again loads again", calls === 2);
   }
 }
 
-deleteChecks().then(unChecks).then(seats070).then(() => {
+deleteChecks().then(unChecks).then(seats072).then(() => {
   if (problems.length) {
     console.error("positions tree: " + problems.length + " problem(s)");
     problems.forEach((p) => console.error("  FAIL " + p));
@@ -1529,6 +1529,6 @@ deleteChecks().then(unChecks).then(seats070).then(() => {
               + "identical siblings grouped without losing anybody, filters "
               + "show matches with the seats above faded, loops and deep chains survive, a seat is deleted only "
               + "when the server says so, a seat opens its tray, the people "
-              + "trays only for HR; slice 070: people under their manager's seat");
+              + "trays only for HR; slice 072: people under their manager's seat");
   process.exit(0);   // the jsdom window of section 22 would keep Node waiting
 });

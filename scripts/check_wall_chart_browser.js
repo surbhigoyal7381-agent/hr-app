@@ -44,7 +44,7 @@ function paperAudit() {
     r.people.forEach((p) => { (seatsOf[p.employee] = seatsOf[p.employee] || []).push(r.title); });
   });
   const idOf = (box) => { const t = box && box.querySelector(".ti"); return t ? t.textContent : null; };
-  // Slice 070: a copy's real parent is a seat where its people's manager
+  // Slice 072: a copy's real parent is a seat where its people's manager
   // sits, worked out here from the rows and manager keys - not from posPlace.
   const copyParents = (box) => {
     const r = byTitle[idOf(box)], out = new Set();
@@ -102,7 +102,7 @@ function paperAudit() {
   boxes.forEach((b) => {
     const rp = [...realParentOf(b)];
     if (rp.some((t) => shown[t]) && !linked.has(b)) bad.push("linked to nobody: " + idOf(b) + (b.classList.contains("copy") ? " (a copy)" : ""));
-    // Slice 070: a copy is an end box - nothing hangs under it.
+    // Slice 072: a copy is an end box - nothing hangs under it.
     if (b.classList.contains("copy") && b.closest(".oc-branch").querySelector(":scope > .oc-node > .oc-box") === b
         && b.closest(".oc-branch").querySelector(":scope > .oc-kids, :scope > .oc-fam")) bad.push("a copy with boxes under it: " + idOf(b));
   });
@@ -202,8 +202,8 @@ function paperAudit() {
     if (OUT) { await page.locator("#pos-wall-print .pos-wall").screenshot({ path: path.join(OUT, "paper-" + label.replace(/[^a-z0-9]+/gi, "-") + ".png") }); await page.evaluate(() => { document.getElementById("pos-wall-print").style.cssText = ""; }); }
   }
 
-  /* ── slice 070: copies on paper, and the size with them (AC-61, AC-62, AC-65) ── */
-  log("\nSlice 070: F-DTC90 with Reports To (census-shaped: copies under the CFO, a 57-name Back Office copy), one sheet, Show Vacant on");
+  /* ── slice 072: copies on paper, and the size with them (AC-61, AC-62, AC-65) ── */
+  log("\nSlice 072: F-DTC90 with Reports To (census-shaped: copies under the CFO, a 57-name Back Office copy), one sheet, Show Vacant on");
   await load(F.reporting());
   const r70 = [];
   for (const [label, lv, hr] of [["2 levels, HR copy off", 2, false], ["All, HR copy off", 99, false], ["All, HR copy on", 99, true]]) {
@@ -212,7 +212,7 @@ function paperAudit() {
     log(`  ${label.padEnd(24)} ${m.w} x ${m.h} px  K ${m.K} KU ${m.KU}  A3 ${f1(m.pt.A3)}  A1 ${f1(m.pt.A1)}  A0 ${f1(m.pt.A0)} pt  several A3: ${m.sheetsA3}  ${m.ms} ms`);
   }
   const a1With = r70[1][1].pt.A1;
-  log(`  070 All on A1 with copies: ${f1(a1With)} pt (069's kill line is 8 pt; not changed by this slice - reported to Surbhi)`);
+  log(`  072 All on A1 with copies: ${f1(a1With)} pt (069's kill line is 8 pt; not changed by this slice - reported to Surbhi)`);
   if (a1With < 8) {
     // AC-62: the panel never shrinks names below 8 pt; it offers a larger paper or several sheets.
     await page.evaluate(() => { window.print = () => {}; POS.wall = null; posWallOpen(); });
@@ -221,13 +221,13 @@ function paperAudit() {
     await page.waitForFunction(() => POS.wall && POS.wall.L, null, { timeout: 30000 });
     const words = await page.evaluate(() => document.querySelector(".pos-wall-result").innerText.replace(/\s+/g, " "));
     log("  All on A1, the panel says: " + words);
-    must("070 AC-62: under 8 pt on A1 the panel offers A0 or several sheets", /Use A0 \(names at \d+ pt\)/.test(words) || /Use \d+ A1 sheets/.test(words), words);
+    must("072 AC-62: under 8 pt on A1 the panel offers A0 or several sheets", /Use A0 \(names at \d+ pt\)/.test(words) || /Use \d+ A1 sheets/.test(words), words);
     await page.evaluate(() => posCloseSheet());
   }
-  for (const [label, lv] of [["070 All", 99], ["070 2 levels", 2], ["070 3 levels", 3]]) {
+  for (const [label, lv] of [["072 All", 99], ["072 2 levels", 2], ["072 3 levels", 3]]) {
     await page.evaluate((lv) => { const html = posWallLayout(posWallCopy("top", lv, true, false)).html; posWallHolder().innerHTML = html; }, lv);
     const r = await page.evaluate(paperAudit);
-    must(`070 AC-65 lines on paper, ${label}: ${r.boxes} boxes, ${r.segs} lines, 0 false or missing links (copies to their manager's seat)`, !r.bad.length, r.bad.slice(0, 3).join(" | "));
+    must(`072 AC-65 lines on paper, ${label}: ${r.boxes} boxes, ${r.segs} lines, 0 false or missing links (copies to their manager's seat)`, !r.bad.length, r.bad.slice(0, 3).join(" | "));
     if (OUT) await page.evaluate(() => { const h = document.getElementById("pos-wall-print"); h.style.cssText = "position:static;visibility:visible"; });
     if (OUT) { await page.locator("#pos-wall-print .pos-wall").screenshot({ path: path.join(OUT, "paper-" + label.replace(/[^a-z0-9]+/gi, "-") + ".png") }); await page.evaluate(() => { document.getElementById("pos-wall-print").style.cssText = ""; }); }
   }

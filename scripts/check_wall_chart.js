@@ -102,7 +102,7 @@ function neverPrinted(label, p) {
 
   /* ── AC-28: the copy holds exactly the allowed keys ─────────────────── */
   function keysOk(copy, hr) {
-    // Slice 070 (PRIV-2): plus copy, same and more - a copy's border and its two lines.
+    // Slice 072 (PRIV-2): plus copy, same and more - a copy's border and its two lines.
     const want = ["below", "branch", "copy", "department", "designation", "kids", "more", "names", "same", "title", "vacant"]
       .concat(hr ? ["opening"] : []).sort().join(",");
     let bad = null;
@@ -172,7 +172,7 @@ function neverPrinted(label, p) {
   const g = paper(window.posWallCopy("top", 99, true, false));
   const gb = [...g.el.querySelectorAll(".oc-box")].filter((b) => b.querySelector(".ti").textContent === "Cashier");
   ok("D-6: six Cashiers in two branches print as two boxes", gb.length === 2, gb.length);
-  // Slice 070 (P-27): a partly filled box says how many are open, never Vacant.
+  // Slice 072 (P-27): a partly filled box says how many are open, never Vacant.
   ok("D-6: the Noida box has all 3 names and no Vacant", gb[0] && gb[0].querySelectorAll(".nm > div").length === 3 && !/Vacant/.test(gb[0].textContent)
      && /1 open/.test(gb[0].textContent));
   ok("D-6: the empty Delhi box says Vacant", gb[1] && !!gb[1].querySelector(".vac"));
@@ -488,7 +488,7 @@ function neverPrinted(label, p) {
   ok("AC-2: no onclick=\"window.print()\" in the Positions code", !/onclick="window\.print\(\)"/.test(posCode));
   ok("AC-2: exactly one window.print(), inside the wall chart's print", (posCode.match(/window\.print\(\)/g) || []).length === 1 && fnBody.includes("window.print()"));
 
-  /* ── slice 070: the paper prints what Reporting lines draws (AC-55 - AC-60, PRIV-2) ── */
+  /* ── slice 072: the paper prints what Reporting lines draws (AC-55 - AC-60, PRIV-2) ── */
   {
     const d = F.reporting();
     load(d);
@@ -497,31 +497,31 @@ function neverPrinted(label, p) {
     const all = paper(window.posWallCopy("top", 99, true, false));
     const printed = [...all.el.querySelectorAll(".nm > div")].map((x) => x.textContent).sort().join("|");
     const everyone = d.rows.reduce((a, r) => a.concat(r.people.map((p) => p.name)), []).sort().join("|");
-    ok("070 AC-55: every person prints exactly once", printed === everyone, names(all) + " printed");
+    ok("072 AC-55: every person prints exactly once", printed === everyone, names(all) + " printed");
     const copies = [...all.el.querySelectorAll(".oc-box.copy")];
-    ok("070 AC-55: copies print dashed, each with its line", copies.length >= 10
+    ok("072 AC-55: copies print dashed, each with its line", copies.length >= 10
        && copies.every((b) => /^(Same seat as under|Set up under) /.test((b.querySelector(".oc-same") || {}).textContent || "")), copies.length);
-    ok("070 AC-55: a copy says it is the same seat", (box(all, "Office Executive", true)[0] || { textContent: "" }).textContent
+    ok("072 AC-55: a copy says it is the same seat", (box(all, "Office Executive", true)[0] || { textContent: "" }).textContent
        .includes("Same seat as under Owner and Managing Director · 6 in all"));
-    ok("070 AC-55: a home says where its other people are", (box(all, "Back Office", false)[0] || { textContent: "" }).textContent
+    ok("072 AC-55: a home says where its other people are", (box(all, "Back Office", false)[0] || { textContent: "" }).textContent
        .includes("63 more shown under 2 other managers"));
     const mis = box(all, "MIS", false)[0];
-    ok("070 AC-57: a home with all its people elsewhere says None here, and its open slot", mis
+    ok("072 AC-57: a home with all its people elsewhere says None here, and its open slot", mis
        && /None here: all 1 under Chief Financial Officer/.test(mis.textContent) && /1 open/.test(mis.textContent) && !/Vacant/.test(mis.textContent));
-    ok("070 AC-57: Vacant only on a seat with nobody at all", [...all.el.querySelectorAll(".vac")].filter((v) => v.textContent === "Vacant").length === 5);
-    ok("070 AC-23 on paper: a home with nothing left does not print", !box(all, "Store Auditor", false).length
+    ok("072 AC-57: Vacant only on a seat with nobody at all", [...all.el.querySelectorAll(".vac")].filter((v) => v.textContent === "Vacant").length === 5);
+    ok("072 AC-23 on paper: a home with nothing left does not print", !box(all, "Store Auditor", false).length
        && /Set up under Owner and Managing Director/.test((box(all, "Store Auditor", true)[0] || { textContent: "" }).textContent));
     const novac = paper(window.posWallCopy("top", 99, false, false));
-    ok("070 AC-57: with Show Vacant off, no Vacant and no open count", !/Vacant| open\b/.test(novac.text));
+    ok("072 AC-57: with Show Vacant off, no Vacant and no open count", !/Vacant| open\b/.test(novac.text));
     const bo = d.rows.find((r) => r.title === "Back Office"), bx = d.rows.find((r) => r.title === "Backoffice Executive");
     const one = window.posWallCopy(bo.id, 1, true, false)[0];
-    ok("070 AC-59: below counts each seat and person once, never the box's own seat", one.below && one.below.seats === 3 && one.below.people === 65,   // BX, and copies of Back Office, Data Entry, Billing under it
+    ok("072 AC-59: below counts each seat and person once, never the box's own seat", one.below && one.below.seats === 3 && one.below.people === 65,   // BX, and copies of Back Office, Data Entry, Billing under it
        JSON.stringify(one.below));
     window.POS.wall = { start: "top" };
     const starts = window.posWallStarts(window.posKids(window.POS.rows)).map((s) => s[0]);
-    ok("070 AC-60: a seat with only copies under it is a place to start", starts.includes(bx.id));
+    ok("072 AC-60: a seat with only copies under it is a place to start", starts.includes(bx.id));
     const fromBx = paper(window.posWallCopy(bx.id, 99, true, false));
-    ok("070 AC-60: and starting there prints its copies", fromBx.el.querySelectorAll(".oc-box.copy").length === 3 && names(fromBx) === 1 + 57 + 4 + 3,
+    ok("072 AC-60: and starting there prints its copies", fromBx.el.querySelectorAll(".oc-box.copy").length === 3 && names(fromBx) === 1 + 57 + 4 + 3,
        names(fromBx));
     window.POS.wall = null;
     // AC-56: the footer counts seat records and people once.
@@ -530,7 +530,7 @@ function neverPrinted(label, p) {
     window.posWallOpen(); await settle(80);
     window.posWallSet("levels", String(window.posWallLevels(window.posKids(window.POS.rows)).slice(-1)[0][0])); await settle(80);
     window.posWallPrint();
-    ok("070 AC-56: the footer reads seats · people in seats", shot && shot.endsWith(" · " + d.rows.length + " seats · "
+    ok("072 AC-56: the footer reads seats · people in seats", shot && shot.endsWith(" · " + d.rows.length + " seats · "
        + d.rows.reduce((a, r) => a + r.people.length, 0) + " people in seats"), shot);
     window.dispatchEvent(new window.Event("afterprint")); window.posCloseSheet(); window.POS.wall = null;
 
@@ -543,10 +543,10 @@ function neverPrinted(label, p) {
     load(s);
     for (const hr of [false, true]) {
       const p = paper(window.posWallCopy("top", 99, true, hr));
-      ok("070 PRIV-2 (HR copy " + (hr ? "on" : "off") + "): no manager id, unseated name, employee id or plan reaches paper",
+      ok("072 PRIV-2 (HR copy " + (hr ? "on" : "off") + "): no manager id, unseated name, employee id or plan reaches paper",
          !/MGR-SNTL|MGRNAME-SNTL|HR-EMP|ASG-SNTL|HIRED-SNTL|PLAN-SNTL|IMG-SNTL/.test(p.html));
       const bad = keysOk(window.posWallCopy("top", 99, true, hr), hr);
-      ok("070 PRIV-2 (HR copy " + (hr ? "on" : "off") + "): copies hold exactly the allowed keys", !bad, bad);
+      ok("072 PRIV-2 (HR copy " + (hr ? "on" : "off") + "): copies hold exactly the allowed keys", !bad, bad);
     }
   }
 

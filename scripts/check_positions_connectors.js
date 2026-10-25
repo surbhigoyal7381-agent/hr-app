@@ -47,7 +47,7 @@ function audit(dev) {
   const rows = POS.rows, byId = {};
   rows.forEach((r) => { byId[r.id] = r; });
   const how = (document.getElementById("pos-f-arrange") || {}).value || "reporting";
-  // Slice 070: a copy's real parent is a seat its people's manager sits in,
+  // Slice 072: a copy's real parent is a seat its people's manager sits in,
   // worked out here from the rows and the manager keys - never from posPlace.
   const byTitle = {}, seatsOf = {};
   rows.forEach((r) => { byTitle[r.title] = r; r.people.forEach((p) => { (seatsOf[p.employee] = seatsOf[p.employee] || []).push(r.id); }); });
@@ -107,7 +107,7 @@ function audit(dev) {
     const id = idOf(b), rp = realParents(b);
     if (rp.some((x) => x) && !linked[id] && boxes.some((x) => rp.indexOf(idOf(x)) >= 0)) bad.push("linked to nobody: " + id);
   });
-  // Slice 070: a copy is an end box; a home with nobody, no open slot and
+  // Slice 072: a copy is an end box; a home with nobody, no open slot and
   // nothing under it is not drawn.
   boxes.forEach((b) => {
     const node = b.closest(".oc-node"), br = node.parentElement.classList.contains("oc-branch") ? node.parentElement : null;
@@ -155,7 +155,7 @@ function audit(dev) {
     zoom: (document.querySelector(".pos-zpct") || {}).textContent || "", arrange: (document.getElementById("pos-f-arrange") || {}).value };
 }
 
-/* Slice 070: FIXTURE=reporting runs with no site - the page is built from
+/* Slice 072: FIXTURE=reporting runs with no site - the page is built from
  * this checkout and position_table answers with the census-shaped fixture
  * (scripts/lib/wall_chart_fixture.js reporting()), as check_wall_chart_browser.js does. */
 const FIXTURE = process.env.FIXTURE || "";
@@ -213,10 +213,10 @@ const FIXTURE = process.env.FIXTURE || "";
       if (c) { await c.click(); await p.waitForTimeout(200); }
     };
     await run("opening view");
-    // Slice 070: the five cases, each opened the way Find opens it.
-    for (const [label, title, also] of [["070 split seat", "Office Executive", "Chief Financial Officer"], ["070 vacancy on home only", "Back Office", "Backoffice Executive"],
-                                  ["070 hidden empty home", "Store Auditor"], ["070 manager in no seat", "Packing"],
-                                  ["070 manager outside scope", "RSO Noida"]]) {
+    // Slice 072: the five cases, each opened the way Find opens it.
+    for (const [label, title, also] of [["072 split seat", "Office Executive", "Chief Financial Officer"], ["072 vacancy on home only", "Back Office", "Backoffice Executive"],
+                                  ["072 hidden empty home", "Store Auditor"], ["072 manager in no seat", "Packing"],
+                                  ["072 manager outside scope", "RSO Noida"]]) {
       // `also`: the manager's seat a copy hangs under, opened too.
       const has = await p.evaluate(([t, a]) => { const r = POS.rows.find((x) => x.title === t); if (!r) return false;
         POS.collapsed = {}; POS.expanded = {}; posFindPick(r.id);

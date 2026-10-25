@@ -291,7 +291,7 @@ def position_table(branch=None, department=None, as_at=None):
 
 	names = [s.name for s in seats]
 	filled, people = {}, {}
-	# Slice 070: each person's Reports To and status ride on this same read,
+	# Slice 072: each person's Reports To and status ride on this same read,
 	# through Frappe's link-field join - no second statement. Kept aside in
 	# `line`, never on the person, until the rule below decides what may go.
 	line, seated_active = {}, set()
@@ -459,7 +459,7 @@ def position_table(branch=None, department=None, as_at=None):
 
 
 def _add_managers(rows, line, seated_active, out, as_at):
-	"""Slice 070: who each seated person reports to, so the chart can draw them
+	"""Slice 072: who each seated person reports to, so the chart can draw them
 	under their manager's seat. FAILS CLOSED (SEC-1): the key says only what
 	this reply already holds.
 

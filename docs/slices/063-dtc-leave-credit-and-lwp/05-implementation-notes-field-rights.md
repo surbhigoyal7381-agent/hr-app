@@ -177,6 +177,39 @@ OK; `test_manager_scope` 12 OK; `test_grooming_066` 64 + 1 OK; `test_grooming_ca
 Not run: the hrms per-doctype CI job (`hrms_test_site`); `bench migrate` (on the approval list
 - the after_install path was observed instead, and `apply()` is the same function).
 
+## Review 06 (BLOCK) - the three fixes, 26 Oct
+
+| # | Finding | Fix | Test |
+|---|---|---|---|
+| B1 | The tests errored on a fresh site: the self-service test user was made before its Employee, and ERPNext strips the role from a user with no Employee | `setUpClass` gives the role back once the Employee exists | Whole module on brand-new sites (results below) |
+| B2 | Two silent drops: an HR User cancelling a CTC Promotion left the revised CTC in place; an HR User's Transfer with a new employee ID gave the new record no bank account or CTC while the old one was marked Left | `refuse_locked_promotion_fields` now runs on `before_submit` **and** `before_cancel` of Employee Promotion and Employee Transfer, and counts every field the action writes: the detail rows, CTC, company and joining date on a company move, and - for a new employee ID - every locked field that holds a value plus status and relieving date. Refused before anything is written ("Nothing has been changed. Ask an HR Manager to do it."). A Promotion or Transfer about yourself is refused here too, because the new-ID path never saves your own record | `test_alv215_cancelling_a_ctc_promotion_is_refused_not_left_half_undone`, `test_alv215_transfer_to_a_new_employee_id_is_refused_before_anything_moves` |
+| B3 | PAN, ESI, PF, IFSC and MICR are created when the first Indian company is set up, after install, so a new tenant left them open until the next migrate | Custom Field `after_insert` -> `lock_new_custom_field`: an Employee field on the level-1 or level-2 list (or named by a rule set) is locked the moment it is made | `test_alv215_indian_fields_created_after_install_are_locked_at_once` (removes the five and re-makes them through Frappe HR's own `make_custom_fields`) |
+
+Security verification 06b (no blocker) asked for one more pin:
+`test_alv215_hr_cannot_move_themselves_to_another_company_by_transfer` - a self-Transfer with a
+new employee ID never saves your own record, so only the own-record check in
+`refuse_locked_promotion_fields` stops it. The Version-timeline exposure of old and new bank, PAN
+and CTC values is older than this branch and is its own ticket (ALV-229 area); not touched here.
+
+**Proof, on sites in my own container only (testfr, and fresh testfr2 / testfr3 / testfr4):**
+
+| Check | Result |
+|---|---|
+| Fresh testfr2: five Indian fields before any company | absent |
+| Same site, right after an Indian company is created | all five at level 1 |
+| Fresh testfr2, whole module, run 1 then run 2 | 20 OK, 20 OK |
+| Fresh testfr4 with the B1 line removed | FAILED (errors=2) - the review's failure, reproduced |
+| Cancel hooks removed | cancel test fails |
+| New-ID block removed | transfer test fails |
+| `lock_new_custom_field` disabled | Indian-fields test fails |
+| Own-record check removed | self-Transfer test fails |
+
+Other paths checked for B2: Employee Promotion and Transfer submit and cancel (all four now
+checked); an amended Promotion or Transfer is a new submit, so it is checked too; Exit Interview
+writes `held_on` with `frappe.db.set_value` (not a locked field); Employee Separation, Full and
+Final Statement and Employee Grievance write no Employee field (grep of `hrms/hr` and
+`hrms/payroll`).
+
 ## Release notes for later (not done - each needs Surbhi's word)
 
 1. D5: read-only query on DTC, Grace and PPJ production first (fields above level 0; Employee

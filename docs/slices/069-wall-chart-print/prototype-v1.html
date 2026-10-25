@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>069 wall chart - prototype v1 (sample data)</title>
+<!--
+  Slice 069 - Download wall chart (PDF). Prototype v1, 24 Oct 2026, hrms-ux-designer.
+  INVENTED DATA ONLY: invented names, invented company, on DTC's shape
+  (Owner, 22 seats under him, 5 leads with 14/10/13/19/11 seats, 363 people in 90 seats).
+  Not production code. The chart markup copies ocNodeCard/ocRender from portal.js and the
+  chart CSS from panels.css (slice 064, approved look prototype-old-v2), so the print uses the
+  same drawing as the screen.
+-->
+<style>
+/* ── Design-system tokens (design_system.html), light and dark ───────────── */
+:root{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);
+  --font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--r-full:999px;
+  /* --fs-xs is 11px in design_system.html; raised to 12 here for the 12 px floor (slice 009 decision 5, still open) */
+  --fs-xs:12px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px;
+  --r-xs:var(--r-sm);--accent:var(--primary);
+}
+:root[data-theme="dark"]{
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+  --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:var(--fs-base)}
+
+/* ── Review scaffolding (not part of the product). Wraps, never sticky. ──── */
+.rv{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 12px;background:#2D2622;color:#fff;font-size:13px}
+.rv b{font-weight:700}
+.rv label{display:inline-flex;gap:6px;align-items:center}
+.rv select{font:inherit;font-size:14px;min-height:36px;border-radius:6px;padding:2px 6px}
+.rv .tag{background:#FBF1E0;color:#94600F;border-radius:999px;padding:2px 8px;font-weight:700}
+
+/* ── Portal pieces used on Positions (panels.css, copied) ──────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--r-sm);font-size:var(--fs-base);font-weight:600;cursor:pointer;border:none;font-family:inherit;white-space:nowrap}
+.btn-primary{background:var(--primary);color:var(--surface);box-shadow:var(--sh2)}
+.btn-primary:hover{background:var(--primary-h)}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}
+.btn-outline:hover{background:var(--primary-lt)}
+.btn-sm{padding:6px 13px;font-size:var(--fs-sm);border-radius:var(--r-xs)}
+.btn:focus-visible,.pos-link:focus-visible,select:focus-visible,input:focus-visible+span{outline:3px solid var(--primary);outline-offset:2px}
+.pf-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.pf-h{font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.pf-sub{font-size:var(--fs-sm);color:var(--text3);margin-top:2px}
+.pf-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);box-shadow:var(--sh1);padding:16px 18px;margin-bottom:12px}
+.gp-label{display:block;font-size:var(--fs-xs);font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.gp-input{width:100%;padding:9px 12px;border:1.5px solid var(--border2);border-radius:var(--r-xs);background:var(--surface);color:var(--text);font-size:var(--fs-base);font-family:inherit}
+.oc-stats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.oc-stat{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r);padding:8px 14px;min-width:112px;background:var(--surface)}
+.oc-stat .n{font-size:var(--fs-lg);font-weight:700;line-height:1.1}
+.oc-stat .l{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-top:3px}
+.oc-stat.tone-medium{border-left-color:var(--amber);background:rgba(217,119,6,.05)}
+.pos-link{border:0;background:none;color:var(--primary);padding:4px 2px;text-decoration:underline;min-height:28px;cursor:pointer;font:inherit}
+
+/* the chart (panels.css 2023-2069, 2115-2140, 2177-2193) */
+.oc-tree{overflow-x:auto;padding:4px 2px 24px;display:flex;justify-content:flex-start}
+.oc-tree > .oc-branch{margin-inline:auto}
+.oc-branch{display:flex;flex-direction:column;align-items:center;position:relative}
+.oc-kids{display:flex;gap:18px;padding-top:22px;position:relative}
+.oc-kids::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;background:var(--border)}
+.oc-kids > .oc-branch::before{content:"";position:absolute;top:-22px;left:50%;width:1px;height:22px;background:var(--border)}
+.oc-kids > .oc-branch::after{content:"";position:absolute;top:-22px;left:-9px;right:-9px;height:1px;background:var(--border)}
+.oc-kids > .oc-branch:first-child::after{left:50%}
+.oc-kids > .oc-branch:last-child::after{right:50%}
+.oc-kids > .oc-branch:only-child::after{display:none}
+.oc-node{position:relative;display:flex;flex-direction:column;align-items:center}
+.oc-box{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r);padding:10px 12px;min-width:196px;max-width:240px;cursor:pointer;color:var(--text)}
+.oc-node.root > .oc-box{border-color:var(--accent);box-shadow:var(--sh1)}
+.oc-box-hd{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.oc-box-hd .ti{font-size:var(--fs-base);font-weight:650;color:var(--text);line-height:1.3}
+.oc-box .sub{font-size:var(--fs-xs);color:var(--text3);margin-top:1px}
+.oc-who{display:flex;gap:7px;align-items:center;margin-top:8px;font-size:var(--fs-sm);color:var(--text)}
+.oc-who .av{width:24px;height:24px;border-radius:50%;flex:none;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);font-weight:700;color:var(--text3)}
+.oc-who.oc-empty{color:var(--text3);font-style:italic}
+.oc-toggle{margin-top:-1px;position:relative;z-index:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-full);color:var(--text3);font:inherit;font-size:var(--fs-sm);line-height:1;padding:3px 9px;cursor:pointer;display:flex;gap:5px;align-items:center;min-height:24px}
+.oc-tag{display:inline-block;font-size:var(--fs-xs);font-weight:700;letter-spacing:.03em;padding:1px 6px;border-radius:var(--r);margin-left:6px;vertical-align:middle}
+.oc-tag.v{background:var(--red-lt);color:var(--red)}
+.oc-hang{position:relative;display:flex;flex-direction:column}
+.oc-hang::after{content:"";position:absolute;top:0;left:10px;right:50%;height:1px;background:var(--border)}
+.oc-hang-item{position:relative;padding:8px 0 0 24px}
+.oc-hang-item::before{content:"";position:absolute;top:0;left:10px;width:1px;height:100%;background:var(--border)}
+.oc-hang-item:last-child::before{height:calc(50% + 4px)}
+.oc-hang-item::after{content:"";position:absolute;top:calc(50% + 4px);left:10px;width:14px;height:1px;background:var(--border)}
+.pos-nomgr-row{display:flex;justify-content:flex-end;margin:0 0 8px}
+.pos-nomgr{border-style:dashed;max-width:260px}
+.oc-fam{position:relative;display:flex;flex-direction:column;align-items:flex-start;padding:0 20px}
+.oc-fam > .oc-kids::after{content:"";position:absolute;left:-10px;top:0;bottom:0;width:1px;background:var(--border)}
+.oc-fam > .oc-kids > .oc-branch:first-child::after{left:-10px}
+.oc-fam > .oc-kids > .oc-branch:only-child::after{display:block;left:-10px;right:50%}
+.oc-hang.under{margin-left:-20px;padding-top:14px}
+.oc-hang.under::after{display:none}
+.oc-hang.under::before{content:"";position:absolute;top:0;left:10px;width:1px;height:14px;background:var(--border)}
+.oc-zoom{display:flex;flex:none;margin-inline:auto}
+.oc-zoom > .oc-branch{margin-inline:auto}
+.pos-ztools{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:0 0 10px}
+.pos-zpct{min-width:44px;text-align:center;font-weight:600}
+.pos-ztools .btn{min-height:30px}
+.oc-box.tone-medium{border-left-color:var(--amber);background:rgba(217,119,6,.05)}
+.oc-flags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.oc-flag{font-size:var(--fs-xs);font-weight:650;letter-spacing:.02em;padding:1px 6px;border-radius:var(--r-full);border:1px solid transparent}
+.oc-flag.medium{background:rgba(217,119,6,.12);color:var(--amber);border-color:rgba(217,119,6,.24)}
+
+/* the existing tray component (.pos-sheet), reused for the panel */
+.pos-scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1149}
+.pos-sheet{position:fixed;top:0;right:0;bottom:0;width:460px;max-width:100%;background:var(--surface);z-index:1150;box-shadow:var(--sh3);display:flex;flex-direction:column;color:var(--text)}
+.pos-sheet .sh-h{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.pos-sheet h2{font-size:var(--fs-lg);margin:0}
+.pos-sheet .sh-b{padding:14px 16px;overflow:auto;flex:1}
+.pos-sheet .sh-f{padding:12px 16px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.pos-sheet .su{color:var(--text3);font-size:var(--fs-sm)}
+.pos-note{background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px;margin:10px 0;font-size:var(--fs-base);line-height:1.45}
+.pos-note.amber{background:var(--amber-lt)}
+.pos-note.info{background:var(--primary-lt)}
+.pos-note p{margin:0}
+.pos-note p + p{margin-top:6px}
+
+/* ── New for 069: only what the panel needs ──────────────────────────────
+   Native selects and radios; the paper choice is a row of radio "chips". */
+.wcp-field{margin:14px 0 0}
+.wcp-field > .gp-label{margin-bottom:6px}
+.wcp-field select{min-height:36px}
+.wcp-chips{display:flex;flex-wrap:wrap;gap:6px}
+.wcp-chip{position:relative}
+.wcp-chip input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.wcp-chip span{display:inline-flex;align-items:center;justify-content:center;min-width:52px;min-height:36px;padding:0 12px;border:1.5px solid var(--border2);border-radius:var(--r-sm);font-weight:600;background:var(--surface);color:var(--text)}
+.wcp-chip input:checked + span{border-color:var(--primary);background:var(--primary-lt);color:var(--primary)}
+.wcp-radio{display:flex;gap:10px;align-items:flex-start;padding:8px 0;min-height:36px;cursor:pointer}
+.wcp-radio input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--primary);flex:none}
+.wcp-radio small{display:block;color:var(--text3);font-size:var(--fs-sm)}
+.wcp-hint{color:var(--text3);font-size:var(--fs-sm);margin-top:4px}
+.wcp-result{border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-top:16px;background:var(--surface2)}
+.wcp-result .big{font-size:var(--fs-md);font-weight:700}
+.wcp-result.warn{border-color:var(--amber);background:var(--amber-lt)}
+.wcp-result .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.wcp-mark{font-weight:700}
+.wcp-sample{display:inline-block;font-size:var(--fs-xs);font-weight:700;background:var(--amber-lt);color:var(--amber);border-radius:var(--r-full);padding:1px 8px;margin-left:6px;vertical-align:middle}
+
+/* print preview stand-in (in the product: the browser's own window) */
+.pv{position:fixed;inset:0;z-index:1300;background:#525659;display:flex;flex-direction:column;color:#fff}
+.pv-top{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:10px 14px;background:#323639;font-size:13px}
+.pv-top b{font-size:14px}
+.pv-main{flex:1;display:flex;min-height:0}
+.pv-stage{flex:1;overflow:auto;padding:16px;min-width:0}
+.pv-side{width:300px;flex:none;background:#fff;color:#2D2622;padding:16px;overflow:auto;font-size:13px}
+.pv-side dl{margin:0 0 12px;display:grid;grid-template-columns:auto 1fr;gap:8px 12px}
+.pv-side dt{color:#5A544E}
+.pv-side dd{margin:0;font-weight:600}
+.pv-side .note{background:#EDEAF4;border-radius:6px;padding:8px 10px;margin:10px 0;line-height:1.45}
+.pv-side .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pv-side .btn-outline{color:#5B4B8A;border-color:#5B4B8A}
+.pv-side .btn-primary{background:#5B4B8A;color:#fff}
+.pv-grid{display:grid;gap:14px;width:max-content;margin:0 auto}
+.paper{background:#fff;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.5)}
+.paper .clip{position:absolute;overflow:hidden}
+.paper .foot{position:absolute;left:0;right:0;color:#2D2622;font-family:var(--font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pv-label{color:#fff;font-size:12px;margin-top:4px;text-align:center}
+.pv-toast{background:#1B7F5A;color:#fff;padding:10px 14px;font-size:13px}
+
+/* ── The paper. Always light: a wall chart is printed on white, whatever
+   the screen theme. Uses the SAME chart markup and lines as the screen. ── */
+.wc{--surface:#fff;--border:#8F8880;--text:#2D2622;--text3:#4A443F;--accent:#5B4B8A;--bg:#fff;background:#fff;color:#2D2622;font-family:var(--font);display:inline-block;width:max-content;padding:8px;font-size:13px;line-height:1.25}
+.wc .oc-box .sub{line-height:1.3}
+.wc .oc-box-hd{display:block}
+.wc .oc-box{cursor:default;box-shadow:none;border-left-width:1px;padding:7px 9px;width:200px;min-width:200px;max-width:none}
+.wc .oc-node.root > .oc-box{border:2px solid #5B4B8A}
+.wc .oc-box-hd .ti{font-size:14px}
+.wc .oc-box .sub{font-size:11px}
+.wc .nm{margin-top:4px;font-size:13px;line-height:1.25;column-gap:14px}
+.wc .nm div{break-inside:avoid}
+.wc .vac{margin-top:4px;font-size:13px;font-style:italic;color:#4A443F}
+.wc .below{margin-top:4px;padding-top:4px;border-top:1px solid #D8D3CC;font-size:11px;color:#4A443F}
+/* the wrap: a long column of seats with nobody under them becomes several
+   columns side by side, so the chart takes the paper's shape */
+.wc .oc-hang.wrap{display:grid;grid-auto-flow:column;column-gap:20px}
+.wc .oc-hang.wrap::after{display:none}
+.wc .oc-hang-item{padding-top:8px}
+.wc .oc-hang-item::after{top:25px}
+.wc .oc-hang-item.ce::before{height:26px}
+.wc .oc-hang-item:last-child::before{height:26px}
+.wc .wc-bar{position:absolute;height:1px;background:var(--border)}
+.wc .wc-roots{display:grid;grid-auto-flow:column;gap:12px 16px;align-items:start}
+
+/* ── Phone. In the product these are @media (max-width:640px) rules; the
+   script copies them under .phone for the Device switch (ux-learnings). ── */
+@media (max-width:640px){
+  #pos-body .oc-kids{flex-direction:column;align-items:center;gap:10px}
+  #pos-body .oc-kids::before,#pos-body .oc-kids > .oc-branch::before,#pos-body .oc-kids > .oc-branch::after{display:none}
+  #pos-body .oc-box{min-width:0;width:100%;max-width:none}
+  #pos-body .oc-node,#pos-body .oc-branch{align-items:stretch;width:100%}
+  #pos-body .oc-fam{padding:0;align-items:stretch;width:100%}
+  #pos-body .oc-hang.under{margin-left:0}
+  #pos-body .oc-hang-item{padding:10px 0 0}
+  #pos-body .oc-fam > .oc-kids::after,#pos-body .oc-fam > .oc-kids > .oc-branch::after,#pos-body .oc-hang::before,#pos-body .oc-hang::after,#pos-body .oc-hang-item::before,#pos-body .oc-hang-item::after{display:none}
+  #pos-body .oc-zoom{flex-direction:column;align-items:stretch;flex:1 1 auto}
+  #pos-body .pos-ztools .btn,#pos-body .oc-toggle{min-height:44px;min-width:44px}
+  #page{padding:12px}
+  .pf-toolbar .tb-acts{width:100%;flex-direction:column}
+  .pf-toolbar .tb-acts .btn{width:100%;min-height:44px}
+  .pos-link{min-height:44px}
+  #page .pf-card select{min-height:44px;font-size:16px}
+  .pos-sheet{left:0;right:0;top:auto;width:100%;max-height:88%;border-radius:var(--r) var(--r) 0 0}
+  .pos-sheet .btn{min-height:44px}
+  .pos-sheet select{min-height:44px;font-size:16px}
+  .wcp-chip span{min-height:44px;min-width:56px}
+  .wcp-radio{min-height:44px}
+  .rv select{min-height:44px}
+  .pv-main{flex-direction:column}
+  .pv-side{width:auto}
+  .pv-side .btn{min-height:44px}
+  .pv-top .btn{min-height:44px}
+}
+
+/* ── Page frame (simplified portal) ─────────────────────────────────────── */
+#app{position:relative}
+#app.phone{width:390px;height:844px;margin:16px auto;border:1px solid var(--border2);border-radius:18px;overflow:hidden;transform:translateZ(0)}
+#app.phone #scroll{height:100%;overflow:auto}
+.topbar{display:flex;align-items:center;gap:10px;height:56px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border);font-weight:700;font-size:var(--fs-md)}
+#page{padding:24px;max-width:1200px;margin:0 auto}
+.tb-acts{display:flex;gap:8px;flex-wrap:wrap}
+#measure{position:absolute;left:-100000px;top:0;visibility:hidden}
+</style>
+</head>
+<body>
+<div class="rv" aria-label="Review controls, not part of the product">
+  <b>069 wall chart · prototype v1</b>
+  <span class="tag">Sample data: invented names on DTC's shape</span>
+  <label>Person <select id="rv-who">
+    <option value="hr">Ritika, HR Manager (whole company)</option>
+    <option value="owner">Owner (Branch permission: Pitampura)</option>
+  </select></label>
+  <label>Device <select id="rv-dev"><option value="desk">Desktop</option><option value="phone">Phone 390</option></select></label>
+  <label>Theme <select id="rv-theme"><option value="">Light</option><option value="dark">Dark</option></select></label>
+  <label>Jump to <select id="rv-state">
+    <option value="">-</option>
+    <option value="panel">Panel as it opens</option>
+    <option value="warn">All levels on A3 (warning)</option>
+    <option value="pv-hod">Print preview: 23 boxes on A3</option>
+    <option value="pv-all">Print preview: All on A1, one sheet</option>
+    <option value="pv-tiles">Print preview: All on A3, several sheets</option>
+  </select></label>
+</div>
+
+<div id="app"><div id="scroll">
+  <div class="topbar">Positions</div>
+  <div id="page">
+    <div class="pf-toolbar">
+      <div>
+        <div class="pf-h">Positions <span class="wcp-sample">Sample</span></div>
+        <div class="pf-sub">Every seat in the organisation, who is in it, and which are empty.</div>
+      </div>
+      <div class="tb-acts">
+        <button type="button" class="btn btn-outline btn-sm" id="wc-open" onclick="wcOpen()">Download wall chart (PDF)</button>
+        <button type="button" class="btn btn-primary btn-sm">+ Add a seat</button>
+      </div>
+    </div>
+    <div id="pos-tiles" class="oc-stats"></div>
+    <div class="pf-card">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div><label class="gp-label" for="pos-f-branch">Branch</label>
+          <select class="gp-input" id="pos-f-branch" style="width:auto" onchange="paintPage()"><option value="">All branches</option></select></div>
+      </div>
+    </div>
+    <div id="pos-body"></div>
+  </div>
+</div>
+<div id="layer"></div>
+</div>
+<div id="measure"></div>
+
+<script>
+"use strict";
+/* ── Invented data on DTC's shape ─────────────────────────────────────── */
+var COMPANY = "Sample Fashions Pvt Ltd";
+var AS_AT = "24 Oct 2026";
+var FIRST = ["Aarav","Priya","Rohit","Neha","Vikram","Ananya","Karan","Sneha","Arjun","Pooja","Rahul","Kavya","Sanjay","Meera","Aditya","Divya","Manish","Ritu","Nikhil","Simran","Deepak","Isha","Amit","Nisha","Varun","Tanvi","Suresh","Anjali","Gaurav","Shreya","Harish","Payal","Mohit","Jyoti","Rakesh","Komal","Vivek","Swati","Ajay","Bhavna"];
+var LAST = ["Sharma","Verma","Gupta","Malhotra","Kapoor","Mehta","Arora","Bansal","Chopra","Saxena","Joshi","Khanna","Sethi","Bhatia","Agarwal","Tandon","Goel","Mittal","Sood","Grover","Ahuja","Bedi","Kohli","Nanda","Puri","Rana","Sahni","Taneja","Walia","Dhawan"];
+var pi = 0;
+function person() { var n = FIRST[(pi * 7) % FIRST.length] + " " + LAST[(pi * 11 + Math.floor(pi / 30)) % LAST.length]; pi++; return n; }
+function ppl(k) { var a = []; for (var i = 0; i < k; i++) a.push(person()); return a; }
+
+var ROWS = [], RID = 0;
+function seat(title, branch, parent, count) {
+  var r = { id: "S" + (++RID), title: title, branch: branch, parent: parent ? parent.id : null, people: ppl(count) };
+  ROWS.push(r); return r;
+}
+(function build() {
+  var top = seat("Owner and Managing Director", "Head Office", null, 1);
+  var L = {
+    "Admin Head": ["Head Office", [["Admin Executive",4],["Office Assistant",5],["Housekeeping",9],["Receptionist",2],["Driver",2],["Security Guard",16],["Electrician",2],["Plumber",1],["Pantry",3],["Courier",1],["Gardener",2],["Liaison Officer",1],["Store Keeper",2],["Admin Assistant",2]]],
+    "Back Office Manager": ["Head Office", [["Back Office",36],["Accounts Executive",6],["Billing",5],["Data Entry",8],["MIS Executive",3],["Inventory Clerk",4],["GST Executive",3],["Payroll Clerk",2],["Dispatch Clerk",4],["Audit Assistant",0]]],
+    "Facility Manager": ["Head Office", [["Floor Manager Noida",3],["Floor Manager Delhi",3],["Floor Manager Pitampura",3,"Pitampura"],["Cashier Noida",5],["Cashier Delhi",4],["Cashier Pitampura",4,"Pitampura"],["Packing",11],["Alteration Tailor",3],["Stock Assistant",6],["Customer Desk",3],["Trial Room Attendant",4],["Billing Counter",4],["Gift Wrap",2]]],
+    "Manager Delhi": ["Delhi", [["Sales - Sarees",8],["Sales - Lehenga",7],["Sales - Menswear",6],["Sales - Kids",4],["Sales - Jewellery",9],["Sales - Footwear",5],["Sales - Accessories",3],["Sales - Fabrics",5],["Sales - Bridal",6],["Sales - Western",3],["RSO Pitampura - Sarees",6,"Pitampura"],["RSO Pitampura - Lehenga",5,"Pitampura"],["RSO Pitampura - Menswear",4,"Pitampura"],["RSO Pitampura - Kids",4,"Pitampura"],["RSO Pitampura - Jewellery",5,"Pitampura"],["RSO Pitampura - Footwear",3,"Pitampura"],["Display",2],["Stock Room",4],["Night Guard",0]]],
+    "S-RE Manager": ["Noida", [["RSO Noida",31],["Senior RSO Noida",6],["RSO Ambala",8,"Ambala"],["RSO Gurgaon",6,"Gurgaon"],["Sales Trainee",3],["Telecaller",4],["Online Orders",5],["Home Delivery",4],["Corporate Sales",3],["Event Sales",0],["Returns Desk",5]]]
+  };
+  Object.keys(L).forEach(function (t) {
+    var lead = seat(t, L[t][0], top, 1);
+    L[t][1].forEach(function (c) { seat(c[0], c[2] || L[t][0], lead, c[1]); });
+  });
+  ["Chief Financial Officer","Company Secretary","Head of Purchase","IT Head","Marketing Head","HR Head","Legal Counsel","Design Head","Quality Head","Logistics Head","Customer Care Head","Internal Auditor","Executive Assistant","Business Analyst","Visual Merchandiser","Security Head","Training Head"].forEach(function (t) {
+    seat(t, "Head Office", top, (t === "Legal Counsel" || t === "Training Head") ? 0 : 1);
+  });
+})();
+var UNSEATED = { hr: 82, owner: 35 };   // sample counts the server would send
+
+/* ── Who sees what ─────────────────────────────────────────────────────── */
+var WHO = "hr";
+function visibleRows() {
+  var b = document.getElementById("pos-f-branch");
+  return ROWS.filter(function (r) { return WHO === "hr" || r.branch === "Pitampura"; });
+}
+function tree(rows) {
+  var by = {}, roots = [];
+  rows.forEach(function (r) { by[r.id] = { r: r, kids: [] }; });
+  rows.forEach(function (r) { if (r.parent && by[r.parent]) by[r.parent].kids.push(by[r.id]); else roots.push(by[r.id]); });
+  return { by: by, roots: roots };
+}
+function depthOf(n) { return 1 + n.kids.reduce(function (m, k) { return Math.max(m, depthOf(k)); }, 0); }
+function below(n) { var s = 0, p = 0; (function walk(x) { x.kids.forEach(function (k) { s++; p += k.r.people.length; walk(k); }); })(n); return { seats: s, people: p }; }
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function initials(n) { return n.split(" ").map(function (w) { return w[0]; }).join("").slice(0, 2); }
+
+/* ── Screen chart: the approved 064 look (prototype-old-v2) ───────────── */
+function screenCard(n, root) {
+  var r = n.r, shown = r.people.slice(0, 3), rest = r.people.length - shown.length;
+  var who = r.people.length ? shown.map(function (p, i) {
+      var tag = (WHO === "hr" && r.title === "Chief Financial Officer") ? '<span class="oc-tag v">leaving 30 Nov</span>' : "";
+      return '<div class="oc-who"><span class="av">' + esc(initials(p)) + "</span><span>" + esc(p) + tag + "</span></div>"; }).join("")
+      + (rest > 0 ? '<div class="oc-who"><span class="av">+</span><span>+' + rest + " more in this seat</span></div>" : "")
+    : '<div class="oc-who oc-empty"><span class="av">&mdash;</span><span>Nobody in this seat</span></div>';
+  var vac = n.kids.filter(function (k) { return !k.r.people.length; }).length;
+  var flags = (WHO === "hr" && vac) ? '<div class="oc-flags"><span class="oc-flag medium">' + vac + " to fill below</span></div>" : "";
+  var tog = n.kids.length ? '<button type="button" class="oc-toggle" aria-expanded="false" aria-label="Show the ' + n.kids.length + " under " + esc(r.title) + '">+<span>' + n.kids.length + "</span></button>" : "";
+  return '<div class="oc-node' + (root ? " root" : "") + '"><button type="button" class="oc-box' + (flags ? " tone-medium" : "") + '" style="text-align:left;font:inherit;width:100%">'
+    + '<div class="oc-box-hd"><span class="ti">' + esc(r.title) + "</span></div>"
+    + (root ? "" : '<div class="sub">' + esc(r.branch) + "</div>") + who + flags + "</button>" + tog + "</div>";
+}
+function screenRender(n, root, open) {
+  var kids = "";
+  if (open && n.kids.length) {
+    var row = n.kids.filter(function (k) { return k.kids.length; }), hang = n.kids.filter(function (k) { return !k.kids.length; });
+    if (hang.length < 3) { row = n.kids; hang = []; }
+    var items = hang.map(function (c) { return '<div class="oc-hang-item">' + screenCard(c, false) + "</div>"; }).join("");
+    kids = (hang.length && row.length)
+      ? '<div class="oc-fam"><div class="oc-kids">' + row.map(function (c) { return screenRender(c, false, false); }).join("") + '</div><div class="oc-hang under">' + items + "</div></div>"
+      : '<div class="oc-kids">' + row.map(function (c) { return screenRender(c, false, false); }).join("") + (hang.length ? '<div class="oc-branch"><div class="oc-hang">' + items + "</div></div>" : "") + "</div>";
+  }
+  return '<div class="oc-branch">' + screenCard(n, root) + kids + "</div>";
+}
+window.paintPage = function () {
+  var rows = visibleRows(), t = tree(rows);
+  var seats = rows.length, people = rows.reduce(function (a, r) { return a + r.people.length; }, 0);
+  var empty = rows.filter(function (r) { return !r.people.length; }).length;
+  document.getElementById("pos-tiles").innerHTML =
+    '<div class="oc-stat"><div class="n">' + seats + '</div><div class="l">Seats</div></div>'
+    + '<div class="oc-stat"><div class="n">' + people + '</div><div class="l">People in seats</div></div>'
+    + '<div class="oc-stat tone-medium"><div class="n">' + empty + '</div><div class="l">Empty seats</div></div>'
+    + '<div class="oc-stat tone-medium"><div class="n">' + UNSEATED[WHO] + '</div><div class="l">In no seat</div></div>';
+  var bsel = document.getElementById("pos-f-branch"), keep = bsel.value;
+  var brs = {}; rows.forEach(function (r) { brs[r.branch] = 1; });
+  bsel.innerHTML = '<option value="">All branches</option>' + Object.keys(brs).sort().map(function (b) { return "<option" + (b === keep ? " selected" : "") + ">" + esc(b) + "</option>"; }).join("");
+  var nm = WHO === "hr" ? '<div class="pos-nomgr-row"><button type="button" class="oc-box pos-nomgr"><div class="oc-box-hd"><span class="ti">No reporting manager</span></div><div class="sub">Not in any seat, and no manager on their record</div><div class="oc-flags"><span class="oc-flag medium">19 people</span></div></button></div>' : "";
+  var tools = '<div class="pos-ztools" role="group" aria-label="Zoom and print"><button type="button" class="btn btn-outline btn-sm" aria-label="Zoom out">&minus;</button><span class="pos-zpct">100%</span><button type="button" class="btn btn-outline btn-sm" aria-label="Zoom in">+</button><button type="button" class="btn btn-outline btn-sm">Reset</button><button type="button" class="btn btn-outline btn-sm">Fit to width</button><button type="button" class="btn btn-outline btn-sm">Print</button></div>';
+  var chart = t.roots.length === 1 ? screenRender(t.roots[0], true, true)
+    : '<div class="oc-branch"><div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:1000px">' + t.roots.map(function (n) { return screenCard(n, false); }).join("") + "</div></div>";
+  document.getElementById("pos-body").innerHTML = tools + nm + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom">' + chart + "</div></div></div>";
+  var tr = document.querySelector("#pos-body .oc-tree"); if (tr) tr.scrollLeft = (tr.scrollWidth - tr.clientWidth) / 2;
+};
+</script>
+<script>
+"use strict";
+/* ── The wall chart: print layout ─────────────────────────────────────────
+   Same markup as the screen card, minus everything §6 of the brief bans:
+   no flags, no tags, no avatars or photos, no toggles. Every name. "Vacant"
+   for an empty seat. "N seats · N people below" on the last level drawn. */
+var NAME_PX = 13, PT_PER_PX = 0.75, PX_PER_MM = 96 / 25.4, MARGIN_MM = 10, FOOT_MM = 8;
+var PAPER = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
+var ORDER = ["A4", "A3", "A2", "A1", "A0"];
+
+function printCard(n, root, last) {
+  var r = n.r, k = r.people.length;
+  var cols = Math.min(4, Math.max(1, Math.ceil(k / 10)));
+  var names = k ? '<div class="nm" style="columns:' + cols + '">' + r.people.map(function (p) { return "<div>" + esc(p) + "</div>"; }).join("") + "</div>"
+                : '<div class="vac">Vacant</div>';
+  var b = (last && n.kids.length) ? below(n) : null;
+  var w = 200 + (cols - 1) * 140;
+  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box" style="width:' + w + 'px;min-width:' + w + 'px">'
+    + '<div class="oc-box-hd"><span class="ti">' + esc(r.title) + "</span></div>"
+    + (root ? "" : '<div class="sub">' + esc(r.branch) + "</div>") + names
+    + (b ? '<div class="below">' + b.seats + " seat" + (b.seats === 1 ? "" : "s") + " &middot; " + b.people + " people below</div>" : "")
+    + "</div></div>";
+}
+function hangHtml(list, K, under, levelsLeft) {
+  var items = list.map(function (c, i) {
+    var ce = (i % K === K - 1) || i === list.length - 1;
+    return '<div class="oc-hang-item' + (ce ? " ce" : "") + '">' + printCard(c, false, levelsLeft <= 1) + "</div>";
+  }).join("");
+  var wrap = list.length > K;
+  return '<div class="oc-hang' + (under ? " under" : "") + (wrap ? " wrap" : "") + '"' + (wrap ? ' style="grid-template-rows:repeat(' + K + ',auto)"' : "") + ">"
+    + items + (wrap ? '<i class="wc-bar"></i>' : "") + "</div>";
+}
+function printRender(n, root, levelsLeft, K, KU) {
+  var kids = "";
+  if (levelsLeft > 1 && n.kids.length) {
+    var row = n.kids.filter(function (k) { return k.kids.length; }), hang = n.kids.filter(function (k) { return !k.kids.length; });
+    if (hang.length < 3) { row = n.kids; hang = []; }
+    kids = (hang.length && row.length)
+      ? '<div class="oc-fam"><div class="oc-kids">' + row.map(function (c) { return printRender(c, false, levelsLeft - 1, K, KU); }).join("") + "</div>" + hangHtml(hang, KU, true, levelsLeft - 1) + "</div>"
+      : '<div class="oc-kids">' + row.map(function (c) { return printRender(c, false, levelsLeft - 1, K, KU); }).join("")
+        + (hang.length ? '<div class="oc-branch">' + hangHtml(hang, K, false, levelsLeft - 1) + "</div>" : "") + "</div>";
+  }
+  return '<div class="oc-branch">' + printCard(n, root, levelsLeft <= 1) + kids + "</div>";
+}
+/* The bar that joins wrapped columns: from the first column's line to the
+   last column's line (and at least to the middle, where the line from the
+   manager comes down). Measured after layout, as the engineer would. */
+function drawBars(host) {
+  [].forEach.call(host.querySelectorAll(".oc-hang.wrap"), function (h) {
+    var items = h.querySelectorAll(":scope > .oc-hang-item"), lastLeft = 0;
+    [].forEach.call(items, function (it) { lastLeft = Math.max(lastLeft, it.offsetLeft); });
+    var bar = h.querySelector(":scope > .wc-bar"), under = h.classList.contains("under");
+    var right = Math.max(lastLeft + 10, under ? 10 : h.offsetWidth / 2);
+    bar.style.left = "10px"; bar.style.width = (right - 10 + 1) + "px"; bar.style.top = under ? "14px" : "0";
+    if (under) { /* the stub from the family line already reaches y=14 */ }
+  });
+}
+function layoutFor(startId, levels, K, KU) {
+  var t = tree(visibleRows()), host = document.getElementById("measure");
+  var html;
+  if (startId === "top" && t.roots.length > 1) {
+    html = '<div class="wc-roots" style="grid-template-rows:repeat(' + K + ',auto)">' + t.roots.map(function (n) { return printCard(n, false, true); }).join("") + "</div>";
+  } else {
+    var n = startId === "top" ? t.roots[0] : t.by[startId];
+    html = printRender(n, true, levels, K, KU);
+  }
+  host.innerHTML = '<div class="wc">' + html + "</div>";
+  var wc = host.firstChild;
+  drawBars(wc);
+  var rc = wc.getBoundingClientRect();
+  return { html: wc.outerHTML, w: Math.ceil(rc.width), h: Math.ceil(rc.height), K: K, KU: KU };
+}
+var CACHE = {};
+function bestLayout(startId, levels) {
+  var key = WHO + "|" + startId + "|" + levels;
+  if (CACHE[key]) return CACHE[key];
+  // Try column heights 4..16 (and 2..5 for a column hanging UNDER a row of
+  // team leads, which can spread across their width) and keep the one that
+  // fills an A-series sheet best.
+  var best = null;
+  for (var K = 4; K <= 16; K += 2) for (var KU = 2; KU <= Math.min(K, 5); KU++) {
+    var L = layoutFor(startId, levels, K, KU);
+    var fit = Math.max(Math.min(1.4142 / L.w, 1 / L.h), Math.min(1 / L.w, 1.4142 / L.h));
+    if (!best || fit > best.fit * 1.0001) { best = L; best.fit = fit; }
+  }
+  CACHE[key] = best;
+  return best;
+}
+function sheetBox(paper, land) {
+  var p = PAPER[paper], wmm = land ? p[1] : p[0], hmm = land ? p[0] : p[1];
+  return { wmm: wmm, hmm: hmm, pw: (wmm - 2 * MARGIN_MM) * PX_PER_MM, ph: (hmm - 2 * MARGIN_MM - FOOT_MM) * PX_PER_MM };
+}
+function plan(L, paper, sheets) {
+  var land = L.w >= L.h, s = sheetBox(paper, land);
+  var one = Math.min(s.pw / L.w, s.ph / L.h), ptOne = NAME_PX * PT_PER_PX * one;
+  if (sheets === "one" || ptOne >= 10) return { land: land, s: s, scale: one, pt: ptOne, cols: 1, rows: 1, fitsOne: sheets !== "one" };
+  var sc = 10 / (NAME_PX * PT_PER_PX);
+  return { land: land, s: s, scale: sc, pt: 10, cols: Math.ceil(L.w * sc / s.pw), rows: Math.ceil(L.h * sc / s.ph) };
+}
+function reads(pt) {
+  if (pt < 8) return "Too small to read.";
+  if (pt < 10) return "Readable close up.";
+  if (pt < 14) return "Readable at arm's length.";
+  return "Readable from about a metre away.";
+}
+</script>
+<script>
+"use strict";
+/* ── The panel ─────────────────────────────────────────────────────────── */
+var WCP = { start: "top", levels: 2, paper: "A3", sheets: "one" };
+function startOptions() {
+  var t = tree(visibleRows()), out = [];
+  if (t.roots.length === 1) out.push(["top", "The top: " + t.roots[0].r.title]);
+  else out.push(["top", "The top of what you can see (" + t.roots.length + " seats)"]);
+  (function walk(list, d) { list.forEach(function (n) { if (n.kids.length && !(d === 0 && t.roots.length === 1)) out.push([n.r.id, "— ".repeat(d) + n.r.title]); walk(n.kids, d + 1); }); })(t.roots, 0);
+  return out;
+}
+function startNode() { var t = tree(visibleRows()); return WCP.start === "top" ? (t.roots.length === 1 ? t.roots[0] : null) : t.by[WCP.start]; }
+function levelOptions() {
+  var n = startNode(), t = tree(visibleRows());
+  if (!n) return [[1, "All: 1 level, " + t.roots.length + " seats side by side"]];
+  var d = depthOf(n), all = below(n), out = [];
+  for (var i = 2; i < d; i++) {
+    out.push([i, i === 2 ? "2 levels: " + (WCP.start === "top" ? "the top" : n.r.title) + " and the " + n.kids.length + " seats under it" : i + " levels"]);
+  }
+  out.push([d, "All " + d + " levels: every seat (" + (all.seats + 1) + " seats, " + (all.people + n.r.people.length) + " people)"]);
+  return out;
+}
+function countPeople(levels) {
+  var n = startNode(), t = tree(visibleRows());
+  if (!n) return { seats: t.roots.length, people: t.roots.reduce(function (a, r) { return a + r.r.people.length; }, 0) };
+  var s = 0, p = 0;
+  (function walk(x, l) { s++; p += x.r.people.length; if (l > 1) x.kids.forEach(function (k) { walk(k, l - 1); }); })(n, levels);
+  return { seats: s, people: p };
+}
+window.wcOpen = function () {
+  var opts = levelOptions();
+  if (!opts.some(function (o) { return o[0] === WCP.levels; })) WCP.levels = opts[0][0];
+  var layer = document.getElementById("layer");
+  layer.innerHTML = '<div class="pos-scrim" onclick="wcClose()"></div>'
+    + '<div class="pos-sheet" role="dialog" aria-modal="true" aria-labelledby="wcp-h">'
+    + '<div class="sh-h"><h2 id="wcp-h">Download wall chart (PDF)</h2><button type="button" class="btn btn-outline btn-sm" onclick="wcClose()">Close</button></div>'
+    + '<div class="sh-b" id="wcp-body"></div>'
+    + '<div class="sh-f"><button type="button" class="btn btn-primary" id="wcp-go" onclick="wcPreview()">Open print preview</button>'
+    + '<div class="wcp-hint">Your browser opens its print window. Choose <b>Save as PDF</b> as the printer, then Save.</div></div></div>';
+  wcPaint();
+  document.getElementById("wcp-h").setAttribute("tabindex", "-1");
+  document.getElementById("wcp-h").focus();
+};
+window.wcClose = function () { document.getElementById("layer").innerHTML = ""; var b = document.getElementById("wc-open"); if (b) b.focus(); };
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape") return;
+  if (document.querySelector(".pv")) { pvClose(); } else if (document.querySelector(".pos-sheet")) wcClose();
+});
+window.wcSet = function (k, v) {
+  WCP[k] = (k === "levels") ? parseInt(v, 10) : v;
+  if (k === "start") { var o = levelOptions(); WCP.levels = o[0][0]; }
+  wcPaint(k);
+};
+function wcPaint(focusKey) {
+  var body = document.getElementById("wcp-body"); if (!body) return;
+  var t = tree(visibleRows()), brs = {}; visibleRows().forEach(function (r) { brs[r.branch] = 1; });
+  var nb = Object.keys(brs).length, filt = document.getElementById("pos-f-branch").value;
+  var L = bestLayout(WCP.start, WCP.levels), P = plan(L, WCP.paper, WCP.sheets), c = countPeople(WCP.levels);
+  var orient = P.land ? "landscape" : "portrait";
+  var line, cls = "wcp-result", acts = "";
+  if (P.cols * P.rows > 1) {
+    line = WCP.paper + " " + orient + " &middot; " + (P.cols * P.rows) + " sheets (" + P.cols + " across, " + P.rows + " down) &middot; names at 10 pt";
+  } else {
+    line = WCP.paper + " " + orient + " &middot; one sheet &middot; names at " + Math.floor(P.pt) + " pt";
+  }
+  var sub = P.fitsOne ? "It fits on one sheet at this size, so it prints as one. " + reads(P.pt) : reads(P.pt);
+  if (P.pt < 8) {
+    cls += " warn";
+    var up = null;
+    for (var i = ORDER.indexOf(WCP.paper) + 1; i < ORDER.length; i++) { if (plan(L, ORDER[i], "one").pt >= 8) { up = ORDER[i]; break; } }
+    var sev = plan(L, WCP.paper, "several");
+    sub = "<span class=\"wcp-mark\">Warning:</span> that is too small to read on a wall.";
+    acts = '<div class="acts">' + (up ? '<button type="button" class="btn btn-outline btn-sm" onclick="wcSet(\'paper\',\'' + up + '\')">Use ' + up + " (names at " + Math.floor(plan(L, up, "one").pt) + " pt)</button>" : "")
+      + '<button type="button" class="btn btn-outline btn-sm" onclick="wcSet(\'sheets\',\'several\')">Use ' + (sev.cols * sev.rows) + " " + WCP.paper + " sheets</button></div>";
+  }
+  var scope = WHO === "hr"
+    ? "Covers the whole company: " + nb + " branches."
+    : "You can see 1 branch, Pitampura, so the chart covers Pitampura only. Its seats report to managers in other branches, so they print side by side with no lines above them.";
+  var st = startOptions(), lv = levelOptions();
+  body.innerHTML =
+    '<p class="su" style="margin:0">A chart of seats and names for a wall, sized for the paper you choose.</p>'
+    + '<div class="pos-note info"><p>' + esc(scope) + "</p>"
+    + (filt ? "<p>Your Branch filter does not apply here. The wall chart uses only the choices below.</p>" : "") + "</div>"
+    + '<div class="wcp-field"><label class="gp-label" for="wcp-start">Start from</label><select class="gp-input" id="wcp-start" onchange="wcSet(\'start\',this.value)">'
+    + st.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === WCP.start ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select></div>"
+    + '<div class="wcp-field"><label class="gp-label" for="wcp-levels">Levels</label><select class="gp-input" id="wcp-levels" onchange="wcSet(\'levels\',this.value)">'
+    + lv.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === WCP.levels ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select></div>"
+    + '<fieldset class="wcp-field" style="border:0;padding:0"><legend class="gp-label">Paper</legend><div class="wcp-chips">'
+    + ORDER.map(function (p) { return '<label class="wcp-chip"><input type="radio" name="wcp-paper" value="' + p + '"' + (p === WCP.paper ? " checked" : "") + ' onchange="wcSet(\'paper\',this.value)"><span>' + p + "</span></label>"; }).join("")
+    + '</div><div class="wcp-hint">' + WCP.paper + " is " + PAPER[WCP.paper][0] + " &times; " + PAPER[WCP.paper][1] + " mm.</div></fieldset>"
+    + '<fieldset class="wcp-field" style="border:0;padding:0"><legend class="gp-label">Sheets</legend>'
+    + '<label class="wcp-radio"><input type="radio" name="wcp-sheets" value="one"' + (WCP.sheets === "one" ? " checked" : "") + ' onchange="wcSet(\'sheets\',this.value)"><span>One sheet, scaled to fit<small>For a print shop. The usual choice from A2 up.</small></span></label>'
+    + '<label class="wcp-radio"><input type="radio" name="wcp-sheets" value="several"' + (WCP.sheets === "several" ? " checked" : "") + ' onchange="wcSet(\'sheets\',this.value)"><span>Several sheets, names at 10 pt<small>For an office printer. Each sheet says where it goes.</small></span></label></fieldset>'
+    + '<div class="' + cls + '" role="status" aria-live="polite"><div class="big">' + line + '</div><div style="margin-top:4px">' + sub + "</div>"
+    + '<div class="wcp-hint">' + c.seats + " seats &middot; " + c.people + " people</div>" + acts + "</div>"
+    + '<div class="pos-note"><p>' + UNSEATED[WHO] + " active " + (WHO === "hr" ? "" : "Pitampura ") + "people are not in any seat, so they are not on the chart. Placing them in a seat first is recommended, not required.</p>"
+    + '<p><button type="button" class="pos-link">See who is not in a seat</button></p></div>'
+    + '<p class="su">Only seat names and people\'s names print. Flags, leaving dates and HR notes never do.</p>';
+  if (focusKey) {
+    var el = focusKey === "paper" ? document.querySelector('input[name=wcp-paper]:checked') : focusKey === "sheets" ? document.querySelector('input[name=wcp-sheets]:checked') : document.getElementById("wcp-" + focusKey);
+    if (el) el.focus();
+  }
+}
+
+/* ── Print preview stand-in ───────────────────────────────────────────────
+   In the product, "Open print preview" sets @page size to the chosen paper,
+   sets the document title (the PDF's file name), and calls window.print().
+   The browser draws this window; this is how the sheets will look in it. */
+var PV = { actual: false };
+window.wcPreview = function () {
+  var L = bestLayout(WCP.start, WCP.levels), P = plan(L, WCP.paper, WCP.sheets), c = countPeople(WCP.levels);
+  var nSheets = P.cols * P.rows, orient = P.land ? "Landscape" : "Portrait";
+  var lv = levelOptions().filter(function (o) { return o[0] === WCP.levels; })[0];
+  var allLv = WCP.levels === levelOptions().slice(-1)[0][0];
+  var scopeWords = WHO === "hr" ? "whole company" : "Pitampura branch";
+  var from = WCP.start === "top" ? "from the top" : "from " + startNode().r.title;
+  var foot = COMPANY + " &middot; " + scopeWords + " &middot; " + (allLv ? "all levels" : WCP.levels + " levels") + " " + esc(from) + " &middot; as at " + AS_AT + " &middot; " + c.people + " people in seats";
+  var title = "Wall chart - " + COMPANY + " - " + (allLv ? "all levels" : WCP.levels + " levels") + " - " + WCP.paper + " - " + AS_AT;
+  PV.ctx = { L: L, P: P, foot: foot, n: nSheets };
+  PV.paperW = P.s.wmm * PX_PER_MM * P.cols + 14 * (P.cols - 1);
+  var pv = document.createElement("div");
+  pv.className = "pv"; pv.setAttribute("role", "dialog"); pv.setAttribute("aria-modal", "true"); pv.setAttribute("aria-labelledby", "pv-h");
+  pv.innerHTML = '<div class="pv-top"><b id="pv-h" tabindex="-1">Print preview <span class="wcp-sample">Sample</span></b><span>In the product this window is your browser\'s own. Shown here so you can see the sheets.</span>'
+    + '<button type="button" class="btn btn-sm" style="background:#fff;color:#2D2622" onclick="pvActual()">' + (PV.actual ? "Fit to window" : "Show at printed size") + "</button></div>"
+    + '<div id="pv-toast"></div>'
+    + '<div class="pv-main"><div class="pv-stage" id="pv-stage"><div class="pv-grid" id="pv-grid" style="grid-template-columns:repeat(' + P.cols + ',max-content)"></div></div>'
+    + '<div class="pv-side"><dl><dt>Destination</dt><dd>Save as PDF</dd><dt>Paper size</dt><dd>' + WCP.paper + " (set by Alvoraa)</dd><dt>Layout</dt><dd>" + orient + "</dd><dt>Pages</dt><dd>" + nSheets + "</dd><dt>File name</dt><dd style=\"word-break:break-word\">" + esc(title) + ".pdf</dd></dl>"
+    + '<div class="note">Names print at ' + Math.floor(P.pt) + " pt. Text stays text, so a print shop can enlarge it without blur.</div>"
+    + '<div class="row"><button type="button" class="btn btn-primary" onclick="pvSave()">Save</button><button type="button" class="btn btn-outline" onclick="pvClose()">Cancel</button></div></div></div>';
+  document.getElementById("app").appendChild(pv);
+  pvFit();
+  document.getElementById("pv-h").focus();
+};
+/* Drawn at display scale d with transforms only. (CSS zoom snaps line
+   heights at small scales, which made boxes 3-5 px taller than measured.) */
+function sheetsHtml(d) {
+  var c = PV.ctx, L = c.L, P = c.P, s = P.s, mm = PX_PER_MM * d, out = "";
+  for (var r = 0; r < P.rows; r++) for (var col = 0; col < P.cols; col++) {
+    var k = r * P.cols + col + 1, ox = -col * s.pw, oy = -r * s.ph, cx = 0, cy = 0;
+    if (c.n === 1) { cx = (s.pw - L.w * P.scale) / 2; cy = (s.ph - L.h * P.scale) / 2; }
+    out += '<div><div class="paper" style="width:' + s.wmm * mm + "px;height:" + s.hmm * mm + 'px">'
+      + '<div class="clip" style="left:' + MARGIN_MM * mm + "px;top:" + MARGIN_MM * mm + "px;width:" + s.pw * d + "px;height:" + s.ph * d + 'px">'
+      + '<div style="position:absolute;left:' + (ox + cx) * d + "px;top:" + (oy + cy) * d + "px;transform:scale(" + P.scale * d + ');transform-origin:0 0;width:' + (L.w + 2) + 'px">' + L.html + "</div></div>"
+      + '<div class="foot" style="bottom:' + MARGIN_MM * mm + "px;padding:0 " + MARGIN_MM * mm + "px;font-size:" + (9 / PT_PER_PX) * d + 'px">' + c.foot
+      + (c.n > 1 ? " &middot; <b>Sheet " + k + " of " + c.n + " (row " + (r + 1) + ", column " + (col + 1) + ")</b>" : "") + "</div></div>"
+      + (c.n > 1 ? '<div class="pv-label">Sheet ' + k + "</div>" : "") + "</div>";
+  }
+  return out;
+}
+function pvFit() {
+  var g = document.getElementById("pv-grid"), st = document.getElementById("pv-stage");
+  if (!g || !st) return;
+  var d = PV.actual ? 1 : Math.min(1, (st.clientWidth - 32) / PV.paperW);
+  g.innerHTML = sheetsHtml(d);
+}
+window.pvActual = function () { PV.actual = !PV.actual; var b = document.querySelector(".pv-top .btn"); b.textContent = PV.actual ? "Fit to window" : "Show at printed size"; pvFit(); };
+window.pvClose = function () { var p = document.querySelector(".pv"); if (p) p.remove(); PV.actual = false; var g = document.getElementById("wcp-go"); if (g) g.focus(); };
+window.pvSave = function () {
+  document.getElementById("pv-toast").innerHTML = '<div class="pv-toast" role="status">Saved (sample). In the product your browser saves the PDF to your Downloads folder.</div>';
+};
+
+/* ── Review controls ───────────────────────────────────────────────────── */
+function copyPhoneRules() {
+  var out = [];
+  [].forEach.call(document.styleSheets, function (ss) {
+    var rules; try { rules = ss.cssRules; } catch (e) { return; }
+    [].forEach.call(rules, function (r) {
+      if (r.media && /max-width:\s*640px/.test(r.media.mediaText)) {
+        [].forEach.call(r.cssRules, function (x) {
+          out.push(x.selectorText.split(",").map(function (s) { return "#app.phone " + s.trim(); }).join(",") + "{" + x.style.cssText + "}");
+        });
+      }
+    });
+  });
+  var st = document.createElement("style"); st.textContent = out.join("\n"); document.head.appendChild(st);
+}
+copyPhoneRules();
+document.getElementById("rv-who").onchange = function () { WHO = this.value; WCP.start = "top"; WCP.levels = 2; document.getElementById("layer").innerHTML = ""; var p = document.querySelector(".pv"); if (p) p.remove(); paintPage(); };
+document.getElementById("rv-dev").onchange = function () { document.getElementById("app").classList.toggle("phone", this.value === "phone"); pvFit(); };
+document.getElementById("rv-theme").onchange = function () { if (this.value) document.documentElement.setAttribute("data-theme", this.value); else document.documentElement.removeAttribute("data-theme"); };
+document.getElementById("rv-state").onchange = function () { goState(this.value); };
+window.goState = function (v) {
+  var p = document.querySelector(".pv"); if (p) p.remove();
+  document.getElementById("layer").innerHTML = "";
+  if (!v) return;
+  WCP.start = "top";
+  WCP.levels = 2; WCP.paper = "A3"; WCP.sheets = "one";
+  var all = function () { WCP.levels = levelOptions().slice(-1)[0][0]; };
+  if (v === "warn") { all(); }
+  if (v === "pv-all") { all(); WCP.paper = "A1"; }
+  if (v === "pv-tiles") { all(); WCP.sheets = "several"; }
+  wcOpen();
+  if (v.indexOf("pv-") === 0) wcPreview();
+};
+paintPage();
+</script>
+</body>
+</html>

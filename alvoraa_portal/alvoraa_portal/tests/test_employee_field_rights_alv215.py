@@ -283,3 +283,21 @@ class FieldRightsAlv215(IntegrationTestCase):
 			ef.refuse_import_of_locked_columns(di)
 		frappe.set_user(self.hr_mgr)
 		ef.refuse_import_of_locked_columns(di)  # HR Manager may import bank details
+
+	# DTC-only patch ------------------------------------------------------
+	def test_alv215_dtc_patch_locks_its_three_fields_and_is_a_no_op_elsewhere(self):
+		from alvoraa_portal.patches.v1_0 import dtc_pay_fields_level_2 as patch
+
+		patch.execute()  # no such fields here: nothing written, nothing raised
+		self.assertFalse(frappe.db.exists("Property Setter", {"doc_type": "Employee", "field_name": "dtc_agency"}))
+		frappe.get_doc({"doctype": "Custom Field", "dt": "Employee", "fieldname": "dtc_agency",
+		                "label": "Agency", "fieldtype": "Data", "insert_after": "employment_type"}
+		               ).insert(ignore_permissions=True)
+		try:
+			patch.execute()
+			self.assertEqual(_level("dtc_agency"), 2)
+		finally:
+			frappe.db.delete("Property Setter", {"doc_type": "Employee", "field_name": "dtc_agency"})
+			frappe.delete_doc("Custom Field", "Employee-dtc_agency", force=True, ignore_permissions=True)
+			frappe.db.commit()  # the column was committed by its DDL; the class-end rollback must not bring the record back
+			frappe.clear_cache(doctype="Employee")

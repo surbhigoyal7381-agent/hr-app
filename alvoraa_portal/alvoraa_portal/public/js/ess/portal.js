@@ -2061,9 +2061,10 @@ window.posPickSave = async function () {
     // The server refuses an over-filled seat, a person at more than one
     // person, and cover with no end date. Those messages say more than
     // anything this screen could invent, so they are shown as they come.
-    // Slice 071: no answer at all (the network, or a page that is not the
-    // server's) may still mean it saved, so ask once whether they are seated.
-    var lost = !!from && !!e && (e.name === "TypeError" || e.name === "SyntaxError");
+    // Slice 071: no answer at all (offline, network, a 5xx page) may still
+    // mean it saved, so ask once whether they are seated. gpFetch marks every
+    // failure with a kind; only "refused" carries the server's own words.
+    var lost = !!from && !!e && !!e.kind && e.kind !== "refused";
     var landed = false;
     if (lost && (POS.unseated || []).some(function (p) { return p.employee === who; })) {
       try {

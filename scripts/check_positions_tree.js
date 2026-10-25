@@ -1052,27 +1052,27 @@ async function unChecks() {
       ok("071 after Add a place the seat reads one up", t.layer().includes("Ravi Kumar is now in Counter Staff · Sector 34."));
     });
   await saving("HR-EMP-00381", "P-Cashier",
-    { assign: () => { throw new TypeError("Failed to fetch"); }, table: () => after("", "") },
+    { assign: () => { throw Object.assign(new Error("Could not reach the server."), { kind: "network" }); }, table: () => after("", "") },
     (t, E) => {
       ok("071 no answer, still unseated: the connection message, dialog open, button back",
          E["pos-person-err"].textContent === "Could not reach the server, so Anjali Saini is not in the seat. Check your connection and press Put them in again."
          && E["pos-person"].classList.contains("open") && E["pos-p-save"].textContent === "Put them in" && !E["pos-p-save"].disabled);
     });
   await saving("HR-EMP-00382", "P-Counter",
-    { assign: () => { throw new TypeError("Failed to fetch"); }, table: () => after("", "") },
+    { assign: () => { throw Object.assign(new Error("Could not reach the server."), { kind: "network" }); }, table: () => after("", "") },
     (t, E) => {
       ok("071 no answer after Add a place: says the seat still has its places",
          E["pos-person-err"].textContent === "Could not reach the server, so Ravi Kumar is not in the seat and the seat still has 1 places. Check your connection and press Put them in again.");
     });
   await saving("HR-EMP-00381", "P-Cashier",
-    { assign: () => { throw new Error("Cashier has 3 seat(s) and would be filled 1.33 times over."); }, table: () => after("", "") },
+    { assign: () => { throw Object.assign(new Error("Cashier has 3 seat(s) and would be filled 1.33 times over."), { kind: "refused", server: true }); }, table: () => after("", "") },
     (t, E) => {
       ok("071 a refusal is shown as it comes, and the list is not re-asked",
          E["pos-person-err"].textContent === "Cashier has 3 seat(s) and would be filled 1.33 times over."
          && !t.calls.some((c) => c[0].endsWith("position_table")));
     });
   await saving("HR-EMP-00381", "P-Cashier",
-    { assign: () => { throw new TypeError("Failed to fetch"); }, table: () => after("HR-EMP-00381", "P-Cashier") },
+    { assign: () => { throw Object.assign(new Error("Could not reach the server."), { kind: "network" }); }, table: () => after("HR-EMP-00381", "P-Cashier") },
     (t, E) => {
       ok("071 answer lost but saved: the success note, not the error",
          E["pos-person-err"].textContent === "" && t.layer().includes("Anjali Saini is now in Cashier · Sector 34."));

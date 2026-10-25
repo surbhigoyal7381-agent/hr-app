@@ -621,6 +621,22 @@ def _position_in_scope(position, endpoint):
 	return doc
 
 
+def _person_in_scope(employee, endpoint):
+	"""The PERSON must be in this caller's companies and branches, exactly as
+	the seat must (slice 071 security F1, F2). One neutral refusal whether the
+	ID is outside the scope or does not exist, so it says nothing about anybody.
+	"""
+	companies, branches = _scope()
+	got = isinstance(employee, str) and frappe.db.get_value(
+		"Employee", employee, ["company", "branch"], as_dict=True)
+	if not got or got.company not in companies or (
+			branches is not None and (got.branch or "") not in branches):
+		from hrms.alvoraa_hr_core.access import refuse
+
+		refuse(_("You can only look up or place people in your own companies and branches."),
+		       "SEC-8", endpoint, "Employee", None)
+
+
 @frappe.whitelist()
 def what_they_hold(employee, ignore_position=None):
 	"""Every seat this person is permanently in today, and how full they are.
@@ -637,6 +653,7 @@ def what_they_hold(employee, ignore_position=None):
 	"""
 	if not may_view():
 		_refuse_view("register.what_they_hold", employee)
+	_person_in_scope(employee, "register.what_they_hold")
 
 	rows = []
 	for a in frappe.get_all(
@@ -747,6 +764,7 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 	there afterwards. So it is passed explicitly, defaulted off, and recorded.
 	"""
 	doc = _position_in_scope(position, "register.assign_person")
+	_person_in_scope(employee, "register.assign_person")
 
 	weight = flt(weight)
 	if weight <= 0 or weight > 100:

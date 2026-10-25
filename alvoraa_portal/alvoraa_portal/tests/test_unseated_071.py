@@ -92,6 +92,61 @@ class PlaceAnyway071(RegisterCase):
 		frappe.set_user("Administrator")
 		self.assertEqual(self.seats(self.full), 1)
 
+	# ── security F1/F2: the PERSON is scoped exactly as the seat is ─────────
+	def outsider(self):
+		"""Another company's employee, with a name and date a leak would show."""
+		from alvoraa_portal.tests.test_positions_064 import _second_company
+
+		doc = frappe.get_doc({"doctype": "Employee", "first_name": "SNTL-OTHERCO-NAME",
+		                      "company": _second_company(), "date_of_birth": "1990-01-01",
+		                      "date_of_joining": "2019-03-07", "status": "Active",
+		                      "gender": frappe.db.get_value("Gender", {}, "name")}).insert(ignore_permissions=True)
+		self._people.append(doc.name)
+		frappe.db.commit()
+		return doc.name
+
+	def test_another_companys_person_is_refused_with_and_without_add_place(self):
+		foreign = self.outsider()
+		frappe.set_user(self.hr_user("scope194.otherco071@example.com"))
+		for flag in (0, 1):
+			with self.assertRaises(frappe.PermissionError):
+				register.assign_person(self.full, foreign, add_place=flag)
+		frappe.set_user("Administrator")
+		self.assertEqual(self.seats(self.full), 1)
+		self.assertFalse(frappe.db.exists(register.ASSIGNMENT, {"employee": foreign}))
+
+	def test_another_branchs_person_is_refused(self):
+		here, there = self.branch("Here 071"), self.branch("There 071")
+		seat = self.pos("Near 071", seats=3, branch=here).name
+		frappe.db.set_value("Employee", self.newcomer, "branch", there)
+		frappe.db.commit()
+		frappe.set_user(self.hr_user("scope194.otherbr071@example.com", branch=here))
+		with self.assertRaises(frappe.PermissionError):
+			register.assign_person(seat, self.newcomer, add_place=1)
+		frappe.set_user("Administrator")
+		self.assertEqual(self.seats(seat), 3)
+		self.assertFalse(frappe.db.exists(register.ASSIGNMENT, {"employee": self.newcomer}))
+
+	def test_the_refusal_names_nobody(self):
+		"""Same words for an outsider and for an ID that does not exist."""
+		foreign = self.outsider()
+		frappe.set_user(self.hr_user("scope194.words071@example.com"))
+		said = []
+		for who in (foreign, "HR-EMP-NOBODY-071"):
+			with self.assertRaises(frappe.PermissionError) as cm:
+				register.assign_person(self.full, who, from_date="1990-01-01", add_place=1)
+			said.append(str(cm.exception))
+		self.assertEqual(said[0], said[1])
+		for leak in ("SNTL-OTHERCO-NAME", "2019", "07-03", "03-07", foreign):
+			self.assertNotIn(leak, said[0])
+
+	def test_what_they_hold_refuses_an_outsider_and_answers_for_an_insider(self):
+		foreign = self.outsider()
+		frappe.set_user(self.hr_user("scope194.hold071@example.com"))
+		with self.assertRaises(frappe.PermissionError):
+			register.what_they_hold(foreign)
+		self.assertEqual(register.what_they_hold(self.newcomer)["held"], 0)
+
 	def test_statement_count_is_a_fixed_handful(self):
 		"""Recorded in the implementation notes; flat per click, not per person."""
 		from alvoraa_portal.tests.leader_fixtures_012 import QueryCounter

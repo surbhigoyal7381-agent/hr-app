@@ -254,8 +254,24 @@ def table_view(as_at):
 		# Whether some role besides HR and the administrator reads plans: it
 		# decides "Only HR and owners see this" against "Only HR sees this".
 		"owners_see": bool(_read_roles() - BROAD_ROLES - {"HR Manager", "System Manager"}),
+		# The reader's own employee, so the page leaves "Plan a replacement"
+		# off their own row (AC-64; design E-1). Their own id, nobody else's.
+		"self": min(_my_employees()[0], default=None),
+		# How many people can read a replacement opening, for the warning
+		# before a request (PR-45; design E-2). Enabled logins holding HR User.
+		"hr_users": _hr_user_count(),
 	}
 	return {"head": head, "by_assignment": by_assignment}
+
+
+def _hr_user_count():
+	"""Enabled logins holding HR User, people only (not Administrator or Guest).
+	The whole site: a tenant is one site, and on a site with several companies
+	this can only say more people than one company has - the safe side for a
+	warning."""
+	users = frappe.get_all("Has Role", filters={"role": "HR User", "parenttype": "User"}, pluck="parent")
+	users = [u for u in set(users) if u not in ("Administrator", "Guest")]
+	return frappe.db.count("User", {"name": ("in", users), "enabled": 1}) if users else 0
 
 
 # ── no side doors (SEC-3, SEC-2) ─────────────────────────────────────────────

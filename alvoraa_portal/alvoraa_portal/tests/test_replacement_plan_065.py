@@ -864,13 +864,20 @@ class TestTheChartReply(Plan065Case):
 			self.assertNotIn("plan", before.lower().replace("planned_vacancies", ""))
 			for word in ("Performance", "Personal reasons", "Other business reason", "improvement", "on hold"):
 				self.assertNotIn(word, before, user)
+			# Nor any of the plans' dates: the end of an improvement period, or a lapse.
+			for d in (add_days(nowdate(), 60), add_days(nowdate(), -3), add_days(nowdate(), 90)):
+				self.assertNotIn(str(d), before, user)
+			self.assertNotIn('"plans"', before, user)
+			self.assertNotIn("hr_users", before, user)
 		self.assertIsNone(self.seat_row(self.reply(self.head), self.recruiter.name)["opening"])
 		self.assertEqual(self.seat_row(self.reply(self.hrA), self.recruiter.name)["opening"], opening)
 		frappe.delete_doc("Job Opening", opening, force=True, ignore_permissions=True, delete_permanently=True)
 
 	def test_ac58_readers_get_the_head_key_and_exactly_the_named_plan_keys(self):
 		out = self.reply(self.hrA)
-		self.assertEqual(out["plans"], {"may_set": True, "owners_see": True})  # even with no plan
+		# Even with no plan. The literal key list, so a key added later cannot slip in.
+		self.assertEqual(sorted(out["plans"]), ["hr_users", "may_set", "owners_see", "self"])
+		self.assertEqual((out["plans"]["may_set"], out["plans"]["owners_see"]), (True, True))
 		self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
 		out = self.reply(self.hrA)
 		# The literal list, not PLAN_KEYS, so a key added later cannot slip in.
@@ -882,6 +889,35 @@ class TestTheChartReply(Plan065Case):
 			self.assertEqual(self.reply(user)["plans"]["may_set"], False, user)
 		self.owners_see(False)
 		self.assertEqual(self.reply(self.hrA)["plans"]["owners_see"], False)
+
+	def test_e1_e2_the_readers_own_row_and_the_hr_user_count(self):
+		"""Design v5 E-1 and E-2: `self` is the reader's own employee (so the
+		page leaves "Plan a replacement" off their row) and `hr_users` the
+		enabled logins holding HR User. Readers only."""
+		self.assertEqual(self.reply(self.hrA)["plans"]["self"], self._emp_of(self.hrA))
+		self.assertIsNone(self.reply(self.sys)["plans"]["self"])  # no Employee record
+		hr_user = "hruser.065@example.com"
+		if not frappe.db.exists("User", hr_user):
+			frappe.get_doc({"doctype": "User", "email": hr_user, "first_name": "Hruser", "enabled": 1,
+			                "send_welcome_email": 0}).insert(ignore_permissions=True)
+		u = frappe.get_doc("User", hr_user)
+		u.flags.ignore_permissions = True
+		u.add_roles("HR User")
+		frappe.db.commit()
+		try:
+			before = self.reply(self.hrA)["plans"]["hr_users"]
+			frappe.db.set_value("User", hr_user, "enabled", 0)
+			frappe.db.commit()
+			self.assertEqual(self.reply(self.hrA)["plans"]["hr_users"], before - 1)
+		finally:
+			frappe.delete_doc("User", hr_user, force=True, ignore_permissions=True)
+			frappe.db.commit()
+		for user in (self.head, self.emp):
+			try:
+				out = self.reply(user)
+			except frappe.PermissionError:
+				continue
+			self.assertNotIn("plans", out, user)
 
 	def test_ac12_ac13_who_set_and_confirmed_it(self):
 		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.", reason="Other business reason")

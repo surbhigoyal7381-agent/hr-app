@@ -199,9 +199,13 @@ function putForm(reason) {
   calls.length = 0;
   window.acSubmit("2026-10-14");
   await settle(250);
-  calls.length === 0
+  /* Only correction calls count. The page's bell timers (the goals badge at
+     1.5 s, and since slice 066 the grooming notices) fire on their own clock
+     and used to land inside this window, failing the run at random. */
+  const sent = calls.filter(c => c.fn);
+  sent.length === 0
     ? ok("a request with nobody named is never sent")
-    : bad("an incomplete request was sent: " + JSON.stringify(calls));
+    : bad("an incomplete request was sent: " + JSON.stringify(sent));
 
   // ── The form is offered exactly where the server would accept it ───
   // `can_request_from` is the oldest day a manager may file for. Blank now

@@ -2028,10 +2028,14 @@ function posChosenResolve() {
 
 window.posPickSave = async function () {
   if (!POS.picked) { posPickErr("Choose somebody from the list first."); return; }
-  var seat = posSeat();
+  var seat = posPickSeat();
   if (!seat) return;
+  var from = POS.pickFrom, who = POS.picked;
+  var name = ((POS.cands || []).filter(function (c) { return c.employee === who; })[0] || from || {}).name || "";
   var btn = document.getElementById("pos-p-save");
   btn.disabled = true;
+  // Slice 071 (PD8): the dialog stays open until the chart has reloaded.
+  btn.textContent = drT("Putting them in…");
   try {
     await gpFetch("hrms.alvoraa_org_structure.register.assign_person", {
       position: seat.id,
@@ -2045,19 +2049,42 @@ window.posPickSave = async function () {
       // it. Absent, the server behaves as it always did and refuses to put
       // one person in more than one person's worth of work.
       resolve: posChosenResolve(),
+      // Slice 071: "Place anyway" - the server adds the place in the same save.
+      add_place: from && from.raise ? 1 : 0,
     });
   } catch (e) {
     // The server refuses an over-filled seat, a person at more than one
     // person, and cover with no end date. Those messages say more than
     // anything this screen could invent, so they are shown as they come.
-    posPickErr(e && e.message ? e.message : e);
-    btn.disabled = false;
-    return;
+    // Slice 071: no answer at all (the network, or a page that is not the
+    // server's) may still mean it saved, so ask once whether they are seated.
+    var lost = !!from && !!e && (e.name === "TypeError" || e.name === "SyntaxError");
+    var landed = false;
+    if (lost && (POS.unseated || []).some(function (p) { return p.employee === who; })) {
+      try {
+        var now = await gpFetch("hrms.alvoraa_org_structure.register.position_table", {});
+        landed = !!(now && now.unseated && !now.unseated.some(function (p) { return p.employee === who; }));
+      } catch (e2) { /* still no answer: say so below */ }
+    }
+    if (!landed) {
+      posPickErr(!lost ? (e && e.message ? e.message : e)
+        : from.raise
+          ? drT("Could not reach the server, so {0} is not in the seat and the seat still has {1} places. Check your connection and press Put them in again.", [name, posNum(seat.seats)])
+          : drT("Could not reach the server, so {0} is not in the seat. Check your connection and press Put them in again.", [name]));
+      btn.disabled = false;
+      btn.textContent = drT("Put them in");
+      return;
+    }
   }
-  btn.disabled = false;
-  posPickClose();
   await posLoad();
-  posPaintPeople();
+  btn.disabled = false;
+  btn.textContent = drT("Put them in");
+  posPickClose(true);
+  if (!from) { posPaintPeople(); return; }
+  POS.unFlash = posEsc(drT("{0} is now in {1}.", [name, seat.title + (seat.branch ? " · " + seat.branch : "")]));
+  posUnseatedSheet();
+  var note = document.getElementById("pos-un-flash");
+  if (note && note.focus) note.focus();
 };
 /* ── setting the chart up in the first place ───────────────────────────
  *
@@ -3284,11 +3311,13 @@ window.posUnseatedSheet = function () {
   var recent = posShift(posToday(), -60);
   var lately = list.filter(function (p) { return p.joined && p.joined >= recent; }).length;
   // Slice 071: an empty list is reached only by placing the last person (a 0 tile cannot be clicked).
-  var b = list.length
+  var b = (POS.unFlash ? '<div class="pos-note ok" role="status" id="pos-un-flash" tabindex="-1">' + POS.unFlash + "</div>" : "")
+    + (list.length
     ? "<p>" + drT("{0} of {1} active people hold no seat, so they are not on this chart and not in the counts above.",
                   [list.length, POS.active_people])
       + (lately * 2 > list.length ? " " + drT("Most joined in the last two months.") : "") + "</p>"
-    : "<p>" + drT("Everybody active is in a seat now, so everybody is on this chart and in the counts above.") + "</p>";
+    : "<p>" + drT("Everybody active is in a seat now, so everybody is on this chart and in the counts above.") + "</p>");
+  POS.unFlash = "";
   var year = posToday().slice(0, 4), n = 0;
   order.forEach(function (br) {
     var people = by[br];

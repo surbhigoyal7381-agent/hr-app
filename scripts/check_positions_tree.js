@@ -995,6 +995,93 @@ async function unChecks() {
        E["pos-person"].classList.contains("open") && E["pos-p-q"].value === "" && E["pos-p-ctx"].style.display === "none"
        && t.ctx.POS.picked === null && t.calls[0][1].position === "P-Cashier");
   }
+  /* step 6: saving */
+  const after = (gone, seatId) => ({
+    rows: UNROWS2.map((r) => (r.id === seatId ? Object.assign({}, r, { filled: r.filled + 1, seats: Math.max(r.seats, r.filled + 1),
+                                                                     open: 0 }) : r)),
+    may_edit: true, unseated: UN2.filter((p) => p.employee !== gone), active_people: 40, as_at: "2026-10-22",
+  });
+  async function saving(emp, seatId, answer, check) {
+    const t = withCands(unContext(true)), E = t.ctx.__els;
+    t.box("pos-un-flash");
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const base = t.fetch;
+    t.fetch = (m, a) => (m.endsWith("assign_person") ? gate.then(() => answer.assign())
+      : m.endsWith("position_table") ? Promise.resolve(answer.table()) : base(m, a));
+    t.ctx.posUnPlace(emp, seatId, { focus() {} });
+    if (t.ctx.POS.pickFrom.raise) t.ctx.posFullGo();
+    await tick();
+    const saved = t.ctx.posPickSave();
+    await tick();
+    const mid = { text: E["pos-p-save"].textContent, disabled: E["pos-p-save"].disabled, open: E["pos-person"].classList.contains("open") };
+    release();
+    await saved; await tick();
+    check(t, E, mid, t.calls.filter((c) => c[0].endsWith("assign_person")).map((c) => c[1]));
+  }
+  await saving("HR-EMP-00381", "P-Cashier",
+    { assign: () => ({ name: "A-1" }), table: () => after("HR-EMP-00381", "P-Cashier") },
+    (t, E, mid, sent) => {
+      ok("071 save: Putting them in…, disabled, dialog still open", mid.text === "Putting them in…" && mid.disabled && mid.open);
+      ok("071 save: a seat with room sends add_place 0, by employee ID",
+         sent.length === 1 && sent[0].add_place === 0 && sent[0].employee === "HR-EMP-00381" && sent[0].position === "P-Cashier");
+      const h = t.layer();
+      ok("071 success: dialog closed, the note, focus on it",
+         !E["pos-person"].classList.contains("open") && E["pos-p-save"].textContent === "Put them in" && !E["pos-p-save"].disabled
+         && h.includes('<div class="pos-note ok" role="status" id="pos-un-flash" tabindex="-1">Anjali Saini is now in Cashier · Sector 34.</div>')
+         && t.focused[t.focused.length - 1] === "pos-un-flash");
+      ok("071 success: title, first line, branch, role and seat counts drop by one",
+         h.includes("In no seat · 5 people") && h.includes("5 of 40 active people") && h.includes("Sector 34 · 3")
+         && h.includes("1 Cashier · matching seat:") && h.includes("(3 of 3)") && !h.includes(">HR-EMP-00381<"));
+      ok("071 success: the tile drops by one", E["pos-tiles"].innerHTML.includes('onclick="posUnseatedSheet()"><div class="n">5</div><div class="l">IN NO SEAT'));
+      t.ctx.posUnseatedSheet();
+      ok("071 the note shows once", !t.layer().includes("is now in"));
+    });
+  await saving("HR-EMP-00382", "P-Counter",
+    { assign: () => ({ name: "A-2" }), table: () => after("HR-EMP-00382", "P-Counter") },
+    (t, E, mid, sent) => {
+      ok("071 Place anyway sends add_place 1", sent.length === 1 && sent[0].add_place === 1 && sent[0].employee === "HR-EMP-00382");
+      ok("071 after Add a place the seat reads one up", t.layer().includes("Ravi Kumar is now in Counter Staff · Sector 34."));
+    });
+  await saving("HR-EMP-00381", "P-Cashier",
+    { assign: () => { throw new TypeError("Failed to fetch"); }, table: () => after("", "") },
+    (t, E) => {
+      ok("071 no answer, still unseated: the connection message, dialog open, button back",
+         E["pos-person-err"].textContent === "Could not reach the server, so Anjali Saini is not in the seat. Check your connection and press Put them in again."
+         && E["pos-person"].classList.contains("open") && E["pos-p-save"].textContent === "Put them in" && !E["pos-p-save"].disabled);
+    });
+  await saving("HR-EMP-00382", "P-Counter",
+    { assign: () => { throw new TypeError("Failed to fetch"); }, table: () => after("", "") },
+    (t, E) => {
+      ok("071 no answer after Add a place: says the seat still has its places",
+         E["pos-person-err"].textContent === "Could not reach the server, so Ravi Kumar is not in the seat and the seat still has 1 places. Check your connection and press Put them in again.");
+    });
+  await saving("HR-EMP-00381", "P-Cashier",
+    { assign: () => { throw new Error("Cashier has 3 seat(s) and would be filled 1.33 times over."); }, table: () => after("", "") },
+    (t, E) => {
+      ok("071 a refusal is shown as it comes, and the list is not re-asked",
+         E["pos-person-err"].textContent === "Cashier has 3 seat(s) and would be filled 1.33 times over."
+         && !t.calls.some((c) => c[0].endsWith("position_table")));
+    });
+  await saving("HR-EMP-00381", "P-Cashier",
+    { assign: () => { throw new TypeError("Failed to fetch"); }, table: () => after("HR-EMP-00381", "P-Cashier") },
+    (t, E) => {
+      ok("071 answer lost but saved: the success note, not the error",
+         E["pos-person-err"].textContent === "" && t.layer().includes("Anjali Saini is now in Cashier · Sector 34."));
+    });
+  {
+    // US-7: the last person placed.
+    const t = withCands(unContext(true)), E = t.ctx.__els;
+    t.box("pos-un-flash");
+    t.ctx.POS.unseated = [UN2[1]];
+    t.fetch = (m) => Promise.resolve(m.endsWith("position_table") ? Object.assign(after("", ""), { unseated: [] })
+      : m.endsWith("candidates_for") ? { rows: [t.cands[2]] } : { name: "A-3", rows: [], held: 0, free: 100 });
+    t.ctx.posUnPlace("HR-EMP-00381", "P-Cashier", { focus() {} });
+    await tick();
+    await t.ctx.posPickSave(); await tick();
+    ok("071 the last one placed: 0 people and the empty sentence",
+       t.layer().includes("In no seat · 0 people") && t.layer().includes("Everybody active is in a seat now"));
+  }
 }
 
 deleteChecks().then(unChecks).then(() => {

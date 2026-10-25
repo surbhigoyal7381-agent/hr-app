@@ -1505,7 +1505,8 @@ async function seats070() {
   /* 22h. the error state (AC-63) */
   {
     let calls = 0;
-    W.gpFetch = () => { calls++; return Promise.reject(new Error("Traceback SERVER-SNTL")); };
+    // Only the chart's own call is counted: other panels (066's bell) use gpFetch too.
+    W.gpFetch = (m) => { if (/position_table/.test(m)) calls++; return Promise.reject(new Error("Traceback SERVER-SNTL")); };
     await W.posLoad();
     const alert = body().querySelector('[role="alert"]');
     const said = alert ? alert.textContent.replace(/\s+/g, " ").trim() : "";

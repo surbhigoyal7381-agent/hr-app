@@ -311,6 +311,22 @@ the confirmer can be misnamed by a no-change save, and a REST confirm writes no 
 (the leaving-date half of SEC-4.3). 06b M2 (the subject sees the opening on their own seat) is
 Surbhi's decision.
 
+### The full-run failures, checked against the base (25 Oct 2026)
+
+I ran the same tests on the code under this branch **without 065**: base `eb33129b`, in a throwaway
+container `hrlocal-065b` on the same site. No docker cp, no shared server. The site still carries the
+plan table, which base code never reads.
+
+| Tests | With 065 | On the base | Reason on the base |
+|---|---|---|---|
+| hrms, whole app | 278 failing names | **274, every one also failing with 065** | Frappe HR's own payroll, shift, leave and attendance tests on a site not set up for them (no holiday list for `_Test Company`, holiday skips, shift time zones, `wkhtmltopdf`) |
+| `test_register_194.TestDeletingASeat` x4 | failed in the full run | pass | "Changing the position list is not yours to do": leftover Custom DocPerm rows on Alvoraa Position from an interrupted earlier run. Passes on 065 code when the module runs alone (25 Oct, OK) |
+| `test_register_194…dtc_shaped…` | fails | fails | Known, from 064 |
+| `test_leave_year` x3 | fail | fail | The year overlaps `_Test Fiscal Year 2025` on this site |
+| `test_shift_types_043…default_shift` | fails | fails | The site holds an extra "CI Test Shift" |
+| `test_field_app_step2_013` ac21, ac24 | fail | fail | Slice 013's own check: "Choose a reason. It is kept in the change history." |
+| `test_attendance_correction` x2 | failed in the full run | pass (108 OK) | Depends on test order; passes alone with 065 too |
+
 Leftover rows: 4 Custom DocPerm rows on Alvoraa Position in `test065` (07:30:36, the shape of
 `TestOptionA.setUp`, left by a run that stopped early) were deleted. Every test makes its own rows.
 

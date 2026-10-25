@@ -1379,6 +1379,64 @@ async function seats070() {
     ok("070 AC-33: the print heading says Reporting lines", W.posPrintHead("reporting").includes("Reporting lines"));
     ok("070 Q4: the old name is gone from the page", !doc.documentElement.innerHTML.includes("Who reports to whom"));
   }
+
+  /* 22f. the seat tray (AC-35 - AC-42, AC-50, SEC-3) */
+  {
+    const layer = () => doc.getElementById("pos-layer");
+    const tray = (id) => { W.posCloseSheet(true); W.posSeatSheet(id); return layer().textContent.replace(/\s+/g, " "); };
+    draw(S70());
+    const copyId = (seat, under) => Object.keys(W.POS.place.byId).find((k) => W.POS.place.byId[k].seat.id === seat && W.POS.place.byId[k].under === under);
+    let t = tray("BO");
+    ok("070 AC-35: Where it shows lists the home and each copy",
+       t.includes("Where it shows on this chart") && t.includes("Under Owner: its own box, 1 person, 1 open, 1 seat under it")
+       && t.includes("Under Chief Financial Officer: 1 person") && t.includes("Under Backoffice Executive: 1 person"), t);
+    ok("070 AC-35: the box opened is marked", /its own box, 1 person, 1 open, 1 seat under itYou opened this one/.test(t));
+    ok("070 AC-37: the note says how people are placed",
+       t.includes("People are placed by Reports To on their employee record. To move someone, change their Reports To; "
+                  + "the chart follows the next time it opens. The seat itself stays under Owner."));
+    ok("070 AC-66: each Show button says what it shows",
+       [...layer().querySelectorAll(".pos-places button")].every((b) => /^Show it on the chart: Under /.test(b.getAttribute("aria-label"))));
+    ok("070 AC-39: lines name the manager and their seat",
+       t.includes("Reports to N E-OWN (Owner)") && t.includes("Reports to N E-CFO (Chief Financial Officer)") && t.includes("Reports to N E-BX (Backoffice Executive)"));
+    t = tray(copyId("BO", "CFO"));
+    ok("070 AC-42: a copy opens the same seat's tray", t.includes("Back Office") && t.includes("3 of 4") && /Under Chief Financial Officer: 1 personYou opened this one/.test(t));
+    ok("070 AC-42: Change edits the seat, not the copy", layer().innerHTML.includes("posSheetChange('BO')"));
+    t = tray(copyId("AUD", "RH"));
+    ok("070 AC-36: a home not drawn says why", t.includes("Its own box under Owner is not drawn: nobody there reports along that line, no slot is open and no seat hangs under it.") && !t.includes("its own box,"));
+    ok("070 AC-39: same seat", tray("FS").includes("Reports to N F1, also in this seat"));
+    t = tray("PK");
+    ok("070 AC-39/AC-50: an unseated manager is named for HR", t.includes("Reports to Neeraj Sood, who is in no seat"));
+    ok("070 AC-39: a manager the reply does not carry is not named", t.includes("Reports to a manager who is not on this chart"));
+    ok("070 AC-39: no manager on record", tray("OWN").includes("No manager on their record"));
+    ok("070 SEC-3: the tray never echoes an unknown manager or hidden seat", !layer().innerHTML.includes("MGR-ABSENT-SNTL")
+       && !tray("HID").includes("MGR-ABSENT-SNTL") && !layer().innerHTML.includes("SEAT-HIDDEN-SNTL"));
+    ok("070 AC-41: a seat drawn once has no Where it shows", !tray("CFO").includes("Where it shows"));
+    // Show: closes the tray, opens the way, focuses the copy (AC-38).
+    W.POS.collapsed = { CFO: true }; W.posPaint();
+    tray("BO");
+    const show = [...layer().querySelectorAll(".pos-places button")][1];
+    show.click();
+    ok("070 AC-38: Show closes the tray", layer().innerHTML === "");
+    const focused = doc.activeElement;
+    ok("070 AC-38: Show opens the fold and focuses the copy", focused && focused.classList.contains("copy")
+       && focused.classList.contains("pos-first") && /Back Office/.test(focused.textContent) && !W.POS.collapsed.CFO);
+    // A reader without HR scope: never the unseated manager's name (AC-50).
+    draw(S70(), "reporting", { unseated: null });
+    t = tray("PK");
+    ok("070 AC-50: without HR scope the unseated manager is not named", !layer().innerHTML.includes("Neeraj") && t.includes("Reports to a manager who is not on this chart"));
+    // AC-40, Q2/P-25: the split advice is gone; the records notes only outside Reporting lines.
+    const src = fs.readFileSync(PORTAL, "utf8");
+    ok("070 AC-40: the split advice is gone from every view", !src.includes("needs splitting first") && !src.includes("Give the head a seat of their own"));
+    W.POS.records = { mismatches: [], mixed: [{ position: "BO", manager: "E-OWN", manager_name: "Own", count: 1 }, { position: "BO", manager: "E-CFO", manager_name: "Cfo", count: 1 }] };
+    draw(S70());
+    ok("070 AC-40: in Reporting lines the records notes give way", !tray("BO").includes("This seat holds the people of"));
+    draw(S70(), "branch");
+    t = tray("BO");
+    ok("070 AC-40/41: in Branch they show as before, without the new section or lines",
+       t.includes("This seat holds the people of 2 managers") && !t.includes("Where it shows") && !t.includes("Reports to N"));
+    W.POS.records = null;
+    W.posCloseSheet(true);
+  }
 }
 
 deleteChecks().then(unChecks).then(seats070).then(() => {

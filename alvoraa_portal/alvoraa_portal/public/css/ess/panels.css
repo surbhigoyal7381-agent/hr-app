@@ -2191,6 +2191,10 @@ body.panel-fullscreen{overflow:hidden}
 .oc-same{display:flex;gap:6px;align-items:flex-start;margin-top:8px;font-size:var(--fs-sm);color:var(--text3);line-height:1.35}
 .oc-same svg{flex:none;margin-top:2px}
 .oc-box.rel{outline:2px dashed var(--primary);outline-offset:2px}
+.pos-places{list-style:none;margin:6px 0 0;padding:0}
+.pos-places li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}
+.pos-places li:first-child{border-top:0}
+.pos-places .this{font-size:var(--fs-xs);font-weight:700;color:var(--primary);background:var(--primary-lt);border-radius:var(--r-full);padding:1px 8px;margin-left:6px;white-space:nowrap}
 .pos-view-note{font-size:var(--fs-sm);color:var(--text2);margin:0 0 10px;line-height:1.45;max-width:760px}
 /* Print what is on screen: A4 landscape, one page wide, pages down (Q8).
    The portal frame is left out only while Positions is the open panel. */

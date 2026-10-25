@@ -1775,7 +1775,9 @@ window.posFindPick = function (id) {
   posPaint();
 };
 function posFindFocus(id) {
-  var r = posById(id), hit = {};
+  var r = posById(id), hit = {}, pl = posPlaced();
+  // Slice 070: a copy is outlined itself.
+  if (pl && pl.byId[id]) { hit[id] = 1; posMarkFirst(hit); return; }
   if (!r) return;
   hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
   posMarkFirst(hit);
@@ -3342,7 +3344,9 @@ window.posWallPrint = function () {
 };
 
 window.posSeatSheet = function (id, flash) {
-  var r = posById(id);
+  // Slice 070: a copy opens its seat's own tray (AC-42).
+  var pl = posPlaced(), copy = pl && pl.byId[id];
+  var r = copy ? copy.seat : posById(id);
   if (!r) return;
   var up = r.reports_to ? posById(r.reports_to) : null;
   var parent = !r.reports_to ? drT("reports to nobody (top of the chart)")
@@ -3353,7 +3357,9 @@ window.posSeatSheet = function (id, flash) {
     + '</b><div class="su">' + drT("filled") + "</div></div><div><b>"
     + (posOpen(r) ? posNum(posOpen(r)) : drT("None")) + '</b><div class="su">' + drT("to fill") + "</div></div></div>";
   if (flash) b += '<div class="pos-note ok" role="status">' + flash + "</div>";
-  b += posRecordNotes(r);
+  // In Reporting lines the chart itself now answers the records check, so its
+  // two notes give way to where the seat shows (Q3).
+  b += pl ? posWhereItShows(r, id, pl) : posRecordNotes(r);
   b += '<h3 class="pos-h3">' + drT("Who is in it") + "</h3>";
   if (!r.people.length) b += '<p class="su">' + drT("Nobody is in this seat.") + "</p>";
   b += '<div class="pos-people">' + r.people.map(function (p) {
@@ -3362,7 +3368,9 @@ window.posSeatSheet = function (id, flash) {
     if (p.covering) c += ' <span class="su">' + posEsc(p.type) + "</span>";
     if (posHired(p)) c += ' <span class="pos-chip green">' + drT("Joined {0}, hired for this seat", [posDay(p.hired_on)]) + "</span>";
     if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
-    return '<div class="pos-prow">' + posEsc(p.name) + c + "</div>";
+    // Slice 070: whom they report to, on its own grey line, in Reporting lines only.
+    var line = pl ? '<div class="su">' + posEsc(posReportsLine(p, r, pl)) + "</div>" : "";
+    return '<div class="pos-prow">' + posEsc(p.name) + c + line + "</div>";
   }).join("") + "</div>";
   b += '<p class="pos-sheet-err" id="pos-sheet-err" role="alert" hidden></p>';
   var f = "";
@@ -3371,14 +3379,88 @@ window.posSeatSheet = function (id, flash) {
       f += '<a class="btn btn-outline btn-sm" target="_blank" rel="noopener" href="/app/job-opening/'
         + encodeURIComponent(r.opening) + '">' + drT("Job opening {0}", [posEsc(r.opening)]) + "</a>";
     } else if (r.open >= 0.5 && r.designation) {
-      f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetAdvertise(\'' + posJs(id) + '\')">'
+      f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetAdvertise(\'' + posJs(r.id) + '\')">'
         + drT("Advertise it") + "</button>";
     }
-    f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetChange(\'' + posJs(id) + '\')">'
+    f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetChange(\'' + posJs(r.id) + '\')">'
       + drT("Change this seat") + "</button>";
   }
   posSheet(posEsc(r.title), b, f);
   POS.sheet = { kind: "seat", id: id };
+};
+
+/* Slice 070: posPlace's answer, but only while Reporting lines is the chart
+   on screen - the tray's new section and lines belong to that view alone. */
+function posPlaced() {
+  return posVal("pos-f-view") === "tree" && posArrange() === "reporting" ? POS.place : null;
+}
+
+/* "Where it shows on this chart" (AC-35 - AC-37): every drawn box of a shared
+   seat, each with Show. Empty for a seat drawn once. */
+function posWhereItShows(r, id, pl) {
+  var copies = pl.copies[r.id] || [];
+  if (!copies.length) return "";
+  var places = [], parent = posParentWords(r);
+  if (!pl.hidden[r.id]) {
+    var n = pl.home[r.id].length, o = posOpen(r);
+    var seats = (posKids(POS.rows).kids[r.id] || []).filter(function (k) { return !pl.hidden[k.id]; }).length;
+    places.push({ id: r.id, text: drT("Under {0}: its own box, {1}", [parent, n === 1 ? drT("1 person") : drT("{0} people", [n])])
+      + (o ? ", " + drT("{0} open", [posNum(o)]) : "")
+      + (seats ? ", " + (seats === 1 ? drT("1 seat under it") : drT("{0} seats under it", [seats])) : "") });
+  }
+  copies.forEach(function (c) {
+    var k = c.people.length;
+    places.push({ id: c.id, text: drT("Under {0}: {1}", [(posById(c.under) || {}).title || "",
+                                                       k === 1 ? drT("1 person") : drT("{0} people", [k])]) });
+  });
+  var out = '<h3 class="pos-h3" id="pos-places-h">' + drT("Where it shows on this chart") + "</h3>"
+    + '<ul class="pos-places" aria-labelledby="pos-places-h">' + places.map(function (p) {
+        return "<li><span>" + posEsc(p.text)
+          + (p.id === id ? '<span class="this">' + drT("You opened this one") + "</span>" : "") + "</span>"
+          + '<button type="button" class="btn btn-outline btn-sm" onclick="posShowPlace(\'' + posJs(p.id) + '\')"'
+          + ' aria-label="' + posEsc(drT("Show it on the chart: {0}", [p.text])) + '">' + drT("Show") + "</button></li>";
+      }).join("") + "</ul>";
+  if (pl.hidden[r.id]) {
+    out += '<p class="su">' + posEsc(drT("Its own box under {0} is not drawn: nobody there reports along that line, no slot is open and no seat hangs under it.", [parent])) + "</p>";
+  }
+  return out + '<div class="pos-note info"><p>' + posEsc(drT("People are placed by Reports To on their employee record. To move someone, change their Reports To; the chart follows the next time it opens. The seat itself stays under {0}.", [parent])) + "</p></div>";
+}
+
+/* Whom one person reports to, from the reply alone (AC-39, SEC-3). A manager
+   the reply does not carry - outside this reader's view, left, or in no seat
+   for a reader without HR scope - is never named. */
+function posReportsLine(p, r, pl) {
+  if (p.manager === "") return drT("No manager on their record");
+  if (!p.manager) return drT("Reports to a manager who is not on this chart");
+  var held = [];
+  POS.rows.forEach(function (x) {
+    x.people.forEach(function (q) { if (q.employee === p.manager) held.push({ r: x, name: q.name }); });
+  });
+  if (held.length) {
+    if (held.some(function (h) { return h.r.id === r.id; })) return drT("Reports to {0}, also in this seat", [held[0].name]);
+    // The seat they are drawn under: the copy's, else the parent, else the first.
+    var copy = (pl.copies[r.id] || []).filter(function (c) { return c.people.indexOf(p) >= 0; })[0];
+    var seat = copy ? posById(copy.under)
+      : (held.filter(function (h) { return h.r.id === r.reports_to; })[0] || held[0]).r;
+    return drT("Reports to {0} ({1})", [held[0].name, seat.title]);
+  }
+  var u = (POS.unseated || []).filter(function (x) { return x.employee === p.manager; })[0];
+  return u ? drT("Reports to {0}, who is in no seat", [u.name]) : drT("Reports to a manager who is not on this chart");
+}
+
+/* Show (AC-38): close the tray, open the folds down to that box, scroll to it
+   and give it the keyboard focus. */
+window.posShowPlace = function (id) {
+  var pl = posPlaced();
+  if (!pl) return;
+  var c = pl.byId[id], at = posById(c ? c.under : (posById(id) || {}).reports_to), hops = 0;
+  while (at && hops < POS_MAX_DEPTH) {
+    delete POS.collapsed[at.id]; POS.expanded[at.id] = true;
+    at = posById(at.reports_to); hops += 1;
+  }
+  posCloseSheet(true);
+  POS._findId = id;
+  posPaint();
 };
 
 /* The notes behind the records check (SEC-5). Empty for anyone the records
@@ -3401,7 +3483,7 @@ function posRecordNotes(r) {
         : drT("Their seats sit under other seats on this chart, so nobody shows under this box:"))
       + "<ul>" + order.map(function (n) { return "<li>" + posEsc(n) + ": " + by[n] + "</li>"; }).join("") + "</ul>"
       + "<p>" + (POS.may_edit
-        ? drT("To fix it, open each seat and set Reports to to this seat. A seat shared with another manager's people needs splitting first.")
+        ? drT("To fix it, open each seat and set Reports to to this seat.")
         : drT("HR can move these seats under this one.")) + "</p></div>";
   }
   if (rec.mixed.length > 1) {
@@ -3413,7 +3495,7 @@ function posRecordNotes(r) {
             : drT("{0} report to {1}", [m.count, m.manager_name || m.manager])) + "</li>";
         }).join("") + "</ul>"
       + "<p>" + drT("That is why it reads like one person with {0} others in their seat.", [Math.max(0, r.people.length - 1)])
-      + (POS.may_edit ? " " + drT("Give the head a seat of their own, then move each group under its own manager.") : "") + "</p></div>";
+      + "</p></div>";
   }
   return out;
 }

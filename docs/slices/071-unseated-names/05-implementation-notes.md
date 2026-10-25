@@ -117,7 +117,7 @@ full run on a clean container, is still owed before a push.**
 `portal.js` and its own block in `panels.css`). Rebased onto `f207e82c` with no conflicts.
 Their 33 `gm` functions are still in `portal.js`. After the rebase: positions tree 219,
 wall chart 183, DOM 13/13, handlers, undefined, tags, design, integrity all OK, and
-`test_unseated_071` 8 OK. 065-option-a and 070-* are still not on `dev`.
+`test_unseated_071` 8 OK. 065-option-a and 072-seats-follow-reporting (renumbered from 070) are still not on `dev`.
 
 ## Environment
 

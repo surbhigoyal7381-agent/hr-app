@@ -301,3 +301,33 @@ class FieldRightsAlv215(IntegrationTestCase):
 			frappe.delete_doc("Custom Field", "Employee-dtc_agency", force=True, ignore_permissions=True)
 			frappe.db.commit()  # the column was committed by its DDL; the class-end rollback must not bring the record back
 			frappe.clear_cache(doctype="Employee")
+
+	# Promotion / Transfer ------------------------------------------------
+	def _promotion(self, user, employee, details=(), revised_ctc=0):
+		frappe.set_user(user)
+		p = frappe.get_doc({"doctype": "Employee Promotion", "employee": employee,
+		                    "promotion_date": add_days(nowdate(), -1), "revised_ctc": revised_ctc,
+		                    "promotion_details": [{"property": label, "fieldname": f, "current": "", "new": v}
+		                                          for f, label, v in details]})
+		p.flags.ignore_permissions = True  # the plan may switch the doctype off; the field rule is the point
+		p.insert()
+		return p
+
+	def test_alv215_promotion_with_a_locked_field_is_refused_not_silently_undone(self):
+		for dt in ("Employee Promotion", "Employee Transfer"):
+			self.assertIn("alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+			              frappe.get_hooks("doc_events")[dt]["before_submit"])
+		frappe.db.set_value("Employee", self.colleague, "ctc", 1000)
+		p = self._promotion(self.hr_user, self.colleague, revised_ctc=2000)
+		with self.assertRaises(frappe.PermissionError):
+			p.submit()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Employee", self.colleague, "ctc"), 1000)
+
+	def test_alv215_promotion_hr_may_make_still_goes_through(self):
+		p = self._promotion(self.hr_user, self.colleague, [("designation", "Designation", "Alv215 Clerk")])
+		p.submit()
+		p = self._promotion(self.hr_mgr, self.colleague, revised_ctc=3000)
+		p.submit()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Employee", self.colleague, "ctc"), 3000)

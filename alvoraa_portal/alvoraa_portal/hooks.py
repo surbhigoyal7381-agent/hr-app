@@ -183,6 +183,14 @@ doc_events = {
     "Data Import": {
         "validate": "alvoraa_portal.employee_field_rights.refuse_import_of_locked_columns",
     },
+    # ALV-215: a Promotion or Transfer that changes a field the submitter may
+    # not change is refused, instead of Frappe silently putting the value back.
+    "Employee Promotion": {
+        "before_submit": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+    },
+    "Employee Transfer": {
+        "before_submit": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+    },
     # ── Module access follows the plan, for the whole life of the tenant ──
     # A plan is chosen once; users arrive and change roles for years afterwards.
     # Without these the gate would apply only to whoever existed on sync day.

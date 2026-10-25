@@ -175,6 +175,28 @@ def refuse_import_of_locked_columns(doc, method=None):
 		)
 
 
+def refuse_locked_promotion_fields(doc, method=None):
+	"""Employee Promotion / Transfer before_submit: say so, instead of Frappe putting values back.
+
+	Submitting writes the changes onto the Employee as the submitter, and Frappe
+	silently restores any field the submitter may not write - an HR User's
+	revised CTC would vanish while the Promotion shows it as done.
+	"""
+	meta = frappe.get_meta(EMPLOYEE)
+	can_write = set(meta.get_permlevel_access("write"))
+	fields = [d.fieldname for d in doc.get("promotion_details") or doc.get("transfer_details") or []]
+	if doc.get("revised_ctc"):
+		fields.append("ctc")
+	locked = [meta.get_label(f) for f in fields
+	          if meta.get_field(f) and (meta.get_field(f).permlevel or 0) not in can_write]
+	if locked:
+		frappe.throw(
+			_("You are not allowed to change {0}, so this cannot be submitted. "
+			  "Ask an HR Manager to submit it.").format(", ".join(locked)),
+			frappe.PermissionError,
+		)
+
+
 @frappe.whitelist()
 def get_employee_field_property(employee: str, fieldname: str):
 	"""Replaces hrms.hr.utils.get_employee_field_property (step B, override_whitelisted_methods).

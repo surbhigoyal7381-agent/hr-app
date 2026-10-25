@@ -862,6 +862,69 @@ const UNROWS = ROWS.map((r) => (r.id === "P-Cashier" ? Object.assign({}, r, { de
      t.layer().includes("In no seat · 0 people") && t.layer().includes("Everybody active is in a seat now"));
 }
 
+/* 071 steps 3-4: buttons, and the confirm before a full seat. */
+const UN2 = UN.concat([
+  { employee: "HR-EMP-00384", name: "Chetan Lal", job_role: "Loader", branch: "Ambala", joined: "2026-10-03", no_manager: false },
+  { employee: "HR-EMP-00385", name: "Deep Kaur", job_role: "Packer", branch: "Sector 34", joined: "2026-10-04", no_manager: false },
+]);
+const UNROWS2 = UNROWS.concat([
+  seat("P-Loader", "Loader", "P-Ambala", { branch: "Ambala", designation: "Loader", seats: 0, filled: 2, open: 0 }),
+  seat("P-PackA", "A Packer", "P-Sector34", { designation: "Packer", seats: 1, filled: 1, open: 0 }),
+  seat("P-PackB", "B Packer", "P-Sector34", { designation: "Packer", seats: 2, filled: 1, open: 1 }),
+]);
+function unContext(mayEdit) {
+  const t = trayContext({ unseated: UN2, rows: UNROWS2, active: 40, may_edit: mayEdit });
+  const els = t.ctx.__els, calls = [];
+  const box = (id, extra) => (els[id] = Object.assign({
+    id, innerHTML: "", textContent: "", value: "", style: {}, checked: false, disabled: false,
+    classList: (() => { const s = new Set(); return { add: (c) => s.add(c), remove: (c) => s.delete(c), contains: (c) => s.has(c) }; })(),
+    focus() { t.focused.push(id); },
+  }, extra || {}));
+  ["pos-full", "pos-full-x", "pos-full-no", "pos-person", "pos-p-q", "pos-p-weight", "pos-p-type", "pos-p-until",
+   "pos-p-delegate", "pos-p-holds", "pos-p-until-wrap", "pos-person-err", "pos-p-list", "pos-p-save", "pos-p-ctx"].forEach((id) => box(id));
+  els["pos-p-list"].children = [];
+  t.ctx.gpFetch = (method, args) => { calls.push([method, args]); return t.fetch ? t.fetch(method, args) : new Promise(() => {}); };
+  t.calls = calls; t.box = box;
+  return t;
+}
+function rowOf(h, emp) { return (h.split('<li class="pos-un-p">').filter((x) => x.includes(">" + emp + "<"))[0] || "").split("</li>")[0]; }
+{
+  const t = unContext(false);
+  t.ctx.posUnseatedSheet();
+  const h = t.layer();
+  ok("071 HR User: names but no buttons and no full words",
+     h.includes("Ravi Kumar") && !h.includes("Place in seat") && !h.includes("Place anyway") && !h.includes("This seat is full"));
+}
+{
+  const t = unContext(true);
+  t.ctx.posUnseatedSheet();
+  const h = t.layer();
+  ok("071 room: Place in seat", rowOf(h, "HR-EMP-00381").includes(">Place in seat</button>") && !rowOf(h, "HR-EMP-00381").includes("full"));
+  ok("071 full: the words, then Place anyway",
+     /This seat is full<\/span><button[^>]*>Place anyway<\/button>/.test(rowOf(h, "HR-EMP-00382")));
+  ok("071 full: the button is described by the name and the words",
+     /aria-describedby="pos-un-n-\d+ pos-un-f-\d+">Place anyway/.test(rowOf(h, "HR-EMP-00382")));
+  ok("071 E1: a seat with 0 places has room", rowOf(h, "HR-EMP-00384").includes(">Place in seat</button>"));
+  ok("071 no matching seat: no button", !rowOf(h, "HR-EMP-00383").includes("<button"));
+  ok("071 Q3: of two matching seats the one with room is used",
+     h.includes("1 Packer · matching seat:") && h.includes(">B Packer · Sector 34</button>")
+     && rowOf(h, "HR-EMP-00385").includes("P-PackB") && rowOf(h, "HR-EMP-00385").includes("Place in seat"));
+
+  const btn = { focus() { t.focused.push("row-button"); } };
+  t.ctx.posUnPlace("HR-EMP-00382", "P-Counter", btn);
+  const x = t.ctx.__els["pos-full-x"].innerHTML;
+  ok("071 confirm opens, focus on Cancel",
+     t.ctx.__els["pos-full"].classList.contains("open") && t.focused[t.focused.length - 1] === "pos-full-no");
+  ok("071 confirm names the seat, its places and people",
+     x.includes("<strong>Counter Staff · Sector 34</strong> has 1 places and 1 people in them."));
+  ok("071 confirm says the seat gets one more place", x.includes("Ravi Kumar in it, the seat gets one more place: 2 in all.")
+     && x.includes("really needs another Counter."));
+  t.ctx.posFullClose();
+  ok("071 Cancel closes, focus back on the row button, nothing sent, nothing changed",
+     !t.ctx.__els["pos-full"].classList.contains("open") && t.focused[t.focused.length - 1] === "row-button"
+     && t.calls.length === 0 && t.ctx.posById("P-Counter").seats === 1);
+}
+
 deleteChecks().then(() => {
   if (problems.length) {
     console.error("positions tree: " + problems.length + " problem(s)");

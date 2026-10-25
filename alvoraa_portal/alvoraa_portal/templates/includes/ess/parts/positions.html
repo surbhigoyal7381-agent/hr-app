@@ -244,6 +244,17 @@
           </div>
         </div>
       </div>
+      <!-- Slice 071: before putting somebody in a full seat. Same shape as #pos-delete. -->
+      <div class="gp-backdrop" id="pos-full">
+        <div class="gp-modal" role="alertdialog" aria-modal="true" aria-labelledby="pos-full-t" aria-describedby="pos-full-x" style="max-width:480px">
+          <div class="gp-modal-hdr"><h2 class="gp-modal-title" id="pos-full-t">This seat is full</h2></div>
+          <div class="gp-modal-body" id="pos-full-x"></div>
+          <div class="gp-modal-footer">
+            <button type="button" class="btn btn-outline" id="pos-full-no" onclick="posFullClose()">Cancel</button>
+            <button type="button" class="btn btn-primary" id="pos-full-go" onclick="posFullGo()">Add a place and continue</button>
+          </div>
+        </div>
+      </div>
       <div class="gp-backdrop" id="pos-person">
         <div class="gp-modal" style="max-width:560px">
           <div class="gp-modal-hdr">

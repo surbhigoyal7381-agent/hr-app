@@ -3281,8 +3281,10 @@ window.posUnseatedSheet = function () {
       roles[k].push(p);
     });
     b += rorder.map(function (role) {
-      var seat = role && POS.rows.filter(function (r) { return r.designation === role && r.branch === br; })
-        .sort(function (x, y) { return x.title < y.title ? -1 : x.title > y.title ? 1 : 0; })[0];
+      var match = role ? POS.rows.filter(function (r) { return r.designation === role && r.branch === br; })
+        .sort(function (x, y) { return x.title < y.title ? -1 : x.title > y.title ? 1 : 0; }) : [];
+      // Slice 071 (Q3): of two matching seats, the first with room, else the first by title.
+      var seat = match.filter(posUnRoom)[0] || match[0];
       var ps = roles[role].slice().sort(function (x, y) { return x.name < y.name ? -1 : x.name > y.name ? 1 : 0; });
       return '<div class="pos-un-role">' + posEsc(ps.length + " " + (role || drT("with no job role")))
         + (seat ? " · " + drT("matching seat:") + ' <button type="button" class="pos-link" onclick="posSeatSheet(\'' + posJs(seat.id) + '\')">'
@@ -3292,16 +3294,61 @@ window.posUnseatedSheet = function () {
         // Slice 071: one row per person. The year only when it is not this year.
         + '<ul class="pos-un">' + ps.map(function (p) {
             var i = n++, day = posDay(p.joined) + (p.joined && p.joined.slice(0, 4) !== year ? " " + p.joined.slice(0, 4) : "");
+            var act = "", call = 'onclick="posUnPlace(\'' + posJs(p.employee) + "','" + posJs(seat && seat.id) + '\',this)"';
+            if (POS.may_edit && seat) {
+              act = posUnRoom(seat)
+                ? '<button type="button" class="btn btn-outline btn-sm" ' + call + ' aria-describedby="pos-un-n-' + i + '">' + drT("Place in seat") + "</button>"
+                : '<span class="su" id="pos-un-f-' + i + '">' + drT("This seat is full") + "</span>"
+                  + '<button type="button" class="btn btn-outline btn-sm" ' + call + ' aria-describedby="pos-un-n-' + i + " pos-un-f-" + i + '">'
+                  + drT("Place anyway") + "</button>";
+            }
             return '<li class="pos-un-p"><div class="pos-un-who"><a class="pos-link" id="pos-un-n-' + i
               + '" target="_blank" rel="noopener" href="/app/employee/' + encodeURIComponent(p.employee) + '">' + posEsc(p.name)
               + '</a> <span class="su">' + posEsc(p.employee) + '</span><span class="pos-un-meta su">'
               + (p.joined ? posEsc(drT("Joined {0}", [day])) : "")
-              + (p.no_manager ? ' <span class="pos-chip">' + drT("No manager") + "</span>" : "") + "</span></div></li>";
+              + (p.no_manager ? ' <span class="pos-chip">' + drT("No manager") + "</span>" : "") + "</span></div>"
+              + (act ? '<div class="pos-un-act">' + act + "</div>" : "") + "</li>";
           }).join("") + "</ul>";
     }).join("");
   });
   posSheet(drT("In no seat · {0} people", [list.length]), b, "");
   POS.sheet = { kind: "unseated" };
+};
+
+/* Slice 071. Room is today's rule (half a place open); a seat with 0 places
+   has no limit on the server, so it has room too (E1). */
+function posUnRoom(s) { return !s.seats || s.open >= 0.5; }
+
+/* "Place in seat" opens today's dialog for that seat; "Place anyway" asks
+   first, because the seat gets one more place. */
+window.posUnPlace = function (employee, seatId, btn) {
+  var p = (POS.unseated || []).filter(function (x) { return x.employee === employee; })[0], s = posById(seatId);
+  if (!p || !s || !POS.may_edit) return;
+  POS.pickRet = btn || null;
+  POS.pickFrom = { seat: s.id, employee: p.employee, name: p.name, role: p.job_role, raise: !posUnRoom(s) };
+  if (POS.pickFrom.raise) posFullOpen(); else posPickPerson(POS.pickFrom);
+};
+
+window.posFullOpen = function () {
+  var f = POS.pickFrom, s = posById(f.seat);
+  document.getElementById("pos-full-x").innerHTML = '<p style="margin:0 0 10px;line-height:1.5">'
+    + drT("{0} has {1} places and {2} people in them.",
+          ["<strong>" + posEsc(s.title + (s.branch ? " · " + s.branch : "")) + "</strong>", posNum(s.seats), posNum(s.filled)])
+    + '</p><p style="margin:0;line-height:1.5">'
+    + posEsc(drT("To put {0} in it, the seat gets one more place: {1} in all. Do this only if the store really needs another {2}.",
+                 [f.name, posNum(s.seats + 1), f.role])) + "</p>";
+  document.getElementById("pos-full").classList.add("open");
+  document.getElementById("pos-full-no").focus();
+};
+
+window.posFullClose = function () {
+  document.getElementById("pos-full").classList.remove("open");
+  if (POS.pickRet && POS.pickRet.focus) POS.pickRet.focus();
+};
+
+window.posFullGo = function () {
+  document.getElementById("pos-full").classList.remove("open");
+  posPickPerson(POS.pickFrom);
 };
 
 /* Two branch records for one store: the same name once case, spaces and

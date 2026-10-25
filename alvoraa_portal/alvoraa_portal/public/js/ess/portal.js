@@ -1549,7 +1549,12 @@ function posPaintTree() {
     + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
       + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
     + "</div>";
-  body.innerHTML = posPrintHead(how) + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
+  // Slice 070 (design §5.4): one line, so nobody is surprised that a seat
+  // holds fewer names in one view than in another.
+  var viewNote = '<p class="pos-view-note noprint">' + posEsc(how === "reporting"
+    ? drT("Each person is shown under the seat of their manager, as set in Reports To on their employee record. A seat shared by people with different managers shows once under each manager. Open slots and the seats under it stay on the seat's own box.")
+    : drT("One box per seat, with everyone in it. To see people under their managers, choose Arrange by: Reporting lines.")) + "</p>";
+  body.innerHTML = posPrintHead(how) + viewNote + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
     + html + "</div></div></div>";
 }
 

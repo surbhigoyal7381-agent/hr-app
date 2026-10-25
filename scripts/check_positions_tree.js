@@ -1361,6 +1361,24 @@ async function seats070() {
     draw(priv); const s2 = shape();
     ok("070 PRIV-1 b: plans, openings and hire dates do not move, add or remove a box", s1 === s2);
   }
+
+  /* 22e. the view's name and its note (AC-33, Q4) */
+  {
+    const note = () => (body().querySelector(".pos-view-note") || {}).textContent || "";
+    ok("070 AC-33: the Arrange by option reads Reporting lines",
+       doc.querySelector('#pos-f-arrange option[value="reporting"]').textContent === "Reporting lines");
+    draw(S70());
+    ok("070 AC-33: the Reporting lines note, word for word", note() === "Each person is shown under the seat of their manager, as set in "
+       + "Reports To on their employee record. A seat shared by people with different managers shows once under each manager. "
+       + "Open slots and the seats under it stay on the seat's own box.", note());
+    for (const arr of ["branch", "department"]) {
+      draw(S70(), arr);
+      ok("070 AC-33: the " + arr + " note, word for word",
+         note() === "One box per seat, with everyone in it. To see people under their managers, choose Arrange by: Reporting lines.", note());
+    }
+    ok("070 AC-33: the print heading says Reporting lines", W.posPrintHead("reporting").includes("Reporting lines"));
+    ok("070 Q4: the old name is gone from the page", !doc.documentElement.innerHTML.includes("Who reports to whom"));
+  }
 }
 
 deleteChecks().then(unChecks).then(seats070).then(() => {

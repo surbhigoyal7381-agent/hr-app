@@ -2191,6 +2191,7 @@ body.panel-fullscreen{overflow:hidden}
 .oc-same{display:flex;gap:6px;align-items:flex-start;margin-top:8px;font-size:var(--fs-sm);color:var(--text3);line-height:1.35}
 .oc-same svg{flex:none;margin-top:2px}
 .oc-box.rel{outline:2px dashed var(--primary);outline-offset:2px}
+.pos-view-note{font-size:var(--fs-sm);color:var(--text2);margin:0 0 10px;line-height:1.45;max-width:760px}
 /* Print what is on screen: A4 landscape, one page wide, pages down (Q8).
    The portal frame is left out only while Positions is the open panel. */
 @page{size:A4 landscape;margin:10mm}

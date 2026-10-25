@@ -74,9 +74,7 @@
     attendance_fixes: function (n) { return __("{0} attendance fixes to decide", [n]); },
     shift_requests: function (n) { return __("{0} shift changes to approve", [n]); },
     policies: function (n) { return __("{0} policies to read and accept", [n]); },
-    my_requests: function (n) { return __("{0} of your requests are waiting", [n]); },
-    /* Slice 066: HR's grooming asks and pending reviews. */
-    grooming: function (n) { return __("{0} grooming reds to look at", [n]); }
+    my_requests: function (n) { return __("{0} of your requests are waiting", [n]); }
   };
 
   /* Section 4's routes, grouped the way the rail groups them.

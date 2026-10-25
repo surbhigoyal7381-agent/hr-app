@@ -78,16 +78,12 @@ PARTS = (
 	("shift_requests", "#time/shift"),
 	("policies", "#company/policies"),
 	("my_requests", "#time"),
-	# Slice 066: HR's two grooming notices - a person asked HR to look at a
-	# mark, and a grooming review is pending. Opens Attendance, where HR acts.
-	("grooming", "#time"),
 )
 
 # Which parts add up to "approvals waiting". The total is
 # approvals + policies + my own open requests (Wave 1 AC-20, Wave 2 section 6.2),
 # so the three groups are named rather than left as an arithmetic accident.
-APPROVAL_PARTS = ("leave_approvals", "goal_updates", "attendance_fixes", "shift_requests",
-                  "grooming")
+APPROVAL_PARTS = ("leave_approvals", "goal_updates", "attendance_fixes", "shift_requests")
 
 # The attendance corrections screen reads at most this many rows
 # (`attendance_correction.to_review`'s default). The COUNT is not capped, so the
@@ -143,9 +139,6 @@ ROW_KEYS = (
 	# internal keys `attendance_fix` and `shift_request`, untranslated.
 	("my_requests", ("name", "kind", "title", "from_date", "to_date", "state",
 	                 "says", "note", "can_withdraw", "action")),
-	# Slice 066: whose, which day or month, and what is waiting. Never the
-	# reason, an amount or the review note.
-	("grooming", ("name", "employee_name", "from_date", "says", "action")),
 )
 
 
@@ -930,56 +923,6 @@ def _part_my_requests(who):
 	)
 
 
-def _part_grooming(who):
-	"""Slice 066: grooming reds waiting on HR - an ask not yet answered, and a
-	"Grooming review pending" flag - for the people in this caller's HR scope.
-
-	HR only (`grooming.hr_scope`, the same rule that lets them keep or remove a
-	mark). The asks are read with `get_list`, so the mark's own read gate
-	applies; the flags come from `grooming.pending_reviews`, the same definition
-	the pending-review report uses. Never the caller's own record.
-	"""
-	import alvoraa_portal.grooming as grooming
-	from frappe.utils import add_months, get_first_day, getdate, nowdate
-
-	available = bool(_has_doctype(grooming.MARK)) and bool(grooming._hr_sql(who.user))
-	filters = ({"asked_on": ["is", "set"], "kept_on": ["is", "not set"], "docstatus": 1,
-	            "employee": ["!=", who.employee or ""]} if available else no_rows())
-
-	def collect(filters, limit):
-		if not available:
-			return []
-		out = []
-		asked = frappe.get_list(grooming.MARK, filters=filters,
-		                        fields=["name", "employee", "employee_name", "mark_date"],
-		                        order_by="asked_on asc", limit_page_length=0)
-		mine = grooming.hr_scope(who.user, list({a.employee for a in asked}))
-		for a in asked:
-			if a.employee in mine:
-				out.append({"name": a.name, "employee_name": a.employee_name,
-				            "from_date": str(a.mark_date),
-				            "says": _("Asked HR to look at a grooming red"), "action": "grooming"})
-		this = getdate(get_first_day(nowdate()))
-		for month in (getdate(add_months(this, -1)), this):
-			for r in grooming.pending_reviews(who.user, month):
-				out.append({"name": r.employee, "employee_name": r.employee_name,
-				            "from_date": str(month),
-				            "says": _("Grooming review pending"), "action": "grooming"})
-		return out[:limit] if limit else out
-
-	return Part(
-		"grooming", "#time",
-		scope="HR only: marks in grooming.hr_scope for this caller (get_list, the mark's own "
-		      "read gate), minus their own; pending reviews from grooming.pending_reviews",
-		filters=filters,
-		count_fn=lambda f: len(collect(f, None)),
-		rows_fn=collect,
-		available=available,
-		label_one=_("{n} grooming red to look at"),
-		label_many=_("{n} grooming reds to look at"),
-	)
-
-
 def parts(user=None):
 	"""The six parts, in order, for this caller (042 section 6.1).
 
@@ -997,7 +940,6 @@ def parts(user=None):
 		_part_shift_requests(who),
 		_part_policies(who),
 		_part_my_requests(who),
-		_part_grooming(who),
 	)
 	# The order and the membership of PARTS is the contract; this proves the
 	# builders above still match it rather than assuming they do.

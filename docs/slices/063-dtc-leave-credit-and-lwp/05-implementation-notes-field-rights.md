@@ -151,6 +151,29 @@ worktree apps mounted). Fresh install as CI does it: erpnext, hrms, alvoraa_port
 | `scripts/check_app_integrity.py` | OK - 806 checks |
 | **Full suite, once, after rebasing on origin/dev af0b7cdf** | `alvoraa_goals`: 18 OK (2 skipped). `alvoraa_portal`: three batches - 30 OK; 962 OK (19 skipped); 2,168 OK (40 skipped). No failure, no error |
 
+**Run 2 - after the Promotion refusal, rebased on f207e82c, `bench migrate` on testfr (25 Oct):**
+alvoraa_goals 18 OK (2 skipped). alvoraa_portal: 32 OK; 963 with 1 failure (20 skipped);
+2,274 with 2 errors (40 skipped). hrms org structure: `test_company_scope_194` 8 OK,
+`test_cover_policy` 25 OK, `test_org_structure` 33 OK, `test_register_194` 38 OK. Slice 066's
+grooming tests, 067's pay-slip and the payroll modules ran inside the portal suite and passed.
+
+The three failures, each checked:
+
+| Test | Class | Proof |
+|---|---|---|
+| `test_shift_types_043.test_my_own_default_shift_is_always_offered` | **Leftover data** | `test_checkin_location` parks its "CI Test Shift" staff in whichever company comes first; on testfr that was "S043 Lonely Company", left by run 1. On a second site without that data, with this branch's code: the module runs 15 OK |
+| `test_attendance_correction.TheManagersFilingWindow.test_a_holiday_in_the_range_pushes_the_reach_further_back` and `test_a_weekly_off_counts_the_same_way` | **Fails on base too (date-dependent); not caused by this change** | These ran after midnight in the site's timezone, so "today" moved during the run ("oldest day you can file for is 2026-10-23"). On a clean origin/dev f207e82c site and on this branch's code, both pass when run alone. Under a frozen clock (freezegun, installed only in my throwaway containers), base and branch give **identical** results: Sunday 25 Oct errors, Wednesday 21 and Friday 23 Oct pass |
+
+**Rebase 3 (26 Oct) onto origin/dev 52fc3451.** Came in: ALV-217 / slice 070 "readable on
+phone" (9 commits to 57d1a157: `portal.js`, `frame.css`, portal templates, two new tests in
+`test_leave_permissions.py`, `portal_leave_063_test.js`, docs, `.claude/context`), slice 071
+"in no seat" tray (15 commits: `hrms/.../alvoraa_org_structure/register.py`, Positions JS and
+scripts, docs) and one 066 grooming commit. None touch my files; clean rebase; integrity check
+OK. Affected modules re-run on the rebased code: field rights 16 OK; `test_leave_permissions` 12
+OK; `test_manager_scope` 12 OK; `test_grooming_066` 64 + 1 OK; `test_grooming_cap_066` 42 OK;
+`test_payroll_flags` 9 OK; `test_payroll_reprocess` 12 OK; `test_pay_slip_marks_067` 18 + 2 OK;
+`test_positions_064` 17 OK; hrms `test_register_194` 38 OK.
+
 Not run: the hrms per-doctype CI job (`hrms_test_site`); `bench migrate` (on the approval list
 - the after_install path was observed instead, and `apply()` is the same function).
 

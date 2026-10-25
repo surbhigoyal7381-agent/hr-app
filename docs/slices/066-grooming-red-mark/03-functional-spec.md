@@ -122,7 +122,7 @@ app, page, settings page, job, cache or index.
 
 ```mermaid
 flowchart TD
-  A[Manager sees person at counter] --> B{Rule set on for the company?}
+  A[Manager sees person at counter] --> B{Grooming component enabled and rule set on?}
   B -- no --> Z1[No Today card. Nothing to do]
   B -- yes --> C{Person on Today card? direct report, punched today}
   C -- no punch --> Z2["Not clocked in" line. Cannot mark]
@@ -306,7 +306,7 @@ Returns `Manager`, `HR`, or a refusal with a code and a sentence. Called by the 
 
 | # | Rule | Refusal sentence (manager / HR) |
 |---|---|---|
-| R1 | Rule set enabled for the subject's company (`rule_set_for`) | No button, no card (SEC-6). Server: "Grooming reds are not switched on for this company." |
+| R1 | Grooming switched on: the `Grooming Red Value` Salary Component exists and is not disabled (`grooming.is_on`), **and** the subject's company has an enabled rule set (`rule_set_for`), which prices the marks. The rule set alone never switches grooming on (pre-push review P-1; Surbhi, 25 Oct 2026, option 2) | No button, no card (SEC-6). Server: "Grooming reds are not switched on for this company." Off also freezes old marks (no ask, keep, remove, raise or review), prices no slip line, sends no notice and raises no flag; old marks are kept and stay readable |
 | R2 | Caller is not `Administrator` and not the subject (`is_own_record`) | "You cannot mark yourself." |
 | R3 | Subject `status` = Active and `date` ≥ `date_of_joining` | "[Name] is not an active employee on this day." |
 | R4 | Subject's category has `earns_marks` (DTC: Contract has 0) | "Contract staff are not given grooming reds." |

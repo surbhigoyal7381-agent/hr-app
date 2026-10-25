@@ -369,3 +369,45 @@ no script errors, every expected word present.
 **Other checks:** DOM tests 13 files run, 0 failed; handlers OK; undefined JS OK; attendance strip
 OK; trays 26/26; wall chart 183 checks OK; design system, tag balance, brand spelling OK;
 `scripts/check_app_integrity.py` OK.
+
+## 16 · Grooming's own switch (pre-push review P-1; Surbhi, 25 Oct 2026, option 2)
+
+Branch `slice/066-grooming-switch`, from origin/dev 3dd9f556 (nothing new had come in). Local only.
+
+**What changed.** Before this, the only switch was the DTC payroll rule set's `enabled` box, which
+the red and green pay engine shares. Now grooming is **on only while the Salary Component
+"Grooming Red Value" exists and its Disabled box is clear**. Missing or disabled means off. The
+rule set still prices the marks, but it never switches grooming on by itself.
+
+Rung: configuration. The switch is a box that already exists on a record that already exists; no
+new field, setting or flag.
+
+| File | Change |
+|---|---|
+| `grooming.py` | `is_on()`: one `get_value` on the component, cached for the request (`request_cache`). `_subjects` gives no rule set while off, so R1, the Today card, the month, the flag and the pending report all read "off" from one place. `may_raise` checks it too. `refuse_if_off()` for the controllers |
+| `grooming_mark.py` | Off: no ask, keep, raise (`before_update_after_submit`), undo or remove (`before_cancel`). New marks are refused by R1 in `validate` |
+| `grooming_review.py` | Off: no review recorded |
+| `payroll_slip.py` | Off: `grooming_days` is 0, so no slip line (an engine-made line on a draft slip is cancelled at the next save, as for any line that drops to 0); the submit check returns at once, so an open "Ask HR" or a stale line holds no slip |
+| tests | `TestGroomingSwitch` (5 tests) in `test_grooming_cap_066.py`; `Case.setUp` clears the request cache |
+
+**While off:** no Today card or buttons (`today()` says `show: False`); no `grooming` key in the
+month payload for anybody, so nobody can tell grooming exists; no new marks by any route (portal,
+REST); old marks are never deleted or changed and stay readable to the people who may read them
+(the read rules do not depend on the switch; HR's saved desk views still list them); no slip
+line; no notices (every notice follows a change, and every change is refused); no flag; the
+"Grooming Review Pending" report is empty. Old notices already in someone's bell stay.
+
+**Cache.** One database read per request or background job (Frappe resets the request cache for
+each). Flipping the box takes effect on the next request; no `clear-cache` is needed.
+
+**Release step (DTC).**
+- *For grooming to stay off after the push, DTC's "Grooming Red Value" component must be missing,
+  or present with Disabled ticked.* I could not check DTC's current value; check it before the
+  push. If HR creates the component before go-live (for the salary structure), create it with
+  Disabled ticked.
+- *To switch on:* Salary Component "Grooming Red Value" at DTC, untick Disabled, save.
+  **Rollback (one line):** tick Disabled on the same component and save.
+- **Release checklist: do not untick Disabled until ALV-215 is fixed, counsel has signed off the
+  "Other" text, the fines and the retention periods, and Surbhi has said yes in writing.**
+
+**Tests.** See the run below.

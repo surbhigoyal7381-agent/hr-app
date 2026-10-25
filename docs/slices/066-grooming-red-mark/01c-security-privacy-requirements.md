@@ -350,6 +350,11 @@ uses (its SEC-15). No company or site name in code.
 | No rule set (every other tenant) | not shown | **refused** | nothing |
 
 Switching the rule set off is also the rollback: marking stops at once; existing marks stay, unpriced.
+
+*Amended 25 Oct 2026 (pre-push review P-1; Surbhi chose option 2):* grooming has its own switch.
+It is on only while the `Grooming Red Value` Salary Component exists and is not disabled; every
+row above is "off" whatever the rule set says while the component is missing or disabled. The
+rollback is now ticking Disabled on that component.
 *Test:* the three states × (screen flag, portal endpoint, REST insert, slip). The middle row must use a
 disabled **draft** rule set, as DTC has.
 

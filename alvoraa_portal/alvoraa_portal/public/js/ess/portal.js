@@ -2346,12 +2346,22 @@ function posWire() {
     }
     // Security F2: a page filtered to "somebody is leaving" (or "key seats")
     // IS a list of leavers (or of key seats), which never goes on paper. Ctrl+P
-    // on Positions clears that one filter first; the print, and the screen
-    // after it, are the chart without it.
+    // on Positions clears that one filter for the print, and puts the screen
+    // back as it was afterwards (Surbhi, 25 Oct 2026). If afterprint never
+    // comes, the filter simply stays cleared.
     var show = document.getElementById("pos-f-open");
     if (onPositions && show && (show.value === "leaving" || show.value === "key")) {
+      var was = { show: show.value, view: posVal("pos-f-view"), arrange: posArrange(), saved: POS._saved,
+                  collapsed: POS.collapsed, expanded: POS.expanded };
       show.value = "";
       posFilterChanged("");
+      window.addEventListener("afterprint", function () {
+        show.value = was.show;
+        document.getElementById("pos-f-view").value = was.view;
+        document.getElementById("pos-f-arrange").value = was.arrange;
+        POS._saved = was.saved; POS.collapsed = was.collapsed; POS.expanded = was.expanded;
+        posPaint();
+      }, { once: true });
     }
   });
 }

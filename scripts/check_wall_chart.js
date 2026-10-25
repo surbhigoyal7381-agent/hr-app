@@ -453,6 +453,10 @@ function neverPrinted(label, p) {
         const body = doc.getElementById("pos-body").innerHTML;
         ok("F2: Ctrl+P clears Show = " + v + " (" + how + " view first)", show.value === "" && before > 0
            && !/Show: Only/.test(body) && body.includes("Owner and Managing Director") && body.includes("IT Head"));
+        window.dispatchEvent(new window.Event("afterprint"));
+        const back = doc.getElementById("pos-body").innerHTML;
+        ok("F2: after printing the filter and the view are back (" + v + ", " + how + ")", show.value === v && view.value === how
+           && !back.includes("IT Head"));
       }
     }
     show.value = "open"; window.posFilterChanged("");

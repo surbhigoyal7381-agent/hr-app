@@ -281,3 +281,27 @@ alone. Removing the clearing makes all 4 checks fail.
 step. The repository pins no Playwright; the script header now says to use one whose browser is
 installed (1.61.1 on this machine wants a Chromium build that is not downloaded, and stops at launch).
 
+## 15 · Surbhi's answers of 24-25 Oct 2026, and what changed
+
+| Question | Her answer | In the code |
+|---|---|---|
+| PD-1: boxes at the left edge of a wrapped column | **Approved** | As built |
+| "Only key seats" cleared by Ctrl+P | **Approved** | As built (`e42e5c48`) |
+| The list view's Open column and "Nobody in this seat" | **Keep both: vacancies should show** | Not hidden in print; only the flag notes and the Notice period column are |
+| m5: an Owner who also holds an HR role | **Counts as HR and gets the HR copy tick** | Already so: he then receives the "in no seat" list, which is the gate. No change |
+| The note when Ctrl+P clears a filter | Restore the filters after printing (preferred), or a quiet line | **Restore built.** The cheaper safe one: it reuses the view, arrangement, folds and saved state the page already keeps, adds no words or element, and if `afterprint` never comes the filter just stays cleared (the safe side) |
+
+**Test:** Show = leaving and Show = key, from the chart and from the list: cleared for the print, then
+after `afterprint` the filter and the view are back and the screen is filtered again. Removing the
+restore fails all 4. CI wall chart check: 183 checks.
+
+**Spec wording to change (lead session's file, not edited here):** spec §7 negative case and 01c §4 ban
+"open" and "to fill" on paper from Ctrl+P. Change to: "never 'key seat', 'Frozen', 'covering', '%',
+leaving dates, 'to fill' flags or the HR box; vacancies may show - 'Vacant', 'Nobody in this seat' and
+the list view's Open count are allowed". Add to AC-3: "With Show = somebody leaving or key seats, Ctrl+P
+prints without that filter and restores it afterwards."
+
+**Not built, on purpose:** slice 070's "copies" of seats on the Reporting lines view. When 070 lands,
+`posWallCopy` must draw them too; it reads `POS.rows` and `posKids`, so 070's change to those decides
+what is needed. A note for 070's impact analysis.
+

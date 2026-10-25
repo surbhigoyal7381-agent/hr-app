@@ -298,6 +298,9 @@ body.sb-collapsed .sidebar:hover .sb-scroll-btn{display:flex}
 .fail p{margin:0 0 12px;color:var(--text2);font-size:var(--fs-base)}
 .fail .btn{min-height:44px}
 select + .fail{margin-top:8px}
+.leave-rings > .fail{grid-column:1 / -1}   /* review D1: the full width, not one ring's cell */
+/* A write whose answer was lost: the line stays beside its locked button. */
+.lost-note{margin:8px 0 0;color:var(--text);font-size:var(--fs-sm);border-left:4px solid var(--amber);padding:4px 0 4px 10px}
 /* A send that did not finish: just above the buttons. */
 .send-fail{border:1px solid var(--amber);border-left-width:4px;background:var(--amber-lt);border-radius:var(--r-sm);padding:12px 14px;margin:4px 0 2px}
 .send-fail b{display:block;font-size:var(--fs-base);color:var(--text);line-height:1.4}

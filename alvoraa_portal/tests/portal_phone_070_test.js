@@ -208,12 +208,18 @@ const serverSays = (m) => JSON.stringify([JSON.stringify({message: m})]);
 
   // AC-35 / SEC-3: the check sends employee_id only when HR applies for someone else.
   fresh(); ROUTES.apply_leave = "drop";
-  window.LP.subject = {name: "PPJ-0058", label: "Rahul"};
   let checkBody = null;
   const realFetch = window.fetch;
   window.fetch = (url, opts) => { if (method(url) === "get_leave_summary") checkBody = opts && opts.body; return realFetch(url, opts); };
+  const forRahul = Object.assign({}, ARGS, {on_behalf_of: "PPJ-0058"});
+  const sendFor = () => window.lsSend(forRahul, () => {}, () => { successes++; });
+  sendFor(); await settle(30); sendFor(); await settle(40);
+  has(checkBody, '"employee_id":"PPJ-0058"', "AC-35: HR's check names the employee the leave is for");
+  /* Security M1: an earlier pick that was searched away is not who the check reads. */
+  fresh(); ROUTES.apply_leave = "drop"; checkBody = null;
+  window.LP.subject = {name: "PPJ-0001", label: "Someone picked earlier"};
   send(); await settle(30); send(); await settle(40);
-  has(checkBody, '"employee_id":"PPJ-0058"', "AC-35: HR's check names the employee");
+  eq(checkBody, "{}", "security M1: the check reads who the leave is sent for, not a stale pick");
   fresh(); ROUTES.apply_leave = "drop"; checkBody = null;
   send(); await settle(30); send(); await settle(40);
   eq(checkBody, "{}", "AC-48 / SEC-3: an employee's own check sends no employee_id");
@@ -312,7 +318,7 @@ const serverSays = (m) => JSON.stringify([JSON.stringify({message: m})]);
   has(box.textContent, "Tap Try again in a minute. If it keeps happening, tell HR.", "AC-19: 5xx line");
 
   // ── OPS-S4: answers that come at 16 s, one read and one write, at the real limit ──
-  console.log("  ...  waiting 16 s for the slow answers (OPS-S4)");
+  console.log("  ...  waiting 18 s for the slow answers (OPS-S4)");
   fresh(); successes = 0;
   // A read through api(): the box at 15 s, then the data replaces it, once.
   const panel = doc.createElement("div");
@@ -322,24 +328,40 @@ const serverSays = (m) => JSON.stringify([JSON.stringify({message: m})]);
   ROUTES.get_payslips = {hold: 16000, then: {ok: {payslips: []}}};
   window.api("get_payslips", {}, () => { painted++; panel.innerHTML = "<p>the data</p>"; },
              (e) => window.failBox(panel, e, () => {}));
-  // A write through api(): at 15 s it must not unlock its button (OPS-S3).
-  const wbtn = doc.createElement("button"); wbtn.disabled = true; doc.body.appendChild(wbtn);
-  ROUTES.submit_shift_request = {hold: 16000, then: {ok: {name: "SR-1"}}};
-  window.api("submit_shift_request", {}, () => { wbtn.textContent = "done"; },
-             (e) => { if (window.mayHaveGone(e)) { window.sayMayHaveGone(); return; } wbtn.disabled = false; });
+  // A real api() write, sent by tapping its real button: the attendance request.
+  doc.getElementById("ar-from-date").value = "2026-11-06";
+  doc.getElementById("ar-to-date").value = "2026-11-06";
+  doc.getElementById("ar-reason").value = "On Duty";
+  const arBtn = doc.querySelector('#panel-att-req button[onclick="submitAttendanceRequest()"]');
+  ROUTES.submit_attendance_request = {hold: 17000, then: {ok: {name: "AR-1"}}};
+  arBtn.click();
+  // A real gpFetch write (review M2): it must wait for its real answer.
+  let orgEnded = null;
+  ROUTES.set_org_setting = {hold: 17000, then: {ok: {}}};
+  window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "x", value: 1})
+    .then(() => { orgEnded = "answer"; }, (e) => { orgEnded = e.kind; });
   // A leave send through gpFetch, held past the limit.
-  ROUTES.apply_leave = {hold: 16000, then: {ok: {name: "LA-9"}}};
+  ROUTES.apply_leave = {hold: 17000, then: {ok: {name: "LA-9"}}};
   send();
   await settle(15300);
   has(panel.textContent, "The office did not answer in 15 seconds. Tap Try again.", "AC-18: the read ends at 15 s");
-  eq(wbtn.disabled, true, "OPS-S3: a timed-out write never unlocks its button");
+  eq(arBtn.disabled, true, "OPS-S3: the real attendance request button stays off after a lost answer");
+  has((arBtn.nextElementSibling || {}).textContent, "Look in your list before you send it again.",
+      "review m2: a line stays beside the button");
+  eq(orgEnded, null, "review M2: a gpFetch write does not end at 15 s, so its button cannot come back on");
   has(txt("la-send-fail"), "No answer from the office. It may have gone through.", "AC-27: the send ends at 15 s");
   eq(btn().textContent, "Try again", "AC-27: Try again");
-  await settle(1200);
+  // Review M1: Try again while that send is still running only checks - never a second send.
+  ROUTES.get_leave_summary = {ok: {applications: []}};
+  send(); await settle(100);
+  eq(count("apply_leave"), 1, "review M1: the check found nothing, but the first send is still running - no second send");
+  has(txt("la-send-fail"), "Still no answer from the office.", "review M1: it says so");
+  await settle(2000);
+  eq(orgEnded, "answer", "review M2: the gpFetch write gets its real answer");
   has(panel.textContent, "the data", "AC-21: the late answer replaces the box by itself");
   eq(painted, 1, "AC-21: once");
   eq(successes, 1, "AC-33: the late send shows success once");
-  eq(count("submit_shift_request"), 1, "OPS-R3 / AC-24: nothing retried by itself");
+  eq(count("submit_attendance_request"), 1, "OPS-R3 / AC-24: nothing retried by itself");
   eq(count("get_payslips"), 1, "AC-24: nothing retried by itself");
   eq(count("apply_leave"), 1, "AC-24: nothing resent by itself");
 

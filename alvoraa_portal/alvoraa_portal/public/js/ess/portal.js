@@ -4,24 +4,13 @@ const loadedPanels = new Set(["home"]);
 
 /* Slice 070 (ALV-217): every call ends.
 
-   This page loads website.js's frappe.call, not the desk one. It never calls
-   `error` - only `callback` (HTTP 200) and `always` (every answer, and it runs
-   BEFORE `callback`). So a refusal, a 5xx or a lost connection used to reach no
-   error branch at all, and "Loading..." stayed for ever. Now the error branch
-   gets an object whose `kind` says what happened:
-     offline - the phone has no signal; nothing was sent
-     timeout - no answer in 15 s. The request is not cancelled: a late answer
-               still reaches `cb`, so a panel replaces its message with the data
-     network - the connection dropped, or the answer was empty
-     server  - a 5xx. Whatever text it carries is not shown: on a 5xx it can be
-               an internal detail (a table name, a record ID) - SEC-4
-     refused - the server said no (4xx); its message shows in Frappe's own
-               pop-up, exactly as before
-   A caller sees at most one error.
-
-   Frappe's website frappe.call pops up every server message itself, before
-   any of our code runs. `error_msg` sends those to a scratch element instead,
-   and `relay` shows them the same way it did - except on a 5xx. */
+   website.js's frappe.call (this page's) never calls `error`; it calls
+   `always` and then, on HTTP 200 only, `callback`. So failures used to reach
+   no code and "Loading..." stayed for ever. The error branch now gets `kind`:
+   offline (nothing sent) · timeout (15 s; the request keeps running, a late
+   answer still reaches `cb`) · network · server (5xx; its text is never
+   shown, SEC-4) · refused (4xx; Frappe's pop-up as before). At most one.
+   `relay` shows server messages itself so a 5xx can be kept quiet. */
 var CALL_LIMIT_MS = 15000;
 /* The one sentence a failed call shows where the screen has no box of its own. */
 function callWords(kind) {
@@ -41,9 +30,13 @@ function relay(r) {
 }
 function api(fn, args, cb, ecb) {
   var answered = false, failed = false, xhr;
+  /* The button that was tapped, so a lost write can be explained beside it. */
+  var ev = window.event, origin = ev && ev.target && ev.target.closest
+    ? ev.target.closest("button, .btn") : null;
   function fail(r) {
     if (answered || failed) return;
     failed = true;
+    r.origin = origin;
     if (r.kind === "refused") relay(r);
     if (ecb) ecb(r);
   }
@@ -52,7 +45,8 @@ function api(fn, args, cb, ecb) {
   xhr = frappe.call({
     method: MOD + "." + fn,
     args: args || {},
-    /* A <template>: markup written into it is inert - nothing runs or loads. */
+    /* Only so Frappe does not pop the message up itself; `relay` decides.
+       Not a safety boundary: jQuery still parses what is written here. */
     error_msg: document.createElement("template"),
     callback: function(r) {
       answered = true;
@@ -79,9 +73,23 @@ function api(fn, args, cb, ecb) {
 function mayHaveGone(r) {
   return !!r && (r.kind === "timeout" || r.kind === "network" || r.kind === "server");
 }
-function sayMayHaveGone() {
-  toast(drT("No answer from the office. It may have gone through.") + " "
-        + drT("Look in your list before you send it again."), "err");
+/* `button` is the control that sent the write; api() remembers the one that
+   was tapped. It stays off, and a line that stays on screen sits beside it
+   (review m2: a 3-second toast was the only explanation). */
+function sayMayHaveGone(r, button) {
+  var words = drT("No answer from the office. It may have gone through.") + " "
+    + drT("Look in your list before you send it again.");
+  var el = button || (r && r.origin);
+  if (!el || !el.parentNode) { toast(words, "err"); return; }
+  el.disabled = true;
+  var note = el.nextElementSibling;
+  if (!note || !note.classList.contains("lost-note")) {
+    note = document.createElement("p");
+    note.className = "lost-note";
+    note.setAttribute("role", "alert");
+    el.insertAdjacentElement("afterend", note);
+  }
+  note.textContent = words;
 }
 
 /* Slice 070 (01b §6): the box that takes the place of "Loading..." when a
@@ -3601,7 +3609,6 @@ function startClock() {
   var _days   = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   var _months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   var _elClock = document.getElementById("live-clock");
-  var _elDate  = document.getElementById("live-date");
   var _elTitle = document.getElementById("home-title");
   var _elSub   = document.getElementById("home-sub");
   function tick() {
@@ -3611,7 +3618,6 @@ function startClock() {
     var s = String(now.getSeconds()).padStart(2,"0");
     if (_elClock) _elClock.textContent = h + ":" + m + ":" + s;
     var dayStr = _days[now.getDay()] + ", " + now.getDate() + " " + _months[now.getMonth()];
-    if (_elDate) _elDate.textContent = dayStr;
     var hr = now.getHours();
     var g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : "Good evening";
     if (_elTitle && _elTitle.dataset.name) _elTitle.textContent = g + ", " + _elTitle.dataset.name + "!";
@@ -3722,7 +3728,7 @@ window.polAck = function(name) {
   api("acknowledge_policy", {name: name, source: "Manual"}, function(r) {
     if (window.frappe && frappe.show_alert) frappe.show_alert({message: r.message, indicator: "green"}, 5);
     polOpen(name); loadHomePolicies();
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } alert((e && e.message) || "Could not acknowledge."); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } alert((e && e.message) || "Could not acknowledge."); });
 };
 
 /* ── Manage (department heads and HR) ── */
@@ -3803,8 +3809,8 @@ window.polSave = function(publish) {
     api("publish_policy", {name: r.name, change_note: g("pol-e-note")}, function(pr) {
       if (window.frappe && frappe.show_alert) frappe.show_alert({message: pr.message, indicator: "green"}, 5);
       polLoadManage(); loadHomePolicies();
-    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not publish") + "</div>"; });
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not save") + "</div>"; });
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not publish") + "</div>"; });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not save") + "</div>"; });
 };
 
 /* ── Compliance (HR) ── */
@@ -3877,7 +3883,7 @@ window.uploadMyDocument = async function(input, row) {
     api("attach_my_document", {row: row, file_url: j.message.file_url}, function(r) {
       if (window.frappe && frappe.show_alert) frappe.show_alert({message: r.message || "Uploaded.", indicator: "green"}, 5);
       loadMyDocuments();
-    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } alert((e && e.message) || "Could not save the upload."); });
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } alert((e && e.message) || "Could not save the upload."); });
   } catch (e) {
     alert(e.message || "Upload failed.");
   }
@@ -5734,7 +5740,7 @@ function ciSend(action, pos) {
       renderTimeline(d.todays_checkins || []);
       paintDayMarks(d.marks);
     }, function() { btn.disabled = false; });
-  }, function(err) { if (mayHaveGone(err)) { sayMayHaveGone(); return; }
+  }, function(err) { if (mayHaveGone(err)) { sayMayHaveGone(err, btn); return; }
     btn.disabled = false;
     toast((err && err.message) || "Failed to " + (action === "IN" ? "check in" : "check out") + ". Please try again.", "err");
   });
@@ -6058,6 +6064,7 @@ function laLoadTypes() {
 var _laEmpSearchTimer = null;
 function laSearchEmployee(q) {
   document.getElementById("la-behalf-employee").value = "";
+  LP.subject = null;   /* 070 security M1: a new search drops the earlier pick */
   document.getElementById("la-behalf-selected").style.display = "none";
   var dd = document.getElementById("la-behalf-dropdown");
   clearTimeout(_laEmpSearchTimer);
@@ -6260,29 +6267,24 @@ function submitLeaveApp() {
 }
 
 /* ── Slice 070 (ALV-217): sending a leave request, for both leave forms ──
-   The states are 02 §6. No signal: nothing leaves the phone and it says so.
-   No answer in 15 s, a dropped connection or a 5xx after sending: the office
-   may already have saved it, so it says that - and Try again first reads the
-   person's own leave list (get_leave_summary, unchanged; `employee_id` only
-   when HR applies for someone else, SEC-3) and sends again only when nothing
-   with the same type, dates and an Open or Approved status is there.
-   `half_day` is not compared: most tenants never get it back from that read,
-   and Frappe HR's own overlap check refuses a second record anyway (SEC-1).
-   The button is locked while Sending... or Checking..., so a double tap sends
-   once. A server refusal shows its own words at the top of the form (E1) and
-   is never resent (SEC-5). A late answer still counts, once (AC-33). The
-   typed values stay in the form, in page memory only (PRIV-1). */
-var LS = {gen: 0, busy: false, maybeSent: false, fails: 0, done: false};
+   States: 02 §6. After a send that may have reached the office, Try again
+   first reads the person's own list and resends only if no Open/Approved
+   leave with the same type and dates is there (SEC-1, SEC-3). `half_day` is
+   not compared: most tenants never get it back from that read, and Frappe
+   HR's overlap check refuses a second record anyway. */
+var LS = {gen: 0, busy: false, maybeSent: false, fails: 0, done: false, inFlight: false};
 function lsReset() {
   LS.gen++;
-  LS.busy = false; LS.maybeSent = false; LS.fails = 0; LS.done = false;
+  LS.busy = false; LS.maybeSent = false; LS.fails = 0; LS.done = false; LS.inFlight = false;
   lsSay(null);
 }
 function lsSay(head, line) { sendSay("la-send-fail", head, line); }
 function lsSend(args, restore, onSuccess) {
   if (LS.busy || LS.done) return;
   var gen = LS.gen, btn = document.getElementById("la-submit-btn");
-  var who = LP.subject ? LP.subject.name : null;
+  /* The check reads the person this request is FOR - the same id sent as
+     on_behalf_of, never a pick the HR user has since moved away from. */
+  var who = args.on_behalf_of || null;
   pfClearErr("la-error");
   function live() { return gen === LS.gen && !LS.done; }
   function busy(words) { LS.busy = true; btn.disabled = true; btn.textContent = drT(words); }
@@ -6317,10 +6319,18 @@ function lsSend(args, restore, onSuccess) {
     btn.textContent = drT("Try again");
     btn.focus();
   }
+  /* Review M1: a request that timed out is still running on the server, and
+     the check cannot see a save that has not committed yet. So while it is
+     in flight, Try again only checks; it sends again only once that request
+     has failed. */
   function send() {
     busy("Sending…");
-    gpFetch("alvoraa_portal.hr_api.apply_leave", args).then(succeed, function (e) {
-      if (e.late) e.late.then(succeed, function () {});
+    gpFetch("alvoraa_portal.hr_api.apply_leave", args, {lostAnswerHandled: true}).then(succeed, function (e) {
+      if (e.late) {
+        LS.inFlight = true;
+        e.late.then(function () { if (gen === LS.gen) LS.inFlight = false; succeed(); },
+                    function () { if (gen === LS.gen) LS.inFlight = false; });
+      }
       failed(e);
     });
   }
@@ -6334,7 +6344,9 @@ function lsSend(args, restore, onSuccess) {
         && String(a.to_date).slice(0, 10) === args.to_date
         && (a.status === "Open" || a.status === "Approved");
     });
-    if (hit) succeed(); else send();
+    if (hit) succeed();
+    else if (LS.inFlight) failed({kind: "timeout"});
+    else send();
   }, function (e) {
     failed(e.kind === "offline" ? e : {kind: "timeout"});
   });
@@ -6597,7 +6609,7 @@ window.lpDoCancel = function(name) {
         : (r.told_n ? drT("HR has been told. You are expected at work.") : drT("You are expected at work."))) + "</p></div>",
       '<button class="btn btn-primary" type="button" onclick="lpCloseDialog()">' + gpEsc(drT("Done")) + "</button>");
     loadLeaves();
-  }, function(r) { if (mayHaveGone(r)) { sayMayHaveGone(); return; }
+  }, function(r) { if (mayHaveGone(r)) { sayMayHaveGone(r); return; }
     if (btn) btn.disabled = false;
     var msg = drT("Not cancelled: the connection dropped. Try again.");
     try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
@@ -7014,7 +7026,7 @@ function submitExpenseClaim() {
     expense_date: ed,
     amount: amt,
     description: desc || null,
-  }).then(done, function(e) {
+  }, {lostAnswerHandled: true}).then(done, function(e) {
     if (gen !== EC_GEN) return;
     if (e.late) e.late.then(done, function() {});
     if (e.kind === "refused") {
@@ -7530,7 +7542,7 @@ function submitShiftRequest() {
     hideLoad(); toast("Shift request submitted: " + d.name, "ok");
     clearForm(["sr-shift-type","sr-from-date","sr-to-date"]);
     loadedPanels.delete("shift-req"); reloadShiftHistory();
-  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(); return; } hideLoad(); toast((e.message||"Failed to submit shift request"), "err"); });
+  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit shift request"), "err"); });
 }
 
 /* ── Attendance Request panel ────────────────────── */
@@ -7564,7 +7576,7 @@ function submitAttendanceRequest() {
     hideLoad(); toast("Attendance request submitted: " + d.name, "ok");
     clearForm(["ar-from-date","ar-to-date","ar-reason","ar-explanation"]);
     loadedPanels.delete("att-req"); reloadAttReqHistory();
-  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(); return; } hideLoad(); toast((e.message||"Failed to submit request"), "err"); });
+  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit request"), "err"); });
 }
 
 /* ── Leave Encashment panel ──────────────────────── */
@@ -7602,7 +7614,7 @@ function submitLeaveEncashment() {
   api("submit_leave_encashment", {leave_type: lt, encashment_date: dt||todayISO()}, function(d) {
     hideLoad(); toast("Leave encashment submitted: " + d.name, "ok");
     reloadLeaveEncHistory();
-  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(); return; } hideLoad(); toast((e.message||"Failed to submit encashment"), "err"); });
+  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit encashment"), "err"); });
 }
 
 /* ── Advance Request panel ───────────────────────── */
@@ -7645,7 +7657,8 @@ function submitAdvanceRequest() {
     clearForm(["adv-purpose","adv-amount"]);
     loadedPanels.delete("adv-req"); reloadAdvHistory();
   }
-  gpFetch("alvoraa_portal.hr_api.submit_advance_request", {purpose: purpose, amount: amount}).then(done, function(e) {
+  gpFetch("alvoraa_portal.hr_api.submit_advance_request", {purpose: purpose, amount: amount},
+          {lostAnswerHandled: true}).then(done, function(e) {
     if (gen !== ADV_GEN) return;
     if (e.late) e.late.then(done, function() {});
     if (e.kind === "refused") { unlock(); toast(e.message, "err"); return; }
@@ -7892,7 +7905,7 @@ window.scActionLeave = function(leaveName, action) {
     var card = document.getElementById("sc-appr-" + leaveName);
     if (card) card.innerHTML = '<div style="padding:10px;color:var(--text3);font-size:var(--fs-base)">' + (action === "approve" ? "<i class=ic-check></i> Approved" : "<i class=ic-x></i> Rejected") + '</div>';
     toast(action === "approve" ? "Leave approved" : "Leave rejected", action === "approve" ? "ok" : "");
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } toast(e.message || "Action failed", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast(e.message || "Action failed", "err"); });
 };
 
 /* ── Team comparison charts ──────────────────────── */
@@ -8074,7 +8087,7 @@ function edActionLeave(leaveId, action) {
       const n = Math.max(0, (parseInt(badge.textContent)||0) - 1);
       badge.textContent = n; badge.style.display = n ? "flex" : "none";
     }
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e.message || "Failed to " + action + " leave"), "err");
   });
@@ -8116,7 +8129,7 @@ function homeActionLeave(leaveId, action) {
 
     // Refresh activity feed to show the approval action
     api("get_portal_activity", {days: 7}, function(d) { renderActivityFeed(d.activities || []); });
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e && e.message ? e.message : "Failed to " + action + " leave"), "err");
   });
@@ -8306,7 +8319,7 @@ function actionLeave(leaveId, action) {
       badge.textContent = next;
       if (!next) badge.style.display = "none";
     }
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e.message || "Failed to " + action + " leave"), "err");
   });
@@ -8968,7 +8981,7 @@ function addGoalComment(goalId) {
     inp.value = "";
     inp.disabled = false;
     loadGoalComments(goalId);
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     inp.disabled = false;
     toast((e && e.message) || "Failed to post comment", "err");
   });
@@ -9094,7 +9107,7 @@ function updateGoalStatus(goalId) {
     _goalData = null;
     _teamGoalData = null;
     loadedPanels.delete("goals");
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     toast((e && e.message) || "Failed to update status", "err");
   });
 }
@@ -9149,7 +9162,7 @@ function submitGoalEvidence(gid) {
       loadedPanels.delete("goals");
       loadHomeGoals();
       loadGoalsPanel();
-    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
       toast((e && e.message) || "Failed to submit evidence", "err");
       if (btn) { btn.disabled = false; btn.textContent = "Submit"; }
     });
@@ -10401,7 +10414,7 @@ function tnSaveNote() {
     toast("Note saved", "ok");
     tnHideAdd();
     loadTeamNotes();
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (btn) { btn.disabled = false; btn.textContent = "Save Note"; }
     fail((e && e.message) || "Could not save the note.");
   });
@@ -10456,7 +10469,7 @@ function saveNoteEdit(noteId, empId) {
     api("save_manager_note", {employee_id: empId, note_text: ta.value, note_date: nd, note_id: noteId}, function() {
       toast("Note updated", "ok");
       loadTeamNotes();
-    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } toast((e && e.message) || "Failed to save", "err"); });
+    }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to save", "err"); });
   });
 }
 
@@ -10466,7 +10479,7 @@ function deleteNote(noteId, prefix) {
     const el = document.getElementById((prefix || "") + noteId);
     if (el) el.remove();
     toast("Note deleted", "ok");
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } toast((e && e.message) || "Failed to delete", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to delete", "err"); });
 }
 
 function printNote(noteId, empName, noteDate) {
@@ -10546,7 +10559,7 @@ function saveDrawerNote(empId) {
     if (ta) ta.value = "";
     hideAddNoteForm(empId);
     loadDrawerNotes(empId);
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } toast((e && e.message) || "Failed to save", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to save", "err"); });
 }
 
 function loadDrawerNotes(empId) {
@@ -10601,7 +10614,7 @@ function saveDrawerNoteEdit(noteId, empId) {
   api("save_manager_note", {employee_id: empId, note_text: ta.value, note_date: date, note_id: noteId}, function() {
     toast("Note updated", "ok");
     loadDrawerNotes(empId);
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } toast((e && e.message) || "Failed to save", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to save", "err"); });
 }
 
 function deleteDrawerNote(noteId, empId) {
@@ -10609,7 +10622,7 @@ function deleteDrawerNote(noteId, empId) {
   api("delete_manager_note", {note_id: noteId}, function() {
     loadDrawerNotes(empId);
     toast("Note deleted", "ok");
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; } toast((e && e.message) || "Failed to delete", "err"); });
+  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; } toast((e && e.message) || "Failed to delete", "err"); });
 }
 
 /* ── Goals Portal (embedded IIFE) ───────────────── */
@@ -10720,7 +10733,16 @@ function deleteDrawerNote(noteId, empId) {
      error carries `late`, a promise of the answer still on its way, so a panel
      can replace its message with the data when it lands. A dropped connection
      or an unreadable answer (an nginx 502 page) -> "network". */
-  function gpFetch(method, args) {
+  /* Review M2 / OPS-S3: a write (named by its verb) never ends at 15 s - its
+     caller would turn the button back on while the save may still be running,
+     and a second tap would save twice. It waits for the real answer, as
+     before 070. Only a caller that handles a lost answer itself (the leave,
+     expense and advance forms) passes {lostAnswerHandled: true}. */
+  var WRITE_CALL = new RegExp("^(save|create|update|delete|submit|approve|reject|set|assign|end|post|"
+    + "propose|add|remove|archive|send|invite|log|relink|return|advance|answer|acknowledge|hr_create|"
+    + "hr_generate|hr_set|hr_start|raise|withdraw|decide|undo|mark|keep|ask|record|apply|cancel|"
+    + "action|attach|publish|sync|unarchive)(_|$)|^(data_review_confirm|to_review|my_notices_seen)$");
+  function gpFetch(method, args, opts) {
     if (navigator.onLine === false) return Promise.reject(gpCallErr("offline"));
     var call = new Promise(function(resolve, reject) {
       function lost(err) {
@@ -10746,6 +10768,7 @@ function deleteDrawerNote(noteId, empId) {
         });
       }).catch(lost);
     });
+    if (WRITE_CALL.test(String(method).split(".").pop()) && !(opts && opts.lostAnswerHandled)) return call;
     return new Promise(function(resolve, reject) {
       var timer = setTimeout(function() {
         var e = gpCallErr("timeout");
@@ -11537,7 +11560,7 @@ function deleteDrawerNote(noteId, empId) {
         toast("Evidence sent to your manager for approval", "ok");
         window.gpOpenDetail(gid);
         _goalData = null; _gpCtx = null;
-      }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(); return; }
+      }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
         toast((e && e.message) || "Failed to submit evidence", "err");
         if (btn) { btn.disabled = false; btn.textContent = "Submit"; }
       });

@@ -291,14 +291,22 @@ def position_table(branch=None, department=None, as_at=None):
 
 	names = [s.name for s in seats]
 	filled, people = {}, {}
+	# Slice 070: each person's Reports To and status ride on this same read,
+	# through Frappe's link-field join - no second statement. Kept aside in
+	# `line`, never on the person, until the rule below decides what may go.
+	line, seated_active = {}, set()
 	for a in frappe.get_all(
 			"Alvoraa Position Assignment",
 			filters={"position": ("in", names), "from_date": ("<=", as_at)},
 			fields=["name", "position", "employee", "employee_name", "weight",
-			        "assignment_type", "to_date", "from_date", "reason"],
+			        "assignment_type", "to_date", "from_date", "reason",
+			        "employee.reports_to as reports_to_emp", "employee.status as emp_status"],
 			limit_page_length=0):
 		if a.to_date and str(a.to_date) < str(as_at):
 			continue
+		line[a.name] = (a.reports_to_emp or "", a.emp_status == "Active")
+		if a.emp_status == "Active":
+			seated_active.add(a.employee)
 		filled[a.position] = filled.get(a.position, 0.0) + flt(a.weight) / 100.0
 		people.setdefault(a.position, []).append({
 			# The assignment's own name, so the dialog can end this one rather
@@ -446,7 +454,38 @@ def position_table(branch=None, department=None, as_at=None):
 	people = permitted_employee_filters()
 	if people != NO_EMPLOYEES:
 		out["unseated"], out["active_people"] = _unseated(people, as_at)
+	_add_managers(rows, line, seated_active, out, as_at)
 	return out
+
+
+def _add_managers(rows, line, seated_active, out, as_at):
+	"""Slice 070: who each seated person reports to, so the chart can draw them
+	under their manager's seat. FAILS CLOSED (SEC-1): the key says only what
+	this reply already holds.
+
+	- The manager's employee id, only when the person is Active and the manager
+	  is Active and already in this reply: seated in one of its seats, or - for
+	  a reader who gets the "in no seat" list - in that list.
+	- "" when an Active person has no Reports To, and only for that HR reader.
+	- Absent in every other case: a Left manager, a manager outside this
+	  reader's seats, an unseated manager for a reader without HR scope, and
+	  any date but today, because Reports To keeps no history.
+	"""
+	if getdate(as_at) != getdate():
+		return
+	hr = "unseated" in out
+	known = set(seated_active)
+	if hr:
+		known.update(u["employee"] for u in out["unseated"])
+	for r in rows:
+		for p in r["people"]:
+			boss, active = line.get(p["assignment"], ("", False))
+			if not active:
+				continue
+			if boss and boss in known:
+				p["manager"] = boss
+			elif not boss and hr:
+				p["manager"] = ""
 
 
 # The ONLY fields a person in the "in no seat" list carries (PRIV-1). Named one

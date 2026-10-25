@@ -832,6 +832,36 @@ function trayContext(opts) {
   ok("a branch with no seat says so", h.includes("There is no seat at Noida."));
 }
 
+/* ── 22. slice 071: names in the "In no seat" tray ──────────────────────── */
+const UN = [
+  { employee: "HR-EMP-00380", name: "Ravi Kumar", job_role: "Cashier", branch: "Sector 34", joined: "2026-09-17", no_manager: false },
+  { employee: "HR-EMP-00381", name: "Anjali Saini", job_role: "Cashier", branch: "Sector 34", joined: "2025-03-14", no_manager: true },
+  { employee: "HR-EMP-00382", name: "Ravi Kumar", job_role: "Counter", branch: "Sector 34", joined: "2026-10-01", no_manager: false },
+  { employee: "HR-EMP-00383", name: "Bina Rao", job_role: "Driver", branch: "Ambala", joined: "2026-10-02", no_manager: false },
+];
+const UNROWS = ROWS.map((r) => (r.id === "P-Cashier" ? Object.assign({}, r, { designation: "Cashier" })
+  : r.id === "P-Counter" ? Object.assign({}, r, { designation: "Counter" }) : r));
+{
+  const t = trayContext({ unseated: UN, rows: UNROWS, active: 40 });
+  t.ctx.posUnseatedSheet();
+  const h = t.layer();
+  ok("071 rows: every person appears exactly once",
+     UN.every((p) => h.split(">" + p.employee + "<").length === 2));
+  ok("071 rows: the name links to the employee record in a new tab",
+     h.includes('href="/app/employee/HR-EMP-00380">Ravi Kumar</a>') && h.includes('target="_blank" rel="noopener"'));
+  ok("071 rows: the ID sits beside the name, in grey", h.includes('Ravi Kumar</a> <span class="su">HR-EMP-00380</span>'));
+  ok("071 rows: joined this year has no year", h.includes("Joined 17 Sep<"));
+  ok("071 rows: joined another year shows it", h.includes("Joined 14 Mar 2025"));
+  ok("071 rows: No manager only when true",
+     h.split("No manager</span>").length === 2 && /HR-EMP-00381<\/span><span class="pos-un-meta su">Joined 14 Mar 2025 <span class="pos-chip">No manager/.test(h));
+  ok("071 rows: sorted by name within the role", h.indexOf("Anjali Saini") < h.indexOf("HR-EMP-00380"));
+  ok("071 rows: the role line keeps its words", h.includes("2 Cashier · matching seat:") && h.includes("1 Driver · no matching seat"));
+  t.ctx.POS.unseated = [];
+  t.ctx.posUnseatedSheet();
+  ok("071 empty: the empty sentence and 0 people",
+     t.layer().includes("In no seat · 0 people") && t.layer().includes("Everybody active is in a seat now"));
+}
+
 deleteChecks().then(() => {
   if (problems.length) {
     console.error("positions tree: " + problems.length + " problem(s)");

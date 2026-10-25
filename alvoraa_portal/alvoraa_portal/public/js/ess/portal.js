@@ -3258,9 +3258,13 @@ window.posUnseatedSheet = function () {
   order.sort(function (a, b) { return !a ? 1 : !b ? -1 : a < b ? -1 : 1; });
   var recent = posShift(posToday(), -60);
   var lately = list.filter(function (p) { return p.joined && p.joined >= recent; }).length;
-  var b = "<p>" + drT("{0} of {1} active people hold no seat, so they are not on this chart and not in the counts above.",
-                       [list.length, POS.active_people])
-    + (lately * 2 > list.length ? " " + drT("Most joined in the last two months.") : "") + "</p>";
+  // Slice 071: an empty list is reached only by placing the last person (a 0 tile cannot be clicked).
+  var b = list.length
+    ? "<p>" + drT("{0} of {1} active people hold no seat, so they are not on this chart and not in the counts above.",
+                  [list.length, POS.active_people])
+      + (lately * 2 > list.length ? " " + drT("Most joined in the last two months.") : "") + "</p>"
+    : "<p>" + drT("Everybody active is in a seat now, so everybody is on this chart and in the counts above.") + "</p>";
+  var year = posToday().slice(0, 4), n = 0;
   order.forEach(function (br) {
     var people = by[br];
     b += '<h3 class="pos-h3">' + posEsc((br || drT("No branch")) + " · " + people.length) + "</h3>";
@@ -3273,18 +3277,28 @@ window.posUnseatedSheet = function () {
     var roles = {}, rorder = [];
     people.forEach(function (p) {
       var k = p.job_role || "";
-      if (!(k in roles)) { roles[k] = 0; rorder.push(k); }
-      roles[k] += 1;
+      if (!(k in roles)) { roles[k] = []; rorder.push(k); }
+      roles[k].push(p);
     });
-    b += "<ul>" + rorder.map(function (role) {
+    b += rorder.map(function (role) {
       var seat = role && POS.rows.filter(function (r) { return r.designation === role && r.branch === br; })
         .sort(function (x, y) { return x.title < y.title ? -1 : x.title > y.title ? 1 : 0; })[0];
-      return "<li>" + posEsc(roles[role] + " " + (role || drT("with no job role")))
+      var ps = roles[role].slice().sort(function (x, y) { return x.name < y.name ? -1 : x.name > y.name ? 1 : 0; });
+      return '<div class="pos-un-role">' + posEsc(ps.length + " " + (role || drT("with no job role")))
         + (seat ? " · " + drT("matching seat:") + ' <button type="button" class="pos-link" onclick="posSeatSheet(\'' + posJs(seat.id) + '\')">'
                   + posEsc(seat.title + (seat.branch ? " · " + seat.branch : "")) + "</button> ("
                   + drT("{0} of {1}", [posNum(seat.filled), posNum(seat.seats)]) + ")"
-                : " · " + drT("no matching seat")) + "</li>";
-    }).join("") + "</ul>";
+                : " · " + drT("no matching seat")) + "</div>"
+        // Slice 071: one row per person. The year only when it is not this year.
+        + '<ul class="pos-un">' + ps.map(function (p) {
+            var i = n++, day = posDay(p.joined) + (p.joined && p.joined.slice(0, 4) !== year ? " " + p.joined.slice(0, 4) : "");
+            return '<li class="pos-un-p"><div class="pos-un-who"><a class="pos-link" id="pos-un-n-' + i
+              + '" target="_blank" rel="noopener" href="/app/employee/' + encodeURIComponent(p.employee) + '">' + posEsc(p.name)
+              + '</a> <span class="su">' + posEsc(p.employee) + '</span><span class="pos-un-meta su">'
+              + (p.joined ? posEsc(drT("Joined {0}", [day])) : "")
+              + (p.no_manager ? ' <span class="pos-chip">' + drT("No manager") + "</span>" : "") + "</span></div></li>";
+          }).join("") + "</ul>";
+    }).join("");
   });
   posSheet(drT("In no seat · {0} people", [list.length]), b, "");
   POS.sheet = { kind: "unseated" };

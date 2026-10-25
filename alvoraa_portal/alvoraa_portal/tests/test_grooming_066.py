@@ -468,7 +468,7 @@ class TestOtherReason(Case):
 		self.assertTrue(_bells(name))
 		for b in _bells(name):
 			self.assertNotIn("Torn", b.subject)
-			self.assertIn(": Other.", b.subject)
+			self.assertIn("Open the day in your Attendance month to read the reason.", b.subject)             # v3 Z5: N1-O
 		with as_user("Rahul"):
 			g = ac.month(TODAY.year, TODAY.month, P["Rahul"])["grooming"]
 		self.assertEqual(g["days"][str(TODAY)]["mark"]["reason"], "Other: Torn shirt sleeve")
@@ -991,7 +991,7 @@ class TestLivePortalBell(Case):
 			d = grooming.my_notices()
 			self.assertEqual(d["unread"], 1)
 			self.assertEqual(d["items"][0]["link"], "/hrms-employee?grooming=%s" % TODAY)
-			self.assertIn(": Other.", d["items"][0]["text"])
+			self.assertIn("Open the day in your Attendance month to read the reason.", d["items"][0]["text"])
 			self.assertNotIn("Torn", json.dumps(d, ensure_ascii=False))
 			grooming.my_notices_seen()
 			self.assertEqual(grooming.my_notices()["unread"], 0)
@@ -1037,4 +1037,36 @@ class TestLivePortalBell(Case):
 		# the words themselves stay on the mark, unchangeable
 		with as_user("Ritika"):
 			self.refused(frappe.client.set_value, grooming.MARK, other, "other_reason", "x")
+
+
+# ── Prototype v3 (approved 25 Oct 2026, Z1-Z17) ──────────────────────────────
+
+class TestPrototypeV3Words(Case):
+	def test_z1_to_z12_the_screen_words_are_v3_s_and_live_in_one_table(self):
+		js = open(os.path.join(os.path.dirname(grooming.__file__), "public", "js", "ess",
+		                       "portal.js"), encoding="utf-8").read()
+		table = js[js.index("var GM_WORDS = {"):js.index("};", js.index("var GM_WORDS = {"))]
+		for words in ("Choose the one reason that fits. Choose Other only if none fits.",     # Z3
+		              "What was wrong", "Write what was wrong first.",                          # Z1
+		              " of 100 characters",                                                     # Z2
+		              "Your words stay on the day, not in the notice.",                         # Z4
+		              " has no login, so HR will tell ",                                        # Z7, Z8
+		              "Could not raise it. Nothing was sent. Check your connection and try again.",  # Z12
+		              " raised it with HR on ",                                                  # Z10
+		              " can still raise it with HR once this month."):                          # Z16
+			self.assertIn(words, table)
+		self.assertNotIn("raised it again on", js)
+		self.assertNotIn("Your reason", js)
+
+	def test_z5_an_other_mark_s_bell_points_to_the_day_and_never_carries_the_words(self):
+		name = _mark("Ravi", "Rahul", reason="Other", other="Shirt not tucked in")
+		text = _bells(name)[0].subject
+		self.assertTrue(text.startswith("Ravi G066, your manager, marked a grooming red for you today "
+		                                "(%s). Open the day in your Attendance month to read the reason." % grooming._day(TODAY)), text)
+		self.assertNotIn("tucked", text)
+
+	def test_z1_the_server_s_blank_box_words(self):
+		with self.assertRaises(frappe.ValidationError) as caught:
+			grooming.clean_other("   ")
+		self.assertIn("Write what was wrong first.", str(caught.exception))
 

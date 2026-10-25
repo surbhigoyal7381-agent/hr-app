@@ -363,7 +363,7 @@ class TestRaiseWithHR(Case):
 		fl = grooming.flag_for(P["Kiran"], M_START, 100, 15000)
 		self.assertEqual((fl.state, fl.why), ("pending", "raised"))
 		hr = [b.subject for b in _bells(names[-1]) if b.for_user == user("Hari")]
-		self.assertEqual(hr, ["Grooming review pending for Kiran G066: Ravi G066 raised it again on "
+		self.assertEqual(hr, ["Grooming review pending for Kiran G066: Ravi G066, the manager, raised it with HR on "
 		                      "%s." % grooming._day(TODAY)])
 
 	def test_nobody_else_raises_and_nothing_before_the_limit(self):
@@ -621,4 +621,44 @@ class TestActionAgreedNotice(Case):
 				self.assertEqual(grooming.my_notices()["items"], [])
 		finally:
 			frappe.db.set_value("Employee", P["Rahul"], "reports_to", P["Ravi"])
+
+
+class TestPrototypeV3Limit(Case):
+	"""v3 Z8, Z11, Z16 on the server's side."""
+
+	def _kiran_at_three(self):
+		if TODAY.day < 4:
+			self.skipTest("too early in the month")
+		for i in range(3):
+			_raw_mark(P["Kiran"], add_days(M_START, i), at="%s 10:0%d:00" % (add_days(M_START, i), i))
+
+	def _row(self):
+		with as_user("Ravi"):
+			return [r for r in grooming.today()["rows"] if r["employee"] == P["Kiran"]][0]
+
+	def test_z8_after_the_raise_the_row_says_the_stop_alone(self):
+		self._kiran_at_three()
+		row = self._row()
+		self.assertEqual(row["why_not"], "Kiran has had 3 grooming reds this month, the most allowed. "
+		                                 "HR has been told and will talk to Kiran. If it carries on, you "
+		                                 "can raise it with HR.")
+		self.assertEqual((row["raise"], row["has_login"]), ({"can": True}, False))
+		with as_user("Ravi"):
+			grooming.raise_with_hr(P["Kiran"], "Not in uniform")
+		row = self._row()
+		self.assertEqual(row["why_not"], "Kiran has had 3 grooming reds this month, the most allowed.")
+		self.assertEqual(row["raise"]["raised_on"], grooming._day(TODAY))
+
+	def test_z16_the_review_says_whether_the_manager_can_still_raise_it(self):
+		self._kiran_at_three()
+		with as_user("Ritika"):
+			grooming.record_review(P["Kiran"], str(M_START), NOTE)
+			first = ac.month(TODAY.year, TODAY.month, P["Kiran"])["grooming"]["review"][-1]
+		self.assertEqual((first["state"], first["after_raise"]), ("cleared", False))
+		with as_user("Ravi"):
+			grooming.raise_with_hr(P["Kiran"], "Not in uniform")
+		with as_user("Ritika"):
+			grooming.record_review(P["Kiran"], str(M_START), NOTE)
+			second = ac.month(TODAY.year, TODAY.month, P["Kiran"])["grooming"]["review"][-1]
+		self.assertEqual((second["state"], second["after_raise"]), ("cleared", True))
 

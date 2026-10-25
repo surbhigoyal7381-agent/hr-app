@@ -98,7 +98,7 @@ def clean_other(text):
 	"""The typed reason, tidied, or a refusal saying what to do next."""
 	text = " ".join(str(text or "").split())
 	if not text:
-		frappe.throw(_("Write your reason in a few words."))
+		frappe.throw(_("Write what was wrong first."))
 	if len(text) > OTHER_MAX:
 		frappe.throw(_("Keep your reason to {0} characters.").format(OTHER_MAX))
 	if about_the_person(text):
@@ -444,16 +444,18 @@ def _decide(f, employee, d, told_in_person=None, exclude=None):
 	warn = " " + _("HR has been told and will talk to {0}. If it carries on, you can raise it "
 	               "with HR.").format(first)
 	if live >= MONTH_MAX:
-		message = (_("{0} has had 3 grooming reds this month, the most allowed, so no more can be "
-		             "marked.").format(first) if hr else
-		           _("{0} has had 3 grooming reds this month, the most allowed.").format(first) + warn)
-		return _no("R12", message, **out)
+		if hr:
+			return _no("R12", _("{0} has had 3 grooming reds this month, the most allowed, so no "
+			                    "more can be marked.").format(first), **out)
+		stop = _("{0} has had 3 grooming reds this month, the most allowed.").format(first)
+		return _no("R12", stop + warn, stop=stop, **out)
 	if (live + 1) * rate > limit:
-		message = _("{0} has reached the most grooming reds the law allows this month, so this one "
-		            "cannot be marked.").format(first)
-		message += (" " + _("(limit {0} = 3% of Basic {1})").format(_rupees(limit), _rupees(base))
-		            if hr else warn)
-		return _no("R12", message, **out)
+		stop = _("{0} has reached the most grooming reds the law allows this month, so this one "
+		         "cannot be marked.").format(first)
+		if hr:
+			return _no("R12", stop + " " + _("(limit {0} = 3% of Basic {1})").format(
+				_rupees(limit), _rupees(base)), **out)
+		return _no("R12", stop + warn, stop=stop, **out)
 
 	has_login = bool(s.user_id and s.user_id in f.enabled and s.status == "Active")
 	if told_in_person is not None and not has_login and not cint(told_in_person):
@@ -865,12 +867,24 @@ def notify_marked(doc, raised=None):
 	if not user:
 		return
 	rate = _rate_now(doc.employee)
-	if doc.marked_as == "Manager":
-		text = _("{0} marked a grooming red for you today ({1}): {2}. It takes {3} off your {4} pay.")
+	if doc.reason == OTHER:
+		# Prototype v3, Z5 (spec N1-O): the typed words stay on the day.
+		if doc.marked_as == "Manager":
+			text = _("{0} marked a grooming red for you today ({1}). Open the day in your Attendance "
+			         "month to read the reason. It takes {2} off your {3} pay.")
+		else:
+			text = _("{0} marked a grooming red for you on {1}. Open the day in your Attendance "
+			         "month to read the reason. It takes {2} off your {3} pay.")
+		text = text.format(_marker_words(doc), _day(doc.mark_date), _rupees(rate),
+		                   _month_name(doc.mark_date))
 	else:
-		text = _("{0} marked a grooming red for you on {1}: {2}. It takes {3} off your {4} pay.")
-	text = text.format(_marker_words(doc), _day(doc.mark_date), _(doc.reason), _rupees(rate),
-	                   _month_name(doc.mark_date))
+		if doc.marked_as == "Manager":
+			text = _("{0} marked a grooming red for you today ({1}): {2}. It takes {3} off your {4} "
+			         "pay.")
+		else:
+			text = _("{0} marked a grooming red for you on {1}: {2}. It takes {3} off your {4} pay.")
+		text = text.format(_marker_words(doc), _day(doc.mark_date), _(doc.reason), _rupees(rate),
+		                   _month_name(doc.mark_date))
 	text += " " + _("If you think it is wrong, open the day and tap “Ask HR to look at this”.")
 	if raised == "max":
 		text += " " + _("This is your 3rd grooming red this month, the most allowed. HR will talk "
@@ -923,7 +937,7 @@ def notify_raised(doc):
 		_notify(doc, [user], _("{0}, your manager, has asked HR to talk to you about grooming. "
 		                       "This adds no fine.").format(name))
 	_notify(doc, _hr_users_for(doc.employee), for_hr=True, text=
-	        _("Grooming review pending for {0}: {1} raised it again on {2}.").format(
+	        _("Grooming review pending for {0}: {1}, the manager, raised it with HR on {2}.").format(
 		        doc.employee_name or doc.employee, name, _day(doc.raised_on)))
 
 
@@ -1230,13 +1244,20 @@ def today():
 			row["can_mark"] = bool(v.ok)
 			row["why_not"] = None if v.ok else v.message
 			row["why_code"] = v.code
+			row["has_login"] = bool(s.user_id in f.enabled)
 			if v.code == "R12" and not hr_only(v):
+				row["stop"] = v.get("stop")
 				at_limit.append(row)
 			row["needs_told_tick"] = bool(v.ok and not v.has_login)
 		rows.append(row)
 	states = _raise_states(f, [r["employee"] for r in at_limit])
 	for r in at_limit:
 		r["raise"] = states.get(r["employee"], {"can": False})
+		if not r["raise"]["can"] and r.get("stop"):
+			# Prototype v3, Z8: once raised (or when no raise is possible) the row
+			# says the stop alone - never "you can raise it" above "Raised with HR".
+			r["why_not"] = r["stop"]
+		r.pop("stop", None)
 	return {"show": True, "day": _day(day), "rows": rows, "not_in": not_in, "count": count,
 	        "reasons": list(REASONS), "other_max": OTHER_MAX, "other_hint": _(OTHER_HINT),
 	        "raise_reasons": list(RAISE_REASONS)}
@@ -1414,6 +1435,9 @@ def _review_payload(fl, carried, is_self, is_manager, is_hr, user, first):
 	       "carried": carried, "live": fl.live}
 	if fl.state == "cleared":
 		out["on"] = _day(fl.review.creation)
+		# Prototype v3, Z16: after the raise's review nothing can raise it again
+		# this month; before a raise, the manager still can, once.
+		out["after_raise"] = bool(fl.get("raise_on"))
 		if is_hr or is_manager:
 			out["note"] = fl.review.review_note
 			out["by"] = _person(fl.review.owner)

@@ -81,6 +81,8 @@ const dom = new JSDOM(html, {
 });
 const {window} = dom, doc = window.document;
 const settle = ms => new Promise(r => setTimeout(r, ms));
+/* Wait for a condition, up to 3 s - the page also boots its own calls. */
+const until = async (ok, ms = 3000) => { const t = Date.now(); while (!ok() && Date.now() - t < ms) await settle(10); };
 const txt = id => (doc.getElementById(id) || {}).textContent || "";
 const count = (fn) => sent.filter(s => s === fn).length;
 const serverSays = (m) => JSON.stringify([JSON.stringify({message: m})]);
@@ -276,18 +278,18 @@ const serverSays = (m) => JSON.stringify([JSON.stringify({message: m})]);
   let got = null;
   ROUTES.get_hr_analytics = {status: 500, body: {exc: "Traceback ...", _server_messages: serverSays("internal detail")}};
   window.api("get_hr_analytics", {}, () => { got = "ok"; }, (e) => { got = e.kind; });
-  await settle(20);
+  await until(() => got !== null);
   eq(got, "server", "AC-19: a 5xx reaches the error branch");
   eq(msgprints.length, 0, "AC-47: no Frappe pop-up beside the box on a 5xx");
   got = null;
   ROUTES.get_hr_analytics = {status: 403, body: {_server_messages: serverSays("Not permitted")}};
   window.api("get_hr_analytics", {}, () => { got = "ok"; }, (e) => { got = e.kind; });
-  await settle(20);
+  await until(() => got !== null);
   eq(got, "refused", "a refusal reaches the error branch");
   eq(msgprints.length, 1, "SEC-5: a refusal still shows the server's message, as before");
   ONLINE = false; got = null; sent.length = 0;
   window.api("get_payslips", {}, () => { got = "ok"; }, (e) => { got = e.kind; });
-  await settle(10); ONLINE = true;
+  await until(() => got !== null); ONLINE = true;
   eq(got, "offline", "AC-17: no signal ends at once");
   eq(count("get_payslips"), 0, "AC-17: and sends nothing");
 

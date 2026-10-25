@@ -961,10 +961,17 @@ function posNode(r, t, depth, pl) {
     sub = sub ? sub + " · reports above your view" : "reports above your view";
   }
 
+  var flags = [];
   // Said before the vacancy flags, because it is the earlier warning: a seat
   // losing its only person in three weeks is not yet empty and will be.
-  // Slice 070: on a shared seat, only for the people drawn in this box.
-  var flags = posLeavingFlag(pl ? posSoonest(here) : r.leaving_on, r.key);
+  if (r.leaving_on) {
+    flags.push({
+      severity: r.key ? "high" : "medium",
+      label: "leaving " + posDay(r.leaving_on),
+      why: "Somebody in this seat is working their notice. Their last day is "
+           + r.leaving_on + ".",
+    });
+  }
   if (r.key) {
     flags.push({ severity: r.open >= 0.5 ? "high" : "low", label: "key seat",
                  why: "An empty key seat is flagged red rather than amber." });
@@ -997,19 +1004,6 @@ function posNode(r, t, depth, pl) {
     else node.quiet = drT("{0} more shown under {1}", [r.people.length - here.length, posElsewhere(mine)]);
   }
   return node;
-}
-
-/* The "leaving" flag for the people drawn in one box. */
-function posLeavingFlag(day, key) {
-  if (!day) return [];
-  return [{
-    severity: key ? "high" : "medium",
-    label: "leaving " + posDay(day),
-    why: "Somebody in this seat is working their notice. Their last day is " + day + ".",
-  }];
-}
-function posSoonest(people) {
-  return people.map(function (p) { return p.leaving; }).filter(Boolean).sort()[0] || null;
 }
 
 /* Twenty-five people doing the same job in the same shop are twenty-five
@@ -1213,7 +1207,7 @@ function posCopyNode(c, pl) {
   return {
     id: c.id, title: r.title,
     subtitle: [r.branch, n === 1 ? drT("1 person") : drT("{0} people", [n])].filter(Boolean).join(" · "),
-    open: 0, flags: posLeavingFlag(posSoonest(c.people), r.key),
+    open: 0, flags: [],
     child_count: 0, has_more: false, children: [],
     people: posFew(c.people, true),
     cls: "copy pos-split", quiet: line,

@@ -1806,15 +1806,32 @@ window.posFromManager = async function () {
 
 /* ── putting somebody in ───────────────────────────────────────────── */
 
-window.posPickPerson = function () {
-  if (!POS.may_edit || !posSeat()) return;
-  document.getElementById("pos-p-q").value = "";
+/* Slice 071: the dialog also opens from the In no seat tray, for that tray's
+   seat and person (`from`, set by posUnPlace). The editor's own seat is
+   untouched; without `from` everything is as before. */
+function posPickSeat() { return POS.pickFrom ? posById(POS.pickFrom.seat) : posSeat(); }
+
+window.posPickPerson = function (from) {
+  POS.pickFrom = from || null;
+  if (!from) POS.pickRet = document.activeElement || null;
+  var seat = posPickSeat();
+  if (!POS.may_edit || !seat) return;
+  document.getElementById("pos-p-q").value = from ? from.name : "";
   document.getElementById("pos-p-weight").value = 100;
   document.getElementById("pos-p-type").value = "Permanent";
   document.getElementById("pos-p-until").value = "";
   document.getElementById("pos-p-delegate").checked = false;
-  POS.picked = null;
+  // Picked by employee ID, never by name: two people can share one.
+  POS.picked = from ? from.employee : null;
   POS.holds = null;
+  var ctx = document.getElementById("pos-p-ctx");
+  if (ctx) {
+    ctx.textContent = !from ? "" : drT("For {0} ({1} of {2}).", [seat.title + (seat.branch ? " · " + seat.branch : ""),
+                                                                 posNum(seat.filled), posNum(seat.seats)])
+      + (from.raise ? " " + drT("When you press Put them in, the seat goes from {0} to {1} places.",
+                                [posNum(seat.seats), posNum(seat.seats + 1)]) : "");
+    ctx.style.display = from ? "" : "none";
+  }
   // Left over from the last person who was looked at, this would read as a
   // warning about the one being chosen now.
   var holds = document.getElementById("pos-p-holds");
@@ -1822,6 +1839,7 @@ window.posPickPerson = function () {
   posPickType();
   posPickErr("");
   document.getElementById("pos-person").classList.add("open");
+  if (from) document.getElementById("pos-p-save").focus();
   posPickSearch();
 };
 
@@ -1844,7 +1862,7 @@ window.posPickType = function () {
 };
 
 window.posPickSearch = async function () {
-  var seat = posSeat();
+  var seat = posPickSeat();
   if (!seat) return;
   var list = document.getElementById("pos-p-list");
   if (!list) return;
@@ -1876,16 +1894,22 @@ window.posPickSearch = async function () {
       : (r.free <= 0 ? "already fully committed"
                      : posNum(r.free) + "% of their time free");
     var where = [r.designation, r.branch].filter(Boolean).join(" - ");
-    return '<div class="pos-cand" style="padding:6px 0;cursor:pointer;'
+    // Slice 071: the employee ID in every line, so two people of one name differ.
+    return '<div class="pos-cand" role="button" tabindex="0" aria-pressed="false" style="padding:6px 0;cursor:pointer;'
       + 'border-bottom:1px solid var(--border)" onclick="posPickOne('
-      + "'" + posEsc(r.employee) + "'" + ')" id="pos-cand-'
+      + "'" + posEsc(r.employee) + "'" + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click()}" id="pos-cand-'
       + posEsc(r.employee) + '">'
       + "<strong>" + posEsc(r.name) + "</strong>"
-      + '<div class="pf-card-meta">'
+      + '<div class="pf-card-meta">' + posEsc(r.employee) + " - "
       + (where ? posEsc(where) + " - " : "") + load
       + "</div></div>";
   }).join("");
-  if (POS.picked) posPickOne(POS.picked);
+  POS.cands = rows;
+  if (!POS.picked) return;
+  // A pick that is not in this list is cleared, so Save cannot send somebody
+  // who is not on the screen (slice 071, PD14).
+  if (rows.some(function (r) { return r.employee === POS.picked; })) posPickOne(POS.picked);
+  else { POS.picked = null; posShowWhatTheyHold(); }
 };
 
 window.posPickOne = function (employee) {
@@ -1895,6 +1919,7 @@ window.posPickOne = function (employee) {
   Array.prototype.forEach.call(list.children, function (el) {
     el.style.background = (el.id === "pos-cand-" + employee)
       ? "var(--surface2)" : "";
+    if (el.setAttribute) el.setAttribute("aria-pressed", el.id === "pos-cand-" + employee ? "true" : "false");
   });
   posShowWhatTheyHold();
 };
@@ -1915,7 +1940,7 @@ window.posShowWhatTheyHold = async function () {
   if (!box) return;
   POS.holds = null;
   if (!POS.picked) { box.style.display = "none"; return; }
-  var seat = posSeat();
+  var seat = posPickSeat();
   box.style.display = "";
   box.innerHTML = '<div class="pf-card-meta">Checking what they already do&hellip;</div>';
   var out;

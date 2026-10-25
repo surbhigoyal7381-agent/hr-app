@@ -925,7 +925,79 @@ function rowOf(h, emp) { return (h.split('<li class="pos-un-p">').filter((x) => 
      && t.calls.length === 0 && t.ctx.posById("P-Counter").seats === 1);
 }
 
-deleteChecks().then(() => {
+/* 071 step 5 onwards: the dialog opened from the tray. Async, so chained below. */
+function withCands(t) {
+  const kids = {};
+  Object.defineProperty(t.ctx.__els["pos-p-list"], "children", { get() {
+    return (this.innerHTML.match(/id="pos-cand-[^"]+"/g) || []).map((m) => (kids[m] = kids[m]
+      || { id: m.slice(4, -1), style: {}, setAttribute(k, v) { this[k] = v; } }));
+  } });
+  t.cands = [{ employee: "HR-EMP-00380", name: "Ravi Kumar", designation: "Cashier", branch: "Sector 34", free: 100 },
+             { employee: "HR-EMP-00382", name: "Ravi Kumar", designation: "Counter", branch: "Sector 34", free: 100 },
+             { employee: "HR-EMP-00381", name: "Anjali Saini", designation: "Cashier", branch: "Sector 34", free: 100 },
+             { employee: "HR-EMP-00999", name: "Zed Other", designation: "", branch: "", free: 100 }];
+  // Like candidates_for: a typed name narrows by name.
+  t.fetch = (m, a) => Promise.resolve(m.endsWith("candidates_for")
+    ? { rows: t.cands.filter((c) => !a.q || c.name.toLowerCase().includes(a.q.toLowerCase())) }
+    : { rows: [], held: 0, free: 100 });
+  t.kid = (emp) => kids['id="pos-cand-' + emp + '"'];
+  return t;
+}
+const tick = () => new Promise((r) => setImmediate(r));
+async function unChecks() {
+  {
+    const t = withCands(unContext(true)), E = t.ctx.__els;
+    t.ctx.posUnPlace("HR-EMP-00381", "P-Cashier", { focus() {} });
+    await tick();
+    ok("071 dialog from the tray: open, name in the search, picked by ID",
+       E["pos-person"].classList.contains("open") && E["pos-p-q"].value === "Anjali Saini" && t.ctx.POS.picked === "HR-EMP-00381");
+    ok("071 dialog: the context line names the seat, no raise sentence",
+       E["pos-p-ctx"].textContent === "For Cashier · Sector 34 (2 of 3)." && E["pos-p-ctx"].style.display === "");
+    ok("071 dialog: focus on Put them in", t.focused[t.focused.length - 1] === "pos-p-save");
+    ok("071 dialog: share 100, Permanently, approvals off",
+       E["pos-p-weight"].value === 100 && E["pos-p-type"].value === "Permanent" && E["pos-p-delegate"].checked === false);
+  }
+  {
+    const t = withCands(unContext(true)), E = t.ctx.__els;
+    t.ctx.posUnPlace("HR-EMP-00380", "P-Cashier", { focus() {} });
+    await tick();
+    const l = E["pos-p-list"].innerHTML;
+    ok("071 duplicate names: each candidate line carries the ID",
+       l.includes("HR-EMP-00380 - Cashier - Sector 34 - free") && l.includes("HR-EMP-00382 - Counter - Sector 34 - free"));
+    ok("071 duplicate names: the ID-picked one is the one marked",
+       t.ctx.POS.picked === "HR-EMP-00380" && t.kid("HR-EMP-00380")["aria-pressed"] === "true"
+       && t.kid("HR-EMP-00382")["aria-pressed"] === "false");
+    E["pos-p-q"].value = "Zed";
+    await t.ctx.posPickSearch();
+    ok("071 a new search without them clears the pick", t.ctx.POS.picked === null);
+    await t.ctx.posPickSave();
+    ok("071 and Save asks to choose, sending nothing",
+       E["pos-person-err"].textContent === "Choose somebody from the list first."
+       && !t.calls.some((c) => c[0].endsWith("assign_person")));
+  }
+  {
+    const t = withCands(unContext(true)), E = t.ctx.__els;
+    t.ctx.posUnPlace("HR-EMP-00382", "P-Counter", { focus() {} });
+    t.ctx.posFullGo();
+    await tick();
+    ok("071 after Add a place: the dialog says the count goes up",
+       !E["pos-full"].classList.contains("open") && E["pos-person"].classList.contains("open")
+       && E["pos-p-ctx"].textContent === "For Counter Staff · Sector 34 (1 of 1). When you press Put them in, the seat goes from 1 to 2 places.");
+  }
+  {
+    const t = withCands(unContext(true)), E = t.ctx.__els;
+    t.ctx.posPickPerson();
+    ok("071 editor path unchanged: no editor seat, no dialog", !E["pos-person"].classList.contains("open"));
+    t.box("pos-e-name", { value: "P-Cashier" });
+    t.ctx.posPickPerson();
+    await tick();
+    ok("071 editor path: empty search, no context line, nobody picked",
+       E["pos-person"].classList.contains("open") && E["pos-p-q"].value === "" && E["pos-p-ctx"].style.display === "none"
+       && t.ctx.POS.picked === null && t.calls[0][1].position === "P-Cashier");
+  }
+}
+
+deleteChecks().then(unChecks).then(() => {
   if (problems.length) {
     console.error("positions tree: " + problems.length + " problem(s)");
     problems.forEach((p) => console.error("  FAIL " + p));

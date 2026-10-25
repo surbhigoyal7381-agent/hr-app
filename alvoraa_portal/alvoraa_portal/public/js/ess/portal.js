@@ -1843,8 +1843,10 @@ window.posPickPerson = function (from) {
   posPickSearch();
 };
 
-window.posPickClose = function () {
+window.posPickClose = function (noFocus) {
   document.getElementById("pos-person").classList.remove("open");
+  // Slice 071: focus goes back to whatever opened the dialog.
+  if (!noFocus && POS.pickRet && POS.pickRet.focus) POS.pickRet.focus();
 };
 
 function posPickErr(msg) {
@@ -2555,7 +2557,15 @@ function posWire() {
   if (POS_WIRED || !document.addEventListener) return;
   POS_WIRED = true;
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && POS.sheet) posCloseSheet();
+    if (e.key !== "Escape") return;
+    // Slice 071: only the top layer closes - the full-seat confirm, then the
+    // person dialog, then the tray. Any other dialog open (or one that already
+    // handled this Escape, like "Delete this seat?") leaves the tray alone.
+    var full = document.getElementById("pos-full"), pick = document.getElementById("pos-person");
+    if (full && full.classList.contains("open")) { posFullClose(); return; }
+    if (pick && pick.classList.contains("open")) { posPickClose(); return; }
+    if (e.defaultPrevented || document.querySelector(".gp-backdrop.open")) return;
+    if (POS.sheet) posCloseSheet();
   });
   // Slice 069 (review m2): a browser that never fired afterprint must not
   // leave the wall chart - possibly an HR copy - as the next panel's print.

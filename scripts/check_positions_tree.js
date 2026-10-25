@@ -1082,6 +1082,48 @@ async function unChecks() {
     ok("071 the last one placed: 0 people and the empty sentence",
        t.layer().includes("In no seat · 0 people") && t.layer().includes("Everybody active is in a seat now"));
   }
+  /* step 7: Escape closes only the top layer */
+  function escContext() {
+    const t = withCands(unContext(true)), keys = [];
+    t.ctx.document.addEventListener = (type, fn) => { if (type === "keydown") keys.push(fn); };
+    t.ctx.posWire();
+    t.esc = (extra) => keys.forEach((fn) => fn(Object.assign({ key: "Escape", defaultPrevented: false }, extra || {})));
+    t.ctx.posUnseatedSheet();
+    t.row = { focus() { t.focused.push("row-button"); } };
+    return t;
+  }
+  {
+    const t = escContext(), E = t.ctx.__els;
+    t.ctx.posUnPlace("HR-EMP-00381", "P-Cashier", t.row);
+    await tick();
+    t.esc();
+    ok("071 Escape with the dialog open: the dialog closes, the tray stays, focus back on the row",
+       !E["pos-person"].classList.contains("open") && t.ctx.POS.sheet && t.layer() !== ""
+       && t.focused[t.focused.length - 1] === "row-button");
+    t.esc();
+    ok("071 a second Escape closes the tray", t.ctx.POS.sheet === null && t.layer() === "");
+  }
+  {
+    const t = escContext(), E = t.ctx.__els;
+    t.ctx.posUnPlace("HR-EMP-00382", "P-Counter", t.row);
+    t.esc();
+    ok("071 Escape with the confirm open: only the confirm closes, no dialog, focus on the row",
+       !E["pos-full"].classList.contains("open") && !E["pos-person"].classList.contains("open") && t.ctx.POS.sheet
+       && t.focused[t.focused.length - 1] === "row-button" && t.calls.length === 0);
+  }
+  {
+    const t = escContext();
+    t.esc({ defaultPrevented: true });
+    ok("071 an Escape another dialog handled leaves the tray", t.ctx.POS.sheet && t.layer() !== "");
+    t.ctx.document.querySelector = (q) => (q === ".gp-backdrop.open" ? {} : null);
+    t.esc();
+    ok("071 any other dialog open leaves the tray", t.ctx.POS.sheet && t.layer() !== "");
+    t.ctx.document.querySelector = () => null;
+    t.esc({ key: "Enter" });
+    ok("071 other keys do nothing", t.ctx.POS.sheet && t.layer() !== "");
+    t.esc();
+    ok("071 nothing on top: Escape closes the tray", t.ctx.POS.sheet === null);
+  }
 }
 
 deleteChecks().then(unChecks).then(() => {

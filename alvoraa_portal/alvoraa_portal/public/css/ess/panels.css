@@ -2195,7 +2195,7 @@ body.panel-fullscreen{overflow:hidden}
 .pos-places li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}
 .pos-places li:first-child{border-top:0}
 .pos-places .this{font-size:var(--fs-sm);font-weight:700;color:var(--primary);background:var(--primary-lt);border-radius:var(--r-full);padding:1px 8px;margin-left:6px;white-space:nowrap}
-@media (max-width:640px){#pos-body .empty-state .btn{min-height:44px}}
+@media (max-width:640px){ #pos-body .empty-state .btn{min-height:44px} }
 .pos-view-note{font-size:var(--fs-sm);color:var(--text2);margin:0 0 10px;line-height:1.45;max-width:760px}
 /* Print what is on screen: A4 landscape, one page wide, pages down (Q8).
    The portal frame is left out only while Positions is the open panel. */

@@ -18,7 +18,6 @@ from frappe.utils import add_days
 
 import alvoraa_portal.attendance_correction as ac
 import alvoraa_portal.grooming as grooming
-import alvoraa_portal.inbox_api as inbox_api
 import alvoraa_portal.payroll_slip as payroll_slip
 from alvoraa_portal.payroll_month import MonthSummary, summarise_month
 from alvoraa_portal.tests import test_grooming_066 as world
@@ -333,11 +332,6 @@ class TestPendingReport(Case):
 			_cols, rows, _msg = pending.execute({"month": str(M_START)})
 			self.assertEqual([(r["employee"], r["why"]) for r in rows],
 			                 [(P["Rahul"], "Legal limit reached")])
-			box = inbox_api.get_inbox()
-		part = [p for p in box["parts"] if p["key"] == "grooming"][0]
-		self.assertEqual(sorted(r["says"] for r in part["rows"]),
-		                 ["Asked HR to look at a grooming red", "Grooming review pending"])
-		self.assertNotIn("uniform", json.dumps(part, ensure_ascii=False).lower())
 		for first in ("Ravi", "Olga"):
 			with as_user(first):
 				self.assertEqual(pending.execute({"month": str(M_START)})[1], [])
@@ -599,4 +593,32 @@ class TestTwoMarkersAtOnce(Case):
 			where employee=%s and docstatus=1 and mark_date between %s and %s""",
 			(P["Kiran"], M_START, M_END))[0][0]
 		self.assertEqual(live, 3)
+
+
+class TestActionAgreedNotice(Case):
+	def test_the_person_and_their_manager_are_told_the_date_never_the_note(self):
+		if YESTERDAY < M_START:
+			self.skipTest("first day of the month")
+		_raw_mark(P["Rahul"], YESTERDAY)
+		_raw_mark(P["Rahul"], TODAY, at="%s 11:00:00" % TODAY)
+		with as_user("Ritika"):
+			name = grooming.record_review(P["Rahul"], str(M_START), NOTE)["name"]
+		bells = frappe.get_all("Notification Log", filters={"document_type": grooming.REVIEW,
+		                                                    "document_name": name},
+		                       fields=["for_user", "subject", "link"])
+		day = grooming._day(frappe.db.get_value(grooming.REVIEW, name, "creation"))
+		said = {b.for_user: b.subject for b in bells}
+		self.assertEqual(said, {
+			user("Rahul"): "HR recorded a grooming review with you. Action agreed on %s." % day,
+			user("Ravi"): "HR recorded the grooming review for Rahul G066. Action agreed on %s." % day})
+		self.assertNotIn("uniform rule", json.dumps(bells))
+		for first in ("Rahul", "Ravi"):
+			with as_user(first):
+				self.assertEqual(len(grooming.my_notices()["items"]), 1)
+		frappe.db.set_value("Employee", P["Rahul"], "reports_to", P["Neha"])
+		try:
+			with as_user("Ravi"):                       # no longer the manager: the notice goes
+				self.assertEqual(grooming.my_notices()["items"], [])
+		finally:
+			frappe.db.set_value("Employee", P["Rahul"], "reports_to", P["Ravi"])
 

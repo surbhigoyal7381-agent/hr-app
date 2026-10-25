@@ -45,3 +45,6 @@ class GroomingReview(Document):
 		if not flag or flag.state != "pending":
 			name = frappe.db.get_value("Employee", self.employee, "first_name") or self.employee
 			frappe.throw(_("There is no grooming review pending for {0}.").format(name))
+
+	def after_insert(self):
+		grooming.notify_review_recorded(self)

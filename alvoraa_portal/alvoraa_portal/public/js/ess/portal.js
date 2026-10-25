@@ -8862,6 +8862,40 @@ window.addEventListener("load", function () {
   switchPanel("att-record");
 });
 
+/* The live portal's bell (Surbhi, 24-25 Oct 2026): grooming notices in their
+   own section at the top of the existing panel, and counted in its badge.
+   The server sends the caller's own notices, fixed sentences only, and only
+   while they may still read what each is about. A notice links to its day. */
+var gmBell = {goals: 0, grooming: 0};
+
+window.gmPaintBadge = function (goals) {
+  if (goals !== undefined) gmBell.goals = goals;
+  var badge = document.getElementById("notif-badge"), total = gmBell.goals + gmBell.grooming;
+  if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+};
+
+window.gmBellLoad = async function (open) {
+  var d;
+  try { d = await gpFetch(GM + "my_notices", {}); } catch (e) { return; }
+  gmBell.grooming = d.unread || 0;
+  gmPaintBadge();
+  var el = document.getElementById("gm-bell");
+  if (!open || !el) return;
+  el.innerHTML = (d.items || []).length
+    ? '<div class="gm-bell-h">Grooming red</div>' + d.items.map(function (n) {
+        var inner = '<div class="notif-item-title' + (n.read ? "" : " gm-unread") + '">' + gpEsc(n.text) + "</div>"
+          + '<div class="notif-item-sub">' + gpEsc(n.when) + "</div>";
+        return n.link ? '<a class="notif-item gm-bell-item" href="' + gpEsc(n.link) + '">' + inner + "</a>"
+                      : '<div class="notif-item gm-bell-item">' + inner + "</div>";
+      }).join("")
+    : "";
+  if (d.unread) {
+    gpFetch(GM + "my_notices_seen", {}).catch(function () {});
+    gmBell.grooming = 0;
+    gmPaintBadge();
+  }
+};
+
 /* A network failure is a TypeError from fetch; anything else is the server
    refusing, in a sentence worth showing as it is. */
 function gmIsNet(e) { return !e || e.name === "TypeError"; }
@@ -13089,7 +13123,7 @@ window.pfRatingLabel = function(value, scale) {
     var panel = document.getElementById("notif-panel");
     var wasOpen = panel.classList.contains("open");
     document.querySelectorAll(".notif-panel.open").forEach(function(p) { p.classList.remove("open"); });
-    if (!wasOpen) { panel.classList.add("open"); loadNotifPanel(); }
+    if (!wasOpen) { panel.classList.add("open"); loadNotifPanel(); gmBellLoad(true); }
   };
 
   document.addEventListener("click", function(e) {
@@ -13125,9 +13159,8 @@ window.pfRatingLabel = function(value, scale) {
   function loadNotifPanel() {
     gpFetch("alvoraa_portal.goals_api.get_pending_approvals", {}).then(function(data) {
       _pfIsManager = true;
-      var badge = document.getElementById("notif-badge");
       var total = data.total || 0;
-      if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+      gmPaintBadge(total);   /* slice 066: the badge also counts grooming notices */
       var body = document.getElementById("notif-panel-body");
       if (!body) return;
       if (total === 0) { body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>"; return; }
@@ -13145,7 +13178,12 @@ window.pfRatingLabel = function(value, scale) {
         "</div>";
       });
       body.innerHTML = html;
-    }).catch(function() { /* not a manager or API not ready — silently ignore */ });
+    }).catch(function() {
+      /* not a manager or API not ready. Slice 066: say so rather than leave
+         "Loading…" under the grooming notices an employee may have. */
+      var body = document.getElementById("notif-panel-body");
+      if (body) body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>";
+    });
   }
 
   /* Boot: just the bell badge, from a cheap count — not the full list
@@ -13153,10 +13191,9 @@ window.pfRatingLabel = function(value, scale) {
      full list still loads when the panel is actually opened. */
   function loadNotifBadge() {
     gpFetch("alvoraa_portal.goals_api.get_pending_approvals_count", {}).then(function(data) {
-      var badge = document.getElementById("notif-badge");
-      var total = (data && data.total) || 0;
-      if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+      gmPaintBadge((data && data.total) || 0);   /* slice 066: plus grooming notices */
     }).catch(function() { /* not a manager or API not ready — silently ignore */ });
+    gmBellLoad(false);
   }
   setTimeout(function() { loadNotifBadge(); }, 1500);
 

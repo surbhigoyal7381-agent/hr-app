@@ -28,6 +28,7 @@ security log, and a failed notice names the mark and nothing else.
 """
 
 import calendar
+import json
 import re
 
 import frappe
@@ -822,10 +823,11 @@ def _notify(doc, users, text, for_hr=False):
 		from frappe.desk.doctype.notification_log.notification_log import make_notification_logs
 
 		make_notification_logs(frappe._dict({
-			"type": "Alert", "document_type": MARK, "document_name": doc.name,
+			"type": "Alert", "document_type": doc.doctype, "document_name": doc.name,
 			"subject": text, "email_content": text, "from_user": frappe.session.user,
 			"link": "/hrms-employee?grooming={0}{1}".format(
-				getdate(doc.mark_date), "&who=" + doc.employee if for_hr else ""),
+				getdate(doc.get("mark_date") or doc.get("review_month")),
+				"&who=" + doc.employee if for_hr else ""),
 		}), emails)
 	except Exception:
 		frappe.log_error(title="Grooming notice not sent for {0}".format(doc.name),
@@ -923,6 +925,116 @@ def notify_raised(doc):
 	_notify(doc, _hr_users_for(doc.employee), for_hr=True, text=
 	        _("Grooming review pending for {0}: {1} raised it again on {2}.").format(
 		        doc.employee_name or doc.employee, name, _day(doc.raised_on)))
+
+
+def notify_review_recorded(review):
+	"""The person and their current manager are told the review is done, with
+	the date and nothing else - never the note (D6; Surbhi 25 Oct 2026)."""
+	on = _day(review.creation)
+	user = _subject_user(review.employee)
+	if user:
+		_notify(review, [user], _("HR recorded a grooming review with you. Action agreed on "
+		                          "{0}.").format(on))
+	manager = frappe.db.get_value("Employee", review.employee, "reports_to")
+	m_user = frappe.db.get_value("Employee", {"name": manager, "status": "Active"}, "user_id") \
+		if manager else None
+	if m_user:
+		_notify(review, [m_user], _("HR recorded the grooming review for {0}. Action agreed on "
+		                            "{1}.").format(frappe.db.get_value("Employee", review.employee,
+		                                                              "employee_name"), on),
+		        for_hr=True)
+
+
+def audit_other_text(doc):
+	"""Every "Other" text is audit-logged (Surbhi, 25 Oct 2026): one security
+	log line - who wrote it, on which mark, when, how long - and NEVER the words
+	(PRIV-7: no personal content in logs). The words themselves stay on the mark,
+	which nobody can edit or delete after it is made, so the line points at the
+	only copy."""
+	if doc.reason != OTHER:
+		return
+	try:
+		frappe.logger("security").info(json.dumps({
+			"event": "grooming_other_text", "at": str(now_datetime()), "user": frappe.session.user,
+			"doctype": MARK, "name": doc.name, "employee": doc.employee,
+			"length": len(doc.other_reason or "")}))
+	except Exception:
+		pass
+
+
+# ── The live portal's bell (Surbhi, 24-25 Oct 2026) ──────────────────────────
+#
+# The portal's bell panel lists goal approvals. These two calls add the
+# grooming notices to it: the person's own Notification Log rows for a mark or
+# a review, nothing else. The words are the fixed sentences the notices were
+# built with - no "Other" text ever reaches one - and a row is shown only while
+# its reader may still read what it is about (the mark's own gate; for a review
+# the subject, their current manager or HR in scope).
+
+@frappe.whitelist()
+def my_notices(limit=20):
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Please sign in."), frappe.PermissionError)
+	rows = frappe.get_all("Notification Log",
+	                      filters={"for_user": user, "document_type": ("in", [MARK, REVIEW])},
+	                      fields=["name", "subject", "link", "creation", "read", "document_type",
+	                              "document_name"],
+	                      order_by="creation desc", limit_page_length=50)
+	allowed = _readable(user, rows)
+	shown = [r for r in rows if (r.document_type, r.document_name) in allowed]
+	return {"unread": sum(1 for r in shown if not r.read),
+	        "items": [{"text": r.subject, "link": r.link if str(r.link or "").startswith(
+	                       "/hrms-employee?grooming=") else None,
+	                   "when": "{0} {1}".format(_day(r.creation), str(r.creation)[11:16]),
+	                   "read": int(r.read or 0)} for r in shown[:max(1, min(cint(limit), 50))]]}
+
+
+@frappe.whitelist(methods=["POST"])
+def my_notices_seen():
+	"""Opening the bell marks the caller's own grooming notices read."""
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Please sign in."), frappe.PermissionError)
+	frappe.db.set_value("Notification Log", {"for_user": user, "read": 0,
+	                                          "document_type": ("in", [MARK, REVIEW])}, "read", 1)
+	return {"ok": 1}
+
+
+def _readable(user, rows):
+	"""Which of these notices' documents the user may read now, in a flat
+	number of queries: the marks' gate (may_read) and the review's gate."""
+	marks = {r.document_name for r in rows if r.document_type == MARK}
+	reviews = {r.document_name for r in rows if r.document_type == REVIEW}
+	docs = {}
+	if marks:
+		for m in frappe.get_all(MARK, filters={"name": ("in", list(marks))},
+		                        fields=["name", "employee", "mark_date", "owner"]):
+			docs[(MARK, m.name)] = m
+	if reviews:
+		for r in frappe.get_all(REVIEW, filters={"name": ("in", list(reviews))},
+		                        fields=["name", "employee"]):
+			docs[(REVIEW, r.name)] = r
+	if not docs:
+		return set()
+	me = _active_employee(user)
+	people = list({d.employee for d in docs.values()})
+	managers = {e.name: e.reports_to for e in frappe.get_all(
+		"Employee", filters={"name": ("in", people)}, fields=["name", "reports_to"])}
+	hr = hr_scope(user, people)
+	today = getdate(nowdate())
+	out = set()
+	for key, d in docs.items():
+		mine = bool(me and d.employee == me)
+		manager = bool(me and managers.get(d.employee) == me)
+		if key[0] == MARK:
+			ok = (mine or d.employee in hr or (me and d.owner == user)
+			      or (manager and getdate(d.mark_date) == today))
+		else:
+			ok = mine or manager or (d.employee in hr and not mine)
+		if ok:
+			out.add(key)
+	return out
 
 
 def notify_flag(doc, why):

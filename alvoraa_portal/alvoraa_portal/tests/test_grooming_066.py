@@ -24,7 +24,6 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate, nowdate
 
 import alvoraa_portal.grooming as grooming
-import alvoraa_portal.inbox_api as inbox_api
 import alvoraa_portal.payroll_slip as payroll_slip
 import alvoraa_portal.attendance_correction as ac
 from alvoraa_portal.tests.utils import ensure_fiscal_years
@@ -235,7 +234,7 @@ def _people():
 def _wipe():
 	people = _people()
 	frappe.db.delete(grooming.MARK, {"employee": ("in", people)})
-	frappe.db.delete("Notification Log", {"document_type": grooming.MARK})
+	frappe.db.delete("Notification Log", {"document_type": ("in", [grooming.MARK, grooming.REVIEW])})
 	frappe.db.delete("Salary Slip", {"employee": ("in", people)})
 	frappe.db.delete("Additional Salary", {"employee": ("in", people)})
 	frappe.db.delete("Attendance", {"employee": ("in", people)})
@@ -871,20 +870,6 @@ class TestHRViews(Case):
 		with as_user("Anil"):
 			self.assertEqual(_list(grooming.MARK), [])
 
-	def test_y4_the_inbox_lists_an_ask_for_hr_in_scope(self):
-		asked = _mark("Ravi", "Rahul")
-		with as_user("Rahul"):
-			grooming.ask(asked)
-		with as_user("Ritika"):
-			part = [p for p in inbox_api.get_inbox()["parts"] if p["key"] == "grooming"][0]
-		self.assertEqual([r["says"] for r in part["rows"]], ["Asked HR to look at a grooming red"])
-		self.assertNotIn("uniform", json.dumps(part, ensure_ascii=False).lower())
-		for first in ("Ravi", "Olga"):
-			with as_user(first):
-				part = [p for p in inbox_api.get_inbox()["parts"] if p["key"] == "grooming"][0]
-				self.assertEqual(part["count"], 0)
-
-
 # ── SEC-12, PRIV-5: the purpose fence ────────────────────────────────────────
 
 ALLOWED = re.compile(r"(^|/)(grooming\.py|payroll_slip\.py|hooks\.py|tests/.*|"
@@ -995,4 +980,61 @@ class TestSecurityVerificationFixes(Case):
 				self.assertRaises(frappe.PermissionError, frappe.client.get, grooming.MARK, name)
 		finally:
 			frappe.db.set_value("Employee", P["Ravi"], "status", "Active")
+
+
+# ── The live portal's bell (Surbhi, 24-25 Oct 2026) ──────────────────────────
+
+class TestLivePortalBell(Case):
+	def test_the_person_sees_fixed_words_never_the_other_text_and_a_link_to_the_day(self):
+		name = _mark("Ravi", "Rahul", reason="Other", other="Torn shirt sleeve")
+		with as_user("Rahul"):
+			d = grooming.my_notices()
+			self.assertEqual(d["unread"], 1)
+			self.assertEqual(d["items"][0]["link"], "/hrms-employee?grooming=%s" % TODAY)
+			self.assertIn(": Other.", d["items"][0]["text"])
+			self.assertNotIn("Torn", json.dumps(d, ensure_ascii=False))
+			grooming.my_notices_seen()
+			self.assertEqual(grooming.my_notices()["unread"], 0)
+		with as_user("Ravi"):                           # the marker gets no notice of his own
+			self.assertEqual(grooming.my_notices()["items"], [])
+		with as_user("Rahul"):
+			grooming.ask(name)
+		for first, n in (("Ritika", 1), ("Hari", 1), ("Olga", 0), ("Neha", 0)):
+			with self.subTest(first=first), as_user(first):
+				items = grooming.my_notices()["items"]
+				self.assertEqual(len(items), n)
+				self.assertNotIn("Torn", json.dumps(items, ensure_ascii=False))
+
+	def test_a_notice_follows_the_mark_s_own_read_rule(self):
+		name = _mark("Ravi", "Rahul")
+		with as_user("Rahul"):
+			grooming.ask(name)
+		with as_user("Hari"):
+			self.assertEqual(len(grooming.my_notices()["items"]), 1)
+		frappe.db.set_value("Employee", P["Hari"], "status", "Left")   # HR who left reads nothing
+		try:
+			with as_user("Hari"):
+				self.assertEqual(grooming.my_notices()["items"], [])
+		finally:
+			frappe.db.set_value("Employee", P["Hari"], "status", "Active")
+
+	def test_every_other_text_is_audit_logged_by_id_never_by_its_words(self):
+		lines = []
+		with patch("alvoraa_portal.grooming.frappe.logger") as logger:
+			logger.return_value.info.side_effect = lines.append
+			fixed = _mark("Ravi", "Rahul")
+			self.assertEqual(lines, [])                 # a fixed reason writes no line
+		with as_user("Ravi"):
+			grooming.undo(fixed)
+		with patch("alvoraa_portal.grooming.frappe.logger") as logger:
+			logger.return_value.info.side_effect = lines.append
+			other = _mark("Ravi", "Rahul", reason="Other", other="Torn shirt sleeve")
+		self.assertEqual(len(lines), 1)
+		entry = json.loads(lines[0])
+		self.assertEqual((entry["event"], entry["name"], entry["user"], entry["length"]),
+		                 ("grooming_other_text", other, user("Ravi"), len("Torn shirt sleeve")))
+		self.assertNotIn("Torn", lines[0])
+		# the words themselves stay on the mark, unchangeable
+		with as_user("Ritika"):
+			self.refused(frappe.client.set_value, grooming.MARK, other, "other_reason", "x")
 

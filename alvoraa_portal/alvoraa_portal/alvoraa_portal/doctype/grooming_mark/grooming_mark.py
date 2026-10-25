@@ -55,6 +55,7 @@ class GroomingMark(Document):
 			self.set(field, None)
 
 	def on_submit(self):
+		grooming.audit_other_text(self)
 		raised = grooming.raised_by(self)
 		grooming.notify_marked(self, raised)
 		if raised:

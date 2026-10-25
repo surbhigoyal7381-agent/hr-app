@@ -559,6 +559,13 @@ after_install = [
     "alvoraa_portal.employee_field_rights.after_migrate",
 ]
 
+# ALV-215 step B: the Promotion / Transfer field picker returned any Employee
+# field, bank number included, ignoring field levels. Ours checks the level and
+# then calls the upstream function unchanged.
+override_whitelisted_methods = {
+    "hrms.hr.utils.get_employee_field_property": "alvoraa_portal.employee_field_rights.get_employee_field_property",
+}
+
 # ── Replace one upstream method wholesale, not monkeypatch it (ALV-174) ────
 # CRM's own invitation email hardcodes "Frappe CRM" in the SUBJECT (Python, not
 # a template) and in the body (a template that never reads the `title` it is

@@ -177,3 +177,22 @@ def refuse_import_of_locked_columns(doc, method=None):
 			frappe.PermissionError,
 		)
 
+
+@frappe.whitelist()
+def get_employee_field_property(employee: str, fieldname: str):
+	"""Replaces hrms.hr.utils.get_employee_field_property (step B, override_whitelisted_methods).
+
+	The Promotion and Transfer field picker calls it. Upstream checks the caller
+	may read the Employee, then returns ANY field, ignoring field levels - so an
+	HR User could read a bank account number this file hides on the form.
+	Check the level, then hand over to upstream unchanged.
+	"""
+	from hrms.hr.utils import get_employee_field_property as upstream
+
+	field = frappe.get_meta(EMPLOYEE).get_field(fieldname) if fieldname else None
+	if employee and field and field.permlevel:
+		doc = frappe.get_doc(EMPLOYEE, employee, check_permission=True)
+		if not doc.has_permlevel_access_to(fieldname, df=field, permission_type="read"):
+			refuse(_("You do not have access to this field."), "SEC-17",
+			       "get_employee_field_property", EMPLOYEE, employee)
+	return upstream(employee, fieldname)

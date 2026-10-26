@@ -513,6 +513,7 @@ function neverPrinted(label, p) {
        && /Set up under Owner and Managing Director/.test((box(all, "Store Auditor", true)[0] || { textContent: "" }).textContent));
     const novac = paper(window.posWallCopy("top", 99, false, false));
     ok("072 AC-57: with Show Vacant off, no Vacant and no open count", !/Vacant| open\b/.test(novac.text));
+    ok("072 review m3: with Show Vacant off, no None here either", !/None here/.test(novac.text) && /None here/.test(all.text));
     const bo = d.rows.find((r) => r.title === "Back Office"), bx = d.rows.find((r) => r.title === "Backoffice Executive");
     const one = window.posWallCopy(bo.id, 1, true, false)[0];
     ok("072 AC-59: below counts each seat and person once, never the box's own seat", one.below && one.below.seats === 3 && one.below.people === 65,   // BX, and copies of Back Office, Data Entry, Billing under it

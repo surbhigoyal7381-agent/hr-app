@@ -1405,6 +1405,8 @@ async function seats072() {
     t = tray(copyId("BO", "CFO"));
     ok("072 AC-42: a copy opens the same seat's tray", t.includes("Back Office") && t.includes("3 of 4") && /Under Chief Financial Officer: 1 personYou opened this one/.test(t));
     ok("072 AC-42: Change edits the seat, not the copy", layer().innerHTML.includes("posSheetChange('BO')"));
+    ok("072 review M1: the tray says the seat is set up under its parent, as the prototype does",
+       t.includes("Head Office · Accounts · set up under Owner") && !t.includes("reports to Owner"), t.slice(0, 120));
     t = tray(copyId("AUD", "RH"));
     ok("072 AC-36: a home not drawn says why", t.includes("Its own box under Owner is not drawn: nobody there reports along that line, no slot is open and no seat hangs under it.") && !t.includes("its own box,"));
     ok("072 AC-39: same seat", tray("FS").includes("Reports to N F1, also in this seat"));

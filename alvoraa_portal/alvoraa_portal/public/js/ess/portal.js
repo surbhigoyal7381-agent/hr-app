@@ -2901,9 +2901,10 @@ function posWallCopy(start, levels, vacant, hr) {
         if (hr) k.opening = 0;
         return k;
       })),
+      // "None here" is a vacancy word too, so it follows Show Vacant (review m3).
       more: !mine.length ? "" : home.length
         ? drT("{0} more shown under {1}", [everyone - home.length, posElsewhere(mine)])
-        : drT("None here: all {0} under {1}", [everyone, posElsewhere(mine)]),
+        : (vacant ? drT("None here: all {0} under {1}", [everyone, posElsewhere(mine)]) : ""),
     });
     if (hr) c.opening = opening;
     return c;
@@ -3435,7 +3436,10 @@ window.posSeatSheet = function (id, flash) {
   var r = copy ? copy.seat : posById(id);
   if (!r) return;
   var up = r.reports_to ? posById(r.reports_to) : null;
-  var parent = !r.reports_to ? drT("reports to nobody (top of the chart)")
+  // Slice 072 (review M1): in Reporting lines a copy may sit under another
+  // manager, so the seat is "set up under" its parent, as the prototype says.
+  var parent = pl ? (r.reports_to ? drT("set up under {0}", [posParentWords(r)]) : drT("top of the chart"))
+    : !r.reports_to ? drT("reports to nobody (top of the chart)")
     : up ? drT("reports to {0}", [up.title + (up.branch ? " · " + up.branch : "")])
       : drT("reports to a seat above your view");
   var b = '<div class="su">' + posEsc((r.branch || drT("No branch")) + " · " + (r.department || drT("No department")) + " · " + parent) + "</div>"

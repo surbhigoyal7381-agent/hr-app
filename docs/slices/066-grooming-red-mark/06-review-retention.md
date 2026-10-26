@@ -292,3 +292,91 @@ Removed: a finding on `_with_records()` loading every employee with a mark (fine
 size, no failure I could state); a finding on Sentry (moved to "not checked", it is
 Frappe-wide, not this diff); a note on the dry run's extra counts (they were in the
 approved strategy).
+
+---
+
+## Re-review, 26 Oct 2026 (tip d9414eb2, on origin/dev 52fc3451)
+
+### Verdict
+
+**SHIP - provisional. Ready to present for a push to dev with the switch OFF. Not ready to
+switch on until counsel answers and Surbhi decides r-1 below.** `SHIP` is not permission to
+deploy; Surbhi decides.
+
+**I could not run the tests.** I could not make my own throwaway site in hrlocal-066r: the
+`sites` folder is owned by root, and `bench new-site` needs the MariaDB root password, which
+I was not allowed to read. I did not use test066r or test066r_sec. So every "proven" below is
+proven by reading the code (and Frappe's own source in the container), not by a run. The
+engineer reports retention 25 OK, grooming 64+1, cap 42, 067 18+2, payroll 9/29/12/76, all
+OK, on test066r (section 13 of the notes) - **not reproduced by me**.
+
+What I did run: `python scripts/check_app_integrity.py` -> `823 checks`, `OK - all
+consistent` (doctype-shadowing check skipped, no bench path); `py_compile` of grooming.py and
+the test file -> OK; the dry-run parser on 21 inputs (table below). origin/dev re-fetched: one
+new commit, 479ad441 (module_access.py and three tests), touches none of this slice's files.
+
+### Each earlier finding, tried to break
+
+| Finding | Fixed? | Evidence |
+|---|---|---|
+| Sec M-2: mistyped dry run erases | **Fixed** (proven by read + parser run) | `_real()` grooming.py:1608-1611. Dry for `'true'`, `'True'`, `'yes'`, `1`, `'1'`, `None`, `''`, `[]`, `{}`, `'dry'`, `'o'`, `0.0`. Real only for `0`, `'0'`, `' 0 '`, `False`, `'false'`, `'no'` (any case). No argument -> default `1` -> dry. A mistyped key (`dryrun=0`) raises TypeError: `erase_due` takes only `dry_run`, so nothing runs. The hook is `erase_daily` (hooks.py:413), which calls `erase_due(dry_run=0)`, and that returns `{"switched_on": 0}` unless `grooming_erase_enabled` is 1 (grooming.py:1628-1630). Neither function is whitelisted |
+| Sec M-1: a runaway erase is invisible | **Fixed** (proven by read) | `_record()` writes one Error Log titled "Grooming erase run": mode, considered, held, erased, failed, marks, reviews, and `stopped` (numbers only). No id, no name, no marker text. The message is given, so Frappe stores it instead of a traceback. More than 25 due (after held people are removed) erases nobody and records why (1668-1671); `grooming_erase_max_people` raises it (1527; missing, 0 or negative means 25). Test `test_m1_every_run_is_recorded_in_counts_only` asserts the exact count dict and that neither the id nor the "Other" text appears |
+| Review m-1: re-check read an old snapshot | **Fixed** (proven by read of Frappe source) | The re-check is now `get_value(..., _due_filters(...), for_update=True)` (1592). With a list filter Frappe builds the query with `for_update` (database.py `get_values`, the list-filter branch), so it is a locking read and sees the latest committed row. The run also commits before the loop and after each person, so each person starts a fresh snapshot. The test opens a second connection, rehires after the job's snapshot, and expects `None` - it would fail on a plain read |
+| Review m-2 / sec m-1: rollback lost Version and bell rows | **Fixed** (proven by read) | Full `frappe.db.rollback()` per failed person (1681). Frappe's `rollback()` without a savepoint calls `after_commit.reset()` (database.py:1201-1203), and `frappe.enqueue(..., enqueue_after_commit=True)` puts the clean-up on that list (background_jobs.py:205-206). `delete_dynamic_links` runs inside the person's transaction, so its deletes roll back too. Test `test_m4_...` reproduces the server's queued clean-up and expects 1 Version and 1 bell per mark - it fails if a savepoint is used |
+| Review m-4: one long uncommitted run | **Fixed** | Commit per person (1677). A timeout now keeps the people already done. The 25-person stop roughly halves the measured 119 s worst case [Inferred] |
+| Review m-3 / sec m-2: held people use up the cap | **Fixed** | Draft-slip people are removed before the count (1665); the old `limit=50` is gone. Test `test_m3_...` (cap 1, one held, one free -> free erased, not stopped) |
+| Review m-6: transfer to a new ID starts the clock | **Fixed as recommended, with a new gap - r-1** | `_transferred()` (1535-1542) excludes a record that is the `employee` of a submitted Employee Transfer with `new_employee_id` set. Field names match hrms employee_transfer.py:28-33, 46-67. Test `test_m6_...` |
+| Blank relieving date (0001-01-01) | **Still holds** | `["relieving_date", "is", "set"]` in `_due_filters` (1553); `_left_without_date` still counted and alerted |
+| Switch OFF by default | **Holds in the repo** | `grooming_erase_enabled` appears only in code, comments and the test's `patch.dict`. No site config, fixture, patch or deploy file sets it. **Not checked:** the site_config.json of dev, dtc, aahr or production (no access) |
+| No new `ignore_permissions` | **Holds** | The only two in the diff are in the test file's company and employee set-up |
+| Nothing else regressed | **Inferred** | Since the first review the diff touches only the erase section of grooming.py (hunks from line 1500 on), one hook line, the test file and the notes. Grooming, cap, 067 and payroll code is unchanged. Not run by me |
+
+### New findings
+
+**r-1 · P3, decide before switch-on · A transferred person's old-ID marks are kept for ever,
+and nothing reports them.** (Proven by read)
+- *State:* A works under ID E1. A company transfer with "Create New Employee ID" makes E2 and
+  sets E1 Left. Later A leaves for good from E2.
+- *What happens:* E2's marks are erased 6 months after E2's relieving date. E1's marks are
+  never erased, because `_transferred` always excludes E1. The self-check uses the same rule,
+  so "people past due" never counts E1. Nobody sees it.
+- *Why it matters:* counsel's rule is end of employment + 6 months, then erased. This keeps
+  them past that, silently. The engineer wrote this down (notes section 13), so it is not
+  hidden, but it has no owner and no alert.
+- *Smallest fix (once Surbhi decides):* treat E1 as due when its `new_employee_id` record is
+  due; or at least have the self-check count "kept because transferred" so it is seen.
+  Owner: Surbhi for the rule, `hrms-fullstack-engineer` for the code.
+
+**r-2 · P4 · The draft-slip check is no longer inside the person's lock.** (Proven by read)
+It moved from `_erase_person` to the list step (1665). A draft slip made for a due person in
+the seconds between the list and their erase is not seen, and that slip is then priced
+without the marks. It needs HR to start a slip for someone who left over 6 months ago, just
+after midnight, inside a run of under a minute. Backlog; one line moves it back if wanted.
+
+**r-3 · P4 · "Every run is recorded" means "every run that found somebody".** (Proven by read)
+`_record` writes nothing when nobody is due (1604). Fine for noise. But a missing record
+cannot tell "nobody due" from "the job did not run" - the same blind spot as security m-3.
+Write it next to m-3; no code needed now.
+
+**Test gap · P4.** `test_m2_...` does not try `[]`, `{}` or a mistyped key. I proved those by
+reading and by the parser run above. Optional to add.
+
+### Subtract pass on this re-review
+
+Removed: a worry about a File attachment's disk copy being deleted before a rollback (no
+Attach field on either doctype, and I could not state a likely case); a note that the old
+`erase_due` Scheduled Job Type on local sites would now run as a harmless dry run (local
+only, never reached dev).
+
+### What to delete
+
+Nothing. `erase_daily` is one line and is what lets the safe default exist.
+
+### Confidence
+
+- **High** on M-2, M-1, the 25-person stop, held people and the transfer rule: short code,
+  read in full.
+- **Medium-high** on the lock and the rollback: I read Frappe's own source for both, and the
+  engineer's tests target each, but I did not see them pass.
+- **Not checked:** a test run on my own site (needs the MariaDB root password, or someone to
+  make the site for me); the live sites' config files.

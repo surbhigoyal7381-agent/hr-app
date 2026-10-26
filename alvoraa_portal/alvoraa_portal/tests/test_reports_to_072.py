@@ -157,6 +157,65 @@ class TestWhoGetsTheManager(ReportsTo072Case):
 			frappe.set_user("Administrator")
 
 
+class TestMoreManagerCases(ReportsTo072Case):
+	"""Review m1: AC-3 (Inactive, Suspended), AC-10 (an ended or a covering
+	seat) and AC-67 (a changed Reports To shows on the next call)."""
+
+	def test_a_suspended_or_inactive_manager_is_not_sent(self):
+		for status in ("Suspended", "Inactive"):
+			frappe.set_user("Administrator")
+			frappe.db.set_value("Employee", self.ok, "status", status)
+			frappe.db.commit()
+			frappe.set_user(self.hr_user(f"hr.{status.lower()}072@example.com"))
+			self.assertEqual(self.managers(register.position_table())[self.p["ok"]], "ABSENT", status)
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Employee", self.ok, "status", "Active")
+		frappe.db.commit()
+
+	def test_a_manager_whose_only_seat_ended_is_not_sent(self):
+		"""AC-10: not seated today, and an owner gets no "in no seat" list."""
+		ended = self.person("MGR-ENDED-SNTL")
+		self.assign(ended, self.top, from_date="2026-01-01", to_date=add_days(nowdate(), -1))
+		frappe.db.set_value("Employee", self.p["none"], "reports_to", ended)
+		self.links[self.p["none"]] = ended
+		frappe.db.commit()
+		frappe.set_user(self.plain_reader("owner.ended072@example.com", branch=self.a))
+		out = register.position_table()
+		self.assertEqual(self.managers(out)[self.p["none"]], "ABSENT")
+		self.assertNotIn(ended, json.dumps(out))
+
+	def test_a_manager_in_a_current_covering_seat_is_sent(self):
+		"""AC-10: covering is still a seat in this reply."""
+		cover = self.person("MGR-COVER-SNTL")
+		# Cover must end (the organisation's rule), so it ends in a month.
+		self.assign(cover, self.top, assignment_type="Acting", to_date=add_days(nowdate(), 30))
+		frappe.db.set_value("Employee", self.p["none"], "reports_to", cover)
+		self.links[self.p["none"]] = cover
+		frappe.db.commit()
+		frappe.set_user(self.plain_reader("owner.cover072@example.com", branch=self.a))
+		self.assertEqual(self.managers(register.position_table())[self.p["none"]], cover)
+
+	def test_a_changed_reports_to_shows_next_time_and_no_seat_changes(self):
+		"""AC-67: the chart reads Reports To fresh; nothing about seats is written."""
+		frappe.set_user(self.hr_user("hr.move072@example.com"))
+		before = self.managers(register.position_table())[self.p["ok"]]
+		frappe.set_user("Administrator")
+		stamps = {d: frappe.get_all(d, filters={"name": ("in", names)}, fields=["name", "modified"], order_by="name")
+		          for d, names in (("Alvoraa Position", [self.top, self.seat]),
+		                           ("Alvoraa Position Assignment",
+		                            frappe.get_all("Alvoraa Position Assignment", filters={"position": self.seat}, pluck="name")))}
+		frappe.db.set_value("Employee", self.p["ok"], "reports_to", self.out)
+		self.links[self.p["ok"]] = self.out
+		frappe.db.commit()
+		frappe.set_user("hr.move072@example.com")
+		after = self.managers(register.position_table())[self.p["ok"]]
+		frappe.set_user("Administrator")
+		self.assertEqual((before, after), (self.ok, self.out))
+		for d, rows in stamps.items():
+			self.assertEqual(frappe.get_all(d, filters={"name": ("in", [r.name for r in rows])},
+			                                fields=["name", "modified"], order_by="name"), rows, d)
+
+
 class TestNoNewStatement(ReportsTo072Case):
 	"""nfr-budget §2 and 04 Q2: the manager rides on the read the page already
 	makes. The number is recorded in the implementation notes."""

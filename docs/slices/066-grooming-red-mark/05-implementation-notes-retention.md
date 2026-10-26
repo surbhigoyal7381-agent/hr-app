@@ -30,15 +30,17 @@ would switch on every site on that bench):
 
 | Want | Command |
 |---|---|
-| See what it would do (any time, switch on or off; erases nothing) | `bench --site <site> execute alvoraa_portal.grooming.erase_due --kwargs "{'dry_run': 1}"` |
+| See what it would do (any time, switch on or off; erases nothing) | `bench --site <site> execute alvoraa_portal.grooming.erase_due` (a dry run unless told otherwise in so many words) |
+| A real run by hand (only with the switch on) | `bench --site <site> execute alvoraa_portal.grooming.erase_due --kwargs "{'dry_run': 0}"` |
+| One deliberate catch-up run of more than 25 people | `bench --site <site> set-config -p grooming_erase_max_people <n>`, then set it back with `0` (0 or missing means 25) |
 | Switch on | `bench --site <site> set-config -p grooming_erase_enabled 1` |
 | Switch off | `bench --site <site> set-config -p grooming_erase_enabled 0` |
 | Is it on? | `bench --site <site> execute alvoraa_portal.grooming.erase_switched_on` |
 | Run the self-check by hand | `bench --site <site> execute alvoraa_portal.grooming.erase_self_check` |
 
 The switch is read fresh by every scheduled job, so no restart is needed. With it off the
-daily run returns `{"switched_on": 0}` before any query, and a real run by hand
-(`erase_due` without `dry_run`) does the same. Order on any site, when Surbhi says so:
+daily run (`erase_daily`) returns `{"switched_on": 0}` before any query, and a real run by
+hand (`dry_run` 0) does the same. Order on any site, when Surbhi says so:
 backup, dry run, read the ids with HR, switch on, read the Error Log after the next day.
 
 **Why a site-config key and not a Scheduled Job Type left disabled.** A Scheduled Job Type
@@ -54,10 +56,10 @@ Rung 4 (new code), as the strategy approved. No DocType, no field, no screen.
 
 | File | Change | Why this mechanism |
 |---|---|---|
-| `alvoraa_portal/grooming.py` | New section at the end: `erase_switched_on`, `_due_filters` (the rule, once), `_due`, `_draft_slip`, `_erase_one`, `_erase_person`, `erase_due` (daily + dry run), `_erase_run`, `_left_without_date`, `erase_self_check`. `add_days` import | The module that holds every grooming rule. Slice 065's erase shape, copied not imported (two uses) |
+| `alvoraa_portal/grooming.py` | New section at the end: `erase_switched_on`, `_due_filters` (the rule, once), `_due`, `_draft_slip`, `_erase_one`, `_erase_person`, `erase_daily` (the hook), `erase_due` (dry run unless told otherwise), `_erase_run`, `_record`, `_transferred`, `_left_without_date`, `erase_self_check`. `add_days` import | The module that holds every grooming rule. Slice 065's erase shape, copied not imported (two uses) |
 | `grooming_mark.py`, `grooming_review.py` | `no_feed_on_delete = True` and `on_trash` refusing any delete without the erase flag | The two lines per controller the strategy named |
 | `hooks.py` | One line appended to `scheduler_events["daily"]` | Frappe's scheduler |
-| `tests/test_grooming_erase_066.py` | 18 tests | Pins every guard |
+| `tests/test_grooming_erase_066.py` | 25 tests (18, then 7 for the review fixes) | Pins every guard |
 
 ## 3 · The rule as built
 
@@ -71,7 +73,8 @@ Due on a run when, all at once:
 
 The same filter runs again under a row lock on the Employee just before the erase, so a
 rehire or a date change between the list and the erase is obeyed. A person with a **draft**
-Salary Slip is skipped and shows in the self-check after 2 days. At most 50 people a run.
+Salary Slip is skipped and shows in the self-check after 2 days. Section 13 has what the
+review changed (fresh locking read, per-person commit, the 25-person stop, transfers).
 
 **D-2** as approved: a rehire on a new Employee record does not touch the old record's
 marks; they go 6 months after the old record's relieving date. **D-5** accepted: the
@@ -216,3 +219,44 @@ Re-run on test066r in hrlocal-066r after the rebase: test_grooming_erase_066 18 
 test_grooming_066 64 + 1 OK; test_grooming_cap_066 42 OK; test_pay_slip_marks_067 18 + 2 OK;
 test_payroll_flags 9, test_payroll_month 29, test_payroll_reprocess 12, test_payroll_rules
 76, all OK; check_app_integrity 823 checks OK. The job was not switched on anywhere.
+
+## 13 · Review fixes, 26 Oct 2026 (06-review-retention, 06b-security-verification-retention)
+
+Both said SHIP WITH FIXES. Each fix has a test that fails when the fix is taken out.
+
+| Finding | Fix | Test |
+|---|---|---|
+| Security M-2: `dry_run='true'` was a real erase (`cint('true')` is 0) | `erase_due` is a dry run unless `dry_run` is exactly 0 / "0" / false / "false" / "no". Anything else, including nothing at all, a typo, "true" or "yes", is a dry run. The daily hook is a new one-line `erase_daily`, the only real run that needs no flag. A real run still needs the switch on | `test_m2_anything_but_an_explicit_no_is_a_dry_run` |
+| Security M-1: a wrong or runaway erase went unseen | Every run that found anybody writes one Error Log titled **"Grooming erase run"** with counts only: mode (dry/real), considered, held_draft_slip, erased, failed, marks, reviews, and `stopped` with the reason. No ids, no names | `test_m1_every_run_is_recorded_in_counts_only` |
+| Security M-1: stop a runaway | A real run with more than 25 people due (after draft-slip holds) erases nobody and records `stopped: "N people due, more than the 25 allowed in one run"`. Site config `grooming_erase_max_people` raises it for one deliberate run | `test_m1_more_people_due_than_the_limit_stops_and_says_why` |
+| Review m-1: the re-check read an old snapshot | The re-check is now itself the locking read (`get_value(..., for_update=True)` with the rule's filters), which sees the latest committed row | `test_m1_a_rehire_committed_while_the_job_runs_is_seen` (a second database connection rehires the person after the job's snapshot) |
+| Review m-2/m-4, security m-1: a failed person lost history; one long uncommitted run | Commit after each person. A failure does a full rollback (which also drops Frappe's queued clean-up of the records it put back), logs the id, commits the log, and moves on | `test_m4_a_person_put_back_keeps_their_history` (Frappe's after-commit clean-up queued as on a server); `test_one_record_that_will_not_erase_...` (the person erased before the failure stays erased) |
+| Review m-3, security m-2: held people used up the 50 places | The cap of 50 is gone; the 25-person stop replaces it. Draft-slip people are left out **before** the count, so they never take a place | `test_m3_people_held_by_a_draft_slip_take_no_place` |
+| Review m-6, security QS-1: a transfer with a new Employee ID started the clock | A Left record that is the `employee` of a submitted Employee Transfer with `new_employee_id` set is never due. **[ASSUMPTION, Surbhi's call pending]**: the coordinator's recommendation, "a transfer is not the end of employment". Consequence: the old record's marks stay until a rule for them is decided (for example, follow the new record's clock). They are not counted by the self-check | `test_m6_a_transfer_to_a_new_employee_id_starts_no_clock` |
+| Review m-5: an old slip cancelled and amended after the erase | **Not changed, written down here.** If HR cancels and amends a submitted slip for a month whose marks were erased, with grooming on, the engine prices the amended draft from the marks, finds 0, cancels its grooming Additional Salary and drops the line. The corrected slip then refunds a fine that was properly deducted, with no note. It needs an unusual action on someone who left over 6 months ago. Surbhi to accept next to D-5, or ask for the engine to leave a month's grooming line alone once its marks are erased | none (traced only) |
+| Review nit, security m-6 | One comment line in the test's clean-up: never run this module on a real site | - |
+
+**Why an Error Log row for the run record.** No schema, no new DocType; `health.py` already
+pulls Error Log titles to the control plane; it is the place D-6 says Surbhi reads. Costs,
+stated plainly: it shows up among errors on the health page (it is not one), and Frappe's Log
+Settings clears Error Log after 14 days by default. A run record must be read within two
+weeks, or Log Settings raised for Error Log. A new log DocType would keep it longer but adds a
+schema, permissions and a migration for one row a day; I did not think that earns it.
+
+**Subtract pass on the fixes.** Removed: the 50-person cap (`ERASE_BATCH`), replaced by the
+25-person stop; the draft-slip check inside `_erase_person` (the run now leaves held people
+out before it starts; the inner check only repeated it). Kept: `erase_daily` (one line; it is
+what lets `erase_due` default to a dry run).
+
+**Not changed, still open from the reviews:** the self-check stops when the job stops
+(security m-3); the health page sends only the top 8 titles (m-4); REST and bulk delete have
+no test of their own (they reach the same `on_trash`); D-1 trusts `modified` (W-1); Server
+Script can call the erase with the flag (R-3). Each needs Surbhi's word, not code.
+
+**Every guard broken on purpose, again (26 Oct).** 24 guards: the 18 from section 6 as they
+now stand, plus the strict dry-run parse, the run record, the 25-person stop, held people
+taking no place, the per-person commit, the full rollback, the fresh locking read and the
+transfer rule. **All 24 caught.** The first try missed the full-rollback guard: marks are
+erased newest first, so the "first mark erases, second fails" test was failing on the wrong
+mark and nothing had been queued. The test now fails on the second erase call, whichever
+mark that is, and catches it.

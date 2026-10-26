@@ -260,3 +260,14 @@ transfer rule. **All 24 caught.** The first try missed the full-rollback guard: 
 erased newest first, so the "first mark erases, second fails" test was failing on the wrong
 mark and nothing had been queued. The test now fails on the second erase call, whichever
 mark that is, and catches it.
+
+**Correction to section 7.** The stray Version row that failed `test_ac63` in
+test_grooming_cap_066 was not left by stopping my run part-way. It came back on 26 Oct
+after a complete guard-breaking run: a broken guard (for example, no `delete_dynamic_links`)
+erases a review but leaves its Version row, and my test clean-up looked for traces only by
+the names of records that still existed. The clean-up now wipes traces by every name a test
+wrote. After deleting the one stray row (mine, `data` "{}"), the cap module passes: 42 OK.
+
+**Runs on test066r after the fixes (26 Oct):** retention 25 OK; grooming 64 + 1 OK; cap 42
+OK (after the stray row above); 067 18 + 2 OK; payroll flags 9, month 29, reprocess 12,
+rules 76, all OK; integrity 823 checks OK.

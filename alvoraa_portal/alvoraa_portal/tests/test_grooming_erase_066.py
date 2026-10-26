@@ -38,6 +38,7 @@ TRACES = (("Version", "ref_doctype", "docname"), ("Comment", "reference_doctype"
           ("DocShare", "share_doctype", "share_name"), ("Tag Link", "document_type", "document_name"),
           ("Event Participants", "reference_doctype", "reference_docname"))
 P = {}
+MADE = []   # every mark and review a test wrote, erased or not
 
 
 def _company():
@@ -66,6 +67,8 @@ def _raw(d, docstatus=0):
 	doc.name = frappe.generate_hash(length=10)
 	doc.docstatus = docstatus
 	doc.db_insert()
+	if doc.doctype in (grooming.MARK, grooming.REVIEW):
+		MADE.append(doc.name)
 	for child in doc.get_all_children():
 		child.parent = doc.name
 		child.db_insert()
@@ -124,13 +127,13 @@ def _alerts(title=None):
 
 def _wipe():
 	people = list(P.values()) or [""]
-	marks = frappe.get_all(grooming.MARK, filters={"employee": ("in", people)}, pluck="name")
-	reviews = frappe.get_all(grooming.REVIEW, filters={"employee": ("in", people)}, pluck="name")
 	frappe.db.delete(grooming.MARK, {"employee": ("in", people)})
 	frappe.db.delete(grooming.REVIEW, {"employee": ("in", people)})
-	for doctype, names in ((grooming.MARK, marks), (grooming.REVIEW, reviews)):
+	# By every name a test made: a guard broken on purpose can erase a record
+	# and leave its traces, which the other 066 tests would then count.
+	for doctype in (grooming.MARK, grooming.REVIEW):
 		for table, type_field, name_field in TRACES:
-			frappe.db.delete(table, {type_field: doctype, name_field: ("in", names or [""])})
+			frappe.db.delete(table, {type_field: doctype, name_field: ("in", MADE or [""])})
 	frappe.db.delete("Event", {"subject": "R066"})
 	slips = frappe.get_all("Salary Slip", filters={"employee": ("in", people)}, pluck="name")
 	frappe.db.delete("Salary Detail", {"parenttype": "Salary Slip", "parent": ("in", slips or [""])})

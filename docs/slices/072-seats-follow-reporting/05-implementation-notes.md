@@ -144,6 +144,18 @@ Came in: 16 commits - slice 071 (In no seat names, Place in seat, the ALV-228 sc
 - Node: tree check 324 (071's and this slice's), wall chart 199, DOM suite 15/15, trays (static), handlers, integrity, undefined-JS, tag balance all OK. All on A1 with copies: 8.5 pt (8.4 HR copy), unchanged.
 - Python on test070t (own container): test_reports_to_072 7 OK, test_unseated_071 12 OK, test_positions_064 17 OK, test_hiring_064 26 OK, test_register_fill_194 62 OK (2 skipped), test_portal_security_010 45 OK, test_grooming_066 64 + 1 OK.
 
+## Review fixes (06-review.md) - 26 Oct
+
+| Finding | Fix | Test that fails without it |
+|---|---|---|
+| M1 tray heading | Reporting lines: "... · set up under Owner", as the prototype (P-28) | tree check "072 review M1" |
+| m3 "None here" on paper | follows Show Vacant (P-29) | wall check "072 review m3" |
+| m1 missing tests | 4 new server tests: Suspended and Inactive manager not sent (AC-3), a manager whose only seat ended not sent and a current covering seat sent (AC-10), a changed Reports To shows next call with no seat or assignment `modified` changed (AC-67) | Suspended test fails with the status check removed (shown) |
+
+**Why the reviewer's fresh site errored, and what a fresh site needs.** Read on `test072_fresh` (new-site + install-app only): `MandatoryError: [Alvoraa Position, Top 072]: company` - **a bare site has no Company**. CI's whole-app run gets ERPNext's test records (including companies); a one-module run does not. The second company the 064/072/071 tests make then also needs ERPNext's "Transit" Warehouse Type, which the setup wizard normally creates. Not slice 066, not migrate, not roles. **Fixed in the tests:** the shared helper `_company()` (hrms `test_org_structure.py`) now calls a new `ensure_company()` that makes the warehouse type and a company when missing; `_second_company()` (test_positions_064) uses it too. A fresh site now needs only `allow_tests` and `throttle_user_limit 1000`, as CI sets.
+
+**Results (26 Oct), on a bare fresh site `test072_fresh` and on `test070t`, same numbers on both:** test_reports_to_072 11 OK (7 statements at ~10 and ~200) · test_unseated_071 12 OK · test_positions_064 17 OK · test_hiring_064 26 OK · test_register_fill_194 62 OK (2 skipped) · test_portal_security_010 45 + 5 OK. Node: tree 325, wall chart 200, DOM suite 15/15, trays, handlers, integrity, undefined-JS, tag balance OK. The sites `test072_sec` and `test072_rev` were not touched.
+
 ## Prototype parity - differences
 
 | # | Difference | Status |
@@ -153,6 +165,8 @@ Came in: 16 commits - slice 071 (In no seat names, Place in seat, the ALV-228 sc
 | D-3 | The "+3 more here" line shows a "+M" avatar (today's rendering of the overflow line); the prototype shows "+" | pre-existing look, not changed |
 | D-4 | A home box keeps "branch · department · N of M filled" (the prototype dropped the department) | as today (AC-54) |
 | D-5 | "N open" prints on every partly filled seat on paper, not only shared ones - as the prototype's own print code does (P-27) | as approved; one 069 assertion updated |
+| P-28 | Seat tray heading in Reporting lines: "... · set up under Owner" (was "reports to Owner"), as `prototype-v1.html` line 565 draws it; Branch and Department keep "reports to" | **matches prototype** (review M1, fixed; tree check fails without it) |
+| P-29 | Paper: "None here: all N under ..." follows the Show Vacant tick like "Vacant" and "N open" | fixed on the coordinator's instruction (review m3); wall check fails without it |
 
 ## Known gaps and shortcuts
 

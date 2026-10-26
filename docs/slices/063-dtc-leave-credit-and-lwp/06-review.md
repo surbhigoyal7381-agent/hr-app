@@ -229,3 +229,87 @@ System Manager only as shipped, so it bites rarely) - kept, because Surbhi asked
 Removed from this review: a note on `update_permission_property` ignoring "if owner" (no site
 has such a row - no failure scenario); a performance note on `rule_set_fields` (one small query
 on save); a finding on custom HR roles losing job-field writes (the engineer already lists it).
+
+---
+
+## Re-review - fixes B1 to B3 (26 Oct 2026)
+
+**Verdict: SHIP - all three blockers are really fixed; I tried to break each one and could not.**
+SHIP means ready to ask Surbhi about the push to dev. It is not permission to push.
+
+**What I reviewed.** Tip 66f0ee01 on origin/dev 52fc3451 (origin/dev has not moved). The code
+fix is 5b8a9e12; b6c324ba adds one test; 66f0ee01 is docs. All commits by this build, linear, no
+merge commits. Code read in full: `employee_field_rights.py`, the hooks block, the new tests,
+and upstream `employee_transfer.py`, `employee_promotion.py`, `update_employee_work_history`.
+
+**Where I ran it.** Two new throwaway sites in `hrlocal-063fr`, local only:
+`testfr_rev2` (erpnext, hrms, alvoraa_portal, alvoraa_goals) and `testfr_rev2b` (same apps, no
+company ever made by me). No other site touched. Both sites are still there; drop them when done.
+
+### The three blockers
+
+| # | Check | Result | Label |
+|---|---|---|---|
+| B1 | Test module, fresh site `testfr_rev2`, run 1 / run 2 | `Ran 20 tests ... OK` / `Ran 20 tests ... OK` | Proven |
+| B1 | Same on `testfr_rev2b` (no company before run 1, as CI) | `Ran 20 tests ... OK` / `Ran 20 tests ... OK` | Proven |
+| B3 | Fresh site, before any company: the five fields do not exist. Made the first Indian company, then read the levels | PAN, ESI, PF, IFSC, MICR all **level 1** at once; five Property Setters written by `lock_new_custom_field` | Proven |
+| B2 | 22 attack cases as real HR User / HR Manager users, below | All refused before any write, or allowed where they should be | Proven |
+
+**B2 - trying to break it** (my script, on `testfr_rev2`):
+
+| Attack | What happened |
+|---|---|
+| HR User submits a Promotion with a revised CTC | Refused; CTC unchanged; Promotion still draft |
+| HR Manager submits it, HR User cancels | Refused (twice: first by Frappe's cancel right, then with that right bypassed, by the new hook). Promotion still submitted, CTC still the new figure. No "cancelled but applied" |
+| HR Manager cancels | CTC put back |
+| HR User amends the cancelled Promotion and submits with a CTC | Refused; no amended record kept |
+| HR Manager amends and submits | Goes through |
+| HR User submits a Promotion with a bank row | Refused |
+| HR User submits a Transfer with "Create New Employee Id" (record has bank, CTC, PAN) - same company, and to another company | Refused, naming the three fields. Employee count unchanged; old record still Active with its bank number |
+| HR Manager does the same Transfer | New record keeps bank, CTC and PAN; old one Left |
+| HR User submits / cancels an in-place Transfer with a bank row | Refused both ways; HR Manager submit and cancel work and the bank number comes back |
+| HR Manager and HR User: self-Transfer with new ID to another company; self-Transfer in place to another company | All four refused; no new record, company unchanged, login not moved |
+| HR Manager self-Promotion; HR User cancels their own Promotion | Both refused |
+
+Employee Separation writes no Employee field (read `employee_separation.py` and the boarding
+controller), so it needs no guard. **Proven by reading.**
+
+### Nothing went backwards
+
+| Earlier guard | Result | Label |
+|---|---|---|
+| Employee changes own designation, CTC, bank, status, PAN, manager, company (desk save) | All unchanged | Proven |
+| Same through `client.set_value` (CTC, PAN, leave approver, bank) and `client.save` | Unchanged | Proven |
+| Employee changes own phone | Saved | Proven |
+| REST `PUT` | Same `doc.save()` path. Security ran it over real HTTP on 5b8a9e12 (06b); I did not | Inferred |
+| HR User own manager; HR Manager own CTC | Refused | Proven |
+| HR Manager own phone | Saved | Proven |
+| HR User writes a colleague's bank | Not written | Proven |
+| HR User reads bank, PAN, CTC with `get_value` / `get_list` | Stripped | Proven |
+| Level 1 rows | HR Manager only | Proven |
+| Employee import with a bank column | HR User: refused with a message naming the column. HR Manager: accepted | Proven |
+| Rule set names a field, it locks | Engineer's test, green on both fresh sites | Proven by test |
+| `apply()` twice | No row or Property Setter added or changed (9 rows, 36 setters) | Proven |
+| `hooks.py` | No duplicate keys (parsed it); only additions | Proven |
+| `ignore_permissions` | Product code still has only the one at `employee_field_rights.py:100` (F-8). New ones are in tests only | Proven |
+| `scripts/check_app_integrity.py` | `OK - all consistent`, 836 checks | Proven |
+
+F-0 from 06b is now pinned: the HR User in `test_alv215_hr_cannot_move_themselves_to_another_company_by_transfer`
+has no bank or CTC, so only line 191 can refuse it. **Inferred** from my run, where the same
+employee shape had empty level-1 fields.
+
+### New, small
+
+| # | Finding | Rank |
+|---|---|---|
+| n1 | Cancelling a new-ID Transfer (after its new record is deleted) is refused for an HR User whenever the old record has bank or CTC, though cancel only writes status, relieving date and company (`employee_field_rights.py:201-206`). Safe direction; an HR Manager can do it. Proven by reading, not run | P4 |
+| n2 | The message reads "Bank A/C No.." - the label already ends in a full stop | P4 |
+
+The earlier minors (m1-m5) and the security findings F-1 to F-10 are unchanged and still
+open where they were.
+
+**Not checked:** india_compliance installed on the site; a full `bench migrate`; the full suite;
+any DTC, Grace or PPJ copy.
+
+**Subtract pass:** removed a note on the database "commit ignored" warning seen while creating a
+company - it comes from setup code outside this change.

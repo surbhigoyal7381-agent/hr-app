@@ -5057,10 +5057,18 @@ function acPaint() {
     + "<th>Worked</th><th>Expected</th><th>Arrival</th><th></th>"
     + "</tr></thead><tbody>";
 
-  d.days.forEach(function (x) {
-    html += acRow(x);
-    if (acState.open === x.date) html += acDetail(x);
-  });
+  /* Newest first, and nothing that has not happened yet. The month arrives
+     from the server as day 1 to the end of the month, which puts the day you
+     came to check at the bottom of a list you have to scroll past, behind rows
+     for a future that cannot be judged. Reversed and trimmed here rather than
+     in `month()`, because the totals above are counted server-side over the
+     whole month and must not change. */
+  d.days.filter(function (x) { return !x.future; })
+    .reverse()
+    .forEach(function (x) {
+      html += acRow(x);
+      if (acState.open === x.date) html += acDetail(x);
+    });
   html += "</tbody></table></div>";
   html += '<p class="ai-note">A day counts as short only once it is more than '
     + gpEsc(d.tolerance_mins) + " minutes under the shift, so a few minutes either "

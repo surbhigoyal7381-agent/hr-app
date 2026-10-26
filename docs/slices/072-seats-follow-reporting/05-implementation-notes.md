@@ -134,6 +134,16 @@ Proof after the merge: every `+` line of each side's commits present in the merg
 (`git show <commit> -- <file> | grep '^+'`), then `check_positions_tree.js`, `run_dom_tests.js`,
 `test_reports_to_072` and `test_unseated_071`.
 
+## Rebase onto origin/dev 52fc3451 (slice 071, ALV-228, 066 network-error fix) - 26 Oct
+
+Came in: 16 commits - slice 071 (In no seat names, Place in seat, the ALV-228 scope fix, Escape closes only the top layer, reads `e.kind` from gpFetch) and 066's "a grooming call with no answer" fix with `portal_grooming_066_test.js`.
+
+- Two conflicts, both in `check_positions_tree.js`, resolved as planned above: 071's section 22 kept whole, this slice's became section 23, one chain `deleteChecks().then(unChecks).then(seats072)`. `portal.js` merged on its own: 071's Escape body, then this slice's outline listeners.
+- Proof: every line 071/066 added to portal.js (153), panels.css (20), positions.html (16), register.py (24), run_dom_tests.js (4) and the check file (230) is present, except 071's old one-check chain, which is now the joint chain.
+- This slice adds no server call, so the 15 s helper has nothing new to cover; its one error path (the chart load) shows fixed words for every error, so it needs no `e.kind`.
+- Node: tree check 324 (071's and this slice's), wall chart 199, DOM suite 15/15, trays (static), handlers, integrity, undefined-JS, tag balance all OK. All on A1 with copies: 8.5 pt (8.4 HR copy), unchanged.
+- Python on test070t (own container): test_reports_to_072 7 OK, test_unseated_071 12 OK, test_positions_064 17 OK, test_hiring_064 26 OK, test_register_fill_194 62 OK (2 skipped), test_portal_security_010 45 OK, test_grooming_066 64 + 1 OK.
+
 ## Prototype parity - differences
 
 | # | Difference | Status |

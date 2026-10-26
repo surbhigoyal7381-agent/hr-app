@@ -351,7 +351,7 @@ class TestSwitchTarget(FrappeTestCase):
 		self._as("HR Manager")
 		t = ma.get_switch_target()
 		self.assertEqual(t["label"], "Switch to HR Core")
-		self.assertEqual(t["url"], "/app/hr")
+		self.assertEqual(t["url"], "/app/hr-setup")
 
 	def test_an_admin_is_sent_to_the_desk(self):
 		self._as("System Manager")

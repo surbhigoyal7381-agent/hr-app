@@ -205,7 +205,7 @@ class TestTheDeskLink(_Personas):
 
 	def test_hr_gets_hr_core_and_a_system_manager_gets_admin(self):
 		self.assertEqual(self._frame_as(self.store_hr_user)["switch_target"],
-		                 {"label": "Switch to HR Core", "url": "/app/hr"})
+		                 {"label": "Switch to HR Core", "url": "/app/hr-setup"})
 		self.assertEqual(self._frame_as(self.sysman_user)["switch_target"],
 		                 {"label": "Switch to Admin", "url": "/app"})
 

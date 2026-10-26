@@ -1127,6 +1127,6 @@ def get_switch_target():
     if ADMIN_ROLES & roles:
         return {"label": "Switch to Admin", "url": "/app"}
     if HR_ROLES & roles:
-        # /app/hr is Frappe HR's own workspace - leaves, payroll, recruitment.
-        return {"label": "Switch to HR Core", "url": "/app/hr"}
+        # /app/hr-setup is Frappe HR's own HR Setup workspace.
+        return {"label": "Switch to HR Core", "url": "/app/hr-setup"}
     return None

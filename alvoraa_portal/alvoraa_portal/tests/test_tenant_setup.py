@@ -66,7 +66,7 @@ class TestDefaultUsers(FrappeTestCase):
 	def test_each_is_offered_the_right_switch(self):
 		self._create()
 		frappe.set_user(HR)
-		self.assertEqual(ma.get_switch_target()["url"], "/app/hr")
+		self.assertEqual(ma.get_switch_target()["url"], "/app/hr-setup")
 		frappe.set_user(ADMIN)
 		self.assertEqual(ma.get_switch_target()["url"], "/app")
 

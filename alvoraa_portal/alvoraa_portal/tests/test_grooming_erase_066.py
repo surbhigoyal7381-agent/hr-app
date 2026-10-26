@@ -13,9 +13,12 @@ Records are written straight to the tables: the erase must remove whatever
 exists, including the things the rules would refuse to create today.
 """
 
+import json
+from functools import partial
 from unittest.mock import patch
 
 import frappe
+import frappe.database
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_months, getdate, now_datetime, nowdate
 
@@ -135,7 +138,10 @@ def _wipe():
 	frappe.db.delete("Additional Salary", {"employee": ("in", people)})
 	# Test site only: a copy here would come from a test (or a guard broken on purpose).
 	frappe.db.delete("Deleted Document", {"deleted_doctype": ("in", [grooming.MARK, grooming.REVIEW])})
-	frappe.db.delete("Error Log", {"method": ("in", [grooming.ERASE_FAILED, grooming.CHECK_FAILED])})
+	frappe.db.delete("Employee Transfer", {"employee": ("in", people)})
+	# NEVER run this module on a real site: these two deletes would remove real alerts.
+	frappe.db.delete("Error Log", {"method": ("in", [grooming.ERASE_FAILED, grooming.CHECK_FAILED,
+	                                                 grooming.RUN_RECORD])})
 
 
 def setUpModule():
@@ -161,9 +167,11 @@ class Case(FrappeTestCase):
 		_wipe()
 		frappe.db.commit()
 
-	def erase(self):
-		with patch.dict(frappe.conf, ON):
-			return grooming.erase_due()
+	def erase(self, **conf):
+		# The real run commits after each person; keep what the test built.
+		frappe.db.commit()
+		with patch.dict(frappe.conf, dict(ON, **conf)):
+			return grooming.erase_daily()
 
 
 class TestTheSwitch(Case):
@@ -171,14 +179,15 @@ class TestTheSwitch(Case):
 		self.assertFalse(grooming.erase_switched_on(), "grooming_erase_enabled is set on the test site")
 		emp = _person("Off")
 		_mark(emp)
-		self.assertEqual(grooming.erase_due(), {"switched_on": 0})
+		self.assertEqual(grooming.erase_daily(), {"switched_on": 0})
+		self.assertEqual(grooming.erase_due(dry_run=0), {"switched_on": 0})
 		self.assertEqual(_records(emp), 1)
 		self.assertEqual(_alerts(), [])
 
 	def test_the_daily_hook_line_exists(self):
 		import alvoraa_portal.hooks as hooks
 
-		self.assertIn("alvoraa_portal.grooming.erase_due", hooks.scheduler_events["daily"])
+		self.assertIn("alvoraa_portal.grooming.erase_daily", hooks.scheduler_events["daily"])
 
 
 class TestWhatIsErased(Case):
@@ -194,7 +203,7 @@ class TestWhatIsErased(Case):
 		# never runs, so the erase must do it itself.
 		with patch("frappe.enqueue"):
 			out = self.erase()
-		self.assertEqual(out["people"], 1)
+		self.assertEqual(out["erased"], 1)
 		self.assertEqual((out["marks"], out["reviews"]), (4, 1))
 		self.assertEqual(_left(grooming.MARK, marks), {})
 		self.assertEqual(_left(grooming.REVIEW, reviews), {})
@@ -297,7 +306,7 @@ class TestDryRunAndRepeat(Case):
 		                 (1, 2, 1, 1, 1))
 		self.assertEqual(dry["employees"], [emp])
 		real = self.erase()
-		self.assertEqual((real["people"], real["marks"], real["reviews"]),
+		self.assertEqual((real["erased"], real["marks"], real["reviews"]),
 		                 (dry["people"], dry["marks"], dry["reviews"]))
 
 	def test_a_second_run_does_nothing_and_raises_nothing(self):
@@ -305,11 +314,11 @@ class TestDryRunAndRepeat(Case):
 		_mark(emp)
 		self.erase()
 		out = self.erase()
-		self.assertEqual((out["people"], out["marks"], out["reviews"]), (0, 0, 0))
+		self.assertEqual((out["erased"], out["marks"], out["reviews"]), (0, 0, 0))
 		self.assertEqual(_alerts(), [])
 
 	def test_one_record_that_will_not_erase_stops_nobody_else_and_logs_an_id_only(self):
-		stuck, fine = _person("Stuck", relieved=add_days(DUE, -5)), _person("Fine")
+		stuck, fine = _person("Stuck"), _person("Fine", relieved=add_days(DUE, -5))
 		bad = _mark(stuck, reason=grooming.OTHER, other=OTHER_TEXT)
 		_mark(fine)
 		real_erase = grooming._erase_one
@@ -367,3 +376,108 @@ class TestNoHandDelete(Case):
 				frappe.delete_doc(doctype, name)
 			self.assertTrue(frappe.db.exists(doctype, name))
 			self.assertEqual(frappe.db.count("Deleted Document", {"deleted_doctype": doctype}), 0)
+
+
+class TestReviewFixes(Case):
+	"""06-review-retention and 06b-security-verification-retention, 26 Oct 2026."""
+
+	def test_m2_anything_but_an_explicit_no_is_a_dry_run(self):
+		emp = _person("Typed")
+		_mark(emp)
+		frappe.db.commit()
+		with patch.dict(frappe.conf, ON):
+			grooming.erase_due()
+			for flag in (1, "1", "true", "True", "yes", "dry", "", None, "o"):
+				grooming.erase_due(dry_run=flag)
+			self.assertEqual(_records(emp), 1)
+			grooming.erase_due(dry_run=0)
+		self.assertEqual(_records(emp), 0)
+
+	def test_m1_every_run_is_recorded_in_counts_only(self):
+		emp = _person("Counted")
+		_mark(emp, reason=grooming.OTHER, other=OTHER_TEXT)
+		grooming.erase_due(dry_run=1)
+		self.erase()
+		rows = [json.loads(r.error) for r in _alerts(grooming.RUN_RECORD)]
+		self.assertIn({"mode": "dry", "considered": 1, "held_draft_slip": 0, "would_erase": 1,
+		               "marks": 1, "reviews": 0}, rows)
+		self.assertIn({"mode": "real", "considered": 1, "held_draft_slip": 0, "erased": 1, "failed": 0,
+		               "marks": 1, "reviews": 0}, rows)
+		for r in _alerts(grooming.RUN_RECORD):
+			self.assertNotIn(emp, r.error)
+			self.assertNotIn(OTHER_TEXT, r.error)
+
+	def test_m1_more_people_due_than_the_limit_stops_and_says_why(self):
+		people = [_person("Many1"), _person("Many2")]
+		for emp in people:
+			_mark(emp)
+		out = self.erase(grooming_erase_max_people=1)
+		self.assertIn("stopped", out)
+		self.assertEqual([_records(e) for e in people], [1, 1])
+		self.assertIn("stopped", json.loads(_alerts(grooming.RUN_RECORD)[0].error))
+
+	def test_m3_people_held_by_a_draft_slip_take_no_place(self):
+		held, free = _person("Held", relieved=add_days(DUE, -5)), _person("Free")
+		_mark(held)
+		_mark(free)
+		_raw({"doctype": "Salary Slip", "employee": held, "company": COMPANY,
+		      "start_date": TODAY, "end_date": TODAY, "posting_date": TODAY})
+		out = self.erase(grooming_erase_max_people=1)
+		self.assertNotIn("stopped", out)
+		self.assertEqual((_records(held), _records(free)), (1, 0))
+
+	def test_m1_a_rehire_committed_while_the_job_runs_is_seen(self):
+		emp = _person("Race")
+		_mark(emp)
+		frappe.db.commit()
+		self.assertEqual(grooming._due(TODAY), [emp])   # this transaction now has its snapshot
+		other = frappe.database.get_db(host=frappe.conf.db_host, port=frappe.conf.db_port,
+		                               user=frappe.conf.db_user or frappe.conf.db_name,
+		                               password=frappe.conf.db_password, cur_db_name=frappe.conf.db_name)
+		try:
+			other.connect()
+			other.sql("update `tabEmployee` set status='Active', relieving_date=null where name=%s", emp)
+			other.commit()
+		finally:
+			other.close()
+		self.assertIsNone(grooming._erase_person(emp, TODAY))
+		self.assertEqual(_records(emp), 1)
+
+	def test_m4_a_person_put_back_keeps_their_history(self):
+		stuck, fine = _person("Back1", relieved=add_days(DUE, -5)), _person("Back2")
+		marks = [_mark(stuck), _mark(stuck)]
+		_mark(fine)
+		for m in marks:
+			_traces(grooming.MARK, m)
+		real_erase = grooming._erase_one
+		calls = []
+
+		def fail_on_bad(doctype, name):
+			# The first of the person's marks erases; the second fails.
+			calls.append(name)
+			if len(calls) == 2:
+				raise frappe.ValidationError("x")
+			return real_erase(doctype, name)
+
+		def queued(method, **kw):
+			# What a server with a worker does: Frappe's clean-up waits for the commit.
+			if kw.get("enqueue_after_commit"):
+				frappe.db.after_commit.add(partial(frappe.get_attr(method), kw["doctype"], kw["name"]))
+
+		with patch.object(grooming, "_erase_one", fail_on_bad), patch("frappe.enqueue", queued):
+			self.erase()
+		self.assertEqual((_records(stuck), _records(fine)), (2, 0))
+		for m in marks:
+			self.assertEqual(frappe.db.count("Version", {"ref_doctype": grooming.MARK, "docname": m}), 1)
+			self.assertEqual(frappe.db.count("Notification Log", {"document_type": grooming.MARK,
+			                                                      "document_name": m}), 1)
+
+	def test_m6_a_transfer_to_a_new_employee_id_starts_no_clock(self):
+		emp = _person("Moved")
+		_mark(emp)
+		_raw({"doctype": "Employee Transfer", "employee": emp, "transfer_date": DUE,
+		      "create_new_employee_id": 1, "new_employee_id": "R066-NEW"}, docstatus=1)
+		self.assertEqual(grooming.erase_due(dry_run=1)["people"], 0)
+		self.assertEqual(grooming.erase_self_check()["people past due"], 0)
+		self.erase()
+		self.assertEqual(_records(emp), 1)

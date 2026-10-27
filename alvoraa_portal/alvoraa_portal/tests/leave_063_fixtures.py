@@ -28,6 +28,8 @@ HOLIDAYS = "L063 Holidays"
 SPECIAL = "L063 Special Days"
 SHIFT = "L063 Shift"
 PAID = "Paid Leaves"
+HK = "L063 Table Staff"       # the designation whose leave comes from the table
+PANTRY = "L063 Other Staff"
 DOMAIN = "l063.test"
 
 
@@ -99,11 +101,11 @@ def ensure_user(email, roles, first, employee=None):
 
 
 def ensure_employee(first, company=COMPANY, grade=None, category=None, branch=None,
-                    reports_to=None, approver=None, login_roles=None):
+                    reports_to=None, approver=None, login_roles=None, designation=None):
 	name = frappe.db.get_value("Employee", {"first_name": first, "last_name": "L063"}, "name")
 	values = {"company": company, "grade": grade, "employment_type": category,
 	          "branch": branch, "reports_to": reports_to, "leave_approver": approver,
-	          "status": "Active", "default_shift": SHIFT}
+	          "status": "Active", "default_shift": SHIFT, "designation": designation}
 	if not name:
 		doc = _insert(dict({"doctype": "Employee", "first_name": first, "last_name": "L063",
 		                    "gender": _gender(), "date_of_birth": "1990-01-01",
@@ -151,6 +153,8 @@ def ensure_world():
 	_named("Employment Type", "L063 Contract", "employee_type_name")
 	for b in ("L063 North", "L063 South"):
 		_named("Branch", b, "branch")
+	for d in (HK, PANTRY):
+		_named("Designation", d, "designation_name")
 
 	_rule_set(COMPANY, enabled=1)
 	_rule_set(OFF_COMPANY, enabled=0)
@@ -187,6 +191,17 @@ def ensure_world():
 	                                            "for_value": "L063 South"}):
 		_insert({"doctype": "User Permission", "user": anil, "allow": "Branch",
 		         "for_value": "L063 South", "apply_to_all_doctypes": 1})
+	# The days-present table (slice 063): Housekeeping-shaped staff, all without a login.
+	p["geeta"] = ensure_employee("Geeta", grade="L063-A", category="L063 Contract", branch="L063 North",
+	                             reports_to=p["sunil"], approver=sun, designation=HK)
+	p["sushila"] = ensure_employee("Sushila", grade="L063-NoLeave", category="L063 Contract",
+	                               branch="L063 North", reports_to=p["sunil"], approver=sun,
+	                               designation=HK)
+	p["hari"] = ensure_employee("Hari", grade="L063-A", branch="L063 North", reports_to=p["sunil"],
+	                            approver=sun, designation=HK)
+	p["pooja"] = ensure_employee("Pooja", grade="L063-A", category="L063 Contract",
+	                             branch="L063 North", reports_to=p["sunil"], approver=sun,
+	                             designation=PANTRY)
 	p["plain"] = ensure_employee("Plain", company=OTHER_COMPANY, login_roles=["Employee"])
 	p["off"] = ensure_employee("Offco", company=OFF_COMPANY, grade="L063-A",
 	                           login_roles=["Employee"])
@@ -194,10 +209,27 @@ def ensure_world():
 	return p
 
 
+HK_ROWS = [("30-31", 0, 5, 0), ("30-31", 6, 12, 1), ("30-31", 13, 18, 2), ("30-31", 19, 25, 3),
+           ("30-31", 26, 31, 4), ("28-29", 0, 4, 0), ("28-29", 5, 11, 1), ("28-29", 12, 17, 2),
+           ("28-29", 18, 24, 3), ("28-29", 25, 29, 4)]
+
+
+def credit_rows(designation=HK):
+	"""DTC's ten days-present rows (spec 7.1), for the designation given."""
+	return [{"designation": designation, "month_length": m, "days_from": a, "days_to": b, "credits": c}
+	        for m, a, b, c in HK_ROWS]
+
+
 def _rule_set(company, enabled):
 	name = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": company}, "name")
 	if name:
 		frappe.db.set_value("Alvoraa Payroll Rule Set", name, "enabled", enabled)
+		if company == COMPANY and not frappe.db.exists(
+				"Alvoraa Leave Credit Row", {"parent": name, "designation": HK}):
+			rs = frappe.get_doc("Alvoraa Payroll Rule Set", name)
+			rs.set("leave_credit_rows", credit_rows())
+			rs.flags.ignore_permissions = True
+			rs.save()
 		frappe.clear_document_cache("Alvoraa Payroll Rule Set", name)
 		return name
 	doc = frappe.get_doc({
@@ -217,6 +249,7 @@ def _rule_set(company, enabled):
 		"categories": [{"category": "L063 Contract", "earns_leave_credits": 0,
 		                "earns_marks": 0, "doubles_deduction": 0}],
 		"mark_rates": [{"grade": "L063-A", "amount_per_mark": 100}],
+		"leave_credit_rows": credit_rows() if company == COMPANY else [],
 	})
 	doc.flags.ignore_permissions = True
 	doc.insert()

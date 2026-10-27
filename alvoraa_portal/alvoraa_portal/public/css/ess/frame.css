@@ -368,3 +368,29 @@ select + .fail{margin-top:8px}
   .ac-l2{color:var(--text2)}
   tr.off .ac-d{color:var(--text2)}
 }
+
+/* ── ALV-222: the sign-out on the bar ─────────────────────────────────────
+   Deliberately NOT inside a phone @media block. The height is a property of
+   the button, not of the screen, and keeping the rule unconditional means a
+   jsdom test can read 44px back out of it - jsdom does not match media
+   queries when it computes a style, so a rule hidden in one is a rule no
+   test can check. The bar itself is already phone-only (.mob-header is
+   display:none until panels.css turns it on at 768px), so nothing shows on a
+   desktop regardless.
+
+   44px is the smallest thumb target the design asks for (072 E-6), and it is
+   the same size ALV-217 gave the hamburger, the bell and the avatar. */
+.mob-signout{
+  display:flex;align-items:center;justify-content:center;
+  min-height:44px;padding:0 14px;flex-shrink:0;
+  border:1px solid var(--border);border-radius:var(--r);
+  background:var(--surface2);color:var(--text);
+  font-size:var(--fs-base);font-weight:600;
+  text-decoration:none;white-space:nowrap;
+}
+.mob-signout:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+/* The tenant name must give way, not shove the sign-out off the edge. The
+   header is a flex row and .mob-brand had no truncation, so a name like "Dev
+   Tex Clothing Private Limited" would have pushed the new button past the
+   right edge of a 320px screen - which fails "always visible" outright. */
+.mob-brand{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

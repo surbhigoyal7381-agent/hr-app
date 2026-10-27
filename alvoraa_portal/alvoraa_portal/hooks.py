@@ -582,8 +582,14 @@ after_install = [
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee
 # field, bank number included, ignoring field levels. Ours checks the level and
 # then calls the upstream function unchanged.
+# One dict only. A second `override_whitelisted_methods = {...}` later in this
+# file would replace this one and silently drop the override above.
 override_whitelisted_methods = {
     "hrms.hr.utils.get_employee_field_property": "alvoraa_portal.employee_field_rights.get_employee_field_property",
+    # ALV-232: Frappe hands a System User "/desk" after a password change, and
+    # every staff account is a System User. The wrapper calls Frappe's function
+    # unchanged and only swaps the path it returns. See auth.update_password.
+    "frappe.core.doctype.user.user.update_password": "alvoraa_portal.auth.update_password",
 }
 
 # ── Replace one upstream method wholesale, not monkeypatch it (ALV-174) ────

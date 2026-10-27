@@ -943,9 +943,16 @@ class APasswordChangeSignsThePhoneOut(PasswordCase):
 		key = link.split("key=", 1)[1].split("&", 1)[0]
 		frappe.db.commit()
 		frappe.set_user("Guest")
-		# Frappe's own endpoint - nothing of ours wraps it any more.
-		self.assertNotIn("frappe.core.doctype.user.user.update_password",
-		                 frappe.get_hooks("override_whitelisted_methods") or {})
+		# Frappe's own function, imported and called directly, so no wrapper of
+		# ours is in the way. That is the point of this test: the sign-out is
+		# the password fingerprint doing the work, not a hook.
+		#
+		# This used to also assert that `override_whitelisted_methods` named
+		# nothing for this method. ALV-232 now wraps it, to replace the /desk
+		# path Frappe hands a System User after a password change. That wrapper
+		# calls this same function unchanged and only swaps the path it returns,
+		# so the claim this test makes is untouched - but the assertion was
+		# about the hook, not about the claim, so it has gone.
 		frappe.local.response = frappe._dict()
 		with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
 			website_update_password(new_password=NEW_PASSWORD, key=key)

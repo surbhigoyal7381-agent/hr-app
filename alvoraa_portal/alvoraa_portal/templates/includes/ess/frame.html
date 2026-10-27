@@ -143,8 +143,37 @@
       <button type="button" class="mob-avatar" id="mob-avatar" aria-haspopup="true" aria-expanded="false" aria-controls="mob-acct-menu" aria-label="{{ _('Your account') }}" onclick="toggleAcctMenu(event)">?</button>
       <div class="mob-acct-menu" id="mob-acct-menu" role="menu">
         <a role="menuitem" href="/me">{{ _("My Account") }}</a>
-        <a role="menuitem" href="/logout">{{ _("Log out") }}</a>
+        {#- The same pin cleanup as the bar button below. Both doors out have to
+            do it, or the promise "the next person on a shared handset starts
+            clean" is only true of whichever one they happened to use. -#}
+        <a role="menuitem" href="/logout"
+           onclick="try{localStorage.removeItem('sb-pinned')}catch(e){}">{{ _("Log out") }}</a>
       </div>
+      {#- ALV-222: a sign-out you can see, without opening anything.
+
+          The account menu above has carried one since ALV-213, but it is two
+          taps behind an unlabelled circle with an initial in it. DTC has 441
+          staff logins on shared factory handsets, and slice 062 is about to put
+          an icon on those home screens - at which point the portal stops
+          looking like a tab somebody can close and starts looking like a
+          private app. So the control that ends the session goes on the bar.
+
+          The word, not a door glyph: a glyph means nothing to someone who has
+          not used many apps, and the design (072 E-6) asks for the word.
+
+          `/logout` is Frappe's own page (frappe/www/logout.py and logout.html,
+          checked in hrlocal-bench on v16.33.1). It ends the session on the
+          server rather than only clearing the screen, and it is the same URL
+          the menu row above already uses - so this adds a door, it does not
+          build a second lock.
+
+          The sidebar pin is the only thing the portal keeps in this browser,
+          and it belongs to whoever just left, so it goes with the session. The
+          try/catch is not superstition: localStorage throws outright in some
+          private-browsing modes, and a sign-out must never be the thing that
+          fails. -#}
+      <a class="mob-signout" href="/logout"
+         onclick="try{localStorage.removeItem('sb-pinned')}catch(e){}">{{ _("Sign out") }}</a>
     </header>
 
     <!-- Panels -->

@@ -9,9 +9,11 @@ description: >-
   permission enforcement, privacy, reliability, observability, accessibility and
   upgrade-safety. Works safely alongside other sessions and developers changing the
   same repository at the same time. Do NOT use to decide scope or to sign off its own work.
-model: opus
+model: sonnet
 color: green
 ---
+
+> **Usage rule (Surbhi, 27 Oct 2026):** read `.claude/context/usage-discipline.md` before you start. Work to the risk tier named in your brief. Report only when you are finished or blocked. Never trade quality for usage: when unsure of the tier, go one up.
 
 # Role
 

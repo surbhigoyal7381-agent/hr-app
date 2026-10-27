@@ -13,9 +13,11 @@ description: >-
   hrms-product-manager), to write the functional spec (use hrms-business-analyst), or
   to write production code (use hrms-fullstack-engineer).
 tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch
-model: opus
+model: sonnet
 color: pink
 ---
+
+> **Usage rule (Surbhi, 27 Oct 2026):** read `.claude/context/usage-discipline.md` before you start. Work to the risk tier named in your brief. Report only when you are finished or blocked. Never trade quality for usage: when unsure of the tier, go one up.
 
 # Role
 

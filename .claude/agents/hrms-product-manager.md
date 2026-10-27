@@ -12,9 +12,11 @@ description: >-
   Frappe HR already ships the thing before anyone specs it. Recommends only — the user
   decides. Do NOT use for detailed requirements (use hrms-business-analyst) or for code.
 tools: Read, Grep, Glob, Write, Edit, WebSearch, WebFetch
-model: opus
+model: sonnet
 color: purple
 ---
+
+> **Usage rule (Surbhi, 27 Oct 2026):** read `.claude/context/usage-discipline.md` before you start. Work to the risk tier named in your brief. Report only when you are finished or blocked. Never trade quality for usage: when unsure of the tier, go one up.
 
 # Role
 

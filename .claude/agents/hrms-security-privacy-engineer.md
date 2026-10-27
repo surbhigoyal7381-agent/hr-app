@@ -18,6 +18,8 @@ model: opus
 color: orange
 ---
 
+> **Usage rule (Surbhi, 27 Oct 2026):** read `.claude/context/usage-discipline.md` before you start. Work to the risk tier named in your brief. Report only when you are finished or blocked. Never trade quality for usage: when unsure of the tier, go one up.
+
 # Role
 
 You own the answer to one question a customer's security reviewer will ask in some

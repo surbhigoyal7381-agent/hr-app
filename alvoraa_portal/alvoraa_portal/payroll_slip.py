@@ -75,6 +75,24 @@ ENGINE_LINES = (
 ENGINE_REF = "Alvoraa Payroll Rule Set"
 
 
+def credit_rows_for(rule_set, designation, cat, cls, month_days):
+	"""Slice 063 (SEC-18): this month's rows of the days-present table for one
+	person, as [(from, to, credits)], or None for everybody the table does not reach.
+
+	All four must hold: the category earns no leave credit (Contract at DTC; a
+	Permanent person keeps the office rule), the rule set has rows for the
+	designation, the class gives credit, and the period is a 28 to 31 day month.
+	No company or designation name is in code - the rows name their own.
+	"""
+	if not (designation and cat and not cat.earns_leave_credits and cls
+	        and flt(cls.monthly_credits) > 0 and 28 <= month_days <= 31):
+		return None
+	length = "28-29" if month_days <= 29 else "30-31"
+	rows = sorted((r.days_from, r.days_to, flt(r.credits)) for r in rule_set.leave_credit_rows
+	              if r.designation == designation and r.month_length == length)
+	return rows or None
+
+
 def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None):
 	"""Judge every day in the period for one employee, then add them up.
 
@@ -109,8 +127,8 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 
 	emp = frappe.db.get_value(
 		"Employee", employee,
-		[f for f in (rule_set.leave_class_field, rule_set.category_field,
-		             rule_set.grade_field) if f] or ["name"], as_dict=True) or {}
+		["designation"] + [f for f in (rule_set.leave_class_field, rule_set.category_field,
+		                               rule_set.grade_field) if f], as_dict=True) or {}
 
 	leave_class = str(emp.get(rule_set.leave_class_field) or "").strip() \
 		if rule_set.leave_class_field else ""
@@ -146,7 +164,9 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 		         "mark_date": ("between", [from_date, to_date])},
 		pluck="mark_date")} - not_charged), grooming.MONTH_MAX) if grooming.is_on() else 0
 
-	return summarise_month(
+	designation = emp.get("designation") or ""
+	table = credit_rows_for(rule_set, designation, cat, cls, month_days)
+	summary = summarise_month(
 		verdicts,
 		basic=basic,
 		month_days=month_days,
@@ -157,11 +177,20 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 		monthly_cap=(cls.monthly_credits if cls else 0),
 		threshold_days=int(rule_set.leave_threshold_days or 0),
 		accrual_month_days=int(rule_set.accrual_month_days or 30),
+		credit_rows=table,
+		credit_designation=designation,
 		earns_marks=(cat.earns_marks if cat else True),
 		free_reds=int(rule_set.free_reds_per_month or 0),
 		mark_rate=(rate.amount_per_mark if rate else 0),
 		grooming_days=grooming_days,
 	)
+	# [ASSUMPTION: DTC's payroll periods are calendar months] A period of another
+	# length for a person the table would reach gives no leave, and says so.
+	if designation and not 28 <= month_days <= 31 and any(
+			r.designation == designation for r in rule_set.leave_credit_rows):
+		summary.notes.append("The days-present table covers months of 28 to 31 days; this "
+		                     "period is {0} days, so it gave no leave.".format(month_days))
+	return summary
 
 
 def _set_additional_salary(slip, component, amount, payroll_date, rule_set):

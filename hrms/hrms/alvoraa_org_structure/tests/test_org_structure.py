@@ -24,8 +24,23 @@ COMPANY = None
 def _company():
 	global COMPANY
 	if not COMPANY:
-		COMPANY = frappe.db.get_value("Company", {}, "name")
+		COMPANY = frappe.db.get_value("Company", {}, "name") or ensure_company("Test Co 194", "TC194")
 	return COMPANY
+
+
+def ensure_company(name, abbr):
+	"""A company to test in, made if missing (slice 072 review). A bare site
+	has none: CI's whole-app run gets ERPNext's test records, a one-module run
+	does not, and every seat then failed on "Company missing". ERPNext's own
+	company code also needs the "Transit" warehouse type its setup wizard
+	makes. Kept afterwards, like the _Test companies ERPNext's tests leave."""
+	if not frappe.db.exists("Warehouse Type", "Transit"):
+		frappe.get_doc({"doctype": "Warehouse Type", "name": "Transit"}).insert(ignore_permissions=True)
+	if not frappe.db.exists("Company", name):
+		frappe.get_doc({"doctype": "Company", "company_name": name, "abbr": abbr,
+		                "default_currency": "INR", "country": "India"}).insert(ignore_permissions=True)
+	frappe.db.commit()
+	return name
 
 
 def _gender():

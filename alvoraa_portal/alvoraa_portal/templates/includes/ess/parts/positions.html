@@ -68,7 +68,7 @@
               <div class="gp-label">Arrange by</div>
               <select class="gp-input" id="pos-f-arrange" style="height:32px;padding:4px 8px;width:auto"
                       onchange="document.getElementById('pos-f-view').value='tree';posPaint()">
-                <option value="reporting">Who reports to whom</option>
+                <option value="reporting">Reporting lines</option>
                 <option value="branch">Branch</option>
                 <option value="department">Department</option>
               </select>
@@ -244,14 +244,27 @@
           </div>
         </div>
       </div>
+      <!-- Slice 071: before putting somebody in a full seat. Same shape as #pos-delete. -->
+      <div class="gp-backdrop" id="pos-full">
+        <div class="gp-modal" role="alertdialog" aria-modal="true" aria-labelledby="pos-full-t" aria-describedby="pos-full-x" style="max-width:480px">
+          <div class="gp-modal-hdr"><h2 class="gp-modal-title" id="pos-full-t">This seat is full</h2></div>
+          <div class="gp-modal-body" id="pos-full-x"></div>
+          <div class="gp-modal-footer">
+            <button type="button" class="btn btn-outline" id="pos-full-no" onclick="posFullClose()">Cancel</button>
+            <button type="button" class="btn btn-primary" id="pos-full-go" onclick="posFullGo()">Add a place and continue</button>
+          </div>
+        </div>
+      </div>
       <div class="gp-backdrop" id="pos-person">
-        <div class="gp-modal" style="max-width:560px">
+        <div class="gp-modal" role="dialog" aria-modal="true" aria-labelledby="pos-person-t" style="max-width:560px">
           <div class="gp-modal-hdr">
-            <div class="gp-modal-title">Put somebody in this seat</div>
+            <div class="gp-modal-title" id="pos-person-t">Put somebody in this seat</div>
             <button class="gp-modal-close" onclick="posPickClose()" aria-label="Close">&times;</button>
           </div>
           <div class="gp-modal-body">
-            <div class="gp-error" id="pos-person-err" style="display:none;margin-bottom:12px"></div>
+            <div class="gp-error" id="pos-person-err" role="alert" style="display:none;margin-bottom:12px"></div>
+            <!-- Slice 071: from the In no seat tray, which seat this fills. -->
+            <div class="pos-note info" id="pos-p-ctx" style="display:none;margin-top:0"></div>
 
             <div class="gp-field">
               <div class="gp-label">Search by name, or leave it to see people already doing this job</div>

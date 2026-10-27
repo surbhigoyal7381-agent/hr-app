@@ -394,3 +394,116 @@ class TestAReportYouCanReadBeforeYouCommit(SalaryReportCase):
 		_cols, rows, msg = self.run_it(company=other)
 		self.assertEqual(rows, [])
 		self.assertIn("no payroll rule set", msg)
+
+
+class TestTheTwoDeductionColumns(SalaryReportCase):
+	"""Slice 075. HR downloads this report as Excel and wants the 11 AM late
+	window and the grooming reds on their own columns, with Net equal to the
+	slip. The late window is already inside Quarters off (so inside Basic):
+	its column splits it out and Net must not move. Grooming is its own line
+	and is taken off Net."""
+
+	FIELD = "unsubscribed"   # an ordinary Employee tick box; stands in for the DTC one
+
+	def setUp(self):
+		super().setUp()
+		self.name = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY})
+		self.saved = frappe.db.get_value(
+			"Alvoraa Payroll Rule Set", self.name,
+			["late_window_from", "late_window_to", "late_window_extra_quarters",
+			 "late_window_employee_field"], as_dict=True)
+
+	def tearDown(self):
+		frappe.db.set_value("Alvoraa Payroll Rule Set", self.name, dict(self.saved))
+		frappe.clear_cache(doctype="Alvoraa Payroll Rule Set")
+		super().tearDown()
+
+	def _window(self, field):
+		frappe.db.set_value("Alvoraa Payroll Rule Set", self.name, {
+			"late_window_from": "10:30:00", "late_window_to": "11:00:00",
+			"late_window_extra_quarters": 1, "late_window_employee_field": field})
+		frappe.clear_cache(doctype="Alvoraa Payroll Rule Set")
+
+	def _late_days(self, n=5):
+		for i in range(n):
+			day = add_days(self.start, i)
+			att = frappe.get_doc({"doctype": "Attendance", "employee": self.emp,
+			                      "company": COMPANY, "attendance_date": day,
+			                      "status": "Present", "shift": SHIFT})
+			att.flags.ignore_permissions = True
+			att.insert()
+			att.submit()
+			for t in ("10:40:00", "18:00:00"):
+				c = frappe.get_doc({"doctype": "Employee Checkin", "employee": self.emp,
+				                    "time": "%s %s" % (day, t), "shift": SHIFT})
+				c.flags.ignore_permissions = True
+				c.insert()
+
+	def _row(self):
+		_c, rows, _m = self.run_it()
+		return [r for r in rows if r["employee"] == self.emp][0]
+
+	def test_field_named_and_unticked_means_no_11am_charge(self):
+		self._paid()
+		self._late_days()
+		self._window(self.FIELD)
+		frappe.db.set_value("Employee", self.emp, self.FIELD, 0)
+		row = self._row()
+		self.assertEqual(row["late_window_quarters"], 0)
+		self.assertEqual(row["late_window_deduction"], 0)
+
+	def test_field_named_and_ticked_charges_and_the_column_agrees(self):
+		self._paid()
+		self._late_days(5)
+		self._window(self.FIELD)
+		frappe.db.set_value("Employee", self.emp, self.FIELD, 0)
+		unticked = self._row()
+		frappe.db.set_value("Employee", self.emp, self.FIELD, 1)
+		ticked = self._row()
+		self.assertEqual(ticked["late_window_quarters"], 5)
+		self.assertAlmostEqual(ticked["late_window_deduction"],
+		                       5 * ticked["daily_rate"] / 4, 1)
+		# Already inside Basic: ticking takes exactly that much off Basic, and
+		# Net moves by the same amount and no more (not subtracted twice).
+		drop = unticked["basic"] - ticked["basic"]
+		self.assertAlmostEqual(drop, ticked["late_window_deduction"], 1)
+		self.assertAlmostEqual(unticked["net"] - ticked["net"], drop, 1)
+
+	def test_net_is_the_slips_net_and_takes_off_grooming_once(self):
+		from alvoraa_portal.payroll_slip import month_summary
+		self._paid()
+		self._late_days()
+		self._window(self.FIELD)
+		frappe.db.set_value("Employee", self.emp, self.FIELD, 1)
+		row = self._row()
+		direct = month_summary(self.emp, COMPANY, str(self.start), nowdate())
+		self.assertEqual(row["net"], round(direct.net, 2))
+		self.assertEqual(row["late_window_quarters"], direct.late_window_quarters)
+		self.assertAlmostEqual(
+			row["net"], row["gross"] - row["red_deduction"]
+			- row["grooming_deduction"] - row["other_deductions"], 1)
+
+	def test_grooming_is_taken_off_net_and_a_held_day_charges_no_11am(self):
+		from alvoraa_portal.payroll_month import summarise_month
+		from alvoraa_portal.payroll_rules import DayVerdict
+		worked = DayVerdict(slab_quarters=1, extra_quarters=1)
+		held = DayVerdict(held=True, extra_quarters=1)
+		m = summarise_month([worked, held], basic=300000, month_days=30,
+		                    mark_rate=100, grooming_days=1, earns_leave_credits=False)
+		self.assertEqual(m.late_window_quarters, 1)
+		self.assertAlmostEqual(m.late_window_deduction, 10000 / 4)
+		self.assertEqual(m.grooming_deduction, 100)
+		self.assertAlmostEqual(m.net, m.earning_basic - 100)
+
+	def test_with_grooming_off_the_column_is_zero_and_net_is_untouched(self):
+		self._paid()
+		self._days()
+		row = self._row()
+		self.assertEqual(row["grooming_deduction"], 0)
+		self.assertAlmostEqual(row["net"], row["gross"] - row["red_deduction"], 1)
+
+	def test_the_new_columns_are_in_the_report(self):
+		cols, _r, _m = self.run_it()
+		labels = [c["label"] for c in cols]
+		for want in ("11 AM deduction", "Grooming red deduction"):
+			self.assertIn(want, labels)

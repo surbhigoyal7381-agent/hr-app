@@ -398,6 +398,47 @@ function putForm(reason) {
     ? ok("the waiting row can still open the month")
     : bad("the waiting row lost 'See their month'");
 
+  // ── The month reads newest first, and stops at today ───────────────
+  //
+  // Surbhi, 26 Oct 2026: "show the latest attendance on the top (i.e.
+  // descending order), don't show the days yet to come." The server still
+  // sends day 1 to the end of the month, because the six totals above the
+  // table are counted over the whole month; the table is what changes.
+  const dayOf = (n, future) => ({
+    date: "2026-10-" + String(n).padStart(2, "0"),
+    weekday: "Monday", state: future ? "future" : "present", future: !!future,
+    status: future ? null : "Present", attendance: future ? null : "ATT-" + n,
+    in_time: future ? null : "09:45", out_time: future ? null : "19:00",
+    hours: future ? 0 : 9.25, expected_hours: 9, missing_punch: 0,
+    is_late: 0, late_by_mins: 0, holiday: null, weekly_off: 0,
+    leave_type: null, request: null, marks: null,
+  });
+  window.acState.open = null;
+  window.acState.team = false;
+  window.acState.data = {
+    employee: ME, employee_name: "Rahul Sharma", is_self: true,
+    year: 2026, month: 10, tolerance_mins: 15,
+    days: [dayOf(24), dayOf(25), dayOf(26), dayOf(27, true), dayOf(28, true)],
+    totals: { present: 3, hours_worked: 27.75, short_days: 0,
+              missing_punches: 0, late_days: 0, leave: 0 },
+  };
+  window.acPaint();
+
+  const dates = [...doc.querySelectorAll("#ac-body table.ac-tbl tbody tr")]
+    .map(tr => (tr.className || "") + "|" + tr.textContent)
+    .map(t => (/\b(2[0-9]) Oct/.exec(t) || [])[1])
+    .filter(Boolean);
+
+  (dates[0] === "26")
+    ? ok("the month opens on the latest day, not the first")
+    : bad("the top row is " + dates[0] + " Oct, expected 26");
+  (dates.join(",") === "26,25,24")
+    ? ok("the days run newest first and stop at today")
+    : bad("rows were " + dates.join(",") + ", expected 26,25,24");
+  (doc.querySelector("#ac-body").textContent.indexOf("To come") < 0)
+    ? ok("no day still to come is drawn")
+    : bad("a future day is still on screen");
+
   console.log(`### correction DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

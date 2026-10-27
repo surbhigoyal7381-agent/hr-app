@@ -40,7 +40,7 @@ corrections the client has already made:
 
 from dataclasses import dataclass, field
 
-from alvoraa_portal.payroll_rules import leave_credits_for_month
+from alvoraa_portal.payroll_rules import QUARTERS_PER_DAY, leave_credits_for_month
 
 
 @dataclass
@@ -58,6 +58,12 @@ class MonthSummary:
 	# Days worked plus approved Paid Leaves days: what the 15-day gate reads (E6).
 	days_for_gate: float = 0
 	total_quarters: int = 0
+	# The part of total_quarters the 11 AM late window added (ATT-04), and its
+	# rupee value. A split-out for the report only: it is already inside
+	# total_quarters, so paid days and Basic carry it and Net must not subtract
+	# it again.
+	late_window_quarters: int = 0
+	late_window_deduction: float = 0.0
 
 	# leave
 	leave_credits_earned: float = 0.0
@@ -132,6 +138,9 @@ def summarise_month(
 
 	for v in verdicts:
 		m.total_quarters += v.total_quarters
+		if not v.held:
+			# A held day is neither paid nor deducted, so it charges nothing.
+			m.late_window_quarters += v.extra_quarters
 		m.day_credits += v.day_credit
 		if v.half_leave:
 			m.days_on_leave += 0.5
@@ -207,6 +216,8 @@ def summarise_month(
 	# ── money ────────────────────────────────────────────────────────────────
 	m.daily_rate = (float(basic) / month_days) if month_days else 0.0
 	m.earning_basic = m.paid_days * m.daily_rate
+	# Same conversion as DayVerdict.day_credit: a quarter is 1/4 of a day.
+	m.late_window_deduction = m.late_window_quarters / QUARTERS_PER_DAY * m.daily_rate
 
 	m.free_reds = int(free_reds or 0)
 	m.mark_rate = float(mark_rate or 0)

@@ -2126,6 +2126,26 @@ body.panel-fullscreen{overflow:hidden}
   .pos-sheet{left:0;right:0;top:auto;width:100%;max-height:88vh;border-radius:var(--r) var(--r) 0 0}
   .pos-sheet .btn{min-height:44px}
 }
+/* Slice 071: one row per person in the In no seat tray, and the person
+   dialog and full-seat confirm, now reached from a phone list: 44 px targets
+   and no text under 12 px, scoped to those two dialogs. Both are
+   .gp-backdrop, so the print rule below leaves them off paper. */
+.pos-un{list-style:none;margin:0 0 6px;padding:0}
+.pos-un-role{margin:10px 0 2px;color:var(--text)}
+.pos-un-p{padding:8px 0 8px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px}
+.pos-un-who{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+.pos-un-who a.pos-link{padding:2px 0;min-height:24px;display:inline-flex;align-items:center;font-weight:600}
+.pos-un-meta{display:block}
+.pos-un-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.pos-sheet h2:focus{outline:none}
+#pos-person .gp-label,#pos-person .pf-card-meta,#pos-full .pf-card-meta{font-size:var(--fs-sm)}
+@media (max-width:640px){
+  #pos-person .btn,#pos-full .btn{min-height:44px}
+  #pos-person .gp-modal-close{width:44px;height:44px}
+  #pos-person .gp-input{font-size:16px;min-height:44px}
+  .pos-un-who a.pos-link{min-height:44px}
+  .pos-cand{min-height:44px}
+}
 
 /* ── Positions chart improvements (slice 064, prototype-old-v2, 23 Oct 2026) ──
    The hanging column (I3, Q2), the No reporting manager box (I4), zoom,
@@ -2164,6 +2184,19 @@ body.panel-fullscreen{overflow:hidden}
   .oc-fam > .oc-kids::after,.oc-fam > .oc-kids > .oc-branch::after,.oc-hang::before,.oc-hang::after,.oc-hang-item::before,.oc-hang-item::after{display:none !important}
   .oc-zoom{flex-direction:column;align-items:stretch;flex:1 1 auto}
 }
+/* Slice 072 (prototype-v1): a seat drawn under each manager. A copy has a
+   dashed border; its grey line, not the dash, says what it is. Pointing at
+   any box of a shared seat outlines its other boxes (desktop only). */
+.oc-box.copy{border-style:dashed;border-left-style:dashed;border-left-width:1px}
+.oc-same{display:flex;gap:6px;align-items:flex-start;margin-top:8px;font-size:var(--fs-sm);color:var(--text3);line-height:1.35}
+.oc-same svg{flex:none;margin-top:2px}
+.oc-box.rel{outline:2px dashed var(--primary);outline-offset:2px}
+.pos-places{list-style:none;margin:6px 0 0;padding:0}
+.pos-places li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}
+.pos-places li:first-child{border-top:0}
+.pos-places .this{font-size:var(--fs-sm);font-weight:700;color:var(--primary);background:var(--primary-lt);border-radius:var(--r-full);padding:1px 8px;margin-left:6px;white-space:nowrap}
+@media (max-width:640px){ #pos-body .empty-state .btn{min-height:44px} }
+.pos-view-note{font-size:var(--fs-sm);color:var(--text2);margin:0 0 10px;line-height:1.45;max-width:760px}
 /* Print what is on screen: A4 landscape, one page wide, pages down (Q8).
    The portal frame is left out only while Positions is the open panel. */
 @page{size:A4 landscape;margin:10mm}
@@ -2208,6 +2241,9 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall .nm div{break-inside:avoid}
 .pos-wall .vac{margin-top:4px;font-style:italic;color:var(--paper-ink2)}
 .pos-wall .opn{margin-top:4px;font-weight:700}
+/* Slice 072: a copy prints dashed, with its "Same seat as under ..." line */
+.pos-wall .oc-box.copy{border-style:dashed}
+.pos-wall .oc-same{font-size:11px;color:var(--paper-ink2);margin-top:4px;padding-top:4px;border-top:1px solid var(--paper-rule);display:block}
 .pos-wall .below{margin-top:4px;padding-top:4px;border-top:1px solid var(--paper-rule);font-size:11px;color:var(--paper-ink2)}
 .pos-wall .oc-fam{padding:0 20px;align-items:flex-start}
 .pos-wall .oc-hang.under{margin-left:-20px}

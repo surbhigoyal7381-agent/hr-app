@@ -225,6 +225,86 @@ const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
     }
   }
 
+  // ── slice 071: names in the In no seat tray (nothing is saved here) ───────
+  if (hr && await page.evaluate(() => POS.unseated.length > 0)) {
+    const seated = await page.evaluate(() => [].concat.apply([], POS.rows.map((r) => r.people.map((p) => p.name))));
+    const secrets = await page.evaluate(() => POS.unseated.map((p) => p.employee)
+      .concat(POS.unseated.map((p) => p.name)));
+    for (const [w, h, tag] of [[1440, 900, "desk"], [390, 844, "phone"]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.evaluate(() => posUnseatedSheet());
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => {
+        const s = document.querySelector(".pos-sheet"), body = s.querySelector(".sh-b");
+        const hits = [...s.querySelectorAll(".pos-un-p a, .pos-un-p button")];
+        return { rows: s.querySelectorAll(".pos-un-p").length, n: POS.unseated.length,
+                 side: body.scrollWidth > body.clientWidth + 1 || document.documentElement.scrollWidth > window.innerWidth + 1,
+                 small: hits.filter((e) => e.getBoundingClientRect().height < 44).length,
+                 tiny: [...s.querySelectorAll(".pos-un-p *")].filter((e) => !e.childElementCount && e.textContent.trim()
+                   && parseFloat(getComputedStyle(e).fontSize) < 12).length };
+      });
+      ok(m.rows === m.n, "071 " + tag + ": one row per unseated person", m.rows + " of " + m.n);
+      ok(!m.side, "071 " + tag + ": no sideways scroll");
+      ok(m.tiny === 0, "071 " + tag + ": no text under 12 px", m.tiny);
+      if (tag === "phone") ok(m.small === 0, "071 phone: every name link and button is 44 px or taller", m.small);
+      await shot("071-" + tag);
+      if (tag === "phone" && await page.evaluate(() => !!document.querySelector(".pos-un-act button"))) {
+        await page.click(".pos-un-act button");
+        if (await page.evaluate(() => document.getElementById("pos-full").classList.contains("open"))) await page.click("#pos-full-go");
+        await page.waitForTimeout(1500);
+        const d = await page.evaluate(() => {
+          const q = [...document.querySelectorAll("#pos-person .btn, #pos-person .gp-input, #pos-person .gp-modal-close")];
+          return { small: q.filter((e) => e.offsetParent && e.getBoundingClientRect().height < 44).length,
+                   field: getComputedStyle(document.getElementById("pos-p-q")).fontSize };
+        });
+        ok(d.small === 0 && d.field === "16px", "071 phone: the dialog's buttons and fields are 44 px, field text 16 px",
+           d.small + " small, " + d.field);
+        await shot("071-phone-dialog");
+        await page.keyboard.press("Escape");
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.evaluate(() => posUnseatedSheet());
+    const anyway = await page.$("button:has-text('Place anyway')");
+    if (anyway) {
+      await anyway.click();
+      const c = await page.evaluate(() => ({ open: document.getElementById("pos-full").classList.contains("open"),
+        focus: document.activeElement && document.activeElement.id, text: document.getElementById("pos-full-x").textContent }));
+      ok(c.open && c.focus === "pos-full-no" && /one more place/.test(c.text), "071 Place anyway asks first, focus on Cancel");
+      await page.emulateMedia({ media: "print" });
+      let paper = await page.evaluate(() => document.body.innerText);
+      ok(!secrets.filter((s) => !seated.includes(s)).some((s) => paper.includes(s)), "071 print with the confirm open: no unseated name or ID");
+      await page.emulateMedia({ media: "screen" });
+      await page.keyboard.press("Escape");
+      const e1 = await page.evaluate(() => ({ full: document.getElementById("pos-full").classList.contains("open"),
+        tray: !!document.querySelector(".pos-sheet"), focus: document.activeElement && document.activeElement.textContent }));
+      ok(!e1.full && e1.tray && e1.focus === "Place anyway", "071 Escape closes the confirm only; focus back on the row");
+      await page.click("#pos-full-no").catch(() => {});
+      await anyway.click();
+      await page.click("#pos-full-go");
+      await page.waitForTimeout(1500);
+      const dl = await page.evaluate(() => ({ open: document.getElementById("pos-person").classList.contains("open"),
+        ctx: document.getElementById("pos-p-ctx").textContent, picked: POS.picked, from: POS.pickFrom && POS.pickFrom.employee,
+        marked: (document.querySelector("#pos-p-list [aria-pressed=true]") || {}).id }));
+      ok(dl.open && /goes from \d+ to \d+ places/.test(dl.ctx), "071 Add a place and continue opens the dialog, saying the count goes up");
+      ok(dl.picked === dl.from && dl.marked === "pos-cand-" + dl.from, "071 the person is picked and marked by employee ID");
+      await page.emulateMedia({ media: "print" });
+      paper = await page.evaluate(() => document.body.innerText);
+      ok(!secrets.filter((s) => !seated.includes(s)).some((s) => paper.includes(s)), "071 print with the dialog open: no unseated name or ID");
+      await page.emulateMedia({ media: "screen" });
+      await page.keyboard.press("Escape");
+      const e2 = await page.evaluate(() => ({ dlg: document.getElementById("pos-person").classList.contains("open"),
+        tray: !!document.querySelector(".pos-sheet") }));
+      ok(!e2.dlg && e2.tray, "071 Escape closes the dialog only; the tray stays");
+    }
+    await page.emulateMedia({ media: "print" });
+    const paper = await page.evaluate(() => document.body.innerText);
+    ok(!secrets.filter((s) => !seated.includes(s)).some((s) => paper.includes(s)), "071 print with the tray open: no unseated name or ID");
+    await page.emulateMedia({ media: "screen" });
+    await page.keyboard.press("Escape");
+    ok(!(await page.evaluate(() => !!document.querySelector(".pos-sheet"))), "071 and Escape then closes the tray");
+  }
+
   ok(errors.length === 0, "no JavaScript errors on the page", errors.slice(0, 2).join(" | "));
   await b.close();
   console.log("\n  " + pass + " passed, " + fail + " failed");

@@ -145,4 +145,72 @@ function scaled(n) {
   return Object.assign({}, one, { rows });
 }
 
-module.exports = { dtc90, owner, group, noLeave, manager, scaled };
+/* Slice 072: F-DTC90 with each person's `manager` (Reports To), shaped from
+ * the 24 Oct census (064 12-fix-cfo-reports-seats.md). INVENTED NAMES.
+ *
+ * Everybody reports to whoever sits in their seat's parent, except:
+ *   Office Executive (new, under the top, 6): 2 to the top, 4 to the CFO
+ *   Back Office (67 slots, 66 people): 6 to the CFO, 57 to the Backoffice
+ *     Executive (a new seat UNDER Back Office), 3 home - the real "64" case
+ *   Data Entry 4 and Billing 3 also to the Backoffice Executive (64 in all)
+ *   MIS (new, under the top, 2 slots, 1 person): to the CFO - home "None here"
+ *   Accountant (new, under Back Office Manager, 5): 1 to the CFO
+ *   RSO Noida (31) moved under Senior RSO Noida: 23 to Senior RSO, 6 to Floor
+ *     Manager Noida, 1 to Manager Delhi, 1 with a manager not sent (outside)
+ *   Store Auditor (new, under the top, 1): to the S-RE Manager - home not drawn
+ *   Packing (11): 1 to Neeraj Sood, who is in no seat (HR's unseated list)
+ *   Floor Manager Delhi (3): 2 to the third, who is in the same seat (Q5)
+ *   The top: "" (no manager on record)
+ */
+function reporting() {
+  const d = dtc90();
+  const rows = d.rows, byTitle = (t) => rows.find((r) => r.title === t);
+  let n = 1000;
+  const add = (title, parent, count, slots, branch, dept) => {
+    const r = { id: "POS-R" + (++n), title, reports_to: parent.id, reports_to_title: parent.title,
+                branch: branch || parent.branch, department: dept || parent.department, designation: title, grade: "",
+                company: parent.company, status: "Active", key: false, seats: slots, filled: count,
+                open: Math.max(0, slots - count), opening: null, leaving_on: null, people: [] };
+    for (let i = 0; i < count; i++) r.people.push({ employee: "HR-EMP-R" + n + "-" + i, assignment: "ASG-R" + n + "-" + i,
+      name: FIRST[(n + i * 3) % FIRST.length] + " " + LAST[(n * 7 + i) % LAST.length] + " R", weight: 100,
+      type: "Permanent", covering: false, hired_on: null, leaving: null });
+    rows.push(r);
+    return r;
+  };
+  const top = rows[0], cfo = byTitle("Chief Financial Officer"), bo = byTitle("Back Office");
+  const bom = byTitle("Back Office Manager"), sre = byTitle("S-RE Manager");
+  const oe = add("Office Executive", top, 6, 6);
+  const mis = add("MIS", top, 1, 2);
+  const acc = add("Accountant", bom, 5, 5);
+  const aud = add("Store Auditor", top, 1, 1, "Noida", "Sales");
+  for (let i = bo.people.length; i < 66; i++) {
+    bo.people.push({ employee: "HR-EMP-BO" + i, assignment: "ASG-BO" + i, weight: 100, type: "Permanent",
+                     name: FIRST[(i * 5) % FIRST.length] + " " + LAST[(i * 13) % LAST.length] + " B",
+                     covering: false, hired_on: null, leaving: null });
+  }
+  bo.seats = 67; bo.filled = 66; bo.open = 1;
+  const bx = add("Backoffice Executive", bo, 1, 1);
+  const rso = byTitle("RSO Noida"), srso = byTitle("Senior RSO Noida");
+  rso.reports_to = srso.id; rso.reports_to_title = srso.title;
+  const holder = {};
+  rows.forEach((r) => { if (r.people.length) holder[r.id] = r.people[0].employee; });
+  rows.forEach((r) => r.people.forEach((p) => { p.manager = holder[r.reports_to] || ""; }));
+  const to = (seat, count, mgr, from) => seat.people.slice(from || 0, (from || 0) + count).forEach((p) => { p.manager = mgr; });
+  to(oe, 2, holder[top.id]); to(oe, 4, holder[cfo.id], 2);
+  to(bo, 6, holder[cfo.id]); to(bo, 57, holder[bx.id], 6);
+  to(byTitle("Data Entry"), 4, holder[bx.id]); to(byTitle("Billing"), 3, holder[bx.id]);
+  to(mis, 1, holder[cfo.id]);
+  to(acc, 1, holder[cfo.id]);
+  to(rso, 6, holder[byTitle("Floor Manager Noida").id], 23); to(rso, 1, holder[byTitle("Manager Delhi").id], 29);
+  delete rso.people[30].manager;
+  to(aud, 1, holder[sre.id]);
+  to(byTitle("Packing"), 1, "HR-EMP-NOSEAT");
+  const fmd = byTitle("Floor Manager Delhi");
+  to(fmd, 2, fmd.people[2].employee);
+  top.people[0].manager = "";
+  d.unseated = d.unseated.concat([{ employee: "HR-EMP-NOSEAT", name: "Neeraj Sood", job_role: "Packing Head",
+                                    branch: "Head Office", joined: "2024-01-01", no_manager: false }]);
+  return d;
+}
+
+module.exports = { dtc90, owner, group, noLeave, manager, scaled, reporting };

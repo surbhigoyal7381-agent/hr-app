@@ -75,16 +75,13 @@ def _second_company():
 	"""A company other than the one the tests' people are in, for the
 	cross-company must-nots. Made once and kept, like the _Test companies
 	ERPNext's own tests leave."""
-	from hrms.alvoraa_org_structure.tests.test_org_structure import _company
+	from hrms.alvoraa_org_structure.tests.test_org_structure import _company, ensure_company
 
 	for name, abbr in (("Second Co 064", "SC064"), ("Third Co 064", "TC064")):
 		if name == _company():
 			continue
-		if not frappe.db.exists("Company", name):
-			frappe.get_doc({"doctype": "Company", "company_name": name, "abbr": abbr,
-			                "default_currency": "INR", "country": "India"}).insert(ignore_permissions=True)
-			frappe.db.commit()
-		return name
+		# ensure_company also makes the warehouse type a bare site lacks (slice 072 review).
+		return ensure_company(name, abbr)
 
 
 class TestPeopleInNoSeat(Positions064Case):

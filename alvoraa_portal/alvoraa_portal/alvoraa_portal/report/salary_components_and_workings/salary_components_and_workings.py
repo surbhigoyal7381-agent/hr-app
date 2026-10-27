@@ -140,6 +140,8 @@ def _row(emp, s):
 
 		"quarters": s.total_quarters,
 		"quarter_days": flt(s.quarter_days, 2),
+		"late_window_quarters": s.late_window_quarters,
+		"late_window_deduction": flt(s.late_window_deduction, 2),
 
 		"leave_earned": flt(s.leave_credits_earned, 2),
 		"leave_used": flt(s.leave_used_for_approved, 2),
@@ -192,6 +194,10 @@ def _message(rule_set, from_date, to_date, skipped, live=True):
 	bits += [
 		_("Every figure here comes from the same calculation the salary slip "
 		  "uses, so the two cannot disagree. Nothing is written by running it."),
+		_("Net already takes off both new columns. <b>11 AM deduction</b> is "
+		  "part of Quarters off, so it is already inside Basic earned and is "
+		  "shown only to split it out. <b>Grooming red deduction</b> is taken "
+		  "off Net as a separate line, and is 0 while grooming is switched off."),
 		_("Period: {0} to {1}. Rule set: {2}{3}.").format(
 			from_date, to_date, frappe.bold(rule_set.name),
 			"" if live else _(" (not live)")),
@@ -229,6 +235,10 @@ def _columns():
 
 		c("quarters", "Quarters off", 100, "Int"),
 		c("quarter_days", "= days", 80),
+		# Inside "Quarters off" and so inside Basic earned already; shown apart
+		# so HR can see the part the 11 AM rule charged. Net does not change.
+		c("late_window_quarters", "11 AM quarters", 105, "Int"),
+		c("late_window_deduction", "11 AM deduction", 120, "Currency"),
 
 		c("leave_earned", "Leave earned", 105),
 		c("leave_used", "Leave used", 95),
@@ -246,7 +256,7 @@ def _columns():
 		c("red_deduction", "Red deduction", 115, "Currency"),
 		# Slice 066: the month's grooming reds and what they cost, after the cap.
 		c("grooming_days", "Grooming reds", 110, "Int"),
-		c("grooming_deduction", "Grooming deduction", 140, "Currency"),
+		c("grooming_deduction", "Grooming red deduction", 160, "Currency"),
 
 		c("incentive", "Incentive", 95, "Currency"),
 		c("gross", "Gross", 110, "Currency"),

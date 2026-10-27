@@ -28,6 +28,16 @@ tr:hover td{background:var(--surface2);transition:background var(--t)}
 /* ── App shell ───────────────────────────────────── */
 /* Fix Frappe topbar */
 nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100%}
+/* The bar is Frappe's own, and its Bootstrap .container centres itself inside a
+   max-width box. On a wide screen that left the account avatar floating short of
+   the page's right edge while everything below it lined up on .main-content's
+   gutter. Same gutters here, so the avatar sits on that line too. */
+nav.navbar>.container{max-width:none;width:100%;padding-left:28px;padding-right:28px}
+@media(max-width:768px){nav.navbar>.container{padding-left:16px;padding-right:16px}}
+/* One mark, not two. Frappe's navbar carries its own brand, which sat directly
+   above the sidebar's brand and repeated it. The sidebar's is the one that says
+   whose portal this is, so that is the one that stays. */
+nav.navbar .navbar-brand{display:none}
 .emp-app{display:flex;min-height:calc(100vh - 52px);position:relative;margin-top:52px}
 
 /* ── Sidebar ─────────────────────────────────────── */

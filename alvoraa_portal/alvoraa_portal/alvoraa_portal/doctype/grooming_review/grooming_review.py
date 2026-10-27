@@ -28,6 +28,15 @@ import alvoraa_portal.grooming as grooming
 
 
 class GroomingReview(Document):
+	# The erase writes no "Deleted" comment (the side-record guard refuses one).
+	no_feed_on_delete = True
+
+	def on_trash(self):
+		# Only the retention erase deletes a review; any other delete keeps a copy.
+		if not self.flags.get(grooming.ERASE_FLAG):
+			frappe.throw(_("Grooming records are erased automatically 6 months after the person "
+			               "leaves. They cannot be deleted by hand."))
+
 	def validate(self):
 		where = "Grooming Review save"
 		if not self.is_new():

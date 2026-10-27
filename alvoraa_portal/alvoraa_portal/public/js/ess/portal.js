@@ -327,7 +327,17 @@ function ocNodeCard(n, isRoot, opts) {
     // thing this chart exists to show.
     : (n.people === null ? ""
        : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
-         + "<span>Nobody in this seat</span></div>");
+         + "<span>" + (n.empty ? ocEsc(n.empty) : "Nobody in this seat") + "</span></div>");
+  // Slice 072, Positions only: one grey line inside the box saying where the
+  // rest of a shared seat is ("Same seat as under Owner · 6 in all"). Inside
+  // the button, so it is part of the box's spoken name. The Organisation page
+  // never sets `quiet`, `empty` or `cls`, so its cards are unchanged.
+  if (n.quiet) {
+    who += '<div class="oc-same"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">'
+      + '<rect x="0.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor"/>'
+      + '<rect x="4.5" y="0.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-dasharray="2 1.5"/>'
+      + "</svg><span>" + ocEsc(n.quiet) + "</span></div>";
+  }
 
   var open = "";
   if (n.open >= 0.5) {
@@ -387,7 +397,7 @@ function ocNodeCard(n, isRoot, opts) {
   // hierarchy, one set of semantics.
   return '<div class="oc-node' + (isRoot ? " root" : "") + '"'
     + (opts.dim && opts.dim(n) ? ' style="opacity:.45"' : "") + ">"
-    + '<button type="button" class="oc-box' + (tone ? " tone-" + tone : "")
+    + '<button type="button" class="oc-box' + (tone ? " tone-" + tone : "") + (n.cls ? " " + n.cls : "")
     + '" style="text-align:left;font:inherit;width:100%;cursor:pointer"'
     + ' onclick="' + focusFn + '(\'' + ocEsc(n.id) + '\')">'
     + '<div class="oc-box-hd"><span class="ti">' + ocEsc(n.title) + "</span>" + open + "</div>"
@@ -499,8 +509,13 @@ window.posLoad = async function () {
   try {
     out = await gpFetch("hrms.alvoraa_org_structure.register.position_table", {});
   } catch (e) {
-    body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
-      + posEsc(e && e.message ? e.message : e) + "</div></div>";
+    // Slice 072 (design §5.6): what happened and what to do, never the
+    // server's own message.
+    body.innerHTML = '<div class="empty-state" role="alert"><div class="empty-state-text"><strong>'
+      + posEsc(drT("The chart did not load.")) + "</strong> "
+      + posEsc(drT("Nothing has changed in your seats or your people. Check your connection, then try again. If it keeps happening, tell your administrator: code POS-LOAD."))
+      + '</div><button type="button" class="btn btn-outline btn-sm" style="margin-top:12px" onclick="posLoad()">'
+      + posEsc(drT("Try again")) + "</button></div>";
     return;
   }
   POS.rows = (out && out.rows) || [];
@@ -782,13 +797,15 @@ function posOne(p) {
            note: p.leaving ? "leaving " + posDay(p.leaving) : null };
 }
 
-function posFew(people) {
+// `here` (slice 072): the seat is drawn in more than one box, so the rest are
+// "more here", not "more in this seat" - some of the seat is elsewhere.
+function posFew(people, here) {
   var out = people.slice(0, POS_NAMES_SHOWN).map(posOne);
   var rest = people.length - out.length;
   if (rest > 0) {
     // Said as a person, not as a cut-off list. Clicking the box opens the
     // seat, which is where all of them are.
-    out.push({ name: "+" + rest + " more in this seat" });
+    out.push({ name: "+" + rest + (here ? " more here" : " more in this seat") });
   }
   return out;
 }
@@ -903,9 +920,22 @@ function posReach(t) {
 }
 
 /* One seat as the chart's card wants it. The shapes almost match already -
-   only `covering` has to become `cover`. */
-function posNode(r, t, depth) {
+   only `covering` has to become `cover`.
+
+   `pl` (slice 072) is posPlace's answer, in the Reporting lines view only:
+   the box then lists the people placed at home, its children are the real
+   seats still drawn plus the copies hanging here, and it says where the rest
+   of a shared seat is. Without it the box is exactly as before. */
+function posNode(r, t, depth, pl) {
   var kids = t.kids[r.id] || [];
+  var here = r.people, copies = [], mine = [];
+  if (pl) {
+    kids = kids.filter(function (k) { return !pl.hidden[k.id]; });
+    here = pl.home[r.id];
+    copies = pl.under[r.id] || [];
+    mine = pl.copies[r.id];
+  }
+  var count = kids.length + copies.length;
   // Open to two levels, then folded. Drawing everything laid 15 seats - and
   // at the first tenant it would be 120 - in one row several thousand pixels
   // wide, with the card scrolling sideways and a tall empty gap above it.
@@ -950,23 +980,30 @@ function posNode(r, t, depth) {
     flags.push({ severity: "low", label: r.status, why: "Not an active seat." });
   }
 
-  return {
+  var node = {
     id: r.id,
     title: r.title,
     subtitle: sub,
     open: r.open,
     flags: flags,
-    child_count: kids.length,
-    has_more: shut && kids.length > 0,
-    people: posFew(r.people),
+    child_count: count,
+    has_more: shut && count > 0,
+    people: posFew(here, mine.length > 0),
     children: (shut || depth + 1 >= POS_MAX_DEPTH)
       ? []
-      : posGroupSiblings(kids, t).map(function (g) {
+      : posGroupSiblings(kids, t, false, pl).map(function (g) {
           return g.group
             ? posGroupNode(g.group, g.members)
-            : posNode(g.solo, t, depth + 1);
-        }),
+            : posNode(g.solo, t, depth + 1, pl);
+        }).concat(copies.map(function (c) { return posCopyNode(c, pl); })),
   };
+  if (mine.length) {
+    // The home of a shared seat: where the rest are (Q6 words).
+    node.cls = "pos-split";
+    if (!here.length) node.empty = drT("None here: all {0} shown under {1}", [r.people.length, posElsewhere(mine)]);
+    else node.quiet = drT("{0} more shown under {1}", [r.people.length - here.length, posElsewhere(mine)]);
+  }
+  return node;
 }
 
 /* Twenty-five people doing the same job in the same shop are twenty-five
@@ -989,11 +1026,15 @@ function posGroupKey(r) {
 
 // `all` (slice 069): group every identical set, ignoring what somebody opened
 // with "Show the N" on screen - the wall chart follows the data, not the view.
-function posGroupSiblings(kids, t, all) {
+// `pl` (slice 072): a seat drawn in more than one box - a copy of it elsewhere,
+// or a copy hanging under it - is never grouped, or the group would list
+// people who are drawn somewhere else too (C4).
+function posGroupSiblings(kids, t, all, pl) {
   var groups = {}, order = [], out = [];
   kids.forEach(function (r) {
     // A seat with reports under it is never folded in with another.
     if ((t.kids[r.id] || []).length) { out.push({ solo: r }); return; }
+    if (pl && (pl.copies[r.id].length || (pl.under[r.id] || []).length)) { out.push({ solo: r }); return; }
     var k = posGroupKey(r);
     if (!groups[k]) { groups[k] = []; order.push(k); }
     groups[k].push(r);
@@ -1055,6 +1096,121 @@ function posGroupNode(key, members) {
     children: [],
     _group: key,
     _members: members.length,
+  };
+}
+
+/* ── slice 072: seats follow the reporting line ─────────────────────────
+ *
+ * In the Reporting lines view each person is drawn under the seat of their
+ * manager - Reports To on their employee record, which the server sends as
+ * `manager` - not under the seat's own parent. A seat whose people report to
+ * different managers is drawn once per manager: its own box ("home") under its
+ * parent, and a COPY under each other manager's seat holding only that
+ * manager's people.
+ *
+ *   - A copy is an end box: no fold, nothing under it, ever. So no loop.
+ *   - Open slots, the job opening and the seats under it stay on the home.
+ *   - The home is left out only when it has nobody at home, no open slot and
+ *     nothing under it (a copy hanging under it counts).
+ *   - Each person is drawn exactly once. Counts never change.
+ *
+ * ONE FUNCTION for the screen and the wall chart, so the two cannot disagree.
+ * It works from the seats being drawn, because what may hold a copy depends
+ * on the view, the filter and the paper's start. Branch and Department never
+ * call it.
+ *
+ * Where person P of seat S is drawn, among the drawn seats (spec §7):
+ *   R1/R2  the manager sits in S's parent or in S itself  -> home
+ *   R3/R4  the manager sits in other drawn seats          -> a copy under one
+ *          (Permanent first, then weight, then title, then id)
+ *   R5     no manager sent, or not in a drawn seat        -> home
+ *   Q6     a manager seat in another company never holds a copy
+ *   G1     with a filter on, only seats that match get copies
+ */
+function posPlace(t, filtered) {
+  var reach = posReach(t).seen, seatsOf = {};
+  Object.keys(t.byId).forEach(function (id) {
+    if (!reach[id]) return;
+    t.byId[id].people.forEach(function (p) {
+      (seatsOf[p.employee] = seatsOf[p.employee] || []).push({ r: t.byId[id], p: p });
+    });
+  });
+  var pl = { home: {}, copies: {}, under: {}, byId: {}, hidden: {} };
+  Object.keys(t.byId).forEach(function (id) {
+    var r = t.byId[id], home = [], by = {}, order = [];
+    var may = reach[id] && (!filtered || posMatches(r));
+    r.people.forEach(function (p) {
+      var m = may ? posManagerSeat(p, r, seatsOf) : null;
+      if (!m) { home.push(p); return; }
+      if (!by[m.id]) { by[m.id] = []; order.push(m); }
+      by[m.id].push(p);
+    });
+    pl.home[id] = home;
+    pl.copies[id] = order.map(function (m) {
+      var c = { id: "copy:" + id + "@" + m.id, seat: r, under: m.id, people: by[m.id] };
+      pl.byId[c.id] = c;
+      (pl.under[m.id] = pl.under[m.id] || []).push(c);
+      return c;
+    });
+  });
+  // Left out only with nobody at home, no open slot and nothing drawn under
+  // it - worked out from the bottom, since a child left out is not "under".
+  var seen = {};
+  function hidden(id, d) {
+    if (id in seen) return seen[id];
+    seen[id] = false;
+    var r = t.byId[id];
+    return (seen[id] = pl.copies[id].length > 0 && !pl.home[id].length && !posOpen(r)
+      && !(pl.under[id] || []).length
+      && !(t.kids[id] || []).some(function (k) { return d >= POS_MAX_DEPTH || !hidden(k.id, d + 1); }));
+  }
+  Object.keys(t.byId).forEach(function (id) { if (hidden(id, 0)) pl.hidden[id] = true; });
+  return pl;
+}
+
+/* The drawn seat a copy of `r` hangs under for this person, or null (home). */
+function posManagerSeat(p, r, seatsOf) {
+  if (!p.manager) return null;
+  var held = (seatsOf[p.manager] || []).filter(function (x) { return x.r.company === r.company; });
+  if (!held.length || held.some(function (x) { return x.r.id === r.id || x.r.id === r.reports_to; })) return null;
+  held.sort(function (a, b) {
+    var pa = a.p.type === "Permanent" ? 0 : 1, pb = b.p.type === "Permanent" ? 0 : 1;
+    return (pa - pb) || ((b.p.weight || 0) - (a.p.weight || 0))
+      || (a.r.title < b.r.title ? -1 : a.r.title > b.r.title ? 1 : 0)
+      || (a.r.id < b.r.id ? -1 : a.r.id > b.r.id ? 1 : 0);
+  });
+  return held[0].r;
+}
+
+/* The words about a seat's parent, never naming one outside the reader's view. */
+function posParentWords(r) {
+  if (!r.reports_to) return drT("the top of the chart");
+  var up = posById(r.reports_to);
+  return up ? up.title : drT("a seat above your view");
+}
+
+/* Where the rest of a seat are: one manager's seat, or how many. */
+function posElsewhere(copies) {
+  return copies.length === 1 ? (posById(copies[0].under) || {}).title || ""
+    : drT("{0} other managers", [copies.length]);
+}
+
+/* A copy as the chart's card wants it: an end box, dashed, with its line. */
+function posCopyLine(c, pl) {
+  var r = c.seat, n = c.people.length, all = r.people.length;
+  return pl.hidden[r.id]
+    ? drT("Set up under {0}", [posParentWords(r)]) + (all > n ? " · " + drT("{0} in all", [all]) : "")
+    : drT("Same seat as under {0}", [posParentWords(r)]) + " · " + drT("{0} in all", [all]);
+}
+function posCopyNode(c, pl) {
+  var r = c.seat, n = c.people.length, line = posCopyLine(c, pl);
+  return {
+    id: c.id, title: r.title,
+    subtitle: [r.branch, n === 1 ? drT("1 person") : drT("{0} people", [n])].filter(Boolean).join(" · "),
+    open: 0, flags: [],
+    child_count: 0, has_more: false, children: [],
+    people: posFew(c.people, true),
+    cls: "copy pos-split", quiet: line,
   };
 }
 
@@ -1285,11 +1441,15 @@ function posPaintTree() {
   }
 
   var how = posArrange();
+  // Slice 072: in Reporting lines each person is drawn under their manager's
+  // seat. Kept on POS so the tray, Find and the outline can read it.
+  var pl = POS.place = how === "reporting" ? posPlace(t, posAnyFilter()) : null;
   var nodes = how === "branch"
     ? posByBranch(rows)
     : (how === "department"
         ? posByDepartment(rows)
-        : t.roots.map(function (r) { return posNode(r, t, 0); }));
+        : t.roots.filter(function (r) { return !pl.hidden[r.id]; })
+            .map(function (r) { return posNode(r, t, 0, pl); }));
 
   var by = {};
   POS.rows.forEach(function (r) { by[r.id] = r; });
@@ -1391,7 +1551,12 @@ function posPaintTree() {
     + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
       + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
     + "</div>";
-  body.innerHTML = posPrintHead(how) + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
+  // Slice 072 (design §5.4): one line, so nobody is surprised that a seat
+  // holds fewer names in one view than in another.
+  var viewNote = '<p class="pos-view-note noprint">' + posEsc(how === "reporting"
+    ? drT("Each person is shown under the seat of their manager, as set in Reports To on their employee record. A seat shared by people with different managers shows once under each manager. Open slots and the seats under it stay on the seat's own box.")
+    : drT("One box per seat, with everyone in it. To see people under their managers, choose Arrange by: Reporting lines.")) + "</p>";
+  body.innerHTML = posPrintHead(how) + viewNote + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
     + html + "</div></div></div>";
 }
 
@@ -1537,8 +1702,12 @@ function posMarkFirst(hit) {
   return boxes.length;
 }
 function posFocusFirst() {
-  var hit = {};
-  POS.rows.filter(posMatches).forEach(function (r) { hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1; });
+  var hit = {}, pl = posPlaced();
+  POS.rows.filter(posMatches).forEach(function (r) {
+    hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
+    // Slice 072 (AC-48): a copy of a matching seat is a box of that seat too.
+    if (pl) pl.copies[r.id].forEach(function (c) { hit[c.id] = 1; });
+  });
   var found = posMarkFirst(hit);
   var n = POS.rows.filter(posMatches).length, txt = document.getElementById("pos-fline-txt");
   if (txt) txt.textContent = n + " matching" + (found ? ", showing the first" : "");
@@ -1554,14 +1723,16 @@ window.posFind = function (q) {
   if (!res) return;
   q = String(q || "").trim().toLowerCase();
   if (q.length < 2) { res.classList.remove("open"); res.innerHTML = ""; return; }
-  var hits = [];
+  var hits = [], fpl = posFindPlace();
   POS.rows.forEach(function (r) {
     if (hits.length < POS_FIND_MAX && String(r.title || "").toLowerCase().indexOf(q) >= 0) {
       hits.push({ id: r.id, main: r.title, sub: [r.branch, r.department].filter(Boolean).join(" · ") });
     }
     r.people.forEach(function (p) {
       if (hits.length < POS_FIND_MAX && String(p.name || "").toLowerCase().indexOf(q) >= 0) {
-        hits.push({ id: r.id, main: p.name, sub: r.title + (r.branch ? " · " + r.branch : "") });
+        // Slice 072 (G2): somebody drawn in a copy is found in the copy.
+        var c = fpl && fpl.copies[r.id].filter(function (x) { return x.people.indexOf(p) >= 0; })[0];
+        hits.push({ id: c ? c.id : r.id, main: p.name, sub: r.title + (r.branch ? " · " + r.branch : "") });
       }
     });
   });
@@ -1581,8 +1752,14 @@ window.posFindKey = function (e) {
     e.target.value = ""; posFind("");
   }
 };
+/* Slice 072: where things are drawn once Find has cleared the filters - the
+   whole chart, in Reporting lines. Null in the other two views. */
+function posFindPlace() {
+  return posArrange() === "reporting" ? posPlace(posKids(POS.rows), false) : null;
+}
 window.posFindPick = function (id) {
-  var r = posById(id);
+  var fpl = posFindPlace(), copy = fpl && fpl.byId[id];
+  var r = copy ? copy.seat : posById(id);
   var res = document.getElementById("pos-find-res"), box = document.getElementById("pos-find");
   if (res) { res.classList.remove("open"); res.innerHTML = ""; }
   if (box) box.value = "";
@@ -1597,7 +1774,13 @@ window.posFindPick = function (id) {
   var how = posArrange(), by = {};
   POS.rows.forEach(function (x) { by[x.id] = x; });
   function open(k) { delete POS.collapsed[k]; POS.expanded[k] = true; }
-  var at = by[r.reports_to], hops = 0;
+  // Slice 072: a copy - or every copy of a seat whose own box is not drawn -
+  // hangs under its manager's seat, so that is the way to open.
+  var under = copy ? [copy.under] : (fpl && fpl.hidden[r.id] ? fpl.copies[r.id].map(function (c) { return c.under; }) : []);
+  under.forEach(function (u) {
+    for (var a = by[u], k = 0; a && k < POS_MAX_DEPTH; a = by[a.reports_to], k++) open(a.id);
+  });
+  var at = under.length ? null : by[r.reports_to], hops = 0;
   while (at && hops < POS_MAX_DEPTH) {
     if ((how === "branch" && at.branch !== r.branch) || (how === "department" && at.department !== r.department)) break;
     open(at.id); at = by[at.reports_to]; hops += 1;
@@ -1612,8 +1795,12 @@ window.posFindPick = function (id) {
   posPaint();
 };
 function posFindFocus(id) {
-  var r = posById(id), hit = {};
+  var r = posById(id), hit = {}, pl = posPlaced();
+  // Slice 072: a copy is outlined itself.
+  if (pl && pl.byId[id]) { hit[id] = 1; posMarkFirst(hit); return; }
   if (!r) return;
+  // A seat whose own box is not drawn is found at its first copy (G2).
+  if (pl && pl.hidden[r.id]) { pl.copies[r.id].forEach(function (c) { hit[c.id] = 1; }); posMarkFirst(hit); return; }
   hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
   posMarkFirst(hit);
 }
@@ -1806,15 +1993,35 @@ window.posFromManager = async function () {
 
 /* ── putting somebody in ───────────────────────────────────────────── */
 
-window.posPickPerson = function () {
-  if (!POS.may_edit || !posSeat()) return;
-  document.getElementById("pos-p-q").value = "";
-  document.getElementById("pos-p-weight").value = 100;
+/* Slice 071: the dialog also opens from the In no seat tray, for that tray's
+   seat and person (`from`, set by posUnPlace). The editor's own seat is
+   untouched; without `from` everything is as before. */
+function posPickSeat() { return POS.pickFrom ? posById(POS.pickFrom.seat) : posSeat(); }
+
+window.posPickPerson = function (from) {
+  POS.pickFrom = from || null;
+  if (!from) POS.pickRet = document.activeElement || null;
+  var seat = posPickSeat();
+  if (!POS.may_edit || !seat) return;
+  document.getElementById("pos-p-q").value = from ? from.name : "";
+  // From the tray, the share starts at the free part of the seat, so half a
+  // place free fills first time (review m2). Otherwise 100, as before.
+  document.getElementById("pos-p-weight").value = from && !from.raise && seat.seats
+    ? Math.min(100, Math.round(seat.open * 100)) : 100;
   document.getElementById("pos-p-type").value = "Permanent";
   document.getElementById("pos-p-until").value = "";
   document.getElementById("pos-p-delegate").checked = false;
-  POS.picked = null;
+  // Picked by employee ID, never by name: two people can share one.
+  POS.picked = from ? from.employee : null;
   POS.holds = null;
+  var ctx = document.getElementById("pos-p-ctx");
+  if (ctx) {
+    ctx.textContent = !from ? "" : drT("For {0} ({1} of {2}).", [seat.title + (seat.branch ? " · " + seat.branch : ""),
+                                                                 posNum(seat.filled), posNum(seat.seats)])
+      + (from.raise ? " " + drT("When you press Put them in, the seat goes from {0} to {1} places.",
+                                [posNum(seat.seats), posNum(seat.seats + 1)]) : "");
+    ctx.style.display = from ? "" : "none";
+  }
   // Left over from the last person who was looked at, this would read as a
   // warning about the one being chosen now.
   var holds = document.getElementById("pos-p-holds");
@@ -1822,11 +2029,14 @@ window.posPickPerson = function () {
   posPickType();
   posPickErr("");
   document.getElementById("pos-person").classList.add("open");
+  if (from) document.getElementById("pos-p-save").focus();
   posPickSearch();
 };
 
-window.posPickClose = function () {
+window.posPickClose = function (noFocus) {
   document.getElementById("pos-person").classList.remove("open");
+  // Slice 071: focus goes back to whatever opened the dialog.
+  if (!noFocus && POS.pickRet && POS.pickRet.focus) POS.pickRet.focus();
 };
 
 function posPickErr(msg) {
@@ -1844,7 +2054,7 @@ window.posPickType = function () {
 };
 
 window.posPickSearch = async function () {
-  var seat = posSeat();
+  var seat = posPickSeat();
   if (!seat) return;
   var list = document.getElementById("pos-p-list");
   if (!list) return;
@@ -1876,16 +2086,22 @@ window.posPickSearch = async function () {
       : (r.free <= 0 ? "already fully committed"
                      : posNum(r.free) + "% of their time free");
     var where = [r.designation, r.branch].filter(Boolean).join(" - ");
-    return '<div class="pos-cand" style="padding:6px 0;cursor:pointer;'
+    // Slice 071: the employee ID in every line, so two people of one name differ.
+    return '<div class="pos-cand" role="button" tabindex="0" aria-pressed="false" style="padding:6px 0;cursor:pointer;'
       + 'border-bottom:1px solid var(--border)" onclick="posPickOne('
-      + "'" + posEsc(r.employee) + "'" + ')" id="pos-cand-'
+      + "'" + posEsc(r.employee) + "'" + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click()}" id="pos-cand-'
       + posEsc(r.employee) + '">'
       + "<strong>" + posEsc(r.name) + "</strong>"
-      + '<div class="pf-card-meta">'
+      + '<div class="pf-card-meta">' + posEsc(r.employee) + " - "
       + (where ? posEsc(where) + " - " : "") + load
       + "</div></div>";
   }).join("");
-  if (POS.picked) posPickOne(POS.picked);
+  POS.cands = rows;
+  if (!POS.picked) return;
+  // A pick that is not in this list is cleared, so Save cannot send somebody
+  // who is not on the screen (slice 071, PD14).
+  if (rows.some(function (r) { return r.employee === POS.picked; })) posPickOne(POS.picked);
+  else { POS.picked = null; posShowWhatTheyHold(); }
 };
 
 window.posPickOne = function (employee) {
@@ -1895,6 +2111,7 @@ window.posPickOne = function (employee) {
   Array.prototype.forEach.call(list.children, function (el) {
     el.style.background = (el.id === "pos-cand-" + employee)
       ? "var(--surface2)" : "";
+    if (el.setAttribute) el.setAttribute("aria-pressed", el.id === "pos-cand-" + employee ? "true" : "false");
   });
   posShowWhatTheyHold();
 };
@@ -1915,7 +2132,7 @@ window.posShowWhatTheyHold = async function () {
   if (!box) return;
   POS.holds = null;
   if (!POS.picked) { box.style.display = "none"; return; }
-  var seat = posSeat();
+  var seat = posPickSeat();
   box.style.display = "";
   box.innerHTML = '<div class="pf-card-meta">Checking what they already do&hellip;</div>';
   var out;
@@ -2003,10 +2220,14 @@ function posChosenResolve() {
 
 window.posPickSave = async function () {
   if (!POS.picked) { posPickErr("Choose somebody from the list first."); return; }
-  var seat = posSeat();
+  var seat = posPickSeat();
   if (!seat) return;
+  var from = POS.pickFrom, who = POS.picked;
+  var name = ((POS.cands || []).filter(function (c) { return c.employee === who; })[0] || from || {}).name || "";
   var btn = document.getElementById("pos-p-save");
   btn.disabled = true;
+  // Slice 071 (PD8): the dialog stays open until the chart has reloaded.
+  btn.textContent = drT("Putting them in…");
   try {
     await gpFetch("hrms.alvoraa_org_structure.register.assign_person", {
       position: seat.id,
@@ -2020,19 +2241,43 @@ window.posPickSave = async function () {
       // it. Absent, the server behaves as it always did and refuses to put
       // one person in more than one person's worth of work.
       resolve: posChosenResolve(),
+      // Slice 071: "Place anyway" - the server adds the place in the same save.
+      add_place: from && from.raise ? 1 : 0,
     });
   } catch (e) {
     // The server refuses an over-filled seat, a person at more than one
     // person, and cover with no end date. Those messages say more than
     // anything this screen could invent, so they are shown as they come.
-    posPickErr(e && e.message ? e.message : e);
-    btn.disabled = false;
-    return;
+    // Slice 071: no answer at all (offline, network, a 5xx page) may still
+    // mean it saved, so ask once whether they are seated. gpFetch marks every
+    // failure with a kind; only "refused" carries the server's own words.
+    var lost = !!from && !!e && !!e.kind && e.kind !== "refused";
+    var landed = false;
+    if (lost && (POS.unseated || []).some(function (p) { return p.employee === who; })) {
+      try {
+        var now = await gpFetch("hrms.alvoraa_org_structure.register.position_table", {});
+        landed = !!(now && now.unseated && !now.unseated.some(function (p) { return p.employee === who; }));
+      } catch (e2) { /* still no answer: say so below */ }
+    }
+    if (!landed) {
+      posPickErr(!lost ? (e && e.message ? e.message : e)
+        : from.raise
+          ? drT("Could not reach the server, so {0} is not in the seat and the seat still has {1} places. Check your connection and press Put them in again.", [name, posNum(seat.seats)])
+          : drT("Could not reach the server, so {0} is not in the seat. Check your connection and press Put them in again.", [name]));
+      btn.disabled = false;
+      btn.textContent = drT("Put them in");
+      return;
+    }
   }
-  btn.disabled = false;
-  posPickClose();
   await posLoad();
-  posPaintPeople();
+  btn.disabled = false;
+  btn.textContent = drT("Put them in");
+  posPickClose(true);
+  if (!from) { posPaintPeople(); return; }
+  POS.unFlash = posEsc(drT("{0} is now in {1}.", [name, seat.title + (seat.branch ? " · " + seat.branch : "")]));
+  posUnseatedSheet();
+  var note = document.getElementById("pos-un-flash");
+  if (note && note.focus) note.focus();
 };
 /* ── setting the chart up in the first place ───────────────────────────
  *
@@ -2503,8 +2748,32 @@ function posWire() {
   if (POS_WIRED || !document.addEventListener) return;
   POS_WIRED = true;
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && POS.sheet) posCloseSheet();
+    if (e.key !== "Escape") return;
+    // Slice 071: only the top layer closes - the full-seat confirm, then the
+    // person dialog, then the tray. Any other dialog open (or one that already
+    // handled this Escape, like "Delete this seat?") leaves the tray alone.
+    var full = document.getElementById("pos-full"), pick = document.getElementById("pos-person");
+    if (full && full.classList.contains("open")) { posFullClose(); return; }
+    if (pick && pick.classList.contains("open")) { posPickClose(); return; }
+    if (e.defaultPrevented || document.querySelector(".gp-backdrop.open")) return;
+    if (POS.sheet) posCloseSheet();
   });
+  // Slice 072 (AC-43): pointing at, or tabbing to, a box of a seat drawn more
+  // than once outlines its other boxes. Desktop only; nothing moves.
+  var relate = function (e) {
+    var rel = document.querySelectorAll("#pos-body .oc-box.rel");
+    for (var i = 0; i < rel.length; i++) rel[i].classList.remove("rel");
+    var pl = posPlaced(), b = e.target && e.target.closest && e.target.closest("#pos-body .oc-box.pos-split");
+    if (!pl || !b || !(window.matchMedia && window.matchMedia("(hover: hover)").matches)) return;
+    var seatOf = function (el) {
+      var m = (el.getAttribute("onclick") || "").match(/\('([^']+)'\)/), id = m && m[1];
+      return pl.byId[id] ? pl.byId[id].seat.id : id;
+    };
+    var seat = seatOf(b), all = document.querySelectorAll("#pos-body .oc-box.pos-split");
+    for (var j = 0; j < all.length; j++) if (all[j] !== b && seatOf(all[j]) === seat) all[j].classList.add("rel");
+  };
+  document.addEventListener("mouseover", relate);
+  document.addEventListener("focusin", relate);
   // Slice 069 (review m2): a browser that never fired afterprint must not
   // leave the wall chart - possibly an HR copy - as the next panel's print.
   window.addEventListener("beforeprint", function () {
@@ -2550,14 +2819,25 @@ function posWire() {
    avatars, flags and fold buttons. The markup and CSS classes are the
    screen chart's, so the boxes and lines are the same drawing. */
 
-/* Seats and people under one seat, all the way down. */
+/* Slice 072: the paper prints what Reporting lines draws with every fold
+   open, so it walks the same placed model - posPlace over every seat, no
+   filter. Worked out once per tree. */
+function posWallPl(t) { return t.pl || (t.pl = posPlace(t, false)); }
+function posWallKids(id, t) {
+  var pl = posWallPl(t);
+  return (t.kids[id] || []).filter(function (k) { return !pl.hidden[k.id]; });
+}
+
+/* Seats and people under one seat, all the way down: each seat record and
+   each person once, never the seat's own (AC-59). */
 function posWallBelow(id, t) {
-  var s = 0, p = 0;
+  var pl = posWallPl(t), seats = {}, p = 0;
   (function walk(at, d) {
     if (d >= POS_MAX_DEPTH) return;
-    (t.kids[at] || []).forEach(function (k) { s += 1; p += k.people.length; walk(k.id, d + 1); });
+    posWallKids(at, t).forEach(function (k) { seats[k.id] = 1; p += pl.home[k.id].length; walk(k.id, d + 1); });
+    (pl.under[at] || []).forEach(function (c) { if (c.seat.id !== id) seats[c.seat.id] = 1; p += c.people.length; });
   })(id, 0);
-  return { seats: s, people: p };
+  return { seats: Object.keys(seats).length, people: p };
 }
 
 /* The HR copy is for HR only (Surbhi, 25 Oct 2026). HR is the page's existing
@@ -2575,32 +2855,57 @@ function posWallMayHr() {
    is HR (posWallMayHr). */
 function posWallCopy(start, levels, vacant, hr) {
   hr = !!(hr && posWallMayHr());
-  var t = posKids(POS.rows);
-  var tops = start === "top" ? t.roots : (t.byId[start] ? [t.byId[start]] : []);
-  function seat(members, depth) {
-    var r = members[0], names = [], opening = 0;
-    members.forEach(function (m) {
-      m.people.forEach(function (p) {
-        var n = { name: p.name };
-        if (hr && p.leaving) n.leaving = posDay(p.leaving);
-        names.push(n);
-      });
-      if (m.opening) opening += 1;
+  var t = posKids(POS.rows), pl = posWallPl(t);
+  var tops = posWallTops(t, start);
+  var named = function (people) {
+    return people.map(function (p) {
+      var n = { name: p.name };
+      if (hr && p.leaving) n.leaving = posDay(p.leaving);
+      return n;
     });
-    var kids = members.length === 1 ? (t.kids[r.id] || []) : [];
-    var last = depth >= levels || depth >= POS_MAX_DEPTH;
+  };
+  function card(r, names, extra) {
     var c = {
       title: r.title,
       designation: r.designation && r.designation !== r.title ? r.designation : "",
       branch: r.branch || "",
       department: r.department || "",
-      names: names,
-      vacant: !!vacant && !names.length,
-      below: last && kids.length ? posWallBelow(r.id, t) : null,
-      kids: last ? [] : posGroupSiblings(kids, t, true).map(function (g) {
-        return seat(g.group ? g.members : [g.solo], depth + 1);
-      }),
+      names: names, vacant: false, below: null, kids: [],
+      // Slice 072 (PRIV-2): a copy's dashed border and its two possible lines -
+      // seat titles and counts only.
+      copy: false, same: "", more: "",
     };
+    return Object.assign(c, extra);
+  }
+  function seat(members, depth) {
+    var r = members[0], home = [], opening = 0, everyone = 0, open = 0;
+    members.forEach(function (m) {
+      home = home.concat(pl.home[m.id]);
+      everyone += m.people.length;
+      open += posOpen(m);
+      if (m.opening) opening += 1;
+    });
+    var one = members.length === 1;
+    var kids = one ? posWallKids(r.id, t) : [], copies = one ? (pl.under[r.id] || []) : [];
+    var mine = one ? pl.copies[r.id] : [];
+    var last = depth >= levels || depth >= POS_MAX_DEPTH;
+    var c = card(r, named(home), {
+      // "Vacant" only when the whole seat is empty; a partly filled seat says
+      // how many are open (P-27). Both follow the Show Vacant tick.
+      vacant: !vacant ? false : (!everyone ? drT("Vacant") : (open ? drT("{0} open", [posNum(open)]) : false)),
+      below: last && (kids.length || copies.length) ? posWallBelow(r.id, t) : null,
+      kids: last ? [] : posGroupSiblings(kids, t, true, pl).map(function (g) {
+        return seat(g.group ? g.members : [g.solo], depth + 1);
+      }).concat(copies.map(function (cp) {
+        var k = card(cp.seat, named(cp.people), { copy: true, same: posCopyLine(cp, pl) });
+        if (hr) k.opening = 0;
+        return k;
+      })),
+      // "None here" is a vacancy word too, so it follows Show Vacant (review m3).
+      more: !mine.length ? "" : home.length
+        ? drT("{0} more shown under {1}", [everyone - home.length, posElsewhere(mine)])
+        : (vacant ? drT("None here: all {0} under {1}", [everyone, posElsewhere(mine)]) : ""),
+    });
     if (hr) c.opening = opening;
     return c;
   }
@@ -2619,7 +2924,7 @@ function posWallCard(c, root, boxes) {
     below = (c.below.seats === 1 ? drT("1 seat") : drT("{0} seats", [c.below.seats])) + " &middot; "
       + (c.below.people === 1 ? drT("1 person below") : drT("{0} people below", [c.below.people]));
   }
-  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box" style="width:'
+  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box' + (c.copy ? " copy" : "") + '" style="width:'
     + (200 + (cols - 1) * 140) + 'px">'
     + '<div class="oc-box-hd"><span class="ti">' + posEsc(c.title) + "</span></div>"
     + (c.designation ? '<div class="sub">' + posEsc(c.designation) + "</div>" : "")
@@ -2628,7 +2933,8 @@ function posWallCard(c, root, boxes) {
         return "<div>" + posEsc(p.name)
           + (p.leaving ? " &middot; " + posEsc(drT("leaving {0}", [p.leaving])) : "") + "</div>";
       }).join("") + "</div>" : "")
-    + (c.vacant ? '<div class="vac">' + posEsc(drT("Vacant")) + "</div>" : "")
+    + (c.vacant ? '<div class="vac">' + posEsc(c.vacant) + "</div>" : "")
+    + (c.same || c.more ? '<div class="oc-same">' + posEsc(c.same || c.more) + "</div>" : "")
     + (c.opening ? '<div class="opn">' + posEsc(c.opening === 1 ? drT("Job opening raised")
         : drT("{0} job openings raised", [c.opening])) + "</div>" : "")
     + (below ? '<div class="below">' + below + "</div>" : "")
@@ -2826,48 +3132,59 @@ function posWallPlan(L, paper, sheets, hr) {
    (AC-58), and exists only for HR (posWallMayHr, AC-65). */
 
 /* Levels under a seat, counting the seat. */
+/* Levels under a seat, counting the seat. A copy is one level below its
+   manager's seat and ends there. */
 function posWallDepth(id, t, d) {
   d = d || 1;
   if (d >= POS_MAX_DEPTH) return d;
-  return (t.kids[id] || []).reduce(function (m, k) { return Math.max(m, posWallDepth(k.id, t, d + 1)); }, d);
+  var copies = (posWallPl(t).under[id] || []).length ? d + 1 : d;
+  return posWallKids(id, t).reduce(function (m, k) { return Math.max(m, posWallDepth(k.id, t, d + 1)); }, copies);
 }
 
-function posWallTops(t) {
-  var s = POS.wall.start;
-  return s === "top" ? t.roots : (t.byId[s] ? [t.byId[s]] : []);
+/* The boxes the paper starts from. A top seat whose own box is not drawn is
+   not one (its people print in copies elsewhere). */
+function posWallTops(t, start) {
+  var s = start || POS.wall.start, pl = posWallPl(t);
+  return s === "top" ? t.roots.filter(function (r) { return !pl.hidden[r.id]; }) : (t.byId[s] ? [t.byId[s]] : []);
 }
 
 /* Seats and people in the chosen start and levels, as the paper counts
-   them: every name line (a person in two seats counts twice). */
+   them: each seat record once however many boxes it has (slice 072), and
+   every name line (a person in two seats counts twice). */
 function posWallCount(t, levels) {
-  var s = 0, p = 0;
+  var pl = posWallPl(t), seats = {}, p = 0;
   (function walk(list, d) {
     list.forEach(function (r) {
-      s += 1; p += r.people.length;
-      if (d < levels && d < POS_MAX_DEPTH) walk(t.kids[r.id] || [], d + 1);
+      seats[r.id] = 1; p += pl.home[r.id].length;
+      if (d < levels && d < POS_MAX_DEPTH) {
+        walk(posWallKids(r.id, t), d + 1);
+        (pl.under[r.id] || []).forEach(function (c) { seats[c.seat.id] = 1; p += c.people.length; });
+      }
     });
   })(posWallTops(t), 1);
-  return { seats: s, people: p };
+  return { seats: Object.keys(seats).length, people: p };
 }
 
 function posWallStarts(t) {
-  var out = [["top", t.roots.length === 1 ? drT("The top: {0}", [t.roots[0].title])
-                                          : drT("The top of what you can see ({0} seats)", [t.roots.length])]];
+  var pl = posWallPl(t), roots = posWallTops(t, "top");
+  var out = [["top", roots.length === 1 ? drT("The top: {0}", [roots[0].title])
+                                        : drT("The top of what you can see ({0} seats)", [roots.length])]];
   (function walk(list, d) {
     list.forEach(function (r) {
-      var kids = t.kids[r.id] || [];
-      if (kids.length && !(d === 0 && t.roots.length === 1)) out.push([r.id, new Array(d + 1).join("— ") + r.title]);
+      var kids = posWallKids(r.id, t);
+      // A seat with only copies under it is a place to start too (AC-60).
+      if ((kids.length || (pl.under[r.id] || []).length) && !(d === 0 && roots.length === 1)) out.push([r.id, new Array(d + 1).join("— ") + r.title]);
       if (d + 1 < POS_MAX_DEPTH) walk(kids, d + 1);
     });
-  })(t.roots, 0);
+  })(roots, 0);
   return out;
 }
 
 function posWallLevels(t) {
-  var tops = posWallTops(t);
+  var tops = posWallTops(t), pl = posWallPl(t);
   var d = tops.reduce(function (m, r) { return Math.max(m, posWallDepth(r.id, t)); }, 1);
   if (d === 1 && tops.length > 1) return [[1, drT("All: 1 level, {0} seats side by side", [tops.length])]];
-  var under = tops.reduce(function (n, r) { return n + (t.kids[r.id] || []).length; }, 0), out = [];
+  var under = tops.reduce(function (n, r) { return n + posWallKids(r.id, t).length + (pl.under[r.id] || []).length; }, 0), out = [];
   for (var i = 2; i < d; i++) {
     out.push([i, i === 2
       ? drT("2 levels: {0} and the {1} seats under it", [POS.wall.start === "top" ? drT("the top") : tops[0].title, under])
@@ -3079,7 +3396,8 @@ window.posWallPrint = function () {
   var foot = [co, branches.length === 1 ? drT("{0} branch", [branches[0]]) : drT("{0} branches", [branches.length]),
               levels + " " + (w.start === "top" ? drT("from the top") : drT("from {0}", [posWallTops(t)[0].title])),
               drT("as at {0}", [posDay(asat) + " " + String(asat).slice(0, 4)]),
-              drT("{0} people in seats", [posWallCount(t, w.levels).people])].join(" · ");
+              // Slice 072 (AC-56): seat records and people, each once, however many boxes.
+              drT("{0} seats · {1} people in seats", [posWallCount(t, w.levels).seats, posWallCount(t, w.levels).people])].join(" · ");
   var hrTag = drT("HR use only - not for display");
   var n = P.cols * P.rows, html = "";
   for (var r = 0; r < P.rows; r++) {
@@ -3113,10 +3431,15 @@ window.posWallPrint = function () {
 };
 
 window.posSeatSheet = function (id, flash) {
-  var r = posById(id);
+  // Slice 072: a copy opens its seat's own tray (AC-42).
+  var pl = posPlaced(), copy = pl && pl.byId[id];
+  var r = copy ? copy.seat : posById(id);
   if (!r) return;
   var up = r.reports_to ? posById(r.reports_to) : null;
-  var parent = !r.reports_to ? drT("reports to nobody (top of the chart)")
+  // Slice 072 (review M1): in Reporting lines a copy may sit under another
+  // manager, so the seat is "set up under" its parent, as the prototype says.
+  var parent = pl ? (r.reports_to ? drT("set up under {0}", [posParentWords(r)]) : drT("top of the chart"))
+    : !r.reports_to ? drT("reports to nobody (top of the chart)")
     : up ? drT("reports to {0}", [up.title + (up.branch ? " · " + up.branch : "")])
       : drT("reports to a seat above your view");
   var b = '<div class="su">' + posEsc((r.branch || drT("No branch")) + " · " + (r.department || drT("No department")) + " · " + parent) + "</div>"
@@ -3124,7 +3447,9 @@ window.posSeatSheet = function (id, flash) {
     + '</b><div class="su">' + drT("filled") + "</div></div><div><b>"
     + (posOpen(r) ? posNum(posOpen(r)) : drT("None")) + '</b><div class="su">' + drT("to fill") + "</div></div></div>";
   if (flash) b += '<div class="pos-note ok" role="status">' + flash + "</div>";
-  b += posRecordNotes(r);
+  // In Reporting lines the chart itself now answers the records check, so its
+  // two notes give way to where the seat shows (Q3).
+  b += pl ? posWhereItShows(r, id, pl) : posRecordNotes(r);
   b += '<h3 class="pos-h3">' + drT("Who is in it") + "</h3>";
   if (!r.people.length) b += '<p class="su">' + drT("Nobody is in this seat.") + "</p>";
   b += '<div class="pos-people">' + r.people.map(function (p) {
@@ -3133,7 +3458,9 @@ window.posSeatSheet = function (id, flash) {
     if (p.covering) c += ' <span class="su">' + posEsc(p.type) + "</span>";
     if (posHired(p)) c += ' <span class="pos-chip green">' + drT("Joined {0}, hired for this seat", [posDay(p.hired_on)]) + "</span>";
     if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
-    return '<div class="pos-prow">' + posEsc(p.name) + c + "</div>";
+    // Slice 072: whom they report to, on its own grey line, in Reporting lines only.
+    var line = pl ? '<div class="su">' + posEsc(posReportsLine(p, r, pl)) + "</div>" : "";
+    return '<div class="pos-prow">' + posEsc(p.name) + c + line + "</div>";
   }).join("") + "</div>";
   b += '<p class="pos-sheet-err" id="pos-sheet-err" role="alert" hidden></p>';
   var f = "";
@@ -3142,14 +3469,88 @@ window.posSeatSheet = function (id, flash) {
       f += '<a class="btn btn-outline btn-sm" target="_blank" rel="noopener" href="/app/job-opening/'
         + encodeURIComponent(r.opening) + '">' + drT("Job opening {0}", [posEsc(r.opening)]) + "</a>";
     } else if (r.open >= 0.5 && r.designation) {
-      f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetAdvertise(\'' + posJs(id) + '\')">'
+      f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetAdvertise(\'' + posJs(r.id) + '\')">'
         + drT("Advertise it") + "</button>";
     }
-    f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetChange(\'' + posJs(id) + '\')">'
+    f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetChange(\'' + posJs(r.id) + '\')">'
       + drT("Change this seat") + "</button>";
   }
   posSheet(posEsc(r.title), b, f);
   POS.sheet = { kind: "seat", id: id };
+};
+
+/* Slice 072: posPlace's answer, but only while Reporting lines is the chart
+   on screen - the tray's new section and lines belong to that view alone. */
+function posPlaced() {
+  return posVal("pos-f-view") === "tree" && posArrange() === "reporting" ? POS.place : null;
+}
+
+/* "Where it shows on this chart" (AC-35 - AC-37): every drawn box of a shared
+   seat, each with Show. Empty for a seat drawn once. */
+function posWhereItShows(r, id, pl) {
+  var copies = pl.copies[r.id] || [];
+  if (!copies.length) return "";
+  var places = [], parent = posParentWords(r);
+  if (!pl.hidden[r.id]) {
+    var n = pl.home[r.id].length, o = posOpen(r);
+    var seats = (posKids(POS.rows).kids[r.id] || []).filter(function (k) { return !pl.hidden[k.id]; }).length;
+    places.push({ id: r.id, text: drT("Under {0}: its own box, {1}", [parent, n === 1 ? drT("1 person") : drT("{0} people", [n])])
+      + (o ? ", " + drT("{0} open", [posNum(o)]) : "")
+      + (seats ? ", " + (seats === 1 ? drT("1 seat under it") : drT("{0} seats under it", [seats])) : "") });
+  }
+  copies.forEach(function (c) {
+    var k = c.people.length;
+    places.push({ id: c.id, text: drT("Under {0}: {1}", [(posById(c.under) || {}).title || "",
+                                                       k === 1 ? drT("1 person") : drT("{0} people", [k])]) });
+  });
+  var out = '<h3 class="pos-h3" id="pos-places-h">' + drT("Where it shows on this chart") + "</h3>"
+    + '<ul class="pos-places" aria-labelledby="pos-places-h">' + places.map(function (p) {
+        return "<li><span>" + posEsc(p.text)
+          + (p.id === id ? '<span class="this">' + drT("You opened this one") + "</span>" : "") + "</span>"
+          + '<button type="button" class="btn btn-outline btn-sm" onclick="posShowPlace(\'' + posJs(p.id) + '\')"'
+          + ' aria-label="' + posEsc(drT("Show it on the chart: {0}", [p.text])) + '">' + drT("Show") + "</button></li>";
+      }).join("") + "</ul>";
+  if (pl.hidden[r.id]) {
+    out += '<p class="su">' + posEsc(drT("Its own box under {0} is not drawn: nobody there reports along that line, no slot is open and no seat hangs under it.", [parent])) + "</p>";
+  }
+  return out + '<div class="pos-note info"><p>' + posEsc(drT("People are placed by Reports To on their employee record. To move someone, change their Reports To; the chart follows the next time it opens. The seat itself stays under {0}.", [parent])) + "</p></div>";
+}
+
+/* Whom one person reports to, from the reply alone (AC-39, SEC-3). A manager
+   the reply does not carry - outside this reader's view, left, or in no seat
+   for a reader without HR scope - is never named. */
+function posReportsLine(p, r, pl) {
+  if (p.manager === "") return drT("No manager on their record");
+  if (!p.manager) return drT("Reports to a manager who is not on this chart");
+  var held = [];
+  POS.rows.forEach(function (x) {
+    x.people.forEach(function (q) { if (q.employee === p.manager) held.push({ r: x, name: q.name }); });
+  });
+  if (held.length) {
+    if (held.some(function (h) { return h.r.id === r.id; })) return drT("Reports to {0}, also in this seat", [held[0].name]);
+    // The seat they are drawn under: the copy's, else the parent, else the first.
+    var copy = (pl.copies[r.id] || []).filter(function (c) { return c.people.indexOf(p) >= 0; })[0];
+    var seat = copy ? posById(copy.under)
+      : (held.filter(function (h) { return h.r.id === r.reports_to; })[0] || held[0]).r;
+    return drT("Reports to {0} ({1})", [held[0].name, seat.title]);
+  }
+  var u = (POS.unseated || []).filter(function (x) { return x.employee === p.manager; })[0];
+  return u ? drT("Reports to {0}, who is in no seat", [u.name]) : drT("Reports to a manager who is not on this chart");
+}
+
+/* Show (AC-38): close the tray, open the folds down to that box, scroll to it
+   and give it the keyboard focus. */
+window.posShowPlace = function (id) {
+  var pl = posPlaced();
+  if (!pl) return;
+  var c = pl.byId[id], at = posById(c ? c.under : (posById(id) || {}).reports_to), hops = 0;
+  while (at && hops < POS_MAX_DEPTH) {
+    delete POS.collapsed[at.id]; POS.expanded[at.id] = true;
+    at = posById(at.reports_to); hops += 1;
+  }
+  posCloseSheet(true);
+  POS._findId = id;
+  posPaint();
 };
 
 /* The notes behind the records check (SEC-5). Empty for anyone the records
@@ -3172,7 +3573,7 @@ function posRecordNotes(r) {
         : drT("Their seats sit under other seats on this chart, so nobody shows under this box:"))
       + "<ul>" + order.map(function (n) { return "<li>" + posEsc(n) + ": " + by[n] + "</li>"; }).join("") + "</ul>"
       + "<p>" + (POS.may_edit
-        ? drT("To fix it, open each seat and set Reports to to this seat. A seat shared with another manager's people needs splitting first.")
+        ? drT("To fix it, open each seat and set Reports to to this seat.")
         : drT("HR can move these seats under this one.")) + "</p></div>";
   }
   if (rec.mixed.length > 1) {
@@ -3184,7 +3585,7 @@ function posRecordNotes(r) {
             : drT("{0} report to {1}", [m.count, m.manager_name || m.manager])) + "</li>";
         }).join("") + "</ul>"
       + "<p>" + drT("That is why it reads like one person with {0} others in their seat.", [Math.max(0, r.people.length - 1)])
-      + (POS.may_edit ? " " + drT("Give the head a seat of their own, then move each group under its own manager.") : "") + "</p></div>";
+      + "</p></div>";
   }
   return out;
 }
@@ -3258,9 +3659,15 @@ window.posUnseatedSheet = function () {
   order.sort(function (a, b) { return !a ? 1 : !b ? -1 : a < b ? -1 : 1; });
   var recent = posShift(posToday(), -60);
   var lately = list.filter(function (p) { return p.joined && p.joined >= recent; }).length;
-  var b = "<p>" + drT("{0} of {1} active people hold no seat, so they are not on this chart and not in the counts above.",
-                       [list.length, POS.active_people])
-    + (lately * 2 > list.length ? " " + drT("Most joined in the last two months.") : "") + "</p>";
+  // Slice 071: an empty list is reached only by placing the last person (a 0 tile cannot be clicked).
+  var b = (POS.unFlash ? '<div class="pos-note ok" role="status" id="pos-un-flash" tabindex="-1">' + POS.unFlash + "</div>" : "")
+    + (list.length
+    ? "<p>" + drT("{0} of {1} active people hold no seat, so they are not on this chart and not in the counts above.",
+                  [list.length, POS.active_people])
+      + (lately * 2 > list.length ? " " + drT("Most joined in the last two months.") : "") + "</p>"
+    : "<p>" + drT("Everybody active is in a seat now, so everybody is on this chart and in the counts above.") + "</p>");
+  POS.unFlash = "";
+  var year = posToday().slice(0, 4), n = 0;
   order.forEach(function (br) {
     var people = by[br];
     b += '<h3 class="pos-h3">' + posEsc((br || drT("No branch")) + " · " + people.length) + "</h3>";
@@ -3273,21 +3680,78 @@ window.posUnseatedSheet = function () {
     var roles = {}, rorder = [];
     people.forEach(function (p) {
       var k = p.job_role || "";
-      if (!(k in roles)) { roles[k] = 0; rorder.push(k); }
-      roles[k] += 1;
+      if (!(k in roles)) { roles[k] = []; rorder.push(k); }
+      roles[k].push(p);
     });
-    b += "<ul>" + rorder.map(function (role) {
-      var seat = role && POS.rows.filter(function (r) { return r.designation === role && r.branch === br; })
-        .sort(function (x, y) { return x.title < y.title ? -1 : x.title > y.title ? 1 : 0; })[0];
-      return "<li>" + posEsc(roles[role] + " " + (role || drT("with no job role")))
+    b += rorder.map(function (role) {
+      var match = role ? POS.rows.filter(function (r) { return r.designation === role && r.branch === br; })
+        .sort(function (x, y) { return x.title < y.title ? -1 : x.title > y.title ? 1 : 0; }) : [];
+      // Slice 071 (Q3): of two matching seats, the first with room, else the first by title.
+      var seat = match.filter(posUnRoom)[0] || match[0];
+      var ps = roles[role].slice().sort(function (x, y) { return x.name < y.name ? -1 : x.name > y.name ? 1 : 0; });
+      return '<div class="pos-un-role">' + posEsc(ps.length + " " + (role || drT("with no job role")))
         + (seat ? " · " + drT("matching seat:") + ' <button type="button" class="pos-link" onclick="posSeatSheet(\'' + posJs(seat.id) + '\')">'
                   + posEsc(seat.title + (seat.branch ? " · " + seat.branch : "")) + "</button> ("
                   + drT("{0} of {1}", [posNum(seat.filled), posNum(seat.seats)]) + ")"
-                : " · " + drT("no matching seat")) + "</li>";
-    }).join("") + "</ul>";
+                : " · " + drT("no matching seat")) + "</div>"
+        // Slice 071: one row per person. The year only when it is not this year.
+        + '<ul class="pos-un">' + ps.map(function (p) {
+            var i = n++, day = posDay(p.joined) + (p.joined && p.joined.slice(0, 4) !== year ? " " + p.joined.slice(0, 4) : "");
+            var act = "", call = 'onclick="posUnPlace(\'' + posJs(p.employee) + "','" + posJs(seat && seat.id) + '\',this)"';
+            if (POS.may_edit && seat) {
+              act = posUnRoom(seat)
+                ? '<button type="button" class="btn btn-outline btn-sm" ' + call + ' aria-describedby="pos-un-n-' + i + '">' + drT("Place in seat") + "</button>"
+                : '<span class="su" id="pos-un-f-' + i + '">' + drT("This seat is full") + "</span>"
+                  + '<button type="button" class="btn btn-outline btn-sm" ' + call + ' aria-describedby="pos-un-n-' + i + " pos-un-f-" + i + '">'
+                  + drT("Place anyway") + "</button>";
+            }
+            return '<li class="pos-un-p"><div class="pos-un-who"><a class="pos-link" id="pos-un-n-' + i
+              + '" target="_blank" rel="noopener" href="/app/employee/' + encodeURIComponent(p.employee) + '">' + posEsc(p.name)
+              + '</a> <span class="su">' + posEsc(p.employee) + '</span><span class="pos-un-meta su">'
+              + (p.joined ? posEsc(drT("Joined {0}", [day])) : "")
+              + (p.no_manager ? ' <span class="pos-chip">' + drT("No manager") + "</span>" : "") + "</span></div>"
+              + (act ? '<div class="pos-un-act">' + act + "</div>" : "") + "</li>";
+          }).join("") + "</ul>";
+    }).join("");
   });
   posSheet(drT("In no seat · {0} people", [list.length]), b, "");
   POS.sheet = { kind: "unseated" };
+};
+
+/* Slice 071. Room is today's rule (half a place open); a seat with 0 places
+   has no limit on the server, so it has room too (E1). */
+function posUnRoom(s) { return !s.seats || s.open >= 0.5; }
+
+/* "Place in seat" opens today's dialog for that seat; "Place anyway" asks
+   first, because the seat gets one more place. */
+window.posUnPlace = function (employee, seatId, btn) {
+  var p = (POS.unseated || []).filter(function (x) { return x.employee === employee; })[0], s = posById(seatId);
+  if (!p || !s || !POS.may_edit) return;
+  POS.pickRet = btn || null;
+  POS.pickFrom = { seat: s.id, employee: p.employee, name: p.name, role: p.job_role, raise: !posUnRoom(s) };
+  if (POS.pickFrom.raise) posFullOpen(); else posPickPerson(POS.pickFrom);
+};
+
+window.posFullOpen = function () {
+  var f = POS.pickFrom, s = posById(f.seat);
+  document.getElementById("pos-full-x").innerHTML = '<p style="margin:0 0 10px;line-height:1.5">'
+    + drT("{0} has {1} places and {2} people in them.",
+          ["<strong>" + posEsc(s.title + (s.branch ? " · " + s.branch : "")) + "</strong>", posNum(s.seats), posNum(s.filled)])
+    + '</p><p style="margin:0;line-height:1.5">'
+    + posEsc(drT("To put {0} in it, the seat gets one more place: {1} in all. Do this only if the store really needs another {2}.",
+                 [f.name, posNum(s.seats + 1), f.role])) + "</p>";
+  document.getElementById("pos-full").classList.add("open");
+  document.getElementById("pos-full-no").focus();
+};
+
+window.posFullClose = function () {
+  document.getElementById("pos-full").classList.remove("open");
+  if (POS.pickRet && POS.pickRet.focus) POS.pickRet.focus();
+};
+
+window.posFullGo = function () {
+  document.getElementById("pos-full").classList.remove("open");
+  posPickPerson(POS.pickFrom);
 };
 
 /* Two branch records for one store: the same name once case, spaces and
@@ -4593,10 +5057,18 @@ function acPaint() {
     + "<th>Worked</th><th>Expected</th><th>Arrival</th><th></th>"
     + "</tr></thead><tbody>";
 
-  d.days.forEach(function (x) {
-    html += acRow(x);
-    if (acState.open === x.date) html += acDetail(x);
-  });
+  /* Newest first, and nothing that has not happened yet. The month arrives
+     from the server as day 1 to the end of the month, which puts the day you
+     came to check at the bottom of a list you have to scroll past, behind rows
+     for a future that cannot be judged. Reversed and trimmed here rather than
+     in `month()`, because the totals above are counted server-side over the
+     whole month and must not change. */
+  d.days.filter(function (x) { return !x.future; })
+    .reverse()
+    .forEach(function (x) {
+      html += acRow(x);
+      if (acState.open === x.date) html += acDetail(x);
+    });
   html += "</tbody></table></div>";
   html += '<p class="ai-note">A day counts as short only once it is more than '
     + gpEsc(d.tolerance_mins) + " minutes under the shift, so a few minutes either "
@@ -9314,9 +9786,10 @@ window.gmBellLoad = async function (open) {
   }
 };
 
-/* A network failure is a TypeError from fetch; anything else is the server
-   refusing, in a sentence worth showing as it is. */
-function gmIsNet(e) { return !e || e.name === "TypeError"; }
+/* No answer: gpFetch's lost calls carry `kind` (slice 070) - offline, network
+   or timeout. Anything else ("refused", "server") is the office answering, in
+   a sentence worth showing as it is. */
+function gmIsNet(e) { return !e || e.kind === "offline" || e.kind === "network" || e.kind === "timeout"; }
 
 function gmName(first) { return gpEsc(first || ""); }
 
@@ -9330,7 +9803,9 @@ window.gmToday = async function () {
   try {
     gmState.today = await gpFetch(GM + "today", {});
   } catch (e) {
-    el.innerHTML = "";
+    /* No answer: say so, with Try again - never a card that just vanishes. */
+    if (gmIsNet(e)) failBox(el, e, gmToday, function (d) { gmState.today = d; gmPaintToday(); });
+    else el.innerHTML = "";
     return;
   }
   gmPaintToday();

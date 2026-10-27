@@ -102,7 +102,8 @@ function neverPrinted(label, p) {
 
   /* ── AC-28: the copy holds exactly the allowed keys ─────────────────── */
   function keysOk(copy, hr) {
-    const want = ["below", "branch", "department", "designation", "kids", "names", "title", "vacant"]
+    // Slice 072 (PRIV-2): plus copy, same and more - a copy's border and its two lines.
+    const want = ["below", "branch", "copy", "department", "designation", "kids", "more", "names", "same", "title", "vacant"]
       .concat(hr ? ["opening"] : []).sort().join(",");
     let bad = null;
     (function walk(list) {
@@ -171,7 +172,9 @@ function neverPrinted(label, p) {
   const g = paper(window.posWallCopy("top", 99, true, false));
   const gb = [...g.el.querySelectorAll(".oc-box")].filter((b) => b.querySelector(".ti").textContent === "Cashier");
   ok("D-6: six Cashiers in two branches print as two boxes", gb.length === 2, gb.length);
-  ok("D-6: the Noida box has all 3 names and no Vacant", gb[0] && gb[0].querySelectorAll(".nm > div").length === 3 && !gb[0].querySelector(".vac"));
+  // Slice 072 (P-27): a partly filled box says how many are open, never Vacant.
+  ok("D-6: the Noida box has all 3 names and no Vacant", gb[0] && gb[0].querySelectorAll(".nm > div").length === 3 && !/Vacant/.test(gb[0].textContent)
+     && /1 open/.test(gb[0].textContent));
   ok("D-6: the empty Delhi box says Vacant", gb[1] && !!gb[1].querySelector(".vac"));
   const gOff = paper(window.posWallCopy("top", 99, false, false));
   ok("AC-56: the empty group still prints, with no Vacant", gOff.el.querySelectorAll(".oc-box").length === 3 && !gOff.text.includes("Vacant"));
@@ -380,7 +383,7 @@ function neverPrinted(label, p) {
   ok("AC-38: it matches the pattern and names nobody", s && /^Wall chart - .+ - (\d+ levels|all levels) - A[0-4] - \d{4}-\d{2}-\d{2}$/.test(s.title)
      && !allNames.some((n) => s.title.includes(n)) && !s.title.includes("PRINTER-SNTL") && !s.title.includes("Owner"));
   ok("AC-41: the footer", s && s.sheets.length === 1 && s.sheets[0].foot
-     === "Sample Fashions Pvt Ltd · 6 branches · all levels from the top · as at 24 Oct 2026 · 363 people in seats", s && s.sheets[0] && s.sheets[0].foot);
+     === "Sample Fashions Pvt Ltd · 6 branches · all levels from the top · as at 24 Oct 2026 · 90 seats · 363 people in seats", s && s.sheets[0] && s.sheets[0].foot);
   ok("AC-41 / D5: nobody's name on the paper's words", s && !/printed by|PRINTER-SNTL/.test(s.text));
   ok("AC-60: wall copy - no banner, no HR words", s && !s.sheets[0].banner && !s.text.includes("HR use only"));
   ok("AC-40: printing marks the page so only the wall chart prints", s && s.printing);
@@ -484,6 +487,69 @@ function neverPrinted(label, p) {
   const fnBody = posCode.slice(fnStart, posCode.indexOf("\n};", fnStart));
   ok("AC-2: no onclick=\"window.print()\" in the Positions code", !/onclick="window\.print\(\)"/.test(posCode));
   ok("AC-2: exactly one window.print(), inside the wall chart's print", (posCode.match(/window\.print\(\)/g) || []).length === 1 && fnBody.includes("window.print()"));
+
+  /* ── slice 072: the paper prints what Reporting lines draws (AC-55 - AC-60, PRIV-2) ── */
+  {
+    const d = F.reporting();
+    load(d);
+    const box = (p, title, copy) => [...p.el.querySelectorAll(".oc-box")].filter((b) => b.querySelector(".ti").textContent === title
+      && b.classList.contains("copy") === copy);
+    const all = paper(window.posWallCopy("top", 99, true, false));
+    const printed = [...all.el.querySelectorAll(".nm > div")].map((x) => x.textContent).sort().join("|");
+    const everyone = d.rows.reduce((a, r) => a.concat(r.people.map((p) => p.name)), []).sort().join("|");
+    ok("072 AC-55: every person prints exactly once", printed === everyone, names(all) + " printed");
+    const copies = [...all.el.querySelectorAll(".oc-box.copy")];
+    ok("072 AC-55: copies print dashed, each with its line", copies.length >= 10
+       && copies.every((b) => /^(Same seat as under|Set up under) /.test((b.querySelector(".oc-same") || {}).textContent || "")), copies.length);
+    ok("072 AC-55: a copy says it is the same seat", (box(all, "Office Executive", true)[0] || { textContent: "" }).textContent
+       .includes("Same seat as under Owner and Managing Director · 6 in all"));
+    ok("072 AC-55: a home says where its other people are", (box(all, "Back Office", false)[0] || { textContent: "" }).textContent
+       .includes("63 more shown under 2 other managers"));
+    const mis = box(all, "MIS", false)[0];
+    ok("072 AC-57: a home with all its people elsewhere says None here, and its open slot", mis
+       && /None here: all 1 under Chief Financial Officer/.test(mis.textContent) && /1 open/.test(mis.textContent) && !/Vacant/.test(mis.textContent));
+    ok("072 AC-57: Vacant only on a seat with nobody at all", [...all.el.querySelectorAll(".vac")].filter((v) => v.textContent === "Vacant").length === 5);
+    ok("072 AC-23 on paper: a home with nothing left does not print", !box(all, "Store Auditor", false).length
+       && /Set up under Owner and Managing Director/.test((box(all, "Store Auditor", true)[0] || { textContent: "" }).textContent));
+    const novac = paper(window.posWallCopy("top", 99, false, false));
+    ok("072 AC-57: with Show Vacant off, no Vacant and no open count", !/Vacant| open\b/.test(novac.text));
+    ok("072 review m3: with Show Vacant off, no None here either", !/None here/.test(novac.text) && /None here/.test(all.text));
+    const bo = d.rows.find((r) => r.title === "Back Office"), bx = d.rows.find((r) => r.title === "Backoffice Executive");
+    const one = window.posWallCopy(bo.id, 1, true, false)[0];
+    ok("072 AC-59: below counts each seat and person once, never the box's own seat", one.below && one.below.seats === 3 && one.below.people === 65,   // BX, and copies of Back Office, Data Entry, Billing under it
+       JSON.stringify(one.below));
+    window.POS.wall = { start: "top" };
+    const starts = window.posWallStarts(window.posKids(window.POS.rows)).map((s) => s[0]);
+    ok("072 AC-60: a seat with only copies under it is a place to start", starts.includes(bx.id));
+    const fromBx = paper(window.posWallCopy(bx.id, 99, true, false));
+    ok("072 AC-60: and starting there prints its copies", fromBx.el.querySelectorAll(".oc-box.copy").length === 3 && names(fromBx) === 1 + 57 + 4 + 3,
+       names(fromBx));
+    window.POS.wall = null;
+    // AC-56: the footer counts seat records and people once.
+    let shot = null;
+    window.print = () => { shot = doc.querySelector("#pos-wall-print .pos-wall-foot").textContent; };
+    window.posWallOpen(); await settle(80);
+    window.posWallSet("levels", String(window.posWallLevels(window.posKids(window.POS.rows)).slice(-1)[0][0])); await settle(80);
+    window.posWallPrint();
+    ok("072 AC-56: the footer reads seats · people in seats", shot && shot.endsWith(" · " + d.rows.length + " seats · "
+       + d.rows.reduce((a, r) => a + r.people.length, 0) + " people in seats"), shot);
+    window.dispatchEvent(new window.Event("afterprint")); window.posCloseSheet(); window.POS.wall = null;
+
+    // PRIV-2: manager ids, the unseated manager's name, plans and every 069 sentinel stay off paper.
+    const s = F.reporting();
+    s.rows.forEach((r) => r.people.forEach((p) => Object.assign(p, { assignment: "ASG-SNTL", hired_on: "HIRED-SNTL", type: p.type,
+      plan: { note: "PLAN-SNTL" }, image: "IMG-SNTL" })));
+    s.rows.find((r) => r.title === "Packing").people[0].manager = "MGR-SNTL";
+    s.unseated.push({ employee: "MGR-SNTL", name: "MGRNAME-SNTL", branch: "Noida", no_manager: false });
+    load(s);
+    for (const hr of [false, true]) {
+      const p = paper(window.posWallCopy("top", 99, true, hr));
+      ok("072 PRIV-2 (HR copy " + (hr ? "on" : "off") + "): no manager id, unseated name, employee id or plan reaches paper",
+         !/MGR-SNTL|MGRNAME-SNTL|HR-EMP|ASG-SNTL|HIRED-SNTL|PLAN-SNTL|IMG-SNTL/.test(p.html));
+      const bad = keysOk(window.posWallCopy("top", 99, true, hr), hr);
+      ok("072 PRIV-2 (HR copy " + (hr ? "on" : "off") + "): copies hold exactly the allowed keys", !bad, bad);
+    }
+  }
 
   if (problems.length) {
     console.error("wall chart: " + problems.length + " problem(s) in " + checks + " checks");

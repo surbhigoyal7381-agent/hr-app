@@ -47,6 +47,21 @@ function audit(dev) {
   const rows = POS.rows, byId = {};
   rows.forEach((r) => { byId[r.id] = r; });
   const how = (document.getElementById("pos-f-arrange") || {}).value || "reporting";
+  // Slice 072: a copy's real parent is a seat its people's manager sits in,
+  // worked out here from the rows and the manager keys - never from posPlace.
+  const byTitle = {}, seatsOf = {};
+  rows.forEach((r) => { byTitle[r.title] = r; r.people.forEach((p) => { (seatsOf[p.employee] = seatsOf[p.employee] || []).push(r.id); }); });
+  const isCopy = (b) => b.classList.contains("copy");
+  const seatOf = (b) => (isCopy(b) ? byTitle[b.querySelector(".ti").textContent] : byId[idOf(b)]);
+  function realParents(b) {
+    if (!isCopy(b)) return [realParent(idOf(b))];
+    const r = seatOf(b), out = [];
+    b.querySelectorAll(".oc-who:not(.oc-empty) > span:last-child").forEach((s) => {
+      const p = r && r.people.find((q) => q.name === s.firstChild.textContent);
+      (p && p.manager ? seatsOf[p.manager] || [] : []).forEach((id) => { if (out.indexOf(id) < 0) out.push(id); });
+    });
+    return out;
+  }
   function realParent(id) {
     if (!id) return null;
     if (id.indexOf("grp:") === 0) { const key = id.slice(4); const m = rows.filter((r) => posGroupKey(r) === key); return m.length ? realParent(m[0].id) : null; }
@@ -85,17 +100,27 @@ function audit(dev) {
     if (id === s.owner) { if (s.y1 < r.bottom - 2) bad.push("line runs through its own box " + id); return; }
     const onTop = (s.y2 <= r.top + 2 && s.y2 >= r.top - 2)
       || (s.y2 - s.y1 <= 3 && s.x2 <= r.left + 2 && s.x2 >= r.left - 2 && s.y1 >= r.top && s.y1 <= r.bottom);
-    if (realParent(id) === s.owner && onTop) { linked[id] = 1; return; }
-    bad.push(`line from ${s.owner} touches ${id} (parent ${realParent(id)})${onTop ? "" : ", not on its top or left edge"}`);
+    if (realParents(b).indexOf(s.owner) >= 0 && onTop) { linked[id] = 1; return; }
+    bad.push(`line from ${s.owner} touches ${id} (parent ${realParents(b).join("/")})${onTop ? "" : ", not on its top or left edge"}`);
   }));
   if (dev !== "phone") boxes.forEach((b) => {
-    const id = idOf(b), rp = realParent(id);
-    if (rp && !linked[id] && boxes.some((x) => idOf(x) === rp)) bad.push("linked to nobody: " + id);
+    const id = idOf(b), rp = realParents(b);
+    if (rp.some((x) => x) && !linked[id] && boxes.some((x) => rp.indexOf(idOf(x)) >= 0)) bad.push("linked to nobody: " + id);
+  });
+  // Slice 072: a copy is an end box; a home with nobody, no open slot and
+  // nothing under it is not drawn.
+  boxes.forEach((b) => {
+    const node = b.closest(".oc-node"), br = node.parentElement.classList.contains("oc-branch") ? node.parentElement : null;
+    if (isCopy(b) && (node.querySelector(".oc-toggle") || (br && br.querySelector(":scope > .oc-node") === node
+        && br.querySelector(":scope > .oc-kids, :scope > .oc-fam")))) bad.push("a copy with a fold or boxes under it: " + idOf(b));
+    if (!isCopy(b) && /None here/.test(b.textContent) && !b.querySelector(".oc-tag.v") && !node.querySelector(".oc-toggle"))
+      bad.push("a home with nobody, no open slot and nothing under it is drawn: " + idOf(b));
   });
   const fbad = [];
   if (posAnyFilter()) {
     const match = {};
     rows.filter(posMatches).forEach((r) => { match[r.id] = 1; match["grp:" + posGroupKey(r)] = 1; });
+    boxes.forEach((b) => { if (isCopy(b) && posMatches(seatOf(b))) match[idOf(b)] = 1; });
     boxes.forEach((b) => {
       const id = idOf(b);
       if (!id || id.indexOf("br:") === 0 || id.indexOf("dp:") === 0 || b.classList.contains("pos-nomgr")) return;
@@ -130,21 +155,42 @@ function audit(dev) {
     zoom: (document.querySelector(".pos-zpct") || {}).textContent || "", arrange: (document.getElementById("pos-f-arrange") || {}).value };
 }
 
+/* Slice 072: FIXTURE=reporting runs with no site - the page is built from
+ * this checkout and position_table answers with the census-shaped fixture
+ * (scripts/lib/wall_chart_fixture.js reporting()), as check_wall_chart_browser.js does. */
+const FIXTURE = process.env.FIXTURE || "";
+
 (async () => {
-  if (!USR || !PWD) { console.error("Set PROBE_USR and PROBE_PWD for a user on a THROWAWAY site."); process.exit(2); }
+  if (!FIXTURE && (!USR || !PWD)) { console.error("Set PROBE_USR and PROBE_PWD for a user on a THROWAWAY site, or FIXTURE=reporting."); process.exit(2); }
   const b = await chromium.launch();
-  const login = await (await b.newContext()).newPage();
-  await login.goto(BASE + "/alvoraa-login");
-  await login.fill("#kx-email", USR); await login.fill("#kx-password", PWD);
-  await Promise.all([login.waitForNavigation().catch(() => {}), login.click("#kx-login-form button[type=submit]")]);
-  const state = await login.context().storageState();
+  let state;
+  const reply = FIXTURE ? require("./lib/wall_chart_fixture")[FIXTURE]() : null;
+  const html = FIXTURE ? require("./lib/portal_source").readPortalSource() : null;
+  if (!FIXTURE) {
+    const login = await (await b.newContext()).newPage();
+    await login.goto(BASE + "/alvoraa-login");
+    await login.fill("#kx-email", USR); await login.fill("#kx-password", PWD);
+    await Promise.all([login.waitForNavigation().catch(() => {}), login.click("#kx-login-form button[type=submit]")]);
+    state = await login.context().storageState();
+  }
   let fails = 0, known = 0;
   for (const theme of ["light", "dark"]) for (const [name, w, h, dev] of [["1440", 1440, 900, "desk"], ["1280", 1280, 800, "desk"], ["1024", 1024, 768, "desk"], ["390", 390, 844, "phone"]]) {
-    const ctx = await b.newContext({ storageState: state, viewport: { width: w, height: h } });
+    const ctx = await b.newContext(Object.assign({ viewport: { width: w, height: h } }, state ? { storageState: state } : {}));
     const p = await ctx.newPage();
     const errs = [];
-    p.on("pageerror", (e) => errs.push(e.message));
-    await p.goto(BASE + "/hrms-employee", { waitUntil: "networkidle" });
+    p.on("pageerror", (e) => { if (!FIXTURE || !/Unexpected token '\{'/.test(e.message)) errs.push(e.message); });
+    if (FIXTURE) {
+      await p.addInitScript(() => {
+        window.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ message: {} }), text: () => Promise.resolve("") });
+        window.frappe = { call: () => Promise.resolve({ message: {} }), csrf_token: "x", boot: {}, ui: {}, _messages: {}, utils: { escape_html: (s) => s } };
+      });
+      await p.route("http://wall.test/**", (r) => r.request().url() === "http://wall.test/hrms-employee"
+        ? r.fulfill({ contentType: "text/html; charset=utf-8", body: html }) : r.fulfill({ status: 404, body: "" }));
+      await p.goto("http://wall.test/hrms-employee", { waitUntil: "load" });
+      await p.evaluate((d) => { window.gpFetch = (m) => Promise.resolve(/position_table/.test(m) ? JSON.parse(JSON.stringify(d)) : {}); }, reply);
+    } else {
+      await p.goto(BASE + "/hrms-employee", { waitUntil: "networkidle" });
+    }
     await p.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
     await p.evaluate(() => switchPanel("positions"));
     await p.waitForFunction(() => window.POS && POS.rows && POS.rows.length > 0, null, { timeout: 30000 });
@@ -167,6 +213,18 @@ function audit(dev) {
       if (c) { await c.click(); await p.waitForTimeout(200); }
     };
     await run("opening view");
+    // Slice 072: the five cases, each opened the way Find opens it.
+    for (const [label, title, also] of [["072 split seat", "Office Executive", "Chief Financial Officer"], ["072 vacancy on home only", "Back Office", "Backoffice Executive"],
+                                  ["072 hidden empty home", "Store Auditor"], ["072 manager in no seat", "Packing"],
+                                  ["072 manager outside scope", "RSO Noida"]]) {
+      // `also`: the manager's seat a copy hangs under, opened too.
+      const has = await p.evaluate(([t, a]) => { const r = POS.rows.find((x) => x.title === t); if (!r) return false;
+        POS.collapsed = {}; POS.expanded = {}; posFindPick(r.id);
+        const m = a && POS.rows.find((x) => x.title === a); if (m) { POS.expanded[m.id] = true; posPaint(); }
+        return true; }, [title, also]);
+      if (has) { await p.waitForTimeout(150); await run(label); }
+    }
+    await p.evaluate(() => { POS.collapsed = {}; POS.expanded = {}; posPaint(); });
     const d = await p.$('#pos-body .oc-toggle[aria-label*="Delhi"][aria-expanded=false]');
     if (d) { await d.click(); await p.waitForTimeout(150); await run("Delhi opened"); }
     await openAll(); await run("reporting everything opened");

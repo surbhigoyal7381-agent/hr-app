@@ -174,6 +174,30 @@ doc_events = {
             "alvoraa_portal.manager_scope.on_employee_update",
         ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+        # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank
+        # field on their own record, HR included. See employee_field_rights.py.
+        "validate": "alvoraa_portal.employee_field_rights.refuse_own_locked_change",
+    },
+    # ALV-215: an Employee import with a column the importer may not change is
+    # refused with a message, instead of Frappe dropping the values silently.
+    "Data Import": {
+        "validate": "alvoraa_portal.employee_field_rights.refuse_import_of_locked_columns",
+    },
+    # ALV-215: a Promotion or Transfer that changes a field the submitter may
+    # not change is refused, instead of Frappe silently putting the value back.
+    # Cancel too: it writes the old values back the same way.
+    "Employee Promotion": {
+        "before_submit": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+        "before_cancel": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+    },
+    "Employee Transfer": {
+        "before_submit": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+        "before_cancel": "alvoraa_portal.employee_field_rights.refuse_locked_promotion_fields",
+    },
+    # ALV-215: PAN, ESI, PF, IFSC and MICR are created when the first Indian
+    # company is set up, after install. Lock them the moment they exist.
+    "Custom Field": {
+        "after_insert": "alvoraa_portal.employee_field_rights.lock_new_custom_field",
     },
     # ── Module access follows the plan, for the whole life of the tenant ──
     # A plan is chosen once; users arrive and change roles for years afterwards.
@@ -407,6 +431,10 @@ scheduler_events = {
         # names in them. Separate from the photo purge above on purpose - the
         # two answer different questions and one failing must not stop the other.
         "alvoraa_portal.field_app_housekeeping.daily",
+        # Slice 066 retention: erases a leaver's grooming marks and reviews 6
+        # months after the relieving date. OFF until the site config holds
+        # grooming_erase_enabled = 1 - see the note above erase_daily.
+        "alvoraa_portal.grooming.erase_daily",
     ],
     "monthly": [
         "alvoraa_portal.scheduled_jobs.generate_monthly_scorecards",
@@ -492,6 +520,10 @@ after_migrate = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.crm_steps.ensure_task_label_field",
+    # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
+    # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
+    # reset in Role Permission Manager is put right. See employee_field_rights.py.
+    "alvoraa_portal.employee_field_rights.apply",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
@@ -543,7 +575,16 @@ after_install = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.email_brand.after_install",
+    # ALV-215: same as after_migrate - a new tenant must not start open.
+    "alvoraa_portal.employee_field_rights.apply",
 ]
+
+# ALV-215 step B: the Promotion / Transfer field picker returned any Employee
+# field, bank number included, ignoring field levels. Ours checks the level and
+# then calls the upstream function unchanged.
+override_whitelisted_methods = {
+    "hrms.hr.utils.get_employee_field_property": "alvoraa_portal.employee_field_rights.get_employee_field_property",
+}
 
 # ── Replace one upstream method wholesale, not monkeypatch it (ALV-174) ────
 # CRM's own invitation email hardcodes "Frappe CRM" in the SUBJECT (Python, not

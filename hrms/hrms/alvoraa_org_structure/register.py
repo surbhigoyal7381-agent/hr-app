@@ -291,14 +291,22 @@ def position_table(branch=None, department=None, as_at=None):
 
 	names = [s.name for s in seats]
 	filled, people = {}, {}
+	# Slice 072: each person's Reports To and status ride on this same read,
+	# through Frappe's link-field join - no second statement. Kept aside in
+	# `line`, never on the person, until the rule below decides what may go.
+	line, seated_active = {}, set()
 	for a in frappe.get_all(
 			"Alvoraa Position Assignment",
 			filters={"position": ("in", names), "from_date": ("<=", as_at)},
 			fields=["name", "position", "employee", "employee_name", "weight",
-			        "assignment_type", "to_date", "from_date", "reason"],
+			        "assignment_type", "to_date", "from_date", "reason",
+			        "employee.reports_to as reports_to_emp", "employee.status as emp_status"],
 			limit_page_length=0):
 		if a.to_date and str(a.to_date) < str(as_at):
 			continue
+		line[a.name] = (a.reports_to_emp or "", a.emp_status == "Active")
+		if a.emp_status == "Active":
+			seated_active.add(a.employee)
 		filled[a.position] = filled.get(a.position, 0.0) + flt(a.weight) / 100.0
 		people.setdefault(a.position, []).append({
 			# The assignment's own name, so the dialog can end this one rather
@@ -446,7 +454,38 @@ def position_table(branch=None, department=None, as_at=None):
 	people = permitted_employee_filters()
 	if people != NO_EMPLOYEES:
 		out["unseated"], out["active_people"] = _unseated(people, as_at)
+	_add_managers(rows, line, seated_active, out, as_at)
 	return out
+
+
+def _add_managers(rows, line, seated_active, out, as_at):
+	"""Slice 072: who each seated person reports to, so the chart can draw them
+	under their manager's seat. FAILS CLOSED (SEC-1): the key says only what
+	this reply already holds.
+
+	- The manager's employee id, only when the person is Active and the manager
+	  is Active and already in this reply: seated in one of its seats, or - for
+	  a reader who gets the "in no seat" list - in that list.
+	- "" when an Active person has no Reports To, and only for that HR reader.
+	- Absent in every other case: a Left manager, a manager outside this
+	  reader's seats, an unseated manager for a reader without HR scope, and
+	  any date but today, because Reports To keeps no history.
+	"""
+	if getdate(as_at) != getdate():
+		return
+	hr = "unseated" in out
+	known = set(seated_active)
+	if hr:
+		known.update(u["employee"] for u in out["unseated"])
+	for r in rows:
+		for p in r["people"]:
+			boss, active = line.get(p["assignment"], ("", False))
+			if not active:
+				continue
+			if boss and boss in known:
+				p["manager"] = boss
+			elif not boss and hr:
+				p["manager"] = ""
 
 
 # The ONLY fields a person in the "in no seat" list carries (PRIV-1). Named one
@@ -621,6 +660,22 @@ def _position_in_scope(position, endpoint):
 	return doc
 
 
+def _person_in_scope(employee, endpoint):
+	"""The PERSON must be in this caller's companies and branches, exactly as
+	the seat must (slice 071 security F1, F2). One neutral refusal whether the
+	ID is outside the scope or does not exist, so it says nothing about anybody.
+	"""
+	companies, branches = _scope()
+	got = isinstance(employee, str) and frappe.db.get_value(
+		"Employee", employee, ["company", "branch"], as_dict=True)
+	if not got or got.company not in companies or (
+			branches is not None and (got.branch or "") not in branches):
+		from hrms.alvoraa_hr_core.access import refuse
+
+		refuse(_("You can only look up or place people in your own companies and branches."),
+		       "SEC-8", endpoint, "Employee", None)
+
+
 @frappe.whitelist()
 def what_they_hold(employee, ignore_position=None):
 	"""Every seat this person is permanently in today, and how full they are.
@@ -637,6 +692,7 @@ def what_they_hold(employee, ignore_position=None):
 	"""
 	if not may_view():
 		_refuse_view("register.what_they_hold", employee)
+	_person_in_scope(employee, "register.what_they_hold")
 
 	rows = []
 	for a in frappe.get_all(
@@ -732,7 +788,7 @@ def _let_go_of(assignment):
 @frappe.whitelist()
 def assign_person(position, employee, weight=100, assignment_type="Permanent",
                   from_date=None, to_date=None, delegate_authority=0,
-                  covering_for=None, reason=None, resolve=None):
+                  covering_for=None, reason=None, resolve=None, add_place=0):
 	"""Put somebody in a seat, for a share of it.
 
 	`weight` is what makes part time expressible: two people at 50 each fill a
@@ -747,6 +803,7 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 	there afterwards. So it is passed explicitly, defaulted off, and recorded.
 	"""
 	doc = _position_in_scope(position, "register.assign_person")
+	_person_in_scope(employee, "register.assign_person")
 
 	weight = flt(weight)
 	if weight <= 0 or weight > 100:
@@ -774,6 +831,15 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 			frappe.throw(_("Cover is carried on top of somebody's own job, so "
 			               "there is nothing to move them out of."))
 		moved = _make_room(employee, doc.name, weight, resolve)
+
+	# Slice 071, "Place anyway" on a full seat: one more place first, in this
+	# same request, so the seat count and the person go in together or not at
+	# all. Read fresh here, never trusted from the browser. A seat with no
+	# limit (0) or one that has room by now gets nothing added.
+	if frappe.utils.cint(add_place):
+		seats = flt(doc.seats)
+		if seats and doc.filled_weight() + weight / 100.0 > seats + 0.01:
+			save_position(name=doc.name, seats=seats + 1)
 
 	a = frappe.new_doc(ASSIGNMENT)
 	a.update({

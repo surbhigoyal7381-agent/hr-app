@@ -143,7 +143,11 @@
       <button type="button" class="mob-avatar" id="mob-avatar" aria-haspopup="true" aria-expanded="false" aria-controls="mob-acct-menu" aria-label="{{ _('Your account') }}" onclick="toggleAcctMenu(event)">?</button>
       <div class="mob-acct-menu" id="mob-acct-menu" role="menu">
         <a role="menuitem" href="/me">{{ _("My Account") }}</a>
-        <a role="menuitem" href="/logout">{{ _("Log out") }}</a>
+        {#- The same pin cleanup as the bar button below. Both doors out have to
+            do it, or the promise "the next person on a shared handset starts
+            clean" is only true of whichever one they happened to use. -#}
+        <a role="menuitem" href="/logout"
+           onclick="try{localStorage.removeItem('sb-pinned')}catch(e){}">{{ _("Log out") }}</a>
       </div>
       {#- ALV-222: a sign-out you can see, without opening anything.
 

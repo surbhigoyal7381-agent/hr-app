@@ -88,10 +88,8 @@ def app_icon(size=192):
 
 	from PIL import Image, ImageDraw
 
-	try:
-		size = max(48, min(1024, cint(size) or 192))
-	except Exception:
-		size = 192
+	# `cint` swallows its own errors and returns 0, so `or 192` is the fallback.
+	size = max(48, min(1024, cint(size) or 192))
 
 	_, colour = _brand()
 	ground = _darker(colour)
@@ -284,25 +282,36 @@ def portal_app_icon(size=192):
 	would show as a notch. `_mark_mask` keeps the mark inside the circle Android
 	promises not to crop.
 	"""
+	# No try/except around the clamp: `cint` swallows its own errors and returns
+	# 0 for anything it cannot read, so `or 192` is already the whole fallback.
+	size = max(48, min(1024, cint(size) or 192))
+
+	frappe.local.response.filename = f"alvora-{size}.png"
+	frappe.local.response.filecontent = _portal_icon_png(size, _darker(brand_colour()))
+	frappe.local.response.type = "download"
+	frappe.local.response.display_content_as = "inline"
+
+
+@lru_cache(maxsize=16)
+def _portal_icon_png(size, ground):
+	"""The finished PNG bytes. Cached, because nothing here varies per request.
+
+	The drawing depends only on the box size and the tenant's ground colour, and
+	the encode is the expensive half: `optimize=True` tries several filter and
+	zlib strategies, which is worth paying once and not on every fetch. The colour
+	is part of the key, so this stays correct even if one process ever serves more
+	than one site.
+	"""
 	from io import BytesIO
 
 	from PIL import Image
 
-	try:
-		size = max(48, min(1024, cint(size) or 192))
-	except Exception:
-		size = 192
-
-	img = Image.new("RGB", (size, size), _darker(brand_colour()))
+	img = Image.new("RGB", (size, size), ground)
 	img.paste(Image.new("RGB", (size, size), (255, 255, 255)), (0, 0), _mark_mask(size))
 
 	buf = BytesIO()
 	img.save(buf, format="PNG", optimize=True)
-
-	frappe.local.response.filename = f"alvora-{size}.png"
-	frappe.local.response.filecontent = buf.getvalue()
-	frappe.local.response.type = "download"
-	frappe.local.response.display_content_as = "inline"
+	return buf.getvalue()
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -345,7 +354,15 @@ def portal_manifest():
 
 	from werkzeug.wrappers import Response
 
-	return Response(json.dumps(payload), mimetype="application/manifest+json")
+	# Chrome re-fetches the manifest on in-scope navigations to decide whether the
+	# page is installable. Nothing in it changes between two opens, so a day of
+	# browser cache removes one guest request per open per phone. A day stale is
+	# harmless: the only per-tenant value is the colour.
+	return Response(
+		json.dumps(payload),
+		mimetype="application/manifest+json",
+		headers={"Cache-Control": "public, max-age=86400"},
+	)
 
 
 # Decision 2 (25 Oct): THIS WORKER CACHES NOTHING, and must not start to.

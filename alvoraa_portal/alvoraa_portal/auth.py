@@ -78,6 +78,16 @@ def _still_on_an_issued_password(user):
     written and this returns False for ever after. Nothing to reset, no flag to
     tidy up, and no list of who is still pending to keep in step.
 
+    One way the signal dies, and it is stock Frappe, not us: the first time an
+    admin ticks "Force user to reset password" in System Settings,
+    `update_last_reset_password_date()`
+    (`core/doctype/system_settings/system_settings.py`) stamps today onto EVERY
+    user whose date is empty. On that tenant everybody then looks like they have
+    chosen their own password and this redirect quietly stops. There is no error
+    to see. If that happens, the fix is the backfill run the other way, not a
+    flag field of our own - a parallel structure here would have to be kept in
+    step with Frappe for ever.
+
     This is a landing page, not a lock. Someone who types another address still
     gets there. If the portal must be unusable until the password changes, that
     is the server-side gate in slice 072, not this.
@@ -100,10 +110,24 @@ def update_password(new_password, logout_all_sessions=0, key=None, old_password=
     (`tenant_setup.py`), and `get_default_path()` can only name a route an
     installed app registered on the apps screen - measured on this bench as
     "/desk". So the last step of first use dropped a frontline worker on the
-    Frappe desk, which is the fault slice 024 exists to stop. Nothing cheaper
-    reaches it: that branch ignores `redirect_url` and the
-    `redirect_after_login` cache entirely, and `default_app` cannot name
-    /hrms-employee.
+    Frappe desk, which is the fault slice 024 exists to stop. That branch
+    ignores `redirect_url` and the `redirect_after_login` cache entirely, so
+    neither of those reaches it.
+
+    There IS a stock route we have not taken, and this comment used to deny it
+    wrongly. `get_default_path()` (`frappe/apps.py`) returns the `route` of the
+    app named by `User.default_app` or `System Settings.default_app`, and that
+    route is whatever an app declares in its `add_to_apps_screen` hook - Frappe
+    HR already declares "/desk/people". So alvoraa_portal could declare
+    "/hrms-employee" and set `default_app` at tenant setup, and stock Frappe
+    would return the right path with no override at all.
+
+    Two things have to be measured before that swap is worth making, and
+    neither has been: `get_apps()` hides an app whose setup wizard is
+    incomplete from anyone who is not a System Manager, which would send
+    `get_default_path()` back to None and us back to "/desk"; and `default_app`
+    changes where every System User flow lands, not only this one. Until
+    somebody runs that test on a staff account, this wrapper is what we have.
 
     The decorator must mirror Frappe's own (`allow_guest=True`,
     `methods=["POST"]`): `frappe.is_whitelisted` checks the method it actually

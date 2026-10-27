@@ -129,7 +129,7 @@ const txt = id => (doc.getElementById(id) || {}).textContent || "";
   has(txt("leave-rings"), "Contract staff do not get monthly Paid Leaves.", "R-15");
   has(txt("leave-rings"), "You can still ask for Leave Without Pay, up to 5 days a month. HR approves it. You have 5 of 5 days waiting or approved in October.", "R-15");
   window.lpRenderCard({month: "October", earns: false, "class": "No Leave", lwp_in_play: 0, lwp_limit: 5});
-  has(txt("leave-rings"), "Your leave class (No Leave) does not get monthly Paid Leaves.", "R-16");
+  has(txt("leave-rings"), "Your leave class (No Leave) does not earn monthly Paid Leaves.", "R-16");
   window.lpRenderCard(null);
   has(txt("leave-rings"), "Getting your Paid Leaves...", "R-13");
   window.lpRenderCard({error: 1});
@@ -297,6 +297,115 @@ const txt = id => (doc.getElementById(id) || {}).textContent || "";
   has(txt("la-submit-btn"), "Try again", "R-48 / 070 AC-27");
   hasNot(doc.body.textContent, "Not sent: the connection dropped", "070 AC-34");
   doc.getElementById("la-leave-type").value === "Leave Without Pay" ? ok("R-48: choices kept") : bad("R-48: form was cleared");
+
+  // ── Housekeeping: leave earned from days present, paid by an agency (prototype v4, W.1-W.5) ──
+  const HK_UPTO = shift(-1);
+  const HK_ROWS = {designation: "Housekeeping", "this": [[6, 12, 1], [13, 18, 2], [19, 25, 3], [26, 31, 4]], other_starts: [5, 12, 18, 25]};
+  const GEETA = {month: "October", "class": "A", earns: true, housekeeping: true, earned: 2, cap: 4, attended_so_far: 14,
+    attended_up_to: HK_UPTO, next_at: 19, days_to_next: 5, used: 1, used_dates: [{date: PAST2, to: PAST2, half: false}],
+    waiting: 0, waiting_from: null, approver: null, month_length: "30-31", rows: HK_ROWS, lwp_in_play: 0, lwp_limit: 5};
+  window.lpRenderCard(GEETA);
+  let hk = txt("leave-rings");
+  has(txt("lv-bal-title"), "Paid Leaves - October", "R-77");
+  has(doc.getElementById("lv-bal-card").textContent, "So far", "R-77");
+  has(hk, "Housekeeping · Class A · up to 4 days a month · 14 days attended up to " + short(HK_UPTO), "R-78");
+  has(hk, "Earned so far", "R-79"); has(hk, "2 of 4 days", "R-79"); has(hk, "from 14 days attended", "R-79");
+  has(hk, "Used", "R-80"); has(hk, short(PAST2), "R-80");
+  has(hk, "Waiting for approval", "R-81"); has(hk, "none", "R-81");
+  hasNot(hk, "To be paid out", "R-82");
+  has(hk, "Next Paid Leaves day at 19 days attended (5 more). This goes up as you attend more days in October.", "R-83");
+  has(hk, "Your leave is recorded for DTC's attendance. Your agency pays you, so this page shows no payout. Nothing carries over to next month.", "R-85");
+  has(hk, "How Housekeeping earns Paid Leaves - class A", "R-86");
+  has(hk, "In a 30- or 31-day month like October: 6 to 12 days attended earns 1, 13 to 18 days attended earns 2, 19 to 25 days attended earns 3, 26 or more days attended earns 4, never more than 4. In a 28- or 29-day month the rows start one day earlier (5, 12, 18, 25). Approved Paid Leaves days count as days attended. A half day counts as half, and the total is rounded down to whole days. Nothing carries over.", "R-86");
+  for (const never of ["15", "salary", "red", "green", "₹", "Class A · 4 days of Paid Leaves"]) hasNot(hk, never, "R-88");
+  window.lpRenderCard(PRIYA_CARD);
+  hasNot(doc.getElementById("lv-bal-card").textContent, "So far", "R-77: the chip is for the agency card only");
+  window.lpRenderCard(Object.assign({}, GEETA, {earned: 0, attended_so_far: 0, attended_up_to: null, next_at: 6, days_to_next: 6, used: 0, used_dates: []}));
+  hk = txt("leave-rings");
+  has(hk, "up to 4 days a month · 0 days attended so far", "R-78 / AC-134");
+  has(hk, "0 of 4 days", "AC-134"); has(hk, "Next Paid Leaves day at 6 days attended (6 more).", "AC-134");
+  has(hk, "none yet", "R-80");
+  window.lpRenderCard(Object.assign({}, GEETA, {earned: 4, attended_so_far: 27, next_at: undefined, days_to_next: undefined}));
+  hk = txt("leave-rings");
+  has(hk, "You have earned the most your class allows (4).", "R-84 / X-8");
+  hasNot(hk, "This goes up", "R-84 / X-8"); hasNot(hk, "Next Paid Leaves day", "R-84 / X-8");
+  window.lpRenderCard(Object.assign({}, GEETA, {month: "February", month_length: "28-29", earned: 2, attended_so_far: 14.5, next_at: 18, days_to_next: 3.5,
+    rows: {designation: "Housekeeping", "this": [[5, 11, 1], [12, 17, 2], [18, 24, 3], [25, 29, 4]], other_starts: [6, 13, 19, 26]}}));
+  hk = txt("leave-rings");
+  has(txt("lv-bal-title"), "Paid Leaves - February", "R-87");
+  has(hk, "14.5 days attended", "AC-139"); has(hk, "(3.5 more)", "AC-139");
+  has(hk, "In a 28- or 29-day month like February: 5 to 11 days attended earns 1, 12 to 17 days attended earns 2, 18 to 24 days attended earns 3, 25 or more days attended earns 4, never more than 4. In a 30- or 31-day month the rows start one day later (6, 13, 19, 26).", "R-87");
+  window.lpRenderCard({month: "October", earns: false, "class": "No Leave", category: null, lwp_in_play: 0, lwp_limit: 5});
+  has(txt("leave-rings"), "Your leave class (No Leave) does not earn monthly Paid Leaves.", "R-89 / AC-137");
+  has(txt("leave-rings"), "You have 0 of 5 days waiting or approved in October.", "R-89");
+
+  // the Apply form for an agency-paid person
+  const HK_TYPES = [{leave_type: "Paid Leaves", paid_leaves: 1, left: 1},
+                    {leave_type: "Leave Without Pay", lwp: 1, lwp_in_play: 0, lwp_limit: 5}];
+  window.openLeaveModal();
+  await settle(20);
+  window._populateLeaveTypeSelect([], false, HK_TYPES);
+  const hkOpts = [...doc.querySelectorAll("#la-leave-type option")].map(o => o.textContent).join("|");
+  has(hkOpts, "Paid Leaves - 1 day left", "R-90"); has(hkOpts, "Leave Without Pay - 0 of 5 used", "R-90");
+  const hkBase = Object.assign({}, base, {housekeeping: 1, earned: 2, next_at: 19});
+  PREVIEW = Object.assign({}, hkBase, {verdict: "ok", days: 1, approver_label: "Sunil Mehra", credited: 4, pl_left: 1, lwp_in_play: 0});
+  pick("Paid Leaves", FUT, FUT);
+  await settle(400);
+  has(txt("la-preview"), "Asking for 1 day of Paid Leaves.", "R-91");
+  has(txt("la-preview"), "Until Sunil Mehra decides, 1 day is set aside from the 2 you have earned so far. Approved Paid Leaves days count as days attended.", "R-91");
+  hasNot(txt("la-preview"), "The leave is paid", "R-91");
+  has(txt("la-submit-btn"), "Send to Sunil Mehra", "AC-141");
+  PREVIEW = Object.assign({}, hkBase, {verdict: "block", reason_code: "pl_short", days: 2, approver_label: "Sunil Mehra", credited: 4, pl_left: 1, lwp_in_play: 0});
+  pick("Paid Leaves", FUT, FUT);
+  await settle(400);
+  has(txt("la-preview"), "2 days asked for, but you have 1 day of Paid Leaves left for October.", "R-92");
+  has(txt("la-preview"), "You have earned 2 so far; the next day comes at 19 days attended. Days already used or waiting are taken off. You can ask for Leave Without Pay instead (0 of 5 used this month).", "R-92");
+  has(txt("la-preview"), "Ask for Leave Without Pay instead", "R-92");
+  PREVIEW = Object.assign({}, hkBase, {verdict: "block", reason_code: "pl_short", days: 2, approver_label: "Sunil Mehra", credited: 4, pl_left: 1, lwp_in_play: 0, earned: 4, next_at: null});
+  pick("Paid Leaves", FUT, FUT);
+  await settle(400);
+  has(txt("la-preview"), "You have earned 4 so far. Days already used or waiting are taken off.", "R-92 at the cap");
+  hasNot(txt("la-preview"), "the next day comes at", "R-92 at the cap");
+  PREVIEW = Object.assign({}, hkBase, {verdict: "ok", days: 0.5, approver_label: "HR", lwp_in_play: 2, lwp_left: 3});
+  pick("Leave Without Pay", FUT, FUT, true);
+  await settle(400);
+  has(txt("la-preview"), "Asking for 0.5 days of Leave Without Pay.", "R-93");
+  has(txt("la-preview"), "If approved, it is recorded as leave without pay on DTC's attendance.", "R-93");
+  has(txt("la-preview"), "This will be 2.5 of 5 days of Leave Without Pay in October.", "R-93");
+  hasNot(txt("la-preview"), "not paid", "R-93"); hasNot(txt("la-preview"), "charged double", "R-94"); hasNot(txt("la-preview"), "special day", "R-94");
+  has(txt("la-preview"), "until then the other half counts as absent.", "R-94");
+  doc.getElementById("la-half-day").checked = false;
+  PREVIEW = Object.assign({}, hkBase, {verdict: "ok", days: 2, approver_label: "HR", lwp_in_play: 0, lwp_left: 5});
+  pick("Leave Without Pay", FUT, FUT);
+  await settle(400);
+  window.submitLeaveApp();
+  await settle(40);
+  has(txt("la-result"), "If approved, it is recorded as leave without pay on DTC's attendance. 2 of 5 days of Leave Without Pay are now waiting or approved in October.", "R-95");
+  hasNot(txt("la-result"), "not paid", "R-95");
+
+  // HR filing for Geeta: third person (R-96, X-2 changed)
+  window.openLeaveModal();
+  await settle(20);
+  window.LP.subject = {name: "E2", label: "Geeta Devi"};
+  window._populateLeaveTypeSelect([], false, HK_TYPES);
+  has([...doc.querySelectorAll("#la-leave-type option")].map(o => o.textContent).join("|"), "Paid Leaves - 1 day left", "R-96 / Q-S2");
+  PREVIEW = Object.assign({}, hkBase, {verdict: "ok", days: 1, approver_label: "Sunil Mehra", credited: 4, pl_left: 1, lwp_in_play: 0});
+  pick("Paid Leaves", FUT, FUT);
+  await settle(400);
+  has(txt("la-preview"), "Until Sunil Mehra decides, 1 day is set aside from the 2 Geeta has earned so far.", "R-96");
+  PREVIEW = Object.assign({}, hkBase, {verdict: "block", reason_code: "pl_short", days: 2, approver_label: "Sunil Mehra", credited: 4, pl_left: 1, lwp_in_play: 0});
+  pick("Paid Leaves", FUT, FUT);
+  await settle(400);
+  has(txt("la-preview"), "Geeta has earned 2 so far; the next day comes at 19 days attended.", "R-96");
+  // a class that gives nothing says so (X-9)
+  window._populateLeaveTypeSelect([], false, [{leave_type: "Leave Without Pay", lwp: 1, lwp_in_play: 0, lwp_limit: 5, no_paid_class: "No Leave"}]);
+  has(txt("la-type-help"), "Geeta's leave class (No Leave) does not get Paid Leaves, so only Leave Without Pay is offered.", "X-9");
+  window.LP.subject = null;
+  window._populateLeaveTypeSelect([], false, [{leave_type: "Leave Without Pay", lwp: 1, lwp_in_play: 0, lwp_limit: 5, no_paid_class: "No Leave"}]);
+  has(txt("la-type-help"), "Your leave class (No Leave) does not get Paid Leaves, so only Leave Without Pay is offered.", "X-9");
+  window._populateLeaveTypeSelect([], false, [{leave_type: "Leave Without Pay", lwp: 1, lwp_in_play: 0, lwp_limit: 5}]);
+  has(txt("la-type-help"), "Your work type does not get Paid Leaves, so only Leave Without Pay is offered.", "X-9 (Contract keeps the drawn sentence)");
+  window.pfCloseModal("la-modal");
 
   // ── the approver's and HR's rows ──────────────────────────────────────
   const row = window.lpApprLines({employee_name: "Manoj Singh", from_date: FUT, chain_top: "Kavita Arora",

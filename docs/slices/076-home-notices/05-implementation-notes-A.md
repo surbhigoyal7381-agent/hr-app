@@ -189,4 +189,4 @@ Removed from my own output: the `kind` key from the notices payload (nothing in 
 | The notices read looks at the newest 100 rows, so "N unread" is exact up to 100 | acceptable simplification; grooming notices per person are few |
 | No desktop bell | for Surbhi |
 | Leave-decline reason is shown on the Leave list only, not in a notification to the employee | as the spec says; B's notices may carry it |
-| Containers `hrlocal-076`, `hrlocal-076b`, `hrlocal-076-redis`, `hrlocal-076-proxy` and the extra worktree `.claude/worktrees/076-before` are left for the next step; they are mine and local | to remove when Surbhi has read this |
+| Containers `hrlocal-076`, `hrlocal-076b`, `hrlocal-076-redis`, `hrlocal-076-proxy` are STOPPED, not removed, and so is the extra worktree `.claude/worktrees/076-before` (old code, for the before numbers). They are mine and local. If `hrlocal-076` is started again it may get a new network address, and the database then refuses it until its user is granted that address (what I did for `hrlocal-076b`). Sites: `test076`, `test076s`, `test076l` | remove when Surbhi has read this |

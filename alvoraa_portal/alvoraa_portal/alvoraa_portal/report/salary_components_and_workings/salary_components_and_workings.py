@@ -46,7 +46,7 @@ def execute(filters=None):
 	ctx = prepare(rule_set, from_date, to_date)
 
 	rows, skipped = [], []
-	for emp in _employees(company, filters):
+	for emp in _employees(company, filters, to_date):
 		summary = month_summary(emp.name, company, from_date, to_date,
 		                        rule_set=rule_set, ctx=ctx)
 		if summary is None:
@@ -89,7 +89,7 @@ def _rules_for_reading(company):
 	return frappe.get_cached_doc("Alvoraa Payroll Rule Set", name), False
 
 
-def _employees(company, filters):
+def _employees(company, filters, to_date):
 	"""Active employees, with the three fields the rules are keyed on.
 
 	Read through `frappe.get_list`, so a store's HR person gets their store and
@@ -110,12 +110,20 @@ def _employees(company, filters):
 	                       limit_page_length=0)
 
 	# The monthly figure every money column hangs off. One query, not one each.
+	#
+	# DATED THE SAME WAY THE ENGINE DATES IT: the assignment that applies is
+	# the newest one starting ON OR BEFORE the period end. Without that
+	# condition a raise dated next month wins here, and this figure is both
+	# the "Monthly salary" column and the test below for who has nothing to
+	# pay - so the column would show a raise beside a Basic earned that does
+	# not include it, in the one report whose purpose is to be checked against
+	# the payslip. `payroll_slip.month_summary` reads it with the same filter.
 	bases = {}
 	if rows:
 		for a in frappe.get_all(
 				"Salary Structure Assignment",
 				filters={"employee": ("in", [r.name for r in rows]),
-				         "docstatus": 1},
+				         "docstatus": 1, "from_date": ("<=", to_date)},
 				fields=["employee", "base", "from_date"],
 				order_by="from_date asc", limit_page_length=0):
 			bases[a.employee] = a.base          # last one wins: the newest
@@ -147,6 +155,9 @@ def _row(emp, s):
 		"leave_used": flt(s.leave_used_for_approved, 2),
 		"leave_encashed": flt(s.leave_encashed, 2),
 
+		# The salary as agreed. Read in `_employees` with the engine's own
+		# date condition, so it cannot disagree with Basic earned beside it.
+		"monthly_salary": flt(emp.base, 2),
 		"paid_days": flt(s.paid_days, 2),
 		"daily_rate": flt(s.daily_rate, 2),
 		"basic": flt(s.earning_basic, 2),
@@ -244,6 +255,10 @@ def _columns():
 		c("leave_used", "Leave used", 95),
 		c("leave_encashed", "Leave encashed", 115),
 
+		# The salary as agreed, with nothing taken off and nothing added. The
+		# chain reads left to right from here: monthly salary, the days paid
+		# for, the rate a day is worth, and what that came to.
+		c("monthly_salary", "Monthly salary", 125, "Currency"),
 		c("paid_days", "Paid days", 90),
 		c("daily_rate", "Daily rate", 100, "Currency"),
 		c("basic", "Basic earned", 110, "Currency"),

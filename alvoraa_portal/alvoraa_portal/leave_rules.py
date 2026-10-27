@@ -47,12 +47,17 @@ HR_ROLES = ("HR Manager", "HR User")
 PAID_LEAVES_FLAGS = (("is_lwp", 0), ("allow_negative", 1), ("allow_encashment", 0),
                      ("is_carry_forward", 0), ("is_earned_leave", 0))
 
-# The card's keys, named one by one (SEC-1). The test asserts the block's keys
-# are a subset of this list and never anything else, so a field added to
-# MonthSummary later cannot reach the employee by accident.
-CARD_KEYS = ("month", "class", "category", "earns", "credited", "used", "used_dates",
-             "waiting", "waiting_from", "to_be_paid_out", "approver", "lwp_in_play",
-             "lwp_limit", "attended_so_far", "attended_up_to", "gate")
+# The card's keys, named one by one (SEC-1). Two lists: office staff, and staff
+# whose leave comes from the days-present table (an agency pays them, so no
+# payout key, SEC-20). The test asserts the block's keys are inside one of the
+# lists and never anything else, so a field added to MonthSummary later cannot
+# reach the employee by accident.
+CARD_KEYS_OFFICE = ("month", "class", "category", "earns", "credited", "used", "used_dates",
+                    "waiting", "waiting_from", "to_be_paid_out", "approver", "lwp_in_play",
+                    "lwp_limit", "attended_so_far", "attended_up_to", "gate")
+CARD_KEYS_TABLE = ("month", "class", "earns", "housekeeping", "earned", "cap", "attended_so_far",
+                   "attended_up_to", "next_at", "days_to_next", "used", "used_dates", "waiting",
+                   "waiting_from", "approver", "month_length", "rows", "lwp_in_play", "lwp_limit")
 
 
 # ── small facts ──────────────────────────────────────────────────────────────
@@ -261,7 +266,11 @@ def notify_chain_on_approval(doc, method=None):
 			return
 		chain = chain_of(doc.employee)
 		own_user = frappe.db.get_value("Employee", doc.employee, "user_id")
-		emails = _notice_users([m.user_id for m in chain], exclude=own_user)
+		# The person approving is never told their own approval. This Frappe sends an
+		# Alert to its own sender, so it has to be left out here (AC-145, AC-146).
+		approver = frappe.session.user
+		emails = _notice_users([m.user_id for m in chain if m.user_id != approver],
+		                       exclude=own_user)
 		name = doc.employee_name or doc.employee
 		first = name.split(" ")[0]
 		dates = range_label(doc.from_date, doc.to_date)
@@ -273,6 +282,17 @@ def notify_chain_on_approval(doc, method=None):
 			                           "nothing for you to do.").format(first)),
 			frappe.utils.escape_html(_("You can see your team's leave on the Team View page.")))
 		_send(doc, emails, subject, body)
+		# N-1b (Surbhi, 25 Oct 2026): HR who look after this person are told of every
+		# approved leave too - once each, so not again if they are also in the chain.
+		# The same subject and the same four facts; never the type or the reason.
+		in_chain = {m.user_id for m in chain}
+		hr = [u for u in hr_users_in_scope(doc.employee) if u not in in_chain and u != approver]
+		_send(doc, _notice_users(hr, exclude=own_user), subject,
+		      "<p>{0}</p><p>{1}</p>".format(
+			      frappe.utils.escape_html(_("{0}'s leave for {1} ({2}) has been approved.")
+			                               .format(name, dates, days_label(doc.total_leave_days))),
+			      frappe.utils.escape_html(_("You are told because you look after {0}'s records "
+			                                 "in HR. There is nothing for you to do.").format(first))))
 	except Exception:
 		frappe.log_error(title="Leave chain notice not sent for {0}".format(doc.name),
 		                 message=frappe.get_traceback())
@@ -296,9 +316,9 @@ def told_top(employee, users):
 	"""(how many were told, the highest of them in the chain) - from real rows."""
 	if not users:
 		return 0, None
-	chain = chain_of(employee)
-	told = [m for m in chain if m.user_id in users]
-	return len(users), (told[-1].employee_name if told else None)
+	# Managers in the chain only: HR told by N-1b are not "your managers" (AC-146).
+	told = [m for m in chain_of(employee) if m.user_id in users]
+	return len({m.user_id for m in told}), (told[-1].employee_name if told else None)
 
 
 def decision_facts(doc):
@@ -476,24 +496,37 @@ def missing_punch(employee, day):
 def _class_and_category(employee, rs):
 	fields = [f for f in (rs.leave_class_field, rs.category_field) if f]
 	meta = frappe.get_meta("Employee")
-	fields = [f for f in fields if meta.has_field(f)]
-	row = frappe.db.get_value("Employee", employee, fields, as_dict=True) if fields else {}
-	row = row or {}
+	fields = ["designation"] + [f for f in fields if meta.has_field(f)]
+	row = frappe.db.get_value("Employee", employee, fields, as_dict=True) or {}
 	cls = str(row.get(rs.leave_class_field) or "").strip() if rs.leave_class_field else ""
 	cat = str(row.get(rs.category_field) or "").strip() if rs.category_field else ""
 	cls_row = next((c for c in rs.leave_classes if (c.leave_class or "").strip() == cls), None)
 	cat_row = next((c for c in rs.categories
 	                if (c.category or "").strip().lower() == cat.lower()), None) if cat else None
-	return cls, cat, cls_row, cat_row
+	return cls, cat, cls_row, cat_row, row.get("designation") or ""
 
 
-def credit_facts(employee, rs):
-	"""What the rule set gives this person this month, in days."""
-	cls, cat, cls_row, cat_row = _class_and_category(employee, rs)
+def credit_facts(employee, rs, day=None):
+	"""What the rule set gives this person this month, in days.
+
+	`housekeeping` (the word is the table's, not the code's): the person's
+	designation has rows in the days-present table and their category earns no
+	leave credit - an agency pays them (SEC-18). `table` is the same and the
+	class gives credit, so this month's rows apply to them."""
+	from alvoraa_portal.payroll_slip import credit_rows_for
+
+	cls, cat, cls_row, cat_row, designation = _class_and_category(employee, rs)
 	credited = flt(cls_row.monthly_credits) if cls_row else 0.0
 	cat_earns = bool(cat_row.earns_leave_credits) if cat_row else True
-	return {"class": cls, "category": cat, "credited": credited,
-	        "earns": bool(credited > 0 and cat_earns), "category_earns": cat_earns}
+	day = getdate(day or nowdate())
+	month_days = (get_last_day(day) - get_first_day(day)).days + 1
+	rows = credit_rows_for(rs, designation, cat_row, cls_row, month_days)
+	agency = bool(designation and not cat_earns
+	              and any(r.designation == designation for r in rs.leave_credit_rows))
+	return {"class": cls, "category": cat, "credited": credited, "designation": designation,
+	        "earns": bool(credited > 0 and (cat_earns or rows is not None)),
+	        "category_earns": cat_earns, "housekeeping": agency, "table": rows is not None,
+	        "rows": rows}
 
 
 def paid_leave_rows(employee, day):
@@ -514,11 +547,30 @@ def paid_leave_rows(employee, day):
 	return rows
 
 
-def paid_leaves_left(employee, rs, day=None):
+def table_summary(employee, company, rs, day):
+	"""The month's summary (the one the slip and the report use) for a person on
+	the days-present table: earned so far, days present, the next step."""
+	from alvoraa_portal.payroll_rules_apply import prepare
+	from alvoraa_portal.payroll_slip import month_summary
+
+	start, end = _month_bounds(day)
+	return month_summary(employee, company, start, end, rule_set=rs,
+	                     ctx=prepare(rs, start, end, employee=employee))
+
+
+def paid_leaves_left(employee, rs, day=None, facts=None, summary=None):
+	"""Days of Paid Leaves still free: the class figure (office) or what the
+	table has earned so far (Housekeeping), less days used and waiting."""
 	day = day or nowdate()
-	facts = credit_facts(employee, rs)
+	facts = facts or credit_facts(employee, rs, day)
+	if facts["table"]:
+		summary = summary or table_summary(
+			employee, frappe.db.get_value("Employee", employee, "company"), rs, day)
+		have = summary.leave_credits_earned
+	else:
+		have = facts["credited"]
 	taken = sum(r["days"] for r in paid_leave_rows(employee, day))
-	return max(0.0, facts["credited"] - taken)
+	return max(0.0, have - taken)
 
 
 def paid_leaves_card(emp):
@@ -542,17 +594,21 @@ def _card(emp, rs):
 
 	today = getdate(nowdate())
 	start, end = _month_bounds(today)
-	facts = credit_facts(emp.name, rs)
+	facts = credit_facts(emp.name, rs, today)
+	# A set class that gives nothing is the reason, not the category (X-9, R-16).
+	class_is_why = bool(facts["class"] and not facts["credited"])
 	out = {
 		"month": _(today.strftime("%B")),
 		"class": facts["class"] or None,
-		"category": None if facts["category_earns"] else (facts["category"] or None),
+		"category": None if (facts["category_earns"] or class_is_why) else (facts["category"] or None),
 		"earns": facts["earns"],
 		"lwp_in_play": lwp_in_play(emp.name, today),
 		"lwp_limit": LWP_MONTH_LIMIT,
 	}
 	if not facts["earns"]:
 		return out
+	if facts["table"]:
+		return _table_card(emp, rs, facts, out, today)
 
 	rows = paid_leave_rows(emp.name, today)
 	used = [r for r in rows if r.status == "Approved"]
@@ -588,6 +644,49 @@ def _card(emp, rs):
 	return out
 
 
+def _table_card(emp, rs, facts, base, today):
+	"""The card for staff whose leave comes from the days-present table (spec 7.7,
+	list two). Every key is named here; there is no `to_be_paid_out` and no pay
+	field of any kind, because an agency pays these staff (SEC-1, SEC-20)."""
+	summary = table_summary(emp.name, emp.company, rs, today)
+	start, _end = _month_bounds(today)
+	rows = paid_leave_rows(emp.name, today)
+	used = [r for r in rows if r.status == "Approved"]
+	waiting = [r for r in rows if r.status == "Open"]
+	last = frappe.get_all("Attendance", filters={"employee": emp.name, "docstatus": 1,
+	                                             "attendance_date": ["between", [start, today]]},
+	                      pluck="attendance_date", order_by="attendance_date desc", limit=1)
+	length = "28-29" if get_last_day(today).day <= 29 else "30-31"
+	other = "30-31" if length == "28-29" else "28-29"
+	earns_rows = [r for r in rs.leave_credit_rows if flt(r.credits) > 0
+	              and r.designation == facts["designation"]]
+	out = {k: base[k] for k in ("month", "class", "earns", "lwp_in_play", "lwp_limit")}
+	out.update({
+		"housekeeping": True,
+		"earned": summary.leave_credits_earned,
+		"cap": facts["credited"],
+		"attended_so_far": summary.days_for_gate,
+		"attended_up_to": str(last[0]) if last else None,
+		"used": sum(r["days"] for r in used),
+		"used_dates": [{"date": str(r.from_date), "to": str(r.to_date), "half": bool(r.half_day)}
+		               for r in sorted(used, key=lambda r: r.from_date, reverse=True)],
+		"waiting": sum(r["days"] for r in waiting),
+		"waiting_from": str(waiting[0].from_date) if waiting else None,
+		"approver": (frappe.db.get_value("User", waiting[0].leave_approver, "full_name")
+		             if waiting and waiting[0].leave_approver else None),
+		"month_length": length,
+		# Rule-set facts, no personal data: this month's rows that earn something,
+		# and where the other month length's rows start (for the rule box).
+		"rows": {"designation": facts["designation"],
+		         "this": [[a, b, c] for a, b, c in facts["rows"] if c > 0],
+		         "other_starts": sorted(r.days_from for r in earns_rows if r.month_length == other)},
+	})
+	if summary.next_credit_at is not None:
+		out["next_at"] = summary.next_credit_at
+		out["days_to_next"] = summary.next_credit_at - summary.days_for_gate
+	return out
+
+
 def annotate_applications(emp, rows):
 	"""The facts the Leave Applications list shows (R-17..R-27), added to the
 	rows the caller already reads for `emp` (at most ten). The chain is walked
@@ -613,7 +712,7 @@ def annotate_applications(emp, rows):
 		if approved:
 			users = told.get(r.name, set())
 			mine = [m for m in chain if m.user_id in users]
-			r["told_count"] = len(users)
+			r["told_count"] = len({m.user_id for m in mine})
 			r["told_top_name"] = mine[-1].employee_name if mine else None
 			# "No manager is set above you" only when it is true.
 			r["has_manager"] = bool(chain)
@@ -652,17 +751,25 @@ def types_offered(emp, own, balance_types):
 		if rule_set_switched_off(emp.company):
 			return [{"leave_type": t} for t in others]
 		return [{"leave_type": t} for t in others] + ([{"leave_type": lwp, "lwp": 1}] if lwp else [])
+	from hrms.alvoraa_hr_core.access import permitted_employee_filters
+
 	facts = credit_facts(emp.name, rs)
 	out = []
 	if facts["earns"]:
 		row = {"leave_type": PAID_LEAVES, "paid_leaves": 1}
-		if own:
-			# X-2: HR acting for someone gets no Paid Leaves figure (SEC-1c).
-			row["left"] = paid_leaves_left(emp.name, rs)
+		# Q-S2 / A-1 (Surbhi, 25 Oct 2026): HR acting for someone sees the days left,
+		# never pay - but only for a person inside the caller's company AND branch.
+		# The on-behalf path elsewhere checks the company alone (finding F-3).
+		if own or frappe.db.exists(
+				"Employee", dict(permitted_employee_filters(), name=emp.name)):
+			row["left"] = paid_leaves_left(emp.name, rs, facts=facts)
 		out.append(row)
 	if lwp:
-		out.append({"leave_type": lwp, "lwp": 1, "lwp_in_play": lwp_in_play(emp.name, nowdate()),
-		            "lwp_limit": LWP_MONTH_LIMIT})
+		row = {"leave_type": lwp, "lwp": 1, "lwp_in_play": lwp_in_play(emp.name, nowdate()),
+		       "lwp_limit": LWP_MONTH_LIMIT}
+		if facts["class"] and not facts["credited"]:
+			row["no_paid_class"] = facts["class"]  # X-9: the class is why Paid Leaves is missing
+		out.append(row)
 	return out + [{"leave_type": t} for t in others]
 
 
@@ -756,7 +863,12 @@ def preview_facts(emp, leave_type, from_date, to_date, half_day, half_day_date, 
 		           date=day_label(max(getdate(clash[0].from_date), getdate(from_date))))
 		return out
 
-	special = _special_day(rs, from_date, to_date)
+	# Agency-paid staff: no special-day line (the doubled deduction is DTC pay,
+	# which does not apply to them), and the page words pay differently.
+	facts = credit_facts(emp.name, rs, from_date)
+	if facts["housekeeping"]:
+		out["housekeeping"] = 1
+	special = None if facts["housekeeping"] else _special_day(rs, from_date, to_date)
 	if special:
 		out["special_day"] = special
 
@@ -770,11 +882,15 @@ def preview_facts(emp, leave_type, from_date, to_date, half_day, half_day_date, 
 		if flt(days) > out["lwp_left"]:
 			out.update(verdict="block", reason_code="lwp_over")
 			return out
-	elif own and leave_type == PAID_LEAVES:
-		facts = credit_facts(emp.name, rs)
-		left = paid_leaves_left(emp.name, rs, from_date)
+	elif leave_type == PAID_LEAVES:
+		# The caller's scope is already checked (_leave_subject), so the days left
+		# are shown on behalf as well (Q-S2, A-1).
+		summary = table_summary(emp.name, emp.company, rs, from_date) if facts["table"] else None
+		left = paid_leaves_left(emp.name, rs, from_date, facts, summary)
 		out.update(credited=facts["credited"], pl_left=left,
 		           lwp_in_play=lwp_in_play(emp.name, from_date))
+		if summary:
+			out.update(earned=summary.leave_credits_earned, next_at=summary.next_credit_at)
 		if flt(days) > left:
 			out.update(verdict="block", reason_code="pl_short")
 			return out

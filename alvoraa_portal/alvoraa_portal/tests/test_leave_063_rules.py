@@ -358,11 +358,20 @@ class TestOnBehalf(Rules063Case):
 		self.assertEqual(rows[P["priya"]]["no_login"], 0)
 		self.assertNotIn("user_id", rows[P["priya"]])
 
-	def test_hr_on_behalf_gets_no_paid_leaves_figure(self):
-		"""X-2 / SEC-1c."""
+	def test_hr_on_behalf_sees_the_days_left_but_not_the_card(self):
+		"""Q-S2 / A-1 (Surbhi, 25 Oct 2026; replaces X-2): the days left, for a
+		person in the caller's company AND branch. Still no card (SEC-1c)."""
 		frappe.set_user(fx.user("Ritika"))
 		s = hr_api.get_leave_summary(employee_id=P["rohit"])
 		self.assertNotIn("paid_leaves", s)
+		pl = [t for t in s["types_offered"] if t["leave_type"] == fx.PAID][0]
+		self.assertEqual(pl["left"], 4)
+
+	def test_hr_in_another_branch_sees_no_figure(self):
+		"""Bad news 3: _hr_target_employee checks the company alone, so the days
+		figure carries its own company-and-branch check."""
+		frappe.set_user(fx.user("Anil"))
+		s = hr_api.get_leave_summary(employee_id=P["rohit"])
 		pl = [t for t in s["types_offered"] if t["leave_type"] == fx.PAID][0]
 		self.assertNotIn("left", pl)
 
@@ -401,9 +410,11 @@ class TestTheChainNotice(Rules063Case):
 		                               "subject": ["like", "%will be away on%"]},
 		                      fields=["for_user", "subject", "email_content"])
 		told = {l.for_user for l in logs}
-		# Kavita, above Sunil, is told. Sunil approved it himself, and Frappe
-		# does not notify the person who did the thing; the employee never.
+		# Kavita, above Sunil, is told. Sunil approved it himself and is not told his
+		# own approval (this Frappe alerts the sender too, so the code leaves him out);
+		# the employee never.
 		self.assertIn(fx.user("Kavita"), told)
+		self.assertNotIn(fx.user("Sunil"), told)
 		self.assertNotIn(fx.user("Priya"), told)
 		for l in logs:
 			text = l.subject + l.email_content
@@ -412,6 +423,69 @@ class TestTheChainNotice(Rules063Case):
 			for never in ("SECRET-REASON-063", fx.PAID, "Sunil Mehra"):
 				self.assertNotIn(never, text)
 		self.assertEqual(res["told_top"], "Kavita L063")
+
+	def _approved_by_sunil(self, reason="SECRET-REASON-063"):
+		d, = self.need(fx.future_day(1))
+		name = fx.apply_as(fx.user("Priya"), leave_type=fx.PAID, from_date=d, to_date=d,
+		                   reason=reason)["name"]
+		res = fx.approve(name, by=fx.user("Sunil"))
+		logs = frappe.get_all("Notification Log",
+		                      filters={"document_type": "Leave Application", "document_name": name,
+		                               "subject": ["like", "%will be away on%"]},
+		                      fields=["for_user", "subject", "email_content"])
+		return name, res, logs
+
+	def test_hr_in_scope_are_told_of_every_approval_once_with_the_same_four_facts(self):
+		"""AC-145 / N-1b: Ritika (looks after Priya) is told; Anil (another branch),
+		Priya and the approver are not; no type, reason or approver in the text."""
+		_name, _res, logs = self._approved_by_sunil()
+		told = [l.for_user for l in logs]
+		self.assertIn(fx.user("Ritika"), told)
+		self.assertEqual(len(told), len(set(told)), "once each")
+		for u in (fx.user("Anil"), fx.user("Priya"), fx.user("Sunil")):
+			self.assertNotIn(u, told)
+		hr = [l for l in logs if l.for_user == fx.user("Ritika")][0]
+		self.assertRegex(hr.subject, r"^Priya L063 will be away on ")
+		self.assertIn("has been approved", hr.email_content)
+		self.assertIn("You are told because you look after Priya's records in HR. "
+		              "There is nothing for you to do.", hr.email_content)
+		for never in ("SECRET-REASON-063", fx.PAID, "Sunil Mehra"):
+			self.assertNotIn(never, hr.subject + hr.email_content)
+
+	def test_hr_who_is_in_the_chain_is_told_once_with_the_chain_wording(self):
+		"""AC-145: Ritika also manages Priya here; she gets one notice, not two."""
+		frappe.db.set_value("Employee", P["sunil"], "reports_to", P["ritika"])
+		try:
+			_name, _res, logs = self._approved_by_sunil()
+		finally:
+			frappe.db.set_value("Employee", P["sunil"], "reports_to", P["kavita"])
+			frappe.db.commit()      # the approval committed the change, so the undo must too
+		mine = [l for l in logs if l.for_user == fx.user("Ritika")]
+		self.assertEqual(len(mine), 1)
+		self.assertIn("is in your team", mine[0].email_content)
+
+	def test_lwp_approved_by_hr_tells_the_other_hr_but_not_the_approver(self):
+		"""AC-145: the approver is never told her own approval."""
+		d, = self.need(fx.future_day(1))
+		name = fx.apply_as(fx.user("Priya"), leave_type=LWP, from_date=d, to_date=d)["name"]
+		fx.approve(name, by=fx.user("Ritika"))
+		told = frappe.get_all("Notification Log",
+		                      filters={"document_name": name,
+		                               "subject": ["like", "%will be away on%"]}, pluck="for_user")
+		self.assertNotIn(fx.user("Ritika"), told)
+		self.assertIn(fx.user("Kavita"), told)
+
+	def test_the_told_line_counts_managers_only(self):
+		"""AC-146: Sunil approves, Kavita is above him, Ritika (HR) is also told.
+		The employee's line says one person, and so does the approver's reply."""
+		name, res, logs = self._approved_by_sunil()
+		self.assertGreaterEqual(len(logs), 2, "Kavita and Ritika were both told")
+		self.assertEqual(res["told_n"], 1)
+		self.assertEqual(res["told_top"], "Kavita L063")
+		frappe.set_user(fx.user("Priya"))
+		row = [a for a in hr_api.get_leave_summary()["applications"] if a["name"] == name][0]
+		self.assertEqual(row["told_count"], 1)
+		self.assertEqual(row["told_top_name"], "Kavita L063")
 
 	def test_nothing_on_decline(self):
 		d, = self.need(fx.future_day(1))

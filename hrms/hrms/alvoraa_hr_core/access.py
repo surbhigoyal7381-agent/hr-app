@@ -286,6 +286,19 @@ def permitted_employee_filters(user=None):
 	return filters
 
 
+def employee_in_scope(employee_id, user=None):
+	"""Is this one Employee inside the user's HR scope? Fails closed.
+
+	Do NOT write dict(permitted_employee_filters(), name=X): both NO_EMPLOYEES
+	and ALL_EMPLOYEES are keyed on `name`, so the caller's own `name` replaces
+	the refusal and a user with no companies is let in. Conditions are joined
+	as a list here so the two `name` tests are both applied."""
+	conditions = [[field, cond[0], cond[1]]
+	              for field, cond in permitted_employee_filters(user).items()]
+	conditions.append(["name", "=", employee_id])
+	return bool(frappe.db.exists("Employee", conditions))
+
+
 def permitted_employees(user=None):
 	"""The Employee records this user may see as HR, as a set of names. Fails closed.
 

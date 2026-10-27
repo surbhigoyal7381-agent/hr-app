@@ -7190,8 +7190,11 @@ function lpPopulateTypes(types) {
   help.style.display = hasPaid ? "none" : "";
   /* X-9: a class that gives nothing is the reason; otherwise it is the work type. */
   var noClass = (types.filter(function(t) { return t.no_paid_class; })[0] || {}).no_paid_class;
+  var noneSet = types.some(function(t) { return t.no_class; });
   var first = LP.subject ? String(LP.subject.label).split(" ")[0] : "";
-  help.textContent = noClass
+  help.textContent = noneSet
+    ? drT("No leave class is set, so only Leave Without Pay is offered. Ask HR if this is wrong.")
+    : noClass
     ? (LP.subject ? drT("{0}'s leave class ({1}) does not get Paid Leaves, so only Leave Without Pay is offered.", [first, noClass])
                   : drT("Your leave class ({0}) does not get Paid Leaves, so only Leave Without Pay is offered.", [noClass]))
     : LP.subject

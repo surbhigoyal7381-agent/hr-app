@@ -457,11 +457,24 @@ class TestApplyFactsForTableStaff(TableCase):
 		self.assertEqual(row["left"], 1)
 		self.assertNotIn("to_be_paid_out", json.dumps(row))
 
-	def test_hr_in_another_branch_gets_no_figure(self):
-		"""Bad news 3: Anil sees the company but not Geeta's branch."""
+	def test_hr_in_another_branch_is_refused(self):
+		"""Bad news 3 and F-3: Anil looks after another branch, so Geeta's summary
+		is refused outright - no figure, no class name."""
 		self._present_this_month("geeta", 6)
-		row = self._types("Anil", "geeta")[fx.PAID]
-		self.assertNotIn("left", row)
+		with self.assertRaises(frappe.PermissionError):
+			self._types("Anil", "geeta")
+
+	def test_an_agency_worker_with_no_class_is_told_so_not_blamed_on_the_work_type(self):
+		"""m-1: Geeta's class cleared. The card must not say 'Contract staff do not
+		get Paid Leaves', and the Apply list says no class is set."""
+		frappe.db.set_value("Employee", P["geeta"], "grade", None)
+		card = leave_rules.paid_leaves_card(frappe.get_doc("Employee", P["geeta"]))
+		self.assertFalse(card["earns"])
+		self.assertIsNone(card["class"])
+		self.assertIsNone(card["category"])
+		row = self._types("Ritika", "geeta")[LWP]
+		self.assertEqual(row.get("no_class"), 1)
+		self.assertNotIn("no_paid_class", row)
 
 	def test_days_used_and_waiting_are_taken_off(self):
 		"""R-98: left = earned so far - used - waiting."""

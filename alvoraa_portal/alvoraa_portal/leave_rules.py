@@ -348,7 +348,7 @@ def hr_users_in_scope(employee):
 	"""HR Managers and HR Users whose scope (companies AND branches) holds this
 	employee, never the employee themselves. A handful of people per tenant (7 at
 	DTC), each asked with the same rule the Inbox uses."""
-	from hrms.alvoraa_hr_core.access import permitted_employee_filters
+	from hrms.alvoraa_hr_core.access import employee_in_scope
 
 	own = frappe.db.get_value("Employee", employee, "user_id")
 	users = frappe.get_all("Has Role", filters={"role": ["in", list(HR_ROLES)],
@@ -361,7 +361,7 @@ def hr_users_in_scope(employee):
 	for u in users:
 		if u in ("Administrator", own):
 			continue
-		if frappe.db.exists("Employee", dict(permitted_employee_filters(u), name=employee)):
+		if employee_in_scope(employee, u):
 			out.append(u)
 	return out
 
@@ -597,6 +597,8 @@ def _card(emp, rs):
 	facts = credit_facts(emp.name, rs, today)
 	# A set class that gives nothing is the reason, not the category (X-9, R-16).
 	class_is_why = bool(facts["class"] and not facts["credited"])
+	# An agency worker with no class set is not turned away for their work type (m-1).
+	class_is_why = class_is_why or facts["housekeeping"]
 	out = {
 		"month": _(today.strftime("%B")),
 		"class": facts["class"] or None,
@@ -751,7 +753,7 @@ def types_offered(emp, own, balance_types):
 		if rule_set_switched_off(emp.company):
 			return [{"leave_type": t} for t in others]
 		return [{"leave_type": t} for t in others] + ([{"leave_type": lwp, "lwp": 1}] if lwp else [])
-	from hrms.alvoraa_hr_core.access import permitted_employee_filters
+	from hrms.alvoraa_hr_core.access import employee_in_scope
 
 	facts = credit_facts(emp.name, rs)
 	out = []
@@ -760,15 +762,19 @@ def types_offered(emp, own, balance_types):
 		# Q-S2 / A-1 (Surbhi, 25 Oct 2026): HR acting for someone sees the days left,
 		# never pay - but only for a person inside the caller's company AND branch.
 		# The on-behalf path elsewhere checks the company alone (finding F-3).
-		if own or frappe.db.exists(
-				"Employee", dict(permitted_employee_filters(), name=emp.name)):
+		if own or employee_in_scope(emp.name):
 			row["left"] = paid_leaves_left(emp.name, rs, facts=facts)
 		out.append(row)
 	if lwp:
 		row = {"leave_type": lwp, "lwp": 1, "lwp_in_play": lwp_in_play(emp.name, nowdate()),
 		       "lwp_limit": LWP_MONTH_LIMIT}
-		if facts["class"] and not facts["credited"]:
-			row["no_paid_class"] = facts["class"]  # X-9: the class is why Paid Leaves is missing
+		# X-9: the class is why Paid Leaves is missing. Only for the caller or someone in
+		# the caller's own company and branch (m-2), like the days left above.
+		if own or employee_in_scope(emp.name):
+			if facts["class"] and not facts["credited"]:
+				row["no_paid_class"] = facts["class"]
+			elif facts["housekeeping"] and not facts["class"]:
+				row["no_class"] = 1  # m-1: no class set, so say that, not "work type"
 		out.append(row)
 	return out + [{"leave_type": t} for t in others]
 

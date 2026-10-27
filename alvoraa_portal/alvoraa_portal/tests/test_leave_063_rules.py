@@ -345,7 +345,7 @@ class TestOnBehalf(Rules063Case):
 	def test_hr_out_of_branch_cannot_file_for_someone(self):
 		d, = self.need(fx.future_day(1))
 		frappe.set_user(fx.user("Anil"))
-		with self.assertRaisesRegex(frappe.PermissionError, "branches you look after"):
+		with self.assertRaisesRegex(frappe.PermissionError, "you look after"):
 			hr_api.apply_leave(LWP, d, d, on_behalf_of=P["priya"])
 
 	def test_the_picker_offers_only_people_in_scope_and_marks_no_login(self):
@@ -367,13 +367,13 @@ class TestOnBehalf(Rules063Case):
 		pl = [t for t in s["types_offered"] if t["leave_type"] == fx.PAID][0]
 		self.assertEqual(pl["left"], 4)
 
-	def test_hr_in_another_branch_sees_no_figure(self):
-		"""Bad news 3: _hr_target_employee checks the company alone, so the days
-		figure carries its own company-and-branch check."""
+	def test_hr_in_another_branch_is_refused_the_leave_summary(self):
+		"""F-3, fixed: _hr_target_employee checks company AND branch, so an HR
+		user limited to one branch gets the refusal, not the other branch's
+		leave reasons and balances."""
 		frappe.set_user(fx.user("Anil"))
-		s = hr_api.get_leave_summary(employee_id=P["rohit"])
-		pl = [t for t in s["types_offered"] if t["leave_type"] == fx.PAID][0]
-		self.assertNotIn("left", pl)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_leave_summary(employee_id=P["rohit"])
 
 
 class TestTheLock(Rules063Case):

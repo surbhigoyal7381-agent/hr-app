@@ -306,5 +306,113 @@ class TestTheWholeSlip(unittest.TestCase):
 		self.assertEqual(m.net, 0.0)
 
 
+# ── slice 063: leave earned from days present (the days-present table) ───────
+
+LONG = [(0, 5, 0.0), (6, 12, 1.0), (13, 18, 2.0), (19, 25, 3.0), (26, 31, 4.0)]
+SHORT = [(0, 4, 0.0), (5, 11, 1.0), (12, 17, 2.0), (18, 24, 3.0), (25, 29, 4.0)]
+
+
+def table(present, rows=LONG, month_days=31, cap=4.0, extra_half=False, approved=0):
+	"""A table person (Contract, so earns_leave_credits is off) with `present`
+	whole days worked, an optional extra half day, and approved Paid Leaves days."""
+	days = [worked() for _ in range(present)]
+	if extra_half:
+		days.append(half_leave_day())
+	return summarise_month(days, basic=12000, month_days=month_days, earns_leave_credits=False,
+	                       monthly_cap=cap, credit_rows=rows, credit_designation="Staff",
+	                       approved_leave_days=approved)
+
+
+def half_leave_day():
+	v = DayVerdict()
+	v.half_leave = True
+	v.slab_quarters = 0
+	return v
+
+
+class TestLeaveFromDaysPresent(unittest.TestCase):
+	"""AC-119..AC-121, AC-126, AC-139, SEC-20: the table picks the row from whole
+	days present; the credit is reported and never paid."""
+
+	def test_october_31_days(self):
+		"""AC-119: every edge of the 30-31 rows."""
+		for present, earned in ((0, 0), (5, 0), (6, 1), (12, 1), (13, 2), (18, 2), (19, 3),
+		                        (20, 3), (25, 3), (26, 4), (30, 4), (31, 4)):
+			self.assertEqual(table(present).leave_credits_earned, earned, present)
+
+	def test_november_30_days_uses_the_same_rows(self):
+		"""AC-120."""
+		for present, earned in ((20, 3), (26, 4), (30, 4)):
+			self.assertEqual(table(present, month_days=30).leave_credits_earned, earned, present)
+
+	def test_february_28_days_uses_the_short_rows(self):
+		"""AC-121."""
+		for present, earned in ((4, 0), (5, 1), (11, 1), (12, 2), (17, 2), (18, 3), (24, 3),
+		                        (25, 4), (28, 4)):
+			self.assertEqual(table(present, SHORT, 28).leave_credits_earned, earned, present)
+
+	def test_a_half_day_rounds_the_total_down(self):
+		"""AC-119 / AC-123: 12.5 days present is the 6-12 row; 25.5 is the 19-25 row."""
+		self.assertEqual(table(12, extra_half=True).leave_credits_earned, 1.0)
+		self.assertEqual(table(25, extra_half=True).leave_credits_earned, 3.0)
+		self.assertEqual(table(14, extra_half=True).days_for_gate, 14.5)
+
+	def test_approved_paid_leaves_days_count_as_present(self):
+		"""AC-122: 24 worked + 2 approved = 26 present = 4; no approved leave = 3."""
+		self.assertEqual(table(24, approved=2).leave_credits_earned, 4.0)
+		self.assertEqual(table(24, approved=0).leave_credits_earned, 3.0)
+
+	def test_the_class_figure_caps_the_row(self):
+		"""AC-124: class B (cap 3) with 31 days present."""
+		m = table(31, cap=3.0)
+		self.assertEqual(m.leave_credits_earned, 3.0)
+		self.assertIsNone(m.next_credit_at)
+
+	def test_no_fifteen_day_minimum(self):
+		"""AC-126: 6 days present earns 1 although the office gate is 15."""
+		m = table(6)
+		self.assertEqual(m.leave_credits_earned, 1.0)
+		self.assertFalse([n for n in m.notes if "gate" in n])
+
+	def test_next_at_reads_the_same_rows(self):
+		"""AC-133, AC-139, AC-135: 14 days earns 2, next at 19; at the cap nothing."""
+		self.assertEqual(table(14).next_credit_at, 19)
+		self.assertEqual(table(0).next_credit_at, 6)
+		self.assertIsNone(table(27).next_credit_at)
+		self.assertEqual(table(14, SHORT, 28).next_credit_at, 18)
+
+	def test_the_credit_is_never_paid(self):
+		"""SEC-20 (b): paid days are the days worked alone, with or without the
+		table; the credit is not in them, and leave encashed is 0."""
+		with_table = table(26)
+		without = summarise_month([worked() for _ in range(26)], basic=12000, month_days=31,
+		                          earns_leave_credits=False, monthly_cap=4.0)
+		self.assertEqual(with_table.paid_days, 26.0)
+		self.assertEqual(with_table.paid_days, without.paid_days)
+		self.assertEqual(with_table.earning_basic, without.earning_basic)
+		self.assertEqual(with_table.net, without.net)
+		self.assertEqual(with_table.leave_credits_earned, 4.0)
+		self.assertEqual(with_table.leave_encashed, 0.0)
+		self.assertTrue(with_table.credit_table)
+
+	def test_used_is_the_approved_paid_leaves_up_to_earned(self):
+		"""AC-129: 14 present with 1 approved Paid Leaves day: earned 2, used 1."""
+		m = table(13, approved=1)
+		self.assertEqual((m.leave_credits_earned, m.leave_used_for_approved), (2.0, 1.0))
+
+	def test_the_why_note_names_the_row_designation_and_the_agency(self):
+		"""AC-129 / Q-S5: the words come from the row's designation, not from code."""
+		self.assertIn("Staff table: 14 days present in a 31-day month gives 2. "
+		              "Reported to the agency; not paid by DTC.", table(14).notes)
+
+	def test_an_office_call_is_unchanged(self):
+		"""No rows given: the old arithmetic, the old fields."""
+		m = month([worked() for _ in range(20)])
+		self.assertFalse(m.credit_table)
+		self.assertEqual(m.paid_days, 24.0)
+		self.assertIsNone(m.next_credit_at)
+
+
+
 if __name__ == "__main__":
 	unittest.main(verbosity=2)

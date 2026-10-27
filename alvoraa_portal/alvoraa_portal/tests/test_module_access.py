@@ -742,3 +742,105 @@ class TestTheHookIsWhereItCanActuallyFire(FrappeTestCase):
 		self.assertIn(".delete()", src)
 		self.assertIn("db_update()", src)
 		self.assertNotIn("delete_doc", src)
+
+
+class TestAUserWrittenWhileWeSweep(FrappeTestCase):
+	"""The sweep saves every enabled user, and some are busy while it runs.
+
+	DTC, 26 Oct 2026: the tenant's biometric sync account punches all day, so
+	its User row moved between `get_doc` and `save`, and Frappe refused with
+	TimestampMismatchError. Every attempt to change the plan then showed an
+	error, and each retry saved again - dropping five features along the way.
+
+	NOTHING HERE TOUCHES THE DATABASE. A first version of these tests moved a
+	real row's `modified` to stage the clash. The rows went back on rollback
+	but Frappe's document cache kept the new stamps, and six unrelated tests in
+	this file then failed on the very error being tested. Clearing the cache in
+	tearDown made it worse. The behaviour under test is "what does it do when
+	save raises", so a stand-in that raises is the whole fixture.
+	"""
+
+	class _Moved(Exception):
+		"""Stands in for whatever Frappe raised; the code catches by type."""
+
+	def _fake_user(self, raises):
+		saves = []
+
+		class FakeUser:
+			def __init__(self):
+				self.flags = frappe._dict()
+				self.module_profile = "unset"
+				self.blocks_cleared = False
+
+			def set(self, field, value):
+				if field == "block_modules":
+					self.blocks_cleared = True
+
+			def save(self, **kwargs):
+				saves.append(self.module_profile)
+				if raises:
+					raise frappe.TimestampMismatchError("moved under us")
+
+		return FakeUser(), saves
+
+	def test_the_profile_still_lands(self):
+		from unittest.mock import patch
+
+		first, first_saves = self._fake_user(raises=True)
+		second, second_saves = self._fake_user(raises=False)
+		reads = [first, second]
+
+		with patch.object(frappe, "get_doc", side_effect=lambda *a, **k: reads.pop(0)):
+			ma._save_profile("busy@example.com", ma.PROFILE_NAME)
+
+		self.assertEqual(reads, [], "it must read the user again, not reuse the stale copy")
+		self.assertEqual(first_saves, [ma.PROFILE_NAME], "the first attempt was made")
+		self.assertEqual(second_saves, [ma.PROFILE_NAME], "and the retry carried the profile")
+
+	def test_a_clash_that_never_settles_is_raised_not_swallowed(self):
+		"""One retry, not a loop. A row written continuously is a real problem,
+		and `apply_to_users` logs it and moves on to the next person."""
+		from unittest.mock import patch
+
+		def always_moving(*args, **kwargs):
+			doc, _ = self._fake_user(raises=True)
+			return doc
+
+		with patch.object(frappe, "get_doc", side_effect=always_moving):
+			with self.assertRaises(frappe.TimestampMismatchError):
+				ma._save_profile("busy@example.com", ma.PROFILE_NAME)
+
+	def test_nothing_is_left_on_screen_for_a_clash_it_handled(self):
+		"""Frappe raises the mismatch through msgprint, which queues the
+		sentence for the browser BEFORE anything catches the exception. Left
+		there it reaches whoever changed the plan as "could not save" - and
+		they try again, which is how the features went."""
+		from unittest.mock import patch
+
+		first, _ = self._fake_user(raises=True)
+		second, _ = self._fake_user(raises=False)
+		reads = [first, second]
+		cleared = []
+
+		with patch.object(frappe, "get_doc", side_effect=lambda *a, **k: reads.pop(0)):
+			with patch.object(frappe, "clear_last_message",
+			                  side_effect=lambda: cleared.append(1)):
+				ma._save_profile("busy@example.com", ma.PROFILE_NAME)
+
+		self.assertEqual(len(cleared), 1,
+			"the queued message must be dropped before the retry")
+
+	def test_clearing_a_profile_also_empties_the_block_list(self):
+		"""The tenant-admin path. It used to be written out longhand beside the
+		ordinary one; both go through the same function now, so this pins that
+		the admin case did not lose anything in the move."""
+		from unittest.mock import patch
+
+		doc, _ = self._fake_user(raises=False)
+
+		with patch.object(frappe, "get_doc", side_effect=lambda *a, **k: doc):
+			ma._save_profile("an.admin@example.com", None)
+
+		self.assertIsNone(doc.module_profile)
+		self.assertTrue(doc.blocks_cleared,
+			"an old block list must not linger on a tenant admin")

@@ -107,6 +107,39 @@ def sync_module_profile(features=None, name=PROFILE_NAME, blocked=None):
     return doc.name
 
 
+def _save_profile(name, want):
+    """Point one user at `want` and save, retrying once if they moved under us.
+
+    Saving is the point: Frappe only copies `block_modules` during validate.
+
+    THE RETRY IS NOT DEFENSIVE PADDING. This sweep saves every enabled user, and
+    some of them are written while it runs - a tenant's biometric sync account
+    is active all day, so its User row moves between `get_doc` and `save` and
+    Frappe refuses with TimestampMismatchError. On DTC that turned every attempt
+    to change the plan into an error on screen (26 Oct 2026), and each retry
+    saved again, dropping more features each time. A fresh read and one more go
+    is enough; a second clash is a real problem and is left to the caller.
+
+    `clear_last_message` goes with the retry because Frappe raises the mismatch
+    through `msgprint`, which queues the sentence for the browser before the
+    exception is ever caught. Without this the first attempt still shows.
+    """
+    user = frappe.get_doc("User", name)
+    for attempt in (1, 2):
+        try:
+            user.module_profile = want
+            if want is None:
+                user.set("block_modules", [])
+            user.flags.ignore_permissions = True
+            user.save(ignore_permissions=True)
+            return
+        except frappe.TimestampMismatchError:
+            if attempt == 2:
+                raise
+            frappe.clear_last_message()
+            user = frappe.get_doc("User", name)
+
+
 def apply_to_users(users=None):
     """Point users at the profile and save, so Frappe copies the blocks across.
 
@@ -130,22 +163,17 @@ def apply_to_users(users=None):
             # Tenant admin: keep the full module list, and clear any profile
             # applied before they became one, or an old block list lingers.
             if frappe.db.get_value("User", name, "module_profile"):
-                u = frappe.get_doc("User", name)
-                u.module_profile = None
-                u.set("block_modules", [])
-                u.flags.ignore_permissions = True
-                u.save(ignore_permissions=True)
+                _save_profile(name, None)
             skipped += 1
             continue
         try:
-            user = frappe.get_doc("User", name)
-            # Always save, even if the profile name is unchanged: its CONTENTS
-            # may have changed, and Frappe only copies them on save.
-            user.module_profile = want
-            user.flags.ignore_permissions = True
-            user.save(ignore_permissions=True)
+            _save_profile(name, want)
             changed += 1
         except Exception:
+            # The message Frappe queued on the way out goes too. A failure this
+            # function has handled must not reach the screen of whoever changed
+            # the plan: it reads as "the save did not work", and they try again.
+            frappe.clear_last_message()
             frappe.log_error(
                 title="module_access: could not apply profile",
                 message=frappe.get_traceback(),

@@ -8,9 +8,11 @@ description: >-
   privacy, accessibility and resilience. Also use to review test coverage, build
   anonymised fixtures, or reproduce a reported bug as a failing test. Do NOT use to
   write feature code or to change the spec.
-model: inherit
+model: sonnet
 color: yellow
 ---
+
+> **Usage rule (Surbhi, 27 Oct 2026):** read `.claude/context/usage-discipline.md` before you start. Work to the risk tier named in your brief. Report only when you are finished or blocked. Never trade quality for usage: when unsure of the tier, go one up.
 
 # Role
 

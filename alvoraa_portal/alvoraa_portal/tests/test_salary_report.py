@@ -18,7 +18,7 @@ import os
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, getdate, nowdate
+from frappe.utils import add_days, flt, getdate, nowdate
 
 from alvoraa_portal.tests.utils import ensure_fiscal_years
 
@@ -507,3 +507,95 @@ class TestTheTwoDeductionColumns(SalaryReportCase):
 		labels = [c["label"] for c in cols]
 		for want in ("11 AM deduction", "Grooming red deduction"):
 			self.assertIn(want, labels)
+
+
+class TestTheMonthlySalaryColumn(SalaryReportCase):
+	"""The salary as agreed, with nothing worked out on it.
+
+	Every other money column on this report is a result. This one is the input,
+	and HR asked for it so they can see at a glance what a row started from.
+
+	The only thing worth testing is WHERE it comes from. The report already
+	loads this figure in `_employees`, for the test that skips people with
+	nothing to pay - but that lookup used to keep the newest Salary Structure
+	Assignment whatever its date, while the engine uses the newest one dated
+	on or before the period end. Left alone, a raise dated next month would
+	appear beside a Basic earned that does not include it, in the one report
+	whose purpose is to be checked against the payslip. The lookup now carries
+	the engine's date condition, and that is what these pin.
+	"""
+
+	def _row(self):
+		_c, rows, _m = self.run_it()
+		return [r for r in rows if r["employee"] == self.emp][0]
+
+	def test_the_column_is_there_as_money(self):
+		cols, _r, _m = self.run_it()
+		col = next((c for c in cols if c["label"] == "Monthly salary"), None)
+		self.assertIsNotNone(col, "HR asked for this column by this name")
+		self.assertEqual(col["fieldtype"], "Currency")
+
+	def test_it_is_the_agreed_salary_and_nothing_is_taken_off_it(self):
+		self._paid()
+		self._days()
+		row = self._row()
+		self.assertEqual(row["monthly_salary"], BASE)
+		# The proof it is untouched: the person worked 5 days of a long period,
+		# so what they EARNED is far less than what they are paid monthly.
+		self.assertLess(row["basic"], row["monthly_salary"])
+
+	def test_deductions_do_not_move_it(self):
+		"""A red mark, a late day, an absence - none of them change what the
+		contract says. A column that moved with them would be Basic earned
+		under another name."""
+		self._paid()
+		self._days()
+		before = self._row()["monthly_salary"]
+		frappe.get_doc({"doctype": "Attendance", "employee": self.emp,
+		                "company": COMPANY,
+		                "attendance_date": add_days(self.start, 5),
+		                "status": "Absent", "shift": SHIFT}
+		               ).insert(ignore_permissions=True).submit()
+		self.assertEqual(self._row()["monthly_salary"], before)
+
+	def test_a_raise_dated_after_the_period_is_not_shown_yet(self):
+		"""The engine will not pay it until it starts, so the report must not
+		display it. This is the one case where the report's own lookup and the
+		engine disagree, and the reason the column is taken from the engine."""
+		self._paid()
+		self._days()
+		ss = frappe.db.get_value("Salary Structure",
+		                         {"docstatus": 1, "company": COMPANY}, "name")
+		a = frappe.get_doc({"doctype": "Salary Structure Assignment",
+		                    "employee": self.emp, "salary_structure": ss,
+		                    "from_date": add_days(nowdate(), 40),
+		                    "base": BASE * 2, "company": COMPANY})
+		a.flags.ignore_permissions = True
+		a.insert()
+		a.submit()
+		row = self._row()
+		self.assertEqual(row["monthly_salary"], BASE,
+			"a raise that has not started must not appear next to a Basic "
+			"earned that does not include it")
+
+	def test_it_agrees_with_the_rate_the_engine_charged(self):
+		"""Monthly salary over the length of the period IS the daily rate.
+		If these two ever part company, one of them is lying."""
+		self._paid()
+		self._days()
+		row = self._row()
+		days = (getdate(nowdate()) - self.start).days + 1
+		self.assertAlmostEqual(row["daily_rate"], row["monthly_salary"] / days, 1)
+
+	def test_it_is_the_figure_the_engine_charged_on(self):
+		"""Read two different ways, it has to be the same number. The engine
+		picks the assignment itself; the report picks it in `_employees`. The
+		date condition is the only thing keeping them in step."""
+		self._paid()
+		self._days()
+		engine = frappe.db.get_value(
+			"Salary Structure Assignment",
+			{"employee": self.emp, "docstatus": 1,
+			 "from_date": ("<=", nowdate())},
+			"base", order_by="from_date desc")
+		self.assertEqual(self._row()["monthly_salary"], flt(engine, 2))

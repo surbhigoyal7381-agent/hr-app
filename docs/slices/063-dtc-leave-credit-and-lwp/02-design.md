@@ -2,10 +2,139 @@
 slice: 063-dtc-leave-credit-and-lwp
 artifact: 02-design (the UX design; plays the part of 01b in the handoff contract)
 author: hrms-ux-designer
-date: 2026-10-21 (v3 the same day: credits on the 1st, Surbhi's final answers)
-status: draft v3 - waiting for Surbhi's review (she reviews after everything is fixed, with the Positions page)
+date: 2026-10-21 (v3: credits on the 1st); v4 2026-10-24 (Housekeeping only)
+status: draft v4 - waiting for Surbhi's review (she reviews after everything is fixed, with the Positions page)
 inputs: 01-product-brief.md to its last section ("Surbhi's FINAL answers before the rework"); 01c-security-privacy-requirements.md (PRIV-1, PRIV-2, SEC-8); 01d-half-day-addendum.md; 01e-credit-at-start-of-month-addendum.md §4-§7; definition-of-ready-done.md (prototype parity); ux-learnings.md; portal code read in worktree 060-manager-review on 21 Oct 2026
-prototype: docs/slices/063-dtc-leave-credit-and-lwp/prototype-v3.html (v1 and v2 kept beside it). Not published - no Artifact tool in this run.
+prototype: docs/slices/063-dtc-leave-credit-and-lwp/prototype-v4.html = v3 plus the Housekeeping states only (v4-diff.txt shows every changed line; v1-v3 kept). Not published - no Artifact tool.
+---
+
+## v4 · Housekeeping (24 Oct 2026) - read this first
+
+**Bad news first.**
+1. **A Housekeeping card never shows money.** Surbhi confirmed an agency pays all 42
+   Housekeeping staff (the `dtc_agency` field names the agency for each). Their credits
+   change no DTC payslip, so the card has no "To be paid out" figure and no pay sentence.
+   I did not draw an either-or switch: the figure is simply not there for them.
+2. **The half-day rounding on a row edge is still not confirmed.** v4 rounds down (12.5
+   counts as 12), as 01f recommends. Question W1.
+3. **v4 is not published** (no Artifact tool). `prototype-v4.html` holds invented data
+   only.
+
+**What v4 adds, and nothing else** (`v4-diff.txt`: v3 copied byte for byte, then only
+these changes):
+
+| Addition | Source |
+|---|---|
+| Geeta (Housekeeping, Contract, class A) and Sushila (Housekeeping, Contract, class No Leave) in the person list | 01f, Surbhi's answers |
+| A "Housekeeping date" review control: Thu 1 Oct (0 days), Fri 23 Oct (14), Fri 30 Oct (27), Mon 15 Feb 2027 (a 28-day month, 12) | brief: day 1, mid-month, late month, short month |
+| The Housekeeping card (`hkCard`) and the rows table (`HK_ROWS`) | 01f H1 |
+| Housekeeping is offered **Paid Leaves** in Apply Leave, capped at what is earned so far | 01f H3 |
+| "Your leave class (No Leave) does not earn monthly Paid Leaves." for Sushila | Q-H4 |
+| Geeta in HR's "Who is this leave for?" list | brief (5) |
+| No pay wording for Housekeeping in the preview and the result | Q-H3 answer |
+
+### W.1 The Housekeeping card - exact words
+
+```
+Paid Leaves - October                                          [So far]
+Housekeeping · Class A · up to 4 days a month · 14 days attended up to 22 Oct
+ Earned so far 2 of 4 days | Used 1 day    | Waiting for approval 0 days
+ from 14 days attended     | 9 Oct         | none
+(i) Next Paid Leaves day at 19 days attended (5 more). This goes up as you attend
+    more days in October.
+Your leave is recorded for DTC's attendance. Your agency pays you, so this page shows no
+payout. Nothing carries over to next month.
+How Housekeeping earns Paid Leaves - class A
+In a 30- or 31-day month like October: 6 to 12 days attended earns 1, 13 to 18 days
+attended earns 2, 19 to 25 days attended earns 3, 26 or more days attended earns 4,
+never more than 4. In a 28- or 29-day month the rows start one day earlier (5, 12, 18,
+25). Approved Paid Leaves days count as days attended. A half day counts as half, and
+the total is rounded down to whole days. Nothing carries over.
+```
+
+| State | What changes |
+|---|---|
+| **Day 1** (0 attended) | "0 of 4 days · from 0 days attended"; class line ends "0 days attended so far"; "Next Paid Leaves day at 6 days attended (6 more)." |
+| **Mid-month** (14) | as above: 2 of 4, next at 19 (5 more) |
+| **Late month** (27) | "4 of 4"; the line reads "**You have earned the most your class allows (4).**" |
+| **Short month** (Feb 2027, 28 days, 12 attended) | "Paid Leaves - February", "2 of 4", "next at 18 (6 more)"; rule box starts "In a 28- or 29-day month like February: 5 to 11 … 25 or more … In a 30- or 31-day month the rows start one day later (6, 13, 19, 26)." |
+| **31 days attended** | the class figure (A = 4), shown as "4 of 4" |
+| **No Leave** (Sushila) | "Your leave class (No Leave) does not earn monthly Paid Leaves." / "You can still ask for Leave Without Pay, up to 5 days a month. HR approves it. You have 0 of 5 days waiting or approved in October." |
+
+Rules for the figures:
+- **Earned so far** = the row for days attended (approved Paid Leaves days included,
+  rounded down to whole days), never above the class figure.
+- **Next** comes from the **same rows**: the first row worth more than today's figure.
+  It is never worked out a second way. No "next" line once the class figure is reached.
+- **Used** and **Waiting** work as for everyone else. **To be paid out is not drawn.**
+- No 15-day line for Housekeeping: their table has no minimum.
+- No red or green marks are mentioned: Contract rules are unchanged.
+
+### W.2 Apply Leave for Housekeeping
+
+- Options: `Paid Leaves - 1 day left` (earned so far − used − waiting) · `Leave Without Pay - 0 of 5 used`.
+- **Paid Leaves, enough:** "**Asking for 1 day of Paid Leaves.** Until Sunil Mehra
+  decides, 1 day is set aside from the 2 you have earned so far. Approved Paid Leaves
+  days count as days attended." (No "The leave is paid".)
+- **Paid Leaves, not enough:** "**2 days asked for, but you have 1 day of Paid Leaves left
+  for October.** You have earned 2 so far; the next day comes at 19 days attended. Days
+  already used or waiting are taken off. You can ask for Leave Without Pay instead (0 of
+  5 used this month)." + **Ask for Leave Without Pay instead**. No send button.
+- **Leave Without Pay:** "**Asking for 2 days of Leave Without Pay.** If approved, it is
+  recorded as leave without pay on DTC's attendance." + the "N of 5" line and the
+  approver line, as for everyone.
+- **Result (LWP):** "If approved, it is recorded as leave without pay on DTC's
+  attendance. 2 of 5 days of Leave Without Pay are now waiting or approved in October."
+- **No pay wording for Housekeeping:** the special-day line ("charged double") is not
+  shown to them, and the half-day block drops "and, on this special day, is charged
+  double". Everything else in the half-day block stays.
+- **HR on behalf:** "Geeta Devi · Housekeeping · no login" in the picker. The types,
+  "1 day left", the not-enough message and the 5-day limit follow Geeta, in the third
+  person ("Geeta has earned 2 so far…").
+
+### W.3 Parity rows that change from v3 to v4 (for the analyst)
+
+| Row | v3 | v4 |
+|---|---|---|
+| Card - who gets which card | Contract → "Contract staff do not get monthly Paid Leaves" | **Housekeeping designation + a class with credits** → Housekeeping card (W.1). Housekeeping + No Leave → "Your leave class (No Leave) does not earn monthly Paid Leaves." Other Contract staff: unchanged |
+| Card - first figure | "Paid Leaves this month 4 · given on 1 Oct" | Housekeeping: "Earned so far N of {class} days · from {n} days attended" |
+| Card - next line | (none) | Housekeeping: "Next Paid Leaves day at {row start} days attended ({k} more)." or "You have earned the most your class allows ({class})." From the rows |
+| Card - "To be paid out" | always drawn | **Not drawn for Housekeeping** |
+| Card - money line | "Paid with your October salary. Nothing carries over." | Housekeeping: "Your leave is recorded for DTC's attendance. Your agency pays you, so this page shows no payout. Nothing carries over to next month." |
+| Card - rule box | flat 4/3/2 sentence | Housekeeping: the rows for this month's length in words, the other length's starting days, approved Paid Leaves count, half days round down |
+| Card - 15-day line | shown under 15 days | **Never for Housekeeping** |
+| Card - chip | none | Housekeeping: "So far" (their figure really does grow during the month) |
+| Card - month label | October | the month being shown (February in the short-month example) |
+| Apply - types | Contract → Leave Without Pay only | Housekeeping with a class → Paid Leaves and Leave Without Pay |
+| Apply - Paid Leaves left | 4 − used − waiting | Housekeeping: earned so far − used − waiting |
+| Apply - Paid Leaves not enough | "…taken off the 4…" | Housekeeping: "You have earned N so far; the next day comes at R days attended…" |
+| Apply - LWP money sentence | "you are not paid for this day; your Paid Leaves … are still paid out" | Housekeeping: "it is recorded as leave without pay on DTC's attendance." |
+| Apply - Paid Leaves "The leave is paid" | shown | **Not shown for Housekeeping** |
+| Apply - special-day line | shown | **Not shown for Housekeeping** |
+| Apply - half day "charged double" clause | shown on a special day | **Not shown for Housekeeping** |
+| Result - LWP | "If approved, you are not paid…" | Housekeeping: "If approved, it is recorded as leave without pay on DTC's attendance. N of 5 …" |
+| HR on behalf - picker | Manoj, Rohit | adds "Geeta Devi · Housekeeping · no login" |
+| Everything else in v3 | - | **Unchanged** (office staff, Inbox, Team View, notices, cancel) |
+
+### W.4 Checks
+
+Measured with Playwright in Chrome, 59 renders: every person (now eight) at 390 and
+1440 px in light and dark, the four Housekeeping dates on the phone, day 1 and February on
+the desktop, Geeta's Paid Leaves within and over what she has earned, her Leave Without
+Pay form and result, HR applying for Geeta, Geeta in Hindi, Sushila in dark. No sideways
+scroll, no text under 12 px, no phone field under 16 px, no target under 44 px on the
+phone or 24 px on the desktop, no script errors. One change after the look: "Next day at"
+became "Next Paid Leaves day at", because "next day" read as "tomorrow".
+
+### W.5 Questions for Surbhi
+
+| # | Question | My recommendation |
+|---|---|---|
+| **W1** | A half day on a row edge (12.5 days attended): round down to 12? | **Yes** (drawn). |
+| **W2** | Is "Paid Leaves" the right name for leave an agency-paid person takes? The name promises pay that DTC does not make. | **Keep the one type name** (D1), because the card says plainly that the agency pays them. Rename only if Housekeeping staff find it confusing. |
+| **W3** | Should the Housekeeping card show "Used" and "Waiting" when DTC does not pay them? | **Yes**: they still decide whether a day off is approved and what is left. |
+| **W4** | Someone whose designation changes mid-month: which rule for that month? | **The designation when the month's figures are worked out** (01f G4). Not drawn. |
+
 ---
 
 # 063 · Design v3: Paid Leaves given on the 1st, leave without pay approved by HR

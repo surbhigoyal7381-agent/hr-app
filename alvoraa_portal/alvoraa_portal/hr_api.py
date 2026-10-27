@@ -11,7 +11,7 @@ from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
-from hrms.alvoraa_hr_core.access import permitted_employee_filters
+from hrms.alvoraa_hr_core.access import employee_in_scope, permitted_employee_filters
 from hrms.alvoraa_org_structure.register import may_view as _may_view_positions
 # A module import, not `from ... import`: the two switch KEYS are constants, and
 # scripts/check_app_integrity.py only recognises functions and classes across apps.
@@ -1040,8 +1040,7 @@ def _can_action_leave(name, doc=None):
     if is_lwp(doc.leave_type) and rule_set_for(doc.company):
         if not ({"HR Manager", "HR User"} & set(frappe.get_roles())):
             return False
-        in_scope = frappe.db.exists(
-            "Employee", dict(permitted_employee_filters(), name=doc.employee))
+        in_scope = employee_in_scope(doc.employee)
         return bool(in_scope and frappe.has_permission("Leave Application", "submit", doc=doc))
 
     if frappe.session.user != _leave_approver_for(doc):
@@ -2286,17 +2285,18 @@ def get_all_active_employees():
 def _hr_target_employee(employee_id, endpoint):
     """The employee HR is acting for, or a refusal. Fails closed (SEC-13).
 
-    Only employees of a company in permitted_companies(). The message is the
+    Only employees inside the caller's companies and branches. The message is the
     same whether the employee is in another company or does not exist, so the
     refusal does not confirm who exists elsewhere. Returns only the fields the
     leave screens need - never the whole Employee record (PRIV-6).
     """
-    from hrms.alvoraa_hr_core.access import permitted_companies, refuse
+    from hrms.alvoraa_hr_core.access import refuse
 
     emp = frappe.db.get_value(
         "Employee", employee_id, ["name", "employee_name", "company", "department"], as_dict=True
     )
-    if not emp or emp.company not in permitted_companies():
+    # Company AND branch (F-3): an HR user limited to some branches is refused the rest.
+    if not emp or not employee_in_scope(employee_id):
         refuse(_("You can only act for employees of the companies you look after."),
                "SEC-13", endpoint, "Employee", employee_id)
     return emp
@@ -2516,7 +2516,7 @@ def _leave_subject(on_behalf_of, endpoint):
                "Employee", on_behalf_of)
     if on_behalf_of:
         emp = _hr_target_employee(on_behalf_of, endpoint)
-        if not frappe.db.exists("Employee", dict(permitted_employee_filters(), name=emp.name)):
+        if not employee_in_scope(emp.name):
             refuse(_("You can only file leave for employees in the branches you look after."),
                    "063-SEC-7", endpoint, "Employee", on_behalf_of)
     else:
@@ -2615,8 +2615,7 @@ def cancel_leave(leave_id):
     me = _get_employee()
     own = bool(me and me.name == doc.employee)
     is_hr = bool({"HR Manager", "HR User"} & set(frappe.get_roles()))
-    hr_in_scope = (not own) and is_hr and bool(frappe.db.exists(
-        "Employee", dict(permitted_employee_filters(), name=doc.employee)))
+    hr_in_scope = (not own) and is_hr and bool(employee_in_scope(doc.employee))
     if not (own or hr_in_scope):
         refuse(_("You can only cancel your own leave."), "063-SEC-8", "hr_api.cancel_leave",
                "Leave Application", doc.name)

@@ -37,7 +37,12 @@ class TestTheCard(Rules063Case):
 	def test_the_card_carries_only_the_named_keys(self):
 		"""AC-17 / SEC-1a: a field added to MonthSummary later cannot leak."""
 		card = _summary(fx.user("Priya"))["paid_leaves"]
-		self.assertTrue(set(card) <= set(leave_rules.CARD_KEYS), set(card) - set(leave_rules.CARD_KEYS))
+		keys = set(leave_rules.CARD_KEYS_OFFICE)
+		self.assertTrue(set(card) <= keys, set(card) - keys)
+		# AC-17: under the gate the block is the list less the two keys that only
+		# a person who has reached the gate does not get - nothing else is missing.
+		self.assertEqual(keys - set(card), set() if "attended_so_far" in card else
+		                 {"attended_so_far", "attended_up_to"})
 		for never in ("daily_rate", "earning_basic", "gross", "net", "paid_days", "reds",
 		              "greens", "notes", "red_deduction"):
 			self.assertNotIn(never, card)

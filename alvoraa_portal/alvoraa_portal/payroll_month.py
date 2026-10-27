@@ -70,6 +70,10 @@ class MonthSummary:
 	leave_used_for_approved: float = 0.0
 	leave_encashed: float = 0.0
 	approved_leave_unpaid: float = 0.0
+	# Slice 063: set only when the days-present table gave the credit. The credit
+	# is reported to the agency, never added to paid days (SEC-20).
+	credit_table: bool = False
+	next_credit_at: int = None
 
 	# days and money
 	day_credits: float = 0.0
@@ -117,6 +121,10 @@ def summarise_month(
 	monthly_cap=0.0,
 	threshold_days=15,
 	accrual_month_days=30,
+	# Slice 063: this month's rows of the days-present table, [(from, to, credits)],
+	# and the designation they are for. Given only for agency-paid staff.
+	credit_rows=None,
+	credit_designation="",
 	# marks
 	earns_marks=True,
 	free_reds=0,
@@ -178,7 +186,22 @@ def summarise_month(
 	# (payroll_slip.month_summary). A caller that passes nothing gets the
 	# gate on days worked alone, as before.
 	m.days_for_gate = m.days_worked + max(0.0, float(approved_leave_days or 0))
-	if earns_leave_credits:
+	if credit_rows is not None:
+		# Slice 063 (spec 7.3): whole days present pick the row; the class figure
+		# caps it; no 15-day minimum. Next-at reads the same rows.
+		m.credit_table = True
+		whole = int(m.days_for_gate)
+		cap = float(monthly_cap or 0)
+		m.leave_credits_earned = min(
+			next((c for a, b, c in credit_rows if a <= whole <= b), 0.0), cap)
+		if m.leave_credits_earned < cap:
+			m.next_credit_at = next(
+				(a for a, b, c in credit_rows if min(c, cap) > m.leave_credits_earned), None)
+		m.notes.append(
+			"{0} table: {1:g} days present in a {2}-day month gives {3:g}. Reported to the "
+			"agency; not paid by DTC.".format(
+				credit_designation, round(m.days_for_gate, 2), month_days, m.leave_credits_earned))
+	elif earns_leave_credits:
 		m.leave_credits_earned = leave_credits_for_month(
 			m.days_for_gate, period_days, credit_per_period, monthly_cap,
 			threshold_days=threshold_days, month_days=accrual_month_days)
@@ -200,18 +223,20 @@ def summarise_month(
 	            else float(m.days_on_leave))
 	approved = max(0.0, approved)
 	m.leave_used_for_approved = min(m.leave_credits_earned, approved)
-	m.leave_encashed = m.leave_credits_earned - m.leave_used_for_approved
-	m.approved_leave_unpaid = approved - m.leave_used_for_approved
-	if m.approved_leave_unpaid:
-		m.notes.append(
-			"{0} approved leave day(s) had no credit left to fund them and are "
-			"unpaid.".format(m.approved_leave_unpaid))
+	if not m.credit_table:
+		m.leave_encashed = m.leave_credits_earned - m.leave_used_for_approved
+		m.approved_leave_unpaid = approved - m.leave_used_for_approved
+		if m.approved_leave_unpaid:
+			m.notes.append(
+				"{0} approved leave day(s) had no credit left to fund them and are "
+				"unpaid.".format(m.approved_leave_unpaid))
 
 	# A day covered by a credit is paid, and a surplus credit adds a day. Both
 	# are worth one day, so paid days need the WHOLE entitlement, not just the
 	# encashed part. The split above is for the payslip to show, not to
-	# subtract twice.
-	m.paid_days = m.day_credits + m.leave_credits_earned
+	# subtract twice. A table credit is reported, never paid: Leave encashed
+	# stays 0 and paid days are the days worked alone (SEC-20).
+	m.paid_days = m.day_credits + (0.0 if m.credit_table else m.leave_credits_earned)
 
 	# ── money ────────────────────────────────────────────────────────────────
 	m.daily_rate = (float(basic) / month_days) if month_days else 0.0

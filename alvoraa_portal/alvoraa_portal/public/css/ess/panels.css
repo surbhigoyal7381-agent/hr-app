@@ -2506,6 +2506,9 @@ body.panel-fullscreen{overflow:hidden}
 .lp-help{font-size:var(--fs-sm);color:var(--text2);margin-top:4px}
 .lp-result h3{margin:0 0 8px;font-size:var(--fs-md)}
 .lp-result p{margin:0 0 8px;font-size:var(--fs-base);line-height:1.5}
+/* Agency-paid card (prototype v4 W.1): the "So far" chip. The
+   chip is worded, so colour is not its only signal. */
+.lp-chip{margin-left:auto;padding:2px 8px;border-radius:var(--r-full);font-size:var(--fs-sm);font-weight:600;background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
 @media (max-width:640px){
   .lp-figs{grid-template-columns:repeat(2,minmax(0,1fr))}
   .lp-table{display:none}

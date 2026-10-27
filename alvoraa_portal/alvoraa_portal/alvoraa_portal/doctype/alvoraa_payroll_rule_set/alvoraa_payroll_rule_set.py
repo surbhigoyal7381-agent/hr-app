@@ -48,6 +48,7 @@ class AlvoraaPayrollRuleSet(Document):
 		self._check_rates()
 		self._check_late_window()
 		self._check_leave()
+		self._check_credit_rows()
 		self._check_categories()
 		self._check_special_day_list()
 
@@ -250,6 +251,59 @@ class AlvoraaPayrollRuleSet(Document):
 				_("Leave is credited by class, so it needs the Employee field "
 				  "that holds the class. Without it no employee can be matched "
 				  "to a figure."))
+
+	def _check_credit_rows(self):
+		"""Slice 063, SEC-19: leave earned by days present, per designation and
+		month length. A typo here goes straight to a third party's figures, so
+		a gap, an overlap or a falling figure is refused where a person is
+		watching. Nothing runs when the table is empty. In memory only."""
+		groups = {}
+		for row in self.leave_credit_rows:
+			row.days_from = cint(row.days_from)
+			row.days_to = cint(row.days_to)
+			row.credits = flt(row.credits)
+			if row.days_from > row.days_to:
+				frappe.throw(
+					_("Leave earned by days present, row {0}: it starts at {1} days but ends at {2}. "
+					  "A row has to move forwards.").format(row.idx, row.days_from, row.days_to))
+			if row.credits < 0:
+				frappe.throw(_("Leave earned by days present, row {0}: days of leave cannot be "
+				               "negative.").format(row.idx))
+			groups.setdefault((row.designation, row.month_length), []).append(row)
+
+		for (designation, length), rows in groups.items():
+			rows.sort(key=lambda r: r.days_from)
+			last_day = 31 if length == "30-31" else 29
+			where = _("{0}, {1}-day months").format(designation, length)
+			if rows[0].days_from != 0:
+				frappe.throw(
+					_("Leave earned by days present ({0}): the first row starts at {1} days, not 0. "
+					  "Anyone with fewer days would match no row.").format(where, rows[0].days_from),
+					title=_("Gap in the leave table"))
+			for earlier, later in zip(rows, rows[1:]):
+				if later.days_from <= earlier.days_to:
+					frappe.throw(
+						_("Leave earned by days present ({0}): rows {1} and {2} overlap ({3} to {4} and "
+						  "{5} to {6}). A day count in the overlap would match both rows.")
+						.format(where, earlier.idx, later.idx, earlier.days_from, earlier.days_to,
+						        later.days_from, later.days_to), title=_("Overlap in the leave table"))
+				if later.days_from > earlier.days_to + 1:
+					frappe.throw(
+						_("Leave earned by days present ({0}): nothing covers {1} to {2} days, between "
+						  "rows {3} and {4}. Extend one row to meet the other.")
+						.format(where, earlier.days_to + 1, later.days_from - 1, earlier.idx, later.idx),
+						title=_("Gap in the leave table"))
+				if later.credits < earlier.credits:
+					frappe.throw(
+						_("Leave earned by days present ({0}): row {1} earns {2} days but the row before "
+						  "it earns {3}. More days present cannot earn less.")
+						.format(where, later.idx, later.credits, earlier.credits),
+						title=_("Leave table falls"))
+			if rows[-1].days_to != last_day:
+				frappe.throw(
+					_("Leave earned by days present ({0}): the last row ends at {1} days, not {2}. "
+					  "The most days in such a month would match no row.")
+					.format(where, rows[-1].days_to, last_day), title=_("Gap in the leave table"))
 
 	def _check_categories(self):
 		"""Per-category exceptions, and the field that selects them.

@@ -1967,7 +1967,16 @@ html, body {
       'Goals': 'goals', 'goals': 'goals',
       'Analytics': 'analytics', 'analytics': 'analytics',
     };
-    return (siteModules || []).map(function(m) { return mapping[m]; }).filter(Boolean);
+    // Anything the table does not name is passed STRAIGHT THROUGH when it is a
+    // real feature id. `modules_enabled` holds a mix - display labels for the
+    // six above, raw ids for everything else - and dropping what was not
+    // recognised is what lost DTC five features on 26 Oct 2026. Only a value
+    // that is neither a label nor an id is discarded.
+    var known = {};
+    (MODULES_DEF || []).forEach(function(m) { known[m.id] = true; });
+    return (siteModules || [])
+      .map(function(m) { return mapping[m] || (known[m] ? m : null); })
+      .filter(Boolean);
   }
 
   function renderEditModules() {
@@ -2144,7 +2153,12 @@ html, body {
     // is one more place for it to drift - and a loose hex fails the design check.
     if (accentEl && t.accent_color) accentEl.value = t.accent_color;
     syncEditSwatch(color);
-    var ids = siteModulesToIds(t.modules);
+    // `features` is what the site actually runs on - `has_feature()` reads it,
+    // and `update_tenant` wrote it. `modules` is the display label list, and
+    // reading the tick boxes back from labels is what lost DTC five features
+    // on 26 Oct 2026. Labels are only the fallback, for a tenant provisioned
+    // before `features` was recorded.
+    var ids = t.features ? siteModulesToIds(t.features) : siteModulesToIds(t.modules);
       // Was `ids.length ? ids : required`, so the required features were added
       // only for a tenant that had NONE - never for one that had some. Every
       // existing tenant opened with them unticked, and saving wrote them away.

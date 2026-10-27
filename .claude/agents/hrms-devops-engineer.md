@@ -12,9 +12,11 @@ description: >-
   command is the user's decision. Do NOT use to decide scope, to write feature code,
   or to run deploy commands on its own.
 tools: Read, Grep, Glob, Bash, Write, Edit, WebSearch, WebFetch
-model: inherit
+model: sonnet
 color: cyan
 ---
+
+> **Usage rule (Surbhi, 27 Oct 2026):** read `.claude/context/usage-discipline.md` before you start. Work to the risk tier named in your brief. Report only when you are finished or blocked. Never trade quality for usage: when unsure of the tier, go one up.
 
 # Role
 

@@ -6904,9 +6904,9 @@ function lpFig(cls, label, v, note) {
 }
 /* "you" only when it is true: HR applying for someone reads the person's name. */
 function lpY() {
-  if (!LP.subject) return {sub: drT("you"), Sub: drT("You"), pos: drT("your"), Pos: drT("Your"), have: drT("you have"), are: drT("you are"), need: drT("need")};
+  if (!LP.subject) return {sub: drT("you"), Sub: drT("You"), pos: drT("your"), Pos: drT("Your"), have: drT("you have"), Have: drT("You have"), are: drT("you are"), need: drT("need")};
   var f = String(LP.subject.label || "").split(" ")[0];
-  return {sub: f, Sub: f, pos: drT("{0}'s", [f]), Pos: drT("{0}'s", [f]), have: drT("{0} has", [f]), are: drT("{0} is", [f]), need: drT("needs")};
+  return {sub: f, Sub: f, pos: drT("{0}'s", [f]), Pos: drT("{0}'s", [f]), have: drT("{0} has", [f]), Have: drT("{0} has", [f]), are: drT("{0} is", [f]), need: drT("needs")};
 }
 
 /* ── the card ── */
@@ -6919,6 +6919,9 @@ function lpRenderCard(pl) {
   var month = (pl && pl.month) || new Date().toLocaleDateString("en-GB", {month: "long"});
   title.textContent = drT("Paid Leaves - {0}", [month]);
   var card = document.getElementById("lv-bal-card");
+  /* The "So far" chip belongs to the agency-paid card only (W.1). */
+  var chip = card && card.querySelector(".lp-chip");
+  if (chip) chip.parentNode.removeChild(chip);
   if (!pl) {
     if (card) card.setAttribute("aria-busy", "true");
     body.innerHTML = '<div class="lp-skel" style="width:40%"></div><div class="lp-skel" style="height:64px"></div>' +
@@ -6935,9 +6938,13 @@ function lpRenderCard(pl) {
     [pl.lwp_limit, lpNum(pl.lwp_in_play), month])) + "</p>";
   if (!pl.earns) {
     var first = pl.category ? drT("{0} staff do not get monthly Paid Leaves.", [pl.category])
-      : pl["class"] ? drT("Your leave class ({0}) does not get monthly Paid Leaves.", [pl["class"]])
+      : pl["class"] ? drT("Your leave class ({0}) does not earn monthly Paid Leaves.", [pl["class"]])
       : drT("No leave class is set for you, so you do not get monthly Paid Leaves. Ask HR if this is wrong.");
     body.innerHTML = '<p style="margin:0 0 8px;font-size:var(--fs-md)">' + gpEsc(first) + "</p>" + lwpLine;
+    return;
+  }
+  if (pl.housekeeping) {
+    lpRenderTableCard(pl, month, card, body);
     return;
   }
   var under = pl.attended_so_far !== undefined, gate = pl.gate || 15;
@@ -6961,6 +6968,42 @@ function lpRenderCard(pl) {
   html += '<div class="lp-rule"><b>' + gpEsc(drT("How Paid Leaves work - class {0}", [pl["class"]])) + "</b><br>" +
     gpEsc(drT("{0} of Paid Leaves on the 1st of every month. They count once you have attended {1} days that month; approved Paid Leaves days count toward the {1}. Days you do not use are paid with that month's salary. Nothing carries over.",
       [lpDays(pl.credited), gate])) + "</div>";
+  body.innerHTML = html;
+}
+
+/* The card for staff whose leave comes from the days-present table (prototype v4,
+   W.1). An agency pays them, so nothing here promises or shows pay. The words
+   around the numbers are fixed; every number and the designation come from the
+   server (the table's rows), never from this file. */
+function lpRenderTableCard(pl, month, card, body) {
+  var rows = pl.rows || {}, des = rows.designation || "", att = lpNum(pl.attended_so_far);
+  var usedNote = (pl.used_dates || []).map(function(u) { return lpShort(u.date) + (u.half ? drT(" (half)") : ""); }).join(", ");
+  var head = card && card.querySelector(".card-header");
+  if (head) head.insertAdjacentHTML("beforeend", '<span class="lp-chip">' + gpEsc(drT("So far")) + "</span>");
+  var html = '<p class="lp-cls">' + gpEsc(pl.attended_up_to
+    ? drT("{0} · Class {1} · up to {2} days a month · {3} days attended up to {4}", [des, pl["class"], lpNum(pl.cap), att, lpShort(pl.attended_up_to)])
+    : drT("{0} · Class {1} · up to {2} days a month · {3} days attended so far", [des, pl["class"], lpNum(pl.cap), att])) + "</p>";
+  html += '<div class="lp-figs"><div class="lp-fig"><div class="l">' + gpEsc(drT("Earned so far")) + '</div><div class="v">' +
+    lpNum(pl.earned) + " <small>" + gpEsc(drT("of {0} days", [lpNum(pl.cap)])) + '</small></div><div class="n">' +
+    gpEsc(drT("from {0} days attended", [att])) + "</div></div>" +
+    lpFig("", drT("Used"), pl.used, pl.used ? usedNote : drT("none yet")) +
+    lpFig("wait", drT("Waiting for approval"), pl.waiting, pl.waiting ? drT("set aside for now") : drT("none")) + "</div>";
+  html += pl.next_at !== undefined
+    ? lpLine("info", "<b>" + gpEsc(drT("Next Paid Leaves day at {0} days attended", [pl.next_at])) + "</b> " +
+        gpEsc(drT("({0} more).", [lpNum(pl.days_to_next)]) + " " + drT("This goes up as you attend more days in {0}.", [month])))
+    : lpLine("info", "<b>" + gpEsc(drT("You have earned the most your class allows ({0}).", [lpNum(pl.cap)])) + "</b>");
+  html += '<p class="lp-muted" style="margin:10px 0 0">' + gpEsc(drT("Your leave is recorded for DTC's attendance. Your agency pays you, so this page shows no payout. Nothing carries over to next month.")) + "</p>";
+  var list = (rows.this || []).map(function(r, i, all) {
+    return i === all.length - 1 ? drT("{0} or more days attended earns {1}", [r[0], lpNum(r[2])])
+      : drT("{0} to {1} days attended earns {2}", [r[0], r[1], lpNum(r[2])]);
+  }).join(", ");
+  var long = pl.month_length === "30-31";
+  html += '<div class="lp-rule"><b>' + gpEsc(drT("How {0} earns Paid Leaves - class {1}", [des, pl["class"]])) + "</b><br>" +
+    gpEsc((long ? drT("In a 30- or 31-day month like {0}: ", [month]) : drT("In a 28- or 29-day month like {0}: ", [month])) +
+      list + drT(", never more than {0}.", [lpNum(pl.cap)]) + " " +
+      (long ? drT("In a 28- or 29-day month the rows start one day earlier ({0}).", [(rows.other_starts || []).join(", ")])
+            : drT("In a 30- or 31-day month the rows start one day later ({0}).", [(rows.other_starts || []).join(", ")])) + " " +
+      drT("Approved Paid Leaves days count as days attended. A half day counts as half, and the total is rounded down to whole days. Nothing carries over.")) + "</div>";
   body.innerHTML = html;
 }
 
@@ -7145,9 +7188,18 @@ function lpPopulateTypes(types) {
   var help = document.getElementById("la-type-help");
   var hasPaid = types.some(function(t) { return t.paid_leaves; });
   help.style.display = hasPaid ? "none" : "";
-  help.textContent = LP.subject
-    ? drT("{0}'s work type does not get Paid Leaves, so only Leave Without Pay is offered.", [String(LP.subject.label).split(" ")[0]])
-    : drT("Your work type does not get Paid Leaves, so only Leave Without Pay is offered.");
+  /* X-9: a class that gives nothing is the reason; otherwise it is the work type. */
+  var noClass = (types.filter(function(t) { return t.no_paid_class; })[0] || {}).no_paid_class;
+  var noneSet = types.some(function(t) { return t.no_class; });
+  var first = LP.subject ? String(LP.subject.label).split(" ")[0] : "";
+  help.textContent = noneSet
+    ? drT("No leave class is set, so only Leave Without Pay is offered. Ask HR if this is wrong.")
+    : noClass
+    ? (LP.subject ? drT("{0}'s leave class ({1}) does not get Paid Leaves, so only Leave Without Pay is offered.", [first, noClass])
+                  : drT("Your leave class ({0}) does not get Paid Leaves, so only Leave Without Pay is offered.", [noClass]))
+    : LP.subject
+      ? drT("{0}'s work type does not get Paid Leaves, so only Leave Without Pay is offered.", [first])
+      : drT("Your work type does not get Paid Leaves, so only Leave Without Pay is offered.");
   lpPreview();
 }
 
@@ -7234,8 +7286,14 @@ function lpVerdict(r, lt, fd, td, hd) {
     var lwpRow = (LP.types || []).filter(function(t) { return t.lwp_limit !== undefined; })[0];
     return {kind: "warn", block: true, who: who, switchable: !!(lwpRow && lwpRow.lwp_in_play < lwpRow.lwp_limit),
       html: "<b>" + gpEsc(drT("{0} asked for, but {1} {2} of Paid Leaves left for {3}.", [lpDays(n), y.have, lpDays(r.pl_left), month])) + "</b> " +
-        gpEsc(drT("Days already used or waiting for approval are taken off the {0}. {1} can ask for Leave Without Pay instead ({2} of {3} used this month).",
-          [lpNum(r.credited), y.Sub, lpNum(r.lwp_in_play), limit]))};
+        gpEsc(r.housekeeping
+          ? (r.next_at != null
+              ? drT("{0} earned {1} so far; the next day comes at {2} days attended.", [y.Have, lpNum(r.earned), r.next_at])
+              : drT("{0} earned {1} so far.", [y.Have, lpNum(r.earned)])) + " " +
+            drT("Days already used or waiting are taken off. {0} can ask for Leave Without Pay instead ({1} of {2} used this month).",
+              [y.Sub, lpNum(r.lwp_in_play), limit])
+          : drT("Days already used or waiting for approval are taken off the {0}. {1} can ask for Leave Without Pay instead ({2} of {3} used this month).",
+              [lpNum(r.credited), y.Sub, lpNum(r.lwp_in_play), limit]))};
   }
   var card = (!LP.subject && _leaveSummaryCache) ? (_leaveSummaryCache.paid_leaves || {}) : {};
   var under = card.attended_so_far !== undefined, gate = card.gate || 15;
@@ -7244,16 +7302,20 @@ function lpVerdict(r, lt, fd, td, hd) {
   var html, lines = [];
   if (lwp) {
     html = "<b>" + gpEsc(drT("Asking for {0} of Leave Without Pay.", [lpDays(n)])) + "</b> " + gpEsc(
-      !earns ? drT("If approved, {0} not paid for {1}.", [y.are, what])
+      r.housekeeping ? drT("If approved, it is recorded as leave without pay on DTC's attendance.")
+      : !earns ? drT("If approved, {0} not paid for {1}.", [y.are, what])
       : under ? drT("If approved, {0} not paid for {1}; {2} Paid Leaves for {3} are still paid out once {4} reach {5} days.", [y.are, what, y.pos, month, y.sub, gate])
       : drT("If approved, {0} not paid for {1}; {2} Paid Leaves for {3} are still paid out.", [y.are, what, y.pos, month]));
     lines.push(gpEsc(drT("This will be {0} of {1} days of Leave Without Pay in {2}.", [lpNum(parseFloat(r.lwp_in_play || 0) + n), limit, month])));
   } else {
     html = "<b>" + gpEsc(drT("Asking for {0} of Paid Leaves.", [lpDays(n)])) + "</b> " + gpEsc(
-      (r.credited !== undefined
-        ? drT("Until {0} decides, {1} is set aside from {2} {3}.", [who, lpDays(n), y.pos, lpNum(r.credited)])
-        : drT("Until {0} decides, {1} is set aside from {2} Paid Leaves.", [who, lpDays(n), y.pos])) + " " +
-      (under ? drT("The leave is paid, and approved Paid Leaves days count toward {0} {1} days.", [y.pos, gate]) : drT("The leave is paid.")));
+      (r.housekeeping && r.earned !== undefined
+        ? drT("Until {0} decides, {1} is set aside from the {2} {3} earned so far.", [who, lpDays(n), lpNum(r.earned), y.have]) + " " +
+          drT("Approved Paid Leaves days count as days attended.")
+        : (r.credited !== undefined
+            ? drT("Until {0} decides, {1} is set aside from {2} {3}.", [who, lpDays(n), y.pos, lpNum(r.credited)])
+            : drT("Until {0} decides, {1} is set aside from {2} Paid Leaves.", [who, lpDays(n), y.pos])) + " " +
+          (under ? drT("The leave is paid, and approved Paid Leaves days count toward {0} {1} days.", [y.pos, gate]) : drT("The leave is paid."))));
   }
   var special = r.special_day && (hd ? r.special_day.date === fd : true);
   if (hd) {
@@ -7312,7 +7374,8 @@ function lpShowResult(r, lt, fd, td, hd) {
     "<p>" + gpEsc(drT("{0} will approve or decline it.", [decider]) + " " + (LP.subject
       ? drT("{0} will be told the answer.", [y.Sub]) : drT("You will see the answer here, under Leave Applications."))) + "</p>" +
     "<p>" + gpEsc(lpWillTell(r.chain_top)) + "</p>" +
-    (lwp ? "<p>" + gpEsc(drT("If approved, {0} not paid for {1}.", [y.are, what]) + " " +
+    (lwp ? "<p>" + gpEsc((r.housekeeping ? drT("If approved, it is recorded as leave without pay on DTC's attendance.")
+                                         : drT("If approved, {0} not paid for {1}.", [y.are, what])) + " " +
              drT("{0} of {1} days of Leave Without Pay are now waiting or approved in {2}.", [lpNum(parseFloat(r.lwp_in_play || 0) + n), r.lwp_limit || 5, r.month])) + "</p>"
          : "<p>" + gpEsc(drT("{0} is set aside from {1} Paid Leaves until {2} decides.", [lpDays(n), y.pos, who])) + "</p>") +
     (hd ? "<p>" + gpEsc(drT("Check in and check out for the other half as usual.")) + "</p>" : "") +

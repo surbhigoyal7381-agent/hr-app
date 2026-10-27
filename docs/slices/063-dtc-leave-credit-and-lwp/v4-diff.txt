@@ -1,0 +1,201 @@
+--- prototype-v3.html	2026-10-23 10:44:52.098762600 +0530
++++ prototype-v4.html	2026-10-24 15:11:58.348986200 +0530
+@@ -163,14 +163,16 @@
+ <body>
+ 
+ <div class="review" role="region" aria-label="Review controls (not part of the product)">
+-  <span class="v2tag">v3 - credits on the 1st, Surbhi's final answers, 21 Oct</span>
++  <span class="v2tag">v4 - adds Housekeeping (DTC's days-attended table), 24 Oct</span>
+   <label>Person
+     <select id="rv-person">
+       <option value="priya">Priya - class A, 20 days attended, half day with a missed punch</option>
+       <option value="rohit">Rohit - class A, 10 days attended, 4 of 5 LWP days</option>
+       <option value="manoj">Manoj - Contract, 5 of 5 LWP days</option>
+       <option value="ritika">Ritika (HR) - her Inbox: approves leave without pay</option>
+-      <option value="ritika-leave">Ritika (HR) - Leave page, applies for Manoj</option>
++      <option value="ritika-leave">Ritika (HR) - Leave page, applies for Manoj or Geeta</option>
++      <option value="geeta">Geeta - Housekeeping, Contract, class A: earns by days attended</option>
++      <option value="sushila">Sushila - Housekeeping, Contract, class No Leave</option>
+       <option value="sunil">Sunil - store manager: Inbox, Team View, notice</option>
+     </select></label>
+   <label>Device
+@@ -181,6 +183,8 @@
+     <select id="rv-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+   <label>Card state
+     <select id="rv-state"><option value="ok">Loaded</option><option value="loading">Loading</option><option value="error">Could not load</option></select></label>
++  <label>Housekeeping date
++    <select id="rv-hk"><option value="mid">Fri 23 Oct (14 days attended)</option><option value="day1">Thu 1 Oct (0 days)</option><option value="late">Fri 30 Oct (27 days)</option><option value="feb">Mon 15 Feb 2027 (28-day month, 12 days)</option></select></label>
+   <label><input type="checkbox" id="rv-fail"> Next send fails (no signal)</label>
+   <span>Try in Apply Leave (as Rohit):
+     <button type="button" data-try="half">Half day, Mon 26 Oct</button>
+@@ -189,7 +193,7 @@
+     <button type="button" data-try="past">Past day LWP, Mon 19 Oct</button>
+     <button type="button" data-try="sept">A September day</button>
+   </span>
+-  <span class="hint">Prototype v3 for review. Today is shown as Fri 23 Oct 2026; attendance is in up to Thu 22 Oct. <span class="sample">Sample</span> Every name and number is invented. Hindi is a machine draft for native review. Paid Leaves go to the leave approver (Sunil); Leave Without Pay goes to HR. On approval the managers above are told.</span>
++  <span class="hint">Prototype v4 for review (v3 plus Housekeeping only). Today is shown as Fri 23 Oct 2026; attendance is in up to Thu 22 Oct. <span class="sample">Sample</span> Every name and number is invented. Hindi is a machine draft for native review. Paid Leaves go to the leave approver (Sunil); Leave Without Pay goes to HR. On approval the managers above are told.</span>
+ </div>
+ 
+ <div id="stage" class="stage phone"><div class="app" id="app"></div></div>
+@@ -214,12 +218,35 @@
+   manoj: {name: "Manoj Singh", first: "Manoj", cls: null, attended: 15, approver: "Sunil Mehra", chain: ["Sunil Mehra", "Kavita Arora"],
+           apps: [{id: 5, t: "Leave Without Pay", f: "2026-10-27", to: "2026-10-27", d: 1, s: "open"},
+                  {id: 6, t: "Leave Without Pay", f: "2026-10-05", to: "2026-10-08", d: 4, s: "approved"}]},
+-  ritika: {name: "Ritika", first: "Ritika", cls: "B", attended: 20, approver: "Kavita Arora", chain: ["Kavita Arora"], hr: true, apps: []}
++  ritika: {name: "Ritika", first: "Ritika", cls: "B", attended: 20, approver: "Kavita Arora", chain: ["Kavita Arora"], hr: true, apps: []},
++  /* v4: Housekeeping (designation), all Contract. Class A earns from DTC's days-attended table; class No Leave earns nothing. */
++  geeta: {name: "Geeta Devi", first: "Geeta", cls: "A", hk: true, contract: true, attended: 14, approver: "Sunil Mehra", chain: ["Sunil Mehra", "Kavita Arora"],
++          apps: [{id: 30, t: "Paid Leaves", f: "2026-10-09", to: "2026-10-09", d: 1, s: "approved"}]},
++  sushila: {name: "Sushila Kumari", first: "Sushila", cls: null, hk: true, contract: true, noLeave: true, attended: 18, approver: "Sunil Mehra", chain: ["Sunil Mehra", "Kavita Arora"], apps: []}
+ };
++/* v4: DTC's Housekeeping table, as rows on the rule set: [from, to, days earned]. 31 days attended = the class figure. */
++var HK_ROWS = {"30-31": [[0, 5, 0], [6, 12, 1], [13, 18, 2], [19, 25, 3], [26, 30, 4]],
++               "28-29": [[0, 4, 0], [5, 11, 1], [12, 17, 2], [18, 24, 3], [25, 29, 4]]};
++/* The four review dates for Housekeeping. Approved Paid Leaves days are already inside "attended". */
++var HK_VIEW = {day1: {attended: 0, upto: null, month: "October", monthHi: "अक्टूबर", days: 31, apps: false},
++               mid: {attended: 14, upto: "22 Oct", month: "October", monthHi: "अक्टूबर", days: 31, apps: true},
++               late: {attended: 27, upto: "29 Oct", month: "October", monthHi: "अक्टूबर", days: 31, apps: true},
++               feb: {attended: 12, upto: "14 Feb", month: "February", monthHi: "फ़रवरी", days: 28, apps: false}};
+ var nextId = 20;
+ function sum(l) { return l.reduce(function (s, a) { return s + a.d; }, 0); }
+ function pl(p, st) { return sum(p.apps.filter(function (a) { return a.t === "Paid Leaves" && a.s === st; })); }
+-function credited(p) { return p.cls ? CREDIT[p.cls] : 0; }
++function credited(p) { return p.cls ? (p.hk ? hkEarned(p) : CREDIT[p.cls]) : 0; }
++function hkv() { return HK_VIEW[R.hk]; }
++function hkRows() { return HK_ROWS[hkv().days >= 30 ? "30-31" : "28-29"]; }
++/* Whole days only: a half day on a row edge rounds down (12.5 gives the 6-12 row). */
++function hkEarned(p) { var a = Math.floor(hkv().attended), cap = CREDIT[p.cls]; if (a >= 31) return cap;
++  var r = hkRows().filter(function (x) { return a >= x[0] && a <= x[1]; })[0]; return Math.min(r ? r[2] : cap, cap); }
++/* The next row, read from the same rows - never worked out a second way. */
++function hkNext(p) { var e = hkEarned(p), cap = CREDIT[p.cls]; if (e >= cap) return null;
++  var r = hkRows().filter(function (x) { return x[2] > e; })[0]; return r ? {at: r[0], more: r[0] - Math.floor(hkv().attended)} : null; }
++/* Q-H3, answered 24 Oct: an agency pays all 42 Housekeeping staff (dtc_agency is set for each). No payout figure, no pay wording for them. */
++function paysDTC(p) { return !p.hk; }
++function appsOf(p) { return p.hk && !hkv().apps ? [] : p.apps; }
+ function avail(p) { return Math.max(0, credited(p) - pl(p, "approved") - pl(p, "open")); }
+ function lwpUsed(p) { return sum(p.apps.filter(function (a) { return a.t === "Leave Without Pay" && (a.s === "open" || a.s === "approved") && a.f >= "2026-10-01"; })); }
+ function lwpWaiting(p) { return p.apps.filter(function (a) { return a.t === "Leave Without Pay" && a.s === "open"; }); }
+@@ -227,7 +254,7 @@
+ function approverOf(p, type) { return type === "Leave Without Pay" ? HR : p.approver; }
+ 
+ /* ───────────── review state ───────────── */
+-var R = {person: "priya", device: "phone", lang: "en", theme: "light", state: "ok", fail: false};
++var R = {person: "priya", device: "phone", lang: "en", theme: "light", state: "ok", fail: false, hk: "mid"};
+ function T(en, hi) { return R.lang === "hi" && hi ? hi : en; }
+ function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]; }); }
+ function dayWord(n) { return R.lang === "hi" ? n + " दिन" : n + " " + (n === 1 ? "day" : "days"); }
+@@ -274,10 +301,12 @@
+   if (R.state === "error") return '<section class="card" aria-labelledby="pl-title">' + head + '</div><div class="card-body"><div class="line warn" role="alert"><span class="ic" aria-hidden="true">!</span><span>' +
+       T("Your Paid Leaves figures could not be shown just now. Your leave requests below are not affected, and you can still apply.", "आपकी Paid Leaves अभी नहीं दिख सकीं। नीचे आपकी अर्ज़ियों पर कोई असर नहीं है, और आप अब भी अर्ज़ी दे सकते हैं।") +
+       '</span></div><button class="btn" type="button" onclick="R.state=\'ok\';render()">' + T("Try again", "फिर से कोशिश करें") + '</button></div></section>';
++  if (p.hk && p.cls) return hkCard(p, head);
+   if (!p.cls) {
+     var u = lwpUsed(p);
+     return '<section class="card" aria-labelledby="pl-title">' + head + '</div><div class="card-body"><p style="margin:0 0 8px;font-size:15px">' +
+-      T("Contract staff do not get monthly Paid Leaves.", "कॉन्ट्रैक्ट स्टाफ़ को हर महीने Paid Leaves नहीं मिलती।") + '</p><p class="muted" style="margin:0">' +
++      (p.noLeave ? T("Your leave class (No Leave) does not earn monthly Paid Leaves.", "आपकी लीव क्लास (No Leave) में हर महीने Paid Leaves नहीं मिलती।")
++                 : T("Contract staff do not get monthly Paid Leaves.", "कॉन्ट्रैक्ट स्टाफ़ को हर महीने Paid Leaves नहीं मिलती।")) + '</p><p class="muted" style="margin:0">' +
+       T("You can still ask for Leave Without Pay, up to " + LWP_LIMIT + " days a month. HR approves it. You have " + u + " of " + LWP_LIMIT + " days waiting or approved in " + MONTH + ".",
+         "आप फिर भी Leave Without Pay माँग सकते हैं, महीने में ज़्यादा से ज़्यादा " + LWP_LIMIT + " दिन। HR इसे मंज़ूर करता है। अक्टूबर में " + LWP_LIMIT + " में से " + u + " दिन माँगे या मंज़ूर हो चुके हैं।") + '</p></div></section>';
+   }
+@@ -305,6 +334,35 @@
+   return '<section class="card" aria-labelledby="pl-title">' + head + '</div><div class="card-body">' + body + '</div></section>';
+ }
+ 
++/* ───────────── v4: the Housekeeping card - earned by days attended ───────────── */
++function hkCard(p, head) {
++  var v = hkv(), cap = CREDIT[p.cls], e = hkEarned(p), nx = hkNext(p), mo = T(v.month, v.monthHi);
++  var ap = appsOf(p), used = sum(ap.filter(function (a) { return a.t === "Paid Leaves" && a.s === "approved"; })),
++      w = sum(ap.filter(function (a) { return a.t === "Paid Leaves" && a.s === "open"; })), out = Math.max(0, e - used - w), pay = paysDTC(p);
++  var lastUsed = ap.filter(function (a) { return a.t === "Paid Leaves" && a.s === "approved"; }).map(function (a) { return short(a.f); }).join(", ");
++  var body = '<p class="cls">' + T("Housekeeping · Class " + p.cls + " · up to " + cap + " days a month · " + v.attended + " days attended" + (v.upto ? " up to " + v.upto : " so far"),
++                                   "हाउसकीपिंग · क्लास " + p.cls + " · महीने में ज़्यादा से ज़्यादा " + cap + " दिन · " + (v.upto ? v.upto + " तक " : "अब तक ") + v.attended + " दिन हाज़िरी") + '</p>';
++  body += '<div class="figs">' +
++    '<div class="fig"><div class="l">' + T("Earned so far", "अब तक मिलीं") + '</div><div class="v">' + e + ' <small>' + T("of " + cap + " days", cap + " में से") + '</small></div><div class="n">' + esc(T("from " + v.attended + " days attended", v.attended + " दिन की हाज़िरी से")) + '</div></div>' +
++    fig("", T("Used", "ली गईं"), used, used ? lastUsed : T("none yet", "अभी कोई नहीं")) +
++    fig("wait", T("Waiting for approval", "मंज़ूरी बाकी"), w, w ? T("set aside for now", "अभी अलग रखी") : T("none", "कोई नहीं")) +
++    (pay ? fig("out", T("To be paid out", "पैसे में मिलेंगी"), out, T("with " + v.month + " salary, so far", v.monthHi + " की सैलरी में, अब तक")) : "") + '</div>';
++  body += '<div class="line info"><span class="ic" aria-hidden="true">i</span><span>' + (nx
++      ? T("<b>Next Paid Leaves day at " + nx.at + " days attended</b> (" + nx.more + " more).", "<b>अगला दिन " + nx.at + " दिन की हाज़िरी पर</b> (" + nx.more + " और)।")
++      : T("<b>You have earned the most your class allows (" + cap + ").</b>", "<b>आपकी क्लास में जितनी मिल सकती हैं, सब मिल गईं (" + cap + ")।</b>")) +
++    ' ' + T("This goes up as you attend more days in " + v.month + ".", mo + " में जैसे-जैसे हाज़िरी बढ़ेगी, यह बढ़ेगी।") + '</span></div>';
++  body += '<p class="muted" style="margin:10px 0 0">' + (pay ? T("Paid with your " + v.month + " salary. Nothing carries over.", mo + " की सैलरी के साथ मिलेगा। कुछ भी अगले महीने नहीं जाता।")
++                                                          : T("Your leave is recorded for DTC's attendance. Your agency pays you, so this page shows no payout. Nothing carries over to next month.", "आपकी छुट्टी DTC की हाज़िरी में दर्ज होती है। आपको एजेंसी पैसे देती है, इसलिए यहाँ पैसे का कोई आँकड़ा नहीं है। कुछ भी अगले महीने नहीं जाता।")) + '</p>';
++  var rows = hkRows().filter(function (x) { return x[2] > 0; }), long = v.days >= 30;
++  body += '<div class="rule"><b>' + T("How Housekeeping earns Paid Leaves - class " + p.cls, "हाउसकीपिंग को Paid Leaves कैसे मिलती हैं - क्लास " + p.cls) + '</b><br>' +
++    T("In a " + (long ? "30- or 31-day" : "28- or 29-day") + " month like " + v.month + ": ", (long ? "30 या 31" : "28 या 29") + " दिन के महीने में: ") +
++    rows.map(function (x, i) { var last = i === rows.length - 1; return T(x[0] + (last ? " or more" : " to " + x[1]) + " days attended earns " + x[2], x[0] + (last ? " या ज़्यादा" : " से " + x[1]) + " दिन की हाज़िरी पर " + x[2]); }).join(", ") + T(", never more than " + cap + ".", ", " + cap + " से ज़्यादा नहीं।") + ' ' +
++    T("In a " + (long ? "28- or 29-day month the rows start one day earlier (5, 12, 18, 25)." : "30- or 31-day month the rows start one day later (6, 13, 19, 26)."), (long ? "28 या 29 दिन के महीने में हर पंक्ति एक दिन पहले शुरू होती है (5, 12, 18, 25)।" : "30 या 31 दिन के महीने में हर पंक्ति एक दिन बाद शुरू होती है (6, 13, 19, 26)।")) + ' ' +
++    T("Approved Paid Leaves days count as days attended. A half day counts as half, and the total is rounded down to whole days. " + (pay ? "Days you do not use are paid with that month's salary. " : "") + "Nothing carries over.",
++      "मंज़ूर Paid Leaves के दिन हाज़िरी में गिने जाते हैं। आधा दिन आधा गिना जाता है, और कुल को पूरे दिनों में नीचे की ओर गिना जाता है। " + (pay ? "जो दिन इस्तेमाल नहीं हुए, उनका पैसा उसी महीने की सैलरी में मिलता है। " : "") + "कुछ भी अगले महीने नहीं जाता।") + '</div>';
++  return '<section class="card" aria-labelledby="pl-title">' + head.replace(T("Paid Leaves - " + MONTH, "Paid Leaves - अक्टूबर"), T("Paid Leaves - " + v.month, "Paid Leaves - " + v.monthHi)) + '<span class="chip proj">' + T("So far", "अब तक") + '</span></div><div class="card-body">' + body + '</div></section>';
++}
++
+ /* ───────────── applications list, with Cancel and the missed-punch line ───────────── */
+ function statusBadge(a, p) {
+   var who = a.t === "Leave Without Pay" ? "HR" : p.approver;
+@@ -329,7 +387,7 @@
+   return h;
+ }
+ function apps(p) {
+-  var rows = p.apps;
++  var rows = appsOf(p);
+   var empty = '<p class="muted" style="padding:16px;margin:0">' + T("No leave asked for yet. Use Apply Leave above.", "अभी तक कोई छुट्टी नहीं माँगी। ऊपर Apply Leave दबाएँ।") + '</p>';
+   var label = function (a) { return a.t + (a.h ? T(" (half day)", " (आधा दिन)") : ""); };
+   var tbl = '<div class="apps-table"><table><thead><tr><th>' + T("Type", "प्रकार") + '</th><th>' + T("Dates", "तारीख") + '</th><th>' + T("Days", "दिन") + '</th><th>' + T("Status", "स्थिति") + '</th></tr></thead><tbody>' +
+@@ -431,21 +489,22 @@
+   if (F.type === "Paid Leaves") {
+     var a = avail(s);
+     if (n > a) return {k: "warn", block: true, switchable: true, html: '<b>' + T(dayWord(n) + " asked for, but " + y.have + " " + dayWord(a) + " of Paid Leaves left for " + MONTH + ".", dayWord(n) + " माँगे गए, पर अक्टूबर की " + dayWord(a) + " Paid Leaves बची है।") + '</b> ' +
+-        T("Days already used or waiting for approval are taken off the " + credited(s) + ". " + y.Sub + " can ask for Leave Without Pay instead (" + lwpUsed(s) + " of " + LWP_LIMIT + " used this month).", "जो दिन ली जा चुकी हैं या मंज़ूरी के इंतज़ार में हैं, वे " + credited(s) + " में से घटा दिए जाते हैं। इसकी जगह Leave Without Pay माँग सकते हैं (इस महीने " + LWP_LIMIT + " में से " + lwpUsed(s) + ")।")};
++        (s.hk ? T(y.Sub + " " + (you ? "have" : "has") + " earned " + credited(s) + " so far" + (hkNext(s) ? "; the next day comes at " + hkNext(s).at + " days attended" : "") + ". Days already used or waiting are taken off. ", "अब तक " + credited(s) + " मिली हैं। ") : "") +
++        T((s.hk ? "" : "Days already used or waiting for approval are taken off the " + credited(s) + ". ") + y.Sub + " can ask for Leave Without Pay instead (" + lwpUsed(s) + " of " + LWP_LIMIT + " used this month).", "जो दिन ली जा चुकी हैं या मंज़ूरी के इंतज़ार में हैं, वे " + credited(s) + " में से घटा दिए जाते हैं। इसकी जगह Leave Without Pay माँग सकते हैं (इस महीने " + LWP_LIMIT + " में से " + lwpUsed(s) + ")।")};
+     head2 = T("Asking for " + dayWord(n) + " of Paid Leaves.", dayWord(n) + " की Paid Leaves की अर्ज़ी।") + '</b> ' +
+-      T("Until " + who + " decides, " + dayWord(n) + " is set aside from " + y.pos + " " + credited(s) + ". The leave is paid" + (s.attended < GATE ? ", and approved Paid Leaves days count toward " + y.pos + " 15 days." : "."),
++      T("Until " + who + " decides, " + dayWord(n) + " is set aside from " + (s.hk ? "the " + credited(s) + " " + y.sub + " " + (you ? "have" : "has") + " earned so far" : y.pos + " " + credited(s)) + "." + (paysDTC(s) ? " The leave is paid" : "") + (s.hk ? (paysDTC(s) ? ", and approved Paid Leaves days count as days attended." : " Approved Paid Leaves days count as days attended.") : s.attended < GATE ? ", and approved Paid Leaves days count toward " + y.pos + " 15 days." : "."),
+         who + " के फ़ैसले तक " + dayWord(n) + " अलग रखा जाएगा। इन दिनों का पैसा मिलेगा" + (s.attended < GATE ? ", और मंज़ूर Paid Leaves के दिन 15 दिनों में गिने जाते हैं।" : "।"));
+   } else {
+     head2 = T("Asking for " + dayWord(n) + " of Leave Without Pay.", dayWord(n) + " की Leave Without Pay की अर्ज़ी।") + '</b> ' +
+-      T("If approved, " + y.are + " not paid for " + (n === 1 ? "this day" : n < 1 ? "this half day" : "these days") + (s.cls ? "; " + y.pos + " Paid Leaves for " + MONTH + " are still paid out" + (s.attended < GATE ? " once " + y.sub + " reach" + (you ? "" : "es") + " 15 days." : ".") : "."),
+-        "मंज़ूर होने पर इन दिनों का पैसा नहीं मिलेगा" + (s.cls ? "; अक्टूबर की Paid Leaves का पैसा फिर भी मिलेगा" + (s.attended < GATE ? " (15 दिन पूरे होने पर)।" : "।") : "।"));
++      T(s.hk ? "If approved, it is recorded as leave without pay on DTC's attendance." : "If approved, " + y.are + " not paid for " + (n === 1 ? "this day" : n < 1 ? "this half day" : "these days") + (s.cls ? (s.hk ? "." : "; " + y.pos + " Paid Leaves for " + MONTH + " are still paid out" + (s.attended < GATE ? " once " + y.sub + " reach" + (you ? "" : "es") + " 15 days." : ".")) : "."),
++        s.hk ? "मंज़ूर होने पर यह DTC की हाज़िरी में Leave Without Pay के रूप में दर्ज होगी।" : "मंज़ूर होने पर इन दिनों का पैसा नहीं मिलेगा" + (s.cls ? "; अक्टूबर की Paid Leaves का पैसा फिर भी मिलेगा" + (s.attended < GATE ? " (15 दिन पूरे होने पर)।" : "।") : "।"));
+   }
+   var html = '<b>' + head2;
+   if (F.half) html += '<br><b>' + T("Half day:", "आधा दिन:") + '</b> ' +
+-      T((lwp ? "it counts as 0.5 of the " + LWP_LIMIT + " days. " : "it uses half a day of Paid Leaves. ") + y.Sub + " must check in and check out for the other half; it is measured against half the shift. Arriving late or leaving early does not count against " + y.sub + " that day, and there is no green mark on a half-day leave day. If a punch is missed, ask HR to approve an attendance correction; until then the other half counts as absent" + (SPECIAL[F.from] ? " and, on this special day, is charged double." : "."),
++      T((lwp ? "it counts as 0.5 of the " + LWP_LIMIT + " days. " : "it uses half a day of Paid Leaves. ") + y.Sub + " must check in and check out for the other half; it is measured against half the shift. Arriving late or leaving early does not count against " + y.sub + " that day, and there is no green mark on a half-day leave day. If a punch is missed, ask HR to approve an attendance correction; until then the other half counts as absent" + (SPECIAL[F.from] && !s.hk ? " and, on this special day, is charged double." : "."),
+         (lwp ? "यह " + LWP_LIMIT + " दिनों में 0.5 गिना जाएगा। " : "इसमें आधे दिन की Paid Leaves लगती है। ") + "दूसरे आधे दिन के लिए चेक-इन और चेक-आउट ज़रूरी है; उसे आधी शिफ़्ट से नापा जाता है। उस दिन देर से आना या जल्दी जाना नहीं गिना जाता, और आधे दिन की छुट्टी वाले दिन ग्रीन मार्क नहीं मिलता। अगर पंच छूट जाए, तो HR से अटेंडेंस सुधार मंज़ूर करवाएँ; तब तक दूसरा आधा दिन गैरहाज़िर गिना जाएगा" + (SPECIAL[F.from] ? " और ख़ास दिन होने से दोगुना कटेगा।" : "।"));
+   var sp = days.filter(function (x) { return SPECIAL[x]; });
+-  if (sp.length) { var x = sp[0], lbl = SPECIAL[x][R.lang] || SPECIAL[x].en;
++  if (sp.length && !s.hk) { var x = sp[0], lbl = SPECIAL[x][R.lang] || SPECIAL[x].en;
+     lines.push('<b>' + T(fmt(x) + " is a special day (" + lbl + ").", fmt(x) + " एक ख़ास दिन है (" + lbl + ")।") + '</b> ' +
+       T("If this leave is approved, the day is not charged double. A day taken without approved leave is unpaid and charged double.", "यह छुट्टी मंज़ूर होने पर उस दिन दोगुनी कटौती नहीं होगी। बिना मंज़ूर छुट्टी के न आने पर वह दिन बिना वेतन का होगा और दोगुना कटेगा।")); }
+   if (F.from < TODAY) lines.push(T("This includes a past day. Past days in " + MONTH + " can be asked for until " + MONTH_END + ".", "इसमें बीता हुआ दिन है। अक्टूबर के बीते दिन " + MONTH_END + " तक माँगे जा सकते हैं।"));
+@@ -469,7 +528,7 @@
+     var v = verdict();
+     body = F.err ? '<div class="line bad" role="alert"><span class="ic" aria-hidden="true">!</span><span>' + F.err + '</span></div>' : "";
+     if (isHrLeave()) body += '<div class="field"><label for="f-behalf">Who is this leave for?</label><select class="input" id="f-behalf">' +
+-        '<option value="">Myself (Ritika)</option><option value="manoj"' + (F.behalf === "manoj" ? " selected" : "") + '>Manoj Singh · no login</option>' +
++        '<option value="">Myself (Ritika)</option><option value="manoj"' + (F.behalf === "manoj" ? " selected" : "") + '>Manoj Singh · no login</option><option value="geeta"' + (F.behalf === "geeta" ? " selected" : "") + '>Geeta Devi · Housekeeping · no login</option>' +
+         '<option value="rohit"' + (F.behalf === "rohit" ? " selected" : "") + '>Rohit Verma</option></select><div class="help">For staff without a login. The types, figures and the 5-day limit follow the person you pick.</div></div>';
+     body += '<div class="field"><label for="f-type">' + T("Leave type", "छुट्टी का प्रकार") + '</label><select class="input" id="f-type"><option value="">' + T("Choose...", "चुनें...") + '</option>' +
+       typesFor(s).map(function (t) {
+@@ -521,7 +580,7 @@
+       '<p><b>' + F.type + ' · ' + fmtRange(F.from, to) + ' · ' + dayWord(n) + (F.half ? T(" (half day)", " (आधा दिन)") : "") + '</b>' + (you ? "" : " · " + s.name) + '</p>' +
+       '<p>' + T(who + " will approve or decline it. " + (you ? "You will see the answer here, under Leave Applications." : s.first + " will be told the answer."), who + " इसे मंज़ूर या नामंज़ूर करेंगे। जवाब यहीं Leave Applications में दिखेगा।") + '</p>' +
+       '<p>' + willTell(s, you) + '</p>' +
+-      (lwp ? '<p>' + T("If approved, " + y.are + " not paid for " + (n === 1 ? "this day" : n < 1 ? "this half day" : "these days") + ". " + lwpUsed(s) + " of " + LWP_LIMIT + " days of Leave Without Pay are now waiting or approved in " + MONTH + ".", "मंज़ूर होने पर इन दिनों का पैसा नहीं मिलेगा। अक्टूबर में अब " + LWP_LIMIT + " में से " + lwpUsed(s) + " दिन की Leave Without Pay इंतज़ार में या मंज़ूर है।") + '</p>'
++      (lwp && s.hk ? '<p>' + T("If approved, it is recorded as leave without pay on DTC's attendance. " + lwpUsed(s) + " of " + LWP_LIMIT + " days of Leave Without Pay are now waiting or approved in " + MONTH + ".", "मंज़ूर होने पर यह DTC की हाज़िरी में Leave Without Pay के रूप में दर्ज होगी।") + '</p>' : lwp ? '<p>' + T("If approved, " + y.are + " not paid for " + (n === 1 ? "this day" : n < 1 ? "this half day" : "these days") + ". " + lwpUsed(s) + " of " + LWP_LIMIT + " days of Leave Without Pay are now waiting or approved in " + MONTH + ".", "मंज़ूर होने पर इन दिनों का पैसा नहीं मिलेगा। अक्टूबर में अब " + LWP_LIMIT + " में से " + lwpUsed(s) + " दिन की Leave Without Pay इंतज़ार में या मंज़ूर है।") + '</p>'
+            : '<p>' + T(dayWord(n) + " is set aside from " + y.pos + " Paid Leaves until " + who + " decides.", who + " के फ़ैसले तक " + dayWord(n) + " अलग रखा गया है।") + '</p>') +
+       (F.half ? '<p>' + T("Check in and check out for the other half as usual.", "दूसरे आधे दिन के लिए हमेशा की तरह चेक-इन और चेक-आउट करें।") + '</p>' : "") +
+       '<p class="muted">' + T("Changed your mind? It can be cancelled from the list.", "मन बदल गया? सूची से रद्द कर सकते हैं।") + '</p>';
+@@ -578,7 +637,7 @@
+   });
+   if (F) drawModal();
+ }
+-["person", "device", "lang", "theme", "state"].forEach(function (k) {
++["person", "device", "lang", "theme", "state", "hk"].forEach(function (k) {
+   document.getElementById("rv-" + k).addEventListener("change", function (e) { R[k] = e.target.value; if (k === "person") { F = null; var b = document.getElementById("bd"); if (b) b.remove(); } render(); });
+ });
+ document.getElementById("rv-fail").addEventListener("change", function (e) { R.fail = e.target.checked; });

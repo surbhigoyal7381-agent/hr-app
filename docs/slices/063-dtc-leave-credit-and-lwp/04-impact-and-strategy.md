@@ -1,44 +1,56 @@
 ---
 slice: 063-dtc-leave-credit-and-lwp
-artifact: 04-impact-and-strategy (change process steps 1 and 2; the 00-impact-analysis of the handoff contract)
+artifact: 04-impact-and-strategy, version 2 (change process steps 1 and 2; the 00-impact-analysis of the handoff contract)
 author: hrms-fullstack-engineer
-date: 2026-10-21
-status: waiting for Surbhi's approval. No feature code written, nothing committed, nothing pushed, nothing written to any server.
-inputs: 03-functional-spec.md v3.0, 01c rev. 3, 01d, 01e, 01-product-brief.md (last sections, including "OD-1 answered"), 02-design.md v3, prototype-v3.html, 01b-devops-first-look.md
-code read: worktree 060-manager-review at 59906139 (hr_api.py, inbox_api.py, payroll_rules.py, payroll_rules_apply.py, payroll_month.py, payroll_slip.py, payroll_reprocess.py, attendance_correction.py, hooks.py, portal.js 4455-4760, parts/attendance.html, parts/request-modals.html, the salary report), hrms leave_application.py and attendance_request.py, hrms alvoraa_hr_core/access.py, Frappe v16.33.1 in hrlocal-bench (Document.discard, notification_log)
+date: 2026-10-25
+status: waiting for Surbhi's approval. Paper only - no code written, nothing committed, nothing pushed, nothing run on any server.
+replaces: version 1 of 21 Oct 2026, kept unchanged as 04-impact-and-strategy-v1.md (the office build it planned is now on dev)
+inputs: 03-functional-spec.md v4.0; 01c rev. 4b (SEC-1..3, 6..20; PRIV-1..3, 5..7); 01g; 04c; 02-design.md v4 (W.1-W.5); prototype-v4.html; 04b-implementation-notes.md; 07-rehearsal-runbook.md; 07a-backup-and-rehearsal-runbook.md (read in worktree 060-manager-review); .claude/context change-process.md, no-over-engineering.md, nfr-budget.md, parallel-work.md
+code read: origin/dev f207e82c (read-only, worktree 066-grooming-build) - leave_rules.py (whole), payroll_month.py (whole), payroll_slip.py (whole), alvoraa_payroll_rule_set.py and .json, hr_api.py 2306-2600, the salary report's leave columns, portal.js lp- block (6064-6560), hooks.py leave entries, scripts/rehearsal_063.py and seed_rehearsal_063.py, hrms leave_application.py on_submit; branch slice/063-field-rights (ALV-215) at 5c96a348; branches slice/070-readable-on-phone, slice/070-seats-follow-reporting, slice/071-unseated-names
+decisions used: Surbhi, 25 Oct 2026, "go with recommendations" - Q-S1 (a), Q-S2 yes for Housekeeping, Q-S7 accept; the rule set stays OFF at DTC until five gates pass
 ---
 
-# 063 · Impact analysis and strategy
+# 063 · Impact analysis and strategy, version 2
 
 ## 0 · Bad news first
 
-1. **Surbhi's OD-1 remedy (iv) works, but not the way it was first described.** I tried it on the
-   local bench. Frappe **refuses to even create** an attendance correction on a date that already
-   has an approved half-day leave - both with and without the half-day tick ("No attendance
-   records to create"). So "the engine reads an approved request" alone would never get a request
-   to read. **It becomes feasible with one extra step that uses Frappe's own design:** when the
-   correction is raised for such a day, the attendance row's "other half" is first marked
-   **Absent** (true - there are no punches for it). Frappe then accepts the half-day correction,
-   and when HR approves it, **Frappe itself** sets the other half back to **Present** and links the
-   request to the day. I proved that sequence on the bench, inside a transaction I rolled back.
-   The engine then trusts that link. Details in section 5.
-2. **A second trap for (iv), found on DTC data:** 12,632 of 12,674 DTC attendance rows carry a
-   shift, and DTC has **0 Shift Assignments**. Frappe's correction looks for the attendance row by
-   shift, so a correction with no shift would not find the row and would try to create a second
-   attendance for the same day, which fails at approval. The same small hook must copy the row's
-   shift onto the request. **My bench probe used a row with no shift, so this part is not yet
-   proven by running** - it is the first thing step 1 proves.
-3. **Bench answers to the spec's checks:** `apply_leave` does leave `leave_approver` empty
-   (confirmed). `discard()` works when the employee calls it on their own Open request (confirmed,
-   status becomes Cancelled). **No DTC employee has an email on the Employee record** (0 of 445
-   active); only the 10 people with a login can get Frappe's status email. Whether the portal
-   loads Hindi: the code says no (see 7.3), not checked by running.
-4. **DTC headcount moved:** 445 active today, not the 476 the spec quotes. Nothing here depends on
-   the exact figure.
-5. **`hr_api.py` is at exactly 69 bypasses in code**, its ceiling. The employee cancel takes it to
-   70, as SEC-8 decided. Every other new read is written without the word.
-6. **Three changes move money** (E6, the half-day rule, OD-1 (iv)) plus one settings change. None
-   reaches DTC until the rehearsal on a local copy passes and Surbhi says so.
+1. **Most of this slice is already built and on `dev`, but not on `main`.** The office part (credit
+   on the 1st by settings, 15-day minimum, LWP limit of 5, HR approves LWP, cancel, chain notice,
+   half days, the missed-punch correction) is commit 24ee6549 and its family on `origin/dev`. It is
+   not on `origin/main` (a473c191). So no DTC employee can apply on production until a release.
+   Version 2 adds only: the Housekeeping table, the Housekeeping card and Apply facts, HR being told
+   of every approval, the "told" counter fix, and wording fixes. Everything else is re-proved, not
+   rebuilt.
+2. **Slice 070 (ALV-217, "readable on a cheap phone") is editing the same leave code in
+   `portal.js`** - `lpSubmit`, `submitLeaveApp`, `openLeaveModal`, `renderLeaveApps` - and the same
+   test file `portal_leave_063_test.js`. It is built, local only, not on `dev`. **One of us must
+   go first** (section 8). I recommend 070 goes first and I rebase on it.
+3. **Showing HR the Housekeeping figure on behalf (Q-S2) opens one hole if done the obvious way.**
+   `get_leave_summary(employee_id)` checks HR's scope by **company only** (`_hr_target_employee`,
+   finding F-3). The branch check lives only in `_leave_subject`. So an HR user limited to one
+   branch could read a person's figure in another branch. The build must check
+   `permitted_employee_filters()` (company **and** branch) before it adds any figure on behalf.
+   This is in the plan (step 3); it costs one query.
+4. **The engine's "Why" note must not name "Housekeeping" in code.** The spec's wording does
+   ("Housekeeping table: ..."). SEC-15 forbids a designation name in code. The note and the card
+   will print the designation **from the table row**, so DTC still reads "Housekeeping" - but the
+   word is data, not code. Same words on screen; tell the analyst.
+5. **Nobody will see the Housekeeping card on their own phone.** 0 of 42 Housekeeping staff have a
+   login. With Q-S2 answered "yes", HR sees the figure when filing for them. That is the only
+   viewer. The card itself (the "own" view) is still built, because it is in the prototype and costs
+   little beside the office card.
+6. **Payroll can still pay an agency worker by mistake.** Q-S1 (a) means HR deletes 42 rows from
+   every month's Payroll Entry by hand. If missed, a slip pays worked days from DTC's payroll. The
+   engine never adds the leave credit to it (SEC-20), but the worked days are still paid. The check
+   afterwards is a desk list filter (section 6.4), not code.
+7. **The "told" line already counts wrong once HR is told.** `told_for` counts every notice with
+   " will be away on " in the subject. The HR notice must use the same subject (spec N-1b), so the
+   employee's line "your managers ... have been told (n people)" would count HR as managers. The
+   fix is two lines (AC-146), in step 4.
+8. **One stale branch to report, not mine to delete:** `slice/063-dtc-leave` (worktree
+   `063-dtc-leave`) holds 17 commits that are all already on `dev` under other hashes
+   (`git cherry` shows every one as "-"). Its demo containers `hrlocal-063*` may still be running.
+   Surbhi decides whether to remove it.
 
 ---
 
@@ -48,69 +60,77 @@ code read: worktree 060-manager-review at 59906139 (hr_api.py, inbox_api.py, pay
 
 | App | Touched | How |
 |---|---|---|
-| `alvoraa_portal` | **Yes** | `hr_api.py`, `inbox_api.py`, `payroll_rules.py`, `payroll_rules_apply.py`, `payroll_month.py`, `payroll_slip.py`, `payroll_reprocess.py`, the salary report, `hooks.py`, `portal.js`, three page parts, **one new module `leave_rules.py`** (section 2.2 says why) |
-| `hrms` (our copy) | **No change** | `access.py` helpers called as they are (`is_own_record`, `refuse`, `refuse_own_decision`, `refuse_own_submit`, `permitted_employee_filters`). Frappe HR's Leave Application, Leave Type, Attendance and Attendance Request used as shipped |
-| `frappe`, `erpnext` | No | `Document.discard` and `notification_log.make_notification_logs` called as shipped (both verified in v16.33.1) |
-| `alvoraa_goals`, `alvox_compensation` | No | Nothing reads leave or the pay engine |
+| `alvoraa_portal` | **Yes** | One new child DocType; one Table field on `Alvoraa Payroll Rule Set`; `payroll_month.py`, `payroll_slip.py`, `leave_rules.py`, the rule set controller; `portal.js` lp- block; possibly a few lines in `panels.css`; tests; the two rehearsal scripts |
+| `hrms` (our copy) | **No change** | `access.py` helpers called as they are (`permitted_employee_filters`, `refuse`). Leave Application, Leave Type, Attendance, Payroll Entry, Salary Slip used as shipped |
+| `frappe`, `erpnext` | No | |
+| `alvoraa_goals`, `alvox_compensation` | No | Nothing reads leave or the pay engine (grep: no import of `payroll_*` or `leave_rules`) |
+| Slice 066 (grooming) | No coupling | Its own switch (the Grooming Red Value component). It shares `payroll_month.py` / `payroll_slip.py`, already on `dev` - I build on top of it |
+| Slice 067 (pay-slip marks) | **Shares the one switch** | Same `enabled` box. Q-S7 accepted: 067's red and green lines wait for the same five gates. No code change |
+| ALV-215 (field rights) | Gate G-A1, and one shared file | It adds `on_update` to the rule set controller; I add one check to its `validate`. Different methods. It locks `designation` (level 2), which this slice needs |
+| Slice 070 (two branches) | `portal.js` | See section 8 |
 
-### 1.2 Every caller of every function I would change (grepped, whole repo)
+**Not touched, on purpose:** `hr_api.py` (the on-behalf figure and the scope check fit inside
+`leave_rules.py`, which `hr_api` already calls), `hooks.py` (the HR notice rides on the existing
+`on_submit` hook; the table check lives in the DocType's own `validate`), `inbox_api.py`, `payroll_rules.py`,
+`payroll_rules_apply.py`, `attendance_correction.py`. No patch.
 
-| Function | Callers found | Effect on them |
+### 1.2 Every caller of every function I would change (grepped on origin/dev f207e82c, whole repo)
+
+| Function | Callers | Effect on them |
 |---|---|---|
-| `payroll_rules.evaluate_day` | `payroll_rules_apply.judge`; tests `test_payroll_rules.py` (wrapper `judge(**kwargs)`) | Two new keyword arguments, both default off. Every existing call behaves as today |
-| `payroll_rules.DayVerdict` | `evaluate_day`; `judge` (no-shift case); `test_payroll_month.py` builders | One new field `half_leave`, default False. `day_credit` unchanged when it is False |
-| `payroll_rules_apply.judge` | `payroll_slip.month_summary`; `payroll_reprocess.preview` and `.run`; `evaluate_attendance`; `on_attendance_submit` | Reads three more attendance fields. Callers that do not fetch them (`evaluate_attendance`, the hook's doc) are updated to fetch them; a missing field reads as "not a half-day leave", so today's answer |
-| `payroll_month.summarise_month` | `payroll_slip.month_summary`; `test_payroll_month.py` | Counters become decimals; E6 adds approved Paid Leaves days to the gate count **only when the caller passes them**. Existing tests pass `20 == 20.0` |
-| `payroll_slip.month_summary` | the salary report; `push_marks_to_additional_salary`; `on_salary_slip_validate`; `test_salary_report.py`; **new: the card** | Reads `leave_type`, `leave_application`, `attendance_request`; counts approved Paid Leaves days; all three callers get E6 and halves (that is the point: card = report = slip) |
-| `payroll_reprocess._attendance_rows` | `preview`, `run` | Three more fields in the list |
-| `hr_api._can_action_leave` | `action_leave`; `_mark_actionable` (scorecard 1236, manager detail 1551); `test_portal_security_010` 329; `test_leave_permissions` (source pins) | New LWP branch after `is_own_record`, only where the company has an enabled rule set. Source pins still hold (`_can_action_leave` still in `action_leave`; no role list in `action_leave`) |
-| `hr_api.apply_leave` | `portal.js` 4712; `test_leave.py`; `test_leave_permissions.py`; `test_portal_security_010` 427-433 | Same signature. New refusals: non-HR `on_behalf_of` (SEC-7), types off at a disabled rule set (SEC-2), Paid Leaves with no approver (SEC-12). Sets `leave_approver` for Paid Leaves |
-| `hr_api.preview_leave_request` | `portal.js` 4628; `test_leave.py`; `test_leave_ledger_035`; `test_leave_permissions`; `test_portal_security_010` 442 | Same signature, more keys returned; existing keys unchanged |
-| `hr_api.get_leave_summary` | `portal.js` 4459, 4525, 4587; `test_leave_ledger_035`; `test_numbers_match_035`; `test_portal_security_010` 444-508 | New keys `paid_leaves`, `types_offered`, and per-application extras; existing keys unchanged |
-| `hr_api.get_all_active_employees` | `portal.js` 4545 (the on-behalf picker) only | Narrowed to `permitted_employee_filters()` (company **and** branch) and gains `no_login` (AC-93) |
-| `inbox_api._part_leave_approvals` | `parts()` -> `get_nav_counts`, `get_inbox` | Filter widens with one OR branch (HR's LWP rows at an enabled-rule-set company). Same part, same key list plus three keys |
-| `hooks.py` doc_events | Leave Application (`before_submit` today), Leave Type (cache hooks today), Attendance Request (060 hooks today) | Entries **added at the end** of each block; nothing removed |
+| `payroll_month.summarise_month` | `payroll_slip.month_summary`; tests `test_payroll_month`, `test_leave_063_engine`, `test_grooming_cap_066`, `test_pay_slip_marks_067`, `test_salary_report` | One new keyword, `credit_rows=None`. Nobody passes it today, so every existing call gives the same answer. Two new fields on `MonthSummary` (`credit_table`, `next_credit_at`), default empty |
+| `payroll_slip.month_summary` | the salary report (line 50); `on_salary_slip_validate` (291); `check_grooming_before_submit` (350); `leave_rules._card` (578); `scripts/rehearsal_063.py` (186); `scripts/seed_rehearsal_063.py` (130, 274) | Reads `designation` in the Employee read it already makes (no new query). Passes rows only when SEC-18 holds. For everyone else, unchanged. For a Housekeeping person the slip's paid days **drop** by the leave credit (that is SEC-20) and `leave_encashed` is 0 |
+| `AlvoraaPayrollRuleSet.validate` | Frappe on every save | One more check, `_check_credit_rows`. An existing rule set with no rows passes it |
+| `leave_rules.credit_facts` | `paid_leaves_left`, `_card`, `types_offered`, `refuse_type_not_offered`, `preview_facts` (all in `leave_rules.py`) | Adds `housekeeping`, `earned`, `cap`. `earns` becomes true for a table person with a class figure, so Paid Leaves is offered and not refused |
+| `leave_rules.paid_leaves_left` | `types_offered`, `preview_facts` | For a table person: earned so far − used − waiting. Office: unchanged |
+| `leave_rules._card` / `paid_leaves_card` | `hr_api.get_leave_summary` 2357 | A second fixed key list for a table person (SEC-1 list two). Office keys unchanged |
+| `leave_rules.types_offered` | `hr_api.get_leave_summary` 2351; tests `test_leave_063_rules` 49-58, 366; `test_leave_063_card_cancel` 104 | On behalf: adds `left` for a Housekeeping person **only if** the person is inside the caller's company-and-branch scope (bad news 3) |
+| `leave_rules.preview_facts` | `hr_api.preview_leave_request` 2561 | Housekeeping facts (`housekeeping`, `earned`, `next_at`); no `special_day` for them; the not-enough check also runs on behalf for Housekeeping |
+| `leave_rules.notify_chain_on_approval` | hooks.py Leave Application `on_submit` (276) | Also tells HR in scope (N-1b), once each, never the employee or the approver |
+| `leave_rules.told_top` | `decision_facts` (320) → `hr_api.action_leave` 1116; test `test_leave_063_rules` 414 | Counts chain managers only |
+| `leave_rules.annotate_applications` | `hr_api.get_leave_summary` 2355 | `told_count` counts chain managers only |
+| `leave_rules.CARD_KEYS` | test `test_leave_063_card_cancel` 40 (subset check) | Split into two lists; the test becomes an **equality** check per list (AC-17, AC-138) |
+| `portal.js` `lpRenderCard`, `lpPopulateTypes`, `lpVerdict`, `lpShowResult` | the Leave page and Apply pop-up only | A Housekeeping branch in each; X-8 and X-9 wording |
 
-Not changed, and pinned by tests that stay: `refuse_own_submit`, `refuse_own_decision`,
-`_leave_approver_for`, `access.py` (0 bypasses), `attendance_correction.py` (0 bypasses - the OD-1
-hook lives outside it), `rule_set_for` itself.
+Not changed and still pinned by their tests: `rule_set_for`, `validate_leave_application`,
+`lock_paid_leaves`, `prepare_half_day_correction`, `chain_of`, `hr_users_in_scope`, `cancel_leave`,
+`_can_action_leave`, the 70 ceiling in `hr_api.py`, the 0 ceiling in `leave_rules.py`.
 
 ### 1.3 Personas
 
-| Persona | What changes |
+| Persona | What changes in version 2 |
 |---|---|
-| **Employee at DTC** (Priya, 10 with a login) | Card "Paid Leaves - October" (own figures, days only); Apply list offers Paid Leaves and LWP; current-month-only, limit of 5; cancel a waiting request or an approved one before it starts; half-day leave counts 0.5; a missed punch on a half day is fixed by a half-day correction HR approves |
-| **Employee at DTC with no login** (435) | Nothing on screen; HR files for them. Their pay follows the engine changes once the rule set is on |
-| **Employee, other tenants** | LWP appears in the Apply list and follows their normal approval (D5). A non-HR user passing `on_behalf_of` is now refused instead of silently filed for themselves (SEC-7) - nobody should be doing that from the screen |
-| **HR Manager / HR User at DTC** (7) | LWP requests of people in their scope in the Inbox, approvable there; files for staff with no login (branch-scoped picker); cancels as today on the desk; cannot approve their own |
-| **Named leave approver / store manager** | Paid Leaves requests in the Inbox as today, plus the "managers up to X are told" line. Cannot approve LWP unless also HR in scope |
-| **Managers up the Reports To chain** | One four-fact notice (name, dates, days, "approved") per approved leave below them. The top of the chain hears of every approved absence (Q6a) |
-| **System Manager** | Changes the DTC rule set from the written list; creates "Paid Leaves" once; the type is then locked |
-| **CXO** | No change |
+| **Employee, office, DTC** (10 with a login) | Nothing new on screen except: the "told" line counts managers only (AC-146). Their pay changes only at switch-on, as already planned |
+| **Employee, Housekeeping, DTC** (42, no login) | Earn Paid Leaves days from days present, by the table. No DTC pay moves. They never see the card unless one is given a login |
+| **Employee, other tenants** | None. No rule set, so nothing here runs |
+| **HR Manager / HR User at DTC** (7) | Filing for a Housekeeping person: sees "Paid Leaves - n days left" and "has earned n so far" (Q-S2), only for people in their company **and** branch. **Told of every approved leave** of people in their scope (N-1b): up to about 6 bells per approval at DTC. Removes Housekeeping rows from each Payroll Entry and checks afterwards (Q-S1). Way B until switch-on |
+| **Named approver / managers up the chain** | No change |
+| **System Manager** | Types the 10 Housekeeping rows once; the rule set refuses a gap, an overlap or a falling figure |
+| **CXO** | None, unless they hold HR Manager at DTC - then they get every HR approval bell too. I could not check who holds the role; say if that is unwanted |
 
 ### 1.4 HRMS domains
 
-- **Leaves:** two types used (LWP exists; Paid Leaves created once by hand at DTC). No allocation, no
-  ledger change (Paid Leaves has `allow_negative` 1, so Frappe's balance check passes).
-- **Attendance:** half-day leave rows read differently by the engine; OD-1 (iv) marks the other
-  half Absent on raising a correction and Frappe marks it Present on approval.
-- **Payroll:** paid days move for DTC once the rule set is on (credits on the 1st by settings; E6;
-  halves). Every other tenant has no rule set, so `rule_set_for` returns None and the engine does
-  nothing - unchanged.
-- **Org structure:** the Reports To chain picks who is told. Not the seat tree (slice 064).
+- **Leaves:** one type for both groups ("Paid Leaves", created by hand at DTC at release); no
+  allocation, no policy, no ledger change.
+- **Attendance:** read only. Days present = days worked + approved Paid Leaves days, halves 0.5 -
+  the number the engine already makes (`days_for_gate`).
+- **Payroll:** office staff as already built. Housekeeping: the credit is reported, never paid; HR
+  keeps them out of Payroll Entry by hand.
+- **Org structure:** `designation` now picks the table, so it becomes a leave field. ALV-215 makes it
+  HR-only. `reports_to` still picks who is told.
 - **Appraisals, goals, compensation:** not touched.
 
-### 1.5 Non-functional verdicts (against the plan; re-checked against the code at step 5)
+### 1.5 The seven non-functional dimensions (against the plan; re-checked against the code at step 5)
 
-| Dimension | Verdict | Reason |
-|---|---|---|
-| **Performance** | **degrades slightly, inside budget** | The Leave page at DTC now runs `month_summary` for one person: about 100 queries for a 30-day month (01b estimate), the same at 20 or 400 staff. `prepare(..., employee=)` keeps the 363-row green table out. Budget 500 ms per call; measured in step 7, and if over, the first fix is one checkin query per month, not a cache. Inbox HR scope stays in the database. Chain walk at most 10 reads (2 at DTC). Other tenants: one extra `rule_set_for` lookup per leave call |
-| **Security** | **improves, one deliberate widening** | New refusals: non-HR on-behalf, branch scope on-behalf, types off when the rule set is off, Paid Leaves with no approver, self-approval on every door. Widening by decision: LWP approval moves from one named person to the HR users in scope (SEC-3), and one new bypass for the employee's cancel (69 -> 70, after own-record and future-date checks). OD-1 (iv): an HR approval now stands in for a punch on half-day leave days (section 5.6) |
-| **Reliability** | **improves** | Every refusal says why and what to do. The chain notice cannot fail an approval (wrapped; the "told" line reads rows actually created, so it never lies). The card failing never blocks the list or Apply. Engine changes are pure functions with tests |
-| **Scalability** | **neutral** | Nothing grows with headcount per request. The limit check reads one person's LWP for one month. No job, no cache |
-| **Maintainability** | **neutral to slightly degrades** | `hr_api.py` and `portal.js` grow (hot files). Kept in check by putting the DTC rules in one new module and making every rule ask `rule_set_for(company)`. No new DocType, field, setting or job |
-| **Data integrity** | **improves** | One source for each number: credits = rule set `monthly_credits`; used and gate count = `month_summary`, which the slip and the report also use, so card = report = slip. No cache, so nothing to go stale. Limit and date rule sit on `validate`, so every door is covered and approval re-checks |
-| **Compliance / privacy** | **improves, with one new flow** | Card is own-record only with a fixed key list, no rupees. Chain notice carries four facts, never type, reason, approver or job title. New flow: managers up the chain learn of approved absences (Surbhi's choice). No log line carries a name, reason or figure |
+| Dimension | Before (dev today) | After (planned) | Verdict |
+|---|---|---|---|
+| **Performance** | Card: one `month_summary` for the caller (24 queries empty, about 3 more per attendance day, 52 ms measured). Approval: chain walk, 1 read per level | Table: **no new query** (rows come with the rule set; `designation` joins the Employee read already made). A Housekeeping person's Apply list and preview need days present, so they run `month_summary` too (about 100 queries for a full month). HR notice: about 2 + 7 queries at DTC plus one bell per HR user. All per request, not per head | **degrades slightly, inside budget** (500 ms per call, 1.5 s per approval). Measured in step 3 and step 4; no cache unless a number says so |
+| **Security** | Card own-only; HR on behalf sees no figure | HR on behalf sees a Housekeeping person's **days** figure, after a company-and-branch check that today's code lacks on that path (bad news 3). Rows editable by System Manager only, refused on save if wrong (SEC-19). No new endpoint, no new bypass, no role change | **neutral** - one widening Surbhi chose, with a tighter scope check than the existing path |
+| **Reliability** | Office rules on every door | A wrong table can no longer be saved. A month length the table does not cover (not 28-31 days) gives 0 and a note, never a guess. Notices still never block an approval | **improves** |
+| **Scalability** | Nothing per head | Same. The table is at most a few dozen rows per rule set | **neutral** |
+| **Maintainability** | DTC rules in `leave_rules.py` (0 bypasses) | One child DocType (5 fields), one check beside `_check_slabs`, one branch in `summarise_month`, a second key list. `portal.js` grows by one Housekeeping branch in four functions | **slightly degrades** (more surface), kept to one module and one table |
+| **Data integrity** | One source per number | Still one source: the table credit and "next at" come out of the one `summarise_month` call that the slip, the desk report and the card share. Nothing stored, nothing cached, so nothing goes stale. A rule-set edit is a Version row | **improves** (the "told" count becomes true) |
+| **Compliance / privacy** | Days only; chain gets four facts | HR gets the same four facts (they could already read every leave on the desk). The card for a table person carries no pay field (SEC-20). The table holds no personal data. Nothing goes to the agency (PRIV-7, instruction only) | **neutral**, one new push of data HR already holds |
 
 ---
 
@@ -118,496 +138,392 @@ hook lives outside it), `rule_set_for` itself.
 
 ### 2.1 The rung for each part
 
-| Part | Rung | Why the cheaper rung was rejected |
+| Part | Rung | Why not cheaper |
 |---|---|---|
-| LWP type | 1 - already there | - |
-| Credits on the 1st (US-23) | 2 - configuration (rule set values) | - |
-| "Paid Leaves" type (US-19) | 2 - one record, by hand, at DTC | A patch runs on every tenant (OPS-7) |
-| Approvers for the people without one | 2 - data, by DTC HR | - |
-| Lock on "Paid Leaves" (OD-8) | 4 - three doc_event lines | No per-record lock in Frappe; a Property Setter makes the whole Leave Type form read-only for every type. DevOps advised no lock; Surbhi chose a lock (D1). OD-8 still open |
-| Date rule, limit of 5 (SEC-6, SEC-13) | 4 - a `validate` hook | The endpoint alone is not a gate: the Employee role can create through REST (verified by security) |
-| HR approves LWP (SEC-3) | 4 - one branch in `_can_action_leave` + the Inbox filter | No Frappe setting gives "HR in scope approves this type" |
-| Chain notice (PRIV-1) | 4 - code on `on_submit` | A Frappe Notification record can be edited by any System Manager to add the reason; security ruled it out |
-| Employee cancel (SEC-8) | 4 - one endpoint, one bypass | Giving the Employee role `cancel` would let REST cancel past approved days |
-| Card, previews, Apply list | 4 - inside existing endpoints | No new endpoint that takes its own employee argument (SEC-1) |
-| E6, half-day rule, OD-1 (iv) | 4 - engine change | Config cannot express them (01e section 3) |
-| New DocType, field, setting, job, cache, app | **none** | - |
+| Office credit on the 1st, 15-day minimum | **2 - configuration** (rule set values, already in the runbook) | - |
+| "Paid Leaves" Leave Type | **2 - one record by hand at DTC**, at release | A patch would run on every tenant (OPS-7) |
+| LWP limit 5, current month, HR approves LWP, cancel, chain notice, half days, missed punch | **already built** (4 - on dev) | - |
+| **Housekeeping table** | **5 - one child DocType** | Frappe Earned Leave accrues by calendar, not by days present, and needs allocations Surbhi ruled out. The rule set's `slabs` mean "percent of a shift". `leave_classes` holds one figure per class. A text box of ranges has no save check, and a typo goes straight to the agency (SEC-19). Numbers in code: the engine holds no numbers by design. Nothing cheaper names a designation, two month lengths and uneven edges (6, 13, 19, 26) with a save check |
+| Housekeeping credit worked out | 4 - one branch in `summarise_month` | Config cannot read days present |
+| HR told of every approval | 4 - a few lines in the existing `on_submit` hook | A Frappe Notification record can be edited by any System Manager to add the reason (PRIV-1) |
+| "Told" count managers only | 4 - two lines | - |
+| Keep Housekeeping out of payroll (Q-S1 a) | **2 - process** + a desk list filter for the check | Code (Q-S1 b) only if a mistake happens once |
+| Way B (bridge) | **1 - already there** (desk Leave Application, LWP) | - |
+| Rehearsal additions | scripts only (not shipped code paths) | - |
+| New field, setting, job, cache, report, export, app | **none** | - |
 
-### 2.2 Files to touch, by story group
+### 2.2 The Housekeeping table - the one new DocType
 
-| Group | Stories | Files |
-|---|---|---|
-| **A · Engine** | US-25 E6, US-26 half day, US-27 OD-1 (iv), US-20, US-21 | `payroll_rules.py` (`DayVerdict.half_leave`, `evaluate_day` two inputs), `payroll_rules_apply.py` (`judge` reads the flags; `evaluate_attendance` field list), `payroll_month.py` (halves; E6), `payroll_slip.py` (`month_summary` fields; Paid Leaves day count), `payroll_reprocess.py` (field list), `report/salary_components_and_workings/*.py` (Worked / On leave / Absent columns Int -> Float) |
-| **B · Rules on every door** | US-6, US-9 (server), US-13, US-19, US-27 (the correction hook) | **new `leave_rules.py`**: `validate_leave_application` (SEC-6, SEC-13), `lock_paid_leaves` (validate / on_trash / before_rename), `prepare_half_day_correction` (Attendance Request `before_insert`, section 5); `hooks.py` (entries added at the end of the Leave Application, Leave Type and Attendance Request blocks) |
-| **C · Filing and approving** | US-7, US-8, US-9, US-10, US-12, US-17 | `hr_api.py` (`apply_leave`, `preview_leave_request`, `_can_action_leave`, `get_all_active_employees`), `inbox_api.py` (`_part_leave_approvals` filter, three row keys) |
-| **D · Chain notice** | US-11 | `leave_rules.py` (`notify_chain_on_approval`, on `on_submit`), `hooks.py` |
-| **E · Cancel** | US-16 | `hr_api.py` (new `cancel_leave`), `leave_rules.py` (N-5, N-6 notices), `test_portal_security_010.py` ceiling 69 -> 70 with the endpoint named |
-| **F · Card** | US-1..US-5, US-15 (server side) | `hr_api.get_leave_summary` (calls `leave_rules.paid_leaves_card(emp)`; adds `types_offered` and application extras) |
-| **G · Screens** | US-1..US-4, US-7..US-18, US-27 row warning | `portal.js` (leave block only: `loadLeaves`, `_populateLeaveTypeSelect`, `openLeaveModal`, `laPreview`, `submitLeaveApp`, `renderLeave*`, new `lp*` functions for the card and cancel), `parts/attendance.html` (card in place of `#leave-rings` when `paid_leaves` is present), `parts/request-modals.html` (Apply pop-up), the Inbox row renderer (`next-inbox.js`), `translations/en.csv` |
-| **H · Release** | US-22, US-23, US-24 | No code. `07-devops-inputs.md` section 5 (evidence), the rehearsal note |
+**Child DocType `Alvoraa Leave Credit Row`** (`istable` 1, `editable_grid` 1, no permissions of its
+own, no personal data). Name proposed by the spec; I keep it.
 
-**Why one new module rather than more of `hr_api.py`:** the hooks need a home anyway, `hr_api.py`
-is the hottest server file and at its bypass ceiling, and putting every DTC rule beside the others
-makes "each asks `rule_set_for`" checkable in one read. It starts at a bypass ceiling of **0** in
-the SEC-16 test. It is one module with plain functions - no class, no registry.
-
-### 2.3 "DTC only" - one check
-
-Every rule calls the existing `payroll_rules_apply.rule_set_for(company)` with the **employee's**
-company and does nothing when it returns None. No company or site name appears in code. The one
-extra question - "is there a rule set that is switched off?" - is asked only where SEC-2 needs to
-refuse (`apply_leave`, the Apply list): `frappe.db.exists("Alvoraa Payroll Rule Set", {"company": c})`.
-
-| Rule | Where it asks |
-|---|---|
-| Card, Paid Leaves offered | `get_leave_summary` |
-| Types refused when the rule set is off | `apply_leave`, `preview_leave_request` |
-| HR approves LWP | `_can_action_leave`, the Inbox filter |
-| Current month, limit of 5 | `leave_rules.validate_leave_application` |
-| Chain notice | `leave_rules.notify_chain_on_approval` |
-| Half-day engine rule, OD-1 (iv) | the engine itself (it already runs only with a rule set); the correction hook |
-| Paid Leaves lock | the lock hook (any enabled rule set on the site) |
-
-One table-driven test runs each rule with the rule set enabled, disabled and absent (AC-27).
-`rule_set_for` uses `get_cached_doc`; switching the rule set off is a save, which clears that
-document's cache, so the switch takes effect on the next request. Step 3 has a test for it.
-
-### 2.4 HR approves LWP, in `_can_action_leave`
-
-```
-1. is_own_record(doc.employee)                     -> False   (unchanged, stays first)
-2. LWP branch, only if all hold:
-     Leave Type is_lwp = 1
-     rule_set_for(employee's company) is not None
-     caller holds HR Manager or HR User
-     employee inside permitted_employee_filters()   (one exists() query, company AND branch)
-   -> return frappe.has_permission("Leave Application", "submit", doc)
-   An LWP at such a company that fails the branch -> False (a named non-HR approver cannot approve it)
-3. Otherwise: the named-approver rule, unchanged.
-```
-
-`action_leave` already calls `refuse_own_decision` first and then this function, so the button and
-the action keep one rule. Approval runs `doc.submit()`, which runs `validate` again, so the date
-rule and the limit are re-checked at approval (AC-44, AC-69). `refuse_own_submit` keeps the desk
-and REST honest. **LWP rows are filed with `leave_approver` empty** (spec 7.2), so they never land in
-one person's approver queue.
-
-### 2.5 The employee cancel, and why 69 becomes 70
-
-New endpoint `hr_api.cancel_leave(leave_id)`:
-
-1. Load the doc. If its `employee` is not the caller's own Active Employee (`_get_employee()`)
-   **and** the caller is not HR with the employee inside `permitted_employee_filters()` -> refuse
-   "You can only cancel your own leave." (rule 063-SEC-8). Checked in our code, not left to User
-   Permissions (3 of 10 DTC logins have none).
-2. Open, draft -> `doc.discard()` **as the user** (0 bypass; proven on the bench). N-5 notice.
-3. Approved, `from_date` after today, and the caller is the employee -> `doc.flags.ignore_permissions = True`
-   on this one document, then `doc.cancel()`. **This is the +1.** N-6 notice, no chain notice.
-4. Approved, today or earlier -> refuse "This leave has started, so only HR can cancel it." HR keeps
-   the desk, as today.
-5. Anything else -> refuse with the reason.
-
-**Why the bypass is the right price:** the Employee role has no `cancel`, and giving it one would let
-REST cancel past approved days (SEC-8). The bypass sits on one document, after the own-record and
-future-date checks. The ceiling comment names `cancel_leave`. No new `allow_guest`.
-
-### 2.6 The limit of 5 and the current-month rule, on `validate`
-
-`leave_rules.validate_leave_application(doc, method)` - hooked on Leave Application `validate`,
-added beside the existing `before_submit`:
-
-- Return at once unless `rule_set_for(company)` is set (DTC only).
-- Skip when status is Cancelled or Rejected (freeing days must never be refused).
-- **Date rule:** any day before the 1st of the **current** month (server date) -> refuse with the
-  first sentence of AC-68, or AC-69's sentence when the leave is being approved. Binds HR on the desk
-  too (OD-4).
-- **Limit (LWP only):** for each calendar month the request touches, read this employee's other LWP
-  applications that are Open or Approved and overlap that month (one query), count each one's days
-  inside the month with Frappe's own `get_number_of_leave_days` (half = 0.5, follows
-  `include_holiday`), add this request's in-month days, refuse over **5** with AC-43's message.
-  `LWP_MONTH_LIMIT = 5  # Surbhi, 21 Oct 2026` - a constant, no setting.
-- Uses `frappe.throw` (a business rule), not `refuse()`; nothing personal in the message.
-- Needs no bypass: it only reads.
-
-### 2.7 The chain notice walk
-
-`leave_rules.notify_chain_on_approval(doc, method)` on Leave Application `on_submit`:
-
-- Only when status is Approved and `rule_set_for(company)` is set.
-- Walk `Employee.reports_to` from the person: stop at no manager, at a person seen before (one
-  `refuse`-style security-log line with ids only, no throw), at a non-Active manager, or after 10
-  steps. Skip the employee themselves and anyone already told. One `get_value` per step.
-- Recipients = the managers' `user_id`s; Frappe's own `make_notification_logs` keeps only enabled
-  users and creates one desk bell each, and sends the email where the user's notification settings
-  allow (production email is muted until go-live). Called directly, not through the after-commit
-  queue, so the "told" count read straight afterwards is true.
-- Subject and body built from four facts only: name, dates, days, "approved" (AC-58). The Notification
-  Log stores `document_type`/`document_name` so "who was told" is answerable a year later and the
-  "told" line can count rows. Opening the link still needs the manager's own read permission - no
-  widening.
-- Wrapped: a failure writes an Error Log titled with the document name only and never blocks the
-  approval.
-
-### 2.8 Half day, E6, OD-1 (iv) in the engine - and the tests that change
-
-**`payroll_rules.evaluate_day`** gets `half_day_leave=False` and `other_half_regularised=False`.
-When `half_day_leave` is set:
-
-| Punches on the day | Verdict |
-|---|---|
-| 2 or more | Worked half measured against **half the shift**; slab quarters capped at 2 before any doubling; **no** late, early or late-window charge; **no greens**; reds only from the slab |
-| fewer than 2, and `other_half_regularised` | Worked half counted in full: 0 quarters, no reds, no greens (OD-1 iv) |
-| fewer than 2, not regularised | Other half **absent**: 2 quarters, doubled on a special day for staff who double |
-
-`DayVerdict.half_leave = True`; `day_credit` = 0.5 minus a quarter-day per quarter for a worked half,
-or minus only the quarters above 2 for an absent half (the same "do not charge the day twice" rule
-the full absent day uses, at half size).
-
-**`payroll_rules_apply.judge`** sets `half_day_leave` when status is "Half Day" **and**
-`leave_application` is filled (an automatic "Half Day" with no leave keeps today's treatment; DTC has
-22 such rows today), and `other_half_regularised` when `attendance_request` is filled and that request
-is submitted (one `get_value`, only on half-day-leave days with fewer than two punches).
-
-**`payroll_month.summarise_month`:** a half-leave verdict adds 0.5 to worked (or 0.5 to absent) and
-0.5 to on leave. **E6:** when the caller passes `approved_leave_days` (Paid Leaves days), the gate
-compares `days_worked + approved_leave_days` with the threshold, and the same figure drives "used"
-(U1). When nobody passes it (old tests), behaviour is today's.
-
-**`payroll_slip.month_summary`** reads `leave_type`, `leave_application`, `attendance_request` and
-counts approved Paid Leaves days from the same attendance rows (On Leave = 1, Half Day with a Paid
-Leaves leave = 0.5) and passes them. So the slip, the report and the card all get E6 and U1.
-
-**Credits on the 1st need no code** (01e section 3): the rule set values do it.
-
-**Tests that change (wording or figures):**
-
-| Test | Change |
-|---|---|
-| `test_payroll_rules.py` 495-583 (leave-credit class) | Still pass. Docstrings that call the 7.5-day cadence "DTC's rule" are corrected - words only |
-| `test_payroll_month.py` `test_a_leave_day_is_not_a_day_worked` (138) | Still true for LWP and for callers that pass nothing; a sibling test pins E6 |
-| `test_payroll_month.py`, `test_salary_report.py`, `test_payroll_reprocess.py`, `test_day_marks.py` fixtures | Unchanged figures (they set their own cadence values). Run once to prove nothing compares counters by type |
-| `test_portal_security_010.py` CEILINGS | `hr_api.py` 69 -> 70 (comment names `cancel_leave`); new row `leave_rules.py: 0` |
-
-**New engine tests (CI, no site data):** half day with the worked half complete, short, one punch,
-no punches; the same on a special day (double and single-deduction staff); regularised with no
-punches; an automatic "Half Day" with no leave unchanged; no green on a half-day leave day even with
-an early punch; gate at 14.5 and 15; E6 with approved and with Open Paid Leaves; half-day LWP equals
-half-day Paid Leaves in pay; quarter cap of 2.
-
-### 2.9 The card payload - the fixed key list
-
-Built inside `get_leave_summary`, **only when `emp` is the caller's own record** and the company has
-an enabled rule set. Built by naming each key; `MonthSummary` is never turned into a dict.
-
-`month`, `class`, `earns`, `credited`, `used` (with `used_dates`, halves marked), `waiting`,
-`to_be_paid_out`, `approver`, `lwp_in_play`, and **only while under the gate** `attended_so_far` and
-`gate`; or `error: true` and nothing else.
-
-- `credited` = the class row's `monthly_credits`; `earns` = that > 0 and the category earns.
-- `used` and `waiting` from this person's Paid Leaves applications in the month (half = 0.5, a request
-  across months counted day by day). `waiting` counts Open only.
-- `attended_so_far` = `month_summary`'s days worked + approved Paid Leaves days (E6).
-- `to_be_paid_out` = max(0, credited - used - waiting).
-- `lwp_in_play` serves R-15 and the Apply list (the LWP limit figure is the employee's own).
-- **Never:** any rupee field, `paid_days`, reds, greens, notes, the Basic. SEC-1's test asserts the
-  key set **equals** this list. `prepare()` is called with `employee=`.
-- On an exception: Error Log titled with the employee id only; `{"error": true}`; the list and Apply
-  still load (AC-16, PRIV-5).
-- Two keys SEC-1 rev. 3 still lists (held-day count and dates) are **left out** - the v3 card does not
-  show them. Security to confirm (spec Q-1).
-
-### 2.10 Release stories - settings change and rehearsal
-
-**US-23 · the DTC rule set values (desk, by a System Manager, local copy first):**
-
-| Field | Old (today, read on DTC 21 Oct) | New | Rollback |
+| Field | Type | Mandatory | Note |
 |---|---|---|---|
-| `leave_threshold_days` | 15 | 15 | - |
-| `accrual_month_days` | 30 | **15** | 30 |
-| Class A `period_days` / `credit_per_period` / `monthly_credits` | 7.5 / 1 / 4 | **15 / 4 / 4** | 7.5 / 1 / 4 |
-| Class B | 10 / 1 / 3 | **15 / 3 / 3** | 10 / 1 / 3 |
-| Class C | 7.5 / 0.5 / 2 | **15 / 2 / 2** | 7.5 / 0.5 / 2 |
-| `enabled` | 0 | 1 - **only after RC-4, Surbhi's word** | 0 (the faster rollback: one tick) |
+| `designation` | Link → Designation | yes | Who the rows are for. A Link, so a deleted or mistyped designation is refused by Frappe |
+| `month_length` | Select `28-29` / `30-31` | yes | |
+| `days_from` | Int | yes | whole days |
+| `days_to` | Int | yes | whole days |
+| `credits` | Float | yes | days of Paid Leaves |
 
-A comment on the record quotes Surbhi's 21 Oct decision. The Version row keeps old and new values.
-No patch, no script on production.
+**On the rule set:** one Table field `leave_credit_rows`, label "Leave Earned by Days Present (by
+Designation)", placed after `leave_classes`, description: "Only for staff whose category earns no
+leave credit. The class figure caps every row." `track_changes` is already 1, so row edits land in the
+rule set's Version rows.
 
-**Other data at DTC, by hand:** "Paid Leaves" Leave Type (`is_lwp` 0, `allow_negative` 1,
-`include_holiday` 1, no encashment, no carry forward, not earned); DTC HR names Paid Leaves approvers
-for staff with none (01b counted 51); release checks RC-7 to RC-12 as the spec lists.
+**Checked on save** - `_check_credit_rows`, a new method beside `_check_slabs`, called from
+`validate()` (one line). Per designation and month length, sorted by `days_from`:
+`days_from` ≤ `days_to`; first row starts at 0; each row starts the day after the last one ended
+(no gap, no overlap); last row ends at 31 (`30-31`) or 29 (`28-29`); `credits` ≥ 0; credits never
+fall as days rise. Each message names the rows, as `_check_slabs` does. Nothing runs if the table is
+empty, so every other tenant's save is unchanged. Fully in memory: no query.
 
-**Settings vs code:** everything a client might want to change (credits, gate, special days, who is
-whose approver) stays data. Code holds only rules Surbhi stated as rules: the limit of 5, current
-month only, who approves LWP, the four-fact notice, the half-day treatment.
+### 2.3 Who gets the table (SEC-18) - decided from data, one helper
 
-**US-24 · rehearsal on a local copy:** a fresh throwaway container with a copy of DTC data (never
-`hrlocal-bench`'s shared sites, never dtc.alvoraa.co); apply US-23 there; switch the rule set on there
-only; run the ten SEC-14 items including the **extra October cost against accrual** (summed from the
-report, both rule set versions) and **item 9 = OD-1 (iv)** (section 5.5); time the rollback. Output
-kept as release evidence in `07` section 5. Nothing goes to DTC until all ten pass and Surbhi says so.
+`credit_rows_for(rule_set, designation, cat_row, cls_row, month_days)` in `payroll_slip.py`, beside
+`month_summary`. It returns this month's rows, or None. All four must hold, else None:
 
-### 2.11 Order of work - thin steps, each green
+1. the rule set is enabled (it is: `rule_set_for` returns only enabled ones);
+2. the person's category row says `earns_leave_credits` = 0 (Contract at DTC; a Permanent
+   Housekeeping person stays on the office rule);
+3. the rule set has rows for the person's `designation`;
+4. the class row exists and its `monthly_credits` > 0 ("No Leave" → None → 0 and the No Leave card).
 
-Each step ends with its own module tests passing; the full suite runs once at the end
-(change-process rule 4).
+Month length 28 or 29 → `28-29`; 30 or 31 → `30-31`; anything else → None, plus a note
+`[ASSUMPTION: DTC's payroll periods are calendar months]`. Two callers: `month_summary` (slip,
+report, card) and `leave_rules.credit_facts` (Apply list, preview, refusal). That is why it is a
+helper and not inline. No company, site or designation name in code.
 
-| Step | What | Proves |
-|---|---|---|
-| 0 | New worktree `.claude/worktrees/063-dtc-leave` on `slice/063-dtc-leave` from `origin/dev`; bring the 063 doc commits across; work-board row | - |
-| 1 | **Bench proof for OD-1 (iv) on a row that carries a shift**, plus the Attendance Request hook (`prepare_half_day_correction`) and its test | The trap in bad news 2 |
-| 2 | Engine: half day, E6, regularised half (pure functions + tests) | AC-109..115, 117 at unit level |
-| 3 | Engine plumbing: `judge`, `month_summary`, reprocess, report columns; slip tests (SEC-10) | AC-99..102, 110 |
-| 4 | `leave_rules.validate_leave_application`, the lock, SEC-2 refusals and SEC-7/SEC-12 in `apply_leave`; the table-driven DTC-only test | AC-24..28, 32, 36, 37, 42..46, 66..70, 91, 92, 96..98 |
-| 5 | `_can_action_leave` LWP branch + Inbox part | AC-47..56 |
-| 6 | Chain notice | AC-57..62 |
-| 7 | `cancel_leave` + N-5/N-6 + ceiling 70 | AC-83..90 |
-| 8 | Card block, `types_offered`, preview payload, application extras; query count at 20 and 400; one timing on the bench | AC-1..23 (server), AC-23 |
-| 9 | Screens; walk all 75 parity rows on the running page; 390 px and 200% zoom | AC-1..16, 29..41, 63..95 (UI) |
-| 10 | Full suite once (throwaway container); integrity script; then stop for review | - |
+### 2.4 The calculation, in `summarise_month` (pure, no database)
+
+New keyword `credit_rows=None` (a list of (from, to, credits) for this month), passed only by
+`month_summary` when 2.3 holds. When given:
+
+1. days present = `days_for_gate` (already: days worked + approved Paid Leaves days, halves 0.5);
+2. whole days = round down (12.5 → 12);
+3. earned = the row holding whole days, capped by the class figure (`monthly_cap`);
+4. `next_credit_at` = `days_from` of the first row worth more than earned, if earned is under the
+   cap; else empty. (The card shows "next at - days present", so 14.5 gives "4.5 more".)
+5. `leave_credits_earned` = earned; `leave_used_for_approved` = min(earned, approved Paid Leaves);
+   **`leave_encashed` = 0** (Q-S5 default, the figure is being drafted for Surbhi - one line to
+   change if she says otherwise); `paid_days` = `day_credits` only - **the credit is never added**
+   (SEC-20);
+6. one note: "{designation} table: {n} days present in a {d}-day month gives {e}. Reported to the
+   agency; not paid by DTC." - the designation from the row (bad news 4);
+7. no 15-day minimum; the office gate note is not added.
+
+`month_summary` does not touch Additional Salary for leave at all, so SEC-20's "no Additional
+Salary" holds by construction; Contract staff earn no marks, so no red or green line either.
+
+**Not a second calculation anywhere.** The card, the Apply list and the preview read `earned` and
+`next_credit_at` from the summary. The rule box text is built in the page from the `rows` the card
+sends (rule-set facts, no personal data), never from numbers typed into the page.
+
+### 2.5 The card, the Apply list and the preview (in `leave_rules.py`)
+
+- `credit_facts` gains `housekeeping` (2.3 holds), `cap`, and for a table person `earns` = True. It
+  does **not** compute `earned` itself - the callers that need it call `month_summary`, once.
+- `_card` for a table person returns **list two** exactly: `month`, `class`, `earns`,
+  `housekeeping`, `earned`, `cap`, `attended_so_far`, `attended_up_to`, `next_at`, `days_to_next`
+  (both left out at the cap), `used`, `used_dates`, `waiting`, `waiting_from`, `approver`,
+  `month_length`, `rows`, `lwp_in_play`, `lwp_limit`. **Never `to_be_paid_out`.** Built by naming
+  each key. `CARD_KEYS` becomes `CARD_KEYS_OFFICE` and `CARD_KEYS_TABLE`; the test checks
+  equality with one of them.
+- `types_offered`: Paid Leaves offered to a table person with `left` = earned − used − waiting.
+  **On behalf (Q-S2):** `left` is added for a table person only when the target is inside
+  `permitted_employee_filters()` for the caller (one `exists` query). Office persons on behalf stay
+  as today (no figure) unless Surbhi widens Q-S2 (question A-1).
+- `preview_facts`: for a table person adds `housekeeping`, `earned`, `next_at`; leaves out
+  `special_day`; runs the not-enough check for own **and** on behalf (scope already checked by
+  `_leave_subject`). The server still does not enforce "left" at filing (AC-34 unchanged).
+- `refuse_type_not_offered` needs no edit: it asks `credit_facts(...)["earns"]`, which is now true for
+  a table person.
+
+### 2.6 HR told of every approval, and the counter (US-33, AC-145, AC-146)
+
+Inside `notify_chain_on_approval`, after the chain notice: `hr = hr_users_in_scope(employee)`
+minus the chain's users (told once, with the chain wording - E-44); `_send` the N-1b body with the
+**same subject**. Frappe already skips the approver (the acting user) and `_notice_users` skips the
+employee. The second line reads "You are told because you look after {first}'s records in HR. There is
+nothing for you to do." - **wording pending Surbhi's yes (X-6)**, one string. Same four facts, same
+exclusions as AC-59. Wrapped by the same try/except, so it never blocks an approval.
+
+Counter: `told_top` and `annotate_applications` count only users who are in `chain_of(employee)`.
+`decision_facts` follows automatically. No new query (the chain is already walked there).
+
+### 2.7 Screens (`portal.js` lp- block only)
+
+- `lpRenderCard`: if `pl.housekeeping`, draw W.1 - three figures, the "So far" chip, the next line
+  (or X-8's first sentence alone at the cap), the agency sentence, the rule box built from `pl.rows`.
+  The chip reuses an existing chip class if one fits; otherwise a few lines appended to the lp- block
+  in `panels.css`.
+- `lpPopulateTypes`: X-9 - a zero class reads "Your leave class ({c}) does not get Paid Leaves, so
+  only Leave Without Pay is offered."; Contract keeps the drawn sentence.
+- `lpVerdict` / `lpShowResult`: Housekeeping sentences R-90..R-95 (no "The leave is paid", no
+  special-day line, no "charged double", the LWP "recorded ... on DTC's attendance" sentence), third
+  person on behalf.
+- Every new string through `drT`. No Hindi file (X-5). The three wrong Hindi drafts (spec §16) are
+  the designer's to fix before native review.
+- The 13 differences (X-2, X-4, X-5, X-8, X-9, D-1..D-8) keep the build's interim until Surbhi
+  answers the analyst's plain list. Each answer is a wording or placement change, not a design
+  change.
+
+### 2.8 What I will NOT build
+
+- No agency export, report filter or print format (PRIV-7: Alvoraa produces nothing).
+- No Payroll Entry filter or slip refusal for agency staff (Q-S1 b) - only if the manual step is
+  missed once.
+- No Way C (monthly allocation script).
+- No second switch for 067's lines (Q-S7).
+- No server cap on "Paid Leaves left" (AC-34).
+- No change to `hr_api.py`, `hooks.py`, `inbox_api.py`, the report's columns, or any DocType but the
+  rule set and the new child.
+- Not the findings F-1..F-7 - including F-3 (`_hr_target_employee` company-only), which I work
+  around in 2.5 rather than fix. Each is a ticket for Surbhi to decide.
 
 ---
 
-## 3 · Risks, trade-offs, and what I would NOT build
+## 3 · Build order - small steps, each with its own tests
 
-### 3.1 Risks
+Already built and on `dev` (version 1). **Not rebuilt; re-proved** by the existing tests in the full
+run and by rehearsal items 1-10:
 
-| Risk | Level | Handling |
+| Item from the brief | Where it lives | What proves it |
 |---|---|---|
-| A pay mistake in the engine change reaches DTC payslips | High if switched on unproven | Pure-function tests + rehearsal on a local copy + Surbhi's word before switch-on |
-| OD-1 (iv): HR approval pays a half with no punch evidence | Medium | Section 5.6 |
-| If HR later **cancels** an approved half-day correction, Frappe's own `on_cancel` cancels every attendance row linked to it - the whole half-day leave row with it | Medium | Release note for HR: decline before approving, never cancel after; the rehearsal includes this case so we see what it does |
-| `hr_api.py`, `portal.js`, `hooks.py`, `inbox_api.py` are hot files | Medium | Hot-file rules: new functions, entries appended, no reformatting; rebase often; pin tests per feature |
-| The card costs about 100 queries a load | Low (10 users) | Measured in step 8 against 500 ms |
-| The chain top learns of every approved absence | Accepted by Surbhi (P3), to confirm (OD-7) | - |
-| LWP approval widens from one person to 7 HR users | Accepted by Surbhi | - |
-| The Team View "Pending Approvals" count still counts only named-approver rows, so it does not include HR's LWP queue | Low | The Inbox is where HR acts (spec). Written down, not built |
-| Slip hook fails open (Frappe's figures stay) | P2, pre-existing | Unchanged by this slice |
+| Office credit on the 1st, 15-day minimum | rule set values (configuration) + `summarise_month` gate, E6 | `test_payroll_month`, `test_leave_063_engine`; rehearsal Test-901..903, 907/908 |
+| LWP limit 5, current month | `validate_leave_application` | `test_leave_063_rules` |
+| HR approves LWP | `_can_action_leave` LWP branch | `test_leave_063_rules`, `test_leave_permissions` |
+| Cancellation | `hr_api.cancel_leave`, N-5, N-6 | `test_leave_063_card_cancel`; ceiling 70 |
+| Chain notice | `notify_chain_on_approval` | `test_leave_063_rules` (chain cases) |
+| "Paid Leaves" type | **release step** (desk, by hand) + `lock_paid_leaves` | lock tests; RC-6 reads the flags back |
+| Way B | **no code** - desk procedure (section 6.2) | AC-148/149 by hand on the synthetic site |
 
-### 3.2 What I would NOT build
+New work, in order. Each step: tests first where a guard is involved, then break the guard on purpose
+and see the test go red (change-process rule). Neighbour modules after each step; **the full suite
+once, at the end**.
 
-- No new DocType, field, setting, page, report, job, cache or app.
-- No Frappe `Notification` record for the chain notice.
-- No server-side cap on Paid Leaves "left" (AC-34 says the server does not enforce it).
-- No Leave Block List (dropped).
-- No "Remind HR" button (V2 default: words only).
-- No first-half / second-half choice (01d D7).
-- No change to `attendance_correction.py` - the OD-1 hook sits on the Attendance Request doctype, so
-  the 060 flow stays exactly as written and approved.
-- No fix for F-1 (other tenants' empty `leave_approver`), F-2 (`month_summary` ignores held-day
-  confirmations), F-3 (`_hr_target_employee` company-only), F-4. Each is written down for Surbhi.
-- Hindi is supplied as a file but not switched on (X-5).
+| Step | What | Files | Tests (new unless marked) | ACs |
+|---|---|---|---|---|
+| **0** | Worktree `.claude/worktrees/063-v4` on `slice/063-v4` from `origin/dev` **after** ALV-215 lands on `dev` (else rebase onto it before step 1 ends). Work-board row. Bring the 063 v4 documents across | - | - | - |
+| **1** | Child DocType + Table field + `_check_credit_rows` | new `alvoraa_leave_credit_row/` (json, py, `__init__`), rule set `.json` (one field), rule set `.py` (one method, one call) | `test_leave_credit_rows_063.py`: each refusal (from > to, not from 0, gap, overlap, short last row per length, negative, falling credits), DTC's 10 rows save, an empty table saves, HR Manager reads but cannot write, a row change shows in the Version row | AC-130, AC-131 |
+| **2** | Engine: `credit_rows_for` (SEC-18) + the `summarise_month` branch (round down, halves, cap, next at, not in paid days, encashed 0, note from the row's designation) | `payroll_month.py`, `payroll_slip.py` | Pure, in `test_leave_063_engine.py`: every edge of AC-119..121, 12.5 → 1, 25.5 → 3, 31 → 4, cap by class B, 14.5 → next 4.5 more, cap leaves next empty, old callers unchanged. Site, in `test_leave_credit_rows_063.py`: SEC-18 a-g, SEC-20 a-e with a **submitted Salary Structure Assignment, Basic 12,000**, desk report row and note, designation changed mid-month (W4) | AC-119..AC-129, AC-132 |
+| **3** | Card list two, Apply list, preview, Q-S2 on behalf with the scope check | `leave_rules.py` | Key **equality** per list (office and table); table payload holds none of `to_be_paid_out`, `paid_days`, `daily_rate`, `earning_basic`, `gross`, `net`; Basic 31,000 never in the response (AC-18 restored - the fixture carries a salary); Anil (other branch) on behalf gets no figure; Ritika gets it; No Leave and Contract sentences; query count **equal** at 20 and 400 staff for an office and a table person, number recorded | AC-17, AC-18, AC-23, AC-133..AC-144 (server side), AC-19 as amended by Q-S2 |
+| **4** | HR notice + the counter | `leave_rules.py` | HR in scope told once, approver not, employee not, Anil not, an HR user in the chain told once with chain wording; `SECRET-REASON-063` absent from HR notices too; the "told" line counts managers only; decline / withdraw / cancel tell no one new | AC-59 (HR), AC-61, AC-145, AC-146 |
+| **5** | Screens | `portal.js` lp- block; `panels.css` only if no chip class fits | `portal_leave_063_test.js` gains the 23 Housekeeping rows (R-76..R-98) and X-8 / X-9; by hand: walk the 98 rows on the running page, 390 px and 200 % zoom, keyboard only | R-76..R-98, AC-8, AC-80 |
+| **6** | Rehearsal additions (synthetic only) | `scripts/seed_rehearsal_063.py` (new cases Test-913..920), `scripts/rehearsal_063.py` (`shape` adds the Housekeeping counts) | Items 11-15 of AC-108 (section 5) | AC-108 |
+| **7** | Full suite once in my own throwaway container (both batch summaries read, not tailed); `scripts/check_app_integrity.py`; DOM checks; then **stop for review** | - | - | - |
 
-### 3.3 The bench checks the spec asked for
-
-| Check | Answer | How (nothing written to any server) |
-|---|---|---|
-| Q-3 Does `apply_leave`'s insert leave `leave_approver` empty? | **Yes, empty.** Frappe's validate does not fill it; only the desk form's script does | Local `test_site`, one transaction rolled back, commits blocked |
-| Q-2 Does `discard()` work when the employee calls it? | **Yes**, for their own Open request: status Cancelled, docstatus 2. That employee had a User Permission on their own record | Same probe, run as the employee's user |
-| OD-1 (iv) Can a correction be raised on a half-day leave date? | **Not as Frappe ships it** (refused both ways). **Yes** once the other half is marked Absent; on approval Frappe sets it Present and links the request | Same probe. Not yet proven with a shift on the row (bad news 2) |
-| Q-4 Does the portal page load Hindi? | **From the code, no.** `drT` uses `window.__` if present, and `alvoraa_portal` has only `translations/en.csv`; nothing on the page loads a translation dictionary. Not checked by running (needs a signed-in browser session) | Code read |
-| Q-5 How many DTC staff have an email? | **0 of 445 active** have a personal, company or preferred email; 10 have a login. Frappe's status email goes to `prefered_email`, `user_id`, company or personal email - so only the 10 can be told by email | Read-only counts on dtc.alvoraa.co (no writes, no names) |
-
----
-
-## 4 · Size and commit plan
-
-**Estimate:** 13 files changed (8 Python, 1 report, `hooks.py`, `portal.js`, 2-3 page parts, `en.csv`)
-plus 1 new Python module. About 700-900 lines of Python, 500-700 of JS/HTML. Tests: 5 new files
-(`test_leave_063_engine.py`, `test_leave_063_rules.py`, `test_leave_063_approval.py`,
-`test_leave_063_cancel_notice.py`, `test_leave_063_card.py`), 70-90 new tests, plus edits to
-`test_portal_security_010.py` (ceilings). Story points in the spec: 75. Honest guess: 4-5 working
-sessions including the rehearsal.
+**Size, honestly:** about 250-350 lines of Python, 150-250 of JS, 1 new DocType, 2 new test files,
+35-50 new tests. One to two working sessions plus the rehearsal.
 
 **Commits** (one concern each, in the worktree, never pushed without Surbhi's word):
-
-1. Half-day leave corrections reach the right attendance row (the hook + test)
-2. The pay engine counts a half-day leave as half leave, and approved Paid Leaves toward the 15
-3. The slip, the report and the reprocess read the half-day and Paid Leaves facts
-4. At DTC, leave is current-month only, LWP is capped at 5, and Paid Leaves is locked
-5. HR in scope approves leave without pay; Paid Leaves keeps its named approver
-6. Managers up the chain are told when a leave is approved
-7. An employee can cancel their own leave before it starts (ceiling 69 to 70)
-8. The Leave page carries the month's Paid Leaves, days only
-9. The Leave page, Apply pop-up and Inbox match prototype v3
-10. (docs) implementation notes
+1. The rule set holds a checked table of leave earned by days present
+2. The engine reports table credit for agency staff and never pays it
+3. The Leave page and Apply form show earned-so-far for table staff; HR in scope sees it on behalf
+4. HR is told of every approved leave; the told line counts managers only
+5. The Leave page draws the Housekeeping card and sentences (prototype v4)
+6. Rehearsal: Housekeeping cases and shape counts
+7. (docs) implementation notes
 
 ---
 
-## 5 · OD-1 remedy (iv): half-day regularisation, no punches - feasibility
+## 4 · How the rule set switches, and how each gate is evidenced
 
-**Verdict: feasible, with one small hook and a small engine change. Not feasible as "the engine
-just reads an approved request", because Frappe will not create the request.**
+**The switch is the one existing box: `enabled` on DTC's `Alvoraa Payroll Rule Set`.** Ticking it
+turns on, in one request: the card, Paid Leaves and LWP on the portal, the limit and month rule, HR
+approval of LWP, the chain and HR notices, half-day pay, the Housekeeping table, the engine's paid days
+on every DTC slip, and 067's red and green lines. Unticking it turns all of that off. Only System
+Manager can tick it, and the Version row records who and when.
 
-### 5.1 What the code and the bench show
+**It stays off until all five gates hold, in this order** (spec 15.3; AC-150):
 
-- The engine judges a day only from Employee Checkin punches (`judge` -> `_punches`); status is
-  read only for Absent and On Leave.
-- Frappe's Attendance Request, on a date with an approved half-day leave, **refuses at insert**:
-  - half-day ticked -> "Attendance status unchanged - Skip" (the leave already wrote the other half
-    as Present);
-  - not ticked -> "On Leave - Skip".
-  Both end in "No attendance records to create" (bench, rolled back).
-- **But Frappe has a designed path for exactly this case:** if the attendance row is "Half Day" with
-  the other half **Absent**, a half-day Attendance Request is accepted, and its approval sets the
-  other half to **Present** and fills `attendance_request` on the row (bench: confirmed).
+| Gate | Evidence (kept in 07 §5 / the release record; anything naming a person stays outside the repo) | Who |
+|---|---|---|
+| **G-A1** ALV-215 field rights on every tenant | Deploy run for the ALV-215 release; read-only query on DTC: the job and pay fields at level 2, ESS read-only (RC-14); AC-151 passes on the synthetic site | Engineer reads; Surbhi releases |
+| **G-A2** Synthetic rehearsal passes | The rehearsal note: AC-108 items 1-15, each with pass/fail and its number; the extra October cost line shown to Surbhi; rollback timed | Engineer runs; Surbhi reads |
+| **G-A3** Surbhi checks the 10 Housekeeping rows | Her dated "checked" against DTC's document; a photo of the document kept with the evidence. The builder typed them, so the builder is not the checker (SEC-19) | **Surbhi** |
+| **G-A4** A fresh, checked DTC backup | 07a §1.1 take, §1.2 verify (`GZIP-OK`, size near 6.5 MB, `-- Dump completed`, four files incl. the site config json), §1.3 copy off the server - taken **after** the last desk data step and before the tick. The 25 Oct 14:41 backup does not count (Q-S10) | Surbhi runs (server access) |
+| **G-A5** Surbhi's word | Dated, in her own message | **Surbhi** |
 
-### 5.2 The design
-
-1. **Hook, Attendance Request `before_insert`** (`leave_rules.prepare_half_day_correction`), runs
-   before Frappe's `validate`. Only when all hold: the company has an enabled rule set; the request is
-   one day with the half-day tick on that day; that day's attendance is "Half Day" with a
-   `leave_application`; the day is before today; and it has fewer than two punches. Then:
-   - copy the attendance row's `shift` onto the request (DTC rows carry a shift; DTC has no Shift
-     Assignments - bad news 2);
-   - set the row's `half_day_status` to "Absent" (a true fact: no punches for it), with
-     `update_modified=False`, through `frappe.db.set_value`.
-   If the insert then fails for any other reason, the transaction rolls back and the row is unchanged.
-2. **Frappe does the rest:** HR approves through the existing 060 `decide` (the raiser is never the
-   decider; `refuse_own_submit` on every door); Frappe sets the other half Present and links the
-   request. Declined -> the half stays Absent, which is the truth.
-3. **Engine** (`judge`): a half-day leave day with fewer than two punches counts the other half as
-   **fully worked** (no quarters, no absence, no reds, no greens) when `attendance_request` is filled
-   and that request is submitted. Otherwise the half is absent (doubled on a special day for staff
-   who double).
-
-### 5.3 Exactly where it goes
-
-| Place | Change |
-|---|---|
-| `payroll_rules.evaluate_day` | `other_half_regularised` input (section 2.8 table) |
-| `payroll_rules_apply.judge` | Sets it from `attendance_request` + one `get_value` of that request's docstatus |
-| `payroll_rules_apply.evaluate_attendance`, `payroll_slip.month_summary`, `payroll_reprocess._attendance_rows` | Add `leave_application`, `leave_type`, `attendance_request` to the fields read |
-| `leave_rules.prepare_half_day_correction` + `hooks.py` Attendance Request `before_insert` | The hook above |
-| `portal.js` | The row's "Ask HR to correct {date}" opens the existing correction form for that date with the half-day box ticked |
-
-### 5.4 Which requests the engine trusts
-
-- **Any reason** on the 060 list. The reason is the employee's explanation; what makes it count is
-  that someone other than the employee approved it. "Work From Home" also lands as "Half Day" on a
-  half-day request, so it is treated the same.
-- **Only submitted** (docstatus 1). A waiting, declined (draft with "Declined") or withdrawn request
-  counts for nothing; Frappe only links a request to the row when it is submitted anyway.
-- **Who approved:** whoever holds submit on Attendance Request under 060 (`_may_review`) - HR, or a
-  direct manager acting in their own capacity. Surbhi said "HR approves". **Question OD-1a below:**
-  trust any approved request (my recommendation - one rule, the 060 rule), or only those whose
-  `alvoraa_decided_as` is HR.
-
-### 5.5 How the rehearsal proves it (AC-117, AC-118, SEC-14 item 9)
-
-On the local copy with the rule set on there only: a past half-day leave day with one punch and
-another with none, **on rows that carry a shift**:
-1. the employee raises the half-day correction from the portal -> accepted; the row's other half reads
-   Absent; the slip shows that half absent;
-2. HR approves -> the row's other half reads Present and is linked; saving the slip again counts the
-   half as worked (0.5 + 0.5 leave), not doubled on a special day;
-3. the same with HR declining -> stays absent;
-4. an approved half-day correction later cancelled on the desk -> recorded as found (section 3.1 risk).
-
-AC-118 holds: the DTC rule set is not switched on until this passes and Surbhi says so. The row
-warning's wording (R-27, AC-116) stays as drawn, because under (iv) "HR approves a correction" is now
-true.
-
-### 5.6 The pay risk, said plainly
-
-- **An HR approval replaces punch evidence** for half a day. Bounded: half-day leave days only, at
-  most 0.5 day each, the subject can never approve their own (portal, desk, REST), the raiser is never
-  the decider (060), and the record keeps who raised, who approved and when.
-- **It treats a half day more generously than a full day.** A full day corrected with no punches is
-  still **held** by the engine today (ATT-06: "no punches, marked present -> held"); a half day
-  corrected with no punches will be **paid**. That is what Surbhi asked for; she should see the
-  difference (OD-1b).
-- NFR: one extra `get_value` only on half-day-leave days with a missing punch; no new bypass (the hook
-  writes one engine-owned fact through `frappe.db.set_value`, which the reviewer must check by eye
-  because the bypass counter cannot see it); no personal data in any log.
-
-### 5.7 Tests
-
-- Engine (CI): regularised half with 0 and 1 punches -> 0.5 worked, no quarters, no greens; not
-  regularised -> absent half, doubled on a special day; a request that is only a draft does not count.
-- Hook (site): fires only at an enabled rule set, only for a past, single, half-day-ticked day with a
-  half-day leave and fewer than two punches; copies the shift; sets the other half Absent; does
-  nothing at another tenant; a full day request is untouched.
-- End to end (site): raise -> approve -> `month_summary` counts the half; decline -> it does not.
+Q-S7 is accepted, so 067's lines need nothing more: they ride on the same five gates.
 
 ---
 
-## 6 · Parallel-work check
+## 5 · Rehearsal plan (synthetic data, throwaway container)
 
-| File | Hot? | Who else is in it | Plan |
+**Where:** a new container built from the slice branch (CRLF stripped from `.sh` files first, as the
+Windows trap requires), its own Redis, its own site `rehearsal063.localhost` on its own database.
+**Never** `hrlocal-bench`'s shared sites (`test_site`, `ppj.localhost`), never dev's DTC, never
+production, never a copy of production data. Both scripts already refuse any site ending in
+`alvoraa.co`. Mute email and pause the scheduler on the site first.
+
+**Data:** `seed_rehearsal_063.py` as today (Test-901..912, items 1-10, passed 30 of 30 on 22 Oct) -
+re-run on the new code to prove nothing moved - plus new cases:
+
+| Case | Set-up | Expected |
+|---|---|---|
+| Test-913 | Housekeeping, Contract, A; October; days present 5, 6, 12, 12.5, 13, 18, 19, 20, 25, 26, 31 (one person per value or one person re-seeded) | 0, 1, 1, 1, 2, 2, 3, 3, 3, 4, 4 |
+| Test-914 | Same, November (30 days): 20, 26, 30 | 3, 4, 4 |
+| Test-915 | Same, February 2027 (28 days): 4, 5, 11, 12, 17, 18, 24, 25, 28 | 0, 1, 1, 2, 2, 3, 3, 4, 4 |
+| Test-916 | 24 worked + 2 approved Paid Leaves / + 2 Open / + 2 approved LWP | 4 / 3 / 3 |
+| Test-917 | Housekeeping, No Leave, 31 present; Permanent Housekeeping A, 20 present; Contract Pantry A; Housekeeping rows deleted | 0 / office rule (4, in paid days) / 0 / 0 |
+| Test-918 | Housekeeping A, Basic 12,000, 26 present: slip saved twice | `payment_days` = worked days only, same both times; no Additional Salary; identical with the rows deleted |
+| Test-919 | A Payroll Entry for the month; HR deletes the Housekeeping rows from "Get Employees"; slips made | zero slips for anyone marked agency-paid (AC-147); their Salary Structure Assignments unchanged |
+| Test-920 | Rule set rows edited mid-month; designation changed mid-month | next working-out uses the new rows / the current designation (E-43, W4) |
+
+Item 14 (shape) is a **read-only count on DTC, on Surbhi's word**: 42 Housekeeping, 36 with a class
+that earns, 6 "No Leave", 0 Permanent Housekeeping. Counts only, any cell under 5 printed as "<5".
+
+**Also on the synthetic site:** the 10 rows typed **in the desk** (not by script) from the written list,
+to time the release step; the rollback (delete the rows; untick) timed; AC-148/149 (Way B) by hand;
+one card load timed for a full-month Housekeeping person (budget 500 ms) and its query count recorded.
+
+**What it cannot prove:** DTC's real punch quirks, the real shift mix, and whether DTC's document
+matches what Surbhi told us - that last one is G-A3.
+
+---
+
+## 6 · Migration and release
+
+### 6.1 What the release creates
+
+| By | Where | What | One-line rollback |
 |---|---|---|---|
-| `hr_api.py` | yes | origin/dev last 7 days: ALV-199 and 060 commits; no open work-board row in the leave functions | New functions; existing ones changed only in their leave branches; rebase before each step |
-| `portal.js` | yes | slice 064a (worktree from this one) edits `posPaint`/positions | Split: I touch only the leave block (4455-4760) and add `lp*` functions |
-| `hooks.py` | yes | - | Append entries at the end of three blocks, with a comment |
-| `inbox_api.py` | medium | - | One part's filter and rows only |
-| `payroll_*.py`, report | no open work | slice 059 engine (already on dev) | Sequence: 059 is in; I build on it |
-| `attendance_correction.py` | yes (060) | 060 work | **Not touched** |
-| `test_portal_security_010.py` | shared | any slice adding a file | One ceiling edit, one new row |
+| `bench migrate` (deploy) | every tenant | Table `tabAlvoraa Leave Credit Row`, empty; one Table field on the rule set. No patch, no backfill, nothing recomputed | Code rollback (DevOps, about 35 min); the empty table is harmless if left |
+| System Manager, desk | DTC | Leave Type "Paid Leaves" (spec 7.5 flags); read the flags back (RC-6) | Leave it; Frappe refuses a delete once used, and it does nothing while the rule set is off |
+| DTC HR, desk | DTC | Leave approvers for staff with none (RC-8, count to refresh) | Clear the field |
+| System Manager, desk | DTC | Office values (7.6) + a comment quoting Surbhi | Put the old values back from the Version row (30; 7.5/1/4, 10/1/3, 7.5/0.5/2) |
+| System Manager, desk | DTC | The 10 Housekeeping rows (7.1) | Delete the rows |
+| System Manager, desk | DTC | Tick `enabled` (last) | **Untick it** - the fastest rollback for everything above |
 
-- **This worktree** (`060-manager-review`) is now on branch `slice/062-widget-after-checkin`, and the
-  063 docs sit on it as commits plus untracked files. I will not build here: the build gets its own
-  worktree from `origin/dev`, and the 063 doc commits are brought across.
-- **Main checkout** has another session's uncommitted edits to `.claude/context/definition-of-ready-done.md`
-  and `ux-learnings.md`. Not mine; not touched.
-- **Incoming:** `origin/dev` holds nothing this branch lacks (checked 21 Oct).
-- **Other developers:** I cannot see other machines. Surbhi, is anyone else working in `hr_api.py`'s
-  leave functions, `inbox_api.py` or the pay engine?
-- **Pin tests:** every commit carries a test named for its feature (section 4), so a bad merge fails CI.
+**The backup rule (07a OPS-10):** before **each** DTC data step above, take, verify and copy off a
+backup (07a §1.1-1.3). Roll back by hand from the written list, never by restoring the dump - a
+restore erases everything entered since. The last backup before the tick is gate G-A4.
+
+### 6.2 Way B - the bridge, now until switch-on (no code)
+
+Works on production today and keeps working after Way A is deployed with the rule set off
+(`validate_leave_application` returns at once when no rule set is enabled - read in the code).
+
+1. Desk → Leave Application → New. Employee in your scope; type "Leave Without Pay"; dates in the
+   current month only; half day if asked.
+2. Status Approved, Save, Submit. Never for yourself (the existing `refuse_own_submit` stops it).
+3. Keep each person to 5 days a calendar month, waiting and approved together - **the system does
+   not check this before switch-on.**
+
+**One read-only check before HR starts:** HR Settings "Leave Approver Mandatory In Leave Application"
+at DTC. If on, HR must also fill the approver field, or the save fails. I could not check the value.
+
+What Way B does not do: no card, no notice, no limit, no month rule. Once switched on, a Way B LWP in
+that month counts toward the 5 (AC-149, E-42). Stop using it at switch-on.
+
+### 6.3 Release order
+
+Each step only on Surbhi's word; evidence into 07 §5.
+
+1. ALV-215 to dev, then main (its own slice) - G-A1.
+2. This slice to dev; prove it landed (pin file, container, file - deploy-trap memory); AC-25 holds
+   on a dev tenant with a rule set switched off.
+3. To main; production deploy with DTC's rule set **off** (AC-25 on DTC: both types refused, no card).
+   `bench migrate` adds the empty table.
+4. On DTC, each with a backup first: "Paid Leaves" (RC-6), approvers (RC-8), RC-7, RC-9..RC-11 reads,
+   office values (RC-12), the 10 rows (RC-12), Surbhi checks the rows (RC-13 = G-A3), RC-14, RC-15.
+5. Fresh checked backup (G-A4), then Surbhi's word (G-A5), then the tick.
+6. After: AC-104 on two named staff; the first Payroll Entry without Housekeeping, then the check
+   (6.4); slips stay draft until HR compares five against the desk report.
+7. Tell DTC HR in writing: never send *Salary Components and Workings* to an agency (PRIV-7); the
+   agency's Excel comes from outside Alvoraa; take Housekeeping out of every Payroll Entry.
+
+### 6.4 Q-S1 (a): the monthly check, with no code
+
+After HR makes slips each month: desk → Salary Slip list → filter Payroll Entry = this month's,
+Designation = Housekeeping (Salary Slip carries `designation`, read in hrms' salary_slip.json) →
+must show **zero** rows, draft or submitted. A saved list filter, so HR clicks one link. It cannot see
+a Permanent Housekeeping person (there are none today); the engineer's read-only release check
+(AC-147) uses `dtc_agency` on Employee instead. If a slip is ever found, HR deletes the draft (or
+cancels a submitted one) and Surbhi decides on Q-S1 (b).
 
 ---
 
-## 7 · Questions for Surbhi before I build
+## 7 · Rollback, in one place
 
-**OD-1 (iv) - the chosen remedy, three small confirmations**
+| What went wrong | Rollback | Time |
+|---|---|---|
+| Anything after switch-on | Untick `enabled` | one save; next request is off |
+| A wrong Housekeeping row | Edit or delete the row (Version row records it); untick if pay already moved | minutes |
+| Wrong office values | Old values from the Version row | minutes |
+| The code itself | DevOps code rollback (07·OPS-4) | about 35 min |
+| Data | Never restore the dump for a desk change; it is the last resort | - |
 
-- **OD-1a** Trust any approved half-day correction (HR or the direct manager, as 060 allows), or only
-  ones HR decided? *Recommend: any approved - one rule.*
-- **OD-1b** A half day corrected with no punches is paid; a full day corrected with no punches stays
-  held. Accept the difference? *Recommend: accept for now, and ask DTC about full days separately.*
-- **OD-1c** Raising the correction marks the other half "Absent" on the attendance record until HR
-  approves (it is true, and it is what lets Frappe accept the request). Accept? *Recommend: yes.*
+Open requests stay Open after a rollback; HR declines them. Submitted leave stays.
 
-**Engine detail the spec leaves open**
+---
 
-- **E-a** On a special day, a short worked half: cap the quarters at 2 **before** doubling (so the
-  worst case equals an absent half, doubled)? *Recommend: yes.*
-- **E-b** One punch on a half-day leave day: the half is **absent** until corrected (spec), not
-  **held** as a full one-punch day is. Confirm? *Recommend: absent, as the spec says.*
+## 8 · Parallel-work check
 
-**The five conflicts**
+**Incoming:** `origin/dev` is at f207e82c (slice 066's switch). 067 (e0fe3f22) and 063 version 1
+(24ee6549) are both inside it. Nothing new arrived since the spec was written. I read the 066 and 067
+diffs to `payroll_month.py` and `payroll_slip.py`: grooming fields and engine lines; my change sits
+in the leave block and the Employee read, not in their lines.
 
-- **X-1** Resolved by (iv): the row's warning and "Ask HR to correct" stay as drawn.
-- **X-2** HR filing on behalf sees no Paid Leaves figure for the person (SEC-1c). *Recommend: keep.*
-- **X-3** "(up to 22 Oct)" on the under-15 line - needs security to add one key. *Recommend: add it.*
-- **X-4** "has been told" only when an email exists. The data now says 0 of 445 have an email on the
-  Employee record and only 10 have a login. *Recommend: keep the interim wording permanently.*
-- **X-5** Hindi supplied, not switched on, until a native reviewer signs off and the page is shown to
-  load it. *Recommend: keep.*
+| File I will change | Hot? | Who else is in it (branches not on dev, work board) | Plan |
+|---|---|---|---|
+| new `alvoraa_leave_credit_row/` | new DocType | nobody | claim on the board |
+| rule set `.json` | DocType JSON | nobody | claim on the board; one field |
+| rule set `.py` | medium | **ALV-215** (`slice/063-field-rights`, 8 commits, not pushed): adds `on_update` | **Sequence**: ALV-215 lands first, I rebase. Different methods, so no clash expected |
+| `payroll_month.py`, `payroll_slip.py` | medium | 066, 067 - both already on dev | Build on top; rebase before each step |
+| `leave_rules.py` | mine | nobody | - |
+| `portal.js` lp- block | **yes** | **070-readable-on-phone** (ALV-217, built, not pushed) changes `lpSubmit`, `submitLeaveApp`, `openLeaveModal`, `renderLeaveApps`, `lpIsDtc`, `lpDoCancel` and `portal_leave_063_test.js`. 070-seats, 071, 064, 065 change `pos*`/`oc*` only | **Sequence**: 070 lands on dev first, I rebase before step 5 and run its phone test too. If Surbhi wants 063 first, 070 rebases on me. **Ask** (question A-3). Steps 1-4 do not touch `portal.js`, so they can start now |
+| `panels.css` | yes | 070-seats, 071, 065, 064 append blocks | Append to the lp- block only, if at all |
+| `portal_leave_063_test.js` | test | 070-readable-on-phone | Same sequence as `portal.js` |
+| `scripts/seed_rehearsal_063.py` | script | 067 appended R-5b checks (on dev) | Append new cases at the end |
 
-**Design confirmations (drawn defaults)**
+**Main checkout** (`C:/Surbhi-Git/hr-app`, branch `slice/066-grooming-switch`) holds another
+session's uncommitted edits to `CLAUDE.md`, `.claude/context/*`, two skills and many untracked docs.
+Not mine; not touched. **This worktree** (`067-pay-slip-marks`) holds the 063 v4 documents,
+uncommitted - also not mine to commit; they come across in step 0.
 
-- **V1** Paid Leaves approved by the named leave approver, as today? *Recommend: yes.*
-- **V2** "Remind HR" as words, no button? *Recommend: yes.*
-- **V4** Under 15 days, show "To be paid out 4 ... once you reach 15 days"? *Recommend: yes.*
-- **S1-S5** Four-fact notice; no cancellation notice to managers; no type on Team View; name only on
-  the HR row; "Only the person who approves it and HR can read this." *Recommend: yes to all five.*
+**Other developers:** I cannot see other machines. Surbhi, is anyone else working in the pay engine
+or the leave screens?
 
-**Also open in the spec**
+**Pin tests:** each step's test file names the feature (`test_leave_credit_rows_063`, the HR-notice
+and counter tests in `test_leave_063_rules`), so a bad merge fails CI.
 
-- **OD-7** The top of the chain learns of every approved absence - confirm.
-- **OD-8** Lock "Paid Leaves" in code (D1), against DevOps' advice? *Recommend: lock (three small hooks).*
-- **SEC-7 scope** The non-HR `on_behalf_of` refusal applies to **every tenant**, not only DTC (it is a
-  silent-misfiling bug everywhere). Confirm? *Recommend: every tenant.*
-- **F-1..F-5** Separate YouTrack tickets? *Recommend: yes, not in this slice.*
+---
+
+## 9 · Questions for Surbhi before I build
+
+| # | Question | My recommendation |
+|---|---|---|
+| **A-1** | Q-S2 said HR may see **Housekeeping** leave days on behalf. Should office staff (Rohit) get the same on behalf? | **Yes** - same days, already in HR's desk report, and the code is simpler without the exception. Until you say so, I build Housekeeping only, as you said |
+| **A-2** | The engine's note and the card print the designation from the table row, so the code never names "Housekeeping" (SEC-15). DTC sees the same words. OK? | **Yes** |
+| **A-3** | Slice 070 (phone) and this slice both change the leave screens. Which lands on dev first? | **070 first**; I start the server steps now and rebase before the screens |
+| **A-4** | ALV-215 lands on dev before I start step 1? | **Yes** - it is gate G-A1 anyway |
+| **A-5** | Remove the stale `slice/063-dtc-leave` worktree and its demo containers (all 17 commits are on dev)? | Yes, but it is your call - the demo on :8063 may still be in use |
+
+Waiting on drafts already in hand (no answer needed from me): the HR notice wording (X-6/Q-S3), the
+Housekeeping "Leave encashed" figure (Q-S5, built as 0), the analyst's plain list of the 13
+differences (Q-S4). Each lands as a one-line change whenever it arrives.
+
+Security must reword SEC-1(c) to match Q-S2 and add the extra card keys (spec Q-1) - paperwork, not
+a blocker for steps 1-2.
 
 ---
 
 ## Subtract pass
 
-Removed while writing: a separate Inbox part for HR's LWP (one OR branch in the existing part does
-it); a second "is this DTC" helper (every rule calls `rule_set_for`); reading the Leave Application
-from the engine (the attendance already carries the link); a background job for the chain notice
-(Frappe's own `make_notification_logs`, called directly); a "told" field (Notification Log rows are
-the record); a change to `attendance_correction.py` for OD-1 (a doctype hook keeps 060 untouched);
-a change to `_hr_target_employee` (F-3 stays outside; the branch check sits in the two leave
-endpoints). Kept and why: the new `leave_rules.py` module (the hooks need a home and `hr_api.py` is at
-its ceiling); the lock (Surbhi's D1, pending OD-8).
+Removed while writing this version:
+
+- **`hr_api.py` and `hooks.py` changes** - the on-behalf figure, its scope check and the HR notice all
+  fit inside `leave_rules.py` functions that `hr_api` and the existing hook already call.
+- **A separate "table credit" helper function** - its only caller would be `summarise_month`, so it is
+  a branch there; "next at" rides on the summary instead of a second calculation.
+- **A stored "earned" figure or cache** for the Apply list - it re-runs `month_summary`; only if the
+  measured time misses 500 ms would I reuse the card's figure.
+- **A Payroll Entry filter or slip refusal for agency staff** - Q-S1 (a) is a desk filter.
+- **A "which designations" field on the rule set** - the rows name their designation.
+- **The spec's literal "Housekeeping" in the note** - the row's designation instead (SEC-15).
+- **A new chip style** - reuse an existing class first.
+
+Kept, and why: the child DocType (SEC-19 needs a save check, nothing cheaper has one); the own-view
+Housekeeping card (in the prototype, cheap beside the office card); `month_length` in the card (the
+server's date decides the month, so the page and the server can never disagree at midnight).

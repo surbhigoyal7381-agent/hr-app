@@ -3,14 +3,77 @@ slice: 063-dtc-leave-credit-and-lwp
 artifact: 01c-security-privacy-requirements
 author: hrms-security-privacy-engineer
 date: 2026-10-21
-status: draft, revision 3 (21 Oct 2026, after Surbhi's final answers) - written before the functional spec
-inputs: 01-product-brief.md (incl. its last three sections, final answers 21 Oct 2026; 01d-half-day-addendum.md; 01e-credit-at-start-of-month-addendum.md; "Decisions by Surbhi", D1-D9, and "Changes by Surbhi ... later the same day"); 01b-devops-first-look.md; 02-design.md (U1-U8); prototype-v1.html; security-compliance-baseline.md; compliance-feature-map.md; memory legal-retention-rules-2026-09.md; 060's 01c as the model. Code read in worktree 060-manager-review on 21 Oct 2026. One read-only script on dtc.alvoraa.co, 21 Oct 2026 (settings and counts only, no names, nothing written).
+status: draft, revision 4b (24 Oct 2026, Housekeeping credit table; an agency pays them) - written before the functional spec
+inputs: 01f-two-kinds-of-credit-addendum.md (Housekeeping update and Surbhi's answers, 24 Oct 2026); 01-product-brief.md (incl. its last three sections, final answers 21 Oct 2026; 01d-half-day-addendum.md; 01e-credit-at-start-of-month-addendum.md; "Decisions by Surbhi", D1-D9, and "Changes by Surbhi ... later the same day"); 01b-devops-first-look.md; 02-design.md (U1-U8); prototype-v1.html; security-compliance-baseline.md; compliance-feature-map.md; memory legal-retention-rules-2026-09.md; 060's 01c as the model. Code read in worktree 060-manager-review on 21 Oct 2026. One read-only script on dtc.alvoraa.co, 21 Oct 2026 (settings and counts only, no names, nothing written).
 ---
 
 # 063 · Security and privacy requirements: Paid Leaves card, and Leave Without Pay with no approval
 
 *I did not write the brief or the design. I am specifying here, not reviewing. SEC-8, SEC-13 and
 PRIV-1 are my own mechanisms, so at `06` somebody other than me should check them.*
+
+## Revision 4b - an agency pays Housekeeping (Surbhi, 24 Oct 2026). Wins over Revision 4.
+
+Her answer to Q-H3: **DTC pays Housekeeping through an agency.** The `dtc_agency` field names the
+same 42 people: MPSP Noida 11, MPSP Devisa 10, METI 10, CSP Ambala 7, ABR 4.
+
+| Change | Effect here |
+|---|---|
+| Credits change **no DTC payslip** | **SEC-20 rewritten:** a credit from the Housekeeping table never enters paid days, a Salary Slip line or an Additional Salary. The table rows **are** added (Revision 4's "no rows" default is withdrawn), because the credit is now a record for the agency, not money from DTC |
+| The card shows no pay | **SEC-1** Housekeeping list: `to_be_paid_out` removed, and no wording about salary |
+| What the agency is told | **New PRIV-7:** the monthly record DTC gives each agency is a personal-data flow to a third party. Only that agency's own people, and days only |
+
+**SEC-17 still blocks switch-on.** With an agency paying, a self-edit of `designation` no longer moves DTC pay, but a self-edit of `dtc_leave_class` or `employment_type` still does, and `leave_approver` still picks who approves.
+
+**Unknown, and it matters:** I could not find **any** route in our code that sends anything to an
+agency (searched every tracked `.py`, `.js` and `.json` for `agency` and `dtc_agency`: nothing but
+the field itself, which lives on the DTC site and not in the repo). The memory note of 11 Oct says
+these staff's punches also exist in **DTC's own biometric muster export**. So today the agency
+probably gets a muster roll from DTC's own system or a spreadsheet, outside Alvoraa. **I do not know.
+Q11.**
+
+## Revision 4 - Housekeeping credit table (24 Oct 2026). This box wins over everything below.
+
+Source: 01f, "Update, 24 Oct 2026" and "Surbhi's answers on the housekeeping table". SEC-1 to SEC-16
+stay as revised in Revision 3. **Nothing to remove for the "ground staff tick":** this file never
+specified it. The designation replaces it.
+
+| Change | Effect here |
+|---|---|
+| Contract staff earn no credit, **except designation "Housekeeping"** (42 people, all Contract) | **New SEC-17** (who may change the fields that now set pay) and **SEC-18** (which people the table can reach) |
+| A new child table on the rule set: designation, month length, days from, days to, credits | **New SEC-19:** no gaps or overlaps, checked on save; System Manager only; every edit recorded; no personal data; proven against DTC's own document |
+| Card for a Housekeeping person: earned so far and "next at" | **SEC-1** gains a second fixed key list. Still days only |
+| The 6 Housekeeping people in class "No Leave" earn 0 | Class caps the table. Test in SEC-18 |
+| **Open (Q-H3):** does DTC or an agency pay Housekeeping? | **New SEC-20:** written for both answers. Safe default: no table rows until she answers |
+| Data inventory | Two rows added (§3) |
+
+**Bad news first - a new Blocker for switching the rule set on (P1, not live today).**
+**Any employee with a portal login can edit their own Employee record, including the fields that
+will set their pay.** *(Verified by running it on dtc.alvoraa.co, 24 Oct 2026, read-only; and in
+code.)*
+- Frappe HR ships the role "Employee Self Service" with **read and write on Employee**
+  (`hrms/setup.py`, `get_user_types_data`), limited to their own record by a User Permission.
+- At DTC all 10 portal logins hold that role (7 of them are not HR, and each has its own User
+  Permission). The write is at permission level 0.
+- Every field the pay engine and this slice read is at level 0 and not read-only: `designation`,
+  `employment_type`, `dtc_leave_class`, `dtc_grade`, `dtc_pay_type`, `dtc_employee_category`,
+  plus `leave_approver` and `reports_to`. No hook on Employee stops a self-edit (checked
+  `alvoraa_portal/hooks.py:157` and `hrms/hooks.py:250`).
+- **The scenario:** a Contract employee with a login sends one REST call setting their own
+  `designation` to "Housekeeping" and earns table credits. A class B employee sets
+  `dtc_leave_class` to "A" and earns 4 instead of 3. Either one, the next time a slip is worked out.
+  The same call can also name a friend as their own `leave_approver`.
+- **Why it is not live:** the rule set is switched off, so no pay depends on these fields today.
+  0 of the 42 Housekeeping staff have a login. **It goes live the moment the rule set is switched
+  on.** It predates this slice, but this slice is what makes `designation` set pay.
+- I did not make the write; this is read from the permissions, not demonstrated. SEC-17 asks for
+  the test that demonstrates it, failing first.
+
+**Other facts checked on 24 Oct 2026 (read-only, counts only):** Employee keeps change history at
+DTC (`track_changes` = 1, no Property Setter; 1,894 Employee Version rows in 90 days). All 42
+Housekeeping staff are Contract and **all 42 have a submitted Salary Structure Assignment** - a
+hint that DTC pays them, not an answer to Q-H3. A child-table edit on the rule set is recorded in
+the parent's Version row (Frappe `version.py:151-173`, read on the local bench).
 
 ## Revision 3 - Surbhi's final answers (21 Oct 2026). This box wins over everything below.
 
@@ -182,12 +245,15 @@ applied by hand.
 
 | Field or object | Class | Purpose | Retention | Who may see it |
 |---|---|---|---|---|
-| Credit figures on the card (rev. 3): class, credited this month, used, waiting, to be paid out; days attended and the 15-day minimum only while under 15; held days and their dates | **sensitive** (pay-derived) | Tell the employee what this month's leave is worth in days (D8) | **Not stored.** Worked out on each load, never cached or copied (PRIV-3) | The employee, about themselves. Nobody else through this endpoint |
+| Credit figures on the card (rev. 3): class, credited this month, used, waiting, to be paid out; days attended and the 15-day minimum only while under 15; held days and their dates. Rev. 4, Housekeeping: earned so far, next at, days attended | **sensitive** (pay-derived) | Tell the employee what this month's leave is worth in days (D8) | **Not stored.** Worked out on each load, never cached or copied (PRIV-3) | The employee, about themselves. Nobody else through this endpoint |
 | `MonthSummary` rupee fields (`daily_rate`, `earning_basic`, `gross`, `net`, `red_deduction`, `green_earning`, `mark_rate`, `incentive`, `other_deductions`) and `notes` | **sensitive** (pay) | Price the slip | Not stored by this slice | **Never leaves the server on this path** (SEC-1) |
 | `Leave Application` - employee, type, dates, half day, status, days | sensitive | Record leave that changes pay | Existing; **statutory minimum unknown**, Q-C1 | The employee; their leave approver; HR within scope |
 | `Leave Application.description` (the employee's reason) | sensitive, and health-adjacent when it names an illness | Context for the approver | As above | The employee, the approver, HR. **Never in a notice, a log or an error** (PRIV-1, PRIV-5) |
 | `Attendance` rows written by the leave | sensitive | Feed the pay engine | Existing | As today |
 | Notice up the Reports To chain on approval (rev. 2) | sensitive, and the email leaves our servers through Brevo | Managers know who is away | Email Queue and Notification Log as Frappe keeps them; the copy at Brevo and in the inbox is outside our control, which is why the body is minimal | Every Active, enabled manager above the person, at most 10 steps (PRIV-1). Name, dates, days only |
+| `Employee.designation` (rev. 4) | internal - a job title the person already holds. Rev. 4b: decides the credits **reported to the agency**, not DTC pay | Picks the Housekeeping credit table | Life of the Employee record; every change recorded (Employee `track_changes` = 1 at DTC) | As today for reading. **Writing: HR only** (SEC-17) |
+| Monthly record for each agency (rev. 4b): name, days attended, leave days by type, credits | sensitive - **leaves DTC for a third party** | The agency pays its staff | Outside our control once sent; route today unknown (Q11) | That agency only, its own people only (PRIV-7) |
+| Rule-set credit table rows (rev. 4): designation, month length, days from, days to, credits | internal - **no personal data** | DTC's Housekeeping credit rule | Life of the rule set; every edit recorded | Read: HR Manager, System Manager. Write: System Manager only |
 | Leave Type "Paid Leaves" | internal | Name the leave the class pays for (D1) | Life of the tenant | Everyone who can read Leave Types |
 
 **Nothing new is collected about anyone.** The card shows the employee figures the engine already
@@ -268,7 +334,13 @@ and removing some. **Allowed (rev. 3, matching spec 7.5 and 01e section 7):** `m
 `earns` (class `monthly_credits` > 0 and the category earns), `credited` (the class's
 `monthly_credits`), `used`, `waiting`, `to_be_paid_out`, `attended_so_far` and `gate` (**only
 while under 15 days**), held-day count and dates. **Dropped in rev. 3:** `earned`, `period`,
-`gain`, `cap` as a separate key, and the "up to" date. **Never:** `daily_rate`, `earning_basic`, `gross`, `net`,
+`gain`, `cap` as a separate key, and the "up to" date.
+**Rev. 4 - a second fixed list, for a person on the Housekeeping table:** `month`, `class`,
+`earns`, `earned` (so far, from the table), `cap` (the class figure), `attended_so_far`, `next_at`
+and `days_to_next` (read from the same table rows, never worked out a second way; absent once the
+cap is reached), `used`, `waiting`, held-day count and dates. **Rev. 4b: no `to_be_paid_out`** -
+an agency pays them, so DTC promises no money (SEC-20). Test (a) runs against **both** lists: an office person's block equals list one,
+a Housekeeping person's equals list two. No rupee field in either. **Never:** `daily_rate`, `earning_basic`, `gross`, `net`,
 `red_deduction`, `green_earning`, `mark_rate`, `incentive`, `other_deductions`, `reds`, `greens`,
 `free_reds`, `deductible_reds`, `total_quarters`, `paid_days`, `notes`, or the Basic it was
 priced from. `prepare()` is called with `employee=` (OPS-6), which also keeps every other
@@ -551,6 +623,109 @@ existing correction flow - no new permission path. (New in rev. 3.)**
 *Test:* SEC-14 item 9 on the local copy. In CI: a half-day leave with no punches for the other half
 → 0.5 leave and 0.5 absent; on a special day → the absent half doubled.
 
+**SEC-17 · The Employee fields that set pay can be changed by HR only - on every door. (New in
+rev. 4. Blocks switching the rule set on.)**
+Move these Employee fields to **permission level 1**, with HR Manager and HR User holding read and
+write at level 1, and Employee / Employee Self Service holding read only at level 1:
+`designation`, `employment_type`, `dtc_leave_class`, `dtc_grade`, `dtc_pay_type`,
+`dtc_employee_category`, `leave_approver`, `reports_to`.
+*Ladder:* rung 2-3, configuration. One Property Setter per field (survives upgrades) and one level-1
+permission row per role. No code, no hook. Frappe then ignores a level-1 value sent by someone without
+level-1 write, on the desk, REST and import alike. Taking write on Employee away from Employee Self
+Service entirely was rejected: it would stop employees editing their own phone number and address,
+which they are meant to do.
+*Why `leave_approver` and `reports_to` are in a leave slice:* they decide who approves Paid Leaves and
+who receives the chain notice (PRIV-1).
+*Audit:* a change by HR keeps a Version row on Employee (`track_changes` = 1, verified at DTC).
+*Test (write it first, and watch it fail on today's permissions):* (a) a user with only Employee Self
+Service and a User Permission on their own Employee sends `PUT /api/resource/Employee/<own id>` with
+`designation = "Housekeeping"` → the stored value is unchanged; (b) the same for `dtc_leave_class`,
+`employment_type` and `leave_approver`; (c) the same user changes their own `cell_number` → saved
+(the self-service edits still work); (d) an HR User changes a designation → saved, and a Version row
+names the user and the old and new value.
+*Release check:* a read-only query on DTC confirms the level-1 setting for all eight fields before the
+rule set is switched on.
+
+**SEC-18 · The Housekeeping table reaches only the people Surbhi named. (New in rev. 4.)**
+The table is used for a person only when **all** are true, decided on the server from data:
+1. their company's rule set is enabled (SEC-15);
+2. their `employment_type` is **Contract** - her rule is an exception *to the Contract rule*, so a
+   Permanent person whose designation is changed by mistake stays on the office rule and their pay
+   does not move;
+3. the rule set has table rows naming their `designation`;
+4. their class figure caps the result: class "No Leave" caps at **0**.
+
+*The guard against a careless designation edit:* a designation edit grants credit only if that
+designation has rows on the rule set, which only a System Manager can add, and every edit is
+recorded. The Employee edit itself is HR-only (SEC-17) and recorded. And the desk report's "why"
+column names the table for every person it reaches, so the payroll check sees the count (expected 36
+at DTC).
+*Test:* (a) Contract + Housekeeping + class A → table credit; (b) Contract + Housekeeping + "No Leave"
+→ 0; (c) Contract + "Pantry" → 0; (d) **Permanent** + Housekeeping → the office rule, not the table;
+(e) Contract + Housekeeping, rule set rows removed → 0, and the card shows the Contract sentence;
+(f) approved Paid Leaves days count as attended (Q-H5); (g) red and green marks stay off for Contract.
+*Rehearsal:* 36 people on the table, 6 at 0, everyone else unchanged.
+
+**SEC-19 · The credit table on the rule set cannot be saved with a gap or an overlap, and a typo is
+caught before it pays. (New in rev. 4.)**
+*Shape:* a child table of the rule set. Columns: `designation` (a link to Designation), month length
+(28-29 or 30-31), days from, days to, credits. **No personal data:** no employee, no name, no amount
+of money.
+*Checked on save* (in `alvoraa_payroll_rule_set.py`, beside `_check_slabs`, which already refuses
+gaps and overlaps for the attendance slabs), for each designation and month length:
+- days from ≤ days to; whole days; credits ≥ 0;
+- rows start at 0 and run without a gap and without an overlap;
+- the last row reaches the month's length (31 or 29) - DTC's "26-30" row must be entered as 26-31 for
+  the 30-31 month, which is Surbhi's answer for 31 days (Q-H6);
+- credits never go down as days go up;
+- the designation exists.
+
+The message names the rows, as `_check_slabs` does.
+*Who may edit:* System Manager only (the rule set's own permissions; HR Manager reads). *Audit:* the
+parent's Version row records each row added, changed or removed (verified in Frappe).
+*Effect of a typo:* a wrong row pays wrongly for up to 36 people every month, and nothing fails. So:
+- the rows are typed from **DTC's own document**, and a photo of it is kept with the release evidence;
+- a **second person** checks every row against the document before switch-on. The builder enters the
+  rows, so the builder must not be the only checker (lesson 6);
+- the rehearsal tests every row edge in both month lengths (01f H3: October 5→0, 6→1, 12→1, 13→2,
+  26→4, 31→4; February 4→0, 5→1, 25→4), plus a half day on a row edge (12.5 → 1, round down -
+  still to be confirmed in the spec).
+
+*CI tests:* each refusal above, one test each; and a valid table saves.
+*Rollback:* delete the rows (the table stops applying and SEC-18 falls back to 0), or switch the rule
+set off. Both are recorded.
+
+**SEC-20 · A Housekeeping credit never becomes DTC pay. (Rewritten in rev. 4b - an agency pays them.)**
+For a person whose credit comes from the Housekeeping table (SEC-18):
+- **No paid days.** The engine reports the credit (`earned`) but does **not** add it to `paid_days`.
+  Today `paid_days = day_credits + leave_credits_earned` (`payroll_month.py:176`), so this is one
+  condition in the engine, keyed on "this credit came from the table" - not on a name, and not on a
+  second setting.
+- **No slip line, no Additional Salary.** Nothing in `on_salary_slip_validate` or
+  `push_marks_to_additional_salary` (`payroll_slip.py:159-208`) is created from the credit. (Contract
+  staff earn no marks, so no red or green Additional Salary exists for them either.)
+- **No pay field on the card** (SEC-1 list two): no `to_be_paid_out`, no `paid_days`, no rupee field,
+  and no sentence about salary.
+- The desk report shows the credit in its leave columns, labelled as reported to the agency, never in
+  paid days.
+
+*Test:* (a) a Housekeeping person with 26 days attended: the card's keys equal list two, and the
+serialised payload holds none of `to_be_paid_out`, `paid_days`, `daily_rate`, `earning_basic`,
+`gross`, `net`; (b) a Salary Slip worked out for that person (they have a submitted Salary Structure
+Assignment, so a payroll run could include them) → `payment_days` equals their worked days only;
+(c) after that slip is saved, **zero** Additional Salary rows exist for them for that month; (d) the
+same slip with the table rows removed → identical `payment_days` (the credit never moved pay);
+(e) an office person on the same day count still gets the credit in paid days (nothing else changed).
+*Observable only if* the fixture person has a submitted Salary Structure Assignment with a non-zero
+Basic, as all 42 do at DTC. Without one, every pay figure is 0 and (b)-(d) prove nothing.
+
+*The other case, for the record only:* if DTC ever paid a Housekeeping person itself, the credit would
+enter paid days as for office staff. That needs Surbhi's word and a change to this requirement.
+
+**Should DTC make salary slips for these 42 at all?** All 42 have a submitted Salary Structure
+Assignment (checked 24 Oct). So a DTC payroll run for "all active employees" would make slips for
+people DTC does not pay directly. That is not a privacy matter, but it is a pay-record one. **Q12.**
+
 ### Privacy
 
 **PRIV-1 · When a leave is approved, every manager up the Reports To chain is told - a fixed few
@@ -587,6 +762,30 @@ and the Error Log; the leave type is absent from the body. Chain fixtures: (a) 3
 (b) A→B→A loop → stops, one security-log line, no repeat; (c) 12 levels → 10 told; (d) a non-Active
 manager in the middle → the walk stops there; (e) a manager with a disabled user → skipped, the one
 above is told; (f) a rejected leave → nobody in the chain is told.
+
+**PRIV-7 · What DTC tells an agency about its people is that agency's own people, in days only.
+(New in rev. 4b.)**
+*The flow:* each month DTC tells each agency, for that agency's own staff, the days attended and the
+leave taken (Paid Leaves and LWP, half days as 0.5), and now the credit earned from the table. The
+agency is a separate company, so this is **personal data leaving DTC for a third party**.
+*Route today:* **unknown** (Revision 4b box). This slice builds **no** export, report or email to an
+agency.
+*What must be true whatever route is used:*
+1. **One agency, its own people.** A record for MPSP Noida holds only rows whose `dtc_agency` is MPSP
+   Noida - never another agency's staff and never DTC's own staff.
+2. **Days only.** Name, the agency's own reference for the person if it has one, days attended, leave
+   days by type, credits. **Never** the leave reason, DTC's Basic or any rupee figure, marks, phone
+   number, or anything about other employees.
+3. **Not the desk report as it stands.** *Salary Components and Workings* holds rupee columns for
+   every employee in the company. Exporting it and sending it to an agency would breach (1) and (2) in
+   one email. HR must not use it for this.
+
+*How it is tested:* while nothing is built, this is a review rule: if a later slice adds an agency
+export, its test must prove (1) and (2) with two agencies in the fixture and a reason string that must
+not appear. **Point 3 is enforced only by instruction today**, which is not a control (Residual risk).
+The smallest structural fix, if Surbhi wants Alvoraa to produce this record: an Agency filter on the
+existing report and a print format with only the day columns. That is her decision (Q11), not part of
+this slice.
 
 **PRIV-2 · Team surfaces show LWP exactly as any approved leave. (Rev. 2: the "Recorded" tag no longer
 exists.)**
@@ -685,6 +884,22 @@ leave day with a missed punch stays half absent; (iii) HR adds the missing Emplo
 the desk. *Question:* "When someone on a half-day leave forgot to punch for the other half, should HR
 be able to fix it in the system, or does that half stay unpaid?" **Default meanwhile:** the half stays
 absent, and nobody builds a new correction path. **Prove first (SEC-14 item 9) - I may be wrong.**
+
+### Added in rev. 4
+
+- **Q-H3 [ANSWERED 24 Oct 2026: an agency pays them]** - SEC-20 rewritten.
+- **Q11 (should know before release):** how does DTC send each agency its monthly attendance and leave
+  record today - from the biometric software, a spreadsheet, or something exported from Alvoraa? And
+  should Alvoraa produce it? Default: Alvoraa produces nothing, and HR must not send the desk report.
+- **Q12 (should know):** should DTC's payroll run make salary slips for the 42 agency staff at all? If
+  not, their Salary Structure Assignments put them in a run by mistake.
+- **Q8 (must know before the build):** approve SEC-17 - HR-only writes on eight Employee fields. It
+  touches every tenant's permission for those fields unless it is scoped to DTC, so say whether it is
+  DTC only (default) or everywhere (my recommendation: everywhere, because the same self-edit exists
+  on every tenant).
+- **Q9 (should know):** a **Permanent** person with designation Housekeeping (none today): office rule
+  or table? Default in SEC-18: office rule, because her exception is to the Contract rule.
+- **Q10 (should know):** half day on a row edge (12.5 attended): round down? Default: yes.
 
 ### Should know (from revision 1, still open)
 
@@ -789,6 +1004,9 @@ Kept, and why: SEC-12 (it is how the requirements hold whichever way question (b
 | ~~Leave Block List edits~~ | Removed in rev. 3 - no block list | - | - | - |
 | An approved leave on a special day avoids the double charge, including when HR approves it after the day, inside the current month (SEC-5 dropped, SEC-6) | Intentional trade-off | P3 | Surbhi (final answers, 21 Oct 2026) | 21 Oct 2026 |
 | LWP approval widens from one named person to every HR user in scope (SEC-3) | Intentional trade-off | P3 | Surbhi (final answers, 21 Oct 2026) | 21 Oct 2026 |
+| **Employees can edit their own pay-setting Employee fields** (SEC-17) | **Dangerous debt - escalate now.** Not live while the rule set is off; live on switch-on | **P1 - blocks switch-on** | **Surbhi** | open |
+| A wrong row in the Housekeeping table reports wrong credits to the agency and nothing fails (SEC-19; rev. 4b: no DTC pay moves) | Acceptable once the second-person check and the edge rehearsal pass | P3 | Surbhi, at switch-on | open |
+| HR could send an agency the whole desk report, rupees and all staff included (PRIV-7 point 3) | Temporary debt - an instruction, not a control. Removed by an agency-filtered day-only print, if Surbhi wants Alvoraa to make the record (Q11) | P2 | **Surbhi** | open |
 | The half-day remedy may not work (SEC-16, Q7) | **Dangerous until proven** - a half day could stay unpaid with no way to fix it. Removed by SEC-14 item 9 passing, or by Q7 | P1 for the half-day rule | **Surbhi - decide Q7 if item 9 fails** | open |
 | "Only my own leave" rests on a User Permission row (§10 point 3) | Temporary debt; removed by a permission hook on Leave Application | P2 | `hrms-fullstack-engineer` to propose | open |
 | "Rehearsed" is a process step, not code (SEC-2) | Acceptable simplification | P2 | **Surbhi - to confirm** | open |

@@ -215,12 +215,7 @@ def list_tenants():
         else:
             status = "Active"   # non-tenant Frappe site (e.g. hrms.localhost)
 
-        raw_modules = cfg.get("modules_enabled", [])
-        if isinstance(raw_modules, str):
-            try:
-                raw_modules = json.loads(raw_modules)
-            except Exception:
-                raw_modules = []
+        raw_modules = _as_list(cfg.get("modules_enabled", [])) or []
 
         tenants.append({
             "site_name":     site_name,
@@ -232,6 +227,15 @@ def list_tenants():
             "logo_url":      cfg.get("tenant_logo_url", ""),
             "host_name":     cfg.get("host_name", f"http://{site_name}"),
             "modules":       raw_modules,
+            # The authoritative selection, as `update_tenant` stored it. The
+            # console used to rebuild its tick boxes from `modules` above, which
+            # holds display LABELS, through a hand-written table of six names -
+            # so every feature not in that table opened unticked and the next
+            # save wrote it away. DTC lost Performance, Onboarding & Exit, Tax &
+            # Benefits, Org Structure and Staff List that way on 26 Oct 2026.
+            # Sent raw: None means a site with no list recorded, which is not
+            # the same as a site with none selected.
+            "features":      _as_list(cfg.get("features")),
             "support_email": cfg.get("support_email", ""),
         })
 
@@ -1316,6 +1320,23 @@ def _require_db_root_password():
             "be created. Add it to deploy/envs/&lt;env&gt;.env and recreate the backend."
         )
     return pw
+
+
+def _as_list(value):
+    """A site_config list, whether it was stored as a list or as JSON text.
+
+    `set-config` without `-p` stores the JSON as a STRING, and older tenants
+    still carry one. Returns None when nothing is recorded, which the console
+    needs to tell apart from an empty selection.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            return None
+    return list(value) if isinstance(value, (list, tuple)) else None
 
 
 def _as_flag(value):

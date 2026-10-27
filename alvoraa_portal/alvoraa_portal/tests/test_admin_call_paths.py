@@ -144,3 +144,51 @@ class TestTheCreateFormIsWiredToThePriceList(FrappeTestCase):
 		self.assertIn('id="ka-preset-row"', page)
 		self.assertIn("window.applyPreset", page)
 		self.assertIn("billing_ready", page)
+
+
+class TestTheEditScreenKeepsWhatItWasNotShown(FrappeTestCase):
+	"""DTC, 26 Oct 2026: saving a tenant through the console removed five
+	features nobody had untouched - Performance & Appraisals, Onboarding &
+	Exit, Tax & Benefits, Org Structure and Staff List.
+
+	The edit screen rebuilt its tick boxes from `modules_enabled`, which holds
+	display LABELS, through a hand-written table of six names. Everything the
+	table did not name was dropped by `.filter(Boolean)`, so those features
+	opened unticked and the save wrote them away. Required features survived
+	only because they are added back afterwards.
+	"""
+
+	def test_the_server_sends_the_real_selection_not_only_labels(self):
+		"""`features` is the authoritative list `update_tenant` stored.
+		Rebuilding it from display labels is what lost them."""
+		from alvoraa_portal import tenant_api
+
+		import inspect
+		src = inspect.getsource(tenant_api.list_tenants)
+		self.assertIn('"features"', src,
+			"each tenant row must carry the stored feature ids")
+
+	def test_a_stored_list_survives_being_read_back(self):
+		from alvoraa_portal.tenant_api import _as_list
+
+		self.assertEqual(_as_list(["a", "b"]), ["a", "b"])
+		# Older tenants were written without `-p`, so the list is JSON text.
+		self.assertEqual(_as_list('["a", "b"]'), ["a", "b"])
+		# Nothing recorded is NOT the same as nothing selected: the console has
+		# to tell them apart, or a site with no list opens with everything off.
+		self.assertIsNone(_as_list(None))
+		self.assertIsNone(_as_list("not json"))
+		self.assertEqual(_as_list([]), [])
+
+	def test_the_page_no_longer_discards_what_its_table_does_not_name(self):
+		page = _page()
+		self.assertIn("known[m] ? m : null", page,
+			"a feature id the label table does not name must pass through")
+
+	def test_the_edit_screen_reads_the_real_selection_first(self):
+		"""Sending `features` is only half of it - the screen has to use it.
+		Labels stay as the fallback for a tenant provisioned before it existed.
+		"""
+		page = _page()
+		self.assertIn("t.features ? siteModulesToIds(t.features)", page,
+			"the tick boxes must come from the stored ids when there are any")

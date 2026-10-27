@@ -4432,6 +4432,7 @@ function switchPanel(name, triggerEl) {
   if (window.tvClosePop) { window.tvClosePop(); window.tvCloseNew(); }
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-" + name).classList.add("active");
+  if (name === "home") hmRefreshIfStale();
 
   if (name === "attendance-insights") { aiOpen(); }
   if (name === "att-record")         { acOpen(); }
@@ -5982,6 +5983,454 @@ function loadHomeLeave(balances) {
    instead. The endpoint is deleted, not merely unused. */
 
 
+/* ── Home: Pending, Notices and the grid (slice 076, Part A) ─────────────
+   Own block, prefix hm / nt. The server decides everything shown here - whose
+   requests, whose notices, what a person may decide. The page only draws it;
+   a hidden button is not a permission.
+
+   Pending is the inbox (inbox_api.get_inbox), nothing else: one filter, so the
+   number and the list cannot disagree. Notices and the bell are one function
+   (notices.notices_feed): the card's "N unread" IS the bell's number.
+
+   Every string that reaches innerHTML goes through esc(). A notice written as
+   <img src=x onerror=alert(1)> is shown as those characters. */
+var HM_IB = "alvoraa_portal.inbox_api.";
+var HM_NT = "alvoraa_portal.notices.";
+var HM_MARK_READ = "frappe.desk.doctype.notification_log.notification_log.mark_as_read";
+var HM_CAP = 5;
+var HM = {pend: null, rows: [], notes: null, all: null, opener: null, at: 0};
+var HM_STALE_MS = 60000;
+
+/* Where "Open" goes, by the row's own `action` word. The inbox's route strings
+   belong to the discarded /hrms-employee-next page and mean nothing here. */
+var HM_SCREEN = {
+  goal_update: "goals", attendance_fix: "att-record", shift_request: "shift-req",
+  policy: "policies", my_leave: "attendance", my_attendance_fix: "att-record",
+  my_shift_request: "shift-req", leave: "team"
+};
+/* A CXO's row is one kind with a count. Name, then the row action it opens. */
+var HM_KIND = {
+  leave_approvals: ["Leave approvals", "leave"],
+  goal_updates: ["Goal and KPI updates", "goal_update"],
+  attendance_fixes: ["Attendance fixes", "attendance_fix"],
+  shift_requests: ["Shift changes", "shift_request"],
+  policies: ["Policies to read", "policy"]
+};
+var HM_TICK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="5 12 10 17 19 7"/></svg>';
+
+function hmEl(id) { return document.getElementById(id); }
+
+/* "6 Nov", no year (design section 8). */
+function hmDay(iso) {
+  var p = isoParts(iso);
+  return p ? p[2] + " " + drT(MON3[p[1] - 1]) : "";
+}
+function hmRange(a, b) {
+  var pa = isoParts(a), pb = isoParts(b);
+  if (!pa) return "";
+  if (!pb || (pa[0] === pb[0] && pa[1] === pb[1] && pa[2] === pb[2])) return hmDay(a);
+  if (pa[1] === pb[1] && pa[0] === pb[0]) return pa[2] + "–" + pb[2] + " " + drT(MON3[pa[1] - 1]);
+  return hmDay(a) + " – " + hmDay(b);
+}
+/* Whole days since a date, on the phone's own calendar. null when unknown. */
+function hmDaysSince(stamp) {
+  var p = isoParts(stamp), t = isoParts(localToday());
+  if (!p || !t) return null;
+  var n = Math.round((Date.UTC(t[0], t[1] - 1, t[2]) - Date.UTC(p[0], p[1] - 1, p[2])) / 86400000);
+  return n < 0 ? 0 : n;
+}
+function hmWaiting(stamp) {
+  var n = hmDaysSince(stamp);
+  if (n === null) return "";
+  return n === 1 ? drT("waiting 1 day") : drT("waiting {0} days", [n]);
+}
+function hmDays(n) {
+  n = parseFloat(n || 0);
+  return n === 1 ? drT("1 day") : drT("{0} days", [Math.round(n * 10) / 10]);
+}
+/* "2 Nov, 4:10 pm" from the server's own timestamp, as typed - no zone shifts. */
+function hmWhen(stamp) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(stamp || ""));
+  if (!m) return "";
+  var h = +m[4], ap = h < 12 ? "am" : "pm";
+  return (+m[3]) + " " + drT(MON3[+m[2] - 1]) + ", " + ((h % 12) || 12) + ":" + m[5] + " " + ap;
+}
+
+function hmEmpty(head, sub) {
+  return '<div class="hm-empty"><span class="hm-tick">' + HM_TICK + '</span><b>' + esc(drT(head))
+    + '</b><span class="hm-es">' + esc(drT(sub)) + '</span></div>';
+}
+function hmChip(id, text) {
+  var c = hmEl(id);
+  if (!c) return;
+  c.textContent = text || "";
+  c.style.display = text ? "" : "none";
+}
+
+/* ── the grid: a lone last card spans the row ─────────────────────────── */
+function homeReflow() {
+  var g = hmEl("home-grid");
+  if (!g) return;
+  var shown = [].filter.call(g.children, function (c) { return c.style.display !== "none"; });
+  [].forEach.call(g.children, function (c) { c.classList.remove("hm-span2"); });
+  if (shown.length % 2 === 1) shown[shown.length - 1].classList.add("hm-span2");
+}
+function hmWatchGrid() {
+  var g = hmEl("home-grid");
+  if (!g || g._hmWatched) { homeReflow(); return; }
+  g._hmWatched = true;
+  if (typeof MutationObserver === "function") {
+    new MutationObserver(homeReflow).observe(g, {attributes: true, attributeFilter: ["style"], subtree: true, childList: true});
+  }
+  homeReflow();
+}
+
+/* ── sheets: a dialog on a laptop, a bottom sheet on a phone ──────────── */
+function hmOpenSheet(title, bodyHtml, footHtml) {
+  hmCloseSheet(true);
+  HM.opener = document.activeElement;
+  var ov = document.createElement("div");
+  ov.className = "hm-ov";
+  ov.id = "hm-ov";
+  ov.innerHTML = '<div class="hm-sheet" role="dialog" aria-modal="true" aria-labelledby="hm-sh-t" id="hm-sheet">'
+    + '<div class="hm-sh-h"><h2 id="hm-sh-t">' + esc(title) + '</h2>'
+    + '<button type="button" class="hm-tbtn" data-hm="close" aria-label="' + esc(drT("Close")) + '">' + esc(drT("Close")) + '</button></div>'
+    + '<div class="hm-sh-b">' + bodyHtml + '</div>'
+    + (footHtml ? '<div class="hm-sh-f">' + footHtml + '</div>' : '') + '</div>';
+  document.body.appendChild(ov);
+  document.body.style.overflow = "hidden";
+  var f = ov.querySelector("textarea, .hm-sh-b button, .hm-sh-b a, .hm-sh-f button, .hm-sh-f a") || ov.querySelector("button");
+  if (f) f.focus();
+  return ov;
+}
+function hmCloseSheet(quiet) {
+  var ov = hmEl("hm-ov");
+  if (!ov) return;
+  ov.parentNode.removeChild(ov);
+  document.body.style.overflow = "";
+  var o = HM.opener;
+  HM.opener = null;
+  if (!quiet && o && o.focus && document.body.contains(o)) o.focus();
+}
+document.addEventListener("keydown", function (e) {
+  var ov = hmEl("hm-ov");
+  if (!ov) return;
+  if (e.key === "Escape") { e.stopPropagation(); hmCloseSheet(); return; }
+  if (e.key !== "Tab") return;
+  var f = [].filter.call(ov.querySelectorAll("button, a[href], textarea"), function (n) { return !n.disabled; });
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+/* ── Pending for you ──────────────────────────────────────────────────── */
+function homePending() {
+  var body = hmEl("home-pending-body");
+  if (!body) return;
+  gpFetch(HM_IB + "get_inbox", {}).then(function (d) {
+    HM.pend = d;
+    HM.at = Date.now();
+    hmPaintPending();
+  }, function (e) {
+    hmChip("home-pending-chip", "");
+    var foot = hmEl("home-pending-foot");
+    if (foot) foot.style.display = "none";
+    failBox(body, e, homePending);
+  });
+}
+window.hmPendingReload = homePending;
+
+/* Home is loaded once, at start-up. Coming back to it after a minute asks again,
+   so the card is not the morning's list at lunch. */
+window.hmRefreshIfStale = function () {
+  if (!HM.at || Date.now() - HM.at < HM_STALE_MS) return;
+  homePending();
+  homeNotices();
+};
+
+function hmIsCxo() { return !!(window._roles && window._roles.is_system_manager); }
+
+/* The rows the card and its sheet draw, oldest first across kinds. A CXO gets
+   one row per kind with a count and no people. */
+function hmPendingRows(d) {
+  var out = [];
+  if (hmIsCxo()) {
+    (d.parts || []).forEach(function (p) {
+      var k = HM_KIND[p.key];
+      if (!k || !p.count) return;
+      out.push({count: p.count, action: k[1], av: String(p.count), title: drT(k[0]),
+        sub: drT("{0} waiting · across your companies", [p.count]), go: "Open"});
+    });
+    out.sort(function (a, b) { return b.count - a.count; });
+    return out;
+  }
+  (d.parts || []).forEach(function (p) {
+    (p.rows || []).forEach(function (r) { out.push(hmRowView(p.key, r)); });
+  });
+  out.sort(function (a, b) {
+    var x = a.since || "9999", y = b.since || "9999";
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+  return out;
+}
+function hmRowView(key, r) {
+  var v = {action: r.action, since: r.waiting_since, row: r, go: "Open"};
+  var w = hmWaiting(r.waiting_since);
+  if (key === "leave_approvals") {
+    v.title = r.employee_name || "";
+    v.sub = drT("Leave request") + " · " + hmRange(r.from_date, r.to_date) + " · " + hmDays(r.total_days)
+      + (w ? " · " + w : "");
+    v.go = "Review";
+  } else if (key === "goal_updates") {
+    v.title = r.employee_name || "";
+    v.sub = drT(r.kind === "kpi" ? "KPI update" : "Goal update") + (r.subject ? " · " + r.subject : "");
+  } else if (key === "attendance_fixes") {
+    v.title = r.employee_name || "";
+    v.sub = drT("Attendance fix") + " · " + hmRange(r.from_date, r.to_date) + (w ? " · " + w : "");
+  } else if (key === "shift_requests") {
+    v.title = r.employee_name || "";
+    v.sub = drT("Shift change") + " · " + hmRange(r.from_date, r.to_date) + (w ? " · " + w : "");
+  } else if (key === "policies") {
+    v.title = r.title || "";
+    v.sub = drT("Policy to read") + " · " + drT("version {0}", [r.version]);
+  } else {
+    v.title = (r.title || "") + (r.from_date ? ", " + hmRange(r.from_date, r.to_date) : "");
+    v.sub = r.says || drT("Your request");
+  }
+  return v;
+}
+function hmPendRowHtml(v, i) {
+  return '<button type="button" class="hm-row" data-hm="pend" data-i="' + i + '">'
+    + '<span class="hm-av" aria-hidden="true">' + esc(v.av || initials(v.title)) + '</span>'
+    + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span><span class="hm-l2">' + esc(v.sub) + '</span></span>'
+    + '<span class="hm-go">' + esc(drT(v.go)) + '</span></button>';
+}
+function hmPaintPending() {
+  var d = HM.pend, body = hmEl("home-pending-body"), foot = hmEl("home-pending-foot");
+  if (!d || !body) return;
+  HM.rows = hmPendingRows(d);
+  var rows = HM.rows;
+  var total = hmIsCxo() ? rows.reduce(function (n, v) { return n + v.count; }, 0) : (d.total || 0);
+  hmChip("home-pending-chip", total ? drT("{0} waiting", [total]) : "");
+  if (!rows.length) {
+    body.innerHTML = hmEmpty("Nothing waiting on you.", "Requests that need you, and policies to read, appear here.");
+  } else {
+    body.innerHTML = rows.slice(0, HM_CAP).map(hmPendRowHtml).join("");
+  }
+  if (rows.length > HM_CAP) {
+    foot.innerHTML = '<span class="hm-note">' + esc(drT(hmIsCxo() ? "Showing {0} of {1} kinds" : "Showing {0} of {1}", [HM_CAP, rows.length]))
+      + '</span><span class="hm-sp"></span><button type="button" class="hm-tbtn" data-hm="pend-all">'
+      + esc(drT("See all {0}", [total])) + '</button>';
+    foot.style.display = "";
+  } else {
+    foot.innerHTML = "";
+    foot.style.display = "none";
+  }
+}
+function hmPendAll() {
+  var rows = HM.rows;
+  hmOpenSheet(drT("Pending for you"),
+    rows.map(hmPendRowHtml).join("")
+    + '<div class="hm-sh-p hm-note">' + esc(drT(hmIsCxo() ? "Counts by kind. Tap one to open its screen."
+      : "Showing all {0} (at most 50 of each kind).", [rows.length])) + '</div>');
+}
+function hmPendOpen(i) {
+  var v = HM.rows[i];
+  if (!v) return;
+  if (v.action === "leave" && !hmIsCxo()) { hmLeaveSheet(v); return; }
+  var screen = HM_SCREEN[v.action];
+  hmCloseSheet(true);
+  if (screen) switchPanel(screen, null);
+}
+
+/* ── the leave sheet: Approve, or Decline with a reason ──────────────── */
+function hmLeaveSheet(v) {
+  var r = v.row, w = hmWaiting(r.waiting_since);
+  var body = '<div class="hm-sh-p"><div class="hm-l1" style="font-size:var(--fs-lg);white-space:normal">' + esc(r.employee_name || "") + '</div>'
+    + '<div class="hm-note" style="margin:2px 0 12px">' + esc(drT("Leave request")) + '</div>'
+    + '<div class="hm-fact"><div>' + esc(r.leave_type || "") + '</div><div class="hm-sub">'
+    + esc(hmRange(r.from_date, r.to_date) + " · " + hmDays(r.total_days)) + '</div></div>'
+    + (w ? '<div class="hm-note" style="margin-top:8px">' + esc(w.charAt(0).toUpperCase() + w.slice(1)) + '.</div>' : '')
+    + '</div>'
+    + '<div class="hm-sh-p hm-reason" id="hm-reason" style="display:none;padding-top:0">'
+    + '<label for="hm-why">' + esc(drT("Why are you declining? {0} will read this.", [(r.employee_name || "").split(" ")[0]])) + '</label>'
+    + '<textarea id="hm-why" maxlength="140" aria-describedby="hm-why-e"></textarea>'
+    + '<div class="hm-err" id="hm-why-e" role="alert" style="display:none">' + esc(drT("Write a short reason first.")) + '</div></div>';
+  var foot = '<button type="button" class="btn btn-primary" data-hm="leave-approve" id="hm-approve">' + esc(drT("Approve")) + '</button>'
+    + '<button type="button" class="btn btn-outline" data-hm="leave-decline" id="hm-decline">' + esc(drT("Decline")) + '</button>';
+  var ov = hmOpenSheet(drT("Leave request"), body, foot);
+  ov._row = r;
+}
+function hmDecide(action) {
+  var ov = hmEl("hm-ov"), r = ov && ov._row;
+  if (!r || ov._busy) return;
+  var reason;
+  if (action === "reject") {
+    var box = hmEl("hm-reason");
+    if (box.style.display === "none") {
+      box.style.display = "";
+      hmEl("hm-why").focus();
+      hmEl("hm-decline").textContent = drT("Send decline");
+      hmEl("hm-decline").className = "btn btn-primary";
+      hmEl("hm-approve").style.display = "none";
+      return;
+    }
+    reason = hmEl("hm-why").value.trim();
+    if (!reason) { hmEl("hm-why-e").style.display = ""; hmEl("hm-why").focus(); return; }
+  }
+  ov._busy = true;
+  var btns = ov.querySelectorAll(".hm-sh-f button");
+  [].forEach.call(btns, function (b) { b.disabled = true; });
+  var args = {leave_id: r.name, action: action};
+  if (reason) args.reason = reason;
+  api("action_leave", args, function () {
+    var first = (r.employee_name || "").split(" ")[0];
+    hmCloseSheet(true);
+    hmDropPending("leave_approvals", r.name);
+    toast(action === "approve" ? drT("Approved. {0}'s leave is approved.", [r.employee_name || ""])
+                               : drT("Declined. {0} will see your reason.", [first]), action === "approve" ? "ok" : "");
+    var badge = hmEl("sb-team-badge");
+    if (badge) {
+      var bn = Math.max(0, (parseInt(badge.textContent) || 0) - 1);
+      badge.textContent = bn; badge.style.display = bn ? "flex" : "none";
+    }
+  }, function (e) {
+    ov._busy = false;
+    if (mayHaveGone(e)) { sayMayHaveGone(e, btns[btns.length - 1]); return; }
+    [].forEach.call(btns, function (b) { b.disabled = false; });
+    toast((e && e.message) || drT("Could not save that. Try again."), "err");
+  });
+}
+/* The decided row leaves the card at once; the count follows it. */
+function hmDropPending(key, name) {
+  var d = HM.pend;
+  if (!d) return;
+  (d.parts || []).forEach(function (p) {
+    if (p.key !== key) return;
+    var n = (p.rows || []).length;
+    p.rows = (p.rows || []).filter(function (x) { return x.name !== name; });
+    if (p.rows.length < n) { p.count = Math.max(0, (p.count || 0) - 1); d.total = Math.max(0, (d.total || 0) - 1); }
+  });
+  hmPaintPending();
+}
+
+/* ── Notices, and the bell that shares their number ───────────────────── */
+function homeNotices() {
+  var body = hmEl("home-notices-body");
+  if (!body) return;
+  gpFetch(HM_NT + "notices_feed", {see_all: 0}).then(function (d) {
+    HM.notes = d;
+    ntPaintBadge(d.unread || 0);
+    hmPaintNotices();
+  }, function (e) {
+    hmChip("home-notices-chip", "");
+    var foot = hmEl("home-notices-foot");
+    if (foot) foot.style.display = "none";
+    failBox(body, e, homeNotices);
+  });
+}
+function ntPaintBadge(n) {
+  var badge = hmEl("notif-badge"), btn = hmEl("mob-notif-btn");
+  if (badge) { badge.textContent = n > 99 ? "99+" : n; badge.style.display = n > 0 ? "flex" : "none"; }
+  if (btn) {
+    var name = drT("Notices, {0} unread", [n]);
+    btn.setAttribute("aria-label", name);
+    btn.setAttribute("title", name);
+  }
+}
+/* The bell outside Home: the same function, called once at start-up. */
+window.ntBellBoot = function () {
+  if (HM.notes) return;
+  gpFetch(HM_NT + "notices_feed", {see_all: 0}).then(function (d) {
+    HM.notes = d;
+    ntPaintBadge(d.unread || 0);
+  }, function () { /* the bell stays as it is; Home shows its own failure box */ });
+};
+function ntRowHtml(n, i, withRead) {
+  return '<button type="button" class="hm-row hm-nrow" data-hm="note" data-i="' + i + '" data-src="' + (withRead ? "all" : "card") + '">'
+    + '<span class="hm-rt"><span class="hm-meta"><span>' + esc("Alvora · " + hmWhen(n.when)) + '</span></span>'
+    + '<span class="hm-txt">' + esc(n.text) + '</span></span>'
+    + (withRead && n.read ? '<span class="hm-note">' + esc(drT("Read")) + '</span>' : '') + '</button>';
+}
+function hmPaintNotices() {
+  var d = HM.notes, body = hmEl("home-notices-body"), foot = hmEl("home-notices-foot");
+  if (!d || !body) return;
+  var items = d.items || [];
+  hmChip("home-notices-chip", d.unread ? drT("{0} unread", [d.unread]) : "");
+  if (!items.length) {
+    body.innerHTML = d.any ? hmEmpty("You are up to date.", "No new notices. Older ones are under See all.")
+                           : hmEmpty("No notices.", "Messages from HR and management, and alerts about your work, appear here.");
+  } else {
+    body.innerHTML = items.map(function (n, i) { return ntRowHtml(n, i, false); }).join("");
+  }
+  if (d.any) {
+    foot.innerHTML = '<span class="hm-sp"></span><button type="button" class="hm-tbtn" data-hm="note-all">'
+      + esc(d.unread > HM_CAP ? drT("See all {0} unread", [d.unread]) : drT("See all")) + '</button>';
+    foot.style.display = "";
+  } else {
+    foot.innerHTML = "";
+    foot.style.display = "none";
+  }
+}
+/* "See all": the last 30 days, unread first. The bell opens this too. */
+window.ntOpenAll = function () {
+  var opener = document.activeElement;
+  gpFetch(HM_NT + "notices_feed", {see_all: 1}).then(function (d) {
+    HM.all = d;
+    ntPaintBadge(d.unread || 0);
+    var items = d.items || [];
+    var html = items.length ? items.map(function (n, i) { return ntRowHtml(n, i, true); }).join("")
+      : hmEmpty("No notices.", "Messages from HR and management, and alerts about your work, appear here.");
+    hmOpenSheet(drT(items.length ? "Notices, last 30 days" : "Notices"), html);
+    HM.opener = opener;
+  }, function (e) {
+    toast(gmIsNet(e) ? drT("Check your connection and try again.") : drT("We could not load your notices. Try again."), "err");
+  });
+};
+function ntOpenOne(n) {
+  var opener = HM.opener;
+  var foot = (n.link ? '<a class="btn btn-outline" href="' + esc(n.link) + '">' + esc(drT("Open it")) + '</a>' : '')
+    + '<button type="button" class="btn btn-primary" data-hm="close">' + esc(drT("Close")) + '</button>';
+  hmOpenSheet(drT("Notice"), '<div class="hm-sh-p"><div class="hm-note" style="margin-bottom:8px">'
+    + esc("Alvora · " + hmWhen(n.when)) + '</div><div style="font-size:16px;line-height:1.5">' + esc(n.text) + '</div></div>', foot);
+  HM.opener = opener;
+  if (n.read) return;
+  /* Frappe's own call: it only ever changes a row whose for_user is the caller. */
+  gpFetch(HM_MARK_READ, {docname: n.name}).then(function () {
+    n.read = 1;
+    var d = HM.notes;
+    if (d) {
+      d.unread = Math.max(0, (d.unread || 0) - 1);
+      d.items = (d.items || []).filter(function (x) { return x.name !== n.name; });
+      ntPaintBadge(d.unread);
+      hmPaintNotices();
+    }
+  }, function () { /* left unread; it will be there next time */ });
+}
+
+/* ── one click handler for everything on Home that is drawn above ─────── */
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-hm]") : null;
+  if (!t) {
+    var ov = hmEl("hm-ov");
+    if (ov && e.target === ov) hmCloseSheet();
+    return;
+  }
+  var what = t.getAttribute("data-hm"), i = +t.getAttribute("data-i");
+  if (what === "close") hmCloseSheet();
+  else if (what === "pend") hmPendOpen(i);
+  else if (what === "pend-all") hmPendAll();
+  else if (what === "leave-approve") hmDecide("approve");
+  else if (what === "leave-decline") hmDecide("reject");
+  else if (what === "note-all") ntOpenAll();
+  else if (what === "note") {
+    var from = t.getAttribute("data-src") === "all" ? HM.all : HM.notes;
+    var n = from && from.items && from.items[i];
+    if (n) ntOpenOne(n);
+  }
+});
+
 function loadHome() {
   const ciBtn = document.getElementById("ci-btn");
 
@@ -6031,18 +6480,10 @@ function loadHome() {
     document.getElementById("sb-desig").textContent = "";
   });
 
-  homeActivity();
+  homePending();
+  homeNotices();
   homeDashboard();
-}
-
-// Activity feed — last 7 days of portal actions
-function homeActivity() {
-  api("get_portal_activity", {days: 7}, function(data) {
-    renderActivityFeed(data.activities || []);
-  }, function(e) {
-    homeBlock("home-activity-card", true);
-    failBox("home-activity-feed", e, homeActivity);
-  });
+  hmWatchGrid();
 }
 
 /* Slice 070: a failed read used to draw an empty holiday list - which reads
@@ -6052,154 +6493,9 @@ function homeDashboard() {
     if (data.no_employee) { renderHolidays([]); return; }
     loadHomeLeave(data.leave_balances);
 
-    // Pending approvals (managers) — collapsed by default, revealed on click
-    const teamApprovals = data.pending_approvals || [];
-    if (teamApprovals.length > 0) {
-      const banner  = document.getElementById("home-attention-banner");
-      const countEl = document.getElementById("home-pending-count");
-      const plurEl  = document.getElementById("home-pending-plural");
-      const listEl  = document.getElementById("home-approvals-list");
-      if (banner && countEl && listEl) {
-        countEl.textContent = teamApprovals.length;
-        if (plurEl) plurEl.textContent = teamApprovals.length === 1 ? "" : "s";
-        banner.style.display = "";
-        listEl.innerHTML = teamApprovals.map(function(l) {
-          const days = parseFloat(l.total_leave_days || 0);
-          const who  = l.employee_name || l.employee || "Team member";
-          return '<div class="appr-card" id="home-appr-' + l.name + '">' +
-            '<div style="flex:1;min-width:0">' +
-              '<div style="font-size:var(--fs-base);font-weight:600;color:var(--text)">' + esc(who) + ' &nbsp;&middot;&nbsp; ' + esc(l.leave_type||"Leave") + '</div>' +
-              '<div style="font-size:var(--fs-xs);color:var(--text3);margin-top:3px">' +
-                fmtDate(l.from_date) + (l.to_date && l.to_date !== l.from_date ? ' – ' + fmtDate(l.to_date) : '') +
-                ' &middot; <strong style="color:var(--text2)">' + days + ' day' + (days!==1?'s':'') + '</strong>' +
-                (l.description ? ' &middot; ' + esc(String(l.description).substring(0,60)) : '') +
-              '</div>' +
-            '</div>' +
-            '<div id="home-appr-acts-' + l.name + '" style="display:flex;gap:8px;flex-shrink:0">' +
-              '<button class="btn btn-green btn-sm" onclick="homeActionLeave(\'' + l.name + '\',\'approve\')">&#10003; Approve</button>' +
-              '<button class="btn btn-danger btn-sm" onclick="homeActionLeave(\'' + l.name + '\',\'reject\')">&#10005; Reject</button>' +
-            '</div>' +
-          '</div>';
-        }).join("");
-      }
-    }
-
     renderHolidays(data.holidays || [], data.holiday_note);
   }, function(e) { failBox("holidays-list", e, homeDashboard); });
 }
-
-function renderActivityFeed(activities) {
-  var el = document.getElementById("home-activity-feed");
-  if (!el) return;
-  /* Slice 070 (N7, AC-56): an empty Activity card is not shown at all. */
-  homeBlock("home-activity-card", activities && activities.length);
-  if (!activities || !activities.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No activity recorded yet.</div></div>';
-    return;
-  }
-
-  // Group by date
-  var groups = {};
-  activities.forEach(function(a) { if (!groups[a.date]) groups[a.date] = []; groups[a.date].push(a); });
-
-  var now  = new Date();
-  var todayStr = now.toISOString().slice(0, 10);
-  var yest  = new Date(now - 86400000).toISOString().slice(0, 10);
-  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-  function dateHdr(d) {
-    if (d === todayStr) return "Today";
-    if (d === yest)     return "Yesterday";
-    var dt = new Date(d + "T00:00:00");
-    return dt.getDate() + " " + months[dt.getMonth()];
-  }
-
-  function iconHtml(a) {
-    if (a.type === "checkin")
-      return '<div class="act-icon ' + (a.icon === "IN" ? "in" : "out") + '">' + (a.icon === "IN" ? "IN" : "OUT") + '</div>';
-    if (a.type === "leave")
-      return '<div class="act-icon leave"><i class=ic-clipboard></i></div>';
-    if (a.type === "approval")
-      return '<div class="act-icon ' + (a.icon === "APPROVED" ? "approved" : "rejected") + '">' + (a.icon === "APPROVED" ? "&#10003;" : "&#10005;") + '</div>';
-    return '<div class="act-icon">&#8226;</div>';
-  }
-
-  function statusBadge(a) {
-    if (a.type === "leave" && a.status) {
-      var cls = (a.status || "").toLowerCase();
-      return '<span class="act-sbadge ' + cls + '">' + a.status + '</span>';
-    }
-    return "";
-  }
-
-  function hhmm(ts) {
-    return ts ? new Date(ts.replace(" ", "T"))
-      .toLocaleTimeString("en-IN", {hour: "2-digit", minute: "2-digit"}) : "";
-  }
-
-  /* "8h 18m". Minutes are dropped once it is a round hour, because "8h 00m"
-     reads as a machine talking. */
-  function spanText(fromTs, toTs) {
-    var a = new Date(fromTs.replace(" ", "T")), b = new Date(toTs.replace(" ", "T"));
-    var mins = Math.round((b - a) / 60000);
-    if (!(mins > 0)) return "";
-    var h = Math.floor(mins / 60), m = mins % 60;
-    return h ? (m ? h + "h " + m + "m" : h + "h") : m + "m";
-  }
-
-  var dates = Object.keys(groups).sort().reverse();
-  el.innerHTML = dates.map(function(date) {
-    var items = groups[date];
-
-    /* The day's attendance as one sentence. Two rows saying "Checked in" and
-       "Checked out" tell somebody what they already know; how long they were
-       there is the part they cannot work out at a glance. */
-    var ins  = items.filter(function(a) { return a.type === "checkin" && a.icon === "IN"; });
-    var outs = items.filter(function(a) { return a.type === "checkin" && a.icon !== "IN"; });
-    var rest = items.filter(function(a) { return a.type !== "checkin"; });
-
-    var line = "";
-    if (ins.length || outs.length) {
-      /* Earliest in, latest out - somebody who steps out at lunch has several
-         of each, and the day still ran from the first to the last. */
-      var first = ins.map(function(a) { return a.time; }).sort()[0];
-      var last  = outs.map(function(a) { return a.time; }).sort().pop();
-      var body;
-      if (first && last) {
-        var dur = spanText(first, last);
-        body = (dur ? "Logged <b>" + dur + "</b> between " : "In and out between ")
-          + hhmm(first) + " and " + hhmm(last);
-      } else if (first) {
-        body = "Checked in at " + hhmm(first) + " &mdash; still in";
-      } else {
-        body = "Checked out at " + hhmm(last);
-      }
-      line = '<div class="act-line">' + body + "</div>";
-    }
-
-    return '<div class="act-day-hdr">' + dateHdr(date) + "</div>" + line +
-      rest.map(function(a) {
-        return '<div class="act-item">' + iconHtml(a) +
-          '<div class="act-body">' +
-            '<div class="act-label">' + esc(a.label || "") + statusBadge(a) + "</div>" +
-            (a.detail ? '<div class="act-detail">' + esc(a.detail) + "</div>" : "") +
-          "</div>" +
-          '<div class="act-time">' + hhmm(a.time) + "</div>" +
-        "</div>";
-      }).join("");
-  }).join("");
-}
-
-window.toggleHomeApprovals = function() {
-  var list = document.getElementById("home-approvals-list");
-  var chev = document.getElementById("home-appr-chev");
-  var chip = document.querySelector(".home-appr-chip");
-  if (!list) return;
-  var open = list.style.display === "flex";
-  list.style.display = open ? "none" : "flex";
-  if (chev) chev.style.transform = open ? "" : "rotate(180deg)";
-  if (chip) chip.textContent = open ? "Tap to review" : "Tap to hide";
-};
 
 /* ── Today, against your own shift ────────────────────────────────────────
    Surbhi, 17 Oct 2026: "Every employee should see what time are their
@@ -6632,18 +6928,12 @@ function ciSend(action, pos) {
     api("get_checkin_status", {}, function(d) {
       ciNeedsLocation = !!d.needs_location;
       updateCheckinUI(d.checked_in, d.last_action);
-      renderTimeline(d.todays_checkins || []);
       paintDayMarks(d.marks);
     }, function() { btn.disabled = false; });
   }, function(err) { if (mayHaveGone(err)) { sayMayHaveGone(err, btn); return; }
     btn.disabled = false;
     toast((err && err.message) || "Failed to " + (action === "IN" ? "check in" : "check out") + ". Please try again.", "err");
   });
-}
-
-function renderTimeline(checkins) {
-  // After each checkin, refresh the activity feed panel
-  api("get_portal_activity", {days: 7}, function(d) { renderActivityFeed(d.activities || []); });
 }
 
 /* ── Holiday month-navigator state ──────────────────── */
@@ -7266,6 +7556,11 @@ function renderLeaveRings(balances) {
   }).join("");
 }
 
+/* Slice 076: the words an approver gave when declining, on the employee's own row. */
+function lvReason(a) {
+  return a.decline_reason ? '<div class="lv-reason">' + esc(drT("Declined: {0}", [a.decline_reason])) + '</div>' : "";
+}
+
 function renderLeaveApps(apps) {
   const tb = document.getElementById("leave-apps-tbody");
   const cards = document.getElementById("leave-apps-cards");   /* ALV-213: shown under 640 px */
@@ -7275,7 +7570,7 @@ function renderLeaveApps(apps) {
     return;
   }
   tb.innerHTML = apps.map(function(a) {
-    return '<tr><td>' + esc(a.leave_type) + '</td><td class="num">' + fmtDate(a.from_date) + '</td><td class="num">' + fmtDate(a.to_date) + '</td><td class="num">' + a.total_leave_days + '</td><td>' + leaveStatusBadge(a.status, a.docstatus) + '</td></tr>';
+    return '<tr><td>' + esc(a.leave_type) + '</td><td class="num">' + fmtDate(a.from_date) + '</td><td class="num">' + fmtDate(a.to_date) + '</td><td class="num">' + a.total_leave_days + '</td><td>' + leaveStatusBadge(a.status, a.docstatus) + lvReason(a) + '</td></tr>';
   }).join("");
   if (cards) cards.innerHTML = apps.map(function(a) {
     var from = String(a.from_date).slice(0, 10), to = String(a.to_date || a.from_date).slice(0, 10);
@@ -7284,7 +7579,7 @@ function renderLeaveApps(apps) {
           ? fmtDate(from).replace(/ \d{4}$/, "")      /* slice 070 (D4): "6 Nov – 7 Nov 2026" */
           : fmtDate(from)) + " – " + fmtDate(to);
     return '<div class="lv-card"><div class="lv-top"><span class="lv-type">' + esc(a.leave_type) + '</span>' +
-      leaveStatusBadge(a.status, a.docstatus) + '</div><div class="lv-meta">' + dates + ' · ' + esc(lpDays(a.total_leave_days)) + '</div></div>';
+      leaveStatusBadge(a.status, a.docstatus) + '</div><div class="lv-meta">' + dates + ' · ' + esc(lpDays(a.total_leave_days)) + '</div>' + lvReason(a) + '</div>';
   }).join("");
 }
 
@@ -8289,6 +8584,8 @@ function loadPortalContext() {
     // kept for the leave modal "apply on behalf of" default
     window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
+    window._roles.is_system_manager = !!ctx.is_system_manager;   /* slice 076: Pending shows a CXO counts */
+    if (HM.pend) hmPaintPending();
     window._roles.positions  = !!ctx.positions;
 
     /* Attendance Insights counts towards the Management heading too, so the
@@ -9048,48 +9345,6 @@ function edActionLeave(leaveId, action) {
   }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
     if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
     toast((e.message || "Failed to " + action + " leave"), "err");
-  });
-}
-
-/* ── Home inline approval action ─────────────────── */
-function homeActionLeave(leaveId, action) {
-  var card = document.getElementById("home-appr-" + leaveId);
-  var acts = document.getElementById("home-appr-acts-" + leaveId);
-  if (card) { card.style.opacity = ".5"; card.style.pointerEvents = "none"; }
-  api("action_leave", {leave_id: leaveId, action: action}, function() {
-    var label = action === "approve" ? "Leave approved" : "Leave rejected";
-    toast(label, action === "approve" ? "ok" : "");
-    if (acts) {
-      acts.innerHTML = '<span class="badge ' + (action==="approve" ? "badge-green" : "badge-red") + '">' +
-        (action==="approve" ? "&#10003; Approved" : "&#10005; Rejected") + '</span>';
-    }
-    if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
-
-    // Decrement count; hide banner when all actioned
-    var countEl  = document.getElementById("home-pending-count");
-    var plurEl   = document.getElementById("home-pending-plural");
-    if (countEl) {
-      var n = Math.max(0, parseInt(countEl.textContent || "0") - 1);
-      countEl.textContent = n;
-      if (plurEl) plurEl.textContent = n === 1 ? "" : "s";
-      if (n === 0) {
-        var banner = document.getElementById("home-attention-banner");
-        if (banner) banner.style.display = "none";
-      }
-    }
-
-    // Sync sidebar badge
-    var badge = document.getElementById("sb-team-badge");
-    if (badge) {
-      var bn = Math.max(0, (parseInt(badge.textContent)||0) - 1);
-      badge.textContent = bn; badge.style.display = bn ? "flex" : "none";
-    }
-
-    // Refresh activity feed to show the approval action
-    api("get_portal_activity", {days: 7}, function(d) { renderActivityFeed(d.activities || []); });
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
-    if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
-    toast((e && e.message ? e.message : "Failed to " + action + " leave"), "err");
   });
 }
 
@@ -10238,39 +10493,8 @@ window.addEventListener("load", function () {
   switchPanel("att-record");
 });
 
-/* The live portal's bell (Surbhi, 24-25 Oct 2026): grooming notices in their
-   own section at the top of the existing panel, and counted in its badge.
-   The server sends the caller's own notices, fixed sentences only, and only
-   while they may still read what each is about. A notice links to its day. */
-var gmBell = {goals: 0, grooming: 0};
-
-window.gmPaintBadge = function (goals) {
-  if (goals !== undefined) gmBell.goals = goals;
-  var badge = document.getElementById("notif-badge"), total = gmBell.goals + gmBell.grooming;
-  if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
-};
-
-window.gmBellLoad = async function (open) {
-  var d;
-  try { d = await gpFetch(GM + "my_notices", {}); } catch (e) { return; }
-  gmBell.grooming = d.unread || 0;
-  gmPaintBadge();
-  var el = document.getElementById("gm-bell");
-  if (!open || !el) return;
-  el.innerHTML = (d.items || []).length
-    ? '<div class="gm-bell-h">Grooming red</div>' + d.items.map(function (n) {
-        var inner = '<div class="notif-item-title' + (n.read ? "" : " gm-unread") + '">' + gpEsc(n.text) + "</div>"
-          + '<div class="notif-item-sub">' + gpEsc(n.when) + "</div>";
-        return n.link ? '<a class="notif-item gm-bell-item" href="' + gpEsc(n.link) + '">' + inner + "</a>"
-                      : '<div class="notif-item gm-bell-item">' + inner + "</div>";
-      }).join("")
-    : "";
-  if (d.unread) {
-    gpFetch(GM + "my_notices_seen", {}).catch(function () {});
-    gmBell.grooming = 0;
-    gmPaintBadge();
-  }
-};
+/* The bell's grooming notices (slices 066, 076): the bell and the Notices card
+   on Home read one function, notices.notices_feed. See the Home block. */
 
 /* No answer: gpFetch's lost calls carry `kind` (slice 070) - offline, network
    or timeout. Anything else ("refused", "server") is the office answering, in
@@ -14561,12 +14785,12 @@ window.pfRatingLabel = function(value, scale) {
     if (doctype === "KPI") {
       pf("approve_kpi_update", {kpi: docname, row_name: rowName, action: action, comment: comment}).then(function() {
         pfLoadKpiUpdateHistory(docname);
-        loadNotifPanel();
+        hmPendingReload();
       }).catch(function(e) { alert("Error: " + e.message); });
     } else {
       gpFetch("alvoraa_portal.goals_api.approve_goal_update", {goal_id: docname, row_name: rowName, action: action, comment: comment}).then(function() {
         loadGoalUpdateHistory(docname);
-        loadNotifPanel();
+        hmPendingReload();
       }).catch(function(e) { alert("Error: " + e.message); });
     }
   };
@@ -14575,22 +14799,14 @@ window.pfRatingLabel = function(value, scale) {
   window.renderUpdateTimeline = renderUpdateTimeline;
   window.pfFmtDate = pfFmtDate;
 
-  /* ── Notification panel JS ──────────────────────── */
+  /* ── The bell ──────────────────────────────────────────────────────
+     Slice 076: it opens the Notices sheet, the same one as "See all" on Home,
+     and its number is the unread count the Notices card shows. */
 
   window.toggleNotifPanel = function(e) {
     if (e) e.stopPropagation();
-    var panel = document.getElementById("notif-panel");
-    var wasOpen = panel.classList.contains("open");
-    document.querySelectorAll(".notif-panel.open").forEach(function(p) { p.classList.remove("open"); });
-    if (!wasOpen) { panel.classList.add("open"); loadNotifPanel(); gmBellLoad(true); }
+    ntOpenAll();
   };
-
-  document.addEventListener("click", function(e) {
-    var panel = document.getElementById("notif-panel");
-    if (panel && panel.classList.contains("open") && !panel.contains(e.target) && !e.target.closest("#mob-notif-btn")) {
-      panel.classList.remove("open");
-    }
-  });
 
   /* ALV-213: the phone header's account menu (My Account, Log out). */
   function setAcctMenu(open) {
@@ -14615,46 +14831,8 @@ window.pfRatingLabel = function(value, scale) {
     }
   });
 
-  function loadNotifPanel() {
-    gpFetch("alvoraa_portal.goals_api.get_pending_approvals", {}).then(function(data) {
-      _pfIsManager = true;
-      var total = data.total || 0;
-      gmPaintBadge(total);   /* slice 066: the badge also counts grooming notices */
-      var body = document.getElementById("notif-panel-body");
-      if (!body) return;
-      if (total === 0) { body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>"; return; }
-      var html = "";
-      (data.kpi_updates || []).forEach(function(u) {
-        html += "<div class=\"notif-item\" onclick=\"pfOpenLog('" + gpEsc(u.kpi) + "','" + gpEsc(u.row_name) + "')\">" +
-          "<div class=\"notif-item-title\">KPI update pending approval</div>" +
-          "<div class=\"notif-item-sub\">" + gpEsc(u.employee_name || "") + " · " + gpEsc(u.kpi_name || u.kpi) + "</div>" +
-        "</div>";
-      });
-      (data.goal_updates || []).forEach(function(u) {
-        html += "<div class=\"notif-item\" onclick=\"gpOpenGoalDetail('" + gpEsc(u.goal) + "','" + gpEsc(u.row_name) + "')\">" +
-          "<div class=\"notif-item-title\">Goal update pending approval</div>" +
-          "<div class=\"notif-item-sub\">" + gpEsc(u.employee_name || "") + " · " + gpEsc(u.goal_name || u.goal) + "</div>" +
-        "</div>";
-      });
-      body.innerHTML = html;
-    }).catch(function() {
-      /* not a manager or API not ready. Slice 066: say so rather than leave
-         "Loading…" under the grooming notices an employee may have. */
-      var body = document.getElementById("notif-panel-body");
-      if (body) body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>";
-    });
-  }
-
-  /* Boot: just the bell badge, from a cheap count — not the full list
-     (loadNotifPanel's get_pending_approvals took 11.6-16.4s for HR; P1). The
-     full list still loads when the panel is actually opened. */
-  function loadNotifBadge() {
-    gpFetch("alvoraa_portal.goals_api.get_pending_approvals_count", {}).then(function(data) {
-      gmPaintBadge((data && data.total) || 0);   /* slice 066: plus grooming notices */
-    }).catch(function() { /* not a manager or API not ready — silently ignore */ });
-    gmBellLoad(false);
-  }
-  setTimeout(function() { loadNotifBadge(); }, 1500);
+  /* Boot: the bell's number, from the same call the Notices card makes. */
+  setTimeout(function() { ntBellBoot(); }, 1500);
 
   /* Rating a KPI outside the review is gone (slice 010 group D, R14). Ratings
      are given on the review's own copy, inside the review, so a rating can

@@ -126,20 +126,13 @@
         <span></span><span></span><span></span>
       </button>
       <div class="mob-brand">{{ tenant_name }}</div>
-      <div class="mob-notif" id="mob-notif-btn" title="Notifications" onclick="toggleNotifPanel(event)">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      {#- Slice 076: the bell opens the Notices sheet (the same one as Home's
+          "See all") and its number is the Notices card's number. Its name is
+          reworded with the count, "Notices, 3 unread", by ntPaintBadge. -#}
+      <button type="button" class="mob-notif" id="mob-notif-btn" title="{{ _('Notices') }}" aria-label="{{ _('Notices') }}" onclick="toggleNotifPanel(event)">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
         <span class="notif-badge" id="notif-badge"></span>
-      </div>
-      <!-- Notification panel -->
-      <div id="notif-panel" class="notif-panel">
-        <div class="notif-panel-hdr">
-          <span>Pending Approvals</span>
-          <button onclick="document.getElementById('notif-panel').classList.remove('open')" style="background:none;border:none;cursor:pointer;font-size:var(--fs-md);color:var(--text3);line-height:1">&times;</button>
-        </div>
-        <!-- Slice 066: grooming notices, above the approvals. -->
-        <div id="gm-bell"></div>
-        <div id="notif-panel-body"><div class="notif-empty">Loading…</div></div>
-      </div>
+      </button>
       <button type="button" class="mob-avatar" id="mob-avatar" aria-haspopup="true" aria-expanded="false" aria-controls="mob-acct-menu" aria-label="{{ _('Your account') }}" onclick="toggleAcctMenu(event)">?</button>
       <div class="mob-acct-menu" id="mob-acct-menu" role="menu">
         <a role="menuitem" href="/me">{{ _("My Account") }}</a>

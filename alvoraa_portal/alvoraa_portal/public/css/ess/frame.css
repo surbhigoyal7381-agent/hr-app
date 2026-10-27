@@ -253,7 +253,9 @@ body.sb-collapsed .sidebar:hover .sb-scroll-btn{display:flex}
   background:var(--surface2);border:1px solid var(--border);
   display:flex;align-items:center;justify-content:center;
   color:var(--text2);font-size:var(--fs-md);cursor:pointer;flex-shrink:0;
+  padding:0;font-family:inherit;
 }
+.mob-notif:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
 
 /* ── Main content ────────────────────────────────── */
 /* No `will-change` here, and it must stay that way.

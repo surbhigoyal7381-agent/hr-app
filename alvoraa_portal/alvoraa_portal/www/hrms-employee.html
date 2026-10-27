@@ -8,6 +8,26 @@
 
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{# Slice 062. What makes this page installable on a phone's home screen.
+
+   The manifest and the icon are endpoints, not files, because Frappe will not
+   serve .json out of www/ and because the icon carries the TENANT's colour -
+   a static file could only ever be one customer's.
+
+   The name is always "Alvora" and so is the mark (decisions 4 and 5, 27 Oct);
+   only the colour is per tenant. field_app_pwa.py has the reasoning.
+
+   Deliberately NOT here: apple-mobile-web-app-status-bar-style. The check-in
+   page sets it to black-translucent, which lets the page draw under the iPhone
+   status bar. That page is built for it, with safe-area insets. This one is
+   not - frame.css pins the navbar at top:0 with no inset - so the clock would
+   sit on top of the header. Leaving it out gives an opaque bar, which is what
+   this layout assumes. #}
+<link rel="manifest" href="/api/method/alvoraa_portal.field_app_pwa.portal_manifest">
+<link rel="apple-touch-icon" href="/api/method/alvoraa_portal.field_app_pwa.portal_app_icon?size=192">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Alvora">
 {% include "templates/includes/design_system.html" %}
 {# OPS-31 / decision 12. The frame's styles and the portal's script are ordinary
    static files under the app's public/ folder, served from /assets/ and cached by
@@ -53,6 +73,29 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
    markup exists. The only readyState test in it has an else branch, and the markup
    carries no inline script tag, so nothing depended on running mid-parse. #}
 <script src="/assets/alvoraa_portal/js/ess/portal.js?v={{ asset_version | e }}" defer></script>
+{# Slice 062. Registering the worker is what turns "a page with a manifest" into
+   "a page Chrome offers to install". It lives here rather than in portal.js on
+   purpose: that file is the busiest in the repo and this needs nothing from it.
+
+   The scope is /hrms-employee, never /. The worker is served from /api/method/,
+   so it can only claim that scope because portal_service_worker() sends
+   Service-Worker-Allowed. A root scope would hand this worker /checkin, the
+   login page and the whole desk.
+
+   The worker caches nothing (decision 2), so there is nothing here that can
+   serve a stale page. If registration fails the portal is completely unaffected
+   - installing is a bonus, not a dependency - so the failure is swallowed
+   rather than shown to an employee who can do nothing about it. #}
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register(
+      '/api/method/alvoraa_portal.field_app_pwa.portal_service_worker',
+      { scope: '/hrms-employee' }
+    ).catch(function () {});
+  });
+}
+</script>
 <footer style="text-align:center;padding:10px 0 14px;font-size:var(--fs-xs);color:var(--text3,var(--border2))">
   Powered by <a href="https://allabouthr.co" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;opacity:.7">AllAboutHR.co</a>
 </footer>

@@ -1,3 +1,4 @@
+import html
 import re
 
 import frappe
@@ -1056,11 +1057,27 @@ def _mark_actionable(rows):
     return rows
 
 
+DECLINE_REASON_SUBJECT = "Decline reason"
+DECLINE_REASON_MAX = 140
+
+
 @frappe.whitelist()
-def action_leave(leave_id, action):
-    """Approve or reject a leave application."""
+def action_leave(leave_id, action, reason=None):
+    """Approve or reject a leave application.
+
+    Slice 076: `reason` is the words a decline carries to the employee (1 to
+    140 characters). It is saved as a Comment on the leave, marked by its
+    subject, and shown on the employee's own leave row only. Callers that pass
+    none behave exactly as before.
+    """
     user = frappe.session.user
     doc  = frappe.get_doc("Leave Application", leave_id)
+    if reason is not None:
+        reason = str(reason).strip()
+        if action != "reject":
+            frappe.throw(_("A reason can only be given when declining."))
+        if not 1 <= len(reason) <= DECLINE_REASON_MAX:
+            frappe.throw(_("Write a reason of 1 to {0} characters.").format(DECLINE_REASON_MAX))
 
     # Nobody approves or rejects their own leave, even when HR Settings would
     # allow it (SEC-9). Checked first, so the message says why.
@@ -1105,6 +1122,12 @@ def action_leave(leave_id, action):
         doc.status = "Rejected"
         doc.db_set("status", "Rejected", update_modified=False)
         doc.submit()
+        if reason:
+            # Escaped: Desk draws a comment's content as HTML. The subject
+            # marks it as the decline reason, so the leave row shows this
+            # comment and never an ordinary note somebody else left there.
+            note = doc.add_comment("Comment", frappe.utils.escape_html(reason))
+            frappe.db.set_value("Comment", note.name, "subject", DECLINE_REASON_SUBJECT)
     else:
         frappe.throw(f"Unknown action: {action}")
 
@@ -1114,87 +1137,6 @@ def action_leave(leave_id, action):
     from alvoraa_portal.leave_rules import decision_facts
     out.update(decision_facts(doc))
     return out
-
-
-@frappe.whitelist()
-def get_portal_activity(days=7):
-    """Return recent portal activity for the logged-in user, sorted latest-first."""
-    user = frappe.session.user
-    emp  = _get_employee(user)
-    if not emp:
-        return {"activities": []}
-
-    td    = today()
-    since = add_days(td, -int(days))
-    since_dt = since + " 00:00:00"
-
-    activity = []
-
-    # Employee checkins
-    checkins = frappe.get_all(
-        "Employee Checkin",
-        filters={"employee": emp.name, "time": [">=", since_dt]},
-        fields=["log_type", "time"],
-        order_by="time desc",
-        ignore_permissions=True,
-    )
-    for c in checkins:
-        t = str(c.time)
-        activity.append({
-            "type":   "checkin",
-            "icon":   c.log_type,
-            "label":  "Checked " + ("in" if c.log_type == "IN" else "out"),
-            "time":   t,
-            "date":   t[:10],
-            "detail": "",
-        })
-
-    # Leave applications submitted
-    leaves = frappe.get_all(
-        "Leave Application",
-        filters={"employee": emp.name, "creation": [">=", since_dt]},
-        fields=["leave_type", "status", "creation", "from_date", "to_date", "total_leave_days"],
-        order_by="creation desc",
-        ignore_permissions=True,
-    )
-    for l in leaves:
-        t     = str(l.creation)
-        days_ = float(l.total_leave_days or 0)
-        cnt   = int(days_) if days_ == int(days_) else days_
-        dr    = str(l.from_date)
-        if l.to_date and str(l.to_date) != str(l.from_date):
-            dr += " to " + str(l.to_date)
-        activity.append({
-            "type":   "leave",
-            "icon":   "LEAVE",
-            "label":  "Applied for " + (l.leave_type or "Leave"),
-            "time":   t,
-            "date":   t[:10],
-            "detail": dr + " · " + str(cnt) + " day" + ("s" if cnt != 1 else ""),
-            "status": l.status or "",
-        })
-
-    # Leaves actioned by this user as approver
-    actioned = frappe.get_all(
-        "Leave Application",
-        filters={"leave_approver": user, "modified": [">=", since_dt], "docstatus": 1},
-        fields=["employee_name", "leave_type", "status", "modified"],
-        order_by="modified desc",
-        ignore_permissions=True,
-    )
-    for l in actioned:
-        t = str(l.modified)
-        activity.append({
-            "type":   "approval",
-            "icon":   "APPROVED" if l.status == "Approved" else "REJECTED",
-            "label":  (l.status or "") + " leave for " + (l.employee_name or ""),
-            "time":   t,
-            "date":   t[:10],
-            "detail": l.leave_type or "",
-        })
-
-    activity.sort(key=lambda x: x["time"], reverse=True)
-    return {"activities": activity}
 
 
 # Review stages from which an overall rating is released to the employee, and so
@@ -2341,6 +2283,25 @@ def get_leave_summary(employee_id=None):
         limit=10,
         ignore_permissions=True,
     )
+
+    # Slice 076: the words an approver gave when declining, on the caller's OWN
+    # Rejected rows only - never on someone else's record that HR passes in.
+    # One query for the page.
+    if not (employee_id and is_hr):
+        rejected = [a.name for a in applications if a.status == "Rejected"]
+        reasons = {}
+        if rejected:
+            for c in frappe.get_all(
+                "Comment",
+                filters={"reference_doctype": "Leave Application",
+                         "reference_name": ["in", rejected], "comment_type": "Comment",
+                         "subject": DECLINE_REASON_SUBJECT},
+                fields=["reference_name", "content"], order_by="creation asc",
+                limit_page_length=0,
+            ):
+                reasons[c.reference_name] = html.unescape(c.content or "")
+        for a in applications:
+            a["decline_reason"] = reasons.get(a.name)
 
     # Slice 063, only where the company's pay rule set is on (SEC-15). The
     # Paid Leaves card is for the caller's OWN record only - never for someone

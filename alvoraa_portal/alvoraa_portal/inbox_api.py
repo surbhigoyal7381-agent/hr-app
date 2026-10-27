@@ -94,6 +94,10 @@ CORRECTIONS_CAP = 50
 # (Wave 2 section 6.1 rule 2, section 13).
 LIST_CAP = 50
 
+# Slice 076: every part carries `waiting_since`, the date the request was made
+# (the policy's effective date), so Home can list the oldest first across kinds.
+# A date only: no person, no reason.
+#
 # The keys a row may carry, per part. Enforced on the way out of `rows()`, the
 # same discipline as `frame_api.FRAME_KEYS`: a field cannot reach a browser by
 # accident, and adding one is a deliberate act somebody reviews.
@@ -108,7 +112,7 @@ ROW_KEYS = (
 	# CONTEXT LINE is the thing that carries no colleague name and no leave
 	# type (042 AC-28), and it is built in `_leave_contexts`, not here.
 	("leave_approvals", ("name", "employee_name", "from_date", "to_date",
-	                     "leave_type", "total_days", "context", "action",
+	                     "leave_type", "total_days", "context", "action", "waiting_since",
 	                     # Slice 063, only on rows at a company whose pay rule
 	                     # set is on: the half-day flag, the "N of 5" figure
 	                     # for Leave Without Pay, the special-day line and the
@@ -119,16 +123,16 @@ ROW_KEYS = (
 	# be: an approver cannot approve "somebody's" progress. What is absent is the
 	# number's provenance and any note about the person.
 	("goal_updates", ("name", "kind", "employee_name", "subject", "logged_on",
-	                  "value", "action")),
+	                  "value", "action", "waiting_since")),
 	# `can_decide`: whether the caller may decide it TODAY
 	# (`attendance_correction.not_yours_yet`). Only those rows are listed and
 	# counted, so it is always true; the buttons still follow it.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
-	                      "reason", "context", "action", "can_decide")),
+	                      "reason", "context", "action", "can_decide", "waiting_since")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
-	                    "shift_type", "action")),
+	                    "shift_type", "action", "waiting_since")),
 	# A policy is a document, not a person. No employee field at all.
-	("policies", ("name", "title", "version", "action")),
+	("policies", ("name", "title", "version", "action", "waiting_since")),
 	# My own requests are mine, so the state sentence and the reason I was given
 	# are mine to read. No approver's name beyond the one the state sentence
 	# already says, and never anybody else's row (042 AC-20).
@@ -138,7 +142,7 @@ ROW_KEYS = (
 	# to fall back to `kind` and head an employee's own rows with the raw
 	# internal keys `attendance_fix` and `shift_request`, untranslated.
 	("my_requests", ("name", "kind", "title", "from_date", "to_date", "state",
-	                 "says", "note", "can_withdraw", "action")),
+	                 "says", "note", "can_withdraw", "action", "waiting_since")),
 )
 
 
@@ -471,7 +475,8 @@ def _part_leave_approvals(who):
 		rows = frappe.get_list(
 			"Leave Application", filters=filters,
 			fields=["name", "employee", "employee_name", "department", "leave_type",
-			        "from_date", "to_date", "total_leave_days", "company", "half_day"],
+			        "from_date", "to_date", "total_leave_days", "company", "half_day",
+			        "creation"],
 			order_by="from_date asc", limit_page_length=limit or 0)
 		# One query for every context line on the page, not one per row.
 		contexts = _leave_contexts(rows)
@@ -490,6 +495,7 @@ def _part_leave_approvals(who):
 				"total_days": r.total_leave_days,
 				"context": contexts.get(r.name),
 				"action": "leave",
+				"waiting_since": str(r.creation) if r.creation else None,
 			}
 			if r.company in dtc:
 				row.update(_dtc_row_facts(r))
@@ -645,6 +651,7 @@ def _part_goal_updates(who):
 				"logged_on": str(r.get("creation")) if r.get("creation") else None,
 				"value": r.get("value"),
 				"action": "goal_update",
+				"waiting_since": str(r.get("creation")) if r.get("creation") else None,
 			})
 		return out
 
@@ -717,6 +724,7 @@ def _part_attendance_fixes(who):
 				"context": _("Half day") if r.half_day else None,
 				"action": "attendance_fix",
 				"can_decide": r.can_decide,
+				"waiting_since": str(r.creation) if r.creation else None,
 			})
 		return out
 
@@ -757,7 +765,8 @@ def _part_shift_requests(who):
 	def rows_fn(filters, limit):
 		rows = frappe.get_list(
 			"Shift Request", filters=filters,
-			fields=["name", "employee_name", "from_date", "to_date", "shift_type"],
+			fields=["name", "employee_name", "from_date", "to_date", "shift_type",
+			        "creation"],
 			order_by="from_date asc", limit_page_length=limit or 0)
 		return [{
 			"name": r.name,
@@ -766,6 +775,7 @@ def _part_shift_requests(who):
 			"to_date": str(r.to_date) if r.to_date else None,
 			"shift_type": r.shift_type,
 			"action": "shift_request",
+			"waiting_since": str(r.creation) if r.creation else None,
 		} for r in rows]
 
 	return Part(
@@ -800,7 +810,7 @@ def _part_policies(who):
 		policies = frappe.get_list(
 			"Policy Document", filters={"status": "Published"},
 			fields=["name", "title", "current_version", "acknowledge_on_joining",
-			        "acknowledge_on_new_version"],
+			        "acknowledge_on_new_version", "effective_from", "modified"],
 			order_by="title asc", limit_page_length=0)
 		wanted = [p for p in policies
 		          if p.acknowledge_on_joining or p.acknowledge_on_new_version]
@@ -815,7 +825,8 @@ def _part_policies(who):
 			}
 			needed = [
 				{"name": p.name, "title": p.title,
-				 "version": int(p.current_version or 0), "action": "policy"}
+				 "version": int(p.current_version or 0), "action": "policy",
+				 "waiting_since": str(p.effective_from or p.modified)}
 				for p in wanted
 				if (p.name, int(p.current_version or 0)) not in done
 			]
@@ -871,7 +882,7 @@ def _part_my_requests(who):
 				"to_date": str(r.to_date) if r.to_date else None,
 				"state": "waiting", "says": _("Waiting for your approver"),
 				"note": None, "can_withdraw": False, "action": "my_leave",
-				"creation": r.creation,
+				"creation": r.creation, "waiting_since": str(r.creation),
 			})
 		for r in frappe.get_list(
 			REQUEST,
@@ -890,7 +901,7 @@ def _part_my_requests(who):
 				# `attendance_correction.withdraw` allows it exactly while the
 				# document is still a draft. Same condition, named once.
 				"can_withdraw": True, "action": "my_attendance_fix",
-				"creation": r.creation,
+				"creation": r.creation, "waiting_since": str(r.creation),
 			})
 		if has_shift:
 			for r in frappe.get_list(
@@ -906,7 +917,7 @@ def _part_my_requests(who):
 					"to_date": str(r.to_date) if r.to_date else None,
 					"state": "waiting", "says": _("Waiting for your approver"),
 					"note": None, "can_withdraw": False, "action": "my_shift_request",
-					"creation": r.creation,
+					"creation": r.creation, "waiting_since": str(r.creation),
 				})
 		out.sort(key=lambda r: r.get("creation") or "", reverse=True)
 		return out[:limit] if limit else out

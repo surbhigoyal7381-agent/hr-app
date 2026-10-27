@@ -741,7 +741,11 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# `cancel_leave` cancels an employee's OWN approved leave before it
 		# starts. The Employee role has no cancel; the bypass is set on that one
 		# document after the own-record and future-date checks.
-		("alvoraa_portal", "hr_api.py"): 70,
+		# 70 -> 67 in slice 076 (AC-109): Home's Activity endpoint, which read
+		# three people's records around permissions, is gone.
+		("alvoraa_portal", "hr_api.py"): 67,
+		# Slice 076 (new file): the caller's own notices through get_list; none.
+		("alvoraa_portal", "notices.py"): 0,
 		# Slice 063 (new file): DTC's leave rules read and notify; none needed.
 		("alvoraa_portal", "leave_rules.py"): 0,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"

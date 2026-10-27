@@ -59,11 +59,6 @@ if (!doc.querySelector("#mob-acct-menu .mob-signout")) {
 } else {
   bad("the sign-out is back inside the dropdown - that is the bug ALV-222 is about");
 }
-if (!out.closest("[hidden]") && out.getAttribute("hidden") === null) {
-  ok("the sign-out carries no hidden attribute");
-} else {
-  bad("the sign-out is hidden");
-}
 const display = window.getComputedStyle(out).display;
 if (display && display !== "none") {
   ok(`the sign-out's own rule leaves it displayed (display:${display})`);

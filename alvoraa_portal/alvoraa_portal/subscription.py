@@ -604,6 +604,9 @@ TENANT_DOCTYPES = [
     "Alvoraa Employee Category",
     "Alvoraa Green Eligibility",
     "Alvoraa Payroll Reprocess Log",
+    # Slice 063: the tenant's own days-present table of leave earned, a child
+    # table of its pay rule set. Tenant-side, like the rest of the rule set.
+    "Alvoraa Leave Credit Row",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

@@ -95,3 +95,27 @@ def run(shape="small", which="after", repeats=REPEATS):
 		json.dump(out, handle, indent=1, default=str)
 	print("\nwritten: %s" % path, flush=True)
 	return out
+
+
+def where_queries_go(shape="large", persona="companyhr", call="get_inbox", top=8):
+	"""The statements one call sends, grouped by their text with the values taken
+	out, most repeated first. A count that moves with headcount shows up here as a
+	statement sent once per row."""
+	import re
+	from collections import Counter
+
+	from alvoraa_portal.tests import fixtures_scale_044 as fx
+	from alvoraa_portal.tests.measure_044 import _Spy
+
+	module = {"get_inbox": "alvoraa_portal.inbox_api", "notices_feed": "alvoraa_portal.notices"}[call]
+	fn = getattr(frappe.get_module(module), call)
+	frappe.set_user(fx.login_of(shape, persona))
+	frappe.local.request_ip = "127.0.0.1"
+	fn()
+	with _Spy() as spy:
+		fn()
+	frappe.set_user("Administrator")
+	shape_of = Counter(re.sub(r"\s+", " ", re.sub(r"'[^']*'|\b\d+\b", "?", q))[:150] for q in spy.statements)
+	print("\n%s %s %s: %d statements" % (shape, persona, call, len(spy.statements)), flush=True)
+	for text, n in shape_of.most_common(int(top)):
+		print("  %3d x  %s" % (n, text), flush=True)

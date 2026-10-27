@@ -15,6 +15,8 @@ nobody later "simplifies" the rule into sending administrators, guests or a
 tenant's vendor users somewhere they cannot use.
 """
 
+from unittest import mock
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.website.utils import get_home_page, get_home_page_via_hooks
@@ -45,7 +47,7 @@ class LandingCase(FrappeTestCase):
 
 	# ── fixtures ────────────────────────────────────────────────────────────
 
-	def make_user(self, roles=()):
+	def make_user(self, roles=(), chose_own_password=True):
 		user = frappe.new_doc("User")
 		user.email = f"h024_{_rand()}@example.com"
 		user.first_name = "Landing"
@@ -53,6 +55,16 @@ class LandingCase(FrappeTestCase):
 		user.insert(ignore_permissions=True)
 		if roles:
 			user.add_roles(*roles)
+		if chose_own_password:
+			# An employee who has never chosen their own password is sent to
+			# /update-password, so a test about where an ESTABLISHED user lands
+			# has to say that they have chosen one. Frappe stamps this field in
+			# one place only — the whitelisted `update_password` behind the
+			# /update-password page — so an empty value means "HR issued it and
+			# nobody has replaced it yet".
+			frappe.db.set_value(
+				"User", user.name, "last_password_reset_date", frappe.utils.today()
+			)
 		return user.name
 
 	def make_employee_for(self, user):
@@ -133,6 +145,34 @@ class TestWhoLandsWhere(LandingCase):
 		user = self.make_user(roles=["HR Manager", "System Manager"])
 		self.make_employee_for(user)
 		self.assertEqual(self.landing_for(user), PORTAL)
+
+	def test_an_employee_on_an_issued_password_is_sent_to_change_it(self):
+		"""HR hands one password to a whole batch of staff. Until a person has
+		replaced it with their own, every door lands them on /update-password.
+
+		We never compare the password or its hash — Frappe salts every hash
+		separately, so a hundred people sharing one password have a hundred
+		different hashes and there is nothing to match. The signal is only
+		"has this person ever set their own password".
+		"""
+		user = self.make_user(chose_own_password=False)
+		self.make_employee_for(user)
+		self.assertEqual(self.landing_for(user), "update-password")
+		# The branded login page is the door nearly all staff come through
+		# (`www/alvoraa-login.html` calls this after a successful sign-in), and
+		# /login redirects to it. It has to agree with the bare address.
+		frappe.set_user(user)
+		try:
+			self.assertEqual(auth.get_portal_redirect()["url"], "/update-password")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_an_operator_on_an_issued_password_is_left_alone(self):
+		"""The password nudge is for staff. This function answers the front
+		door of every tenant, so a platform operator who has never used
+		/update-password must still reach the desk, not be herded off it."""
+		user = self.make_user(roles=["System Manager"], chose_own_password=False)
+		self.assertIsNone(auth.home_page_for(user))
 
 	def test_a_system_manager_with_no_employee_record_keeps_the_desk(self):
 		"""A platform operator. Sending them to an employee page every login is
@@ -241,6 +281,131 @@ class TestTheDoorsAgree(LandingCase):
 		finally:
 			frappe.local.response.pop("home_page", None)
 			frappe.set_user("Administrator")
+
+
+class TestTheFirstUseJourney(LandingCase):
+	"""Walk it, do not assume it.
+
+	The nudge rests on one unwritten premise - that HR setting a password does
+	not count as the person choosing one - and it ends at one step nobody owned:
+	where Frappe sends them after the change. Both are tested here by calling
+	the real functions, because a test that sets `last_password_reset_date` by
+	hand proves only that our own `if` statement works.
+	"""
+
+	ISSUED = "Kx7#vRm2Zp9qLw"
+	CHOSEN = "Tb4$nQy8Wd3rJm"
+	FRAPPE_ENDPOINT = "frappe.core.doctype.user.user.update_password"
+
+	def the_endpoint_the_page_reaches(self):
+		"""Resolve the change-password endpoint the way a request does.
+
+		`frappe.handler.execute_cmd` runs the name through
+		`frappe.override_whitelisted_method` and then `get_attr` on whatever
+		comes back, and that is the only path to the browser - /api/v1 funnels
+		into the same handler, /api/v2 resolves it the same way. Calling
+		`auth.update_password` by name here would pass even if the hook that
+		puts it in the way were deleted, which is the whole fault this class was
+		written to stop happening twice.
+		"""
+		return frappe.get_attr(frappe.override_whitelisted_method(self.FRAPPE_ENDPOINT))
+
+	def make_user_with_an_issued_password(self):
+		"""HR's own path: a password typed on the User form and saved."""
+		user = frappe.new_doc("User")
+		user.email = f"h024_{_rand()}@example.com"
+		user.first_name = "Landing"
+		user.send_welcome_email = 0
+		user.new_password = self.ISSUED
+		user.insert(ignore_permissions=True)
+		return user.name
+
+	def test_hr_setting_a_password_is_not_the_person_choosing_one(self):
+		"""The premise the whole design rests on, and the only thing in this
+		suite watching Frappe for us.
+
+		If an upgrade ever made `User.save` stamp `last_password_reset_date`,
+		the nudge would switch itself off for a whole batch and every other
+		test in this file would still pass, because they all set the field by
+		hand. Nothing observable would change until HR noticed that nobody was
+		being asked.
+		"""
+		user = self.make_user_with_an_issued_password()
+		self.assertFalse(
+			frappe.db.get_value("User", user, "last_password_reset_date"),
+			"Frappe now stamps the field when HR sets a password - the nudge is dead",
+		)
+
+		# And a second save with another password still does not stamp it.
+		doc = frappe.get_doc("User", user)
+		doc.new_password = self.CHOSEN
+		doc.save(ignore_permissions=True)
+		self.assertFalse(frappe.db.get_value("User", user, "last_password_reset_date"))
+
+	def test_changing_the_password_stamps_the_date_and_lands_them_in_the_portal(self):
+		"""The whole journey, through Frappe's real endpoint.
+
+		Frappe's `update_password` ends `return get_default_path() or "/desk"`
+		for a System User, and the page navigates to whatever comes back. Our
+		wrapper replaces that path. Without it this test fails on the first
+		assertion with /desk or /apps - the Frappe back office, handed to a
+		frontline worker as the last step of first use.
+
+		`login_manager` is a stand-in: the real one needs an HTTP request, and
+		the old-password check is Frappe's job, not what this test is about.
+		"""
+		user = self.make_user_with_an_issued_password()
+		self.make_employee_for(user)
+		self.assertEqual(self.landing_for(user), "update-password")
+
+		frappe.set_user(user)
+		try:
+			frappe.local.response.pop("http_status_code", None)
+			with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
+				landed = self.the_endpoint_the_page_reaches()(
+					new_password=self.CHOSEN, old_password=self.ISSUED
+				)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertEqual(landed, "/" + PORTAL)
+		self.assertTrue(frappe.db.get_value("User", user, "last_password_reset_date"))
+		# And it clears itself - no list of who is still pending to keep in step.
+		self.assertEqual(self.landing_for(user), PORTAL)
+
+	def test_an_operator_changing_their_password_keeps_frappes_own_answer(self):
+		"""This wrapper runs on every password change on every tenant. A
+		platform operator must still be handed the desk, not herded into an
+		employee portal."""
+		user = self.make_user_with_an_issued_password()
+		frappe.get_doc("User", user).add_roles("System Manager")
+
+		frappe.set_user(user)
+		try:
+			frappe.local.response.pop("http_status_code", None)
+			with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
+				landed = self.the_endpoint_the_page_reaches()(
+					new_password=self.CHOSEN, old_password=self.ISSUED
+				)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertNotEqual(landed, "/" + PORTAL)
+		self.assertNotEqual(landed, "/update-password")
+
+	def test_a_dead_reset_link_still_gets_its_message_not_a_portal_page(self):
+		"""Frappe answers a used or invalid link with 410 and a sentence for
+		the user. Replacing that with a portal path would send somebody who
+		never proved anything into the portal."""
+		frappe.local.response.pop("http_status_code", None)
+		try:
+			answer = self.the_endpoint_the_page_reaches()(
+				new_password=self.CHOSEN, key="not-a-real-key"
+			)
+			self.assertEqual(frappe.local.response.get("http_status_code"), 410)
+			self.assertNotIn(PORTAL, answer)
+		finally:
+			frappe.local.response.pop("http_status_code", None)
 
 
 class TestItNeverBreaksTheFrontDoor(LandingCase):

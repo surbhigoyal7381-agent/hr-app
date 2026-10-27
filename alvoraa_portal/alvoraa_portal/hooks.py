@@ -594,3 +594,11 @@ override_whitelisted_methods = {
 override_doctype_class = {
     "CRM Invitation": "alvoraa_portal.overrides.crm_invitation.AlvoraCRMInvitation",
 }
+
+# ── Where a person lands after they change their password (ALV-232) ────────
+# Frappe hands a System User "/desk" and every staff account is a System User.
+# The wrapper calls Frappe's function unchanged and only swaps the path it
+# returns; the reasoning is in alvoraa_portal.auth.update_password.
+override_whitelisted_methods = {
+    "frappe.core.doctype.user.user.update_password": "alvoraa_portal.auth.update_password",
+}

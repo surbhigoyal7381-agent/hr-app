@@ -16,7 +16,11 @@ const { readPortalSource } = require("./lib/portal_source");
 
 const EVENTS = ["onclick=", "onchange=", "oninput=", "onsubmit=", "onkeyup=",
   "onkeydown=", "onfocus=", "onblur="];
+// Keywords belong here too: a handler like onclick="try{...}catch(e){}" puts
+// catch( in front of the scanner, which then hunts for a global function called
+// catch and of course never finds one.
 const NOT_FUNCS = new Set(["if", "for", "while", "return", "function", "typeof", "new",
+  "catch", "switch",
   "var", "JSON", "Math", "Number", "String", "Array", "Object", "Boolean", "parseInt",
   "parseFloat", "isNaN", "encodeURIComponent", "decodeURIComponent", "alert", "confirm",
   "prompt", "setTimeout", "setInterval", "rgba", "rgb", "url", "translate", "rotate",

@@ -2598,12 +2598,16 @@ a.gm-bell-item{display:block;text-decoration:none;color:inherit}
   .gm-bd{align-items:flex-end;padding:0}
   .gm-sheet{max-width:100%;margin:0;border-radius:16px 16px 0 0;padding:16px 16px 24px}
   .gm-opt{font-size:var(--fs-md)}
+}
+
 /* ── Replacement plans (slice 065) ─────────────────────────────────────────
    Only a plan reader is ever sent a plan, so nothing here draws for anyone
    else. Every mark is .private: it never prints, and "Hide replacement plans"
    removes it. The red edge is screen only. Nothing here counts plans. */
 .pos-flag{display:inline-block;vertical-align:-2px;color:var(--red);margin-right:4px;flex:none}
 .pos-flagword{display:none;color:var(--red);font-weight:600}
+/* The same words inside "Change this seat", where pf-card-meta is grey. */
+.pos-planmeta{color:var(--red);font-weight:600}
 @media screen{.oc-box.pos-planned{border-left-color:var(--red)}}
 .pos-planline{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center;margin:-6px 0 16px;font-size:var(--fs-sm);color:var(--text2)}
 .pos-plan{margin:6px 0 2px;border-left:3px solid var(--red);background:var(--red-lt);border-radius:var(--r-sm);padding:8px 10px;color:var(--text)}

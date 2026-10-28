@@ -1865,7 +1865,14 @@ function posPaintPeople() {
     ? r.people.map(function (p) {
         return '<div style="display:flex;gap:8px;align-items:center;'
           + 'justify-content:space-between;padding:4px 0">'
-          + "<span>" + posEsc(p.name)
+          // Surbhi, 28 Oct 2026: whoever opens this dialog must be in the same
+          // context as the chart behind it. posPlanMark gives nothing to a
+          // non-reader (the server sends them no plan) and nothing while marks
+          // are hidden, so the dialog is identical in both cases.
+          + "<span>" + posPlanMark(p).pre + posEsc(p.name)
+          + (posPlanOf(p)
+              ? ' <span class="pf-card-meta pos-planmeta private">'
+                + drT("replacement planned") + "</span>" : "")
           + (p.weight < 100
               ? ' <span class="pf-card-meta">' + posNum(p.weight)
                 + "% of the seat</span>" : "")

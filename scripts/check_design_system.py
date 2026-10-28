@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import colorsys
 import glob
+import io
 import os
 import re
 import sys
 
 WWW = os.path.join("alvoraa_portal", "alvoraa_portal", "www")
+APP = os.path.join("alvoraa_portal", "alvoraa_portal")
 
 # The page is now a short list of Jinja includes (slice 034 US-10). Reading it
 # alone would measure a shell and pass while checking almost nothing, so this
@@ -179,6 +181,31 @@ def main() -> int:
 		return 2
 
 	failures, rows = [], []
+
+	# A stylesheet with one brace missing still loads: the browser silently
+	# swallows everything after it, or buries it inside the last block that was
+	# left open. On 28 Oct 2026 a merge dropped the closing brace of a
+	# `@media(max-width:768px)` rule, so a whole slice's styles only applied on
+	# a phone. Every markup check passed; only a human noticed the colour was
+	# wrong. Counting braces costs nothing and would have caught it at once.
+	for css in sorted(glob.glob(os.path.join(APP, "public", "css", "**", "*.css"), recursive=True)):
+		text = io.open(css, encoding="utf8").read()
+		depth, first_extra = 0, None
+		for line_no, line in enumerate(text.splitlines(), 1):
+			for ch in line:
+				if ch == "{":
+					depth += 1
+				elif ch == "}":
+					depth -= 1
+					if depth < 0 and first_extra is None:
+						first_extra = line_no
+		short = os.path.relpath(css).replace(os.sep, "/")
+		if first_extra is not None:
+			failures.append("%s: a closing brace with nothing open, line %d" % (short, first_extra))
+		elif depth > 0:
+			failures.append("%s: %d block(s) never closed - everything after one of "
+			                "them is nested inside it" % (short, depth))
+
 	for name in PAGES:
 		path = os.path.join(WWW, name)
 		if not os.path.exists(path):

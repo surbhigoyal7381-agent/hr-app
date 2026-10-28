@@ -1585,6 +1585,40 @@ function ctx065(opts) {
            trays, tray: (id) => { c.posSeatSheet(id); const h = t.layer(); c.posCloseSheet(true); return h; } };
 }
 const READER = { may_set: true, owners_see: true, self: "E-HR", hr_users: 6 };
+
+/* "Change this seat" (Surbhi, 28 Oct 2026). Whoever opens this dialog must be
+   in the same context as the chart behind it, and nobody else may learn
+   anything from it. posPaintPeople writes the "Who is in it" list. */
+function editor065(opts, hide) {
+  const c = ctx065(opts).c;
+  c.__els["pos-people"] = { id: "pos-people", innerHTML: "", style: {} };
+  c.__els["pos-people-wrap"] = { id: "pos-people-wrap", innerHTML: "", style: {} };
+  // posSeat() reads the hidden name field, which is how the editor knows
+  // which seat it is on. P-Sector34 holds Kiran Gupta, who has a plan.
+  c.__els["pos-e-name"] = { id: "pos-e-name", value: "P-Sector34", style: {} };
+  if (hide) c.posHidePlans(true);
+  c.posPaintPeople();
+  return c.__els["pos-people"].innerHTML;
+}
+{
+  const planned = editor065({ plans: READER });
+  ok("065 S1: the seat editor names the planned person",
+     planned.includes("Kiran Gupta"), planned.slice(0, 120));
+  ok("065 S1: and says a replacement is planned, in the mark's own colour",
+     /pos-planmeta[^>]*>[^<]*replacement planned/.test(planned), planned.slice(0, 200));
+  ok("065 S1: the words are marked private, so a print drops them",
+     /class="[^"]*private[^"]*"[^>]*>[^<]*replacement planned/.test(planned));
+
+  const stranger = editor065({ plans: null });
+  ok("065 S2: a non-reader's seat editor says nothing about plans",
+     !PLAN_WORDS.test(stranger), (stranger.match(PLAN_WORDS) || [])[0]);
+  ok("065 S2: and still names everyone in the seat",
+     stranger.includes("Kiran Gupta"));
+
+  const hidden = editor065({ plans: READER }, true);
+  ok("065 S3: Hide replacement plans empties this dialog too",
+     !PLAN_WORDS.test(hidden), (hidden.match(PLAN_WORDS) || [])[0]);
+}
 {
   // A non-reader: the reply has no `plans` key and no `plan` on anybody.
   const n = ctx065({ plans: null });

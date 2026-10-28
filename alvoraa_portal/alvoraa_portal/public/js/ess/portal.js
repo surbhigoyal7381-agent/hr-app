@@ -9899,7 +9899,7 @@ function renderHomeGoals(data) {
       '<div style="color:var(--text3);font-size:var(--fs-base);padding:14px 0">No active goals set for this period. Goals appear here once submitted by your manager.</div>';
     return;
   }
-  const shown = goals.slice(0, 5);
+  const shown = goals.slice(0, 3);   /* slice 076: three on Home; "Full Portal" has the rest */
   document.getElementById("home-goals-list").innerHTML = shown.map(function(g) {
     const pct = Math.min(100, Math.round(parseFloat(g.progress_pct || 0)));
     const actFmt = parseFloat(g.actual_progress||0).toLocaleString("en-IN",{maximumFractionDigits:1});
@@ -9938,13 +9938,13 @@ function renderTeamGoals(data) {
     return;
   }
   let html = "";
-  /* Five people on Home; the rest are on the Team page (slice 076, so the grid stays balanced). */
-  const empIds = Object.keys(byEmp), HOME_TEAM_MAX = 5;
+  /* Three people, one goal each, on Home; the rest are on the Team page (slice 076, so the grid stays balanced). */
+  const empIds = Object.keys(byEmp), HOME_TEAM_MAX = 3;
   empIds.slice(0, HOME_TEAM_MAX).forEach(function(empId) {
     const ed   = byEmp[empId];
     const rec  = ed.employee || {};
     html += '<div class="hg-member">' + esc(rec.employee_name||empId) + (rec.designation ? ' · ' + esc(rec.designation) : '') + '</div>';
-    ed.goals.slice(0, 3).forEach(function(g) {
+    ed.goals.slice(0, 1).forEach(function(g) {
       const pct = Math.min(100, Math.round(parseFloat(g.progress_pct || 0)));
       html += '<div class="hg-card ' + _trajClass(g.trajectory) + '" onclick="openTeamGoalDrawer(\'' + g.name + '\')">' +
         '<div class="hg-traj"><span class="traj-badge ' + _trajBadge(g.trajectory) + '" style="font-size:var(--fs-xs);padding:2px 8px">' +

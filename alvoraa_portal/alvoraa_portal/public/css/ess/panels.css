@@ -726,6 +726,10 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
   .hm-ov{align-items:flex-end;padding:0}
   .hm-sheet{width:100%;border-radius:var(--r) var(--r) 0 0;max-height:90vh}
 }
+/* My Documents has no screen of its own, so it cannot say "View all": it shows
+   about three rows and the rest scroll inside the card. */
+.hm-scroll{max-height:190px;overflow-y:auto}
+.hm-scroll:focus-visible{outline:3px solid var(--primary);outline-offset:-3px}
 .lv-reason{font-size:var(--fs-base);color:var(--text2);margin-top:4px}
 
 /* ── Today against your own shift ─────────────────────────────────────────

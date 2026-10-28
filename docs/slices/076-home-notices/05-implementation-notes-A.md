@@ -25,6 +25,13 @@ Surbhi approved these. Local only, not pushed.
 
 Home's total queries, after the fix (before the fix in brackets), at 980 people: store HR 82 (157), company HR 82 (157), System Manager 72 (147), manager 69 (69), employee 62 (62). At 20 people: store and company HR 74 (79), System Manager 70 (75), manager 69, employee 59. `measure_076.py` was re-run on `test076l` and `test076s`.
 
+### Second fix pass: AC-112 (Surbhi chose "cap the three old cards")
+
+- **My Goals** shows 3 goals (was 5); the header's "Full Portal" link has the rest. **Team goals** shows 3 people with 1 goal each, then "View all N" opening the Team panel. **My documents** has no screen of its own, so it cannot say "View all": it shows about three rows and the rest scroll inside the card (keyboard-reachable, labelled). Nothing is hidden. The new Pending and Notices cards are unchanged.
+- The first try (5 people, 3 goals each) still failed; 3 goals per person would too (a person with 3 goals is about 300 px), so I went to 1 goal per person. That is more than the suggested start.
+- **Browser check: 45 of 45 cells pass, 0 noted, 0 failing AC-112.** The check itself is unchanged.
+- **Open item answered, and it is bad news: Team's list does NOT match the inbox's goal-update count.** On the 980-person fixture: manager inbox 19, store HR 59, company HR 59, System Manager 59; the Team panel's "Pending Progress Approvals" shows **0** for all of them. They are different things: the inbox counts Goal Progress Updates and KPI Progress Log rows (what the old bell listed); the Team panel lists goal *evidence* (`hr_api.get_pending_approvals`). So a "Goal update" row in Pending opens a screen that does not list it. The inbox row carries no goal id, so Pending cannot open the goal drawer (where `approveUpdate` lives) either. **Fix needs a decision:** add the goal id to the goal-update row (a new key, so it needs Surbhi's yes because of SEC-19) and open the drawer. Until then, a manager cannot approve goal progress updates from anywhere on the live portal now that the bell list is gone. `measure_076.compare_goal_approvals` reproduces the numbers.
+
 The sections below are the first write-up. Where they differ from this table, this table wins (bad news 1, the `get_nav_counts` sentence, and the CXO wording in difference 2).
 
 ## Bad news first

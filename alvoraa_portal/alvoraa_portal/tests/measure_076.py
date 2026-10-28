@@ -119,3 +119,19 @@ def where_queries_go(shape="large", persona="companyhr", call="get_inbox", top=8
 	print("\n%s %s %s: %d statements" % (shape, persona, call, len(spy.statements)), flush=True)
 	for text, n in shape_of.most_common(int(top)):
 		print("  %3d x  %s" % (n, text), flush=True)
+
+
+def compare_goal_approvals(shape="large"):
+	"""Does the Team panel's 'Pending Progress Approvals' list show what Pending
+	counts? Pending counts Goal Progress Updates and KPI Progress Log rows (the
+	inbox); the Team panel lists goal evidence (hr_api.get_pending_approvals)."""
+	from alvoraa_portal import hr_api, inbox_api
+	from alvoraa_portal.tests import fixtures_scale_044 as fx
+
+	for persona, _roles in fx.PERSONAS:
+		frappe.set_user(fx.login_of(shape, persona))
+		inbox = {p["key"]: p["count"] for p in inbox_api.get_inbox()["parts"]}["goal_updates"]
+		team = hr_api.get_pending_approvals()
+		print("%-10s inbox goal_updates=%-4s team panel: goals=%s kpis=%s" % (
+			persona, inbox, len(team.get("goals", [])), len(team.get("kpis", []))), flush=True)
+	frappe.set_user("Administrator")

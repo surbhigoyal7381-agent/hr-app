@@ -185,11 +185,11 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   window.switchPanel = realSwitch;
   eq(panels, ["team"], "a goal update opens the Team panel, where the Approve buttons are");
 
-  // ── Team goals on Home: five people, then View all ───────────────────
+  // ── Team goals on Home: three people, one goal each, then View all ───────────────────
   const by = {};
   for (let i = 0; i < 8; i++) by["E" + i] = {employee: {employee_name: "Person " + i}, goals: [{name: "g" + i, goal_name: "Goal", progress_pct: 10, trajectory: "On Track"}]};
   window.renderTeamGoals({available: true, by_employee: by});
-  eq($("home-team-goals-list").querySelectorAll(".hg-member").length, 5, "Team goals shows five people");
+  eq($("home-team-goals-list").querySelectorAll(".hg-member").length, 3, "Team goals shows three people");
   yes(/View all 8/.test($("home-team-goals-list").textContent), "with a View all 8 link");
   window.renderTeamGoals({available: true, by_employee: {E0: by.E0}});
   yes(!/View all/.test($("home-team-goals-list").textContent), "no link when everyone fits");

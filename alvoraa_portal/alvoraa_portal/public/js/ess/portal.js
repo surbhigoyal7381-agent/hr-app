@@ -319,7 +319,7 @@ function ocNodeCard(n, isRoot, opts) {
         // 30 Nov", which is a fact about them, not about the job.
         if (p.note) tags += '<span class="oc-tag v">' + ocEsc(p.note) + "</span>";
         return '<div class="oc-who">' + ocAvatar(p)
-          + "<span>" + ocEsc(p.name) + tags + "</span></div>";
+          + "<span>" + (p.pre || "") + ocEsc(p.name) + tags + (p.post || "") + "</span></div>";
       }).join("")
     // `null` means this card is not a seat at all - a branch or a department
     // holds seats, and telling somebody that a branch has nobody in it is
@@ -529,6 +529,8 @@ window.posLoad = async function () {
   // tiles then - never a "0" that would be untrue.
   POS.unseated = out && Object.prototype.hasOwnProperty.call(out, "unseated") ? (out.unseated || []) : null;
   POS.active_people = (out && out.active_people) || 0;
+  // Slice 065: sent only to a plan reader (SEC-4); absent, not empty, for anyone else.
+  POS.plans = (out && out.plans) || null;
   POS.records = null;
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
@@ -536,6 +538,7 @@ window.posLoad = async function () {
   // The offer to build a chart lives in the empty state, where somebody is
   // already looking, and nowhere else.
   posWire();
+  posPlanChrome();
   posFillFilters();
   posPaint();
   posLoadRecords();
@@ -730,10 +733,12 @@ function posMatches(r, ignore) {
   if (b && r.branch !== b && ignore !== "pos-f-branch") return false;
   if (d && r.department !== d && ignore !== "pos-f-dept") return false;
   if (role && r.designation !== role && ignore !== "pos-f-role") return false;
-  if (ignore === "pos-f-open") return true;
+  if (ignore === "pos-f-open" || (ignore === "plans" && /^plan/.test(show))) return true;
   if (show === "open") return r.open >= 0.5;
   if (show === "key") return r.key;
   if (show === "leaving") return !!r.leaving_on;
+  if (show === "plan") return posPlannedSeat(r);
+  if (show === "plan14") return posPlannedSeat(r, 14);
   return true;
 }
 
@@ -764,7 +769,7 @@ function posPaintList() {
   if (!body) return;
   var rows = POS.rows.filter(posMatches);
 
-  posPaintTiles(rows);
+  posPaintTiles(posTileRows());
 
   if (!rows.length) { body.innerHTML = posNothing(); return; }
 
@@ -776,8 +781,8 @@ function posPaintList() {
 
   var out = rows.map(function (r) { return "<tr>" + posCells(r) + "</tr>"; }).join("");
 
-  body.innerHTML = '<div style="overflow-x:auto"><table class="pf-table">'
-    + "<thead>" + head + "</thead><tbody>" + out + "</tbody></table></div>";
+  body.innerHTML = posPlanPrintWrap('<div style="overflow-x:auto"><table class="pf-table">'
+    + "<thead>" + head + "</thead><tbody>" + out + "</tbody></table></div>");
 }
 
 /* The cells both views share. `lead` is whatever goes in front of the title -
@@ -793,14 +798,16 @@ var POS_NAMES_SHOWN = 3;
 /* One person as the chart's card wants them, with the facts a reader needs
    about them rather than about the job. */
 function posOne(p) {
+  var mk = posPlanMark(p);
   return { name: p.name, weight: p.weight, cover: p.covering,
-           note: p.leaving ? "leaving " + posDay(p.leaving) : null };
+           note: p.leaving ? "leaving " + posDay(p.leaving) : null,
+           pre: mk.pre, post: mk.post };
 }
 
 // `here` (slice 072): the seat is drawn in more than one box, so the rest are
 // "more here", not "more in this seat" - some of the seat is elsewhere.
 function posFew(people, here) {
-  var out = people.slice(0, POS_NAMES_SHOWN).map(posOne);
+  var out = posByPlan(people).slice(0, POS_NAMES_SHOWN).map(posOne);
   var rest = people.length - out.length;
   if (rest > 0) {
     // Said as a person, not as a cut-off list. Clicking the box opens the
@@ -811,11 +818,12 @@ function posFew(people, here) {
 }
 
 function posCells(r, lead, tail) {
-  var shown = r.people.slice(0, POS_NAMES_SHOWN);
+  var shown = posByPlan(r.people).slice(0, POS_NAMES_SHOWN);
   var rest = r.people.length - shown.length;
   var who = r.people.length
     ? shown.map(function (p) {
-        return posEsc(p.name)
+        var mk = posPlanMark(p);
+        return mk.pre + posEsc(p.name) + mk.post
           // pos-flag: never printed (slice 069, SEC-3 - every Positions view)
           + (p.weight < 100 ? ' <span class="pf-card-meta pos-flag">' + posNum(p.weight) + "%</span>" : "")
           + (p.covering ? ' <span class="pf-card-meta pos-flag">covering</span>' : "")
@@ -989,6 +997,10 @@ function posNode(r, t, depth, pl) {
     child_count: count,
     has_more: shut && count > 0,
     people: posFew(here, mine.length > 0),
+    // Slice 072 splits one seat across boxes, which the v5 prototype never
+    // showed. The edge marks the box the planned person is actually drawn in;
+    // on any other box of that seat it would point at the wrong people.
+    cls: posPlannedSeat(r, null, here) ? "pos-planned" : "",
     children: (shut || depth + 1 >= POS_MAX_DEPTH)
       ? []
       : posGroupSiblings(kids, t, false, pl).map(function (g) {
@@ -1411,11 +1423,11 @@ function posPaintTree() {
   // branch or department in those views). The rest is left out, not greyed.
   POS.shown = {};
   var rows = posAnyFilter() ? posKeepRows(posArrange()) : POS.rows;
-  if (posAnyFilter() && !rows.length) { posPaintTiles(POS.rows.filter(posMatches)); body.innerHTML = posNothing(); return; }
+  if (posAnyFilter() && !rows.length) { posPaintTiles(posTileRows()); body.innerHTML = posNothing(); return; }
   var t = posKids(rows);
   var matched = POS.rows.filter(posMatches).length;
 
-  posPaintTiles(POS.rows.filter(posMatches));
+  posPaintTiles(posTileRows());
 
   if (!POS.rows.length) { body.innerHTML = posNothing(); return; }
 
@@ -1539,7 +1551,7 @@ function posPaintTree() {
       + '<div class="oc-box-hd"><span class="ti">No reporting manager</span></div>'
       + '<div class="sub">Not in any seat, and no manager on their record</div>'
       + '<div class="oc-flags"><span class="oc-flag medium">' + nm + " people</span></div></button></div>" : "";
-  var nMatch = posAnyFilter() ? POS.rows.filter(posMatches).length : 0;
+  var nMatch = posAnyFilter() ? POS.rows.filter(posMatches).length : 0, pv = posPlanShow();
   // No Print button since slice 069 (D-2): it printed flags, leaving dates and
   // the HR box. "Download wall chart (PDF)" is the way to print.
   var tools = '<div class="pos-ztools noprint" role="group" aria-label="Zoom">'
@@ -1548,7 +1560,7 @@ function posPaintTree() {
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(1)" aria-label="Zoom in" title="Zoom in (+)">+</button>'
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(0)">Reset</button>'
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoomFit()">Fit to width</button>'
-    + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
+    + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + (pv ? drT("Matching seats") : nMatch + " matching") + "</span>"
       + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
     + "</div>";
   // Slice 072 (design §5.4): one line, so nobody is surprised that a seat
@@ -1556,8 +1568,8 @@ function posPaintTree() {
   var viewNote = '<p class="pos-view-note noprint">' + posEsc(how === "reporting"
     ? drT("Each person is shown under the seat of their manager, as set in Reports To on their employee record. A seat shared by people with different managers shows once under each manager. Open slots and the seats under it stay on the seat's own box.")
     : drT("One box per seat, with everyone in it. To see people under their managers, choose Arrange by: Reporting lines.")) + "</p>";
-  body.innerHTML = posPrintHead(how) + viewNote + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
-    + html + "</div></div></div>";
+  body.innerHTML = posPlanPrintWrap(posPrintHead(how) + viewNote + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
+    + html + "</div></div></div>");
 }
 
 /* Open a view centred on the chart (the top seat sits over the middle of its
@@ -1710,7 +1722,8 @@ function posFocusFirst() {
   });
   var found = posMarkFirst(hit);
   var n = POS.rows.filter(posMatches).length, txt = document.getElementById("pos-fline-txt");
-  if (txt) txt.textContent = n + " matching" + (found ? ", showing the first" : "");
+  if (txt) txt.textContent = posPlanShow() ? drT("Matching seats") + (found ? drT(", showing the first") : "")
+    : n + " matching" + (found ? ", showing the first" : "");
 }
 
 /* FIND (I5): a seat or a person, among the seats already on the page.
@@ -2805,6 +2818,344 @@ function posWire() {
   });
 }
 
+/* ── Replacement plans (slice 065) ─────────────────────────────────────────
+   A private note an HR Manager keeps on a person's row, so cover can be found
+   before a seat empties. The server sends `plans` and each person's `plan`
+   ONLY to a plan reader - HR Manager, System Manager, and owners where the
+   company switched them on - and never the plan about the reader themselves
+   (SEC-4, decision 9). Everything below therefore draws nothing for anyone
+   else: there is nothing to draw from. Only an HR Manager sets, confirms,
+   removes and records an outcome; owners and the System Manager only read.
+   No number anywhere counts plans, and a group box is never red. */
+
+var POS_FLAG = '<svg class="pos-flag private" viewBox="0 0 12 14" width="12" height="14" role="img" aria-label="'
+  + drT("Replacement planned") + '"><path d="M2 1v12" stroke="currentColor" stroke-width="1.6"/>'
+  + '<path d="M2.6 1.6h7.6l-1.8 2.7 1.8 2.7H2.6z" fill="currentColor"/></svg>';
+
+function posPlanShown() { return !!(POS.plans && !POS.hidePlans); }
+function posPlanOf(p) { return posPlanShown() && p && p.plan ? p.plan : null; }
+function posMaySet() { return !!(POS.plans && POS.plans.may_set); }
+function posPlanShow() { return /^plan/.test(posVal("pos-f-open")); }
+function posTileRows() { return POS.rows.filter(function (r) { return posMatches(r, "plans"); }); }
+/* Under a plan Show option the chart or list IS a list of plans, so nothing of
+   it prints (V5-5): a print shows one sentence, and the wall chart - the only
+   Print since slice 069 - is not offered. Both views call this. */
+function posPlanPrintWrap(html) {
+  var pv = posPlanShow(), wallBtn = document.getElementById("pos-wall-btn");
+  if (wallBtn && POS.rows.length) wallBtn.style.display = pv ? "none" : "";
+  return pv ? '<div class="pos-printonly">' + drT("This view is not printed. Choose another Show option, then print.")
+    + "</div><div data-private>" + html + "</div>" : html;
+}
+function posLong(iso) { return iso ? posDay(iso) + " " + String(iso).slice(0, 4) : ""; }
+function posDaysTo(iso) {
+  return Math.round((Date.parse(iso + "T00:00:00Z") - Date.parse(posToday() + "T00:00:00Z")) / 864e5);
+}
+function posSeesLine() {
+  return POS.plans && POS.plans.owners_see ? drT("Only HR and owners see this.") : drT("Only HR sees this.");
+}
+/* The flag before a name; on a phone also the words after it. */
+function posPlanMark(p) {
+  return posPlanOf(p)
+    ? { pre: POS_FLAG, post: ' <span class="pos-flagword private">&middot; ' + drT("replacement planned") + "</span>" }
+    : { pre: "", post: "" };
+}
+/* Planned people first, for plan readers only. Never in print: the order would say it. */
+function posByPlan(people) {
+  if (!posPlanShown() || POS.printing) return people;
+  return people.slice().sort(function (a, b) { return (b.plan ? 1 : 0) - (a.plan ? 1 : 0); });
+}
+function posPlannedSeat(r, within, people) {
+  return (people || r.people).some(function (p) {
+    var pl = posPlanOf(p);
+    return !!pl && (!within || posDaysTo(pl.lapses_on) <= within);
+  });
+}
+/* Performance (option A, 24 Oct 2026): hiring waits for the end date AND an
+   HR Manager's "Not improved". The outcome may be recorded on the end date. */
+function posOnHold(pl) { return pl.reason === "Performance" && !pl.not_improved_on; }
+function posOutcomeDue(pl) { return posOnHold(pl) && posToday() >= pl.improvement_ends_on; }
+
+/* "Request a replacement": a full seat with a job role and nobody being hired
+   for it, and EITHER a plan the HR Manager may act on (not on hold) OR a
+   leaving date this reader already receives. An editor who cannot read plans
+   gets it only from a leaving date, so the button never hints at a plan. */
+function posMayRequest(r) {
+  if (!POS.may_edit || posOpen(r) || r.opening || !r.designation) return false;
+  var fromPlan = posPlanShown() && posMaySet()
+    && r.people.some(function (p) { return p.plan && !posOnHold(p.plan); });
+  return fromPlan || r.people.some(function (p) { return p.leaving; });
+}
+
+/* The two Show options and the line under the filters, for plan readers only. */
+function posPlanChrome() {
+  var sel = document.getElementById("pos-f-open");
+  if (sel) {
+    var keep = sel.value;
+    [].slice.call(sel.querySelectorAll("option.private")).forEach(function (o) { o.remove(); });
+    if (posPlanShown()) {
+      sel.insertAdjacentHTML("beforeend", '<option class="private" value="plan">' + drT("Only seats with a replacement planned")
+        + '</option><option class="private" value="plan14">' + drT("Only plans that end in the next 14 days") + "</option>");
+    }
+    sel.value = /^plan/.test(keep) && !posPlanShown() ? "" : keep;
+  }
+  var line = document.getElementById("pos-planline");
+  if (!POS.plans) { if (line) line.remove(); return; }
+  if (!line) {
+    var card = document.querySelector("#panel-positions > .pf-card");
+    if (!card) return;
+    card.insertAdjacentHTML("afterend", '<div id="pos-planline" class="pos-planline noprint"></div>');
+    line = document.getElementById("pos-planline");
+  }
+  line.innerHTML = POS.hidePlans
+    ? '<button type="button" class="pos-link" onclick="posHidePlans(false)">' + drT("Show hidden marks") + "</button>"
+    : '<span class="private">' + POS_FLAG + " " + drT("Replacement planned for this person.") + " " + posSeesLine() + "</span>"
+      + '<button type="button" class="pos-link private" onclick="posHidePlans(true)">'
+      + drT("Hide replacement plans (before you share your screen)") + "</button>";
+}
+/* Before a screen is shared. Not remembered between visits. Hiding clears a
+   chosen plan option, because the chart would otherwise still be the list. */
+window.posHidePlans = function (hide) {
+  POS.hidePlans = !!hide;
+  var sel = document.getElementById("pos-f-open");
+  var had = posPlanShow();
+  posPlanChrome();
+  if (had && sel) { sel.value = ""; if (!posAnyFilter()) { posClearFilter(); return; } }
+  posPaint();
+};
+window.addEventListener("beforeprint", function () { if (POS.plans) { POS.printing = true; posPaint(); } });
+window.addEventListener("afterprint", function () { if (POS.printing) { POS.printing = false; posPaint(); } });
+
+/* What a person's row in the seat tray adds: the plan, or the link to set one. */
+function posPlanRow(r, p) {
+  if (posPlanOf(p)) return posPlanBlock(r, p);
+  if (posPlanShown() && posMaySet() && p.employee !== POS.plans.self) {
+    return '<div class="private"><button type="button" class="pos-link" onclick="posPlanSheet(\'' + posJs(r.id) + "','"
+      + posJs(p.assignment) + '\')">' + drT("Plan a replacement") + "</button></div>";
+  }
+  return "";
+}
+function posPlanBlock(r, p) {
+  var pl = p.plan, d = posDaysTo(pl.lapses_on), first = p.name.split(" ")[0], set = posMaySet(), imp = "";
+  var a = "'" + posJs(r.id) + "','" + posJs(p.assignment) + "'";
+  // Recording "Not improved" also confirms; one line says it, not two.
+  var same = pl.not_improved_on && pl.confirmed_on === pl.not_improved_on && pl.confirmed_by === pl.not_improved_by;
+  var meta = pl.confirmed_by && !same
+    ? drT("Set by {0} on {1}. Confirmed again by {2} on {3}.", [pl.set_by, posLong(pl.set_on), pl.confirmed_by, posLong(pl.confirmed_on)])
+    : drT("Set by {0} on {1}.", [pl.set_by, posLong(pl.set_on)]);
+  if (pl.not_improved_on) {
+    imp = "<strong>" + drT("Not improved. Hiring may start.") + "</strong> "
+      + posEsc(drT("Recorded by {0} on {1}.", [pl.not_improved_by, posLong(pl.not_improved_on)]));
+  } else if (posOutcomeDue(pl)) {
+    // No reminder (Surbhi, V-8): the block states the fact; the buttons follow.
+    imp = (posToday() === pl.improvement_ends_on
+        ? "<strong>" + posEsc(drT("The improvement period ends today, {0}.", [posLong(pl.improvement_ends_on)])) + "</strong>"
+        : "<strong>" + drT("The improvement period has ended.") + "</strong> " + posEsc(drT("It ended on {0}.", [posLong(pl.improvement_ends_on)])))
+      + (set ? "" : " " + drT("HR records the outcome."));
+  } else if (posOnHold(pl)) {
+    imp = "<strong>" + posEsc(drT("Improvement period ends on {0}.", [posLong(pl.improvement_ends_on)])) + "</strong> "
+      + drT("Hiring is on hold until then and until HR records the outcome.")
+      + (p.leaving ? " " + posEsc(drT("{0} has a leaving date, so hiring may start now.", [first])) : "");
+  }
+  var tail = set ? drT(" unless you confirm it again.") : drT(" unless HR confirms it again.");
+  var left = d <= 14
+    ? '<span class="pos-chip amber">' + drT("Ends in {0} {1}, on {2}", [d, d === 1 ? drT("day") : drT("days"), posLong(pl.lapses_on)]) + "</span>" + tail
+    : drT("{0} days left. Ends on {1}", [d, posLong(pl.lapses_on)]) + tail;
+  var b = '<div class="pos-plan private" role="group" aria-label="' + posEsc(drT("Replacement plan for {0}", [p.name])) + '">'
+    + '<div class="pt">' + POS_FLAG + drT("Replacement planned") + "</div>"
+    + '<div class="pm">' + posEsc(meta) + "</div>"
+    + '<div class="pm">' + posEsc(drT("Reason: {0}", [drT(pl.reason)])) + "</div>"
+    + (imp ? '<div class="pm">' + imp + "</div>" : "")
+    + '<div class="pm">' + left + "</div>"
+    + (pl.note ? '<div class="pn">&ldquo;' + posEsc(pl.note) + "&rdquo;</div>" : '<div class="pm">' + drT("No note.") + "</div>")
+    + '<div class="pw">' + posSeesLine() + (set ? "" : " " + drT("HR sets, confirms and removes plans.")) + "</div>";
+  if (set && posOutcomeDue(pl)) {
+    b += '<div class="pa"><button type="button" class="btn btn-outline btn-sm" onclick="posOutcomeSheet(' + a + ",'improved')\">"
+      + drT("Improved – remove the plan") + '</button><button type="button" class="btn btn-outline btn-sm" onclick="posOutcomeSheet('
+      + a + ",'not_improved')\">" + drT("Not improved – hiring may start") + "</button></div>";
+  }
+  if (set) {
+    b += '<div class="pa"><button type="button" class="btn btn-outline btn-sm" onclick="posConfirmPlan(' + a + ',this)">'
+      + drT("Confirm for 90 more days") + '</button><button type="button" class="pos-link" onclick="posRemoveSheet(' + a + ')">'
+      + drT("Remove the plan") + "</button></div>";
+  }
+  return b + "</div>";
+}
+
+function posPerson(id, asg) {
+  var r = posById(id);
+  return r ? r.people.filter(function (p) { return p.assignment === asg; })[0] || null : null;
+}
+function posBusy(btn, words) { if (btn) { btn.setAttribute("aria-busy", "true"); btn.textContent = words; } }
+function posBack(id) { return '<button type="button" class="btn btn-outline btn-sm" onclick="posSeatSheet(\'' + posJs(id) + '\')">' + drT("Cancel") + "</button>"; }
+
+/* Set a plan: the rules in four lines, a reason, for Performance an end date
+   and a tick, then an optional note. A failed save keeps everything typed. */
+window.posPlanSheet = function (id, asg, failed, keep) {
+  var p = posPerson(id, asg);
+  if (!p) return;
+  keep = keep || { reason: "", ends: "", told: false, note: "" };
+  var first = p.name.split(" ")[0], perf = keep.reason === "Performance";
+  var lo = posShift(posToday(), 30), hi = posShift(posToday(), 60);
+  var b = "<p>" + drT("A private note so HR can start finding cover before this seat empties. It is not a score, and nothing works it out for you.") + "</p>"
+    + '<div class="pos-note info"><ul style="margin:0">'
+    + "<li>" + (POS.plans.owners_see
+        ? drT("Only HR Managers and the owners see it (your company has switched owners on). The system administrator can see it too.")
+        : drT("Only HR Managers see it. The system administrator can see it too.")) + "</li>"
+    + "<li>" + posEsc(drT("{0} does not see it on any screen, and neither does their manager.", [first])) + " " + posSeesLine() + "</li>"
+    + "<li>" + drT("It is never printed, and never used in reviews, ratings or pay.") + "</li>"
+    + "<li>" + posEsc(drT("It ends on {0} unless HR confirms it again. It is erased within a day of {1} leaving this seat.", [posLong(posShift(posToday(), 90)), first]))
+    + '<span id="pos-hold-rule"' + (perf ? "" : " hidden") + "> " + posEsc(drT("Nobody can request a replacement for {0} before", [first]))
+    + ' <span id="pos-hold-date">' + (keep.ends ? posLong(keep.ends) : drT("the end of the improvement period")) + "</span>"
+    + posEsc(drT(", and not until HR records whether {0} improved.", [first])) + "</span></li></ul></div>"
+    + (failed ? '<p class="pos-sheet-err" role="alert"><strong>' + drT("We could not save the plan.") + "</strong> "
+        + drT("Check your connection, then try again. Your note is still here.") + "</p>" : "")
+    + '<fieldset class="pos-fs" id="pos-pl-reason"><legend class="pos-lab">' + drT("Reason") + "</legend>"
+    + ["Performance", "Personal reasons", "Other business reason"].map(function (o, k) {
+        return '<label class="pos-opt"><input type="radio" name="pos-pl-reason" id="pos-pl-r' + k + '" value="' + o + '"'
+          + (keep.reason === o ? " checked" : "") + "> " + drT(o) + "</label>";
+      }).join("")
+    + '<div class="pos-fielderr" id="pos-pl-reason-err" hidden>' + drT("Choose a reason.") + "</div></fieldset>"
+    + '<div id="pos-pl-perf"' + (perf ? "" : " hidden") + ">"
+    + '<label class="pos-lab" for="pos-pl-ends">' + drT("Improvement period ends on") + "</label>"
+    + '<input type="date" id="pos-pl-ends" min="' + lo + '" max="' + hi + '" value="' + posEsc(keep.ends) + '" aria-describedby="pos-pl-ends-hint pos-pl-ends-err">'
+    + '<div class="su" id="pos-pl-ends-hint">' + posEsc(drT("Between {0} and {1}. Hiring for this seat is on hold until then and until HR records the outcome.", [posLong(lo), posLong(hi)])) + "</div>"
+    + '<div class="pos-fielderr" id="pos-pl-ends-err" hidden>' + posEsc(drT("Choose a date between {0} and {1}.", [posLong(lo), posLong(hi)])) + "</div>"
+    + '<label class="pos-opt" style="margin-top:10px;align-items:flex-start"><input type="checkbox" id="pos-pl-told" style="margin-top:2px"'
+    + (keep.told ? " checked" : "") + ' aria-describedby="pos-pl-told-err"> <span>'
+    + posEsc(drT("I have told {0} about the improvement period and given written goals. The replacement plan is not mentioned to them.", [first])) + "</span></label>"
+    + '<div class="pos-fielderr" id="pos-pl-told-err" hidden>' + posEsc(drT("Tick this once you have told {0}.", [first])) + "</div></div>"
+    + '<label class="pos-lab" for="pos-pl-note">' + drT("Note (optional)") + "</label>"
+    + '<textarea id="pos-pl-note" maxlength="200" aria-describedby="pos-pl-hint pos-pl-count">' + posEsc(keep.note) + "</textarea>"
+    + '<div class="pos-count" id="pos-pl-count" aria-live="polite">' + drT("{0} of 200 characters", [keep.note.length]) + "</div>"
+    + '<div class="su" id="pos-pl-hint">' + drT("What the business needs to know, for example “Notice likely in December”. No opinions about the person, and nothing about health or family.") + "</div>";
+  posSheet(posEsc(drT("Plan a replacement for {0}?", [p.name])), b, posBack(id)
+    + '<button type="button" class="btn btn-primary btn-sm" onclick="posPlanSave(\'' + posJs(id) + "','" + posJs(asg) + '\',this)">' + drT("Save the plan") + "</button>");
+  POS.sheet = { kind: "plan", id: id };
+  var t = document.getElementById("pos-pl-note"), c = document.getElementById("pos-pl-count");
+  t.addEventListener("input", function () {
+    var n = t.value.length;
+    c.textContent = n >= 200 ? drT("200 of 200 characters. That is the limit.") : drT("{0} of 200 characters", [n]);
+    c.className = "pos-count" + (n >= 200 ? " full" : "");
+  });
+  // The date, the tick and rule 4's hold sentence exist only for Performance; nothing is sent for the others.
+  document.getElementById("pos-pl-reason").addEventListener("change", function () {
+    var pf = posPlanInput().reason === "Performance";
+    document.getElementById("pos-pl-perf").hidden = !pf;
+    document.getElementById("pos-hold-rule").hidden = !pf;
+    document.getElementById("pos-pl-reason-err").hidden = true;
+  });
+  document.getElementById("pos-pl-ends").addEventListener("change", function (e) {
+    document.getElementById("pos-hold-date").textContent = e.target.value ? posLong(e.target.value) : drT("the end of the improvement period");
+  });
+};
+function posPlanInput() {
+  var r = document.querySelector("input[name=pos-pl-reason]:checked");
+  return { reason: r ? r.value : "", ends: document.getElementById("pos-pl-ends").value,
+           told: document.getElementById("pos-pl-told").checked, note: document.getElementById("pos-pl-note").value };
+}
+window.posPlanSave = async function (id, asg, btn) {
+  var k = posPlanInput(), perf = k.reason === "Performance";
+  var lo = posShift(posToday(), 30), hi = posShift(posToday(), 60);
+  var bad = [["pos-pl-reason-err", !k.reason, "pos-pl-r0"],
+             ["pos-pl-ends-err", perf && (!k.ends || k.ends < lo || k.ends > hi), "pos-pl-ends"],
+             ["pos-pl-told-err", perf && !k.told, "pos-pl-told"]];
+  bad.forEach(function (x) { document.getElementById(x[0]).hidden = !x[1]; });
+  var miss = bad.filter(function (x) { return x[1]; })[0];
+  if (miss) { document.getElementById(miss[2]).focus(); return; }
+  posBusy(btn, drT("Saving…"));
+  var p = posPerson(id, asg);
+  try {
+    await gpFetch("hrms.alvoraa_org_structure.plans.set_plan", { assignment: asg, note: k.note.trim(),
+      reason: k.reason, improvement_ends_on: perf ? k.ends : null });
+  } catch (e) { posPlanSheet(id, asg, true, k); return; }
+  await posLoad();
+  posSeatSheet(id, perf
+    ? posEsc(drT("Plan saved for {0}. Hiring is on hold until {1} and until HR records the outcome.", [p.name, posLong(k.ends)]))
+    : posEsc(drT("Plan saved for {0}. It ends on {1} unless you confirm it again.", [p.name, posLong(posShift(posToday(), 90))]))
+      + (posMayRequest(posById(id)) ? " " + drT("To start hiring now, use <strong>Request a replacement</strong> below.") : ""));
+};
+window.posConfirmPlan = async function (id, asg, btn) {
+  var p = posPerson(id, asg);
+  posBusy(btn, drT("Confirming…"));
+  try { await gpFetch("hrms.alvoraa_org_structure.plans.confirm_plan", { plan: p.plan.name }); }
+  catch (e) { posSeatSheet(id, null, "<strong>" + drT("We could not confirm the plan.") + "</strong> " + drT("Check your connection, then try again. Nothing changed.")); return; }
+  await posLoad();
+  posSeatSheet(id, posEsc(drT("Confirmed. The plan for {0} now ends on {1}.", [p.name, posLong(posShift(posToday(), 90))])));
+};
+/* Remove erases at once and cannot be undone, so it asks first. */
+window.posRemoveSheet = function (id, asg) {
+  var r = posById(id), p = posPerson(id, asg);
+  posSheet(posEsc(drT("Remove the plan for {0}?", [p.name])),
+    "<p>" + drT("The plan and its note are erased at once. Nobody can bring them back. No copy is kept in the system.") + "</p>"
+    + (r.opening ? "<p>" + posEsc(drT("The job opening {0} stays open. Close it on the opening if you no longer need it.", [r.opening])) + "</p>" : ""),
+    posBack(id) + '<button type="button" class="btn btn-primary btn-sm" onclick="posRemovePlan(\'' + posJs(id) + "','" + posJs(asg) + '\',this)">' + drT("Remove and erase") + "</button>");
+  POS.sheet = { kind: "remove", id: id };
+};
+window.posRemovePlan = async function (id, asg, btn) {
+  var p = posPerson(id, asg);
+  posBusy(btn, drT("Removing…"));
+  try { await gpFetch("hrms.alvoraa_org_structure.plans.remove_plan", { plan: p.plan.name }); }
+  catch (e) { posSeatSheet(id, null, "<strong>" + drT("We could not remove the plan.") + "</strong> " + drT("Check your connection, then try again. The plan is still in place.")); return; }
+  await posLoad();
+  posSeatSheet(id, drT("Plan removed and erased."));
+};
+/* The outcome of an improvement period. Each asks once first. */
+window.posOutcomeSheet = function (id, asg, o) {
+  var r = posById(id), p = posPerson(id, asg), go = '<button type="button" class="btn btn-primary btn-sm" onclick="posOutcomeDo(\''
+    + posJs(id) + "','" + posJs(asg) + "','" + o + '\',this)">';
+  if (o === "improved") {
+    posSheet(posEsc(drT("Record that {0} improved?", [p.name])),
+      "<p>" + drT("The plan and its note are erased at once, as Remove the plan does. Nobody can bring them back. No copy is kept in the system.") + "</p>"
+      + (r.opening ? "<p>" + posEsc(drT("The job opening {0} stays open. Close it on the opening if you no longer need it.", [r.opening])) + "</p>" : ""),
+      posBack(id) + go + drT("Improved – remove the plan") + "</button>");
+  } else {
+    posSheet(posEsc(drT("Record that {0} did not improve?", [p.name])),
+      "<p>" + drT("Hiring for this seat may start. Your name and today's date are kept on the plan.") + "</p>"
+      + "<p>" + posEsc(drT("The plan now ends on {0} unless HR confirms it again.", [posLong(posShift(posToday(), 90))])) + "</p>",
+      posBack(id) + go + drT("Not improved – hiring may start") + "</button>");
+  }
+  POS.sheet = { kind: "outcome", id: id };
+};
+window.posOutcomeDo = async function (id, asg, o, btn) {
+  var p = posPerson(id, asg);
+  posBusy(btn, o === "improved" ? drT("Removing…") : drT("Saving…"));
+  try { await gpFetch("hrms.alvoraa_org_structure.plans.record_outcome", { plan: p.plan.name, outcome: o }); }
+  catch (e) { posSeatSheet(id, null, "<strong>" + drT("We could not save the outcome.") + "</strong> " + drT("Check your connection, then try again. Nothing changed.")); return; }
+  await posLoad();
+  posSeatSheet(id, o === "improved" ? drT("Recorded: improved. Plan removed and erased.")
+    : posEsc(drT("Recorded: not improved. Hiring may start. The plan now ends on {0} unless you confirm it again.", [posLong(posShift(posToday(), 90))])));
+};
+/* Request a replacement: an opening that is NOT advertised, through today's post_job. */
+window.posRequestSheet = function (id, failed) {
+  var r = posById(id);
+  // Whose plan or leaving date allows hiring; the plan wins when both exist.
+  var sp = posByPlan(r.people).filter(function (p) { return (posPlanOf(p) && !posOnHold(p.plan)) || p.leaving; })[0];
+  var subj = sp ? sp.name.split(" ")[0] : drT("the person");
+  var n = POS.plans && POS.plans.hr_users != null ? POS.plans.hr_users : null;
+  posSheet(posEsc(drT("Request a replacement for {0}?", [r.title])),
+    "<p>" + drT("This makes a job opening for 1 person in this seat. It is <strong>not advertised</strong>: it is not on your careers page until HR publishes it.") + "</p>"
+    + "<p>" + drT("The opening names the seat and the job role only. It says nothing about the person or why. Write nothing about them when you add the details.") + "</p>"
+    + '<div class="pos-note amber" role="note"><h3>' + drT("Before you do") + "</h3>"
+    + posEsc(n === null ? drT("People with the HR User role can read job openings. From the seat, they could work out who this opening is about.")
+        : drT("The {0} people with the HR User role can read job openings. From the seat, they could work out who this opening is about.", [n]))
+    + (r.seats === 1
+        ? " <strong>" + drT("This seat holds one person, so they will know at once.") + "</strong> " + posEsc(drT("Go ahead only if {0} already knows, or it cannot reach them.", [subj]))
+        : " " + posEsc(drT("If that could reach {0}, wait.", [subj]))) + "</div>"
+    + (failed ? '<p class="pos-sheet-err" role="alert"><strong>' + drT("We could not make the opening.") + "</strong> " + drT("Check your connection, then try again. Nothing was made.") + "</p>" : ""),
+    posBack(id) + '<button type="button" class="btn btn-primary btn-sm" onclick="posRequestDo(\'' + posJs(id) + '\',this)">' + drT("Make the opening, not advertised") + "</button>");
+  POS.sheet = { kind: "request", id: id };
+};
+window.posRequestDo = async function (id, btn) {
+  posBusy(btn, drT("Making the opening…"));
+  var out;
+  try { out = await gpFetch("hrms.alvoraa_org_structure.register.post_job", { position: id, vacancies: 1 }); }
+  catch (e) { posRequestSheet(id, true); return; }
+  await posLoad();
+  posSeatSheet(id, posEsc(drT("Opening {0} made, not advertised. It has opened in a new tab so you can add the details.", [out.name]))
+    + ' <a class="pos-link" target="_blank" rel="noopener" href="/app/job-opening/' + encodeURIComponent(out.name) + '">' + drT("Open the job opening") + "</a>");
+  window.open("/app/job-opening/" + encodeURIComponent(out.name), "_blank", "noopener");
+};
+
 /* ── the wall chart: the seat chart as a PDF (slice 069) ─────────────────
    Drawn in the browser from the rows already on the page; no server call.
 
@@ -3430,7 +3781,7 @@ window.posWallPrint = function () {
   window.print();
 };
 
-window.posSeatSheet = function (id, flash) {
+window.posSeatSheet = function (id, flash, err) {
   // Slice 072: a copy opens its seat's own tray (AC-42).
   var pl = posPlaced(), copy = pl && pl.byId[id];
   var r = copy ? copy.seat : posById(id);
@@ -3447,12 +3798,13 @@ window.posSeatSheet = function (id, flash) {
     + '</b><div class="su">' + drT("filled") + "</div></div><div><b>"
     + (posOpen(r) ? posNum(posOpen(r)) : drT("None")) + '</b><div class="su">' + drT("to fill") + "</div></div></div>";
   if (flash) b += '<div class="pos-note ok" role="status">' + flash + "</div>";
+  if (err) b += '<p class="pos-sheet-err" role="alert">' + err + "</p>";
   // In Reporting lines the chart itself now answers the records check, so its
   // two notes give way to where the seat shows (Q3).
   b += pl ? posWhereItShows(r, id, pl) : posRecordNotes(r);
   b += '<h3 class="pos-h3">' + drT("Who is in it") + "</h3>";
   if (!r.people.length) b += '<p class="su">' + drT("Nobody is in this seat.") + "</p>";
-  b += '<div class="pos-people">' + r.people.map(function (p) {
+  b += '<div class="pos-people">' + posByPlan(r.people).map(function (p) {
     var c = "";
     if (p.weight != null && p.weight < 100) c += ' <span class="su">' + drT("{0}% of the seat", [posNum(p.weight)]) + "</span>";
     if (p.covering) c += ' <span class="su">' + posEsc(p.type) + "</span>";
@@ -3460,7 +3812,8 @@ window.posSeatSheet = function (id, flash) {
     if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
     // Slice 072: whom they report to, on its own grey line, in Reporting lines only.
     var line = pl ? '<div class="su">' + posEsc(posReportsLine(p, r, pl)) + "</div>" : "";
-    return '<div class="pos-prow">' + posEsc(p.name) + c + line + "</div>";
+    return '<div class="pos-prow">' + posPlanMark(p).pre + posEsc(p.name) + c + line
+      + posPlanRow(r, p) + "</div>";
   }).join("") + "</div>";
   b += '<p class="pos-sheet-err" id="pos-sheet-err" role="alert" hidden></p>';
   var f = "";
@@ -3471,6 +3824,10 @@ window.posSeatSheet = function (id, flash) {
     } else if (r.open >= 0.5 && r.designation) {
       f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetAdvertise(\'' + posJs(r.id) + '\')">'
         + drT("Advertise it") + "</button>";
+    }
+    if (posMayRequest(r)) {
+      f += '<button type="button" class="btn btn-primary btn-sm" onclick="posRequestSheet(\'' + posJs(r.id) + '\')">'
+        + drT("Request a replacement") + "</button>";
     }
     f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetChange(\'' + posJs(r.id) + '\')">'
       + drT("Change this seat") + "</button>";

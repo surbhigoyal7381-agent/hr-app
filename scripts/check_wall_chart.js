@@ -480,6 +480,46 @@ function neverPrinted(label, p) {
   ok("AC-35: and prints once the size is ready", prints === 1);
   window.dispatchEvent(new window.Event("afterprint")); window.posCloseSheet(); window.POS.wall = null;
 
+  /* ── slice 065: plans never reach paper (V5-5, V5-6) ────────────────── */
+  {
+    const reader = F.dtc90();
+    const shared = reader.rows.find((r) => r.people.length >= 3);
+    const planned = shared.people[2];
+    planned.plan = { name: "RP-W1", set_on: "2026-10-01", set_by: "you", confirmed_by: null, confirmed_on: "2026-10-01",
+                     lapses_on: "2026-12-30", note: "PLANNOTE-065", reason: "Performance",
+                     improvement_ends_on: "2026-11-20", not_improved_on: null, not_improved_by: null };
+    load(reader);
+    window.POS.plans = { may_set: true, owners_see: true, self: null, hr_users: 6 };
+    for (const hr of [false, true]) {
+      const copy = window.posWallCopy("top", 99, true, hr);
+      const js = JSON.stringify(copy), pp = paper(copy);
+      ["plan", "RP-W1", "PLANNOTE-065", "Performance", "2026-11-20", "20 Nov", "2026-12-30", "replacement", "improvement"].forEach((w) =>
+        ok("065: the " + (hr ? "HR" : "wall") + " copy and paper hold no " + w, !js.includes(w) && !pp.html.includes(w)));
+      const box = (function find(list) { for (const c of list) { if (c.title === shared.title) return c; const k = find(c.kids); if (k) return k; } return null; })(copy);
+      ok("065 V5-6: on paper the planned person keeps their place, not first",
+         box && box.names.map((n) => n.name).join("|") === shared.people.map((p) => p.name).join("|"));
+    }
+    // Under a plan Show option: no wall chart, and Ctrl+P prints one sentence.
+    const show = doc.getElementById("pos-f-open"), pnl = doc.getElementById("panel-positions"), was = pnl.classList.contains("active");
+    pnl.classList.add("active");
+    window.posPlanChrome();
+    show.value = "plan"; window.posFilterChanged("");
+    const body = doc.getElementById("pos-body");
+    ok("065 V5-5: no wall chart button under a plan option", btn.style.display === "none");
+    const po = body.querySelector(".pos-printonly");
+    ok("065 V5-5: the print-only sentence", po && po.textContent === "This view is not printed. Choose another Show option, then print.");
+    ok("065 V5-5: everything else on the page body is private, so it never prints",
+       [...body.children].every((c) => c === po || c.hasAttribute("data-private")));
+    window.dispatchEvent(new window.Event("beforeprint"));
+    ok("065: Ctrl+P keeps the plan option and the sentence (069 clears only leaving and key)",
+       show.value === "plan" && !!body.querySelector(".pos-printonly"));
+    window.dispatchEvent(new window.Event("afterprint"));
+    show.value = ""; window.posClearFilter();
+    ok("065: the wall chart button is back with the option off", btn.style.display === "");
+    if (!was) pnl.classList.remove("active");
+    window.POS.plans = null;
+  }
+
   /* ── AC-2: one window.print() in the Positions code, the wall chart's ── */
   const src = require("fs").readFileSync(require("path").join(__dirname, "..", "alvoraa_portal", "alvoraa_portal", "public", "js", "ess", "portal.js"), "utf8");
   const posCode = src.slice(src.indexOf("window.posLoad = "), src.indexOf("function ocPaint"));

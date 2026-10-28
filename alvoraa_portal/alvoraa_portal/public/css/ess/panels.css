@@ -2598,4 +2598,36 @@ a.gm-bell-item{display:block;text-decoration:none;color:inherit}
   .gm-bd{align-items:flex-end;padding:0}
   .gm-sheet{max-width:100%;margin:0;border-radius:16px 16px 0 0;padding:16px 16px 24px}
   .gm-opt{font-size:var(--fs-md)}
+/* ── Replacement plans (slice 065) ─────────────────────────────────────────
+   Only a plan reader is ever sent a plan, so nothing here draws for anyone
+   else. Every mark is .private: it never prints, and "Hide replacement plans"
+   removes it. The red edge is screen only. Nothing here counts plans. */
+.pos-flag{display:inline-block;vertical-align:-2px;color:var(--red);margin-right:4px;flex:none}
+.pos-flagword{display:none;color:var(--red);font-weight:600}
+@media screen{.oc-box.pos-planned{border-left-color:var(--red)}}
+.pos-planline{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center;margin:-6px 0 16px;font-size:var(--fs-sm);color:var(--text2)}
+.pos-plan{margin:6px 0 2px;border-left:3px solid var(--red);background:var(--red-lt);border-radius:var(--r-sm);padding:8px 10px;color:var(--text)}
+.pos-plan .pt{font-weight:700;color:var(--red);display:flex;gap:6px;align-items:center}
+.pos-plan .pm{font-size:var(--fs-sm);color:var(--text2);margin-top:2px}
+.pos-plan .pn{margin-top:6px;font-style:italic;overflow-wrap:anywhere}
+.pos-plan .pw{font-size:var(--fs-sm);color:var(--text2);margin-top:6px;font-weight:600}
+.pos-plan .pa{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;align-items:center}
+@media (min-width:641px){.pos-plan .btn{min-height:28px}}
+.pos-lab{display:block;font-weight:650;font-size:var(--fs-sm);margin:12px 0 4px;padding:0}
+.pos-fs{border:0;padding:0;margin:0;min-width:0}
+.pos-opt{display:flex;gap:8px;align-items:center;min-height:28px;cursor:pointer;margin:0}
+.pos-opt input{width:18px;height:18px;margin:0;flex:none;accent-color:var(--primary)}
+.pos-sheet textarea,.pos-sheet input[type=date]{font:inherit;font-size:16px;width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
+.pos-sheet textarea{min-height:88px}
+.pos-sheet input[type=date]{max-width:220px;min-height:36px}
+.pos-count{font-size:var(--fs-sm);color:var(--text3);margin-top:2px}
+.pos-count.full{color:var(--amber);font-weight:700}
+.pos-fielderr{color:var(--red);font-weight:600;margin-top:4px;font-size:var(--fs-sm)}
+.pos-fielderr[hidden]{display:none}
+.pos-printonly{display:none}
+@media print{.pos-printonly{display:block!important;font-size:12px}}
+@media (max-width:640px){
+  .pos-flagword{display:inline}
+  .pos-opt{min-height:44px}
+  .pos-sheet input[type=date]{min-height:44px;max-width:none}
 }

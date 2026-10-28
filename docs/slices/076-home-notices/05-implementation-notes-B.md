@@ -9,9 +9,22 @@ tier: 1 (scope, the send job, email). Plan: 04-impact-and-strategy.md, Part B.
 
 # 076 Part B: sending a notice. Implementation notes
 
+## Send now waits for at most 15 people (Surbhi, 28 Oct 2026)
+
+`SEND_IN_REQUEST` is 15: 15 or fewer are written before the page answers; 16 or more go to the background and the page says "Sending to N people. It will show under Notices I sent when it is done." (01b decision 1). **The confirm above 25 people (AC-16) is a separate number, `CONFIRM_ABOVE`, and stays 25**; a test pins both. Spec AC-30 annotated.
+
+Re-measured on my site test076l (Administrator to chosen people; times on this machine are noisy, query counts are the proof):
+
+| Send | Page waits | Queries in the request | Background |
+|---|---|---|---|
+| Now, 15 people | 1,109 ms (first, cold) and 375 ms | 108 and 93 | none |
+| Now, 16 people | 113 ms and 155 ms | 9 | 442 ms and 503 ms, 85 queries, status Sent |
+
+The warm 15-person send is under the 500 ms budget; the first call after start-up was not. Tests: `test_announcements_076` 59 OK; DOM suite 18 files, 0 failed; scope-trap, integrity, brand, design-system, tag-balance, API-path and undefined-JS checks OK.
+
 ## AC-18 narrowed (review Blocker 1), 28 Oct 2026
 
-Surbhi approved it. A repeat is now the same sender, the same text **and the same audience** (kind, company, branch, chosen people) within 2 minutes, and a Cancelled notice never counts as the first one. The double-tap and retry protection stays. The chosen ids are compared sorted, so the same people ticked in another order are the same audience. The send-now limit stays at 25.
+Surbhi approved it. A repeat is now the same sender, the same text **and the same audience** (kind, company, branch, chosen people) within 2 minutes, and a Cancelled notice never counts as the first one. The double-tap and retry protection stays. The chosen ids are compared sorted, so the same people ticked in another order are the same audience. The send-now limit was 25 at that point (now 15, section above).
 
 Tests (4 new, `test_announcements_076` now 59, all OK): the same words to branch A then branch B both send (Bina gets the second); schedule, cancel, send the same words now: it sends; a double tap returns the first notice with one record; two senders with the same words both send. Broken on purpose twice: ignoring the audience failed 10 tests, counting cancelled notices failed 1. DOM suite 18 files, 0 failed; scope-trap, integrity and brand checks OK.
 

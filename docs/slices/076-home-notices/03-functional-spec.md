@@ -359,7 +359,7 @@ Test type key: **B** = `bench run-tests` test; **D** = DOM test (`run_dom_tests.
 - **AC-27 (B)** Given each of: role removed, User disabled, sender's own Employee not Active, sender no longer has any scope, when the job runs, then nothing is sent and status is Not sent with the reason in words. (SEC-5; 2 of the 4 apply to directors too.)
 - **AC-28 (B)** A recipient whose User was deleted is counted as skipped, others receive rows, no Error Log row is written for that.
 - **AC-29 (B)** Given 450 recipients, rows are written in chunks of 200 with a commit after each; if the process stops after chunk 1, 200 rows persist.
-- **AC-30 (B)** (Changed 28 Oct 2026 by Surbhi: 25, not 200.) "Now" with 25 or fewer recipients finishes in the request: status Sent on return. "Now" with 26 or more returns status Scheduled with `send_at` = now, and a job is enqueued on `long`; the reply says "Sending".
+- **AC-30 (B)** (Changed 28 Oct 2026 by Surbhi: 15, not 200. The confirm above 25, AC-16, is a separate number and stays 25.) "Now" with 15 or fewer recipients finishes in the request: status Sent on return. "Now" with 16 or more returns status Scheduled with `send_at` = now, and a job is enqueued on `long`; the reply says "Sending".
 - **AC-31 (B)** One tick takes at most two due notices and only enqueues; it does not write recipient rows itself.
 
 ### US-5 Stuck, failed, not sent

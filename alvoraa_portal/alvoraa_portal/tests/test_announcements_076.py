@@ -636,14 +636,15 @@ class TestSend(Case):
 		self.assertEqual(len(_rows(name)), 2, "the first chunk was committed")
 		self.assertEqual(frappe.db.get_value("Announcement", name, "status"), "Sending")
 
-	def test_now_to_25_or_fewer_is_sent_before_the_reply(self):
-		"""AC-30, first half, with Surbhi's 25 (28 Oct 2026)."""
-		self.assertEqual(ann.SEND_IN_REQUEST, 25)
+	def test_now_to_15_or_fewer_is_sent_before_the_reply(self):
+		"""AC-30, first half, with Surbhi's 15 (28 Oct 2026). The confirm above 25
+		(AC-16) is a separate number and stays 25."""
+		self.assertEqual((ann.SEND_IN_REQUEST, ann.CONFIRM_ABOVE), (15, 25))
 		res = _send("Hra")
 		self.assertEqual((res["status"], res["reached"]), ("Sent", 3))
 
-	def test_now_to_more_than_25_is_queued_on_long(self):
-		"""AC-30, second half (25 patched to 2: the fixture has 3 people)."""
+	def test_now_to_more_than_15_is_queued_on_long(self):
+		"""AC-30, second half (15 patched to 2: the fixture has 3 people)."""
 		with patch.object(ann, "SEND_IN_REQUEST", 2), patch("frappe.enqueue") as q:
 			res = _send("Hra")
 		self.assertEqual(res["status"], "Scheduled")

@@ -412,6 +412,9 @@ tables, the code and database have moved together.
    ```
    Interactive — it prompts for the DB root password.
 4. `bench --site all clear-cache`, then start the containers.
+5. On every restored site that has replacement plans (slice 065): erase them all before
+   anyone logs in - §5.12. If the release being rolled back is the one that added them,
+   erase them BEFORE step 1 instead, then stop the daily job after - also §5.12.
 
 **Decision point:** roll back if a site fails to migrate, if our doctypes appear in the orphan
 list, or if the permission check in §6 shows an employee other people's data. Cosmetic problems
@@ -622,6 +625,43 @@ KEEP = ("tenant_name", "primary_color", "support_email", "subscription_plan",
 Never copy `db_name`, `db_user`, `db_password` or `db_root_password`. The restored site has
 its own database; copying the old credentials points it at the source stack's database - on
 a dev stack, that means dev writing into production.
+
+---
+
+## 5.12 Replacement plans after a restore, and before a rollback (slice 065)
+
+A replacement plan is HR's private note that someone may need replacing. When HR removes
+one it is erased completely, and **nothing records that it was removed** - so a restore
+from a backup older than the removal brings it back, and the daily erase cannot know to
+remove it again.
+
+**After restoring any tenant** (this section, §7, A.5, or a restore drill), before anyone
+logs in:
+
+```bash
+bench --site <site> execute hrms.alvoraa_org_structure.plans.erase_all_plans
+# expect: {"erased": <n>, "left": 0}
+bench --site <site> execute hrms.alvoraa_org_structure.plans.self_check
+# expect every count 0
+```
+
+Then tell that tenant's HR: "replacement plans were cleared by a restore; set again any
+you still need". Plans are short notes: losing them is cheap; bringing back one HR removed
+is not.
+
+**Rolling slice 065 back, in this order:**
+
+1. **Erase every plan first**, with the two commands above, while the code that erases
+   them properly is still there. Once it is gone, the only ways left to remove a plan are
+   a desk delete, which keeps a full copy in Deleted Document, or leaving the table behind
+   with every note still in it.
+2. Then roll back (§7 or A.5).
+3. Then stop the daily job: if the code was reverted but the database was not restored,
+   the Scheduled Job Type `plans.erase_due_plans` still exists and fails daily. Tick
+   **Stopped** on it (Desk → Scheduled Job Type), or let the next `bench migrate` remove it.
+
+**Every release check** (not only after a restore): the scheduler is on, the Scheduled Job
+Type `plans.erase_due_plans` exists, and `self_check` returns every count 0.
 
 ---
 

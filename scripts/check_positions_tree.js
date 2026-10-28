@@ -47,6 +47,17 @@ function makeContext(values) {
   const el = (id) => (els[id] = els[id] || {
     id, value: values[id] || "", innerHTML: "", textContent: "",
     style: {}, checked: false,
+    // A <select> on the real page. Slice 065 adds and removes its two Show
+    // options through these, so a stub without them fails on the code rather
+    // than on the behaviour being checked.
+    _opts: [],
+    querySelectorAll(sel) {
+      return sel === "option.private" ? this._opts.splice(0).map((o) => ({ remove() {} })) : [];
+    },
+    insertAdjacentHTML(where, html) {
+      (html.match(/class="private"/g) || []).forEach(() => this._opts.push(1));
+      if (where === "beforeend") this.innerHTML += html;
+    },
   });
   ["pos-body", "pos-count", "pos-filter-note", "pos-f-branch", "pos-f-dept",
    "pos-f-role", "pos-f-open", "pos-f-view", "pos-add-btn",
@@ -1521,6 +1532,291 @@ async function seats072() {
   }
 }
 
+/* ── 23. replacement plans (slice 065, prototype v5) ─────────────────────
+   The server sends `plans` and each person's `plan` ONLY to a plan reader.
+   So a non-reader's reply has neither key, and their Positions section -
+   chart, tiles, Show list, every seat tray - must carry no plan word, no
+   reason word and no end date. Searched in the Positions section only:
+   the appraisal pages use "improvement" for their own reasons. */
+const PLAN_WORDS = /replacement|planned|Plan a|Performance|Personal reasons|Other business reason|improvement|on hold|outcome|pos-planflag|pos-planned|pos-plan\b/i;
+const P_TODAY = "2026-10-27";
+function plan065(extra) {
+  return Object.assign({ name: "RP-1", set_on: "2026-10-01", set_by: "you", confirmed_by: null,
+    confirmed_on: "2026-10-01", lapses_on: "2026-12-30", note: "Note 065 private", reason: "Personal reasons",
+    improvement_ends_on: null, not_improved_on: null, not_improved_by: null }, extra || {});
+}
+function rows065(withPlans) {
+  const one = (id, title, parent, people, extra) => seat(id, title, parent, Object.assign({
+    designation: "Role", seats: people.length, filled: people.length, open: 0, people }, extra || {}));
+  const p = (emp, name, plan, extra) => Object.assign({ employee: emp, assignment: "A-" + emp, name, weight: 100,
+    covering: false }, withPlans && plan ? { plan } : {}, extra || {});
+  return [
+    one("P-Director", "Director", "", [p("E-HR", "Ritika HR")]),
+    one("P-Sector34", "Store Manager", "P-Director", [p("E-1", "Anil Gill"), p("E-2", "Kiran Gupta", plan065())]),
+    one("P-Hold", "Section Incharge", "P-Director", [p("E-3", "Vikas Khanna",
+      plan065({ reason: "Performance", improvement_ends_on: "2026-11-20" }))]),
+    one("P-Due", "Bangle", "P-Director", [p("E-4", "Simran Khanna",
+      plan065({ reason: "Performance", improvement_ends_on: "2026-10-10" }))]),
+    one("P-Resign", "Karigar", "P-Director", [p("E-5", "Aarti Sethi",
+      plan065({ reason: "Performance", improvement_ends_on: "2026-11-20" }), { leaving: "2026-12-15" })],
+        { leaving_on: "2026-12-15" }),
+    one("P-NotImp", "Cashier", "P-Director", [p("E-6", "Mohit Chopra",
+      plan065({ reason: "Performance", improvement_ends_on: "2026-10-10", not_improved_on: "2026-10-20",
+                not_improved_by: "you", confirmed_on: "2026-10-20", confirmed_by: "you" }))]),
+  ];
+}
+function ctx065(opts) {
+  const t = trayContext({ may_edit: opts.may_edit !== false, rows: rows065(!!opts.plans) });
+  const c = t.ctx;
+  c.POS.today = P_TODAY;
+  c.POS.plans = opts.plans || null;
+  c.POS.collapsed = {}; c.POS.expanded = { "P-Director": true }; c.POS.onPath = {}; c.POS.departments = {};
+  // The Show list, real enough for posPlanChrome to add and remove its options.
+  const opts_ = [];
+  c.__els["pos-f-open"] = { id: "pos-f-open", value: opts.show || "", style: {},
+    querySelectorAll: () => opts_.splice(0).map((o) => ({ remove() {} })),
+    insertAdjacentHTML: (w, h) => opts_.push(h), get innerHTML() { return opts_.join(""); } };
+  c.__els["pos-f-view"] = { id: "pos-f-view", value: "tree", style: {} };
+  c.__els["pos-wall-btn"] = { id: "pos-wall-btn", style: { display: "" } };
+  c.posPlanChrome();
+  c.posPaint();
+  const trays = c.POS.rows.map((r) => { c.posSeatSheet(r.id); const h = t.layer(); c.posCloseSheet(true); return h; });
+  return { c, t, page: c.__els["pos-body"].innerHTML + c.__els["pos-tiles"].innerHTML + c.__els["pos-f-open"].innerHTML,
+           trays, tray: (id) => { c.posSeatSheet(id); const h = t.layer(); c.posCloseSheet(true); return h; } };
+}
+const READER = { may_set: true, owners_see: true, self: "E-HR", hr_users: 6 };
+
+/* Pressing Save (Surbhi, 28 Oct 2026). Nothing here was covered: 383 checks
+   and not one of them pressed the button, so the dialog validated the tick and
+   then left it out of the call. The server refuses a Performance plan without
+   it, and the screen blamed the connection. These checks press Save and read
+   what actually goes down the wire. */
+function saveCtx065(opts) {
+  const c = ctx065({ plans: READER }).c;
+  const sent = [];
+  c.gpFetch = (method, args) => {
+    sent.push({ method, args });
+    return opts.refuse ? Promise.reject(opts.refuse) : Promise.resolve({});
+  };
+  const fields = {
+    "pos-pl-ends": opts.ends || "",
+    "pos-pl-told": null,
+    "pos-pl-note": opts.note || "",
+    "pos-pl-reason-err": null, "pos-pl-ends-err": null, "pos-pl-told-err": null,
+    "pos-pl-r0": null, "pos-sheet-err": null,
+  };
+  Object.keys(fields).forEach((id) => {
+    c.__els[id] = { id, value: fields[id] === null ? "" : fields[id],
+                    checked: id === "pos-pl-told" ? !!opts.told : false,
+                    hidden: false, style: {}, focus() {} };
+  });
+  const reason = opts.reason || "Performance";
+  c.document.querySelector = (sel) =>
+    (sel.indexOf("pos-pl-reason") > -1 && reason) ? { value: reason } : null;
+  return { c, sent };
+}
+
+{
+  // The bug itself: the tick must reach the server.
+  const t = saveCtx065({ reason: "Performance", ends: "2026-11-27", told: true, note: "x" });
+  t.c.posPlanSave("P-Sector34", "A-E-2", null);
+  const call = t.sent[0];
+  ok("065 SV-1: pressing Save calls set_plan",
+     !!call && /plans\.set_plan$/.test(call.method), call && call.method);
+  ok("065 SV-1: and the tick goes with it - without this EVERY performance plan is refused",
+     !!call && (call.args.told === 1 || call.args.told === true), call && JSON.stringify(call.args));
+  ok("065 SV-1: the reason and the end date go too",
+     !!call && call.args.reason === "Performance" && call.args.improvement_ends_on === "2026-11-27");
+}
+{
+  // A reason with no improvement period must not send a stale date.
+  const t = saveCtx065({ reason: "Personal reasons", told: false, note: "y" });
+  t.c.posPlanSave("P-Sector34", "A-E-2", null);
+  const call = t.sent[0];
+  ok("065 SV-2: a non-performance plan still saves",
+     !!call, "nothing was sent");
+  ok("065 SV-2: and carries no improvement period",
+     !!call && !call.args.improvement_ends_on);
+}
+{
+  // The tick is still required locally, so Save does not even leave the page.
+  const t = saveCtx065({ reason: "Performance", ends: "2026-11-27", told: false });
+  t.c.posPlanSave("P-Sector34", "A-E-2", null);
+  ok("065 SV-3: without the tick nothing is sent and the field is marked",
+     t.sent.length === 0 && t.c.__els["pos-pl-told-err"].hidden === false);
+}
+
+/* "Change this seat" (Surbhi, 28 Oct 2026). Whoever opens this dialog must be
+   in the same context as the chart behind it, and nobody else may learn
+   anything from it. posPaintPeople writes the "Who is in it" list. */
+function editor065(opts, hide) {
+  const c = ctx065(opts).c;
+  c.__els["pos-people"] = { id: "pos-people", innerHTML: "", style: {} };
+  c.__els["pos-people-wrap"] = { id: "pos-people-wrap", innerHTML: "", style: {} };
+  // posSeat() reads the hidden name field, which is how the editor knows
+  // which seat it is on. P-Sector34 holds Kiran Gupta, who has a plan.
+  c.__els["pos-e-name"] = { id: "pos-e-name", value: "P-Sector34", style: {} };
+  if (hide) c.posHidePlans(true);
+  c.posPaintPeople();
+  return c.__els["pos-people"].innerHTML;
+}
+{
+  const planned = editor065({ plans: READER });
+  ok("065 S1: the seat editor names the planned person",
+     planned.includes("Kiran Gupta"), planned.slice(0, 120));
+  ok("065 S1: and says a replacement is planned, in the mark's own colour",
+     /pos-planmeta[^>]*>[^<]*replacement planned/.test(planned), planned.slice(0, 200));
+  ok("065 S1: the words are marked private, so a print drops them",
+     /class="[^"]*private[^"]*"[^>]*>[^<]*replacement planned/.test(planned));
+
+  const stranger = editor065({ plans: null });
+  ok("065 S2: a non-reader's seat editor says nothing about plans",
+     !PLAN_WORDS.test(stranger), (stranger.match(PLAN_WORDS) || [])[0]);
+  ok("065 S2: and still names everyone in the seat",
+     stranger.includes("Kiran Gupta"));
+
+  const hidden = editor065({ plans: READER }, true);
+  ok("065 S3: Hide replacement plans empties this dialog too",
+     !PLAN_WORDS.test(hidden), (hidden.match(PLAN_WORDS) || [])[0]);
+}
+{
+  // A non-reader: the reply has no `plans` key and no `plan` on anybody.
+  const n = ctx065({ plans: null });
+  ok("065: a non-reader's chart, tiles and Show list carry no plan word", !PLAN_WORDS.test(n.page), (n.page.match(PLAN_WORDS) || [])[0]);
+  ok("065: nor any end date of a plan", !/2026-11-20|20 Nov|2026-10-10|10 Oct|2026-12-30|30 Dec/.test(n.page));
+  // "Request a replacement" from a leaving date is allowed: the same with or
+  // without a plan (SEC-6 path b), so it says nothing about one.
+  n.trays.forEach((h, i) => {
+    const t = h.replace(/Request a replacement/g, "");
+    ok("065: a non-reader's seat tray " + i + " carries no plan word", !PLAN_WORDS.test(t), (t.match(PLAN_WORDS) || [])[0]);
+  });
+  ok("065: a non-reader gets the request only from a leaving date",
+     n.tray("P-Resign").includes("Request a replacement") && !n.tray("P-Sector34").includes("Request a replacement"));
+  // The positive control: the same check finds the words when a reader is sent plans.
+  const r = ctx065({ plans: READER });
+  ok("065 control: the check does see a reader's plan words", PLAN_WORDS.test(r.page) && PLAN_WORDS.test(r.tray("P-Sector34")));
+}
+{
+  const r = ctx065({ plans: READER });
+  ok("065 V5-1: the flag before the planned person's name", /pos-flag[\s\S]*Kiran Gupta/.test(r.page));
+  ok("065 V5-2: the red edge only on planned seats' own boxes",
+     (r.page.match(/pos-planned/g) || []).length === 5, (r.page.match(/pos-planned/g) || []).length);
+  ok("065: the two Show options and no count in them", r.page.includes('value="plan"') && r.page.includes('value="plan14"'));
+  ok("065: planned person first in the box", r.page.indexOf("Kiran Gupta") < r.page.indexOf("Anil Gill"));
+  r.c.POS.printing = true; r.c.posPaint();
+  const printed = r.c.__els["pos-body"].innerHTML;
+  ok("065 V5-6: while printing the order is normal again", printed.indexOf("Anil Gill") < printed.indexOf("Kiran Gupta"));
+  r.c.POS.printing = false;
+  // Rule rows (V-7 to V-11, V5-9 to V5-11).
+  const own = r.tray("P-Director");
+  ok("065 E-1: no Plan a replacement on the reader's own row", !own.includes("Plan a replacement"));
+  ok("065: Plan a replacement on someone else's row", r.tray("P-Sector34").includes("Plan a replacement"));
+  const hold = r.tray("P-Hold");
+  ok("065 V-7 (v6): on hold says so in one sentence, with a chip, and there is no request",
+     hold.includes("Hiring is on hold until 20 Nov 2026 and until HR records whether Vikas improved.")
+     && /pos-chip amber">Hiring on hold</.test(hold) && !hold.includes("Request a replacement"));
+  ok("065: no outcome buttons before the end date", !hold.includes("Improved – remove the plan"));
+  const due = r.tray("P-Due");
+  ok("065 V5-9 (v6): after the end date - one sentence with the date, a chip, and the two buttons",
+     due.includes("The improvement period ended on 10 Oct 2026.")
+     && /pos-chip amber">Outcome due</.test(due)
+     && due.includes("Improved – remove the plan") && due.includes("Not improved – hiring may start"));
+  ok("065 V5-9 (v6): HR is told whose outcome it is, not 'the outcome'",
+     due.includes("Record whether Simran improved.") && !due.includes("HR records the outcome."));
+  ok("065 v6: the two outcome buttons carry equal weight - neither is primary",
+     !/btn-primary[^>]*>\s*(Improved|Not improved)/.test(due));
+  ok("065: still no request while the outcome waits", !due.includes("Request a replacement"));
+  ok("065 V-7: a leaving date unlocks hiring", r.tray("P-Resign").includes("has a leaving date, so hiring may start now.")
+     && r.tray("P-Resign").includes("Request a replacement"));
+  const ni = r.tray("P-NotImp");
+  ok("065 V-9 (v6): a green chip says hiring may start, the grey line says who recorded it",
+     /pos-chip green">Hiring may start</.test(ni)
+     && ni.includes("Not improved, recorded by you on 20 Oct 2026")
+     && ni.includes("Request a replacement"));
+  ok("065 V-9: no Confirmed again line repeating the same person and day", !ni.includes("Confirmed again"));
+  ok("065 V-6: Reason line", r.tray("P-Sector34").includes("Reason: Personal reasons"));
+  // v6 tiers: the detail is ONE grey line, and the quiet things stay quiet.
+  const one = r.tray("P-Sector34");
+  ok("065 v6: reason, who set it and when it ends are one grey line",
+     /Reason: Personal reasons · Set by [^<]*· Ends /.test(one), one.slice(0, 300));
+  ok("065 v6: the standalone countdown sentence is gone", !/\d+ days left\./.test(one));
+  ok("065 v6: a plan with no note says nothing about a note",
+     !r.tray("P-NotImp").includes("No note."));
+  ok("065 v6: a plan 90 days out does not push Confirm as the primary action",
+     !/btn-primary[^>]*>\s*Confirm for 90 more days/.test(one));
+  r.c.POS.today = "2026-11-20";
+  ok("065 V5-9: on the end date - ends today, with the buttons", r.tray("P-Hold").includes("The improvement period ends today, 20 Nov 2026.")
+     && r.tray("P-Hold").includes("Not improved – hiring may start"));
+  r.c.POS.today = P_TODAY;
+  // Owners and the System Manager read only (V-11).
+  const o = ctx065({ plans: Object.assign({}, READER, { may_set: false, self: null }) });
+  const od = o.tray("P-Due");
+  ok("065 V-11: a reader who may not set sees HR records the outcome, and no buttons", od.includes("HR records the outcome.")
+     && !od.includes("Improved – remove the plan") && !od.includes("Confirm for 90 more days") && !od.includes("Plan a replacement"));
+  ok("065: an owner never gets a request because of a plan", !o.tray("P-NotImp").includes("Request a replacement"));
+  // The request dialog's count travels with plan data only (V5-10).
+  r.c.posRequestSheet("P-NotImp");
+  ok("065 V5-10: a plan reader reads the HR User count", r.t.layer().includes("The 6 people with the HR User role can read job openings."));
+  r.c.posCloseSheet(true);
+  const n = ctx065({ plans: null });
+  n.c.posRequestSheet("P-Resign");
+  ok("065 V5-10: a non-reader editor reads it with no number", n.t.layer().includes("People with the HR User role can read job openings.")
+     && !/The \d+ people/.test(n.t.layer()));
+  n.c.posCloseSheet(true);
+}
+{
+  // Under a plan Show option: no number, nothing prints, no wall chart (V5-4, V5-5).
+  const r = ctx065({ plans: READER, show: "plan" });
+  const body = r.c.__els["pos-body"].innerHTML;
+  ok("065 V5-4: the line says Matching seats, with no number", body.includes("Matching seats") && !/\d+ matching/.test(body));
+  ok("065 V5-5: a print shows only the sentence", body.startsWith('<div class="pos-printonly">This view is not printed. Choose another Show option, then print.</div><div data-private>'));
+  ok("065 V5-5: and the wall chart is not offered", r.c.__els["pos-wall-btn"].style.display === "none");
+  ok("065 V3: tiles ignore the plan option", (() => { const a = r.c.__els["pos-tiles"].innerHTML;
+     r.c.__els["pos-f-open"].value = ""; r.c.posPaint(); return a === r.c.__els["pos-tiles"].innerHTML; })());
+  ok("065: the wall chart comes back with the option off", r.c.__els["pos-wall-btn"].style.display === "");
+  // The List view is a list of plans under a plan option too.
+  r.c.__els["pos-f-open"].value = "plan"; r.c.__els["pos-f-view"].value = "list"; r.c.posPaint();
+  const list = r.c.__els["pos-body"].innerHTML;
+  ok("065 V5-5: the List view prints only the sentence too", list.startsWith('<div class="pos-printonly">')
+     && list.includes("<div data-private>") && r.c.__els["pos-wall-btn"].style.display === "none");
+  ok("065 V5-4: the List drops non-matches", list.includes("Kiran Gupta") && !list.includes("Ritika HR"));
+  // The column that makes the filtered list worth looking at (Surbhi, 28 Oct).
+  ok("065 L-1: the list carries a Replacement plan column", list.includes(">Replacement plan</th>"));
+  // .pos-flag was already the print-suppression marker on "50%", "covering",
+  // "leaving" and "key seat". Slice 065 must never colour it.
+  ok("065 L-3: the plan flag does not reuse the page's existing marker class",
+     !/<svg[^>]*class="[^"]*pos-flag/.test(list + r.page));
+  ok("065 L-1: and it says who, why and when it ends",
+     /Kiran Gupta · Personal reasons · ends /.test(list), list.slice(0, 400));
+  ok("065 L-1: the column is private, so print and Hide take it away",
+     /<th class="private">Replacement plan<\/th>/.test(list));
+  r.c.__els["pos-f-view"].value = "tree";
+  // Hiding the marks takes the plan option away with them.
+  r.c.__els["pos-f-open"].value = "plan";
+  r.c.posHidePlans(true);
+  ok("065: Hide replacement plans clears a chosen plan option", r.c.__els["pos-f-open"].value === ""
+     && !/pos-planflag|pos-planned/.test(r.c.__els["pos-body"].innerHTML));
+}
+{
+  // L-2: the same table for someone who may not read plans - one column fewer
+  // and not a word about plans anywhere in it.
+  const mk = (plans) => {
+    const r = ctx065({ plans });
+    r.c.__els["pos-f-view"].value = "list";
+    r.c.posPaint();
+    return r.c.__els["pos-body"].innerHTML;
+  };
+  const reader = mk(READER), stranger = mk(null);
+  ok("065 L-2: a non-reader's list has no plan column", !stranger.includes("Replacement plan"));
+  ok("065 L-2: and says nothing about plans at all",
+     !PLAN_WORDS.test(stranger), (stranger.match(PLAN_WORDS) || [])[0]);
+  ok("065 L-2: both lists still name everyone",
+     reader.includes("Kiran Gupta") && stranger.includes("Kiran Gupta"));
+  ok("065 L-2: the reader's list has exactly one more column",
+     (reader.match(/<th/g) || []).length === (stranger.match(/<th/g) || []).length + 1);
+}
+
+
 deleteChecks().then(unChecks).then(seats072).then(() => {
   if (problems.length) {
     console.error("positions tree: " + problems.length + " problem(s)");
@@ -1531,6 +1827,7 @@ deleteChecks().then(unChecks).then(seats072).then(() => {
               + "identical siblings grouped without losing anybody, filters "
               + "show matches with the seats above faded, loops and deep chains survive, a seat is deleted only "
               + "when the server says so, a seat opens its tray, the people "
-              + "trays only for HR; slice 072: people under their manager's seat");
+              + "trays only for HR; slice 072: people under their manager's seat; "
+              + "slice 065: replacement plans are shown to readers and to nobody else");
   process.exit(0);   // the jsdom window of section 22 would keep Node waiting
 });

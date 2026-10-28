@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home Page Prototype</title>
+<style>
+/* Tokens copied from alvoraa_portal/templates/includes/design_system.html (light and dark). */
+:root,[data-theme="light"]{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;--hero-bg:#3D3461;--hero-fg:#FFFFFF;--hero-accent:#BBAEE0;--on-primary:#FFFFFF;
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);
+}
+[data-theme="dark"]{
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;--hero-bg:#2A2438;--hero-fg:#F0EDE8;--hero-accent:#BBAEE0;--on-primary:#1A1815;
+}
+:root{--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--r-full:999px}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--surface2);color:var(--text);font-size:14px;line-height:1.4}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* ---- review scaffolding (not part of the product) ---- */
+.rv{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px 22px;align-items:flex-start}
+.rv fieldset{border:0;margin:0;padding:0;min-width:0}
+.rv legend{font-size:12px;font-weight:700;color:var(--text3);padding:0 0 3px;text-transform:uppercase;letter-spacing:.04em}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button{min-height:32px;padding:0 10px;border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-sm);cursor:pointer;font-size:13px}
+.seg button[aria-pressed=true]{background:var(--primary);color:var(--on-primary);border-color:var(--primary);font-weight:600}
+.rv label.ck{display:flex;gap:6px;align-items:center;min-height:32px;font-size:13px}
+.sample{background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber);border-radius:var(--r-sm);padding:6px 12px;margin:10px 16px 0;font-size:13px}
+.stage{padding:16px;overflow-x:auto}
+.ro{margin:0 16px 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;font-size:13px;max-width:1280px}
+.ro h2{font-size:14px;margin:0 0 6px}
+.ro table{border-collapse:collapse;width:100%;margin:6px 0}
+.ro th,.ro td{text-align:left;padding:3px 8px;border-bottom:1px solid var(--border);font-size:12px}
+.ro .ok{font-weight:700;color:var(--green)}.ro .bad{font-weight:700;color:var(--red)}
+.ro ul{margin:4px 0;padding-left:18px}
+.notes{margin:0 16px 24px;font-size:13px;color:var(--text2);max-width:1280px}
+
+/* ---- the app frame ---- */
+.app{background:var(--bg);margin:0 auto;border:1px solid var(--border2);position:relative;overflow:hidden}
+.app.desk{width:1280px;display:flex;min-height:900px}
+.app.phone{width:360px}
+.side{width:240px;flex:none;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{font-weight:700;font-size:18px;color:var(--primary);padding:4px 10px 14px}
+.nav{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border:0;background:none;border-radius:var(--r-sm);cursor:pointer;text-align:left;font-size:15px;color:var(--text2);width:100%}
+.nav[aria-current=page]{background:var(--primary-lt);color:var(--primary);font-weight:600}
+.mainc{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:10px;min-height:56px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border)}
+.phone .top{padding:0 12px}
+.top h1{font-size:18px;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bell{position:relative;min-width:44px;min-height:44px;border:0;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;border-radius:var(--r-sm)}
+.badge{min-width:20px;height:20px;border-radius:var(--r-full);background:var(--primary);color:var(--on-primary);font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+.content{padding:24px}
+.phone .content{padding:16px}
+.bottom{display:flex;border-top:1px solid var(--border);background:var(--surface)}
+.bottom button{flex:1;min-height:56px;border:0;background:none;font-size:12px;color:var(--text2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.bottom button[aria-current=page]{color:var(--primary);font-weight:700}
+
+/* ---- cards and the balanced grid ---- */
+.top-stack{margin-bottom:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}
+.phone .grid{grid-template-columns:1fr}
+.grid.nat{align-items:start}
+.span2{grid-column:1/-1}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh1);display:flex;flex-direction:column;min-width:0}
+.ch{display:flex;align-items:center;gap:8px;min-height:52px;padding:8px 16px;flex-wrap:wrap}
+.ch h2{margin:0;font-size:15px;font-weight:700}
+.chip{display:inline-flex;align-items:center;padding:2px 10px;border-radius:var(--r-full);font-size:12px;font-weight:600;background:var(--primary-lt);color:var(--primary);white-space:nowrap}
+.chip.quiet{background:var(--surface2);color:var(--text2)}
+.exist{margin-left:auto;font-size:12px;color:var(--text3)}
+.row{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 16px;border:0;border-top:1px solid var(--border);background:none;width:100%;text-align:left;cursor:pointer}
+.row:hover{background:var(--surface2)}
+.row.static{cursor:default}.row.static:hover{background:none}
+.av{width:36px;height:36px;border-radius:50%;background:var(--primary-lt);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none}
+.rt{flex:1;min-width:0}
+.l1{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.l2{font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.go{font-size:13px;font-weight:600;color:var(--primary);flex:none}
+.nrow{min-height:64px;align-items:flex-start;padding-top:6px;padding-bottom:6px}
+.nrow .meta{font-size:12px;color:var(--text2);display:flex;gap:8px;align-items:center}
+.nrow .txt{font-size:14px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cf{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 8px 0 16px;border-top:1px solid var(--border);margin-top:auto;flex-wrap:wrap}
+.cf .sp{flex:1}
+.tbtn{min-height:44px;padding:0 10px;border:0;background:none;color:var(--primary);font-weight:600;font-size:14px;cursor:pointer;border-radius:var(--r-sm)}
+.tbtn:hover{background:var(--primary-lt)}
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:16px 20px 24px;gap:4px;border-top:1px solid var(--border)}
+.empty b{font-size:15px}.empty span{font-size:13px;color:var(--text2);max-width:34ch}
+.tick{width:32px;height:32px;border-radius:50%;background:var(--green-lt);color:var(--green);display:flex;align-items:center;justify-content:center;margin-bottom:4px}
+.hero{background:var(--hero-bg);color:var(--hero-fg);border-radius:var(--r);padding:20px 24px;display:flex;gap:16px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.hero .nm{font-size:20px;font-weight:700}.hero .sub{color:var(--hero-accent);font-size:14px}
+.hero .st{margin-top:8px;display:flex;gap:8px;align-items:center;font-size:15px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--hero-accent)}
+.hero .clock{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.btn{min-height:44px;padding:0 18px;border-radius:var(--r-sm);border:1px solid var(--primary);background:var(--primary);color:var(--on-primary);font-weight:600;font-size:15px;cursor:pointer}
+.btn.out{background:none;color:var(--primary)}
+.btn.big{min-height:56px;font-size:18px;min-width:160px;background:var(--hero-fg);color:var(--hero-bg);border-color:var(--hero-fg)}
+.phone .hero{padding:16px}.phone .hero .big{width:100%}.phone .hero>div:last-child{width:100%}
+.qbar2{display:flex;gap:4px;margin-top:12px;max-width:360px}.qbar2 i{flex:1;height:10px;border-radius:4px;background:rgba(255,255,255,.22)}.qbar2 i.on{background:var(--hero-accent)}.dl{font-size:13px;color:var(--hero-accent);margin-top:4px}
+.qbar{display:flex;gap:4px;margin:4px 16px 8px}.qbar i{flex:1;height:12px;border-radius:4px;background:var(--surface2)}.qbar i.on{background:var(--green)}
+.pad{padding:0 16px 12px}
+.prog{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:4px}.prog i{display:block;height:100%;background:var(--primary)}
+
+/* ---- sheets, dialogs, forms ---- */
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:50}
+#ov.on{display:block}
+.sheet{position:fixed;background:var(--surface);border-radius:var(--r);box-shadow:var(--sh3);display:flex;flex-direction:column;max-height:86vh;overflow:hidden;z-index:51}
+.sheet.dlg{top:8vh;left:50%;transform:translateX(-50%);width:min(560px,92vw)}
+.sheet.bs{bottom:0;border-radius:var(--r) var(--r) 0 0;max-height:90vh}
+.sh-h{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 16px;border-bottom:1px solid var(--border);min-height:56px}
+.sh-h h2{margin:0;font-size:17px;flex:1}
+.sh-b{overflow:auto;padding:0}
+.sh-p{padding:16px}
+.sh-f{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap}
+.sh-f .btn{flex:1;min-width:120px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 18px;border-radius:var(--r);font-size:14px;display:none;z-index:60;max-width:90vw}
+.fld{margin-bottom:20px}
+.fld>label,.fld>legend{display:block;font-weight:600;font-size:15px;margin-bottom:6px;padding:0}
+fieldset.fld{border:0;padding:0;margin:0 0 20px}
+.hint{font-size:13px;color:var(--text2);margin-top:4px}
+.err{font-size:14px;color:var(--red);margin-top:4px;font-weight:600}
+textarea,input[type=text],input[type=date],input[type=time],input[type=search],select{width:100%;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface)}
+textarea{min-height:110px;resize:vertical}
+.opt{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:8px 0;cursor:pointer;font-size:15px}
+.opt input{width:22px;height:22px;margin:0;flex:none;accent-color:var(--primary)}
+.cnt{font-size:13px;color:var(--text2);text-align:right}
+.reach{background:var(--primary-lt);border-radius:var(--r-sm);padding:10px 12px;font-size:14px;margin-bottom:16px}
+.ppl{max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm);margin-top:8px}
+.ppl .opt{padding:0 12px;border-bottom:1px solid var(--border)}
+.sent{border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;margin-bottom:10px;background:var(--surface)}
+.sent .t{font-size:15px}.sent .m{font-size:13px;color:var(--text2);margin-top:4px}
+.banner{background:var(--green-lt);color:var(--green);border:1px solid var(--green);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:16px;font-weight:600}
+.compose{max-width:640px}
+.sw{display:flex;gap:12px;align-items:flex-start;padding:8px 0}
+.sw button[role=switch]{width:56px;height:44px;border-radius:var(--r-full);border:1px solid var(--border2);background:var(--surface2);cursor:pointer;position:relative;flex:none}
+.sw button[role=switch]::after{content:"";position:absolute;top:9px;left:6px;width:24px;height:24px;border-radius:50%;background:var(--text3);transition:left .15s}
+.sw button[aria-checked=true]{background:var(--primary-lt);border-color:var(--primary)}
+.sw button[aria-checked=true]::after{left:26px;background:var(--primary)}
+.sw .state{font-weight:700;font-size:14px}
+.setc{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin-bottom:16px;max-width:680px}
+.setc h2{margin:0 0 8px;font-size:16px}
+</style>
+</head>
+<body>
+<div class="sample"><b>Sample data.</b> Every name, number and message here is invented. Cards marked "Existing card" are stand-ins for today's cards, drawn only to prove the balance. Prototype v1 for slice 076 (ALV-240).</div>
+<div class="rv" id="rv"></div>
+<div class="stage"><div id="app" class="app desk"></div></div>
+<div class="ro" id="ro" aria-live="polite"></div>
+<div class="notes" id="notes"></div>
+<div id="ov"></div>
+<div id="toast" role="status"></div>
+<script>
+(function(){
+'use strict';
+var $=function(s,r){return (r||document).querySelector(s)};
+var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+
+/* ================= sample data ================= */
+var NAMES=['Rohit Sharma','Priya Nair','Imran Khan','Deepa Joshi','Vikram Singh','Neelam Gupta','Sunil Yadav','Pooja Mishra','Manoj Tiwari','Farah Ali','Kunal Arora','Lata Devi','Harish Rawat','Seema Bhatt','Ajay Chauhan','Rekha Pillai','Mohit Saini','Tara Menon','Gaurav Jain','Nisha Kapoor','Sanjay Dubey','Alka Reddy','Rajesh Kumar','Divya Iyer','Yusuf Ansari','Komal Thakur','Pankaj Verma','Shreya Das','Lokesh Patel','Bhavna Shah','Tarun Malik','Jyoti Rana','Amit Bose','Charu Sethi','Dinesh Pal','Esha Ghosh','Faisal Qureshi','Geeta Nayak'];
+var PERSONAS={
+  employee:{id:'employee',label:'Employee',name:'Anita Verma',role:'Sales associate · Noida unit',goals:true,team:false,docs:true,policies:true,hr:false,mgr:false},
+  frontline:{id:'frontline',label:'Frontline employee',name:'Ramesh Yadav',role:'Floor staff, shift B · Noida unit',goals:false,team:false,docs:true,policies:false,hr:false,mgr:false},
+  manager:{id:'manager',label:'Manager',name:'Sakshi Verma',role:'Store manager · Noida unit',goals:true,team:true,docs:true,policies:true,hr:false,mgr:true},
+  hr:{id:'hr',label:'HR Manager',name:'Kavita Rao',role:'HR Manager · Noida and Gurugram units',goals:true,team:false,docs:true,policies:true,hr:true,mgr:true},
+  cxo:{id:'cxo',label:'CXO',name:'Arjun Mehta',role:'Chief Executive · all companies',goals:true,team:true,docs:false,policies:false,hr:false,mgr:true,cxo:true}
+};
+var KIND={leave:'Leave request',expense:'Expense claim',goal:'Goal update',fix:'Attendance fix',shift:'Shift change',policy:'Policy to read',mine:'Your request'};
+var CFG={
+  employee:{none:{},few:{policy:1,mine:1},many:{policy:3,mine:4}},
+  frontline:{none:{},few:{mine:1},many:{policy:2,mine:3}},
+  manager:{none:{},few:{leave:1,expense:1},many:{leave:8,expense:6,fix:4,goal:3,shift:2,policy:1}},
+  hr:{none:{},few:{leave:1,expense:1},many:{leave:10,expense:9,fix:6,goal:4,shift:2}},
+  cxo:{none:{},few:{leave:2,expense:1},many:{leave:14,expense:6,goal:9,fix:5,shift:3,policy:1}}
+};
+var ETYPE=['Travel','Meals','Stationery','Fuel','Phone bill','Courier'];
+var EAMT=[1240,860,415,2300,699,180,3150,520,975];
+var LTYPE=['Casual leave','Earned leave','Casual leave','Sick leave'];
+var LDATE=['6–8 Nov','3 Nov','12–13 Nov','28 Oct','17–21 Nov','1 Nov'];
+function pendingData(pid,size){
+  var cfg=CFG[pid][size],out=[],k=0,i,kind;
+  var order=['leave','expense','goal','fix','shift','policy','mine'];
+  if(PERSONAS[pid].cxo){
+    var tot=0;order.forEach(function(kd){if(cfg[kd]){out.push({id:'c'+kd,kind:kd,count:cfg[kd],title:{leave:'Leave approvals',expense:'Expense claims',goal:'Goal updates',fix:'Attendance fixes',shift:'Shift changes',policy:'Policies to read'}[kd],sub:cfg[kd]+' waiting · across your companies',act:'open',age:cfg[kd]});tot+=cfg[kd]}});
+    out.sort(function(a,b){return b.count-a.count});
+    return {rows:out,total:tot,counts:true};
+  }
+  order.forEach(function(kd,ki){
+    for(i=0;i<(cfg[kd]||0);i++){
+      var nm=NAMES[(k*3+ki*5+i)%38],age=((i*2+ki*3)%9)+1,r={id:kd+i,kind:kd,age:age,act:'open',who:nm};
+      if(kd==='leave'){r.title=nm;r.sub='Leave request · '+LDATE[i%6]+' · '+((i%3)+1)+(i%3?' days':' day');r.ltype=LTYPE[i%4];r.dates=LDATE[i%6];r.days=(i%3)+1;r.act='sheet'}
+      else if(kd==='expense'){r.title=nm;r.etype=ETYPE[i%6];r.amt=EAMT[(i+ki)%9];r.edate=(20+(i%7))+' Oct';r.note=['Taxi to the supplier visit','Lunch with the delivery team','Printer paper for the counter','Petrol, two trips to the depot','Monthly phone bill','Courier of signed forms'][i%6];r.sub='Expense claim · ₹'+r.amt.toLocaleString('en-IN')+' · '+r.etype;r.act='sheet'}
+      else if(kd==='goal'){r.title=nm;r.sub='Goal update · waiting '+age+' days'}
+      else if(kd==='fix'){r.title=nm;r.sub='Attendance fix · '+(18+(i%8))+' Oct'}
+      else if(kd==='shift'){r.title=nm;r.sub='Shift change · '+(3+i)+' Nov'}
+      else if(kd==='policy'){r.title=['Leave and attendance policy','Safety on the floor','Code of conduct'][i%3];r.sub='Policy to read · version '+(2+i)}
+      else {r.title=['Your leave, 6–8 Nov','Your attendance fix, 21 Oct','Your shift change, 9 Nov','Your leave, 28 Oct'][i%4];r.sub='Waiting for '+(pid==='frontline'?'Sakshi Verma':'Sakshi Verma')}
+      out.push(r);
+    }
+  });
+  out.sort(function(a,b){return b.age-a.age});
+  return {rows:out,total:out.length,counts:false};
+}
+var ANN=[
+ {from:'Kavita Rao, HR Manager',text:'Tomorrow is a half day for the Noida unit. Please plan your shift.',when:'2 h ago'},
+ {from:'Arjun Mehta, Chief Executive',text:'Diwali sweets will be handed out at the gate on Thursday, 30 Oct, from 4 pm. Please bring your staff card.',when:'Yesterday'},
+ {from:'Kavita Rao, HR Manager',text:'The safety walk for all floor staff is moved to Monday 3 Nov, 10 am, in the canteen hall. Attendance is needed because the fire officer will sign each person in. If you are on leave that day, tell your manager today so that HR can book you into the next walk on 10 Nov. Wear your shoes with a closed toe.',when:'2 days ago'}
+];
+var SYS=['Your leave for 6–8 Nov was approved by Sakshi Verma.','Your attendance fix for 21 Oct was sent to Sakshi Verma.','A new policy is waiting for you: Leave and attendance.','Your goal update was approved: Sell 40 units this month.','Your shift change for 9 Nov was approved.','Your expense claim for ₹860 was approved.'];
+function noticeData(pid,size){
+  var out=[],i;
+  if(size==='none') return out;
+  var na=size==='few'?1:6, ns=size==='few'?1:14, nr=size==='few'?1:20;
+  for(i=0;i<na;i++){var a=ANN[i%3];out.push({id:'a'+i,kind:'ann',from:a.from,text:a.text,when:i<1?a.when:(i+1)+' days ago',read:false})}
+  for(i=0;i<ns;i++){out.push({id:'s'+i,kind:'sys',from:'Alvora',text:SYS[i%6],when:(i+1)+' h ago',read:false,link:'the existing screen'})}
+  for(i=0;i<nr;i++){var a2=ANN[(i+1)%3];out.push({id:'r'+i,kind:i%3===0?'ann':'sys',from:i%3===0?a2.from:'Alvora',text:i%3===0?a2.text:SYS[(i+2)%6],when:(i+4)+' days ago',read:true})}
+  return out;
+}
+var BFIRST=['Meera Kapoor','Sunil Yadav','Lata Devi'];
+function bdayData(pid,size){
+  if(size==='none') return [];
+  if(size==='few') return [{name:'Meera Kapoor',type:'b',day:29},{name:'Sunil Yadav',type:'a',day:31,years:5},{name:'Lata Devi',type:'b',day:12}];
+  var out=[],i;
+  for(i=0;i<38;i++){out.push({name:NAMES[i],type:i%3===1?'a':'b',day:Math.floor(i*31/38)+1,years:1+((i*3)%12)})}
+  return out;
+}
+function bdayOrdered(list){
+  var up=list.filter(function(x){return x.day>=27}).sort(function(a,b){return a.day-b.day});
+  var past=list.filter(function(x){return x.day<27}).sort(function(a,b){return b.day-a.day});
+  return up.concat(past);
+}
+var SENT0=[
+ {id:'n1',text:'Tomorrow is a half day for the Noida unit. Please plan your shift.',to:'Noida unit',when:'Sent 26 Oct, 4:10 pm',status:'sent',reached:238,read:212},
+ {id:'n2',text:'Diwali sweets will be handed out at the gate on Thursday, 30 Oct.',to:'Everyone I look after',when:'Sent 24 Oct, 9:02 am',status:'sent',reached:410,read:371},
+ {id:'n3',text:'Safety walk on Monday 3 Nov, 10 am, canteen hall.',to:'Gurugram unit',when:'Scheduled for 3 Nov, 9:00 am',status:'scheduled',reached:0,read:0}
+];
+var SCOPE={
+  hr:{everyone:{label:'Everyone I look after',n:412,place:'the Noida and Gurugram units'},targets:[{id:'b1',label:'Noida unit',n:240,g:'Branches'},{id:'b2',label:'Gurugram unit',n:172,g:'Branches'}]},
+  cxo:{everyone:{label:'Everyone I can see',n:1180,place:'all your companies'},targets:[{id:'c1',label:'Alvora Retail',n:760,g:'Companies'},{id:'c2',label:'Alvora Foods',n:420,g:'Companies'},{id:'b1',label:'Noida unit (Alvora Retail)',n:240,g:'Branches'},{id:'b2',label:'Gurugram unit (Alvora Retail)',n:172,g:'Branches'}]}
+};
+SCOPE.own={everyone:{label:'Everyone in my branch',n:240,place:'the Noida unit'},targets:[{id:'b1',label:'Noida unit',n:240,g:'Branches'}]};
+var SENDERS=[{id:'arjun',n:'Arjun Mehta',r:'Chief Executive'},{id:'kavita',n:'Kavita Rao',r:'HR Manager'},{id:'dev',n:'Dev Malhotra',r:'Chief Operating Officer'},{id:'neha',n:'Neha Bansal',r:'Chief Finance Officer'},{id:'sakshi',n:'Sakshi Verma',r:'Store manager'},{id:'anita',n:'Anita Verma',r:'Sales associate'}];
+
+/* ================= state ================= */
+var st={persona:'employee',size:'few',view:'desk',theme:'light',screen:'home',bday:true,email:false,sentToday:2,holder:{hr:true,cxo:true},optOut:false,checkedIn:false};
+var cache={},C=null,openerId=null;
+function resetCompose(){C={text:'',aud:'all',target:'',people:{},psearch:'',when:'now',date:'',time:'',email:false,err:{},banner:'',sent:SENT0.map(function(x){return Object.assign({},x)})}}
+resetCompose();
+function data(){
+  var k=st.persona+'|'+st.size;
+  if(!cache[k]) cache[k]={pend:pendingData(st.persona,st.size),notes:noticeData(st.persona,st.size),bd:bdayData(st.persona,st.size)};
+  return cache[k];
+}
+function canSend(pid){return !!st.holder[pid]}
+function scopeOf(pid){return pid==='hr'?SCOPE.hr:pid==='cxo'?SCOPE.cxo:SCOPE.own}
+function unread(){return data().notes.filter(function(n){return !n.read}).length}
+
+/* ================= icons ================= */
+var I={
+ bell:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>',
+ chev:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>',
+ pin:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3z"/></svg>',
+ check:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="5 12 10 17 19 7"/></svg>',
+ cake:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 21h16M5 21v-7h14v7M12 14V9M12 4c1 1 1 2 0 3-1-1-1-2 0-3"/></svg>'
+};
+function initials(n){return n.split(' ').map(function(x){return x[0]}).slice(0,2).join('')}
+
+/* ================= card builders ================= */
+function pendRow(r){
+  var tail=r.act==='sheet'?'<span class="go">Review</span>':'<span class="go">Open</span>';
+  return '<button class="row" data-act="pend" data-id="'+r.id+'"><span class="av" aria-hidden="true">'+(r.counts?r.count:initials(r.who||r.title))+'</span><span class="rt"><span class="l1" style="display:block">'+esc(r.title)+'</span><span class="l2" style="display:block">'+esc(r.sub)+(r.age&&!r.count&&r.kind!=='goal'&&r.kind!=='policy'&&r.kind!=='mine'?' · waiting '+r.age+(r.age===1?' day':' days'):'')+'</span></span>'+tail+'</button>';
+}
+function pendingCard(){
+  var d=data().pend,rows=d.rows.slice(0,5);
+  var h='<section class="card" data-card="pending" aria-labelledby="h-pend"><div class="ch"><h2 id="h-pend">Pending for you</h2>'+(d.total?'<span class="chip">'+d.total+' waiting</span>':'')+'</div>';
+  if(!rows.length) h+='<div class="empty"><span class="tick">'+I.check+'</span><b>Nothing waiting on you.</b><span>Requests that need you, and policies to read, appear here.</span></div>';
+  else {h+=rows.map(pendRow).join('');}
+  if(d.rows.length>5) h+='<div class="cf"><span class="l2">Showing 5 of '+d.rows.length+(d.counts?' kinds':'')+'</span><span class="sp"></span><button class="tbtn" data-act="all-pend">See all '+d.total+'</button></div>';
+  return h+'</section>';
+}
+function noticeRow(n){
+  var ann=n.kind==='ann';
+  return '<button class="row nrow" data-act="notice" data-id="'+n.id+'"><span class="rt"><span class="meta">'+(ann?'<span style="color:var(--primary);font-weight:700;display:inline-flex;gap:3px;align-items:center">'+I.pin+'Pinned</span>':'')+'<span>'+esc(ann?n.from.split(',')[0]:'Alvora')+' · '+esc(n.when)+'</span></span><span class="txt" style="display:-webkit-box">'+esc(n.text)+'</span></span>'+(n.read?'<span class="l2">Read</span>':'')+'</button>';
+}
+function sortedUnread(){
+  var all=data().notes.filter(function(n){return !n.read});
+  return all.filter(function(n){return n.kind==='ann'}).concat(all.filter(function(n){return n.kind==='sys'}));
+}
+function noticesCard(){
+  var u=sortedUnread(),rows=u.slice(0,5),p=PERSONAS[st.persona],tot=data().notes.length;
+  var h='<section class="card" data-card="notices" aria-labelledby="h-not"><div class="ch"><h2 id="h-not">Notices</h2>'+(u.length?'<span class="chip">'+u.length+' unread</span>':'')+'</div>';
+  if(!rows.length) h+='<div class="empty"><span class="tick">'+I.check+'</span><b>'+(tot?'You are up to date.':'No notices.')+'</b><span>'+(tot?'No new notices. Older ones are under See all.':'Messages from HR and management, and alerts about your work, appear here.')+'</span></div>';
+  else h+=rows.map(noticeRow).join('');
+  var snd=canSend(st.persona);
+  if(snd||tot>0||u.length>5){
+    h+='<div class="cf">'+(snd?'<button class="tbtn" data-act="compose">Send a notice</button>':'')+'<span class="sp"></span>'+(tot?'<button class="tbtn" data-act="all-notes">See all'+(u.length>5?' '+u.length+' unread':'')+'</button>':'')+'</div>';
+  }
+  return h+'</section>';
+}
+function bdayRow(x,earlier){
+  var sub=x.type==='b'?'Birthday':'Work anniversary · '+x.years+(x.years===1?' year':' years');
+  var today=x.day===27;
+  return '<div class="row static"><span class="av" aria-hidden="true">'+initials(x.name)+'</span><span class="rt"><span class="l1" style="display:block">'+esc(x.name)+'</span><span class="l2" style="display:block">'+sub+(earlier?' · earlier this month':'')+'</span></span><span class="go" style="color:var(--text)">'+(today?'Today':x.day+' Oct')+'</span></div>';
+}
+function bdayList(){
+  var list=data().bd;
+  if(!st.bday) list=list.filter(function(x){return x.type==='a'});
+  return bdayOrdered(list);
+}
+function bdayCard(){
+  var l=bdayList(),title=st.bday?'Birthdays and anniversaries':'Work anniversaries';
+  var h='<section class="card" data-card="bday" aria-labelledby="h-bd"><div class="ch"><h2 id="h-bd">'+title+' this month</h2></div>';
+  if(!l.length) h+='<div class="empty"><span class="tick">'+I.cake+'</span><b>'+(st.bday?'No birthdays or anniversaries this month.':'No work anniversaries this month.')+'</b><span>People in your branch who share these dates appear here.</span></div>';
+  else h+=l.slice(0,5).map(function(x){return bdayRow(x,x.day<27)}).join('');
+  if(l.length>5) h+='<div class="cf"><span class="l2">Showing 5 of '+l.length+'</span><span class="sp"></span><button class="tbtn" data-act="all-bday">See all '+l.length+'</button></div>';
+  return h+'</section>';
+}
+function exist(id,title,body){
+  return '<section class="card" data-card="'+id+'" aria-labelledby="h-'+id+'"><div class="ch"><h2 id="h-'+id+'">'+title+'</h2><span class="exist">Existing card</span></div>'+body+'</section>';
+}
+function simpleRows(items){return items.map(function(t){return '<div class="row static"><span class="rt"><span class="l1" style="display:block">'+esc(t[0])+'</span><span class="l2" style="display:block">'+esc(t[1])+'</span></span></div>'}).join('')}
+function todayCard(){
+  return exist('today','Today','<div class="qbar" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i><i></i></div><div class="pad"><div class="l1">Shift 9:30 am to 6:30 pm</div><div class="l2">Checked in 9:12 am · on time</div></div>');
+}
+function leaveCard(){
+  return exist('leave','Leave balance',simpleRows([['Casual leave','6 days left'],['Earned leave','11 days left'],['Sick leave','4 days left'],['Compensatory off','1 day left']]));
+}
+function holCard(){
+  return exist('holidays','Upcoming holidays',simpleRows([['Diwali','Thu, 30 Oct'],['Bhai Dooj','Fri, 31 Oct'],['Guru Nanak Jayanti','Wed, 5 Nov'],['Christmas','Thu, 25 Dec']]));
+}
+function goalsCard(){
+  var g=[['Sell 40 units this month',72],['Complete safety course',40],['Keep returns under 3%',90]];
+  return exist('goals','My goals',g.map(function(x){return '<div class="row static" style="display:block"><div class="l1">'+x[0]+'</div><div class="prog"><i style="width:'+x[1]+'%"></i></div></div>'}).join(''));
+}
+function teamGoalsCard(){
+  return exist('teamgoals','Team goals',simpleRows([['Team sales target','68% of the way'],['Shelf audit','3 of 5 stores done'],['Training hours','2 people behind']]));
+}
+function docsCard(){return exist('docs','My documents',simpleRows([['Address proof','Uploaded'],['Bank details','Uploaded'],['Photo','Needed']]))}
+function polCard(){return exist('policies','Policies',simpleRows([['Leave and attendance','Read'],['Safety on the floor','Read'],['Code of conduct','Read']]))}
+
+function heroCard(){
+  var p=PERSONAS[st.persona];
+  return '<section class="hero" data-card="checkin" aria-label="Check in"><div><div class="nm">Good morning, '+esc(p.name.split(' ')[0])+'</div><div class="sub">'+esc(p.role)+'</div><div class="st"><span class="dot" aria-hidden="true"></span><span>'+(st.checkedIn?'Checked in at 9:12 am':'Not checked in yet today')+'</span></div><div class="dayw" aria-label="Today against your shift"><div class="qbar2" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i><i></i></div><div class="dl">Shift 9:30 am to 6:30 pm · today so far, in quarters</div></div></div><div><div class="clock">9:12 am</div><button class="btn big" data-act="checkin">'+(st.checkedIn?'Check Out':'Check In')+'</button></div></section>';
+}
+
+/* ================= screens ================= */
+function homeScreen(){
+  var p=PERSONAS[st.persona],cards=[pendingCard(),noticesCard(),leaveCard()];
+  if(st.bday||true) {}
+  if(orgBday()) cards.push(bdayCard());
+  cards.push(holCard());
+  if(p.goals&&st.size!=='none') cards.push(goalsCard());
+  if(p.team&&st.size!=='none') cards.push(teamGoalsCard());
+  if(p.docs&&st.size!=='none') cards.push(docsCard());
+  if(p.policies&&st.size!=='none') cards.push(polCard());
+  if(st.view==='desk'&&cards.length%2===1) cards[cards.length-1]=cards[cards.length-1].replace('<section class="card"','<section class="card span2"');
+  return '<div class="top-stack">'+heroCard()+'</div><div class="grid">'+cards.join('')+'</div>';
+}
+function orgBday(){return st.bdayOrg!==false}
+function composeScreen(){
+  var p=PERSONAS[st.persona],sc=scopeOf(st.persona),h='';
+  var n=audCount(sc);
+  h+='<div class="compose"><button class="tbtn" data-act="go" data-id="home">← Back to Home</button>';
+  h+='<h2 style="margin:8px 0 16px;font-size:20px">Send a notice</h2>';
+  if(C.banner) h+='<div class="banner" role="status">'+esc(C.banner)+'</div>';
+  if(st.sentToday>=5){
+    h+='<div class="setc"><b>You have sent 5 notices today.</b><div class="hint">That is the limit for one day. You can send again tomorrow. Notices you already sent are listed below.</div></div>';
+  } else {
+    h+='<div class="fld"><label for="c-text">Message</label><textarea id="c-text" maxlength="300" aria-describedby="c-cnt c-warn'+(C.err.text?' c-etext':'')+'">'+esc(C.text)+'</textarea><div class="cnt" id="c-cnt">'+C.text.length+' of 300</div><div class="hint" id="c-warn">Everyone you choose will read this. Do not put pay, health or other personal details in it.</div>'+(C.err.text?'<div class="err" id="c-etext">'+C.err.text+'</div>':'')+'</div>';
+    h+='<fieldset class="fld"><legend>Send to</legend>';
+    h+='<label class="opt"><input type="radio" name="aud" value="all"'+(C.aud==='all'?' checked':'')+'><span>'+sc.everyone.label+' <span class="hint">('+sc.everyone.n.toLocaleString('en-IN')+' people)</span></span></label>';
+    h+='<label class="opt"><input type="radio" name="aud" value="branch"'+(C.aud==='branch'?' checked':'')+'><span>A branch or company</span></label>';
+    if(C.aud==='branch'){
+      h+='<div style="margin:0 0 8px 32px"><label for="c-target" class="hint" style="display:block;margin:0 0 4px">Choose one</label><select id="c-target"><option value="">Choose…</option>';
+      var grp='';sc.targets.forEach(function(t){if(t.g!==grp){if(grp)h+='</optgroup>';h+='<optgroup label="'+t.g+'">';grp=t.g}h+='<option value="'+t.id+'"'+(C.target===t.id?' selected':'')+'>'+esc(t.label)+' ('+t.n+' people)</option>'});
+      h+='</optgroup></select>'+(C.err.target?'<div class="err">'+C.err.target+'</div>':'')+'</div>';
+    }
+    h+='<label class="opt"><input type="radio" name="aud" value="people"'+(C.aud==='people'?' checked':'')+'><span>Chosen people</span></label>';
+    if(C.aud==='people'){
+      h+='<div style="margin:0 0 8px 32px"><label for="c-psearch" class="hint" style="display:block;margin:0 0 4px">Find a person</label><input type="search" id="c-psearch" value="'+esc(C.psearch)+'"><div class="ppl" role="group" aria-label="People you can reach">';
+      NAMES.filter(function(x){return x.toLowerCase().indexOf(C.psearch.toLowerCase())>-1}).slice(0,20).forEach(function(x){h+='<label class="opt"><input type="checkbox" data-person="'+esc(x)+'"'+(C.people[x]?' checked':'')+'><span>'+esc(x)+'</span></label>'});
+      h+='</div>'+(C.err.people?'<div class="err">'+C.err.people+'</div>':'')+'</div>';
+    }
+    h+='</fieldset>';
+    h+='<div class="reach" id="c-reach" role="status">'+reachText(sc)+'</div>';
+    h+='<fieldset class="fld"><legend>When</legend><label class="opt"><input type="radio" name="when" value="now"'+(C.when==='now'?' checked':'')+'><span>Send now</span></label><label class="opt"><input type="radio" name="when" value="later"'+(C.when==='later'?' checked':'')+'><span>Send later</span></label>';
+    if(C.when==='later'){
+      h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 0 0 32px"><div style="flex:1;min-width:140px"><label for="c-date" class="hint" style="display:block;margin:0 0 4px">Date</label><input type="date" id="c-date" min="2026-10-27" value="'+C.date+'"></div><div style="flex:1;min-width:120px"><label for="c-time" class="hint" style="display:block;margin:0 0 4px">Time</label><input type="time" id="c-time" value="'+C.time+'"></div></div><div class="hint" style="margin-left:32px">It goes out at about this time, up to 4 minutes later.</div>'+(C.err.when?'<div class="err" style="margin-left:32px">'+C.err.when+'</div>':'');
+    }
+    h+='</fieldset>';
+    if(st.email) h+='<div class="fld"><label class="opt"><input type="checkbox" id="c-email"'+(C.email?' checked':'')+'><span>Also send this by email<span class="hint" style="display:block">Goes at the same time as the notice.</span></span></label></div>';
+    h+='<div class="fld"><button class="btn" id="c-send" data-act="send" style="width:100%">'+sendLabel(sc)+'</button><div class="hint">You have sent '+st.sentToday+' of 5 notices today.</div></div>';
+  }
+  h+='<h3 style="margin:24px 0 8px;font-size:16px">Notices I sent</h3>';
+  C.sent.forEach(function(s){
+    h+='<div class="sent"><div class="t">'+esc(s.text)+'</div><div class="m">To '+esc(s.to)+' · '+esc(s.when)+'</div><div class="m"><b>'+(s.status==='sent'?'Reached '+s.reached+' people · Read by '+s.read+' of '+s.reached+(s.emailed?' · Emailed':''):s.status==='scheduled'?'Not sent yet':'Cancelled, not sent')+'</b></div>'+(s.status==='scheduled'?'<button class="tbtn" data-act="cancel-sched" data-id="'+s.id+'" style="margin-left:-10px">Cancel this notice</button>':'')+'</div>';
+  });
+  return h+'</div>';
+}
+function audCount(sc){
+  if(C.aud==='all') return sc.everyone.n;
+  if(C.aud==='branch'){var t=sc.targets.filter(function(x){return x.id===C.target})[0];return t?t.n:0}
+  return Object.keys(C.people).filter(function(k){return C.people[k]}).length;
+}
+function reachText(sc){
+  var n=audCount(sc);
+  if(C.aud==='branch'&&!C.target) return 'Choose a branch or company to see how many people this reaches.';
+  if(C.aud==='people'&&!n) return 'Tick the people you want to reach.';
+  return 'This reaches <b>'+n.toLocaleString('en-IN')+' '+(n===1?'person':'people')+'</b>. Everyone has a login, so everyone sees it. People who have left are skipped.';
+}
+function whenLabel(){
+  if(C.when==='now') return '';
+  if(!C.date||!C.time) return ' later';
+  var d=new Date(C.date+'T00:00');
+  var m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  var hh=parseInt(C.time.slice(0,2),10),mm=C.time.slice(3);
+  return ' for '+d.getDate()+' '+m+', '+((hh%12)||12)+':'+mm+(hh<12?' am':' pm');
+}
+function sendLabel(sc){
+  var n=audCount(sc);
+  var who=n?' to '+n.toLocaleString('en-IN')+' '+(n===1?'person':'people'):'';
+  return (C.when==='now'?'Send':'Schedule')+(C.when==='now'?who:whenLabel()+who);
+}
+function settingsScreen(){
+  var h='<div class="compose" style="max-width:700px"><button class="tbtn" data-act="go" data-id="home">← Back to Home</button><h2 style="margin:8px 0 4px;font-size:20px">Organisation settings</h2><div class="hint" style="margin-bottom:16px">Notices and birthdays. These settings change Home for everyone in the organisation.</div>';
+  h+='<div class="setc"><h2>Who can send notices</h2><div class="hint" style="margin-bottom:8px">People who have the <b>Notice Sender</b> access. Each person can reach only the people in their own company and branch.</div><div class="ppl" style="margin:0 0 12px" role="list" aria-label="People with Notice Sender access">';
+  [['Arjun Mehta','Chief Executive','cxo'],['Kavita Rao','HR Manager','hr'],['Dev Malhotra','Chief Operating Officer',''],['Neha Bansal','Chief Finance Officer','']].forEach(function(x){var on=x[2]?st.holder[x[2]]:true;if(on)h+='<div class="row static" role="listitem" style="min-height:48px"><span class="rt"><span class="l1" style="display:block">'+x[0]+'</span><span class="l2" style="display:block">'+x[1]+'</span></span></div>'});
+  h+='</div><div class="hint"><b>To give or remove the access:</b> open the person under Users, then Roles, and tick or untick Notice Sender. It takes effect the next time they open Home.</div><button class="btn out" style="margin-top:12px" data-act="toast" data-msg="Opens Users in the office screen (existing). Nothing new to build.">Open Users</button><div class="hint" style="margin-top:12px">Last changed by Kavita Rao, 20 Oct 2026.</div></div>';
+  h+='<div class="setc"><h2>Birthdays and anniversaries on Home</h2><div class="sw"><button role="switch" aria-checked="'+orgBday()+'" aria-labelledby="sw-l" data-act="bday-switch"></button><div><div id="sw-l" class="state">'+(orgBday()?'On':'Off')+'</div><div class="hint">'+(orgBday()?'Staff see people in their own branch who have a birthday or work anniversary this month: name, day, and years of service. Never age. Each person can hide themselves in My profile.':'Home does not show a birthdays and anniversaries card.')+'</div></div></div></div></div>';
+  return h;
+}
+function profileScreen(){
+  var h='<div class="compose"><h2 style="margin:0 0 4px;font-size:20px">My profile</h2><div class="hint" style="margin-bottom:16px">Only the new setting is drawn. The rest of the profile is unchanged.</div>';
+  if(orgBday()) h+='<div class="setc"><h2>Sharing with colleagues</h2><label class="opt"><input type="checkbox" id="p-share"'+(st.optOut?'':' checked')+'><span>Show my birthday and work anniversary to colleagues in my branch<span class="hint" style="display:block">They see your name, the day and month, and your years of service. Never your age or birth year. You can change this at any time.</span></span></label></div>';
+  else h+='<div class="setc"><div class="hint">There is nothing to set here right now.</div></div>';
+  if(PERSONAS[st.persona].hr) h+='<button class="btn out" data-act="go" data-id="settings">Organisation settings</button>';
+  return h+'</div>';
+}
+
+/* ================= shell ================= */
+function navItems(){
+  var p=PERSONAS[st.persona],it=[['home','Home'],['time','Time'],['pay','Pay'],['growth','Growth']];
+  if(p.mgr) it.push(['team','Team']);
+  it.push(['profile','My profile']);
+  if(p.hr) it.push(['settings','Settings']);
+  return it;
+}
+function titleOf(){return {home:'Home',compose:'Send a notice',settings:'Organisation settings',profile:'My profile'}[st.screen]||'Home'}
+function bellHTML(){
+  var u=unread();
+  return '<button class="bell" data-act="all-notes" aria-label="Notices, '+u+' unread">'+I.bell+(u?'<span class="badge">'+u+'</span>':'')+'</button>';
+}
+function body(){
+  if(st.screen==='compose') return composeScreen();
+  if(st.screen==='settings') return settingsScreen();
+  if(st.screen==='profile') return profileScreen();
+  return homeScreen();
+}
+function render(){
+  document.documentElement.setAttribute('data-theme',st.theme);
+  var app=$('#app');app.className='app '+(st.view==='desk'?'desk':'phone');
+  var fid=document.activeElement&&document.activeElement.id,sc=window.scrollY;
+  var nav=navItems();
+  var cur=st.screen==='compose'?'home':st.screen;
+  var main='<div class="top"><h1>'+titleOf()+'</h1>'+bellHTML()+'</div><div class="content" id="content">'+body()+'</div>';
+  if(st.view==='desk'){
+    app.innerHTML='<nav class="side" aria-label="Main"><div class="brand">Alvora</div>'+nav.map(function(n){return '<button class="nav" data-act="go" data-id="'+n[0]+'"'+(cur===n[0]?' aria-current="page"':'')+'>'+n[1]+'</button>'}).join('')+'</nav><div class="mainc">'+main+'</div>';
+  } else {
+    var bn=nav.filter(function(n){return n[0]!=='settings'&&n[0]!=='team'}).slice(0,5);
+    app.innerHTML='<div class="mainc">'+main+'<nav class="bottom" aria-label="Main">'+bn.map(function(n){return '<button data-act="go" data-id="'+n[0]+'"'+(cur===n[0]?' aria-current="page"':'')+'>'+(n[0]==='profile'?'Me':n[1])+'</button>'}).join('')+'</nav></div>';
+  }
+  if(fid){var e=document.getElementById(fid);if(e){e.focus();if(e.setSelectionRange&&e.type!=='search'&&e.tagName==='TEXTAREA'){}}}
+  renderRv();
+  measureSoon();
+}
+function renderRv(){
+  function seg(label,key,opts){return '<fieldset><legend>'+label+'</legend><div class="seg">'+opts.map(function(o){return '<button data-rv="'+key+'" data-v="'+o[0]+'" aria-pressed="'+(st[key]===o[0])+'">'+o[1]+'</button>'}).join('')+'</div></fieldset>'}
+  $('#rv').innerHTML=seg('Person','persona',Object.keys(PERSONAS).map(function(k){return [k,PERSONAS[k].label]}))+seg('Data','size',[['none','None'],['few','Few'],['many','Many']])+seg('View','view',[['desk','1280 px'],['phone','360 px']])+seg('Theme','theme',[['light','Light'],['dark','Dark']])+
+   '<fieldset><legend>Organisation and tenant</legend><label class="ck"><input type="checkbox" data-rvc="bdayOrg"'+(orgBday()?' checked':'')+'> Birthdays widget on (org setting)</label><label class="ck"><input type="checkbox" data-rvc="holder"'+(st.holder[st.persona]?' checked':'')+'> This person has Notice Sender access</label><label class="ck"><input type="checkbox" data-rvc="email"'+(st.email?' checked':'')+'> Email active for tenant</label><label class="ck"><input type="checkbox" data-rvc="limit"'+(st.sentToday>=5?' checked':'')+'> 5 notices already sent today</label></fieldset>'+
+   '<fieldset><legend>Sample data</legend><div class="seg"><button data-rv="reset" data-v="1">Reset</button></div></fieldset>';
+}
+
+/* ================= sheets ================= */
+function openSheet(title,html,foot,cls){
+  var ov=$('#ov');ov.className='on';ov.innerHTML='';
+  var el=document.createElement('div');
+  var phone=st.view==='phone';
+  el.className='sheet '+(phone?'bs':'dlg');el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-labelledby','sh-t');el.id='sheet';
+  if(phone){var r=$('#app').getBoundingClientRect();el.style.left=r.left+'px';el.style.width=r.width+'px'}
+  el.innerHTML='<div class="sh-h"><h2 id="sh-t">'+esc(title)+'</h2><button class="tbtn" data-act="close" aria-label="Close">Close</button></div><div class="sh-b">'+html+'</div>'+(foot?'<div class="sh-f">'+foot+'</div>':'');
+  ov.appendChild(el);
+  var f=el.querySelector('textarea,input,select,button.btn,button');if(f)f.focus();
+  document.body.style.overflow='hidden';
+}
+function closeSheet(){var ov=$('#ov');ov.className='';ov.innerHTML='';document.body.style.overflow='';render();if(openerId){var o=document.getElementById(openerId);openerId=null;if(o)o.focus()}}
+function toast(msg){var t=$('#toast');t.textContent=msg;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){t.style.display='none'},3200)}
+function allPend(){
+  var d=data().pend;
+  openSheet('Pending for you',d.rows.map(pendRow).join('')+'<div class="sh-p l2">'+(d.counts?'Counts by kind. Tap one to open its screen.':'Showing all '+d.rows.length+' (at most 50 of each kind).')+'</div>');
+}
+function allNotes(){
+  var n=data().notes;
+  if(!n.length){openSheet('Notices','<div class="empty" style="border:0;padding:32px 20px"><b>No notices.</b><span>Messages from HR and management, and alerts about your work, appear here.</span></div>');return}
+  var h=n.slice().sort(function(a,b){return (a.read-b.read)||((a.kind==='ann'?0:1)-(b.kind==='ann'?0:1))}).map(noticeRow).join('');
+  openSheet('Notices, last 30 days',h);
+}
+function allBday(){
+  var l=bdayList();
+  openSheet((st.bday?'Birthdays and anniversaries':'Work anniversaries')+', October',l.map(function(x){return bdayRow(x,x.day<27)}).join('')+'<div class="sh-p l2">Only people in your own branch who share their dates.</div>');
+}
+function noticeSheet(id){
+  var n=data().notes.filter(function(x){return x.id===id})[0];if(!n)return;
+  n.read=true;
+  openSheet(n.kind==='ann'?'Notice from '+n.from.split(',')[0]:'Notice',
+   '<div class="sh-p"><div class="l2" style="margin-bottom:8px">'+(n.kind==='ann'?esc(n.from):'Alvora')+' · '+esc(n.when)+'</div><div style="font-size:16px;line-height:1.5">'+esc(n.text)+'</div></div>',
+   (n.link?'<button class="btn out" data-act="toast" data-msg="Opens the existing screen for this alert.">Open it</button>':'')+'<button class="btn" data-act="close">Close</button>');
+}
+function decideSheet(id){
+  var r=data().pend.rows.filter(function(x){return x.id===id})[0];if(!r)return;
+  var h,foot;
+  if(r.kind==='leave'){
+    h='<div class="sh-p"><div class="l1" style="font-size:18px">'+esc(r.who)+'</div><div class="l2" style="margin:2px 0 12px">Leave request</div><div class="sent" style="margin:0"><div>'+esc(r.ltype)+'</div><div class="m">'+esc(r.dates)+' · '+r.days+(r.days===1?' day':' days')+'</div></div><div class="hint" style="margin-top:8px">Waiting '+r.age+' days.</div></div>';
+  } else {
+    h='<div class="sh-p"><div class="l1" style="font-size:18px">'+esc(r.who)+'</div><div class="l2" style="margin:2px 0 12px">Expense claim</div><div class="sent" style="margin:0"><div style="font-size:24px;font-weight:700">₹'+r.amt.toLocaleString('en-IN')+'</div><div class="m">'+esc(r.etype)+' · '+esc(r.edate)+'</div><div class="m" style="color:var(--text)">'+esc(r.note)+'</div></div><div class="hint" style="margin-top:8px">Waiting '+r.age+' days. Approving passes it to accounts for payment. You cannot take it back here.</div></div>';
+  }
+  h+='<div class="sh-p" id="dec-reason" style="display:none;padding-top:0"><label for="dr" style="font-weight:600;display:block;margin-bottom:6px">Why are you declining? '+esc(r.who.split(' ')[0])+' will read this.</label><textarea id="dr" maxlength="140" style="min-height:80px"></textarea><div class="err" id="dr-e" style="display:none">Write a short reason first.</div></div>';
+  foot='<button class="btn" data-act="approve" data-id="'+id+'" id="dec-a">Approve</button><button class="btn out" data-act="decline" data-id="'+id+'" id="dec-d">Decline</button>';
+  openSheet(r.kind==='leave'?'Leave request':'Expense claim',h,foot);
+}
+function dlg(title,text,okLabel,okAct,okId,cancelLabel){
+  openSheet(title,'<div class="sh-p" style="font-size:15px">'+text+'</div>','<button class="btn out" data-act="close">'+(cancelLabel||'Go back')+'</button><button class="btn" data-act="'+okAct+'"'+(okId?' data-id="'+okId+'"':'')+'>'+okLabel+'</button>');
+}
+
+/* ================= send ================= */
+function validateSend(sc){
+  C.err={};var ok=true,t=C.text.trim();
+  if(!t){C.err.text='Write a message first.';ok=false}
+  if(C.aud==='branch'&&!C.target){C.err.target='Choose a branch or company.';ok=false}
+  if(C.aud==='people'&&!audCount(sc)){C.err.people='Tick at least one person.';ok=false}
+  if(C.when==='later'){
+    if(!C.date||!C.time){C.err.when='Choose a date and a time.';ok=false}
+    else if(new Date(C.date+'T'+C.time)<=new Date('2026-10-27T09:12')){C.err.when='Choose a time that has not passed yet.';ok=false}
+  }
+  return ok;
+}
+function doSend(sc){
+  var n=audCount(sc),to=C.aud==='all'?sc.everyone.label:C.aud==='branch'?sc.targets.filter(function(x){return x.id===C.target})[0].label:'Chosen people ('+n+')';
+  var later=C.when==='later',w=whenLabel();
+  C.sent.unshift({id:'n'+Date.now(),text:C.text.trim(),to:to,when:later?'Scheduled'+w:'Sent 27 Oct, 9:12 am',status:later?'scheduled':'sent',reached:later?0:n,read:0,emailed:st.email&&C.email&&!later});
+  C.banner=later?'Scheduled'+w+'. It will reach '+n.toLocaleString('en-IN')+' people.':'Sent to '+n.toLocaleString('en-IN')+' people. They will see it on Home and in the bell.';
+  st.sentToday=Math.min(5,st.sentToday+1);
+  C.text='';C.people={};C.date='';C.time='';C.when='now';C.err={};
+  render();window.scrollTo(0,0);
+}
+
+/* ================= events ================= */
+document.addEventListener('click',function(e){
+  var rv=e.target.closest('[data-rv]');
+  if(rv){var k=rv.dataset.rv,v=rv.dataset.v;
+    if(k==='reset'){cache={};resetCompose();st.sentToday=2;toast('Sample data reset.');render();return}
+    st[k]=v;if(k==='persona'&&st.screen==='compose'&&!canSend(v))st.screen='home';if(k==='persona'&&st.screen==='settings'&&!PERSONAS[v].hr)st.screen='home';render();return}
+  var a=e.target.closest('[data-act]');if(!a)return;
+  var act=a.dataset.act,id=a.dataset.id;
+  if(a.id) openerId=a.id; else if(!$('#sheet')) {a.id=a.id||('op'+Math.random().toString(36).slice(2,7));openerId=a.id}
+  var sc=scopeOf(st.persona);
+  switch(act){
+    case 'close': closeSheet();break;
+    case 'toast': toast(a.dataset.msg);break;
+    case 'checkin': st.checkedIn=!st.checkedIn;render();break;
+    case 'go':
+      if(['home','profile','settings'].indexOf(id)>-1){st.screen=id;render();window.scrollTo(0,0)}
+      else toast('Existing screen. Not part of this slice.');break;
+    case 'compose': st.screen='compose';render();window.scrollTo(0,0);break;
+    case 'all-pend': allPend();break;
+    case 'all-notes': allNotes();break;
+    case 'all-bday': allBday();break;
+    case 'notice': noticeSheet(id);break;
+    case 'pend':
+      var r=data().pend.rows.filter(function(x){return x.id===id})[0];
+      if(r.act==='sheet') decideSheet(id);
+      else {var rt={leave:'Team',goal:'Growth',fix:'Time, Fix attendance',shift:'Time, Shift change',policy:'Company, Policies',mine:'Time',expense:'Expense claims'}[r.kind];toast('Opens the existing screen: '+rt+'.')}
+      break;
+    case 'approve':
+      var rr=data().pend.rows.filter(function(x){return x.id===id})[0];
+      var d=data().pend;d.rows=d.rows.filter(function(x){return x.id!==id});d.total=d.rows.length;
+      $('#ov').className='';$('#ov').innerHTML='';document.body.style.overflow='';openerId=null;render();
+      toast('Approved. '+(rr.kind==='expense'?rr.who+'’s claim of ₹'+rr.amt.toLocaleString('en-IN')+' goes to accounts.':rr.who+'’s leave is approved.'));break;
+    case 'decline':
+      var box=$('#dec-reason');
+      if(box.style.display==='none'){box.style.display='block';$('#dr').focus();$('#dec-d').textContent='Send decline';$('#dec-a').style.display='none';$('#dec-d').className='btn';break}
+      if(!$('#dr').value.trim()){$('#dr-e').style.display='block';$('#dr').focus();break}
+      var r2=data().pend.rows.filter(function(x){return x.id===id})[0];
+      var d2=data().pend;d2.rows=d2.rows.filter(function(x){return x.id!==id});d2.total=d2.rows.length;
+      $('#ov').className='';$('#ov').innerHTML='';document.body.style.overflow='';openerId=null;render();
+      toast('Declined. '+r2.who.split(' ')[0]+' will see your reason.');break;
+    case 'send':
+      if(!validateSend(sc)){render();var f=$('.err');if(f){var inp=f.parentNode.querySelector('textarea,select,input');if(inp)inp.focus()}break}
+      var n=audCount(sc);
+      if(n>25) dlg('Send to '+n.toLocaleString('en-IN')+' people?','You are about to '+(C.when==='now'?'send this now':'schedule this'+whenLabel())+' to <b>'+n.toLocaleString('en-IN')+' people</b>. You cannot take a sent notice back.',C.when==='now'?'Send to '+n.toLocaleString('en-IN')+' people':'Schedule it','confirm-send');
+      else doSend(sc);
+      break;
+    case 'confirm-send': $('#ov').className='';$('#ov').innerHTML='';document.body.style.overflow='';doSend(sc);break;
+    case 'cancel-sched': dlg('Cancel this notice?','It is scheduled but not sent. If you cancel it, nobody will receive it.','Cancel the notice','confirm-cancel',id,'Keep it');break;
+    case 'confirm-cancel': C.sent.forEach(function(s){if(s.id===id)s.status='cancelled'});$('#ov').className='';$('#ov').innerHTML='';document.body.style.overflow='';render();break;
+    case 'bday-switch':
+      if(orgBday()) dlg('Switch off birthdays and anniversaries?','Home will stop showing this card for everyone in the organisation (412 people). You can switch it back on at any time.','Switch off','bday-off',null,'Keep it on');
+      else {st.bdayOrg=true;render()}
+      break;
+    case 'bday-off': st.bdayOrg=false;$('#ov').className='';$('#ov').innerHTML='';document.body.style.overflow='';render();toast('Switched off for everyone.');break;
+  }
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&$('#ov').className==='on')closeSheet()});
+document.addEventListener('input',function(e){
+  var t=e.target;
+  if(t.id==='c-text'){C.text=t.value;$('#c-cnt').textContent=t.value.length+' of 300'}
+  else if(t.id==='c-psearch'){C.psearch=t.value;var pos=t.selectionStart;render();var n=$('#c-psearch');n.focus();n.setSelectionRange(pos,pos)}
+  else if(t.id==='dr'){var er=$('#dr-e');if(er)er.style.display='none'}
+});
+document.addEventListener('change',function(e){
+  var t=e.target,sc=scopeOf(st.persona);
+  if(t.name==='aud'){C.aud=t.value;C.err={};render()}
+  else if(t.name==='when'){C.when=t.value;C.err={};render()}
+  else if(t.id==='c-target'){C.target=t.value;render()}
+  else if(t.dataset&&t.dataset.person){C.people[t.dataset.person]=t.checked;$('#c-reach').innerHTML=reachText(sc);$('#c-send').textContent=sendLabel(sc)}
+  else if(t.id==='c-date'){C.date=t.value;$('#c-send').textContent=sendLabel(sc)}
+  else if(t.id==='c-time'){C.time=t.value;$('#c-send').textContent=sendLabel(sc)}
+  else if(t.id==='c-email'){C.email=t.checked}
+  else if(t.id==='p-share'){st.optOut=!t.checked;toast(t.checked?'Colleagues in your branch can see your birthday and anniversary.':'You are hidden from the birthdays and anniversaries card.')}
+  else if(t.dataset&&t.dataset.rvc){
+    if(t.dataset.rvc==='bdayOrg')st.bdayOrg=t.checked;
+    if(t.dataset.rvc==='email')st.email=t.checked;
+    if(t.dataset.rvc==='holder'){st.holder[st.persona]=t.checked;if(!t.checked&&st.screen==='compose')st.screen='home'}
+    if(t.dataset.rvc==='limit')st.sentToday=t.checked?5:2;
+    render();
+  }
+});
+
+/* ================= the balance check ================= */
+var mt=null;function measureSoon(){clearTimeout(mt);mt=setTimeout(function(){drawReadout(measure())},30)}
+function measure(){
+  var app=$('#app'),grid=app.querySelector('.grid');if(!grid)return null;
+  var cards=$$('[data-card]',app),nat={};
+  grid.classList.add('nat');cards.forEach(function(c){nat[c.dataset.card]=c.getBoundingClientRect().height});grid.classList.remove('nat');
+  var R=cards.map(function(c){var b=c.getBoundingClientRect();return {id:c.dataset.card,top:Math.round(b.top+window.scrollY),h:Math.round(b.height),nat:Math.round(nat[c.dataset.card]),bottom:Math.round(b.bottom+window.scrollY),rows:$$('.row',c).length}});
+  var rows={};R.forEach(function(r){(rows[r.top]=rows[r.top]||[]).push(r)});
+  var keys=Object.keys(rows).map(Number).sort(function(a,b){return a-b});
+  var pairs=[],maxGap=0,i;
+  keys.forEach(function(k,ix){
+    var g=rows[k];
+    if(g.length>1){var mx=Math.max.apply(null,g.map(function(x){return x.nat})),mn=Math.min.apply(null,g.map(function(x){return x.nat}));pairs.push({a:g[0].id,b:g[1].id,ratio:mx/mn,shown:Math.max.apply(null,g.map(function(x){return x.h}))/Math.min.apply(null,g.map(function(x){return x.h}))})}
+    if(ix>0){var prev=Math.max.apply(null,rows[keys[ix-1]].map(function(x){return x.bottom}));maxGap=Math.max(maxGap,k-prev)}
+  });
+  var hs=R.map(function(r){return r.h}).sort(function(a,b){return a-b}),med=hs[Math.floor(hs.length/2)];
+  var tall=Math.max.apply(null,hs);
+  var last=rows[keys[keys.length-1]],lb=last.map(function(x){return x.bottom}),colEnd=Math.max.apply(null,lb)-Math.min.apply(null,lb);
+  var caps=R.filter(function(r){return ['pending','notices','bday'].indexOf(r.id)>-1}).every(function(r){return r.rows<=5});
+  var ids=R.slice().sort(function(a,b){return a.top-b.top}).map(function(r){return r.id});
+  var order=ids[0]==='checkin'&&ids[1]==='pending'&&ids[2]==='notices';
+  var stretched=pairs.filter(function(p){return p.ratio>1.5});
+  var fw=app.scrollWidth<=app.clientWidth+1;
+  return {R:R,pairs:pairs,stretched:stretched,maxGap:maxGap,med:med,tall:tall,tallOk:tall<=2*med,colEnd:colEnd,caps:caps,order:order,fw:fw,gapOk:maxGap<=24,colOk:colEnd<=120,view:st.view,persona:st.persona,size:st.size,bday:orgBday()};
+}
+function ok(b){return '<span class="'+(b?'ok':'bad')+'">'+(b?'Pass':'Fail')+'</span>'}
+function drawReadout(m){
+  var el=$('#ro');if(!m){el.innerHTML='<h2>Balance check</h2>This screen is not the Home page. Go back to Home to see the card heights.';return}
+  var t='<h2>Balance check (measured live: '+(m.view==='desk'?'1280':'360')+' px · '+PERSONAS[m.persona].label+' · data: '+m.size+(m.bday?'':' · birthdays widget off')+')</h2>';
+  t+='<table><tr><th>Card</th><th>Natural height</th><th>Shown height</th><th>Gap above</th></tr>';
+  var prevBottom=null;
+  m.R.slice().sort(function(a,b){return a.top-b.top||0}).forEach(function(r){t+='<tr><td>'+r.id+'</td><td>'+r.nat+' px</td><td>'+r.h+' px</td><td>'+(prevBottom===null?'-':Math.max(0,r.top-prevBottom)+' px')+'</td></tr>';if(r.top>=0)prevBottom=Math.max(prevBottom||0,r.bottom)});
+  t+='</table><ul>';
+  t+='<li>Same-row cards within 1.5x: '+(m.view==='phone'?'one column, no side-by-side cards. ':ok(true)+' ('+(m.stretched.length?m.stretched.length+' pair(s) over 1.5x on natural height, so the shorter card stretches to match: '+m.stretched.map(function(p){return p.a+' / '+p.b+' '+p.ratio.toFixed(2)+'x'}).join(', '):'every pair is within 1.5x without stretching')+')')+'</li>';
+  t+='<li>No card taller than 2x the median ('+m.med+' px, tallest '+m.tall+' px): '+ok(m.tallOk)+'</li>';
+  t+='<li>Largest gap between cards '+m.maxGap+' px (limit 24): '+ok(m.gapOk)+' · columns end within '+m.colEnd+' px of each other (limit 120): '+ok(m.colOk)+'</li>';
+  t+='<li>Lists capped at 5 rows (Pending, Notices, Birthdays): '+ok(m.caps)+'</li>';
+  t+='<li>Nothing wider than the screen: '+ok(m.fw)+(m.view==='phone'?' · order check-in, Pending, Notices: '+ok(m.order):'')+'</li></ul>';
+  el.innerHTML=t;
+}
+window.__balance=measure;
+window.__set=function(o){Object.assign(st,o);st.screen='home';render();return measure()};
+$('#notes').innerHTML='<b>Try:</b> switch Person and Data, then flip View between 1280 px and 360 px. Anyone with the Notice Sender access (Kavita and Arjun have it; tick the box in the bar to give it to the current person) will see "Send a notice" on the Notices card; tap it. As Kavita use Settings for who has the access and the birthdays switch. As anyone open My profile for the hide-me tick. Tap a leave or expense row as a manager. The readout above measures the page you are looking at.';
+render();
+})();
+</script>
+</body>
+</html>

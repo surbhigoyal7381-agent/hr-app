@@ -741,7 +741,11 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# `cancel_leave` cancels an employee's OWN approved leave before it
 		# starts. The Employee role has no cancel; the bypass is set on that one
 		# document after the own-record and future-date checks.
-		("alvoraa_portal", "hr_api.py"): 70,
+		# 70 -> 67 in slice 076 (AC-109): Home's Activity endpoint, which read
+		# three people's records around permissions, is gone.
+		("alvoraa_portal", "hr_api.py"): 67,
+		# Slice 076 (new file): the caller's own notices through get_list; none.
+		("alvoraa_portal", "notices.py"): 0,
 		# Slice 063 (new file): DTC's leave rules read and notify; none needed.
 		("alvoraa_portal", "leave_rules.py"): 0,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
@@ -834,6 +838,16 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "payroll_month.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/report/salary_components_and_workings/salary_components_and_workings.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/report/grooming_review_pending/grooming_review_pending.py"): 0,
+		# Slice 065 (SEC-7). Replacement plans: set, confirm and remove run as
+		# the HR Manager, the daily erase as the scheduler. No bypass anywhere.
+		("hrms", "alvoraa_org_structure/plans.py"): 0,
+		("hrms", "alvoraa_org_structure/doctype/replacement_plan/replacement_plan.py"): 0,
+		# Slice 076 Part B: writing one Notification Log row per recipient is
+		# writing other people's rows - the one bypass. The scope, the send and
+		# the cancel run as the sender; the scope code in access.py has none.
+		("alvoraa_portal", "announcements.py"): 1,
+		("alvoraa_portal", "alvoraa_portal/doctype/announcement/announcement.py"): 0,
+		("alvoraa_portal", "patches/v1_0/notice_sender_role.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

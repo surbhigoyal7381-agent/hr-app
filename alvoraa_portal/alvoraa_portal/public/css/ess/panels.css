@@ -658,31 +658,107 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .tvtab.active{background:var(--primary);color:var(--surface);border-color:var(--primary)}
 .tvtab:not(.active):hover{background:var(--surface2);color:var(--text)}
 
-/* ── Home body grid: activity (left) + actions (right) ─────────────── */
-.home-body-grid{display:grid;grid-template-columns:1fr 300px;gap:16px;margin-bottom:24px;align-items:start}
-.home-left-col{display:flex;flex-direction:column;gap:16px;min-width:0}
-.home-actions-col{display:flex;flex-direction:column;gap:16px}
-@media(max-width:860px){.home-body-grid{grid-template-columns:1fr}}
+/* ── Home grid (slice 076) ──────────────────────────────────────────────
+   One two-column grid made of ROWS, not two independent columns. Cards in a
+   row stretch to the same height; a hidden card drops out and the rest
+   reflow (homeReflow puts .hm-span2 on a lone last card). At 1280 px the grid
+   is 992 px wide: two 488 px columns and a 16 px gap. One column below
+   1024 px, in the same order, so a phone reads check-in, Pending, Notices
+   first. There is no fixed side column. */
+.home-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;align-items:stretch}
+.home-grid>*{min-width:0;margin:0}
+.home-grid>.hm-span2{grid-column:1/-1}
+@media(max-width:1023px){.home-grid{grid-template-columns:1fr}}
+/* The goals sections were bare lists; in the grid they are cards like the rest. */
+.home-grid>.home-goals-section{padding:16px 18px;margin:0}
+/* The Today strip lives inside the check-in card, on its own full-width row. */
+.checkin-day{flex-basis:100%;position:relative;z-index:1}
+.checkin-day:empty{display:none}
 
-/* ── Activity feed items ─────────────────────────────────────────────── */
-.act-day-hdr{font-size:var(--fs-xs);font-weight:700;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;padding:14px 0 6px;border-bottom:1px solid var(--border);margin-bottom:2px}
-.act-day-hdr:first-child{padding-top:0}
-.act-item{display:flex;align-items:flex-start;gap:12px;padding:9px 0}
-.act-item+.act-item{border-top:1px solid var(--border)}
-.act-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);font-weight:700;flex-shrink:0;letter-spacing:0}
-.act-icon.in{background:var(--green-lt,var(--green-lt));color:var(--green,var(--green))}
-.act-icon.out{background:var(--red-lt,var(--red-lt));color:var(--red,var(--red))}
-.act-icon.leave{background:var(--primary-lt);color:var(--primary)}
-.act-icon.approved{background:var(--green-lt,var(--green-lt));color:var(--green,var(--green))}
-.act-icon.rejected{background:var(--red-lt,var(--red-lt));color:var(--red,var(--red))}
-.act-body{flex:1;min-width:0}
-.act-label{font-size:var(--fs-base);font-weight:500;color:var(--text);line-height:1.4}
-.act-detail{font-size:var(--fs-xs);color:var(--text3);margin-top:2px}
-.act-time{font-size:var(--fs-xs);color:var(--text3);white-space:nowrap;font-variant-numeric:tabular-nums;padding-top:2px}
-.act-sbadge{display:inline-block;font-size:var(--fs-xs);font-weight:700;padding:1px 6px;border-radius:var(--r-full);margin-left:5px;vertical-align:middle}
-.act-sbadge.open{background:var(--amber-lt,var(--amber-lt));color:var(--amber,var(--amber))}
-.act-sbadge.approved{background:var(--green-lt,var(--green-lt));color:var(--green,var(--green))}
-.act-sbadge.rejected{background:var(--red-lt,var(--red-lt));color:var(--red,var(--red))}
+/* Pending and Notices cards. Prefix hm-. Rows are real buttons, 56 px or more
+   (44 px on the smallest targets), words not colour for every state. */
+.hm-card{display:flex;flex-direction:column}
+.hm-head{display:flex;align-items:center;gap:8px;min-height:52px;padding:8px 16px;flex-wrap:wrap}
+.hm-title{margin:0;font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.hm-chip{display:inline-flex;align-items:center;padding:2px 10px;border-radius:var(--r-full);font-size:var(--fs-sm);font-weight:600;background:var(--primary-lt);color:var(--primary);white-space:nowrap}
+.hm-body{flex:1;display:flex;flex-direction:column}
+.hm-row{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 16px;border:0;border-top:1px solid var(--border);background:none;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit}
+.hm-row:hover{background:var(--surface2)}
+.hm-row:focus-visible,.hm-tbtn:focus-visible,.hm-sheet button:focus-visible,.hm-sheet textarea:focus-visible{outline:3px solid var(--primary);outline-offset:-3px}
+.hm-av{width:36px;height:36px;border-radius:50%;background:var(--primary-lt);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm);flex:none}
+.hm-rt{flex:1;min-width:0}
+.hm-l1{display:block;font-weight:600;font-size:var(--fs-md);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-l2{display:block;font-size:var(--fs-base);color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-go{font-size:var(--fs-base);font-weight:600;color:var(--primary);flex:none}
+.hm-nrow{align-items:flex-start;min-height:64px;padding-top:8px;padding-bottom:8px}
+.hm-meta{display:flex;gap:8px;align-items:center;font-size:var(--fs-sm);color:var(--text2)}
+.hm-pin{color:var(--primary);font-weight:700}
+.hm-txt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:var(--fs-base);line-height:1.35;color:var(--text)}
+.hm-foot{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 8px 0 16px;border-top:1px solid var(--border);margin-top:auto;flex-wrap:wrap}
+.hm-foot .hm-sp{flex:1}
+.hm-note{font-size:var(--fs-base);color:var(--text2)}
+.hm-tbtn{min-height:44px;padding:0 10px;border:0;background:none;color:var(--primary);font:inherit;font-weight:600;font-size:var(--fs-base);cursor:pointer;border-radius:var(--r-sm)}
+.hm-tbtn:hover{background:var(--primary-lt)}
+.hm-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:16px 20px 24px;gap:4px;border-top:1px solid var(--border)}
+.hm-empty b{font-size:var(--fs-md);color:var(--text)}
+.hm-empty span.hm-es{font-size:var(--fs-base);color:var(--text2);max-width:34ch}
+.hm-tick{width:32px;height:32px;border-radius:50%;background:var(--green-lt);color:var(--green);display:flex;align-items:center;justify-content:center;margin-bottom:4px}
+.hm-skel{min-height:96px;margin:0 16px 16px;border-radius:var(--r-sm);background:var(--surface2);animation:hm-pulse 1.4s ease-in-out infinite}
+@keyframes hm-pulse{50%{opacity:.5}}
+@media(prefers-reduced-motion:reduce){.hm-skel{animation:none}}
+.hm-card .fail{margin:0 16px 16px}
+
+/* The sheets: a dialog on a laptop, a bottom sheet at phone width. */
+.hm-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1300;display:flex;align-items:flex-start;justify-content:center;padding:8vh 12px 0}
+.hm-sheet{background:var(--surface);color:var(--text);border-radius:var(--r);box-shadow:var(--sh3);display:flex;flex-direction:column;width:min(560px,100%);max-height:86vh;overflow:hidden}
+.hm-sh-h{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 16px;border-bottom:1px solid var(--border);min-height:56px}
+.hm-sh-h h2{margin:0;font-size:var(--fs-lg);flex:1}
+.hm-sh-b{overflow:auto}
+.hm-sh-p{padding:16px}
+.hm-sh-f{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap}
+.hm-sh-f .btn{flex:1;min-width:120px;min-height:44px}
+.hm-fact{border:1px solid var(--border);border-radius:var(--r);padding:12px 16px}
+.hm-fact .hm-sub{font-size:var(--fs-base);color:var(--text2);margin-top:4px}
+.hm-reason label{display:block;font-weight:600;font-size:var(--fs-md);margin-bottom:6px}
+.hm-reason textarea{width:100%;min-height:80px;padding:10px 12px;font-size:16px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);box-sizing:border-box}
+.hm-err{font-size:var(--fs-base);color:var(--red);margin-top:4px;font-weight:600}
+@media(max-width:640px){
+  .hm-ov{align-items:flex-end;padding:0}
+  .hm-sheet{width:100%;border-radius:var(--r) var(--r) 0 0;max-height:90vh}
+}
+/* My Documents has no screen of its own, so it cannot say "View all": it shows
+   about three rows and the rest scroll inside the card. */
+.hm-scroll{max-height:190px;overflow-y:auto}
+.hm-scroll:focus-visible{outline:3px solid var(--primary);outline-offset:-3px}
+.lv-reason{font-size:var(--fs-base);color:var(--text2);margin-top:4px}
+
+/* ── Send a notice (slice 076, Part B): Compose and Notices I sent ──────── */
+.nc-wrap{max-width:640px}
+.nc-back{margin-left:-10px}
+.nc-h{margin:8px 0 16px;font-size:var(--fs-xl);font-weight:700;color:var(--text)}
+.nc-h:focus{outline:none}
+.nc-h3{margin:24px 0 8px;font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.nc-banner{background:var(--green-lt);color:var(--green);border-radius:var(--r-sm);padding:10px 12px;font-weight:600;font-size:var(--fs-base);margin-bottom:16px}
+.nc-box{border:1px solid var(--border);border-radius:var(--r);padding:16px;background:var(--surface);color:var(--text)}
+.nc-label{display:block;font-weight:600;font-size:var(--fs-md);color:var(--text);margin-bottom:6px;padding:0}
+.nc-text{min-height:110px;font-size:16px;resize:vertical}
+.nc-cnt{font-size:var(--fs-sm);color:var(--text2);text-align:right;margin-top:4px}
+.nc-fs{border:0;margin:0 0 12px;padding:0;min-width:0}
+.nc-opt{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:10px 0;font-size:var(--fs-base);color:var(--text);cursor:pointer}
+.nc-opt input{width:20px;height:20px;margin:0;flex:none;accent-color:var(--primary)}
+.nc-sub{margin:0 0 8px 30px}
+.nc-sub .gp-input{font-size:16px}
+.nc-dt{display:flex;gap:12px;flex-wrap:wrap}
+.nc-dt>div{flex:1;min-width:130px}
+.nc-ppl{max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px;margin-top:6px}
+.nc-reach{background:var(--primary-lt);color:var(--text);border-radius:var(--r-sm);padding:10px 12px;font-size:var(--fs-base);margin-bottom:16px}
+.nc-send{width:100%;min-height:44px}
+.nc-sent{border-top:1px solid var(--border);padding:12px 0}
+.nc-t{font-size:var(--fs-base);color:var(--text);white-space:pre-wrap;word-break:break-word}
+.nc-m{font-size:var(--fs-sm);color:var(--text2);margin-top:4px}
+.nc-cancel{margin-left:-10px}
+.nc-holder{min-height:48px;display:flex;align-items:center;border-top:1px solid var(--border);padding:6px 0;font-size:var(--fs-base);color:var(--text)}
+.nc-opt input:focus-visible,.nc-back:focus-visible,.nc-cancel:focus-visible,.nc-send:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
 
 /* ── Today against your own shift ─────────────────────────────────────────
    Surbhi, 17 Oct 2026: show the quarters, the half-day line and the day's
@@ -1366,18 +1442,9 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .upd-btn-approve{font-size:var(--fs-xs);padding:4px 10px;border-radius:var(--r-sm);background:var(--green);color:var(--surface);border:none;cursor:pointer;font-weight:600}
 .upd-btn-reject{font-size:var(--fs-xs);padding:4px 10px;border-radius:var(--r-sm);background:var(--danger,var(--red));color:var(--surface);border:none;cursor:pointer;font-weight:600}
 .upd-approved-by{font-size:var(--fs-xs);color:var(--text3);margin-top:4px}
-/* Notification panel */
+/* The bell badge (the bell opens the Notices sheet) */
 .notif-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;background:var(--red);color:var(--surface);border-radius:var(--r);font-size:var(--fs-xs);font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;pointer-events:none;display:none}
 .mob-notif{position:relative}
-.notif-panel{position:fixed;top:60px;right:12px;width:340px;max-width:calc(100vw - 24px);background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh3);z-index:2000;display:none;max-height:70vh;overflow-y:auto}
-.notif-panel.open{display:block}
-.notif-panel-hdr{padding:12px 16px;border-bottom:1px solid var(--border);font-size:var(--fs-base);font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between}
-.notif-item{padding:11px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
-.notif-item:hover{background:var(--surface2)}
-.notif-item:last-child{border-bottom:none}
-.notif-item-title{font-size:var(--fs-sm);font-weight:600;color:var(--text);margin-bottom:2px}
-.notif-item-sub{font-size:var(--fs-xs);color:var(--text3)}
-.notif-empty{padding:24px 16px;text-align:center;font-size:var(--fs-sm);color:var(--text3)}
 /* Evidence upload zone */
 .ev-upload-zone{display:flex;align-items:center;gap:10px;cursor:pointer;border:1.5px dashed var(--border);border-radius:var(--r-sm);padding:9px 12px;background:var(--surface);transition:border-color .2s}
 .ev-upload-zone:hover{border-color:var(--primary)}
@@ -1738,8 +1805,6 @@ body.panel-fullscreen{overflow:hidden}
 /* 7 — Scorecard scrollable area: always show slim bar */
 .sc-body{scrollbar-width:thin}
 
-/* 8 — Home activity card fills available width cleanly */
-.home-left-col>.card{min-height:180px}
 
 
 /* ── Organisation chart, employee view ─────────────────────────────
@@ -1799,13 +1864,6 @@ body.panel-fullscreen{overflow:hidden}
   .oc-results{right:auto;left:0;width:100%}
 }
 
-
-/* A day's attendance as one sentence rather than two rows of "Checked
-   in" / "Checked out", which is 80 pixels to say what everybody already
-   knows. */
-.act-line{padding:7px 0 9px;font-size:var(--fs-base);color:var(--text2);
-  line-height:1.5}
-.act-line b{color:var(--text);font-weight:650;font-variant-numeric:tabular-nums}
 
 /* ── Attendance insights ──────────────────────────────────────────
    Rates, never raw counts. Almost everybody is short at some point;
@@ -2551,11 +2609,6 @@ body.panel-fullscreen{overflow:hidden}
 .ac-tag.gm-tag,.gm-tile .l{font-size:var(--fs-sm)}
 /* Prototype v3: the "Other" box's character count. */
 .gm-counter{color:var(--text3);font-size:var(--fs-sm);margin:4px 0 0}
-/* The bell's grooming section (live portal). */
-.gm-bell-h{padding:8px 14px 4px;font-size:var(--fs-sm);font-weight:700;color:var(--text2)}
-a.gm-bell-item{display:block;text-decoration:none;color:inherit}
-.gm-bell-item .notif-item-sub{font-size:var(--fs-sm)}
-.gm-unread{font-weight:700}
 .gm-box{margin-top:12px;border:1px solid var(--border);border-left:3px solid var(--border2);
   border-radius:var(--r-sm);padding:10px 12px;background:var(--surface);
   white-space:normal}
@@ -2598,4 +2651,52 @@ a.gm-bell-item{display:block;text-decoration:none;color:inherit}
   .gm-bd{align-items:flex-end;padding:0}
   .gm-sheet{max-width:100%;margin:0;border-radius:16px 16px 0 0;padding:16px 16px 24px}
   .gm-opt{font-size:var(--fs-md)}
+}
+
+/* ── Replacement plans (slice 065) ─────────────────────────────────────────
+   Only a plan reader is ever sent a plan, so nothing here draws for anyone
+   else. Every mark is .private: it never prints, and "Hide replacement plans"
+   removes it. The red edge is screen only. Nothing here counts plans. */
+/* NOT .pos-flag: that name was already taken on the Positions page as a
+   print-suppression marker on "50%", "covering", "leaving" and "key seat".
+   Giving it a colour turned every one of those chips red. */
+.pos-planflag{display:inline-block;vertical-align:-2px;color:var(--red);margin-right:6px;flex:none}
+.pos-flagword{display:none;color:var(--red);font-weight:600}
+/* The same words inside "Change this seat", where pf-card-meta is grey. */
+.pos-planmeta{color:var(--red);font-weight:600}
+@media screen{.oc-box.pos-planned{border-left-color:var(--red)}}
+/* One plan per line inside the list's own column. */
+.pos-plan-line{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin:2px 0;
+  font-size:var(--fs-sm);color:var(--text2)}
+.pos-planline{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center;margin:-6px 0 16px;font-size:var(--fs-sm);color:var(--text2)}
+.pos-plan{margin:6px 0 2px;border-left:3px solid var(--red);background:var(--red-lt);border-radius:var(--r-sm);padding:8px 10px;color:var(--text)}
+.pos-plan .pt{font-weight:700;color:var(--red);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* The card sits on --red-lt, so a chip needs the surface behind it to read. */
+.pos-plan .pos-chip{background:var(--surface)}
+/* Tier 2: the one sentence with something to do in it. */
+.pos-plan .pb{margin:4px 0 0}
+.pos-plan .pm{font-size:var(--fs-sm);color:var(--text2);margin-top:7px}
+.pos-plan .pn{margin-top:7px;font-style:italic;overflow-wrap:anywhere;
+  padding-left:9px;border-left:2px solid var(--border2)}
+.pos-plan .pw{font-size:var(--fs-sm);color:var(--text3);font-weight:400;
+  border-top:1px solid var(--border2);margin-top:9px;padding-top:6px}
+.pos-plan .pa{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;align-items:center}
+@media (min-width:641px){.pos-plan .btn{min-height:28px}}
+.pos-lab{display:block;font-weight:650;font-size:var(--fs-sm);margin:12px 0 4px;padding:0}
+.pos-fs{border:0;padding:0;margin:0;min-width:0}
+.pos-opt{display:flex;gap:8px;align-items:center;min-height:28px;cursor:pointer;margin:0}
+.pos-opt input{width:18px;height:18px;margin:0;flex:none;accent-color:var(--primary)}
+.pos-sheet textarea,.pos-sheet input[type=date]{font:inherit;font-size:16px;width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
+.pos-sheet textarea{min-height:88px}
+.pos-sheet input[type=date]{max-width:220px;min-height:36px}
+.pos-count{font-size:var(--fs-sm);color:var(--text3);margin-top:2px}
+.pos-count.full{color:var(--amber);font-weight:700}
+.pos-fielderr{color:var(--red);font-weight:600;margin-top:4px;font-size:var(--fs-sm)}
+.pos-fielderr[hidden]{display:none}
+.pos-printonly{display:none}
+@media print{.pos-printonly{display:block!important;font-size:12px}}
+@media (max-width:640px){
+  .pos-flagword{display:inline}
+  .pos-opt{min-height:44px}
+  .pos-sheet input[type=date]{min-height:44px;max-width:none}
 }

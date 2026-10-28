@@ -17,6 +17,20 @@ app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = "alvoraa_portal.auth.on_login"
 
+# ── Nothing but the password screen, until they choose one (ALV-242) ──────
+# ALV-232 only chose where a first-use session LANDS. The back button walked
+# straight past it into the whole app, and since HR issues one password per
+# batch that meant signing in as a colleague and reading their pay. This runs
+# on every request, so it covers the portal, /me, /checkin and the desk at once.
+# It fails open by design - see alvoraa_portal.auth.lock_until_password_chosen.
+before_request = [
+    "alvoraa_portal.auth.lock_until_password_chosen",
+    # The bare "/" again. The get_website_user_home_page hook below is
+    # asked fourth and can be overruled by a default workspace, so it is
+    # not enough on its own. See auth.route_the_bare_root.
+    "alvoraa_portal.auth.route_the_bare_root",
+]
+
 # ── The bare address "/" lands where login does (slice 024) ───────────────
 # Frappe resolves "/" through get_home_page(), which asks this hook. Without
 # it, typing https://<tenant>/ dropped a signed-in employee into the desk,
@@ -407,6 +421,9 @@ has_permission = {
 scheduler_events = {
     "all": [
         "alvoraa_portal.scheduled_jobs.update_delivery_tracking",
+        # Slice 076: hands at most two due notices to the long queue; writes
+        # nothing itself. A notice goes out up to one tick after its time.
+        "alvoraa_portal.announcements.send_due_announcements",
     ],
     "hourly": [
         "alvoraa_portal.scheduled_jobs.calculate_driver_ratings",
@@ -577,6 +594,10 @@ after_install = [
     "alvoraa_portal.email_brand.after_install",
     # ALV-215: same as after_migrate - a new tenant must not start open.
     "alvoraa_portal.employee_field_rights.apply",
+    # Slice 076: the Notice Sender role without desk access. Frappe makes it
+    # WITH desk access while syncing the Announcement permissions; this runs
+    # after that. Live sites get the same from the notice_sender_role patch.
+    "alvoraa_portal.announcements.make_role",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

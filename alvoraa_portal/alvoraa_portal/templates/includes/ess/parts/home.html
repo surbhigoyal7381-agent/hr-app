@@ -26,125 +26,133 @@
             </div>
             <button class="btn-checkin check-in" id="ci-btn" onclick="doCheckin()" data-action="IN">Check In</button>
           </div>
+
+          <!-- Today against your own shift: the quarters, the half-day line and
+               the day's marks. Slice 076: inside the check-in card, not a card
+               of its own. Drawn by paintDayMarks from the same payload as the
+               one-line summary above. -->
+          <div id="day-widget" class="checkin-day"></div>
         </div>
 
-        <!-- 2-col: Left (activity + goals) | Right (approvals + holidays) -->
-        <div class="home-body-grid">
+        <!-- Slice 076: one two-column grid made of rows. Cards in a row stretch to
+             the same height, a hidden card drops out and the rest reflow, and a
+             lone last card spans the full width (homeReflow). Order is the same
+             for everyone. No fixed side column. -->
+        <div class="home-grid" id="home-grid">
 
-          <!-- LEFT: Activity + Goals -->
-          <div class="home-left-col">
-
-            <!-- Today against your own shift: the quarters, the half-day
-                 line and the day's marks. Drawn by paintDayMarks from the
-                 same payload as the banner's one-line summary. -->
-            <div id="day-widget"></div>
-
-            <div class="card" id="home-activity-card">
-              <div class="card-header">
-                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="opacity:.6"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <span class="card-title" style="margin-left:6px">Activity</span>
-              </div>
-              <div class="card-body" style="padding:12px 20px">
-                <div id="home-activity-feed"><div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div></div>
-              </div>
+          <!-- Pending for you: the inbox, oldest first (homePending). Never hidden. -->
+          <section class="card hm-card" id="home-pending-card" aria-labelledby="home-pending-h">
+            <div class="hm-head">
+              <h2 class="hm-title" id="home-pending-h">Pending for you</h2>
+              <span class="hm-chip" id="home-pending-chip" style="display:none"></span>
             </div>
+            <div class="hm-body" id="home-pending-body"><div class="hm-skel" aria-hidden="true"></div></div>
+            <div class="hm-foot" id="home-pending-foot" style="display:none"></div>
+          </section>
 
-            <!-- My Goals (shown when alvoraa_goals installed) -->
-            <!-- The "this week" grid was removed by slice 042 (SEC-9 / AC-59):
-                 it named up to forty colleagues and their per-day away state. -->
-
-            <div class="home-goals-section" id="home-goals-section" style="display:none">
-              <div class="home-goals-hdr">
-                <div class="home-goals-title">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-                  My Goals
-                </div>
-                <span class="home-goals-link" onclick="switchPanel('goals',document.getElementById('nav-goals'))" style="cursor:pointer">Full Portal →</span>
-              </div>
-              <div id="home-goals-list"></div>
+          <!-- Notices: unread only; the number is the bell's number (homeNotices). Never hidden. -->
+          <section class="card hm-card" id="home-notices-card" aria-labelledby="home-notices-h">
+            <div class="hm-head">
+              <h2 class="hm-title" id="home-notices-h">Notices</h2>
+              <span class="hm-chip" id="home-notices-chip" style="display:none"></span>
             </div>
+            <div class="hm-body" id="home-notices-body"><div class="hm-skel" aria-hidden="true"></div></div>
+            <div class="hm-foot" id="home-notices-foot" style="display:none"></div>
+          </section>
 
-            <!-- Team Goals (managers only) -->
-            <div class="home-goals-section" id="home-team-goals-section" style="display:none">
-              <div class="home-goals-hdr">
-                <div class="home-goals-title">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                  Team Goals
-                </div>
-                <span class="home-goals-link" onclick="switchPanel('team',null)">Team View →</span>
-              </div>
-              <div id="home-team-goals-list"></div>
+          <div class="card" id="home-leave-card" style="display:none">
+            <div class="card-header">
+              <span><i class=ic-leave></i></span>
+              <span class="card-title" style="margin-left:6px">Leave balance</span>
+              <a href="#" onclick="switchPanel('attendance');return false" style="margin-left:auto;font-size:var(--fs-sm)">Details →</a>
             </div>
-
+            <div class="card-body" style="padding:8px 20px 14px">
+              <div id="home-leave-list"></div>
+            </div>
           </div>
 
-          <!-- RIGHT: Approvals + Holidays -->
-          <div class="home-actions-col">
-
-            <!-- Pending Approvals (managers only, hidden until data loaded) -->
-            <div class="card" id="home-leave-card" style="display:none;margin-bottom:16px">
-              <div class="card-header">
-                <span><i class=ic-leave></i></span>
-                <span class="card-title" style="margin-left:6px">Leave balance</span>
-                <a href="#" onclick="switchPanel('attendance');return false" style="margin-left:auto;font-size:var(--fs-sm)">Details →</a>
-              </div>
-              <div class="card-body" style="padding:8px 20px 14px">
-                <div id="home-leave-list"></div>
-              </div>
-            </div>
-            <div id="home-attention-banner" style="display:none" class="card">
-              <div class="card-header home-appr-hdr" onclick="toggleHomeApprovals()" style="cursor:pointer;user-select:none">
-                <span style="font-size:var(--fs-md)"><i class=ic-zap></i></span>
-                <span class="card-title" style="margin-left:6px"><span id="home-pending-count">0</span> Pending Approval<span id="home-pending-plural">s</span></span>
-                <span class="home-appr-chip" style="margin-left:auto;font-size:var(--fs-xs);color:var(--primary);font-weight:600">Tap to review</span>
-                <svg class="rev-chev" id="home-appr-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-left:8px;color:var(--text3);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
-              </div>
-              <div id="home-approvals-list" style="display:none;padding:0 12px 12px;flex-direction:column;gap:8px"></div>
-            </div>
-
-            <!-- Upcoming Holidays -->
-            <div class="card" id="home-holidays-card">
-              <div class="card-header">
-                <span><i class=ic-award></i></span>
-                <span class="card-title" style="margin-left:6px" id="hol-month-label">Upcoming Holidays</span>
-                <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
-                  <button id="hol-view-all-btn" onclick="holToggleViewAll()" style="background:none;border:1px solid var(--border);border-radius:var(--r-sm);cursor:pointer;padding:3px 8px;font-size:var(--fs-xs);color:var(--text2);line-height:1.4" title="View all holidays this year">All year</button>
-                  <div id="hol-nav" style="display:none;align-items:center;gap:2px">
-                    <button id="hol-prev" onclick="holNavMonth(-1)" style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:var(--fs-base);color:var(--text3);line-height:1" title="Previous month">&#8249;</button>
-                    <button id="hol-next" onclick="holNavMonth(1)"  style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:var(--fs-base);color:var(--text3);line-height:1" title="Next month">&#8250;</button>
-                  </div>
+          <!-- Upcoming Holidays -->
+          <div class="card" id="home-holidays-card">
+            <div class="card-header">
+              <span><i class=ic-award></i></span>
+              <span class="card-title" style="margin-left:6px" id="hol-month-label">Upcoming Holidays</span>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                <button id="hol-view-all-btn" onclick="holToggleViewAll()" style="background:none;border:1px solid var(--border);border-radius:var(--r-sm);cursor:pointer;padding:3px 8px;font-size:var(--fs-xs);color:var(--text2);line-height:1.4" title="View all holidays this year">All year</button>
+                <div id="hol-nav" style="display:none;align-items:center;gap:2px">
+                  <button id="hol-prev" onclick="holNavMonth(-1)" style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:var(--fs-base);color:var(--text3);line-height:1" title="Previous month">&#8249;</button>
+                  <button id="hol-next" onclick="holNavMonth(1)"  style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:var(--fs-base);color:var(--text3);line-height:1" title="Next month">&#8250;</button>
                 </div>
               </div>
-              <div class="card-body">
-                <div id="holidays-list"><div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div></div>
-              </div>
             </div>
-
-            <!-- My Documents (build B4: employee document checklist) -->
-            <div class="card" id="my-docs-card" style="display:none;margin-top:20px">
-              <div class="card-header">
-                <span><i class=ic-folder></i></span>
-                <span class="card-title" style="margin-left:6px">My Documents</span>
-                <span id="my-docs-summary" style="margin-left:auto;font-size:var(--fs-sm);color:var(--text3)"></span>
-              </div>
-              <div class="card-body" style="padding:12px 20px">
-                <div id="my-docs-list"></div>
-              </div>
+            <div class="card-body">
+              <div id="holidays-list"><div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div></div>
             </div>
-
-            <!-- Policies widget (build B5: policy library) -->
-            <div class="card" id="home-policies-card" style="display:none;margin-top:20px">
-              <div class="card-header">
-                <span><i class=ic-book></i></span>
-                <span class="card-title" style="margin-left:6px">Policies</span>
-                <a href="#" onclick="switchPanel('policies');return false" style="margin-left:auto;font-size:var(--fs-sm)">All policies →</a>
-              </div>
-              <div class="card-body" style="padding:12px 20px">
-                <div id="home-policies-list"></div>
-              </div>
-            </div>
-
           </div>
+
+          <!-- My Goals (shown when alvoraa_goals installed) -->
+          <!-- The "this week" grid was removed by slice 042 (SEC-9 / AC-59):
+               it named up to forty colleagues and their per-day away state. -->
+          <div class="home-goals-section card" id="home-goals-section" style="display:none">
+            <div class="home-goals-hdr">
+              <div class="home-goals-title">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                My Goals
+              </div>
+              <span class="home-goals-link" onclick="switchPanel('goals',document.getElementById('nav-goals'))" style="cursor:pointer">Full Portal →</span>
+            </div>
+            <div id="home-goals-list"></div>
+          </div>
+
+          <!-- Team Goals (managers only) -->
+          <div class="home-goals-section card" id="home-team-goals-section" style="display:none">
+            <div class="home-goals-hdr">
+              <div class="home-goals-title">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                Team Goals
+              </div>
+              <span class="home-goals-link" onclick="switchPanel('team',null)">Team View →</span>
+            </div>
+            <div id="home-team-goals-list"></div>
+          </div>
+
+          <!-- My Documents (build B4: employee document checklist) -->
+          <div class="card" id="my-docs-card" style="display:none">
+            <div class="card-header">
+              <span><i class=ic-folder></i></span>
+              <span class="card-title" style="margin-left:6px">My Documents</span>
+              <span id="my-docs-summary" style="margin-left:auto;font-size:var(--fs-sm);color:var(--text3)"></span>
+            </div>
+            <div class="card-body" style="padding:12px 20px">
+              <div id="my-docs-list" class="hm-scroll" tabindex="0" role="region" aria-label="My Documents"></div>
+            </div>
+          </div>
+
+          <!-- Policies widget (build B5: policy library) -->
+          <div class="card" id="home-policies-card" style="display:none">
+            <div class="card-header">
+              <span><i class=ic-book></i></span>
+              <span class="card-title" style="margin-left:6px">Policies</span>
+              <a href="#" onclick="switchPanel('policies');return false" style="margin-left:auto;font-size:var(--fs-sm)">All policies →</a>
+            </div>
+            <div class="card-body" style="padding:12px 20px">
+              <div id="home-policies-list"></div>
+            </div>
+          </div>
+
         </div>
 
+      </div>
+
+      <!-- Send a notice (slice 076, Part B). Reached only from "Send a notice" on
+           the Notices card, which is drawn only for Notice Sender holders. The
+           server refuses everyone else, whatever this page shows. -->
+      <div id="panel-notice-compose" class="panel">
+        <div class="nc-wrap">
+          <button type="button" class="hm-tbtn nc-back" data-nc="back">&larr; Back to Home</button>
+          <h2 class="nc-h" id="nc-h" tabindex="-1">Send a notice</h2>
+          <div class="nc-banner" id="nc-banner" role="status" style="display:none"></div>
+          <div id="nc-form"><div class="hm-skel" aria-hidden="true"></div></div>
+          <h3 class="nc-h3">Notices I sent</h3>
+          <div id="nc-sent"><div class="hm-skel" aria-hidden="true"></div></div>
+        </div>
       </div>

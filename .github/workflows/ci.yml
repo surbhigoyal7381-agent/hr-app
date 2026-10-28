@@ -267,6 +267,15 @@ jobs:
           python scripts/check_email_template_overrides.py --self-test
           python scripts/check_email_template_overrides.py
 
+      # Slice 076 (AC-117). `dict(permitted_employee_filters(user), name=x)` and
+      # `{**permitted_employee_filters(user)}` let a caller's id replace the
+      # scope, so a person entitled to nobody could read everybody. The first
+      # line proves the check can fail. Text only.
+      - name: No caller's id replaces the employee scope
+        run: |
+          python scripts/check_scope_traps.py --self-test
+          python scripts/check_scope_traps.py
+
   # ── Key guard (slice 013, OPS-37, OPS-71, SEC-23) ─────────────────────────
   # A signing key is handed out the moment it is pushed: the image is built from
   # this repo, and everything published while it was public is already copied.

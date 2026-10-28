@@ -165,6 +165,8 @@ permission_query_conditions = {
 	# ALV-117: Frappe HR ships this doctype with read AND export for every
 	# Employee and no row filter at all. Lists, reports and exports.
 	"Employee Performance Feedback": "hrms.alvoraa_hr_core.feedback_access.feedback_query_conditions",
+	# Slice 065, SEC-1: one gate for every list, count and REST read of plans.
+	"Replacement Plan": "hrms.alvoraa_org_structure.plans.query_conditions",
 }
 
 has_permission = {
@@ -178,6 +180,8 @@ has_permission = {
 	# lists, this guards one record at its own URL, and when it is printed,
 	# emailed, shared or written to.
 	"Employee Performance Feedback": "hrms.alvoraa_hr_core.feedback_access.has_feedback_permission",
+	# Slice 065, SEC-1: the other half - one plan, and no print/email/export/share.
+	"Replacement Plan": "hrms.alvoraa_org_structure.plans.has_permission",
 }
 
 # DocType Class
@@ -322,12 +326,21 @@ doc_events = {
 	"Custom DocPerm": {
 		"on_update": "hrms.alvoraa_org_structure.register.record_permission_change",
 		"on_trash": "hrms.alvoraa_org_structure.register.record_permission_change",
+		# Slice 065, SEC-2: no broad role and no print/export/... on plans.
+		"validate": "hrms.alvoraa_org_structure.plans.refuse_careless_grant",
 	},
 	# Slice 064, SEC-8: only somebody who may place people in a seat may point a
 	# job opening at it, because a hire from that opening is placed in the seat.
 	"Job Opening": {
 		"validate": "hrms.alvoraa_org_structure.hiring.guard_seat_link",
 	},
+	# Slice 065, SEC-3: no comment, assignment, share, tag or file on a
+	# replacement plan. One comparison per save; reads nothing.
+	"Comment": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"ToDo": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"DocShare": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"Tag Link": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"File": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
 }
 
 # Scheduled Tasks
@@ -361,6 +374,8 @@ scheduler_events = {
 		# ── PMS ──────────────────────────────────────────────────────────────
 		"hrms.pms.pms_notifications.send_overdue_stage_alerts",
 		"hrms.pms.pms_notifications.send_checkin_nudges",
+		# Slice 065, PRIV-3: erase replacement plans that lapsed or whose person left.
+		"hrms.alvoraa_org_structure.plans.erase_due_plans",
 	],
 	"daily_long": [
 		"hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry.process_expired_allocation",

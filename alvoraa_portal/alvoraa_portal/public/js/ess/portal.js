@@ -319,7 +319,7 @@ function ocNodeCard(n, isRoot, opts) {
         // 30 Nov", which is a fact about them, not about the job.
         if (p.note) tags += '<span class="oc-tag v">' + ocEsc(p.note) + "</span>";
         return '<div class="oc-who">' + ocAvatar(p)
-          + "<span>" + ocEsc(p.name) + tags + "</span></div>";
+          + "<span>" + (p.pre || "") + ocEsc(p.name) + tags + (p.post || "") + "</span></div>";
       }).join("")
     // `null` means this card is not a seat at all - a branch or a department
     // holds seats, and telling somebody that a branch has nobody in it is
@@ -529,6 +529,8 @@ window.posLoad = async function () {
   // tiles then - never a "0" that would be untrue.
   POS.unseated = out && Object.prototype.hasOwnProperty.call(out, "unseated") ? (out.unseated || []) : null;
   POS.active_people = (out && out.active_people) || 0;
+  // Slice 065: sent only to a plan reader (SEC-4); absent, not empty, for anyone else.
+  POS.plans = (out && out.plans) || null;
   POS.records = null;
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
@@ -536,6 +538,7 @@ window.posLoad = async function () {
   // The offer to build a chart lives in the empty state, where somebody is
   // already looking, and nowhere else.
   posWire();
+  posPlanChrome();
   posFillFilters();
   posPaint();
   posLoadRecords();
@@ -730,10 +733,12 @@ function posMatches(r, ignore) {
   if (b && r.branch !== b && ignore !== "pos-f-branch") return false;
   if (d && r.department !== d && ignore !== "pos-f-dept") return false;
   if (role && r.designation !== role && ignore !== "pos-f-role") return false;
-  if (ignore === "pos-f-open") return true;
+  if (ignore === "pos-f-open" || (ignore === "plans" && /^plan/.test(show))) return true;
   if (show === "open") return r.open >= 0.5;
   if (show === "key") return r.key;
   if (show === "leaving") return !!r.leaving_on;
+  if (show === "plan") return posPlannedSeat(r);
+  if (show === "plan14") return posPlannedSeat(r, 14);
   return true;
 }
 
@@ -764,20 +769,26 @@ function posPaintList() {
   if (!body) return;
   var rows = POS.rows.filter(posMatches);
 
-  posPaintTiles(rows);
+  posPaintTiles(posTileRows());
 
   if (!rows.length) { body.innerHTML = posNothing(); return; }
 
   var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
     + '<th>Department</th><th>Who is in it</th><th class="pos-leave-col">Notice period</th>'
+    // Surbhi, 28 Oct 2026: the Show option already narrowed the list to planned
+    // seats, but the list then said nothing about the plans. This column is the
+    // answer to "what and when", and it exists only for someone who may read
+    // plans and has not hidden the marks - so a non-reader's table is the same
+    // table, one column narrower, exactly as if no plan existed.
+    + (posPlanShown() ? '<th class="private">' + drT("Replacement plan") + "</th>" : "")
     + '<th style="text-align:right">Seats</th>'
     + '<th style="text-align:right">Open</th>'
     + (POS.may_edit ? "<th></th>" : "") + "</tr>";
 
   var out = rows.map(function (r) { return "<tr>" + posCells(r) + "</tr>"; }).join("");
 
-  body.innerHTML = '<div style="overflow-x:auto"><table class="pf-table">'
-    + "<thead>" + head + "</thead><tbody>" + out + "</tbody></table></div>";
+  body.innerHTML = posPlanPrintWrap('<div style="overflow-x:auto"><table class="pf-table">'
+    + "<thead>" + head + "</thead><tbody>" + out + "</tbody></table></div>");
 }
 
 /* The cells both views share. `lead` is whatever goes in front of the title -
@@ -793,14 +804,16 @@ var POS_NAMES_SHOWN = 3;
 /* One person as the chart's card wants them, with the facts a reader needs
    about them rather than about the job. */
 function posOne(p) {
+  var mk = posPlanMark(p);
   return { name: p.name, weight: p.weight, cover: p.covering,
-           note: p.leaving ? "leaving " + posDay(p.leaving) : null };
+           note: p.leaving ? "leaving " + posDay(p.leaving) : null,
+           pre: mk.pre, post: mk.post };
 }
 
 // `here` (slice 072): the seat is drawn in more than one box, so the rest are
 // "more here", not "more in this seat" - some of the seat is elsewhere.
 function posFew(people, here) {
-  var out = people.slice(0, POS_NAMES_SHOWN).map(posOne);
+  var out = posByPlan(people).slice(0, POS_NAMES_SHOWN).map(posOne);
   var rest = people.length - out.length;
   if (rest > 0) {
     // Said as a person, not as a cut-off list. Clicking the box opens the
@@ -811,11 +824,12 @@ function posFew(people, here) {
 }
 
 function posCells(r, lead, tail) {
-  var shown = r.people.slice(0, POS_NAMES_SHOWN);
+  var shown = posByPlan(r.people).slice(0, POS_NAMES_SHOWN);
   var rest = r.people.length - shown.length;
   var who = r.people.length
     ? shown.map(function (p) {
-        return posEsc(p.name)
+        var mk = posPlanMark(p);
+        return mk.pre + posEsc(p.name) + mk.post
           // pos-flag: never printed (slice 069, SEC-3 - every Positions view)
           + (p.weight < 100 ? ' <span class="pf-card-meta pos-flag">' + posNum(p.weight) + "%</span>" : "")
           + (p.covering ? ' <span class="pf-card-meta pos-flag">covering</span>' : "")
@@ -849,6 +863,7 @@ function posCells(r, lead, tail) {
     + '<td class="pos-leave-col">' + (r.leaving_on
         ? "<strong>" + posEsc(posDay(r.leaving_on)) + "</strong>"
         : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
+    + (posPlanShown() ? '<td class="private">' + posPlanCell(r) + "</td>" : "")
     + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
     + '<td style="text-align:right">' + open + "</td>"
     + (POS.may_edit
@@ -989,6 +1004,10 @@ function posNode(r, t, depth, pl) {
     child_count: count,
     has_more: shut && count > 0,
     people: posFew(here, mine.length > 0),
+    // Slice 072 splits one seat across boxes, which the v5 prototype never
+    // showed. The edge marks the box the planned person is actually drawn in;
+    // on any other box of that seat it would point at the wrong people.
+    cls: posPlannedSeat(r, null, here) ? "pos-planned" : "",
     children: (shut || depth + 1 >= POS_MAX_DEPTH)
       ? []
       : posGroupSiblings(kids, t, false, pl).map(function (g) {
@@ -1411,11 +1430,11 @@ function posPaintTree() {
   // branch or department in those views). The rest is left out, not greyed.
   POS.shown = {};
   var rows = posAnyFilter() ? posKeepRows(posArrange()) : POS.rows;
-  if (posAnyFilter() && !rows.length) { posPaintTiles(POS.rows.filter(posMatches)); body.innerHTML = posNothing(); return; }
+  if (posAnyFilter() && !rows.length) { posPaintTiles(posTileRows()); body.innerHTML = posNothing(); return; }
   var t = posKids(rows);
   var matched = POS.rows.filter(posMatches).length;
 
-  posPaintTiles(POS.rows.filter(posMatches));
+  posPaintTiles(posTileRows());
 
   if (!POS.rows.length) { body.innerHTML = posNothing(); return; }
 
@@ -1539,7 +1558,7 @@ function posPaintTree() {
       + '<div class="oc-box-hd"><span class="ti">No reporting manager</span></div>'
       + '<div class="sub">Not in any seat, and no manager on their record</div>'
       + '<div class="oc-flags"><span class="oc-flag medium">' + nm + " people</span></div></button></div>" : "";
-  var nMatch = posAnyFilter() ? POS.rows.filter(posMatches).length : 0;
+  var nMatch = posAnyFilter() ? POS.rows.filter(posMatches).length : 0, pv = posPlanShow();
   // No Print button since slice 069 (D-2): it printed flags, leaving dates and
   // the HR box. "Download wall chart (PDF)" is the way to print.
   var tools = '<div class="pos-ztools noprint" role="group" aria-label="Zoom">'
@@ -1548,7 +1567,7 @@ function posPaintTree() {
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(1)" aria-label="Zoom in" title="Zoom in (+)">+</button>'
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(0)">Reset</button>'
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoomFit()">Fit to width</button>'
-    + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
+    + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + (pv ? drT("Matching seats") : nMatch + " matching") + "</span>"
       + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
     + "</div>";
   // Slice 072 (design §5.4): one line, so nobody is surprised that a seat
@@ -1556,8 +1575,8 @@ function posPaintTree() {
   var viewNote = '<p class="pos-view-note noprint">' + posEsc(how === "reporting"
     ? drT("Each person is shown under the seat of their manager, as set in Reports To on their employee record. A seat shared by people with different managers shows once under each manager. Open slots and the seats under it stay on the seat's own box.")
     : drT("One box per seat, with everyone in it. To see people under their managers, choose Arrange by: Reporting lines.")) + "</p>";
-  body.innerHTML = posPrintHead(how) + viewNote + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
-    + html + "</div></div></div>";
+  body.innerHTML = posPlanPrintWrap(posPrintHead(how) + viewNote + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
+    + html + "</div></div></div>");
 }
 
 /* Open a view centred on the chart (the top seat sits over the middle of its
@@ -1710,7 +1729,8 @@ function posFocusFirst() {
   });
   var found = posMarkFirst(hit);
   var n = POS.rows.filter(posMatches).length, txt = document.getElementById("pos-fline-txt");
-  if (txt) txt.textContent = n + " matching" + (found ? ", showing the first" : "");
+  if (txt) txt.textContent = posPlanShow() ? drT("Matching seats") + (found ? drT(", showing the first") : "")
+    : n + " matching" + (found ? ", showing the first" : "");
 }
 
 /* FIND (I5): a seat or a person, among the seats already on the page.
@@ -1852,7 +1872,14 @@ function posPaintPeople() {
     ? r.people.map(function (p) {
         return '<div style="display:flex;gap:8px;align-items:center;'
           + 'justify-content:space-between;padding:4px 0">'
-          + "<span>" + posEsc(p.name)
+          // Surbhi, 28 Oct 2026: whoever opens this dialog must be in the same
+          // context as the chart behind it. posPlanMark gives nothing to a
+          // non-reader (the server sends them no plan) and nothing while marks
+          // are hidden, so the dialog is identical in both cases.
+          + "<span>" + posPlanMark(p).pre + posEsc(p.name)
+          + (posPlanOf(p)
+              ? ' <span class="pf-card-meta pos-planmeta private">'
+                + drT("replacement planned") + "</span>" : "")
           + (p.weight < 100
               ? ' <span class="pf-card-meta">' + posNum(p.weight)
                 + "% of the seat</span>" : "")
@@ -2805,6 +2832,411 @@ function posWire() {
   });
 }
 
+/* ── Replacement plans (slice 065) ─────────────────────────────────────────
+   A private note an HR Manager keeps on a person's row, so cover can be found
+   before a seat empties. The server sends `plans` and each person's `plan`
+   ONLY to a plan reader - HR Manager, System Manager, and owners where the
+   company switched them on - and never the plan about the reader themselves
+   (SEC-4, decision 9). Everything below therefore draws nothing for anyone
+   else: there is nothing to draw from. Only an HR Manager sets, confirms,
+   removes and records an outcome; owners and the System Manager only read.
+   No number anywhere counts plans, and a group box is never red. */
+
+var POS_FLAG = '<svg class="pos-planflag private" viewBox="0 0 12 14" width="12" height="14" role="img" aria-label="'
+  + drT("Replacement planned") + '"><path d="M2 1v12" stroke="currentColor" stroke-width="1.6"/>'
+  + '<path d="M2.6 1.6h7.6l-1.8 2.7 1.8 2.7H2.6z" fill="currentColor"/></svg>';
+
+function posPlanShown() { return !!(POS.plans && !POS.hidePlans); }
+function posPlanOf(p) { return posPlanShown() && p && p.plan ? p.plan : null; }
+function posMaySet() { return !!(POS.plans && POS.plans.may_set); }
+function posPlanShow() { return /^plan/.test(posVal("pos-f-open")); }
+function posTileRows() { return POS.rows.filter(function (r) { return posMatches(r, "plans"); }); }
+/* Under a plan Show option the chart or list IS a list of plans, so nothing of
+   it prints (V5-5): a print shows one sentence, and the wall chart - the only
+   Print since slice 069 - is not offered. Both views call this. */
+function posPlanPrintWrap(html) {
+  var pv = posPlanShow(), wallBtn = document.getElementById("pos-wall-btn");
+  if (wallBtn && POS.rows.length) wallBtn.style.display = pv ? "none" : "";
+  return pv ? '<div class="pos-printonly">' + drT("This view is not printed. Choose another Show option, then print.")
+    + "</div><div data-private>" + html + "</div>" : html;
+}
+function posLong(iso) { return iso ? posDay(iso) + " " + String(iso).slice(0, 4) : ""; }
+function posDaysTo(iso) {
+  return Math.round((Date.parse(iso + "T00:00:00Z") - Date.parse(posToday() + "T00:00:00Z")) / 864e5);
+}
+function posSeesLine() {
+  return POS.plans && POS.plans.owners_see ? drT("Only HR and owners see this.") : drT("Only HR sees this.");
+}
+/* The flag before a name; on a phone also the words after it. */
+function posPlanMark(p) {
+  return posPlanOf(p)
+    ? { pre: POS_FLAG, post: ' <span class="pos-flagword private">&middot; ' + drT("replacement planned") + "</span>" }
+    : { pre: "", post: "" };
+}
+/* Planned people first, for plan readers only. Never in print: the order would say it. */
+function posByPlan(people) {
+  if (!posPlanShown() || POS.printing) return people;
+  return people.slice().sort(function (a, b) { return (b.plan ? 1 : 0) - (a.plan ? 1 : 0); });
+}
+function posPlannedSeat(r, within, people) {
+  return (people || r.people).some(function (p) {
+    var pl = posPlanOf(p);
+    return !!pl && (!within || posDaysTo(pl.lapses_on) <= within);
+  });
+}
+/* Performance (option A, 24 Oct 2026): hiring waits for the end date AND an
+   HR Manager's "Not improved". The outcome may be recorded on the end date. */
+function posOnHold(pl) { return pl.reason === "Performance" && !pl.not_improved_on; }
+function posOutcomeDue(pl) { return posOnHold(pl) && posToday() >= pl.improvement_ends_on; }
+
+/* "Request a replacement": a full seat with a job role and nobody being hired
+   for it, and EITHER a plan the HR Manager may act on (not on hold) OR a
+   leaving date this reader already receives. An editor who cannot read plans
+   gets it only from a leaving date, so the button never hints at a plan. */
+function posMayRequest(r) {
+  if (!POS.may_edit || posOpen(r) || r.opening || !r.designation) return false;
+  var fromPlan = posPlanShown() && posMaySet()
+    && r.people.some(function (p) { return p.plan && !posOnHold(p.plan); });
+  return fromPlan || r.people.some(function (p) { return p.leaving; });
+}
+
+/* The two Show options and the line under the filters, for plan readers only. */
+function posPlanChrome() {
+  var sel = document.getElementById("pos-f-open");
+  if (sel) {
+    var keep = sel.value;
+    [].slice.call(sel.querySelectorAll("option.private")).forEach(function (o) { o.remove(); });
+    if (posPlanShown()) {
+      sel.insertAdjacentHTML("beforeend", '<option class="private" value="plan">' + drT("Only seats with a replacement planned")
+        + '</option><option class="private" value="plan14">' + drT("Only plans that end in the next 14 days") + "</option>");
+    }
+    sel.value = /^plan/.test(keep) && !posPlanShown() ? "" : keep;
+  }
+  var line = document.getElementById("pos-planline");
+  if (!POS.plans) { if (line) line.remove(); return; }
+  if (!line) {
+    var card = document.querySelector("#panel-positions > .pf-card");
+    if (!card) return;
+    card.insertAdjacentHTML("afterend", '<div id="pos-planline" class="pos-planline noprint"></div>');
+    line = document.getElementById("pos-planline");
+  }
+  line.innerHTML = POS.hidePlans
+    ? '<button type="button" class="pos-link" onclick="posHidePlans(false)">' + drT("Show hidden marks") + "</button>"
+    : '<span class="private">' + POS_FLAG + " " + drT("Replacement planned for this person.") + " " + posSeesLine() + "</span>"
+      + '<button type="button" class="pos-link private" onclick="posHidePlans(true)">'
+      + drT("Hide replacement plans (before you share your screen)") + "</button>";
+}
+/* Before a screen is shared. Not remembered between visits. Hiding clears a
+   chosen plan option, because the chart would otherwise still be the list. */
+window.posHidePlans = function (hide) {
+  POS.hidePlans = !!hide;
+  var sel = document.getElementById("pos-f-open");
+  var had = posPlanShow();
+  posPlanChrome();
+  if (had && sel) { sel.value = ""; if (!posAnyFilter()) { posClearFilter(); return; } }
+  posPaint();
+};
+window.addEventListener("beforeprint", function () { if (POS.plans) { POS.printing = true; posPaint(); } });
+window.addEventListener("afterprint", function () { if (POS.printing) { POS.printing = false; posPaint(); } });
+
+/* What a person's row in the seat tray adds: the plan, or the link to set one. */
+function posPlanRow(r, p) {
+  if (posPlanOf(p)) return posPlanBlock(r, p);
+  if (posPlanShown() && posMaySet() && p.employee !== POS.plans.self) {
+    return '<div class="private"><button type="button" class="pos-link" onclick="posPlanSheet(\'' + posJs(r.id) + "','"
+      + posJs(p.assignment) + '\')">' + drT("Plan a replacement") + "</button></div>";
+  }
+  return "";
+}
+/* One seat's plans, for the list's own column. The same facts the card leads
+   with - what happens next, why, and when it lapses - said in one line each,
+   because a table row has no room for a card and no need of one. */
+function posPlanCell(r) {
+  var lines = r.people.map(function (p) {
+    var pl = posPlanOf(p);
+    if (!pl) return "";
+    var chip = "";
+    if (pl.not_improved_on) chip = '<span class="pos-chip green">' + drT("Hiring may start") + "</span> ";
+    else if (posOutcomeDue(pl)) chip = '<span class="pos-chip amber">' + drT("Outcome due") + "</span> ";
+    else if (posOnHold(pl)) chip = '<span class="pos-chip amber">' + drT("Hiring on hold") + "</span> ";
+    var d = posDaysTo(pl.lapses_on);
+    if (d <= 14) {
+      chip += '<span class="pos-chip amber">'
+        + drT("Ends in {0} {1}", [d, d === 1 ? drT("day") : drT("days")]) + "</span> ";
+    }
+    return '<div class="pos-plan-line">' + chip + "<span>"
+      + posEsc(drT("{0} · {1} · ends {2}", [p.name, drT(pl.reason), posLong(pl.lapses_on)]))
+      + "</span></div>";
+  }).filter(Boolean).join("");
+  return lines || '<span class="pf-card-meta">&mdash;</span>';
+}
+
+function posPlanBlock(r, p) {
+  /* Four tiers, prototype v6 (Surbhi, 28 Oct 2026). The block had grown to six
+     sentences at one weight, so "who typed it" arrived before "hiring is on
+     hold". Top to bottom now: what it is and what happens next · the one
+     sentence to act on · the person's own words · the detail, grey · the
+     promise, quietest of all. */
+  var pl = p.plan, d = posDaysTo(pl.lapses_on), first = p.name.split(" ")[0], set = posMaySet();
+  var a = "'" + posJs(r.id) + "','" + posJs(p.assignment) + "'";
+  var soon = d <= 14;
+
+  // Tier 1. Words carry the state and colour repeats it, never the other way
+  // round. At most two: one for hiring, one for the clock.
+  var chips = "";
+  if (pl.not_improved_on) chips += '<span class="pos-chip green">' + drT("Hiring may start") + "</span>";
+  else if (posOutcomeDue(pl)) chips += '<span class="pos-chip amber">' + drT("Outcome due") + "</span>";
+  else if (posOnHold(pl)) chips += '<span class="pos-chip amber">' + drT("Hiring on hold") + "</span>";
+  if (soon) {
+    chips += '<span class="pos-chip amber">'
+      + drT("Ends in {0} {1}", [d, d === 1 ? drT("day") : drT("days")]) + "</span>";
+  }
+
+  // Tier 2. Only the performance states leave anything to do, so only they get
+  // a sentence. Everything else is detail, and detail belongs in the grey line.
+  var body = "";
+  if (posOutcomeDue(pl)) {
+    body = (posToday() === pl.improvement_ends_on
+        ? "<strong>" + posEsc(drT("The improvement period ends today, {0}.", [posLong(pl.improvement_ends_on)])) + "</strong>"
+        : "<strong>" + posEsc(drT("The improvement period ended on {0}.", [posLong(pl.improvement_ends_on)])) + "</strong>")
+      + " " + (set ? posEsc(drT("Record whether {0} improved.", [first])) : drT("HR records the outcome."));
+  } else if (posOnHold(pl)) {
+    body = posEsc(drT("Hiring is on hold until {0} and until HR records whether {1} improved.",
+                      [posLong(pl.improvement_ends_on), first]))
+      + (p.leaving ? " " + posEsc(drT("{0} has a leaving date, so hiring may start now.", [first])) : "");
+  }
+
+  // Tier 4. One line, middot-separated. Recording "Not improved" also confirms,
+  // so that is one item, not two.
+  var same = pl.not_improved_on && pl.confirmed_on === pl.not_improved_on && pl.confirmed_by === pl.not_improved_by;
+  var meta = [drT("Reason: {0}", [drT(pl.reason)]),
+              drT("Set by {0} on {1}", [pl.set_by, posLong(pl.set_on)])];
+  if (pl.confirmed_by && !same) {
+    meta.push(drT("Confirmed again by {0} on {1}", [pl.confirmed_by, posLong(pl.confirmed_on)]));
+  }
+  if (pl.not_improved_on) {
+    meta.push(drT("Not improved, recorded by {0} on {1}", [pl.not_improved_by, posLong(pl.not_improved_on)]));
+  }
+  meta.push(drT("Ends {0}", [posLong(pl.lapses_on)])
+            + (set ? drT(" unless you confirm it again") : drT(" unless HR confirms it again")));
+
+  var b = '<div class="pos-plan private" role="group" aria-label="' + posEsc(drT("Replacement plan for {0}", [p.name])) + '">'
+    + '<div class="pt">' + POS_FLAG + "<span>" + drT("Replacement planned") + "</span>" + chips + "</div>"
+    + (body ? '<p class="pb">' + body + "</p>" : "")
+    + (pl.note ? '<div class="pn">&ldquo;' + posEsc(pl.note) + "&rdquo;</div>" : "")
+    + '<div class="pm">' + posEsc(meta.join(" · ")) + "</div>";
+
+  if (set && posOutcomeDue(pl)) {
+    // Equal weight and both outline: the outcome is a judgement about a person,
+    // and the screen must not lean on either answer.
+    b += '<div class="pa"><button type="button" class="btn btn-outline btn-sm" onclick="posOutcomeSheet(' + a + ",'improved')\">"
+      + drT("Improved – remove the plan") + '</button><button type="button" class="btn btn-outline btn-sm" onclick="posOutcomeSheet('
+      + a + ",'not_improved')\">" + drT("Not improved – hiring may start") + "</button></div>"
+      + '<div class="pa"><button type="button" class="pos-link" onclick="posConfirmPlan(' + a + ',this)">'
+      + drT("Confirm for 90 more days") + '</button><button type="button" class="pos-link" onclick="posRemoveSheet(' + a + ')">'
+      + drT("Remove the plan") + "</button></div>";
+  } else if (set) {
+    // Primary only inside the same 14 days the chip warns about. A primary
+    // button 90 days out nudges HR to renew a plan nobody has revisited.
+    b += '<div class="pa"><button type="button" class="btn btn-sm ' + (soon ? "btn-primary" : "btn-outline")
+      + '" onclick="posConfirmPlan(' + a + ',this)">' + drT("Confirm for 90 more days")
+      + '</button><button type="button" class="pos-link" onclick="posRemoveSheet(' + a + ')">'
+      + drT("Remove the plan") + "</button></div>";
+  }
+
+  b += '<div class="pw">' + posSeesLine() + (set ? "" : " " + drT("HR sets, confirms and removes plans.")) + "</div>";
+  return b + "</div>";
+}
+function posPerson(id, asg) {
+  var r = posById(id);
+  return r ? r.people.filter(function (p) { return p.assignment === asg; })[0] || null : null;
+}
+function posBusy(btn, words) { if (btn) { btn.setAttribute("aria-busy", "true"); btn.textContent = words; } }
+function posBack(id) { return '<button type="button" class="btn btn-outline btn-sm" onclick="posSeatSheet(\'' + posJs(id) + '\')">' + drT("Cancel") + "</button>"; }
+
+/* Set a plan: the rules in four lines, a reason, for Performance an end date
+   and a tick, then an optional note. A failed save keeps everything typed. */
+window.posPlanSheet = function (id, asg, failed, keep) {
+  var p = posPerson(id, asg);
+  if (!p) return;
+  keep = keep || { reason: "", ends: "", told: false, note: "" };
+  var first = p.name.split(" ")[0], perf = keep.reason === "Performance";
+  var lo = posShift(posToday(), 30), hi = posShift(posToday(), 60);
+  var b = "<p>" + drT("A private note so HR can start finding cover before this seat empties. It is not a score, and nothing works it out for you.") + "</p>"
+    + '<div class="pos-note info"><ul style="margin:0">'
+    + "<li>" + (POS.plans.owners_see
+        ? drT("Only HR Managers and the owners see it (your company has switched owners on). The system administrator can see it too.")
+        : drT("Only HR Managers see it. The system administrator can see it too.")) + "</li>"
+    + "<li>" + posEsc(drT("{0} does not see it on any screen, and neither does their manager.", [first])) + " " + posSeesLine() + "</li>"
+    + "<li>" + drT("It is never printed, and never used in reviews, ratings or pay.") + "</li>"
+    + "<li>" + posEsc(drT("It ends on {0} unless HR confirms it again. It is erased within a day of {1} leaving this seat.", [posLong(posShift(posToday(), 90)), first]))
+    + '<span id="pos-hold-rule"' + (perf ? "" : " hidden") + "> " + posEsc(drT("Nobody can request a replacement for {0} before", [first]))
+    + ' <span id="pos-hold-date">' + (keep.ends ? posLong(keep.ends) : drT("the end of the improvement period")) + "</span>"
+    + posEsc(drT(", and not until HR records whether {0} improved.", [first])) + "</span></li></ul></div>"
+    + (failed ? '<p class="pos-sheet-err" role="alert"><strong>' + drT("We could not save the plan.") + "</strong> "
+        + (typeof failed === "string"
+            ? posEsc(failed) + " " + drT("Your note is still here.")
+            : drT("Check your connection, then try again. Your note is still here.")) + "</p>" : "")
+    + '<fieldset class="pos-fs" id="pos-pl-reason"><legend class="pos-lab">' + drT("Reason") + "</legend>"
+    + ["Performance", "Personal reasons", "Other business reason"].map(function (o, k) {
+        return '<label class="pos-opt"><input type="radio" name="pos-pl-reason" id="pos-pl-r' + k + '" value="' + o + '"'
+          + (keep.reason === o ? " checked" : "") + "> " + drT(o) + "</label>";
+      }).join("")
+    + '<div class="pos-fielderr" id="pos-pl-reason-err" hidden>' + drT("Choose a reason.") + "</div></fieldset>"
+    + '<div id="pos-pl-perf"' + (perf ? "" : " hidden") + ">"
+    + '<label class="pos-lab" for="pos-pl-ends">' + drT("Improvement period ends on") + "</label>"
+    + '<input type="date" id="pos-pl-ends" min="' + lo + '" max="' + hi + '" value="' + posEsc(keep.ends) + '" aria-describedby="pos-pl-ends-hint pos-pl-ends-err">'
+    + '<div class="su" id="pos-pl-ends-hint">' + posEsc(drT("Between {0} and {1}. Hiring for this seat is on hold until then and until HR records the outcome.", [posLong(lo), posLong(hi)])) + "</div>"
+    + '<div class="pos-fielderr" id="pos-pl-ends-err" hidden>' + posEsc(drT("Choose a date between {0} and {1}.", [posLong(lo), posLong(hi)])) + "</div>"
+    + '<label class="pos-opt" style="margin-top:10px;align-items:flex-start"><input type="checkbox" id="pos-pl-told" style="margin-top:2px"'
+    + (keep.told ? " checked" : "") + ' aria-describedby="pos-pl-told-err"> <span>'
+    + posEsc(drT("I have told {0} about the improvement period and given written goals. The replacement plan is not mentioned to them.", [first])) + "</span></label>"
+    + '<div class="pos-fielderr" id="pos-pl-told-err" hidden>' + posEsc(drT("Tick this once you have told {0}.", [first])) + "</div></div>"
+    + '<label class="pos-lab" for="pos-pl-note">' + drT("Note (optional)") + "</label>"
+    + '<textarea id="pos-pl-note" maxlength="200" aria-describedby="pos-pl-hint pos-pl-count">' + posEsc(keep.note) + "</textarea>"
+    + '<div class="pos-count" id="pos-pl-count" aria-live="polite">' + drT("{0} of 200 characters", [keep.note.length]) + "</div>"
+    + '<div class="su" id="pos-pl-hint">' + drT("What the business needs to know, for example “Notice likely in December”. No opinions about the person, and nothing about health or family.") + "</div>";
+  posSheet(posEsc(drT("Plan a replacement for {0}?", [p.name])), b, posBack(id)
+    + '<button type="button" class="btn btn-primary btn-sm" onclick="posPlanSave(\'' + posJs(id) + "','" + posJs(asg) + '\',this)">' + drT("Save the plan") + "</button>");
+  POS.sheet = { kind: "plan", id: id };
+  var t = document.getElementById("pos-pl-note"), c = document.getElementById("pos-pl-count");
+  t.addEventListener("input", function () {
+    var n = t.value.length;
+    c.textContent = n >= 200 ? drT("200 of 200 characters. That is the limit.") : drT("{0} of 200 characters", [n]);
+    c.className = "pos-count" + (n >= 200 ? " full" : "");
+  });
+  // The date, the tick and rule 4's hold sentence exist only for Performance; nothing is sent for the others.
+  document.getElementById("pos-pl-reason").addEventListener("change", function () {
+    var pf = posPlanInput().reason === "Performance";
+    document.getElementById("pos-pl-perf").hidden = !pf;
+    document.getElementById("pos-hold-rule").hidden = !pf;
+    document.getElementById("pos-pl-reason-err").hidden = true;
+  });
+  document.getElementById("pos-pl-ends").addEventListener("change", function (e) {
+    document.getElementById("pos-hold-date").textContent = e.target.value ? posLong(e.target.value) : drT("the end of the improvement period");
+  });
+};
+function posPlanInput() {
+  var r = document.querySelector("input[name=pos-pl-reason]:checked");
+  return { reason: r ? r.value : "", ends: document.getElementById("pos-pl-ends").value,
+           told: document.getElementById("pos-pl-told").checked, note: document.getElementById("pos-pl-note").value };
+}
+window.posPlanSave = async function (id, asg, btn) {
+  var k = posPlanInput(), perf = k.reason === "Performance";
+  var lo = posShift(posToday(), 30), hi = posShift(posToday(), 60);
+  var bad = [["pos-pl-reason-err", !k.reason, "pos-pl-r0"],
+             ["pos-pl-ends-err", perf && (!k.ends || k.ends < lo || k.ends > hi), "pos-pl-ends"],
+             ["pos-pl-told-err", perf && !k.told, "pos-pl-told"]];
+  bad.forEach(function (x) { document.getElementById(x[0]).hidden = !x[1]; });
+  var miss = bad.filter(function (x) { return x[1]; })[0];
+  if (miss) { document.getElementById(miss[2]).focus(); return; }
+  posBusy(btn, drT("Saving…"));
+  var p = posPerson(id, asg);
+  try {
+    await gpFetch("hrms.alvoraa_org_structure.plans.set_plan", { assignment: asg, note: k.note.trim(),
+      reason: k.reason, improvement_ends_on: perf ? k.ends : null,
+      // The server checks this too, and refuses a Performance plan without it.
+      // It was validated above and then left out of the call, so EVERY
+      // Performance plan was refused and the screen blamed the connection.
+      told: k.told ? 1 : 0 });
+  } catch (e) {
+    // Show what the server actually said. Inventing "check your connection"
+    // over a refusal sends the reader hunting for a fault that is not there.
+    posPlanSheet(id, asg, e && e.server && e.message ? e.message : true, k);
+    return;
+  }
+  await posLoad();
+  posSeatSheet(id, perf
+    ? posEsc(drT("Plan saved for {0}. Hiring is on hold until {1} and until HR records the outcome.", [p.name, posLong(k.ends)]))
+    : posEsc(drT("Plan saved for {0}. It ends on {1} unless you confirm it again.", [p.name, posLong(posShift(posToday(), 90))]))
+      + (posMayRequest(posById(id)) ? " " + drT("To start hiring now, use <strong>Request a replacement</strong> below.") : ""));
+};
+window.posConfirmPlan = async function (id, asg, btn) {
+  var p = posPerson(id, asg);
+  posBusy(btn, drT("Confirming…"));
+  try { await gpFetch("hrms.alvoraa_org_structure.plans.confirm_plan", { plan: p.plan.name }); }
+  catch (e) {
+    posSeatSheet(id, null, "<strong>" + drT("We could not confirm the plan.") + "</strong> "
+      + (e && e.server && e.message ? posEsc(e.message) : drT("Check your connection, then try again. Nothing changed.")));
+    return;
+  }
+  await posLoad();
+  posSeatSheet(id, posEsc(drT("Confirmed. The plan for {0} now ends on {1}.", [p.name, posLong(posShift(posToday(), 90))])));
+};
+/* Remove erases at once and cannot be undone, so it asks first. */
+window.posRemoveSheet = function (id, asg) {
+  var r = posById(id), p = posPerson(id, asg);
+  posSheet(posEsc(drT("Remove the plan for {0}?", [p.name])),
+    "<p>" + drT("The plan and its note are erased at once. Nobody can bring them back. No copy is kept in the system.") + "</p>"
+    + (r.opening ? "<p>" + posEsc(drT("The job opening {0} stays open. Close it on the opening if you no longer need it.", [r.opening])) + "</p>" : ""),
+    posBack(id) + '<button type="button" class="btn btn-primary btn-sm" onclick="posRemovePlan(\'' + posJs(id) + "','" + posJs(asg) + '\',this)">' + drT("Remove and erase") + "</button>");
+  POS.sheet = { kind: "remove", id: id };
+};
+window.posRemovePlan = async function (id, asg, btn) {
+  var p = posPerson(id, asg);
+  posBusy(btn, drT("Removing…"));
+  try { await gpFetch("hrms.alvoraa_org_structure.plans.remove_plan", { plan: p.plan.name }); }
+  catch (e) { posSeatSheet(id, null, "<strong>" + drT("We could not remove the plan.") + "</strong> " + drT("Check your connection, then try again. The plan is still in place.")); return; }
+  await posLoad();
+  posSeatSheet(id, drT("Plan removed and erased."));
+};
+/* The outcome of an improvement period. Each asks once first. */
+window.posOutcomeSheet = function (id, asg, o) {
+  var r = posById(id), p = posPerson(id, asg), go = '<button type="button" class="btn btn-primary btn-sm" onclick="posOutcomeDo(\''
+    + posJs(id) + "','" + posJs(asg) + "','" + o + '\',this)">';
+  if (o === "improved") {
+    posSheet(posEsc(drT("Record that {0} improved?", [p.name])),
+      "<p>" + drT("The plan and its note are erased at once, as Remove the plan does. Nobody can bring them back. No copy is kept in the system.") + "</p>"
+      + (r.opening ? "<p>" + posEsc(drT("The job opening {0} stays open. Close it on the opening if you no longer need it.", [r.opening])) + "</p>" : ""),
+      posBack(id) + go + drT("Improved – remove the plan") + "</button>");
+  } else {
+    posSheet(posEsc(drT("Record that {0} did not improve?", [p.name])),
+      "<p>" + drT("Hiring for this seat may start. Your name and today's date are kept on the plan.") + "</p>"
+      + "<p>" + posEsc(drT("The plan now ends on {0} unless HR confirms it again.", [posLong(posShift(posToday(), 90))])) + "</p>",
+      posBack(id) + go + drT("Not improved – hiring may start") + "</button>");
+  }
+  POS.sheet = { kind: "outcome", id: id };
+};
+window.posOutcomeDo = async function (id, asg, o, btn) {
+  var p = posPerson(id, asg);
+  posBusy(btn, o === "improved" ? drT("Removing…") : drT("Saving…"));
+  try { await gpFetch("hrms.alvoraa_org_structure.plans.record_outcome", { plan: p.plan.name, outcome: o }); }
+  catch (e) { posSeatSheet(id, null, "<strong>" + drT("We could not save the outcome.") + "</strong> " + drT("Check your connection, then try again. Nothing changed.")); return; }
+  await posLoad();
+  posSeatSheet(id, o === "improved" ? drT("Recorded: improved. Plan removed and erased.")
+    : posEsc(drT("Recorded: not improved. Hiring may start. The plan now ends on {0} unless you confirm it again.", [posLong(posShift(posToday(), 90))])));
+};
+/* Request a replacement: an opening that is NOT advertised, through today's post_job. */
+window.posRequestSheet = function (id, failed) {
+  var r = posById(id);
+  // Whose plan or leaving date allows hiring; the plan wins when both exist.
+  var sp = posByPlan(r.people).filter(function (p) { return (posPlanOf(p) && !posOnHold(p.plan)) || p.leaving; })[0];
+  var subj = sp ? sp.name.split(" ")[0] : drT("the person");
+  var n = POS.plans && POS.plans.hr_users != null ? POS.plans.hr_users : null;
+  posSheet(posEsc(drT("Request a replacement for {0}?", [r.title])),
+    "<p>" + drT("This makes a job opening for 1 person in this seat. It is <strong>not advertised</strong>: it is not on your careers page until HR publishes it.") + "</p>"
+    + "<p>" + drT("The opening names the seat and the job role only. It says nothing about the person or why. Write nothing about them when you add the details.") + "</p>"
+    + '<div class="pos-note amber" role="note"><h3>' + drT("Before you do") + "</h3>"
+    + posEsc(n === null ? drT("People with the HR User role can read job openings. From the seat, they could work out who this opening is about.")
+        : drT("The {0} people with the HR User role can read job openings. From the seat, they could work out who this opening is about.", [n]))
+    + (r.seats === 1
+        ? " <strong>" + drT("This seat holds one person, so they will know at once.") + "</strong> " + posEsc(drT("Go ahead only if {0} already knows, or it cannot reach them.", [subj]))
+        : " " + posEsc(drT("If that could reach {0}, wait.", [subj]))) + "</div>"
+    + (failed ? '<p class="pos-sheet-err" role="alert"><strong>' + drT("We could not make the opening.") + "</strong> " + drT("Check your connection, then try again. Nothing was made.") + "</p>" : ""),
+    posBack(id) + '<button type="button" class="btn btn-primary btn-sm" onclick="posRequestDo(\'' + posJs(id) + '\',this)">' + drT("Make the opening, not advertised") + "</button>");
+  POS.sheet = { kind: "request", id: id };
+};
+window.posRequestDo = async function (id, btn) {
+  posBusy(btn, drT("Making the opening…"));
+  var out;
+  try { out = await gpFetch("hrms.alvoraa_org_structure.register.post_job", { position: id, vacancies: 1 }); }
+  catch (e) { posRequestSheet(id, true); return; }
+  await posLoad();
+  posSeatSheet(id, posEsc(drT("Opening {0} made, not advertised. It has opened in a new tab so you can add the details.", [out.name]))
+    + ' <a class="pos-link" target="_blank" rel="noopener" href="/app/job-opening/' + encodeURIComponent(out.name) + '">' + drT("Open the job opening") + "</a>");
+  window.open("/app/job-opening/" + encodeURIComponent(out.name), "_blank", "noopener");
+};
+
 /* ── the wall chart: the seat chart as a PDF (slice 069) ─────────────────
    Drawn in the browser from the rows already on the page; no server call.
 
@@ -3430,7 +3862,7 @@ window.posWallPrint = function () {
   window.print();
 };
 
-window.posSeatSheet = function (id, flash) {
+window.posSeatSheet = function (id, flash, err) {
   // Slice 072: a copy opens its seat's own tray (AC-42).
   var pl = posPlaced(), copy = pl && pl.byId[id];
   var r = copy ? copy.seat : posById(id);
@@ -3447,12 +3879,13 @@ window.posSeatSheet = function (id, flash) {
     + '</b><div class="su">' + drT("filled") + "</div></div><div><b>"
     + (posOpen(r) ? posNum(posOpen(r)) : drT("None")) + '</b><div class="su">' + drT("to fill") + "</div></div></div>";
   if (flash) b += '<div class="pos-note ok" role="status">' + flash + "</div>";
+  if (err) b += '<p class="pos-sheet-err" role="alert">' + err + "</p>";
   // In Reporting lines the chart itself now answers the records check, so its
   // two notes give way to where the seat shows (Q3).
   b += pl ? posWhereItShows(r, id, pl) : posRecordNotes(r);
   b += '<h3 class="pos-h3">' + drT("Who is in it") + "</h3>";
   if (!r.people.length) b += '<p class="su">' + drT("Nobody is in this seat.") + "</p>";
-  b += '<div class="pos-people">' + r.people.map(function (p) {
+  b += '<div class="pos-people">' + posByPlan(r.people).map(function (p) {
     var c = "";
     if (p.weight != null && p.weight < 100) c += ' <span class="su">' + drT("{0}% of the seat", [posNum(p.weight)]) + "</span>";
     if (p.covering) c += ' <span class="su">' + posEsc(p.type) + "</span>";
@@ -3460,7 +3893,8 @@ window.posSeatSheet = function (id, flash) {
     if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
     // Slice 072: whom they report to, on its own grey line, in Reporting lines only.
     var line = pl ? '<div class="su">' + posEsc(posReportsLine(p, r, pl)) + "</div>" : "";
-    return '<div class="pos-prow">' + posEsc(p.name) + c + line + "</div>";
+    return '<div class="pos-prow">' + posPlanMark(p).pre + posEsc(p.name) + c + line
+      + posPlanRow(r, p) + "</div>";
   }).join("") + "</div>";
   b += '<p class="pos-sheet-err" id="pos-sheet-err" role="alert" hidden></p>';
   var f = "";
@@ -3471,6 +3905,10 @@ window.posSeatSheet = function (id, flash) {
     } else if (r.open >= 0.5 && r.designation) {
       f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetAdvertise(\'' + posJs(r.id) + '\')">'
         + drT("Advertise it") + "</button>";
+    }
+    if (posMayRequest(r)) {
+      f += '<button type="button" class="btn btn-primary btn-sm" onclick="posRequestSheet(\'' + posJs(r.id) + '\')">'
+        + drT("Request a replacement") + "</button>";
     }
     f += '<button type="button" class="btn btn-outline btn-sm" onclick="posSheetChange(\'' + posJs(r.id) + '\')">'
       + drT("Change this seat") + "</button>";
@@ -4009,6 +4447,7 @@ function switchPanel(name, triggerEl) {
   if (window.tvClosePop) { window.tvClosePop(); window.tvCloseNew(); }
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-" + name).classList.add("active");
+  if (name === "home") hmRefreshIfStale();
 
   if (name === "attendance-insights") { aiOpen(); }
   if (name === "att-record")         { acOpen(); }
@@ -4049,7 +4488,7 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); }
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); }
     if (name === "policies")    polLoad();
   }
 
@@ -5559,6 +5998,826 @@ function loadHomeLeave(balances) {
    instead. The endpoint is deleted, not merely unused. */
 
 
+/* ── Home: Pending, Notices and the grid (slice 076, Part A) ─────────────
+   Own block, prefix hm / nt. The server decides everything shown here - whose
+   requests, whose notices, what a person may decide. The page only draws it;
+   a hidden button is not a permission.
+
+   Pending is the inbox (inbox_api.get_inbox), nothing else: one filter, so the
+   number and the list cannot disagree. Notices and the bell are one function
+   (notices.notices_feed): the card's "N unread" IS the bell's number.
+
+   Every string that reaches innerHTML goes through esc(). A notice written as
+   <img src=x onerror=alert(1)> is shown as those characters. */
+var HM_IB = "alvoraa_portal.inbox_api.";
+var HM_NT = "alvoraa_portal.notices.";
+var HM_MARK_READ = "frappe.desk.doctype.notification_log.notification_log.mark_as_read";
+var HM_CAP = 5;
+var HM = {pend: null, rows: [], notes: null, all: null, opener: null, at: 0};
+var HM_STALE_MS = 60000;
+
+/* Where "Open" goes, by the row's own `action` word. The inbox's route strings
+   belong to the discarded /hrms-employee-next page and mean nothing here. */
+var HM_SCREEN = {
+  goal_update: "team", attendance_fix: "att-record",
+  policy: "policies", my_leave: "attendance", my_attendance_fix: "att-record",
+  my_shift_request: "shift-req", leave: "team"
+};
+/* A CXO's row is one kind with a count. Name, then the row action it opens. */
+var HM_KIND = {
+  leave_approvals: ["Leave approvals", "leave"],
+  goal_updates: ["Goal and KPI updates", "goal_update"],
+  attendance_fixes: ["Attendance fixes", "attendance_fix"],
+  policies: ["Policies to read", "policy"]
+};
+var NT_PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3z"/></svg>';
+var HM_TICK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="5 12 10 17 19 7"/></svg>';
+
+function hmEl(id) { return document.getElementById(id); }
+
+/* "6 Nov", no year (design section 8). */
+function hmDay(iso) {
+  var p = isoParts(iso);
+  return p ? p[2] + " " + drT(MON3[p[1] - 1]) : "";
+}
+function hmRange(a, b) {
+  var pa = isoParts(a), pb = isoParts(b);
+  if (!pa) return "";
+  if (!pb || (pa[0] === pb[0] && pa[1] === pb[1] && pa[2] === pb[2])) return hmDay(a);
+  if (pa[1] === pb[1] && pa[0] === pb[0]) return pa[2] + "–" + pb[2] + " " + drT(MON3[pa[1] - 1]);
+  return hmDay(a) + " – " + hmDay(b);
+}
+/* Whole days since a date, on the phone's own calendar. null when unknown. */
+function hmDaysSince(stamp) {
+  var p = isoParts(stamp), t = isoParts(localToday());
+  if (!p || !t) return null;
+  var n = Math.round((Date.UTC(t[0], t[1] - 1, t[2]) - Date.UTC(p[0], p[1] - 1, p[2])) / 86400000);
+  return n < 0 ? 0 : n;
+}
+function hmWaiting(stamp) {
+  var n = hmDaysSince(stamp);
+  if (n === null) return "";
+  return n === 1 ? drT("waiting 1 day") : drT("waiting {0} days", [n]);
+}
+function hmDays(n) {
+  n = parseFloat(n || 0);
+  return n === 1 ? drT("1 day") : drT("{0} days", [Math.round(n * 10) / 10]);
+}
+/* "2 Nov, 4:10 pm" from the server's own timestamp, as typed - no zone shifts. */
+function hmWhen(stamp) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(stamp || ""));
+  if (!m) return "";
+  var h = +m[4], ap = h < 12 ? "am" : "pm";
+  return (+m[3]) + " " + drT(MON3[+m[2] - 1]) + ", " + ((h % 12) || 12) + ":" + m[5] + " " + ap;
+}
+
+function hmEmpty(head, sub) {
+  return '<div class="hm-empty"><span class="hm-tick">' + HM_TICK + '</span><b>' + esc(drT(head))
+    + '</b><span class="hm-es">' + esc(drT(sub)) + '</span></div>';
+}
+function hmChip(id, text) {
+  var c = hmEl(id);
+  if (!c) return;
+  c.textContent = text || "";
+  c.style.display = text ? "" : "none";
+}
+
+/* ── the grid: a lone last card spans the row ─────────────────────────── */
+function homeReflow() {
+  var g = hmEl("home-grid");
+  if (!g) return;
+  var shown = [].filter.call(g.children, function (c) { return c.style.display !== "none"; });
+  [].forEach.call(g.children, function (c) { c.classList.remove("hm-span2"); });
+  if (shown.length % 2 === 1) shown[shown.length - 1].classList.add("hm-span2");
+}
+function hmWatchGrid() {
+  var g = hmEl("home-grid");
+  if (!g || g._hmWatched) { homeReflow(); return; }
+  g._hmWatched = true;
+  if (typeof MutationObserver === "function") {
+    new MutationObserver(homeReflow).observe(g, {attributes: true, attributeFilter: ["style"], subtree: true, childList: true});
+  }
+  homeReflow();
+}
+
+/* ── sheets: a dialog on a laptop, a bottom sheet on a phone ──────────── */
+function hmOpenSheet(title, bodyHtml, footHtml) {
+  hmCloseSheet(true);
+  HM.opener = document.activeElement;
+  var ov = document.createElement("div");
+  ov.className = "hm-ov";
+  ov.id = "hm-ov";
+  ov.innerHTML = '<div class="hm-sheet" role="dialog" aria-modal="true" aria-labelledby="hm-sh-t" id="hm-sheet">'
+    + '<div class="hm-sh-h"><h2 id="hm-sh-t">' + esc(title) + '</h2>'
+    + '<button type="button" class="hm-tbtn" data-hm="close" aria-label="' + esc(drT("Close")) + '">' + esc(drT("Close")) + '</button></div>'
+    + '<div class="hm-sh-b">' + bodyHtml + '</div>'
+    + (footHtml ? '<div class="hm-sh-f">' + footHtml + '</div>' : '') + '</div>';
+  document.body.appendChild(ov);
+  document.body.style.overflow = "hidden";
+  var f = ov.querySelector("textarea, .hm-sh-b button, .hm-sh-b a, .hm-sh-f button, .hm-sh-f a") || ov.querySelector("button");
+  if (f) f.focus();
+  return ov;
+}
+function hmCloseSheet(quiet) {
+  var ov = hmEl("hm-ov");
+  if (!ov) return;
+  ov.parentNode.removeChild(ov);
+  document.body.style.overflow = "";
+  var o = HM.opener;
+  HM.opener = null;
+  if (!quiet && o && o.focus && document.body.contains(o)) o.focus();
+}
+document.addEventListener("keydown", function (e) {
+  var ov = hmEl("hm-ov");
+  if (!ov) return;
+  if (e.key === "Escape") { e.stopPropagation(); hmCloseSheet(); return; }
+  if (e.key !== "Tab") return;
+  var f = [].filter.call(ov.querySelectorAll("button, a[href], textarea"), function (n) { return !n.disabled; });
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+/* ── Pending for you ──────────────────────────────────────────────────── */
+function homePending() {
+  var body = hmEl("home-pending-body");
+  if (!body) return;
+  gpFetch(HM_IB + "get_inbox", {}).then(function (d) {
+    HM.pend = d;
+    HM.at = Date.now();
+    hmPaintPending();
+  }, function (e) {
+    hmChip("home-pending-chip", "");
+    var foot = hmEl("home-pending-foot");
+    if (foot) foot.style.display = "none";
+    failBox(body, e, homePending);
+  });
+}
+window.hmPendingReload = homePending;
+
+/* Home is loaded once, at start-up. Coming back to it after a minute asks again,
+   so the card is not the morning's list at lunch. */
+window.hmRefreshIfStale = function () {
+  if (!HM.at || Date.now() - HM.at < HM_STALE_MS) return;
+  homePending();
+  homeNotices();
+};
+
+function hmIsCxo() { return !!(window._roles && window._roles.is_system_manager); }
+
+/* The rows the card and its sheet draw, oldest first across kinds. A CXO gets
+   one row per kind with a count and no people. */
+function hmPendingRows(d) {
+  var out = [];
+  if (hmIsCxo()) {
+    (d.parts || []).forEach(function (p) {
+      var k = HM_KIND[p.key];
+      if (!k || !p.count) return;
+      /* Goal and KPI updates have no Team-page list, so that row opens the
+         oldest one in the caller's scope, and says so. */
+      var oldest = k[1] === "goal_update" && p.rows && p.rows[0] ? p.rows[0] : null;
+      out.push({count: p.count, action: k[1], av: String(p.count), title: drT(k[0]), row: oldest,
+        sub: drT(oldest ? "{0} waiting · opens the oldest" : "{0} waiting · your queue", [p.count]), go: "Open"});
+    });
+    out.sort(function (a, b) { return b.count - a.count; });
+    return out;
+  }
+  (d.parts || []).forEach(function (p) {
+    /* The live portal has no screen where a manager decides a shift change, so
+       the row would lead nowhere. Out of Pending until Part C or a decide screen. */
+    if (p.key === "shift_requests") return;
+    (p.rows || []).forEach(function (r) { out.push(hmRowView(p.key, r)); });
+  });
+  out.sort(function (a, b) {
+    var x = a.since || "9999", y = b.since || "9999";
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+  return out;
+}
+function hmRowView(key, r) {
+  var v = {action: r.action, since: r.waiting_since, row: r, go: "Open"};
+  var w = hmWaiting(r.waiting_since);
+  if (key === "leave_approvals") {
+    v.title = r.employee_name || "";
+    v.sub = drT("Leave request") + " · " + hmRange(r.from_date, r.to_date) + " · " + hmDays(r.total_days)
+      + (w ? " · " + w : "");
+    v.go = "Review";
+  } else if (key === "goal_updates") {
+    v.title = r.employee_name || "";
+    v.sub = drT(r.kind === "kpi" ? "KPI update" : "Goal update") + (r.subject ? " · " + r.subject : "");
+  } else if (key === "attendance_fixes") {
+    v.title = r.employee_name || "";
+    v.sub = drT("Attendance fix") + " · " + hmRange(r.from_date, r.to_date) + (w ? " · " + w : "");
+  } else if (key === "policies") {
+    v.title = r.title || "";
+    v.sub = drT("Policy to read") + " · " + drT("version {0}", [r.version]);
+  } else {
+    v.title = (r.title || "") + (r.from_date ? ", " + hmRange(r.from_date, r.to_date) : "");
+    v.sub = r.says || drT("Your request");
+  }
+  return v;
+}
+function hmPendRowHtml(v, i) {
+  return '<button type="button" class="hm-row" data-hm="pend" data-i="' + i + '">'
+    + '<span class="hm-av" aria-hidden="true">' + esc(v.av || initials(v.title)) + '</span>'
+    + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span><span class="hm-l2">' + esc(v.sub) + '</span></span>'
+    + '<span class="hm-go">' + esc(drT(v.go)) + '</span></button>';
+}
+function hmPaintPending() {
+  var d = HM.pend, body = hmEl("home-pending-body"), foot = hmEl("home-pending-foot");
+  if (!d || !body) return;
+  HM.rows = hmPendingRows(d);
+  var rows = HM.rows;
+  var shifts = ((d.parts || []).filter(function (p) { return p.key === "shift_requests"; })[0] || {}).count || 0;
+  var total = hmIsCxo() ? rows.reduce(function (n, v) { return n + v.count; }, 0) : Math.max(0, (d.total || 0) - shifts);
+  hmChip("home-pending-chip", total ? drT("{0} waiting", [total]) : "");
+  if (!rows.length) {
+    body.innerHTML = hmEmpty("Nothing waiting on you.", "Requests that need you, and policies to read, appear here.");
+  } else {
+    body.innerHTML = rows.slice(0, HM_CAP).map(hmPendRowHtml).join("");
+  }
+  if (rows.length > HM_CAP) {
+    foot.innerHTML = '<span class="hm-note">' + esc(drT(hmIsCxo() ? "Showing {0} of {1} kinds" : "Showing {0} of {1}", [HM_CAP, rows.length]))
+      + '</span><span class="hm-sp"></span><button type="button" class="hm-tbtn" data-hm="pend-all">'
+      + esc(drT("See all {0}", [total])) + '</button>';
+    foot.style.display = "";
+  } else {
+    foot.innerHTML = "";
+    foot.style.display = "none";
+  }
+}
+function hmPendAll() {
+  var rows = HM.rows;
+  hmOpenSheet(drT("Pending for you"),
+    rows.map(hmPendRowHtml).join("")
+    + '<div class="hm-sh-p hm-note">' + esc(drT(hmIsCxo() ? "Counts by kind. Tap one to open its screen."
+      : "Showing all {0} (at most 50 of each kind).", [rows.length])) + '</div>');
+}
+function hmPendOpen(i) {
+  var v = HM.rows[i];
+  if (!v) return;
+  if (v.action === "leave" && !hmIsCxo()) { hmLeaveSheet(v); return; }
+  var screen = HM_SCREEN[v.action];
+  hmCloseSheet(true);
+  /* A goal or KPI update opens its own drawer, where Approve and Reject are
+     (the same drawers the old bell opened). Without the id, the Team page. */
+  var r = v.row;
+  if (v.action === "goal_update" && r && r.document) {
+    if (r.kind === "kpi" && window.pfOpenLog) { window.pfOpenLog(r.document, r.name); return; }
+    if (r.kind !== "kpi" && window.gpOpenGoalDetail) { window.gpOpenGoalDetail(r.document, r.name); return; }
+  }
+  if (screen) switchPanel(screen, null);
+}
+
+/* ── the leave sheet: Approve, or Decline with a reason ──────────────── */
+function hmLeaveSheet(v) {
+  var r = v.row, w = hmWaiting(r.waiting_since);
+  var body = '<div class="hm-sh-p"><div class="hm-l1" style="font-size:var(--fs-lg);white-space:normal">' + esc(r.employee_name || "") + '</div>'
+    + '<div class="hm-note" style="margin:2px 0 12px">' + esc(drT("Leave request")) + '</div>'
+    + '<div class="hm-fact"><div>' + esc(r.leave_type || "") + '</div><div class="hm-sub">'
+    + esc(hmRange(r.from_date, r.to_date) + " · " + hmDays(r.total_days)) + '</div></div>'
+    + (w ? '<div class="hm-note" style="margin-top:8px">' + esc(w.charAt(0).toUpperCase() + w.slice(1)) + '.</div>' : '')
+    + '</div>'
+    + '<div class="hm-sh-p hm-reason" id="hm-reason" style="display:none;padding-top:0">'
+    + '<label for="hm-why">' + esc(drT("Why are you declining? {0} will read this.", [(r.employee_name || "").split(" ")[0]])) + '</label>'
+    + '<textarea id="hm-why" maxlength="140" aria-describedby="hm-why-e"></textarea>'
+    + '<div class="hm-err" id="hm-why-e" role="alert" style="display:none">' + esc(drT("Write a short reason first.")) + '</div></div>';
+  var foot = '<button type="button" class="btn btn-primary" data-hm="leave-approve" id="hm-approve">' + esc(drT("Approve")) + '</button>'
+    + '<button type="button" class="btn btn-outline" data-hm="leave-decline" id="hm-decline">' + esc(drT("Decline")) + '</button>';
+  var ov = hmOpenSheet(drT("Leave request"), body, foot);
+  ov._row = r;
+}
+function hmDecide(action) {
+  var ov = hmEl("hm-ov"), r = ov && ov._row;
+  if (!r || ov._busy) return;
+  var reason;
+  if (action === "reject") {
+    var box = hmEl("hm-reason");
+    if (box.style.display === "none") {
+      box.style.display = "";
+      hmEl("hm-why").focus();
+      hmEl("hm-decline").textContent = drT("Send decline");
+      hmEl("hm-decline").className = "btn btn-primary";
+      hmEl("hm-approve").style.display = "none";
+      return;
+    }
+    reason = hmEl("hm-why").value.trim();
+    if (!reason) { hmEl("hm-why-e").style.display = ""; hmEl("hm-why").focus(); return; }
+  }
+  ov._busy = true;
+  var btns = ov.querySelectorAll(".hm-sh-f button");
+  [].forEach.call(btns, function (b) { b.disabled = true; });
+  var args = {leave_id: r.name, action: action};
+  if (reason) args.reason = reason;
+  api("action_leave", args, function () {
+    var first = (r.employee_name || "").split(" ")[0];
+    hmCloseSheet(true);
+    hmDropPending("leave_approvals", r.name);
+    toast(action === "approve" ? drT("Approved. {0}'s leave is approved.", [r.employee_name || ""])
+                               : drT("Declined. {0} will see your reason.", [first]), action === "approve" ? "ok" : "");
+    var badge = hmEl("sb-team-badge");
+    if (badge) {
+      var bn = Math.max(0, (parseInt(badge.textContent) || 0) - 1);
+      badge.textContent = bn; badge.style.display = bn ? "flex" : "none";
+    }
+  }, function (e) {
+    ov._busy = false;
+    if (mayHaveGone(e)) { sayMayHaveGone(e, btns[btns.length - 1]); return; }
+    [].forEach.call(btns, function (b) { b.disabled = false; });
+    toast((e && e.message) || drT("Could not save that. Try again."), "err");
+  });
+}
+/* The decided row leaves the card at once; the count follows it. */
+function hmDropPending(key, name) {
+  var d = HM.pend;
+  if (!d) return;
+  (d.parts || []).forEach(function (p) {
+    if (p.key !== key) return;
+    var n = (p.rows || []).length;
+    p.rows = (p.rows || []).filter(function (x) { return x.name !== name; });
+    if (p.rows.length < n) { p.count = Math.max(0, (p.count || 0) - 1); d.total = Math.max(0, (d.total || 0) - 1); }
+  });
+  hmPaintPending();
+}
+
+/* ── Notices, and the bell that shares their number ───────────────────── */
+function homeNotices() {
+  var body = hmEl("home-notices-body");
+  if (!body) return;
+  gpFetch(HM_NT + "notices_feed", {see_all: 0}).then(function (d) {
+    HM.notes = d;
+    ntPaintBadge(d.unread || 0);
+    hmPaintNotices();
+  }, function (e) {
+    hmChip("home-notices-chip", "");
+    var foot = hmEl("home-notices-foot");
+    if (foot) foot.style.display = "none";
+    failBox(body, e, homeNotices);
+  });
+}
+function ntPaintBadge(n) {
+  var badge = hmEl("notif-badge"), btn = hmEl("mob-notif-btn");
+  if (badge) { badge.textContent = n > 99 ? "99+" : n; badge.style.display = n > 0 ? "flex" : "none"; }
+  if (btn) {
+    var name = drT("Notices, {0} unread", [n]);
+    btn.setAttribute("aria-label", name);
+    btn.setAttribute("title", name);
+  }
+}
+/* The bell outside Home: the same function, called once at start-up. */
+window.ntBellBoot = function () {
+  if (HM.notes) return;
+  gpFetch(HM_NT + "notices_feed", {see_all: 0}).then(function (d) {
+    HM.notes = d;
+    ntPaintBadge(d.unread || 0);
+  }, function () { /* the bell stays as it is; Home shows its own failure box */ });
+};
+function ntRowHtml(n, i, withRead) {
+  /* An announcement is pinned and says who sent it (slice 076 Part B). */
+  var pin = n.kind === "announcement";
+  return '<button type="button" class="hm-row hm-nrow" data-hm="note" data-i="' + i + '" data-src="' + (withRead ? "all" : "card") + '">'
+    + '<span class="hm-rt"><span class="hm-meta">' + (pin ? '<span class="hm-pin">' + NT_PIN + esc(drT("Pinned")) + '</span>' : '')
+    + '<span>' + esc((pin ? String(n.from || "").split(",")[0] : "Alvora") + " · " + hmWhen(n.when)) + '</span></span>'
+    + '<span class="hm-txt">' + esc(n.text) + '</span></span>'
+    + (withRead && n.read ? '<span class="hm-note">' + esc(drT("Read")) + '</span>' : '') + '</button>';
+}
+function hmPaintNotices() {
+  var d = HM.notes, body = hmEl("home-notices-body"), foot = hmEl("home-notices-foot");
+  if (!d || !body) return;
+  var items = d.items || [];
+  hmChip("home-notices-chip", d.unread ? drT("{0} unread", [d.unread]) : "");
+  if (!items.length) {
+    body.innerHTML = d.any ? hmEmpty("You are up to date.", "No new notices. Older ones are under See all.")
+                           : hmEmpty("No notices.", "Messages from HR and management, and alerts about your work, appear here.");
+  } else {
+    body.innerHTML = items.map(function (n, i) { return ntRowHtml(n, i, false); }).join("");
+  }
+  if (d.any || d.can_send) {
+    foot.innerHTML = (d.can_send ? '<button type="button" class="hm-tbtn" data-hm="compose">' + esc(drT("Send a notice")) + '</button>' : '')
+      + '<span class="hm-sp"></span>' + (d.any ? '<button type="button" class="hm-tbtn" data-hm="note-all">'
+      + esc(d.unread > HM_CAP ? drT("See all {0} unread", [d.unread]) : drT("See all")) + '</button>' : '');
+    foot.style.display = "";
+  } else {
+    foot.innerHTML = "";
+    foot.style.display = "none";
+  }
+}
+/* "See all": the last 30 days, unread first. The bell opens this too. */
+window.ntOpenAll = function () {
+  var opener = document.activeElement;
+  gpFetch(HM_NT + "notices_feed", {see_all: 1}).then(function (d) {
+    HM.all = d;
+    ntPaintBadge(d.unread || 0);
+    var items = d.items || [];
+    var html = items.length ? items.map(function (n, i) { return ntRowHtml(n, i, true); }).join("")
+      : hmEmpty("No notices.", "Messages from HR and management, and alerts about your work, appear here.");
+    hmOpenSheet(drT(items.length ? "Notices, last 30 days" : "Notices"), html);
+    HM.opener = opener;
+  }, function (e) {
+    toast(gmIsNet(e) ? drT("Check your connection and try again.") : drT("We could not load your notices. Try again."), "err");
+  });
+};
+function ntOpenOne(n) {
+  var opener = HM.opener;
+  var foot = (n.link ? '<a class="btn btn-outline" href="' + esc(n.link) + '">' + esc(drT("Open it")) + '</a>' : '')
+    + '<button type="button" class="btn btn-primary" data-hm="close">' + esc(drT("Close")) + '</button>';
+  var pin = n.kind === "announcement", from = String(n.from || "");
+  hmOpenSheet(pin ? drT("Notice from {0}", [from.split(",")[0]]) : drT("Notice"), '<div class="hm-sh-p"><div class="hm-note" style="margin-bottom:8px">'
+    + esc((pin ? from : "Alvora") + " · " + hmWhen(n.when)) + '</div><div style="font-size:16px;line-height:1.5">' + esc(n.text) + '</div></div>', foot);
+  HM.opener = opener;
+  if (n.read) return;
+  /* Frappe's own call: it only ever changes a row whose for_user is the caller. */
+  gpFetch(HM_MARK_READ, {docname: n.name}).then(function () {
+    n.read = 1;
+    var d = HM.notes;
+    if (d) {
+      d.unread = Math.max(0, (d.unread || 0) - 1);
+      d.items = (d.items || []).filter(function (x) { return x.name !== n.name; });
+      ntPaintBadge(d.unread);
+      hmPaintNotices();
+    }
+  }, function () { /* left unread; it will be there next time */ });
+}
+
+/* ── one click handler for everything on Home that is drawn above ─────── */
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-hm]") : null;
+  if (!t) {
+    var ov = hmEl("hm-ov");
+    if (ov && e.target === ov) hmCloseSheet();
+    return;
+  }
+  var what = t.getAttribute("data-hm"), i = +t.getAttribute("data-i");
+  if (what === "close") hmCloseSheet();
+  else if (what === "pend") hmPendOpen(i);
+  else if (what === "pend-all") hmPendAll();
+  else if (what === "leave-approve") hmDecide("approve");
+  else if (what === "leave-decline") hmDecide("reject");
+  else if (what === "note-all") ntOpenAll();
+  else if (what === "team-all") switchPanel("team", null);
+  else if (what === "compose") ncOpen();
+  else if (what === "note") {
+    var from = t.getAttribute("data-src") === "all" ? HM.all : HM.notes;
+    var n = from && from.items && from.items[i];
+    if (n) ntOpenOne(n);
+  }
+});
+
+/* ── Send a notice (slice 076, Part B) ───────────────────────────────────
+   Own block, prefix nc. Only Notice Sender holders see the way in (the card's
+   "Send a notice", drawn when notices_feed says can_send). Every check here is
+   repeated by announcements.create_notice: the role, the scope, the 300
+   characters, the confirm above 25, the 5 a day and the time. The page's
+   checks are a courtesy that puts the words next to the field.
+
+   Counts, never names: the reach line and "Notices I sent" carry numbers only.
+   Every string that reaches innerHTML goes through esc(). */
+var NC_API = "alvoraa_portal.announcements.";
+var NC = null;
+
+function ncOpen() {
+  switchPanel("notice-compose", null);
+  ncSay("");
+  ncLoad();
+  var h = hmEl("nc-h");
+  if (h) h.focus();
+}
+function ncLoad() {
+  NC = {reach: null, text: "", aud: "everyone", target: "", people: {}, found: [], q: "",
+        when: "now", date: "", time: "", email: false, err: {}, general: "", busy: false, timer: null};
+  var form = hmEl("nc-form");
+  form.innerHTML = '<div class="hm-skel" aria-hidden="true"></div>';
+  gpFetch(NC_API + "notice_reach", {}).then(function (r) {
+    NC.reach = r;
+    ncPaint();
+    ncSearch();
+  }, function (e) { failBox(form, e, ncLoad); });
+  ncLoadSent();
+}
+function ncSay(text) {
+  var b = hmEl("nc-banner");
+  if (!b) return;
+  b.textContent = text || "";
+  b.style.display = text ? "" : "none";
+}
+
+/* How many people the current choice reaches. */
+function ncCount() {
+  var r = NC.reach;
+  if (!r) return 0;
+  if (NC.aud === "everyone") return r.everyone.n;
+  if (NC.aud === "target") {
+    var t = (r.targets || []).filter(function (x) { return x.kind + ":" + x.value === NC.target; })[0];
+    return t ? t.n : 0;
+  }
+  return Object.keys(NC.people).length;
+}
+function ncPeopleWord(n) {
+  return n === 1 ? drT("1 person") : drT("{0} people", [Number(n || 0).toLocaleString("en-IN")]);
+}
+/* " for 3 Nov, 9:00 am", or " later" before a date and time are chosen. */
+function ncWhenLabel() {
+  if (NC.when === "now") return "";
+  if (!NC.date || !NC.time) return " " + drT("later");
+  return " " + drT("for {0}", [hmWhen(NC.date + " " + NC.time)]);
+}
+function ncSendLabel() {
+  var n = ncCount(), who = n ? " " + drT("to {0}", [ncPeopleWord(n)]) : "";
+  return NC.when === "now" ? drT("Send") + who : drT("Schedule") + ncWhenLabel() + who;
+}
+function ncReachHtml() {
+  var n = ncCount();
+  if (NC.aud === "target" && !NC.target) return esc(drT("Choose a branch or company to see how many people this reaches."));
+  if (NC.aud === "people" && !n) return esc(drT("Tick the people you want to reach."));
+  return drT("This reaches {0}.", ["<b>" + esc(ncPeopleWord(n)) + "</b>"])
+    + " " + esc(drT("Everyone has a login, so everyone sees it. People who have left are skipped."));
+}
+function ncErr(key) {
+  return NC.err[key] ? '<div class="hm-err" id="nc-e-' + key + '" role="alert">' + esc(drT(NC.err[key])) + '</div>' : "";
+}
+function ncRadio(name, value, checked, labelHtml) {
+  return '<label class="nc-opt"><input type="radio" name="' + name + '" value="' + value + '"' + (checked ? " checked" : "")
+    + '><span>' + labelHtml + '</span></label>';
+}
+
+function ncPaint() {
+  var r = NC.reach, form = hmEl("nc-form");
+  if (!r || !form) return;
+  if (r.sent_today >= r.per_day) {
+    form.innerHTML = '<div class="nc-box"><b>' + esc(drT("You have sent {0} notices today.", [r.per_day])) + '</b><div class="gp-hint">'
+      + esc(drT("That is the limit for one day. You can send again tomorrow. Notices you already sent are listed below.")) + '</div></div>';
+    return;
+  }
+  if (!r.everyone.n) {
+    form.innerHTML = '<div class="nc-box"><b>' + esc(drT("No one is in your scope. Ask HR.")) + '</b></div>';
+    return;
+  }
+  var h = '<div class="gp-field"><label class="nc-label" for="nc-text">' + esc(drT("Message")) + '</label>'
+    + '<textarea id="nc-text" class="gp-input nc-text" maxlength="' + r.max_chars + '" aria-describedby="nc-cnt nc-warn' + (NC.err.text ? " nc-e-text" : "") + '">' + esc(NC.text) + '</textarea>'
+    + '<div class="nc-cnt" id="nc-cnt" aria-live="polite">' + esc(drT("{0} of {1}", [NC.text.length, r.max_chars])) + '</div>'
+    + '<div class="gp-hint" id="nc-warn">' + esc(drT("Everyone you choose will read this. Do not put pay, health or other personal details in it.")) + '</div>'
+    + ncErr("text") + '</div>';
+
+  h += '<fieldset class="nc-fs"><legend class="nc-label">' + esc(drT("Send to")) + '</legend>'
+    + ncRadio("nc-aud", "everyone", NC.aud === "everyone", esc(r.everyone.label) + ' <span class="gp-hint">(' + esc(ncPeopleWord(r.everyone.n)) + ')</span>');
+  if ((r.targets || []).length) {
+    h += ncRadio("nc-aud", "target", NC.aud === "target", esc(drT("A branch or company")));
+    if (NC.aud === "target") {
+      h += '<div class="nc-sub"><label class="gp-hint" for="nc-target">' + esc(drT("Choose one")) + '</label>'
+        + '<select id="nc-target" class="gp-input"' + (NC.err.target ? ' aria-describedby="nc-e-target"' : '') + '><option value="">' + esc(drT("Choose…")) + '</option>';
+      ["company", "branch"].forEach(function (kind) {
+        var list = r.targets.filter(function (t) { return t.kind === kind; });
+        if (!list.length) return;
+        h += '<optgroup label="' + esc(drT(kind === "company" ? "Companies" : "Branches")) + '">';
+        list.forEach(function (t) {
+          var v = t.kind + ":" + t.value;
+          h += '<option value="' + esc(v) + '"' + (NC.target === v ? " selected" : "") + '>' + esc(t.label) + ' (' + esc(ncPeopleWord(t.n)) + ')</option>';
+        });
+        h += '</optgroup>';
+      });
+      h += '</select>' + ncErr("target") + '</div>';
+    }
+  }
+  h += ncRadio("nc-aud", "people", NC.aud === "people", esc(drT("Chosen people")));
+  if (NC.aud === "people") {
+    h += '<div class="nc-sub"><label class="gp-hint" for="nc-q">' + esc(drT("Find a person")) + '</label>'
+      + '<input type="search" id="nc-q" class="gp-input" value="' + esc(NC.q) + '" autocomplete="off"' + (NC.err.people ? ' aria-describedby="nc-e-people"' : '') + '>'
+      + '<div class="nc-ppl" id="nc-plist" role="group" aria-label="' + esc(drT("People you can reach")) + '">' + ncPeopleHtml() + '</div>'
+      + ncErr("people") + '</div>';
+  }
+  h += '</fieldset>';
+  h += '<div class="nc-reach" id="nc-reach" role="status" aria-live="polite">' + ncReachHtml() + '</div>';
+
+  h += '<fieldset class="nc-fs"><legend class="nc-label">' + esc(drT("When")) + '</legend>'
+    + ncRadio("nc-when", "now", NC.when === "now", esc(drT("Send now")))
+    + ncRadio("nc-when", "later", NC.when === "later", esc(drT("Send later")));
+  if (NC.when === "later") {
+    h += '<div class="nc-sub nc-dt"><div><label class="gp-hint" for="nc-date">' + esc(drT("Date")) + '</label>'
+      + '<input type="date" id="nc-date" class="gp-input" min="' + esc(localToday()) + '" value="' + esc(NC.date) + '"' + (NC.err.when ? ' aria-describedby="nc-e-when"' : '') + '></div>'
+      + '<div><label class="gp-hint" for="nc-time">' + esc(drT("Time")) + '</label>'
+      + '<input type="time" id="nc-time" class="gp-input" value="' + esc(NC.time) + '"></div></div>'
+      + '<div class="gp-hint nc-sub">' + esc(drT("It goes out at about this time, up to 4 minutes later.")) + '</div>' + ncErr("when");
+  }
+  h += '</fieldset>';
+  if (r.email_active) {
+    h += '<div class="gp-field"><label class="nc-opt"><input type="checkbox" id="nc-email"' + (NC.email ? " checked" : "") + '><span>'
+      + esc(drT("Also send this by email")) + '<span class="gp-hint" style="display:block">' + esc(drT("Goes at the same time as the notice.")) + '</span></span></label></div>';
+  }
+  h += '<div class="gp-field"><button type="button" class="btn btn-primary nc-send" id="nc-send" data-nc="send"' + (NC.busy ? " disabled" : "") + '>' + esc(ncSendLabel()) + '</button>'
+    + (NC.general ? '<p class="lost-note" id="nc-general" role="alert">' + esc(NC.general) + '</p>' : '')
+    + '<div class="gp-hint">' + esc(drT("You have sent {0} of {1} notices today.", [r.sent_today, r.per_day])) + '</div></div>';
+  form.innerHTML = h;
+}
+function ncPeopleHtml() {
+  var shown = {}, h = "";
+  /* Ticked people stay on screen whatever the search says, so a tick is never hidden. */
+  Object.keys(NC.people).forEach(function (id) { shown[id] = NC.people[id]; });
+  (NC.found || []).forEach(function (p) { shown[p.id] = p.name; });
+  Object.keys(shown).forEach(function (id) {
+    h += '<label class="nc-opt"><input type="checkbox" data-nc-person="' + esc(id) + '" data-nc-name="' + esc(shown[id]) + '"'
+      + (NC.people[id] ? " checked" : "") + '><span>' + esc(shown[id]) + '</span></label>';
+  });
+  return h || '<div class="gp-hint">' + esc(drT("No one by that name in the people you can reach.")) + '</div>';
+}
+function ncSearch() {
+  if (!NC || NC.aud !== "people") return;
+  var q = NC.q;
+  gpFetch(NC_API + "search_notice_people", {q: q}).then(function (list) {
+    if (!NC || NC.q !== q) return;
+    NC.found = list || [];
+    var box = hmEl("nc-plist");
+    if (box) box.innerHTML = ncPeopleHtml();
+  }, function () { /* the list stays as it was; the search box still works */ });
+}
+function ncRefreshLine() {
+  var reach = hmEl("nc-reach"), btn = hmEl("nc-send");
+  if (reach) reach.innerHTML = ncReachHtml();
+  if (btn) btn.textContent = ncSendLabel();
+}
+
+/* The page's own checks, with the words drawn in the design (6.8). */
+function ncValidate() {
+  NC.err = {};
+  if (!NC.text.trim()) NC.err.text = "Write a message first.";
+  if (NC.aud === "target" && !NC.target) NC.err.target = "Choose a branch or company.";
+  if (NC.aud === "people" && !ncCount()) NC.err.people = "Tick at least one person.";
+  if (NC.when === "later") {
+    if (!NC.date || !NC.time) NC.err.when = "Choose a date and a time.";
+    else if (new Date(NC.date + "T" + NC.time) <= new Date()) NC.err.when = "Choose a time that has not passed yet.";
+  }
+  return !Object.keys(NC.err).length;
+}
+function ncFocusError() {
+  var first = document.querySelector("#nc-form .hm-err");
+  var box = first && first.parentNode;
+  var field = box && box.querySelector("textarea, select, input");
+  if (field) field.focus();
+}
+/* The server's refusal goes next to the field it is about, when it names one. */
+var NC_FIELD_OF = {
+  "Write a message first.": "text", "Choose a branch or company.": "target", "Tick at least one person.": "people",
+  "Choose a date and a time.": "when", "Choose a time that has not passed yet.": "when"
+};
+
+function ncTrySend() {
+  if (!NC || !NC.reach || NC.busy) return;
+  NC.general = "";
+  if (!ncValidate()) { ncPaint(); ncFocusError(); return; }
+  var n = ncCount();
+  if (n > NC.reach.confirm_above) {
+    var who = ncPeopleWord(n);
+    hmOpenSheet(drT("Send to {0}?", [who]),
+      '<div class="hm-sh-p" style="font-size:var(--fs-md)">' + esc(NC.when === "now"
+        ? drT("You are about to send this now to {0}. You cannot take a sent notice back.", [who])
+        : drT("You are about to schedule this{0} to {1}. You cannot take a sent notice back.", [ncWhenLabel(), who])) + '</div>',
+      '<button type="button" class="btn btn-outline" data-hm="close">' + esc(drT("Go back")) + '</button>'
+      + '<button type="button" class="btn btn-primary" data-nc="confirm">' + esc(NC.when === "now" ? drT("Send to {0}", [who]) : drT("Schedule it")) + '</button>');
+    return;
+  }
+  ncSend(0);
+}
+function ncSend(confirmed) {
+  hmCloseSheet(true);
+  NC.busy = true;
+  var btn = hmEl("nc-send");
+  if (btn) btn.disabled = true;
+  var kind = NC.aud === "target" ? NC.target.split(":")[0] : NC.aud;
+  var args = {message: NC.text, audience_kind: kind, when: NC.when, email: NC.email ? 1 : 0, confirmed: confirmed ? 1 : 0};
+  if (NC.aud === "target") args[kind] = NC.target.slice(NC.target.indexOf(":") + 1);
+  if (NC.aud === "people") args.people = JSON.stringify(Object.keys(NC.people));
+  if (NC.when === "later") args.send_at = NC.date + " " + NC.time + ":00";
+  var later = NC.when === "later", label = ncWhenLabel();
+  gpFetch(NC_API + "create_notice", args, {lostAnswerHandled: true}).then(function (res) {
+    ncDone(res, later, label);
+  }, function (e) {
+    if (mayHaveGone(e)) {
+      /* Decision 10. The button stays off and the list below is the truth. The
+         same words again within 2 minutes would return this same notice. */
+      NC.general = drT("It may have gone through. Check Notices I sent.");
+      ncPaint();
+      var b = hmEl("nc-send");
+      if (b) b.disabled = true;
+      ncLoadSent();
+      if (e.late) e.late.then(function (res) { ncDone(res, later, label); }, function () {});
+      return;
+    }
+    NC.busy = false;
+    var msg = (e && e.message) || drT("Could not send that. Try again.");
+    var field = NC_FIELD_OF[msg];
+    if (field) NC.err[field] = msg; else NC.general = msg;
+    ncPaint();
+    if (field) ncFocusError();
+  });
+}
+function ncDone(res, later, label) {
+  var who = ncPeopleWord(res.people || res.reached || 0);
+  ncLoad();
+  if (res.status === "Sent") ncSay(drT("Sent to {0}. They will see it on Home and in the bell.", [who]));
+  else if (later || res.later) ncSay(drT("Scheduled{0}. It will reach {1}.", [label, who]));
+  else ncSay(drT("Sending to {0}. It will show under Notices I sent when it is done.", [who]));
+  window.scrollTo(0, 0);
+}
+
+/* ── Notices I sent: the sender's own, counts only ────────────────────── */
+function ncLoadSent() {
+  var box = hmEl("nc-sent");
+  if (!box) return;
+  gpFetch(NC_API + "my_sent_notices", {}).then(function (rows) {
+    box.innerHTML = (rows || []).length ? rows.map(ncSentHtml).join("")
+      : '<div class="gp-hint">' + esc(drT("You have not sent a notice yet.")) + '</div>';
+  }, function (e) { failBox(box, e, ncLoadSent); });
+}
+function ncSentHtml(s) {
+  var when = (s.status === "Sent" || s.status === "Sending" || s.status === "Failed")
+    ? drT("Sent {0}", [hmWhen(s.scheduled_for)]) : drT("Scheduled for {0}", [hmWhen(s.scheduled_for)]);
+  var line = {
+    "Sent": drT("Reached {0} · Read by {1} of {2}", [ncPeopleWord(s.reached), s.read, s.reached]) + (s.reason ? " · " + s.reason : ""),
+    "Sending": drT("Sending now. Reached {0} so far.", [ncPeopleWord(s.reached)]),
+    "Scheduled": drT("Not sent yet"),
+    "Cancelled": drT("Cancelled, not sent"),
+    "Not sent": drT("Not sent: {0}", [s.reason]),
+    "Failed": drT("Stopped part way: {0}", [s.reason])
+  }[s.status] || s.status;
+  return '<div class="nc-sent"><div class="nc-t">' + esc(s.message) + '</div>'
+    + '<div class="nc-m">' + esc(drT("To {0}", [s.audience_label]) + " · " + when) + '</div>'
+    + '<div class="nc-m"><b>' + esc(line) + '</b></div>'
+    + (s.status === "Scheduled" ? '<button type="button" class="hm-tbtn nc-cancel" data-nc="cancel" data-name="' + esc(s.name) + '">'
+      + esc(drT("Cancel this notice")) + '</button>' : '') + '</div>';
+}
+function ncCancelAsk(name) {
+  hmOpenSheet(drT("Cancel this notice?"),
+    '<div class="hm-sh-p" style="font-size:var(--fs-md)">' + esc(drT("It is scheduled but not sent. If you cancel it, nobody will receive it.")) + '</div>',
+    '<button type="button" class="btn btn-outline" data-hm="close">' + esc(drT("Keep it")) + '</button>'
+    + '<button type="button" class="btn btn-primary" data-nc="cancel-yes" data-name="' + esc(name) + '">' + esc(drT("Cancel the notice")) + '</button>');
+}
+function ncCancel(name, btn) {
+  if (btn) btn.disabled = true;
+  gpFetch(NC_API + "cancel_notice", {name: name}).then(function () {
+    hmCloseSheet();
+    toast(drT("Cancelled. Nobody will receive it."), "ok");
+    ncLoadSent();
+  }, function (e) {
+    hmCloseSheet();
+    toast((e && e.message) || drT("Could not cancel that. Try again."), "err");
+    ncLoadSent();
+  });
+}
+
+/* ── Organisation settings: who holds Notice Sender, as drawn ────────── */
+function ncHolders() {
+  var card = hmEl("org-senders-card"), list = hmEl("org-senders-list");
+  if (!card || !list) return;
+  gpFetch(NC_API + "notice_sender_holders", {}).then(function (rows) {
+    list.innerHTML = (rows || []).length ? rows.map(function (h) {
+      return '<div class="nc-holder" role="listitem"><span class="hm-rt"><span class="hm-l1">' + esc(h.name) + '</span>'
+        + (h.title ? '<span class="hm-l2">' + esc(h.title) + '</span>' : '')
+        + (h.changed_by ? '<span class="gp-hint" style="display:block">' + esc(drT("Last changed by {0}, {1}", [h.changed_by, fmtDate(h.changed_on)])) + '</span>' : '')
+        + '</span></div>';
+    }).join("") : '<div class="gp-hint" role="listitem">' + esc(drT("Nobody has the Notice Sender access yet.")) + '</div>';
+    card.style.display = "";
+  }, function () { card.style.display = "none"; /* HR User and others: not theirs to see */ });
+}
+
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-nc]") : null;
+  if (!t) return;
+  var what = t.getAttribute("data-nc");
+  if (what === "back") switchPanel("home", null);
+  else if (what === "send") ncTrySend();
+  else if (what === "confirm") ncSend(1);
+  else if (what === "cancel") ncCancelAsk(t.getAttribute("data-name"));
+  else if (what === "cancel-yes") ncCancel(t.getAttribute("data-name"), t);
+});
+document.addEventListener("input", function (e) {
+  var t = e.target;
+  if (!NC || !NC.reach || !t) return;
+  if (t.id === "nc-text") {
+    NC.text = t.value;
+    var c = hmEl("nc-cnt");
+    if (c) c.textContent = drT("{0} of {1}", [t.value.length, NC.reach.max_chars]);
+  } else if (t.id === "nc-q") {
+    NC.q = t.value;
+    clearTimeout(NC.timer);
+    NC.timer = setTimeout(ncSearch, 250);
+  }
+});
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!NC || !NC.reach || !t) return;
+  if (t.name === "nc-aud") { NC.aud = t.value; NC.err = {}; ncPaint(); ncSearch(); }
+  else if (t.name === "nc-when") { NC.when = t.value; NC.err = {}; ncPaint(); }
+  else if (t.id === "nc-target") { NC.target = t.value; ncRefreshLine(); }
+  else if (t.id === "nc-date") { NC.date = t.value; ncRefreshLine(); }
+  else if (t.id === "nc-time") { NC.time = t.value; ncRefreshLine(); }
+  else if (t.id === "nc-email") NC.email = t.checked;
+  else if (t.getAttribute && t.getAttribute("data-nc-person")) {
+    var id = t.getAttribute("data-nc-person");
+    if (t.checked) NC.people[id] = t.getAttribute("data-nc-name"); else delete NC.people[id];
+    ncRefreshLine();
+  }
+});
+
 function loadHome() {
   const ciBtn = document.getElementById("ci-btn");
 
@@ -5608,18 +6867,10 @@ function loadHome() {
     document.getElementById("sb-desig").textContent = "";
   });
 
-  homeActivity();
+  homePending();
+  homeNotices();
   homeDashboard();
-}
-
-// Activity feed — last 7 days of portal actions
-function homeActivity() {
-  api("get_portal_activity", {days: 7}, function(data) {
-    renderActivityFeed(data.activities || []);
-  }, function(e) {
-    homeBlock("home-activity-card", true);
-    failBox("home-activity-feed", e, homeActivity);
-  });
+  hmWatchGrid();
 }
 
 /* Slice 070: a failed read used to draw an empty holiday list - which reads
@@ -5629,154 +6880,9 @@ function homeDashboard() {
     if (data.no_employee) { renderHolidays([]); return; }
     loadHomeLeave(data.leave_balances);
 
-    // Pending approvals (managers) — collapsed by default, revealed on click
-    const teamApprovals = data.pending_approvals || [];
-    if (teamApprovals.length > 0) {
-      const banner  = document.getElementById("home-attention-banner");
-      const countEl = document.getElementById("home-pending-count");
-      const plurEl  = document.getElementById("home-pending-plural");
-      const listEl  = document.getElementById("home-approvals-list");
-      if (banner && countEl && listEl) {
-        countEl.textContent = teamApprovals.length;
-        if (plurEl) plurEl.textContent = teamApprovals.length === 1 ? "" : "s";
-        banner.style.display = "";
-        listEl.innerHTML = teamApprovals.map(function(l) {
-          const days = parseFloat(l.total_leave_days || 0);
-          const who  = l.employee_name || l.employee || "Team member";
-          return '<div class="appr-card" id="home-appr-' + l.name + '">' +
-            '<div style="flex:1;min-width:0">' +
-              '<div style="font-size:var(--fs-base);font-weight:600;color:var(--text)">' + esc(who) + ' &nbsp;&middot;&nbsp; ' + esc(l.leave_type||"Leave") + '</div>' +
-              '<div style="font-size:var(--fs-xs);color:var(--text3);margin-top:3px">' +
-                fmtDate(l.from_date) + (l.to_date && l.to_date !== l.from_date ? ' – ' + fmtDate(l.to_date) : '') +
-                ' &middot; <strong style="color:var(--text2)">' + days + ' day' + (days!==1?'s':'') + '</strong>' +
-                (l.description ? ' &middot; ' + esc(String(l.description).substring(0,60)) : '') +
-              '</div>' +
-            '</div>' +
-            '<div id="home-appr-acts-' + l.name + '" style="display:flex;gap:8px;flex-shrink:0">' +
-              '<button class="btn btn-green btn-sm" onclick="homeActionLeave(\'' + l.name + '\',\'approve\')">&#10003; Approve</button>' +
-              '<button class="btn btn-danger btn-sm" onclick="homeActionLeave(\'' + l.name + '\',\'reject\')">&#10005; Reject</button>' +
-            '</div>' +
-          '</div>';
-        }).join("");
-      }
-    }
-
     renderHolidays(data.holidays || [], data.holiday_note);
   }, function(e) { failBox("holidays-list", e, homeDashboard); });
 }
-
-function renderActivityFeed(activities) {
-  var el = document.getElementById("home-activity-feed");
-  if (!el) return;
-  /* Slice 070 (N7, AC-56): an empty Activity card is not shown at all. */
-  homeBlock("home-activity-card", activities && activities.length);
-  if (!activities || !activities.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No activity recorded yet.</div></div>';
-    return;
-  }
-
-  // Group by date
-  var groups = {};
-  activities.forEach(function(a) { if (!groups[a.date]) groups[a.date] = []; groups[a.date].push(a); });
-
-  var now  = new Date();
-  var todayStr = now.toISOString().slice(0, 10);
-  var yest  = new Date(now - 86400000).toISOString().slice(0, 10);
-  var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-  function dateHdr(d) {
-    if (d === todayStr) return "Today";
-    if (d === yest)     return "Yesterday";
-    var dt = new Date(d + "T00:00:00");
-    return dt.getDate() + " " + months[dt.getMonth()];
-  }
-
-  function iconHtml(a) {
-    if (a.type === "checkin")
-      return '<div class="act-icon ' + (a.icon === "IN" ? "in" : "out") + '">' + (a.icon === "IN" ? "IN" : "OUT") + '</div>';
-    if (a.type === "leave")
-      return '<div class="act-icon leave"><i class=ic-clipboard></i></div>';
-    if (a.type === "approval")
-      return '<div class="act-icon ' + (a.icon === "APPROVED" ? "approved" : "rejected") + '">' + (a.icon === "APPROVED" ? "&#10003;" : "&#10005;") + '</div>';
-    return '<div class="act-icon">&#8226;</div>';
-  }
-
-  function statusBadge(a) {
-    if (a.type === "leave" && a.status) {
-      var cls = (a.status || "").toLowerCase();
-      return '<span class="act-sbadge ' + cls + '">' + a.status + '</span>';
-    }
-    return "";
-  }
-
-  function hhmm(ts) {
-    return ts ? new Date(ts.replace(" ", "T"))
-      .toLocaleTimeString("en-IN", {hour: "2-digit", minute: "2-digit"}) : "";
-  }
-
-  /* "8h 18m". Minutes are dropped once it is a round hour, because "8h 00m"
-     reads as a machine talking. */
-  function spanText(fromTs, toTs) {
-    var a = new Date(fromTs.replace(" ", "T")), b = new Date(toTs.replace(" ", "T"));
-    var mins = Math.round((b - a) / 60000);
-    if (!(mins > 0)) return "";
-    var h = Math.floor(mins / 60), m = mins % 60;
-    return h ? (m ? h + "h " + m + "m" : h + "h") : m + "m";
-  }
-
-  var dates = Object.keys(groups).sort().reverse();
-  el.innerHTML = dates.map(function(date) {
-    var items = groups[date];
-
-    /* The day's attendance as one sentence. Two rows saying "Checked in" and
-       "Checked out" tell somebody what they already know; how long they were
-       there is the part they cannot work out at a glance. */
-    var ins  = items.filter(function(a) { return a.type === "checkin" && a.icon === "IN"; });
-    var outs = items.filter(function(a) { return a.type === "checkin" && a.icon !== "IN"; });
-    var rest = items.filter(function(a) { return a.type !== "checkin"; });
-
-    var line = "";
-    if (ins.length || outs.length) {
-      /* Earliest in, latest out - somebody who steps out at lunch has several
-         of each, and the day still ran from the first to the last. */
-      var first = ins.map(function(a) { return a.time; }).sort()[0];
-      var last  = outs.map(function(a) { return a.time; }).sort().pop();
-      var body;
-      if (first && last) {
-        var dur = spanText(first, last);
-        body = (dur ? "Logged <b>" + dur + "</b> between " : "In and out between ")
-          + hhmm(first) + " and " + hhmm(last);
-      } else if (first) {
-        body = "Checked in at " + hhmm(first) + " &mdash; still in";
-      } else {
-        body = "Checked out at " + hhmm(last);
-      }
-      line = '<div class="act-line">' + body + "</div>";
-    }
-
-    return '<div class="act-day-hdr">' + dateHdr(date) + "</div>" + line +
-      rest.map(function(a) {
-        return '<div class="act-item">' + iconHtml(a) +
-          '<div class="act-body">' +
-            '<div class="act-label">' + esc(a.label || "") + statusBadge(a) + "</div>" +
-            (a.detail ? '<div class="act-detail">' + esc(a.detail) + "</div>" : "") +
-          "</div>" +
-          '<div class="act-time">' + hhmm(a.time) + "</div>" +
-        "</div>";
-      }).join("");
-  }).join("");
-}
-
-window.toggleHomeApprovals = function() {
-  var list = document.getElementById("home-approvals-list");
-  var chev = document.getElementById("home-appr-chev");
-  var chip = document.querySelector(".home-appr-chip");
-  if (!list) return;
-  var open = list.style.display === "flex";
-  list.style.display = open ? "none" : "flex";
-  if (chev) chev.style.transform = open ? "" : "rotate(180deg)";
-  if (chip) chip.textContent = open ? "Tap to review" : "Tap to hide";
-};
 
 /* ── Today, against your own shift ────────────────────────────────────────
    Surbhi, 17 Oct 2026: "Every employee should see what time are their
@@ -6209,18 +7315,12 @@ function ciSend(action, pos) {
     api("get_checkin_status", {}, function(d) {
       ciNeedsLocation = !!d.needs_location;
       updateCheckinUI(d.checked_in, d.last_action);
-      renderTimeline(d.todays_checkins || []);
       paintDayMarks(d.marks);
     }, function() { btn.disabled = false; });
   }, function(err) { if (mayHaveGone(err)) { sayMayHaveGone(err, btn); return; }
     btn.disabled = false;
     toast((err && err.message) || "Failed to " + (action === "IN" ? "check in" : "check out") + ". Please try again.", "err");
   });
-}
-
-function renderTimeline(checkins) {
-  // After each checkin, refresh the activity feed panel
-  api("get_portal_activity", {days: 7}, function(d) { renderActivityFeed(d.activities || []); });
 }
 
 /* ── Holiday month-navigator state ──────────────────── */
@@ -6843,6 +7943,11 @@ function renderLeaveRings(balances) {
   }).join("");
 }
 
+/* Slice 076: the words an approver gave when declining, on the employee's own row. */
+function lvReason(a) {
+  return a.decline_reason ? '<div class="lv-reason">' + esc(drT("Declined: {0}", [a.decline_reason])) + '</div>' : "";
+}
+
 function renderLeaveApps(apps) {
   const tb = document.getElementById("leave-apps-tbody");
   const cards = document.getElementById("leave-apps-cards");   /* ALV-213: shown under 640 px */
@@ -6852,7 +7957,7 @@ function renderLeaveApps(apps) {
     return;
   }
   tb.innerHTML = apps.map(function(a) {
-    return '<tr><td>' + esc(a.leave_type) + '</td><td class="num">' + fmtDate(a.from_date) + '</td><td class="num">' + fmtDate(a.to_date) + '</td><td class="num">' + a.total_leave_days + '</td><td>' + leaveStatusBadge(a.status, a.docstatus) + '</td></tr>';
+    return '<tr><td>' + esc(a.leave_type) + '</td><td class="num">' + fmtDate(a.from_date) + '</td><td class="num">' + fmtDate(a.to_date) + '</td><td class="num">' + a.total_leave_days + '</td><td>' + leaveStatusBadge(a.status, a.docstatus) + lvReason(a) + '</td></tr>';
   }).join("");
   if (cards) cards.innerHTML = apps.map(function(a) {
     var from = String(a.from_date).slice(0, 10), to = String(a.to_date || a.from_date).slice(0, 10);
@@ -6861,7 +7966,7 @@ function renderLeaveApps(apps) {
           ? fmtDate(from).replace(/ \d{4}$/, "")      /* slice 070 (D4): "6 Nov – 7 Nov 2026" */
           : fmtDate(from)) + " – " + fmtDate(to);
     return '<div class="lv-card"><div class="lv-top"><span class="lv-type">' + esc(a.leave_type) + '</span>' +
-      leaveStatusBadge(a.status, a.docstatus) + '</div><div class="lv-meta">' + dates + ' · ' + esc(lpDays(a.total_leave_days)) + '</div></div>';
+      leaveStatusBadge(a.status, a.docstatus) + '</div><div class="lv-meta">' + dates + ' · ' + esc(lpDays(a.total_leave_days)) + '</div>' + lvReason(a) + '</div>';
   }).join("");
 }
 
@@ -7866,6 +8971,8 @@ function loadPortalContext() {
     // kept for the leave modal "apply on behalf of" default
     window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
+    window._roles.is_system_manager = !!ctx.is_system_manager;   /* slice 076: Pending shows a CXO counts */
+    if (HM.pend) hmPaintPending();
     window._roles.positions  = !!ctx.positions;
 
     /* Attendance Insights counts towards the Management heading too, so the
@@ -8628,48 +9735,6 @@ function edActionLeave(leaveId, action) {
   });
 }
 
-/* ── Home inline approval action ─────────────────── */
-function homeActionLeave(leaveId, action) {
-  var card = document.getElementById("home-appr-" + leaveId);
-  var acts = document.getElementById("home-appr-acts-" + leaveId);
-  if (card) { card.style.opacity = ".5"; card.style.pointerEvents = "none"; }
-  api("action_leave", {leave_id: leaveId, action: action}, function() {
-    var label = action === "approve" ? "Leave approved" : "Leave rejected";
-    toast(label, action === "approve" ? "ok" : "");
-    if (acts) {
-      acts.innerHTML = '<span class="badge ' + (action==="approve" ? "badge-green" : "badge-red") + '">' +
-        (action==="approve" ? "&#10003; Approved" : "&#10005; Rejected") + '</span>';
-    }
-    if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
-
-    // Decrement count; hide banner when all actioned
-    var countEl  = document.getElementById("home-pending-count");
-    var plurEl   = document.getElementById("home-pending-plural");
-    if (countEl) {
-      var n = Math.max(0, parseInt(countEl.textContent || "0") - 1);
-      countEl.textContent = n;
-      if (plurEl) plurEl.textContent = n === 1 ? "" : "s";
-      if (n === 0) {
-        var banner = document.getElementById("home-attention-banner");
-        if (banner) banner.style.display = "none";
-      }
-    }
-
-    // Sync sidebar badge
-    var badge = document.getElementById("sb-team-badge");
-    if (badge) {
-      var bn = Math.max(0, (parseInt(badge.textContent)||0) - 1);
-      badge.textContent = bn; badge.style.display = bn ? "flex" : "none";
-    }
-
-    // Refresh activity feed to show the approval action
-    api("get_portal_activity", {days: 7}, function(d) { renderActivityFeed(d.activities || []); });
-  }, function(e) { if (mayHaveGone(e)) { sayMayHaveGone(e); return; }
-    if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
-    toast((e && e.message ? e.message : "Failed to " + action + " leave"), "err");
-  });
-}
-
 /* ── Team panel ──────────────────────────────────── */
 const TEAM_COLORS = ["var(--primary)","var(--primary)","var(--green)","var(--amber)","var(--red)","var(--green)","var(--amber)","var(--primary)"];
 
@@ -9220,7 +10285,7 @@ function renderHomeGoals(data) {
       '<div style="color:var(--text3);font-size:var(--fs-base);padding:14px 0">No active goals set for this period. Goals appear here once submitted by your manager.</div>';
     return;
   }
-  const shown = goals.slice(0, 5);
+  const shown = goals.slice(0, 3);   /* slice 076: three on Home; "Full Portal" has the rest */
   document.getElementById("home-goals-list").innerHTML = shown.map(function(g) {
     const pct = Math.min(100, Math.round(parseFloat(g.progress_pct || 0)));
     const actFmt = parseFloat(g.actual_progress||0).toLocaleString("en-IN",{maximumFractionDigits:1});
@@ -9259,11 +10324,13 @@ function renderTeamGoals(data) {
     return;
   }
   let html = "";
-  Object.keys(byEmp).forEach(function(empId) {
+  /* Three people, one goal each, on Home; the button says where it goes (the Team page, which has no goals list: tap a person there); the rest are on the Team page (slice 076, so the grid stays balanced). */
+  const empIds = Object.keys(byEmp), HOME_TEAM_MAX = 3;
+  empIds.slice(0, HOME_TEAM_MAX).forEach(function(empId) {
     const ed   = byEmp[empId];
     const rec  = ed.employee || {};
     html += '<div class="hg-member">' + esc(rec.employee_name||empId) + (rec.designation ? ' · ' + esc(rec.designation) : '') + '</div>';
-    ed.goals.slice(0, 3).forEach(function(g) {
+    ed.goals.slice(0, 1).forEach(function(g) {
       const pct = Math.min(100, Math.round(parseFloat(g.progress_pct || 0)));
       html += '<div class="hg-card ' + _trajClass(g.trajectory) + '" onclick="openTeamGoalDrawer(\'' + g.name + '\')">' +
         '<div class="hg-traj"><span class="traj-badge ' + _trajBadge(g.trajectory) + '" style="font-size:var(--fs-xs);padding:2px 8px">' +
@@ -9274,6 +10341,9 @@ function renderTeamGoals(data) {
         '</div>';
     });
   });
+  if (empIds.length > HOME_TEAM_MAX) {
+    html += '<button type="button" class="hm-tbtn" data-hm="team-all">' + esc(drT("See your team of {0}", [empIds.length])) + '</button>';
+  }
   document.getElementById("home-team-goals-list").innerHTML = html;
 }
 
@@ -9815,39 +10885,8 @@ window.addEventListener("load", function () {
   switchPanel("att-record");
 });
 
-/* The live portal's bell (Surbhi, 24-25 Oct 2026): grooming notices in their
-   own section at the top of the existing panel, and counted in its badge.
-   The server sends the caller's own notices, fixed sentences only, and only
-   while they may still read what each is about. A notice links to its day. */
-var gmBell = {goals: 0, grooming: 0};
-
-window.gmPaintBadge = function (goals) {
-  if (goals !== undefined) gmBell.goals = goals;
-  var badge = document.getElementById("notif-badge"), total = gmBell.goals + gmBell.grooming;
-  if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
-};
-
-window.gmBellLoad = async function (open) {
-  var d;
-  try { d = await gpFetch(GM + "my_notices", {}); } catch (e) { return; }
-  gmBell.grooming = d.unread || 0;
-  gmPaintBadge();
-  var el = document.getElementById("gm-bell");
-  if (!open || !el) return;
-  el.innerHTML = (d.items || []).length
-    ? '<div class="gm-bell-h">Grooming red</div>' + d.items.map(function (n) {
-        var inner = '<div class="notif-item-title' + (n.read ? "" : " gm-unread") + '">' + gpEsc(n.text) + "</div>"
-          + '<div class="notif-item-sub">' + gpEsc(n.when) + "</div>";
-        return n.link ? '<a class="notif-item gm-bell-item" href="' + gpEsc(n.link) + '">' + inner + "</a>"
-                      : '<div class="notif-item gm-bell-item">' + inner + "</div>";
-      }).join("")
-    : "";
-  if (d.unread) {
-    gpFetch(GM + "my_notices_seen", {}).catch(function () {});
-    gmBell.grooming = 0;
-    gmPaintBadge();
-  }
-};
+/* The bell's grooming notices (slices 066, 076): the bell and the Notices card
+   on Home read one function, notices.notices_feed. See the Home block. */
 
 /* No answer: gpFetch's lost calls carry `kind` (slice 070) - offline, network
    or timeout. Anything else ("refused", "server") is the office answering, in
@@ -14138,12 +15177,12 @@ window.pfRatingLabel = function(value, scale) {
     if (doctype === "KPI") {
       pf("approve_kpi_update", {kpi: docname, row_name: rowName, action: action, comment: comment}).then(function() {
         pfLoadKpiUpdateHistory(docname);
-        loadNotifPanel();
+        hmPendingReload();
       }).catch(function(e) { alert("Error: " + e.message); });
     } else {
       gpFetch("alvoraa_portal.goals_api.approve_goal_update", {goal_id: docname, row_name: rowName, action: action, comment: comment}).then(function() {
         loadGoalUpdateHistory(docname);
-        loadNotifPanel();
+        hmPendingReload();
       }).catch(function(e) { alert("Error: " + e.message); });
     }
   };
@@ -14152,22 +15191,14 @@ window.pfRatingLabel = function(value, scale) {
   window.renderUpdateTimeline = renderUpdateTimeline;
   window.pfFmtDate = pfFmtDate;
 
-  /* ── Notification panel JS ──────────────────────── */
+  /* ── The bell ──────────────────────────────────────────────────────
+     Slice 076: it opens the Notices sheet, the same one as "See all" on Home,
+     and its number is the unread count the Notices card shows. */
 
   window.toggleNotifPanel = function(e) {
     if (e) e.stopPropagation();
-    var panel = document.getElementById("notif-panel");
-    var wasOpen = panel.classList.contains("open");
-    document.querySelectorAll(".notif-panel.open").forEach(function(p) { p.classList.remove("open"); });
-    if (!wasOpen) { panel.classList.add("open"); loadNotifPanel(); gmBellLoad(true); }
+    ntOpenAll();
   };
-
-  document.addEventListener("click", function(e) {
-    var panel = document.getElementById("notif-panel");
-    if (panel && panel.classList.contains("open") && !panel.contains(e.target) && !e.target.closest("#mob-notif-btn")) {
-      panel.classList.remove("open");
-    }
-  });
 
   /* ALV-213: the phone header's account menu (My Account, Log out). */
   function setAcctMenu(open) {
@@ -14192,46 +15223,8 @@ window.pfRatingLabel = function(value, scale) {
     }
   });
 
-  function loadNotifPanel() {
-    gpFetch("alvoraa_portal.goals_api.get_pending_approvals", {}).then(function(data) {
-      _pfIsManager = true;
-      var total = data.total || 0;
-      gmPaintBadge(total);   /* slice 066: the badge also counts grooming notices */
-      var body = document.getElementById("notif-panel-body");
-      if (!body) return;
-      if (total === 0) { body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>"; return; }
-      var html = "";
-      (data.kpi_updates || []).forEach(function(u) {
-        html += "<div class=\"notif-item\" onclick=\"pfOpenLog('" + gpEsc(u.kpi) + "','" + gpEsc(u.row_name) + "')\">" +
-          "<div class=\"notif-item-title\">KPI update pending approval</div>" +
-          "<div class=\"notif-item-sub\">" + gpEsc(u.employee_name || "") + " · " + gpEsc(u.kpi_name || u.kpi) + "</div>" +
-        "</div>";
-      });
-      (data.goal_updates || []).forEach(function(u) {
-        html += "<div class=\"notif-item\" onclick=\"gpOpenGoalDetail('" + gpEsc(u.goal) + "','" + gpEsc(u.row_name) + "')\">" +
-          "<div class=\"notif-item-title\">Goal update pending approval</div>" +
-          "<div class=\"notif-item-sub\">" + gpEsc(u.employee_name || "") + " · " + gpEsc(u.goal_name || u.goal) + "</div>" +
-        "</div>";
-      });
-      body.innerHTML = html;
-    }).catch(function() {
-      /* not a manager or API not ready. Slice 066: say so rather than leave
-         "Loading…" under the grooming notices an employee may have. */
-      var body = document.getElementById("notif-panel-body");
-      if (body) body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>";
-    });
-  }
-
-  /* Boot: just the bell badge, from a cheap count — not the full list
-     (loadNotifPanel's get_pending_approvals took 11.6-16.4s for HR; P1). The
-     full list still loads when the panel is actually opened. */
-  function loadNotifBadge() {
-    gpFetch("alvoraa_portal.goals_api.get_pending_approvals_count", {}).then(function(data) {
-      gmPaintBadge((data && data.total) || 0);   /* slice 066: plus grooming notices */
-    }).catch(function() { /* not a manager or API not ready — silently ignore */ });
-    gmBellLoad(false);
-  }
-  setTimeout(function() { loadNotifBadge(); }, 1500);
+  /* Boot: the bell's number, from the same call the Notices card makes. */
+  setTimeout(function() { ntBellBoot(); }, 1500);
 
   /* Rating a KPI outside the review is gone (slice 010 group D, R14). Ratings
      are given on the review's own copy, inside the review, so a rating can

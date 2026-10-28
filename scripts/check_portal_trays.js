@@ -60,7 +60,6 @@ const INVENTORY = {
   ".sidebar-overlay":     { page: "portal", kind: "shell" },
   ".bottom-nav":          { page: "portal", kind: "shell" },
   ".loading-overlay":     { page: "portal", kind: "shell" },
-  ".notif-panel":         { page: "portal", kind: "popover" },
   ".toast-wrap":          { page: "portal", kind: "toast" },
   ".gp-toast-wrap":       { page: "portal", kind: "toast" },
   ".tv-toast":            { page: "portal", kind: "toast" },
@@ -80,6 +79,9 @@ const INVENTORY = {
   // including #pos-editor, #pos-delete, #pos-person, #pos-setup, #dr-confirm)
   ".gp-backdrop":         { page: "portal", kind: "dialog", open: "class" },
   ".tv-pop-backdrop":     { page: "portal", kind: "dialog", open: "class" },
+  // Slice 076: Home's sheets (Pending, Notices, the leave decision). Built by
+  // script when opened, appended to <body>, so no panel can be their frame.
+  ".hm-ov":               { page: "portal", kind: "dialog", open: "script" },
   "#cal-signoff-modal":   { page: "portal", kind: "dialog", open: "style" },
   // The -next page (a separate document; left rail and bottom sheet only)
   ".nf-rail":             { page: "next", kind: "shell" },

@@ -35,9 +35,13 @@ def guard_seat_link(doc, method=None):
 	before = doc.get_doc_before_save()
 	old = (before.get(LINK) or None) if before else None
 	if not new or new == old:
+		# Re-opening a closed opening that already names the seat is a new
+		# start to hiring too, so the hold applies; SEC-8 does not (review R-1).
+		if new and before and before.status != "Open" and doc.status == "Open":
+			_refuse_if_on_hold(new, frappe.db.get_value(register.POSITION, new, "seats"))
 		return
 
-	seat = frappe.db.get_value(register.POSITION, new, ["company", "branch"], as_dict=True)
+	seat = frappe.db.get_value(register.POSITION, new, ["company", "branch", "seats"], as_dict=True)
 	if not seat:
 		return  # Frappe's own link check refuses a seat that does not exist
 	companies, branches = register._scope()
@@ -59,6 +63,20 @@ def guard_seat_link(doc, method=None):
 			JOB_OPENING,
 			doc.name,
 		)
+
+	_refuse_if_on_hold(new, seat.seats)
+
+
+def _refuse_if_on_hold(position, seats):
+	"""Slice 065, option A: no opening starts on a seat held for an
+	improvement period - from `post_job`, the desk form or REST alike. Plan
+	readers only: a refusal to anyone else would tell them a plan exists. An
+	opening with no seat link is not checked (a stated limit)."""
+	import hrms.alvoraa_org_structure.plans as plans
+
+	if plans.is_reader() and plans.hiring_on_hold(position, seats):
+		frappe.throw(_("Hiring for this seat is on hold until the improvement period ends and HR "
+		               "records the outcome."))
 
 
 # ── a hire placed in their seat on the day they join (US-18, SEC-6/7/9/10) ──

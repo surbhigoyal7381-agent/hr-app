@@ -86,7 +86,9 @@ def may_edit():
 	return bool(frappe.has_permission(POSITION, "write"))
 
 
-AUDITED = (POSITION, "Alvoraa Position Assignment")
+# Slice 065: who may read replacement plans is a tenant's choice too (the
+# owners' Read row), and gets the same readable record.
+AUDITED = (POSITION, "Alvoraa Position Assignment", "Replacement Plan")
 
 
 def record_permission_change(doc, method=None):
@@ -357,6 +359,19 @@ def position_table(branch=None, department=None, as_at=None):
 		for a in rows_:
 			a["leaving"] = leaving.get(a["employee"])
 
+	# Slice 065: replacement plans, for plan readers looking at today only.
+	# Everybody else gets no key at all - not an empty one - so their reply is
+	# byte for byte the same whether plans exist or not (SEC-4).
+	import hrms.alvoraa_org_structure.plans as plans
+
+	plan_reader = plans.is_reader()
+	plan_view = plans.table_view(as_at) if plan_reader else None
+	if plan_view:
+		for rows_ in people.values():
+			for a in rows_:
+				if a["assignment"] in plan_view["by_assignment"]:
+					a["plan"] = plan_view["by_assignment"][a["assignment"]]
+
 	# Is this seat already being recruited for? Without it the screen offers
 	# "Advertise it" on a seat that is already advertised, and somebody raises
 	# a second opening for the same job without ever being told about the
@@ -393,7 +408,10 @@ def position_table(branch=None, department=None, as_at=None):
 			# earlier warning of the two.
 			# The opening that is filling this seat, if one is. The screen shows
 			# a way into it instead of offering to make another.
-			"opening": openings.get(s.name),
+			# On a FULL seat a new opening is a replacement plan by another
+			# name, so only plan readers are told of it (065, SEC-4.3). They
+			# can still find it in Job Opening if they may read those.
+			"opening": openings.get(s.name) if plan_reader or flt(s.seats) - got > 0.005 else None,
 			"leaving_on": min([p["leaving"] for p in people.get(s.name, [])
 			                   if p.get("leaving")] or [None],
 			                  key=lambda d: d or "9999-12-31"),
@@ -450,6 +468,9 @@ def position_table(branch=None, department=None, as_at=None):
 	# the key is ABSENT otherwise - the page then shows no tile, never a "0"
 	# that would be untrue (SEC-2). Not stored anywhere; worked out per load.
 	from hrms.alvoraa_hr_core.access import NO_EMPLOYEES, permitted_employee_filters
+
+	if plan_view:
+		out["plans"] = plan_view["head"]
 
 	people = permitted_employee_filters()
 	if people != NO_EMPLOYEES:

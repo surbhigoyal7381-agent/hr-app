@@ -7,6 +7,16 @@
           </div>
         </div>
 
+        <!-- Who can send notices (slice 076, Part B): names only, read-only. The
+             role is given and taken away in Users; nothing here changes it. -->
+        <div class="pf-card" style="margin-bottom:24px;display:none" id="org-senders-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Who can send notices</div>
+          <div class="gp-hint" style="margin-bottom:8px">People who have the <b>Notice Sender</b> access. Each person can reach only the people in their own company and branch.</div>
+          <div id="org-senders-list" role="list" aria-label="People with Notice Sender access"></div>
+          <div class="gp-hint" style="margin-top:8px"><b>To give or remove the access:</b> open the person under Users, then Roles, and tick or untick Notice Sender. It takes effect the next time they open Home.</div>
+          <a class="btn btn-outline" style="margin-top:12px" href="/app/user" target="_blank" rel="noopener">Open Users</a>
+        </div>
+
         <!-- Document Compliance (build B4) -->
         <div class="pf-card" style="margin-bottom:24px;display:none" id="org-docs-card">
           <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">

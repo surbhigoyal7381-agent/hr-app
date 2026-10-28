@@ -222,6 +222,14 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   eq(rows.map(lines), ["Leave approvals", "Goal and KPI updates", "Attendance fixes", "Policies to read"],
      "a CXO sees one row per kind, most first");
   yes(!/Anita|Charu/.test($("home-pending-body").textContent), "a CXO's Pending names no person");
+  yes(/opens the oldest/.test(rows[1].textContent) && !/opens the oldest/.test(rows[0].textContent), "only the goal and KPI row says it opens the oldest");
+  const cxoOpened = [];
+  const cxoReal = {g: window.gpOpenGoalDetail, s: window.switchPanel};
+  window.gpOpenGoalDetail = (d, r) => cxoOpened.push(["goal", d, r]);
+  window.switchPanel = (n) => cxoOpened.push(["panel", n]);
+  click(rows[1]); click(rowsOf("home-pending-body")[0]);
+  window.gpOpenGoalDetail = cxoReal.g; window.switchPanel = cxoReal.s;
+  eq(cxoOpened, [["goal", "GOAL-G1", "G1"], ["panel", "team"]], "a CXO's goal row opens the oldest goal in scope; the leave row still opens Team");
   yes(/14 waiting/.test(rows[0].textContent), "each row carries its count");
   eq($("home-pending-chip").textContent, "29 waiting", "the CXO chip adds the kinds shown");
   yes(/your queue/.test(rows[0].textContent) && !/across your companies/.test($("home-pending-body").textContent), "the CXO label says 'your queue'");

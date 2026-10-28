@@ -6158,8 +6158,11 @@ function hmPendingRows(d) {
     (d.parts || []).forEach(function (p) {
       var k = HM_KIND[p.key];
       if (!k || !p.count) return;
-      out.push({count: p.count, action: k[1], av: String(p.count), title: drT(k[0]),
-        sub: drT("{0} waiting · your queue", [p.count]), go: "Open"});
+      /* Goal and KPI updates have no Team-page list, so that row opens the
+         oldest one in the caller's scope, and says so. */
+      var oldest = k[1] === "goal_update" && p.rows && p.rows[0] ? p.rows[0] : null;
+      out.push({count: p.count, action: k[1], av: String(p.count), title: drT(k[0]), row: oldest,
+        sub: drT(oldest ? "{0} waiting · opens the oldest" : "{0} waiting · your queue", [p.count]), go: "Open"});
     });
     out.sort(function (a, b) { return b.count - a.count; });
     return out;
@@ -6244,7 +6247,7 @@ function hmPendOpen(i) {
   /* A goal or KPI update opens its own drawer, where Approve and Reject are
      (the same drawers the old bell opened). Without the id, the Team page. */
   var r = v.row;
-  if (v.action === "goal_update" && r && r.document && !hmIsCxo()) {
+  if (v.action === "goal_update" && r && r.document) {
     if (r.kind === "kpi" && window.pfOpenLog) { window.pfOpenLog(r.document, r.name); return; }
     if (r.kind !== "kpi" && window.gpOpenGoalDetail) { window.gpOpenGoalDetail(r.document, r.name); return; }
   }

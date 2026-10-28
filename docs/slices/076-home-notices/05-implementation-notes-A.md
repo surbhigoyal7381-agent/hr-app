@@ -49,6 +49,13 @@ Home's total queries, after the fix (before the fix in brackets), at 980 people:
 
 Not changed and still open (from the review): CXO "Goal and KPI updates" opens the Team page, which lists none of them; goal and KPI rows have no "waiting N days"; shift changes appear nowhere for a manager; KPI log read scope (above).
 
+### Fifth fix pass: the CXO row, and KPI in a real browser (Surbhi chose A)
+
+- **CXO "Goal and KPI updates" row.** It is a count with no single id, so the smallest honest behaviour is: it opens the **oldest** goal or KPI update in the caller's scope (the first row `get_inbox` already returned), and its label says so: "N waiting · opens the oldest". Other CXO rows are unchanged. No new key and no new query: it reuses `document`, so SEC-19 holds as before (ids only from the scope subquery).
+- **Tests.** DOM: the goal row says "opens the oldest" and opens that goal; the leave row still opens Team. Python: a System Manager (the CXO, by Surbhi's answer) gets the ids in scope (existing test). **"CXO outside scope" does not exist for a System Manager: `access.permitted_companies` gives a System Manager every company on the site, by design** (a company User Permission does not narrow it). So the outside-scope test is the nearest real case: HR limited by User Permission to another company gets no id and `approve_goal_update` is refused (`test_hr_limited_to_another_company_gets_no_id_and_cannot_approve`). If Surbhi wants a System Manager who can be narrowed, that is a change to `permitted_companies`, not to Home.
+- **Real browser, KPI, on test076 (Chrome, real login as the manager).** What I saw: Pending listed "G076A Staff · KPI update · Smoke KPI · Open"; tapping it opened the KPI log modal; an Approve button was visible; I pressed it; the database then showed the update as **Approved**; no page error. The test KPI was deleted afterwards.
+- Balance check 45 of 45, DOM suite 17 of 17, static checks and scope-trap script pass; Python modules touched pass (see the run in the report).
+
 The sections below are the first write-up. Where they differ from this table, this table wins (bad news 1, the `get_nav_counts` sentence, and the CXO wording in difference 2).
 
 ## Bad news first

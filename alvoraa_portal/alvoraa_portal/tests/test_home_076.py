@@ -272,6 +272,8 @@ class TestGoalUpdateRowsCarryTheGoalOnlyInScope(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		from alvoraa_portal.tests.test_portal_security_010 import _second_company
+		cls.company_b = _second_company()      # before the people, as that helper asks
 		lt = ensure_leave_type("Alvoraa Casual")
 		cls.mgr_user = ensure_user("g076.mgr@example.com", roles=("Employee",))
 		cls.mgr_emp = ensure_employee_with_leave("G076Mgr", lt, days=1, last_name="Boss")
@@ -350,6 +352,30 @@ class TestGoalUpdateRowsCarryTheGoalOnlyInScope(FrappeTestCase):
 			with self.subTest(user=user):
 				ids, _p = self._ids(user)
 				self.assertEqual(ids, set(self.goals.values()))
+
+	def test_hr_limited_to_another_company_gets_no_id_and_cannot_approve(self):
+		"""A System Manager (the CXO, by Surbhi's answer) sees every company by
+		design - `access.permitted_companies` says so - so "outside scope" is a
+		person limited to a company that is not these people's: HR on another
+		company."""
+		user = ensure_user("g076.cxo@example.com", roles=("HR Manager", "Employee"))
+		emp = ensure_employee_with_leave("G076Cxo", ensure_leave_type("Alvoraa Casual"),
+		                                 days=1, last_name="Cxo")
+		link_user_to_employee(emp, user)
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Company",
+		                "for_value": self.company_b, "apply_to_all_doctypes": 1}).insert(
+			ignore_permissions=True)
+		frappe.db.commit()
+		frappe.clear_cache()
+		self.addCleanup(lambda: (frappe.set_user("Administrator"),
+		                         frappe.db.delete("User Permission", {"user": user}),
+		                         frappe.db.commit()))
+		ids, _p = self._ids(user)
+		self.assertEqual(ids, set())
+		from alvoraa_portal import goals_api
+		row = frappe.get_doc("Individual Goal", self.goals["a"]).progress_updates[0].name
+		with self.assertRaises(frappe.PermissionError):
+			goals_api.approve_goal_update(self.goals["a"], row, "Approved")
 
 	def test_the_manager_can_approve_the_update_the_row_points_at(self):
 		from alvoraa_portal import goals_api

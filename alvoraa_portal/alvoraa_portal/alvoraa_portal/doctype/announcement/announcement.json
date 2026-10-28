@@ -1,0 +1,165 @@
+{
+ "actions": [],
+ "allow_import": 0,
+ "allow_rename": 0,
+ "autoname": "ANN-.YYYY.-.#####",
+ "creation": "2026-10-28 12:00:00.000000",
+ "description": "A notice a Notice Sender sent, or scheduled, to people in their own scope. Who received it are the Notification Log rows linked to it.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "message",
+  "audience_kind",
+  "audience_company",
+  "audience_branch",
+  "audience_people",
+  "sender_label",
+  "column_break_a",
+  "send_at",
+  "status",
+  "status_reason",
+  "email_requested",
+  "email_note",
+  "reached",
+  "stalled",
+  "sent_at"
+ ],
+ "fields": [
+  {
+   "description": "Plain text, required (the controller checks it: Frappe would call a message made only of tags empty). Escaped wherever it is shown, so it is stored exactly as written.",
+   "fieldname": "message",
+   "fieldtype": "Small Text",
+   "ignore_xss_filter": 1,
+   "label": "Message"
+  },
+  {
+   "fieldname": "audience_kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Send to",
+   "options": "Everyone in my scope\nCompany\nBranch\nChosen people",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.audience_kind=='Company'",
+   "fieldname": "audience_company",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "depends_on": "eval:doc.audience_kind=='Branch'",
+   "fieldname": "audience_branch",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "label": "Branch",
+   "options": "Branch"
+  },
+  {
+   "depends_on": "eval:doc.audience_kind=='Chosen people'",
+   "description": "The chosen Employee ids, as a list. Read only by the send for this one notice.",
+   "fieldname": "audience_people",
+   "fieldtype": "Long Text",
+   "label": "Chosen people",
+   "read_only": 1
+  },
+  {
+   "description": "Who it says it is from, fixed when it was created.",
+   "fieldname": "sender_label",
+   "fieldtype": "Data",
+   "label": "From",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_a",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "send_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Send at",
+   "reqd": 1
+  },
+  {
+   "default": "Scheduled",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Scheduled\nSending\nSent\nCancelled\nNot sent\nFailed",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "status_reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "email_requested",
+   "fieldtype": "Check",
+   "label": "Also by email"
+  },
+  {
+   "fieldname": "email_note",
+   "fieldtype": "Data",
+   "label": "Email result",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "reached",
+   "fieldtype": "Int",
+   "label": "Reached",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "stalled",
+   "fieldtype": "Int",
+   "label": "Stalled resumes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sent_at",
+   "fieldtype": "Datetime",
+   "label": "Sent at",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-28 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Announcement",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "if_owner": 1,
+   "read": 1,
+   "role": "Notice Sender",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_views": 0
+}

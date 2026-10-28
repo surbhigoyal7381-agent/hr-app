@@ -21,7 +21,8 @@ from alvoraa_portal.tests.test_grooming_066 import Case, P, _mark, as_user, user
 setUpModule = world.setUpModule
 tearDownModule = world.tearDownModule
 
-FIELDS = {"name", "text", "link", "when", "read"}
+# Part B added `kind` and `from` (who sent an announcement) on purpose.
+FIELDS = {"name", "kind", "from", "text", "link", "when", "read"}
 
 
 def _more_notices(first, mark_name, n):
@@ -61,7 +62,8 @@ class TestNoticesFeed(Case):
 		self.assertEqual(len(d["items"]), 1)
 		self.assertEqual(set(d["items"][0]), FIELDS)
 		self.assertEqual(d["items"][0]["read"], 0)
-		self.assertEqual(set(d), {"unread", "any", "items"})
+		self.assertEqual(set(d), {"unread", "any", "can_send", "items"})
+		self.assertEqual((d["items"][0]["kind"], d["items"][0]["from"]), ("alert", None))
 
 	def test_a_colleague_cannot_read_or_mark_my_notice(self):
 		name = _mark("Ravi", "Rahul")
@@ -137,7 +139,7 @@ class TestNoticesFeed(Case):
 		self.assertEqual(len(sheet["items"]), 2, "the read one is gone, the old unread one stays")
 		self.assertEqual(sheet["unread"], 2)
 
-	def test_only_grooming_notices_in_part_a(self):
+	def test_only_grooming_notices_and_announcements(self):
 		_mark("Ravi", "Rahul")
 		frappe.get_doc({"doctype": "Notification Log", "for_user": user("Rahul"), "type": "Alert",
 		                "subject": "Not a notice", "document_type": "Employee",

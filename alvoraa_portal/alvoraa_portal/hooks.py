@@ -421,6 +421,9 @@ has_permission = {
 scheduler_events = {
     "all": [
         "alvoraa_portal.scheduled_jobs.update_delivery_tracking",
+        # Slice 076: hands at most two due notices to the long queue; writes
+        # nothing itself. A notice goes out up to one tick after its time.
+        "alvoraa_portal.announcements.send_due_announcements",
     ],
     "hourly": [
         "alvoraa_portal.scheduled_jobs.calculate_driver_ratings",
@@ -591,6 +594,10 @@ after_install = [
     "alvoraa_portal.email_brand.after_install",
     # ALV-215: same as after_migrate - a new tenant must not start open.
     "alvoraa_portal.employee_field_rights.apply",
+    # Slice 076: the Notice Sender role without desk access. Frappe makes it
+    # WITH desk access while syncing the Announcement permissions; this runs
+    # after that. Live sites get the same from the notice_sender_role patch.
+    "alvoraa_portal.announcements.make_role",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

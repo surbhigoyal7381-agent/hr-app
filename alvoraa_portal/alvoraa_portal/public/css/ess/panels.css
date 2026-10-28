@@ -732,6 +732,34 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .hm-scroll:focus-visible{outline:3px solid var(--primary);outline-offset:-3px}
 .lv-reason{font-size:var(--fs-base);color:var(--text2);margin-top:4px}
 
+/* ── Send a notice (slice 076, Part B): Compose and Notices I sent ──────── */
+.nc-wrap{max-width:640px}
+.nc-back{margin-left:-10px}
+.nc-h{margin:8px 0 16px;font-size:var(--fs-xl);font-weight:700;color:var(--text)}
+.nc-h:focus{outline:none}
+.nc-h3{margin:24px 0 8px;font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.nc-banner{background:var(--green-lt);color:var(--green);border-radius:var(--r-sm);padding:10px 12px;font-weight:600;font-size:var(--fs-base);margin-bottom:16px}
+.nc-box{border:1px solid var(--border);border-radius:var(--r);padding:16px;background:var(--surface);color:var(--text)}
+.nc-label{display:block;font-weight:600;font-size:var(--fs-md);color:var(--text);margin-bottom:6px;padding:0}
+.nc-text{min-height:110px;font-size:16px;resize:vertical}
+.nc-cnt{font-size:var(--fs-sm);color:var(--text2);text-align:right;margin-top:4px}
+.nc-fs{border:0;margin:0 0 12px;padding:0;min-width:0}
+.nc-opt{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:10px 0;font-size:var(--fs-base);color:var(--text);cursor:pointer}
+.nc-opt input{width:20px;height:20px;margin:0;flex:none;accent-color:var(--primary)}
+.nc-sub{margin:0 0 8px 30px}
+.nc-sub .gp-input{font-size:16px}
+.nc-dt{display:flex;gap:12px;flex-wrap:wrap}
+.nc-dt>div{flex:1;min-width:130px}
+.nc-ppl{max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);padding:0 10px;margin-top:6px}
+.nc-reach{background:var(--primary-lt);color:var(--text);border-radius:var(--r-sm);padding:10px 12px;font-size:var(--fs-base);margin-bottom:16px}
+.nc-send{width:100%;min-height:44px}
+.nc-sent{border-top:1px solid var(--border);padding:12px 0}
+.nc-t{font-size:var(--fs-base);color:var(--text);white-space:pre-wrap;word-break:break-word}
+.nc-m{font-size:var(--fs-sm);color:var(--text2);margin-top:4px}
+.nc-cancel{margin-left:-10px}
+.nc-holder{min-height:44px;display:flex;align-items:center;border-top:1px solid var(--border);font-size:var(--fs-base);color:var(--text)}
+.nc-opt input:focus-visible,.nc-back:focus-visible,.nc-cancel:focus-visible,.nc-send:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
 /* ── Today against your own shift ─────────────────────────────────────────
    Surbhi, 17 Oct 2026: show the quarters, the half-day line and the day's
    marks, measured against the employee's own shift and their own arrival.

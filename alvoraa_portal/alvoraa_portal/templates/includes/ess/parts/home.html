@@ -142,3 +142,17 @@
         </div>
 
       </div>
+
+      <!-- Send a notice (slice 076, Part B). Reached only from "Send a notice" on
+           the Notices card, which is drawn only for Notice Sender holders. The
+           server refuses everyone else, whatever this page shows. -->
+      <div id="panel-notice-compose" class="panel">
+        <div class="nc-wrap">
+          <button type="button" class="hm-tbtn nc-back" data-nc="back">&larr; Back to Home</button>
+          <h2 class="nc-h" id="nc-h" tabindex="-1">Send a notice</h2>
+          <div class="nc-banner" id="nc-banner" role="status" style="display:none"></div>
+          <div id="nc-form"><div class="hm-skel" aria-hidden="true"></div></div>
+          <h3 class="nc-h3">Notices I sent</h3>
+          <div id="nc-sent"><div class="hm-skel" aria-hidden="true"></div></div>
+        </div>
+      </div>

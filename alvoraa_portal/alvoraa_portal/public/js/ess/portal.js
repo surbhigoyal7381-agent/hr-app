@@ -4488,7 +4488,7 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); }
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); }
     if (name === "policies")    polLoad();
   }
 
@@ -6030,6 +6030,7 @@ var HM_KIND = {
   attendance_fixes: ["Attendance fixes", "attendance_fix"],
   policies: ["Policies to read", "policy"]
 };
+var NT_PIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 7 3 3H7l3-3z"/></svg>';
 var HM_TICK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="5 12 10 17 19 7"/></svg>';
 
 function hmEl(id) { return document.getElementById(id); }
@@ -6373,8 +6374,11 @@ window.ntBellBoot = function () {
   }, function () { /* the bell stays as it is; Home shows its own failure box */ });
 };
 function ntRowHtml(n, i, withRead) {
+  /* An announcement is pinned and says who sent it (slice 076 Part B). */
+  var pin = n.kind === "announcement";
   return '<button type="button" class="hm-row hm-nrow" data-hm="note" data-i="' + i + '" data-src="' + (withRead ? "all" : "card") + '">'
-    + '<span class="hm-rt"><span class="hm-meta"><span>' + esc("Alvora · " + hmWhen(n.when)) + '</span></span>'
+    + '<span class="hm-rt"><span class="hm-meta">' + (pin ? '<span class="hm-pin">' + NT_PIN + esc(drT("Pinned")) + '</span>' : '')
+    + '<span>' + esc((pin ? String(n.from || "").split(",")[0] : "Alvora") + " · " + hmWhen(n.when)) + '</span></span>'
     + '<span class="hm-txt">' + esc(n.text) + '</span></span>'
     + (withRead && n.read ? '<span class="hm-note">' + esc(drT("Read")) + '</span>' : '') + '</button>';
 }
@@ -6389,9 +6393,10 @@ function hmPaintNotices() {
   } else {
     body.innerHTML = items.map(function (n, i) { return ntRowHtml(n, i, false); }).join("");
   }
-  if (d.any) {
-    foot.innerHTML = '<span class="hm-sp"></span><button type="button" class="hm-tbtn" data-hm="note-all">'
-      + esc(d.unread > HM_CAP ? drT("See all {0} unread", [d.unread]) : drT("See all")) + '</button>';
+  if (d.any || d.can_send) {
+    foot.innerHTML = (d.can_send ? '<button type="button" class="hm-tbtn" data-hm="compose">' + esc(drT("Send a notice")) + '</button>' : '')
+      + '<span class="hm-sp"></span>' + (d.any ? '<button type="button" class="hm-tbtn" data-hm="note-all">'
+      + esc(d.unread > HM_CAP ? drT("See all {0} unread", [d.unread]) : drT("See all")) + '</button>' : '');
     foot.style.display = "";
   } else {
     foot.innerHTML = "";
@@ -6417,8 +6422,9 @@ function ntOpenOne(n) {
   var opener = HM.opener;
   var foot = (n.link ? '<a class="btn btn-outline" href="' + esc(n.link) + '">' + esc(drT("Open it")) + '</a>' : '')
     + '<button type="button" class="btn btn-primary" data-hm="close">' + esc(drT("Close")) + '</button>';
-  hmOpenSheet(drT("Notice"), '<div class="hm-sh-p"><div class="hm-note" style="margin-bottom:8px">'
-    + esc("Alvora · " + hmWhen(n.when)) + '</div><div style="font-size:16px;line-height:1.5">' + esc(n.text) + '</div></div>', foot);
+  var pin = n.kind === "announcement", from = String(n.from || "");
+  hmOpenSheet(pin ? drT("Notice from {0}", [from.split(",")[0]]) : drT("Notice"), '<div class="hm-sh-p"><div class="hm-note" style="margin-bottom:8px">'
+    + esc((pin ? from : "Alvora") + " · " + hmWhen(n.when)) + '</div><div style="font-size:16px;line-height:1.5">' + esc(n.text) + '</div></div>', foot);
   HM.opener = opener;
   if (n.read) return;
   /* Frappe's own call: it only ever changes a row whose for_user is the caller. */
@@ -6450,10 +6456,362 @@ document.addEventListener("click", function (e) {
   else if (what === "leave-decline") hmDecide("reject");
   else if (what === "note-all") ntOpenAll();
   else if (what === "team-all") switchPanel("team", null);
+  else if (what === "compose") ncOpen();
   else if (what === "note") {
     var from = t.getAttribute("data-src") === "all" ? HM.all : HM.notes;
     var n = from && from.items && from.items[i];
     if (n) ntOpenOne(n);
+  }
+});
+
+/* ── Send a notice (slice 076, Part B) ───────────────────────────────────
+   Own block, prefix nc. Only Notice Sender holders see the way in (the card's
+   "Send a notice", drawn when notices_feed says can_send). Every check here is
+   repeated by announcements.create_notice: the role, the scope, the 300
+   characters, the confirm above 25, the 5 a day and the time. The page's
+   checks are a courtesy that puts the words next to the field.
+
+   Counts, never names: the reach line and "Notices I sent" carry numbers only.
+   Every string that reaches innerHTML goes through esc(). */
+var NC_API = "alvoraa_portal.announcements.";
+var NC = null;
+
+function ncOpen() {
+  switchPanel("notice-compose", null);
+  ncSay("");
+  ncLoad();
+  var h = hmEl("nc-h");
+  if (h) h.focus();
+}
+function ncLoad() {
+  NC = {reach: null, text: "", aud: "everyone", target: "", people: {}, found: [], q: "",
+        when: "now", date: "", time: "", email: false, err: {}, general: "", busy: false, timer: null};
+  var form = hmEl("nc-form");
+  form.innerHTML = '<div class="hm-skel" aria-hidden="true"></div>';
+  gpFetch(NC_API + "notice_reach", {}).then(function (r) {
+    NC.reach = r;
+    ncPaint();
+    ncSearch();
+  }, function (e) { failBox(form, e, ncLoad); });
+  ncLoadSent();
+}
+function ncSay(text) {
+  var b = hmEl("nc-banner");
+  if (!b) return;
+  b.textContent = text || "";
+  b.style.display = text ? "" : "none";
+}
+
+/* How many people the current choice reaches. */
+function ncCount() {
+  var r = NC.reach;
+  if (!r) return 0;
+  if (NC.aud === "everyone") return r.everyone.n;
+  if (NC.aud === "target") {
+    var t = (r.targets || []).filter(function (x) { return x.kind + ":" + x.value === NC.target; })[0];
+    return t ? t.n : 0;
+  }
+  return Object.keys(NC.people).length;
+}
+function ncPeopleWord(n) {
+  return n === 1 ? drT("1 person") : drT("{0} people", [Number(n || 0).toLocaleString("en-IN")]);
+}
+/* " for 3 Nov, 9:00 am", or " later" before a date and time are chosen. */
+function ncWhenLabel() {
+  if (NC.when === "now") return "";
+  if (!NC.date || !NC.time) return " " + drT("later");
+  return " " + drT("for {0}", [hmWhen(NC.date + " " + NC.time)]);
+}
+function ncSendLabel() {
+  var n = ncCount(), who = n ? " " + drT("to {0}", [ncPeopleWord(n)]) : "";
+  return NC.when === "now" ? drT("Send") + who : drT("Schedule") + ncWhenLabel() + who;
+}
+function ncReachHtml() {
+  var n = ncCount();
+  if (NC.aud === "target" && !NC.target) return esc(drT("Choose a branch or company to see how many people this reaches."));
+  if (NC.aud === "people" && !n) return esc(drT("Tick the people you want to reach."));
+  return drT("This reaches {0}.", ["<b>" + esc(ncPeopleWord(n)) + "</b>"])
+    + " " + esc(drT("Everyone has a login, so everyone sees it. People who have left are skipped."));
+}
+function ncErr(key) {
+  return NC.err[key] ? '<div class="hm-err" id="nc-e-' + key + '" role="alert">' + esc(drT(NC.err[key])) + '</div>' : "";
+}
+function ncRadio(name, value, checked, labelHtml) {
+  return '<label class="nc-opt"><input type="radio" name="' + name + '" value="' + value + '"' + (checked ? " checked" : "")
+    + '><span>' + labelHtml + '</span></label>';
+}
+
+function ncPaint() {
+  var r = NC.reach, form = hmEl("nc-form");
+  if (!r || !form) return;
+  if (r.sent_today >= r.per_day) {
+    form.innerHTML = '<div class="nc-box"><b>' + esc(drT("You have sent {0} notices today.", [r.per_day])) + '</b><div class="gp-hint">'
+      + esc(drT("That is the limit for one day. You can send again tomorrow. Notices you already sent are listed below.")) + '</div></div>';
+    return;
+  }
+  if (!r.everyone.n) {
+    form.innerHTML = '<div class="nc-box"><b>' + esc(drT("No one is in your scope. Ask HR.")) + '</b></div>';
+    return;
+  }
+  var h = '<div class="gp-field"><label class="nc-label" for="nc-text">' + esc(drT("Message")) + '</label>'
+    + '<textarea id="nc-text" class="gp-input nc-text" maxlength="' + r.max_chars + '" aria-describedby="nc-cnt nc-warn' + (NC.err.text ? " nc-e-text" : "") + '">' + esc(NC.text) + '</textarea>'
+    + '<div class="nc-cnt" id="nc-cnt" aria-live="polite">' + esc(drT("{0} of {1}", [NC.text.length, r.max_chars])) + '</div>'
+    + '<div class="gp-hint" id="nc-warn">' + esc(drT("Everyone you choose will read this. Do not put pay, health or other personal details in it.")) + '</div>'
+    + ncErr("text") + '</div>';
+
+  h += '<fieldset class="nc-fs"><legend class="nc-label">' + esc(drT("Send to")) + '</legend>'
+    + ncRadio("nc-aud", "everyone", NC.aud === "everyone", esc(r.everyone.label) + ' <span class="gp-hint">(' + esc(ncPeopleWord(r.everyone.n)) + ')</span>');
+  if ((r.targets || []).length) {
+    h += ncRadio("nc-aud", "target", NC.aud === "target", esc(drT("A branch or company")));
+    if (NC.aud === "target") {
+      h += '<div class="nc-sub"><label class="gp-hint" for="nc-target">' + esc(drT("Choose one")) + '</label>'
+        + '<select id="nc-target" class="gp-input"' + (NC.err.target ? ' aria-describedby="nc-e-target"' : '') + '><option value="">' + esc(drT("Choose…")) + '</option>';
+      ["company", "branch"].forEach(function (kind) {
+        var list = r.targets.filter(function (t) { return t.kind === kind; });
+        if (!list.length) return;
+        h += '<optgroup label="' + esc(drT(kind === "company" ? "Companies" : "Branches")) + '">';
+        list.forEach(function (t) {
+          var v = t.kind + ":" + t.value;
+          h += '<option value="' + esc(v) + '"' + (NC.target === v ? " selected" : "") + '>' + esc(t.label) + ' (' + esc(ncPeopleWord(t.n)) + ')</option>';
+        });
+        h += '</optgroup>';
+      });
+      h += '</select>' + ncErr("target") + '</div>';
+    }
+  }
+  h += ncRadio("nc-aud", "people", NC.aud === "people", esc(drT("Chosen people")));
+  if (NC.aud === "people") {
+    h += '<div class="nc-sub"><label class="gp-hint" for="nc-q">' + esc(drT("Find a person")) + '</label>'
+      + '<input type="search" id="nc-q" class="gp-input" value="' + esc(NC.q) + '" autocomplete="off"' + (NC.err.people ? ' aria-describedby="nc-e-people"' : '') + '>'
+      + '<div class="nc-ppl" id="nc-plist" role="group" aria-label="' + esc(drT("People you can reach")) + '">' + ncPeopleHtml() + '</div>'
+      + ncErr("people") + '</div>';
+  }
+  h += '</fieldset>';
+  h += '<div class="nc-reach" id="nc-reach" role="status" aria-live="polite">' + ncReachHtml() + '</div>';
+
+  h += '<fieldset class="nc-fs"><legend class="nc-label">' + esc(drT("When")) + '</legend>'
+    + ncRadio("nc-when", "now", NC.when === "now", esc(drT("Send now")))
+    + ncRadio("nc-when", "later", NC.when === "later", esc(drT("Send later")));
+  if (NC.when === "later") {
+    h += '<div class="nc-sub nc-dt"><div><label class="gp-hint" for="nc-date">' + esc(drT("Date")) + '</label>'
+      + '<input type="date" id="nc-date" class="gp-input" min="' + esc(localToday()) + '" value="' + esc(NC.date) + '"' + (NC.err.when ? ' aria-describedby="nc-e-when"' : '') + '></div>'
+      + '<div><label class="gp-hint" for="nc-time">' + esc(drT("Time")) + '</label>'
+      + '<input type="time" id="nc-time" class="gp-input" value="' + esc(NC.time) + '"></div></div>'
+      + '<div class="gp-hint nc-sub">' + esc(drT("It goes out at about this time, up to 4 minutes later.")) + '</div>' + ncErr("when");
+  }
+  h += '</fieldset>';
+  if (r.email_active) {
+    h += '<div class="gp-field"><label class="nc-opt"><input type="checkbox" id="nc-email"' + (NC.email ? " checked" : "") + '><span>'
+      + esc(drT("Also send this by email")) + '<span class="gp-hint" style="display:block">' + esc(drT("Goes at the same time as the notice.")) + '</span></span></label></div>';
+  }
+  h += '<div class="gp-field"><button type="button" class="btn btn-primary nc-send" id="nc-send" data-nc="send"' + (NC.busy ? " disabled" : "") + '>' + esc(ncSendLabel()) + '</button>'
+    + (NC.general ? '<p class="lost-note" id="nc-general" role="alert">' + esc(NC.general) + '</p>' : '')
+    + '<div class="gp-hint">' + esc(drT("You have sent {0} of {1} notices today.", [r.sent_today, r.per_day])) + '</div></div>';
+  form.innerHTML = h;
+}
+function ncPeopleHtml() {
+  var shown = {}, h = "";
+  /* Ticked people stay on screen whatever the search says, so a tick is never hidden. */
+  Object.keys(NC.people).forEach(function (id) { shown[id] = NC.people[id]; });
+  (NC.found || []).forEach(function (p) { shown[p.id] = p.name; });
+  Object.keys(shown).forEach(function (id) {
+    h += '<label class="nc-opt"><input type="checkbox" data-nc-person="' + esc(id) + '" data-nc-name="' + esc(shown[id]) + '"'
+      + (NC.people[id] ? " checked" : "") + '><span>' + esc(shown[id]) + '</span></label>';
+  });
+  return h || '<div class="gp-hint">' + esc(drT("No one by that name in the people you can reach.")) + '</div>';
+}
+function ncSearch() {
+  if (!NC || NC.aud !== "people") return;
+  var q = NC.q;
+  gpFetch(NC_API + "search_notice_people", {q: q}).then(function (list) {
+    if (!NC || NC.q !== q) return;
+    NC.found = list || [];
+    var box = hmEl("nc-plist");
+    if (box) box.innerHTML = ncPeopleHtml();
+  }, function () { /* the list stays as it was; the search box still works */ });
+}
+function ncRefreshLine() {
+  var reach = hmEl("nc-reach"), btn = hmEl("nc-send");
+  if (reach) reach.innerHTML = ncReachHtml();
+  if (btn) btn.textContent = ncSendLabel();
+}
+
+/* The page's own checks, with the words drawn in the design (6.8). */
+function ncValidate() {
+  NC.err = {};
+  if (!NC.text.trim()) NC.err.text = "Write a message first.";
+  if (NC.aud === "target" && !NC.target) NC.err.target = "Choose a branch or company.";
+  if (NC.aud === "people" && !ncCount()) NC.err.people = "Tick at least one person.";
+  if (NC.when === "later") {
+    if (!NC.date || !NC.time) NC.err.when = "Choose a date and a time.";
+    else if (new Date(NC.date + "T" + NC.time) <= new Date()) NC.err.when = "Choose a time that has not passed yet.";
+  }
+  return !Object.keys(NC.err).length;
+}
+function ncFocusError() {
+  var first = document.querySelector("#nc-form .hm-err");
+  var box = first && first.parentNode;
+  var field = box && box.querySelector("textarea, select, input");
+  if (field) field.focus();
+}
+/* The server's refusal goes next to the field it is about, when it names one. */
+var NC_FIELD_OF = {
+  "Write a message first.": "text", "Choose a branch or company.": "target", "Tick at least one person.": "people",
+  "Choose a date and a time.": "when", "Choose a time that has not passed yet.": "when"
+};
+
+function ncTrySend() {
+  if (!NC || !NC.reach || NC.busy) return;
+  NC.general = "";
+  if (!ncValidate()) { ncPaint(); ncFocusError(); return; }
+  var n = ncCount();
+  if (n > NC.reach.confirm_above) {
+    var who = ncPeopleWord(n);
+    hmOpenSheet(drT("Send to {0}?", [who]),
+      '<div class="hm-sh-p" style="font-size:var(--fs-md)">' + esc(NC.when === "now"
+        ? drT("You are about to send this now to {0}. You cannot take a sent notice back.", [who])
+        : drT("You are about to schedule this{0} to {1}. You cannot take a sent notice back.", [ncWhenLabel(), who])) + '</div>',
+      '<button type="button" class="btn btn-outline" data-hm="close">' + esc(drT("Go back")) + '</button>'
+      + '<button type="button" class="btn btn-primary" data-nc="confirm">' + esc(NC.when === "now" ? drT("Send to {0}", [who]) : drT("Schedule it")) + '</button>');
+    return;
+  }
+  ncSend(0);
+}
+function ncSend(confirmed) {
+  hmCloseSheet(true);
+  NC.busy = true;
+  var btn = hmEl("nc-send");
+  if (btn) btn.disabled = true;
+  var kind = NC.aud === "target" ? NC.target.split(":")[0] : NC.aud;
+  var args = {message: NC.text, audience_kind: kind, when: NC.when, email: NC.email ? 1 : 0, confirmed: confirmed ? 1 : 0};
+  if (NC.aud === "target") args[kind] = NC.target.slice(NC.target.indexOf(":") + 1);
+  if (NC.aud === "people") args.people = JSON.stringify(Object.keys(NC.people));
+  if (NC.when === "later") args.send_at = NC.date + " " + NC.time + ":00";
+  var later = NC.when === "later", label = ncWhenLabel();
+  gpFetch(NC_API + "create_notice", args, {lostAnswerHandled: true}).then(function (res) {
+    ncDone(res, later, label);
+  }, function (e) {
+    if (mayHaveGone(e)) {
+      /* Decision 10. The button stays off and the list below is the truth. The
+         same words again within 2 minutes would return this same notice. */
+      NC.general = drT("It may have gone through. Check Notices I sent.");
+      ncPaint();
+      var b = hmEl("nc-send");
+      if (b) b.disabled = true;
+      ncLoadSent();
+      if (e.late) e.late.then(function (res) { ncDone(res, later, label); }, function () {});
+      return;
+    }
+    NC.busy = false;
+    var msg = (e && e.message) || drT("Could not send that. Try again.");
+    var field = NC_FIELD_OF[msg];
+    if (field) NC.err[field] = msg; else NC.general = msg;
+    ncPaint();
+    if (field) ncFocusError();
+  });
+}
+function ncDone(res, later, label) {
+  var who = ncPeopleWord(res.people || res.reached || 0);
+  ncLoad();
+  if (res.status === "Sent") ncSay(drT("Sent to {0}. They will see it on Home and in the bell.", [who]));
+  else if (later || res.later) ncSay(drT("Scheduled{0}. It will reach {1}.", [label, who]));
+  else ncSay(drT("Sending to {0}. It will show under Notices I sent when it is done.", [who]));
+  window.scrollTo(0, 0);
+}
+
+/* ── Notices I sent: the sender's own, counts only ────────────────────── */
+function ncLoadSent() {
+  var box = hmEl("nc-sent");
+  if (!box) return;
+  gpFetch(NC_API + "my_sent_notices", {}).then(function (rows) {
+    box.innerHTML = (rows || []).length ? rows.map(ncSentHtml).join("")
+      : '<div class="gp-hint">' + esc(drT("You have not sent a notice yet.")) + '</div>';
+  }, function (e) { failBox(box, e, ncLoadSent); });
+}
+function ncSentHtml(s) {
+  var when = (s.status === "Sent" || s.status === "Sending" || s.status === "Failed")
+    ? drT("Sent {0}", [hmWhen(s.scheduled_for)]) : drT("Scheduled for {0}", [hmWhen(s.scheduled_for)]);
+  var line = {
+    "Sent": drT("Reached {0} · Read by {1} of {2}", [ncPeopleWord(s.reached), s.read, s.reached]) + (s.reason ? " · " + s.reason : ""),
+    "Sending": drT("Sending now. Reached {0} so far.", [ncPeopleWord(s.reached)]),
+    "Scheduled": drT("Not sent yet"),
+    "Cancelled": drT("Cancelled, not sent"),
+    "Not sent": drT("Not sent: {0}", [s.reason]),
+    "Failed": drT("Stopped part way: {0}", [s.reason])
+  }[s.status] || s.status;
+  return '<div class="nc-sent"><div class="nc-t">' + esc(s.message) + '</div>'
+    + '<div class="nc-m">' + esc(drT("To {0}", [s.audience_label]) + " · " + when) + '</div>'
+    + '<div class="nc-m"><b>' + esc(line) + '</b></div>'
+    + (s.status === "Scheduled" ? '<button type="button" class="hm-tbtn nc-cancel" data-nc="cancel" data-name="' + esc(s.name) + '">'
+      + esc(drT("Cancel this notice")) + '</button>' : '') + '</div>';
+}
+function ncCancelAsk(name) {
+  hmOpenSheet(drT("Cancel this notice?"),
+    '<div class="hm-sh-p" style="font-size:var(--fs-md)">' + esc(drT("It is scheduled but not sent. If you cancel it, nobody will receive it.")) + '</div>',
+    '<button type="button" class="btn btn-outline" data-hm="close">' + esc(drT("Keep it")) + '</button>'
+    + '<button type="button" class="btn btn-primary" data-nc="cancel-yes" data-name="' + esc(name) + '">' + esc(drT("Cancel the notice")) + '</button>');
+}
+function ncCancel(name, btn) {
+  if (btn) btn.disabled = true;
+  gpFetch(NC_API + "cancel_notice", {name: name}).then(function () {
+    hmCloseSheet();
+    toast(drT("Cancelled. Nobody will receive it."), "ok");
+    ncLoadSent();
+  }, function (e) {
+    hmCloseSheet();
+    toast((e && e.message) || drT("Could not cancel that. Try again."), "err");
+    ncLoadSent();
+  });
+}
+
+/* ── Organisation settings: who holds Notice Sender (names only) ─────── */
+function ncHolders() {
+  var card = hmEl("org-senders-card"), list = hmEl("org-senders-list");
+  if (!card || !list) return;
+  gpFetch(NC_API + "notice_sender_holders", {}).then(function (names) {
+    list.innerHTML = (names || []).length ? names.map(function (n) {
+      return '<div class="nc-holder" role="listitem">' + esc(n) + '</div>';
+    }).join("") : '<div class="gp-hint" role="listitem">' + esc(drT("Nobody has the Notice Sender access yet.")) + '</div>';
+    card.style.display = "";
+  }, function () { card.style.display = "none"; /* HR User and others: not theirs to see */ });
+}
+
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-nc]") : null;
+  if (!t) return;
+  var what = t.getAttribute("data-nc");
+  if (what === "back") switchPanel("home", null);
+  else if (what === "send") ncTrySend();
+  else if (what === "confirm") ncSend(1);
+  else if (what === "cancel") ncCancelAsk(t.getAttribute("data-name"));
+  else if (what === "cancel-yes") ncCancel(t.getAttribute("data-name"), t);
+});
+document.addEventListener("input", function (e) {
+  var t = e.target;
+  if (!NC || !NC.reach || !t) return;
+  if (t.id === "nc-text") {
+    NC.text = t.value;
+    var c = hmEl("nc-cnt");
+    if (c) c.textContent = drT("{0} of {1}", [t.value.length, NC.reach.max_chars]);
+  } else if (t.id === "nc-q") {
+    NC.q = t.value;
+    clearTimeout(NC.timer);
+    NC.timer = setTimeout(ncSearch, 250);
+  }
+});
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!NC || !NC.reach || !t) return;
+  if (t.name === "nc-aud") { NC.aud = t.value; NC.err = {}; ncPaint(); ncSearch(); }
+  else if (t.name === "nc-when") { NC.when = t.value; NC.err = {}; ncPaint(); }
+  else if (t.id === "nc-target") { NC.target = t.value; ncRefreshLine(); }
+  else if (t.id === "nc-date") { NC.date = t.value; ncRefreshLine(); }
+  else if (t.id === "nc-time") { NC.time = t.value; ncRefreshLine(); }
+  else if (t.id === "nc-email") NC.email = t.checked;
+  else if (t.getAttribute && t.getAttribute("data-nc-person")) {
+    var id = t.getAttribute("data-nc-person");
+    if (t.checked) NC.people[id] = t.getAttribute("data-nc-name"); else delete NC.people[id];
+    ncRefreshLine();
   }
 });
 

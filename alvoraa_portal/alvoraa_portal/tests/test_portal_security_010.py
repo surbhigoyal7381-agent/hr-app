@@ -842,6 +842,12 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# the HR Manager, the daily erase as the scheduler. No bypass anywhere.
 		("hrms", "alvoraa_org_structure/plans.py"): 0,
 		("hrms", "alvoraa_org_structure/doctype/replacement_plan/replacement_plan.py"): 0,
+		# Slice 076 Part B: writing one Notification Log row per recipient is
+		# writing other people's rows - the one bypass. The scope, the send and
+		# the cancel run as the sender; the scope code in access.py has none.
+		("alvoraa_portal", "announcements.py"): 1,
+		("alvoraa_portal", "alvoraa_portal/doctype/announcement/announcement.py"): 0,
+		("alvoraa_portal", "patches/v1_0/notice_sender_role.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

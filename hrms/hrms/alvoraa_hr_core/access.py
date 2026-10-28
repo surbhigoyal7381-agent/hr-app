@@ -319,3 +319,37 @@ def permitted_employees(user=None):
 	["employee", "in", sorted(names) or [""]].
 	"""
 	return set(frappe.get_all("Employee", filters=permitted_employee_filters(user), pluck="name"))
+
+
+def notice_audience_conditions(user):
+	"""Whom a Notice Sender may reach (slice 076, SEC-2, SEC-3, SEC-4), as a LIST
+	of Employee conditions. Fails closed. Every status: the caller adds Active.
+
+	`user` has no default on purpose. The scheduled send runs as Administrator,
+	who would reach everybody, so the caller must always name the sender.
+
+	A list, not a dict, so a caller that adds ["name", "in", ids] can never
+	replace the "nobody" condition (the dict(..., name=X) trap, slice 063).
+
+	- Administrator or System Manager: everyone (documented, AC-13).
+	- HR Manager / HR User: permitted_employee_filters(user), unchanged.
+	- Anyone else (a director given Notice Sender, Q3=B): only the companies in
+	  their Company User Permissions, narrowed by Branch permissions. No fallback
+	  to their own company; with no Company permission, nobody.
+	"""
+	roles = set(frappe.get_roles(user))
+	if user == "Administrator" or "System Manager" in roles:
+		return [["name", "!=", ""]]
+	if HR_ROLES & roles:
+		return [[field, cond[0], cond[1]] for field, cond in permitted_employee_filters(user).items()]
+
+	from frappe.core.doctype.user_permission.user_permission import get_user_permissions
+
+	companies = sorted({d.get("doc") for d in get_user_permissions(user).get("Company", []) if d.get("doc")})
+	if not companies:
+		return [["name", "in", []]]
+	conditions = [["company", "in", companies]]
+	branches = permitted_branches(user)
+	if branches is not None:
+		conditions.append(["branch", "in", branches])
+	return conditions

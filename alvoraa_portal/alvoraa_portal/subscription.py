@@ -607,6 +607,9 @@ TENANT_DOCTYPES = [
     # Slice 063: the tenant's own days-present table of leave earned, a child
     # table of its pay rule set. Tenant-side, like the rest of the rule set.
     "Alvoraa Leave Credit Row",
+    # Slice 076: a notice the tenant's own HR or management sent to its own
+    # staff. The tenant's record, read and written inside the tenant.
+    "Announcement",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

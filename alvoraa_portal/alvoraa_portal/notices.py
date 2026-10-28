@@ -4,9 +4,10 @@ The Notices card on Home, the number on the bell and the "See all" sheet all
 read this one function, so the card's "N unread" and the bell cannot disagree.
 Nothing else in the portal counts notices.
 
-In Part A a notice is a grooming alert (a Notification Log row about a grooming
-mark or review). Part B adds one more document type to `NOTICE_DOCTYPES`; nothing
-else here changes.
+A notice is a grooming alert (a Notification Log row about a grooming mark or
+review) or, from Part B, an announcement a Notice Sender sent. Announcements come
+first ("Pinned") with who sent them; their text is stored HTML-escaped for the
+desk (SEC-9), so it is unescaped here and the page escapes it again on the way in.
 
 **Own rows only.** The query names the caller as `for_user` and Frappe's own
 permission condition for Notification Log says the same, so a colleague's row
@@ -25,14 +26,17 @@ Marking a notice read is Frappe's own `mark_as_read(docname)`, which only ever
 changes a row where `for_user` is the caller. There is no wrapper to get wrong.
 """
 
+import html
+
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, now_datetime
 
 from alvoraa_portal import grooming
 
-# The kinds of document a notice may be about. Part B adds "Announcement".
-NOTICE_DOCTYPES = (grooming.MARK, grooming.REVIEW)
+# The kinds of document a notice may be about.
+ANNOUNCEMENT = "Announcement"
+NOTICE_DOCTYPES = (grooming.MARK, grooming.REVIEW, ANNOUNCEMENT)
 
 CARD_ROWS = 5        # what the Home card shows (design 4.2)
 READ_CAP = 100       # the most rows one call reads
@@ -48,7 +52,9 @@ def notices_feed(see_all=0):
 
 	`unread` is the true count of unread notices the caller may still read.
 	`any` is whether they have ever had one in the window, so an empty card can
-	say "You are up to date" or "No notices".
+	say "You are up to date" or "No notices". `can_send` is whether the caller
+	holds Notice Sender, so the card shows "Send a notice" (the endpoints check
+	again, AC-51).
 	"""
 	user = frappe.session.user
 	if user == "Guest":
@@ -63,19 +69,30 @@ def notices_feed(see_all=0):
 		fields=["name", "subject", "link", "creation", "read", "document_type", "document_name"],
 		order_by="creation desc", limit_page_length=READ_CAP)
 
-	allowed = grooming._readable(user, rows) if rows else set()
-	shown = [r for r in rows if (r.document_type, r.document_name) in allowed]
+	# An announcement row is the person's own copy: nothing more to gate.
+	alerts = [r for r in rows if r.document_type != ANNOUNCEMENT]
+	allowed = grooming._readable(user, alerts) if alerts else set()
+	shown = [r for r in rows if r.document_type == ANNOUNCEMENT
+	         or (r.document_type, r.document_name) in allowed]
+	# Pinned first, then newest first (the sort keeps creation order inside each).
+	shown.sort(key=lambda r: r.document_type != ANNOUNCEMENT)
 	unread = [r for r in shown if not r.read]
 
 	chosen = (sorted(shown, key=lambda r: bool(r.read)) if see_all else unread[:CARD_ROWS])
 	# Grooming links open the day only while grooming is on (as the old bell did).
-	on = grooming.is_on() if chosen else False
+	on = grooming.is_on() if any(r.document_type != ANNOUNCEMENT for r in chosen) else False
+	sent = [r.document_name for r in chosen if r.document_type == ANNOUNCEMENT]
+	senders = dict(frappe.get_all(ANNOUNCEMENT, filters={"name": ["in", sent]},
+	                              fields=["name", "sender_label"], as_list=True)) if sent else {}
 	return {
 		"unread": len(unread),
 		"any": bool(shown),
+		"can_send": 1 if "Notice Sender" in frappe.get_roles(user) else 0,
 		"items": [{
 			"name": r.name,
-			"text": r.subject,
+			"kind": "announcement" if r.document_type == ANNOUNCEMENT else "alert",
+			"from": senders.get(r.document_name) if r.document_type == ANNOUNCEMENT else None,
+			"text": html.unescape(r.subject or "") if r.document_type == ANNOUNCEMENT else r.subject,
 			"link": r.link if on and str(r.link or "").startswith("/hrms-employee?grooming=") else None,
 			"when": str(r.creation),
 			"read": 1 if r.read else 0,

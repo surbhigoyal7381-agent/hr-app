@@ -27,9 +27,25 @@ from alvoraa_portal.tests.leave_fixtures import (
 	ensure_employee_with_leave,
 	ensure_leave_type,
 	ensure_user,
-	link_user_to_employee,
+	link_user_to_employee as _link_user_to_employee,
 	reset_leave_applications,
 )
+
+
+def link_user_to_employee(employee, email):
+	"""Link, then hand the Employee role back if the link cost the user it.
+
+	A new user saved before any Employee points at it loses the Employee role
+	(ERPNext validate_employee_role), so on a fresh site such as CI every call
+	the test made as that user was refused. A site that already had the user
+	from an earlier run passed, which is how this got through (CI, 28 Oct).
+	"""
+	_link_user_to_employee(employee, email)
+	user = frappe.get_doc("User", email)
+	if not any(r.role == "Employee" for r in user.roles):
+		user.append("roles", {"role": "Employee"})
+		user.flags.ignore_permissions = True
+		user.save(ignore_permissions=True)
 
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

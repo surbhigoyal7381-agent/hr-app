@@ -1652,21 +1652,38 @@ function editor065(opts, hide) {
   ok("065 E-1: no Plan a replacement on the reader's own row", !own.includes("Plan a replacement"));
   ok("065: Plan a replacement on someone else's row", r.tray("P-Sector34").includes("Plan a replacement"));
   const hold = r.tray("P-Hold");
-  ok("065 V-7: on hold says so, and there is no request", hold.includes("Improvement period ends on 20 Nov 2026.")
-     && hold.includes("Hiring is on hold until then and until HR records the outcome.") && !hold.includes("Request a replacement"));
+  ok("065 V-7 (v6): on hold says so in one sentence, with a chip, and there is no request",
+     hold.includes("Hiring is on hold until 20 Nov 2026 and until HR records whether Vikas improved.")
+     && /pos-chip amber">Hiring on hold</.test(hold) && !hold.includes("Request a replacement"));
   ok("065: no outcome buttons before the end date", !hold.includes("Improved – remove the plan"));
   const due = r.tray("P-Due");
-  ok("065 V5-9: after the end date - has ended, and the two buttons", due.includes("The improvement period has ended.")
-     && due.includes("It ended on 10 Oct 2026.") && due.includes("Improved – remove the plan") && due.includes("Not improved – hiring may start"));
-  ok("065 V5-9: HR's block never says Record the outcome", !due.includes("Record the outcome"));
+  ok("065 V5-9 (v6): after the end date - one sentence with the date, a chip, and the two buttons",
+     due.includes("The improvement period ended on 10 Oct 2026.")
+     && /pos-chip amber">Outcome due</.test(due)
+     && due.includes("Improved – remove the plan") && due.includes("Not improved – hiring may start"));
+  ok("065 V5-9 (v6): HR is told whose outcome it is, not 'the outcome'",
+     due.includes("Record whether Simran improved.") && !due.includes("HR records the outcome."));
+  ok("065 v6: the two outcome buttons carry equal weight - neither is primary",
+     !/btn-primary[^>]*>\s*(Improved|Not improved)/.test(due));
   ok("065: still no request while the outcome waits", !due.includes("Request a replacement"));
   ok("065 V-7: a leaving date unlocks hiring", r.tray("P-Resign").includes("has a leaving date, so hiring may start now.")
      && r.tray("P-Resign").includes("Request a replacement"));
   const ni = r.tray("P-NotImp");
-  ok("065 V-9: Not improved, recorded by, and the request", ni.includes("Not improved. Hiring may start.")
-     && ni.includes("Recorded by you on 20 Oct 2026.") && ni.includes("Request a replacement"));
+  ok("065 V-9 (v6): a green chip says hiring may start, the grey line says who recorded it",
+     /pos-chip green">Hiring may start</.test(ni)
+     && ni.includes("Not improved, recorded by you on 20 Oct 2026")
+     && ni.includes("Request a replacement"));
   ok("065 V-9: no Confirmed again line repeating the same person and day", !ni.includes("Confirmed again"));
   ok("065 V-6: Reason line", r.tray("P-Sector34").includes("Reason: Personal reasons"));
+  // v6 tiers: the detail is ONE grey line, and the quiet things stay quiet.
+  const one = r.tray("P-Sector34");
+  ok("065 v6: reason, who set it and when it ends are one grey line",
+     /Reason: Personal reasons · Set by [^<]*· Ends /.test(one), one.slice(0, 300));
+  ok("065 v6: the standalone countdown sentence is gone", !/\d+ days left\./.test(one));
+  ok("065 v6: a plan with no note says nothing about a note",
+     !r.tray("P-NotImp").includes("No note."));
+  ok("065 v6: a plan 90 days out does not push Confirm as the primary action",
+     !/btn-primary[^>]*>\s*Confirm for 90 more days/.test(one));
   r.c.POS.today = "2026-11-20";
   ok("065 V5-9: on the end date - ends today, with the buttons", r.tray("P-Hold").includes("The improvement period ends today, 20 Nov 2026.")
      && r.tray("P-Hold").includes("Not improved – hiring may start"));

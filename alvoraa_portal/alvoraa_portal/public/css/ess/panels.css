@@ -2604,17 +2604,23 @@ a.gm-bell-item{display:block;text-decoration:none;color:inherit}
    Only a plan reader is ever sent a plan, so nothing here draws for anyone
    else. Every mark is .private: it never prints, and "Hide replacement plans"
    removes it. The red edge is screen only. Nothing here counts plans. */
-.pos-flag{display:inline-block;vertical-align:-2px;color:var(--red);margin-right:4px;flex:none}
+.pos-flag{display:inline-block;vertical-align:-2px;color:var(--red);margin-right:6px;flex:none}
 .pos-flagword{display:none;color:var(--red);font-weight:600}
 /* The same words inside "Change this seat", where pf-card-meta is grey. */
 .pos-planmeta{color:var(--red);font-weight:600}
 @media screen{.oc-box.pos-planned{border-left-color:var(--red)}}
 .pos-planline{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center;margin:-6px 0 16px;font-size:var(--fs-sm);color:var(--text2)}
 .pos-plan{margin:6px 0 2px;border-left:3px solid var(--red);background:var(--red-lt);border-radius:var(--r-sm);padding:8px 10px;color:var(--text)}
-.pos-plan .pt{font-weight:700;color:var(--red);display:flex;gap:6px;align-items:center}
-.pos-plan .pm{font-size:var(--fs-sm);color:var(--text2);margin-top:2px}
-.pos-plan .pn{margin-top:6px;font-style:italic;overflow-wrap:anywhere}
-.pos-plan .pw{font-size:var(--fs-sm);color:var(--text2);margin-top:6px;font-weight:600}
+.pos-plan .pt{font-weight:700;color:var(--red);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* The card sits on --red-lt, so a chip needs the surface behind it to read. */
+.pos-plan .pos-chip{background:var(--surface)}
+/* Tier 2: the one sentence with something to do in it. */
+.pos-plan .pb{margin:4px 0 0}
+.pos-plan .pm{font-size:var(--fs-sm);color:var(--text2);margin-top:7px}
+.pos-plan .pn{margin-top:7px;font-style:italic;overflow-wrap:anywhere;
+  padding-left:9px;border-left:2px solid var(--border2)}
+.pos-plan .pw{font-size:var(--fs-sm);color:var(--text3);font-weight:400;
+  border-top:1px solid var(--border2);margin-top:9px;padding-top:6px}
 .pos-plan .pa{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;align-items:center}
 @media (min-width:641px){.pos-plan .btn{min-height:28px}}
 .pos-lab{display:block;font-weight:650;font-size:var(--fs-sm);margin:12px 0 4px;padding:0}

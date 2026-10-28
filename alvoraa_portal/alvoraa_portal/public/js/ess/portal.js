@@ -2942,52 +2942,81 @@ function posPlanRow(r, p) {
   return "";
 }
 function posPlanBlock(r, p) {
-  var pl = p.plan, d = posDaysTo(pl.lapses_on), first = p.name.split(" ")[0], set = posMaySet(), imp = "";
+  /* Four tiers, prototype v6 (Surbhi, 28 Oct 2026). The block had grown to six
+     sentences at one weight, so "who typed it" arrived before "hiring is on
+     hold". Top to bottom now: what it is and what happens next · the one
+     sentence to act on · the person's own words · the detail, grey · the
+     promise, quietest of all. */
+  var pl = p.plan, d = posDaysTo(pl.lapses_on), first = p.name.split(" ")[0], set = posMaySet();
   var a = "'" + posJs(r.id) + "','" + posJs(p.assignment) + "'";
-  // Recording "Not improved" also confirms; one line says it, not two.
-  var same = pl.not_improved_on && pl.confirmed_on === pl.not_improved_on && pl.confirmed_by === pl.not_improved_by;
-  var meta = pl.confirmed_by && !same
-    ? drT("Set by {0} on {1}. Confirmed again by {2} on {3}.", [pl.set_by, posLong(pl.set_on), pl.confirmed_by, posLong(pl.confirmed_on)])
-    : drT("Set by {0} on {1}.", [pl.set_by, posLong(pl.set_on)]);
-  if (pl.not_improved_on) {
-    imp = "<strong>" + drT("Not improved. Hiring may start.") + "</strong> "
-      + posEsc(drT("Recorded by {0} on {1}.", [pl.not_improved_by, posLong(pl.not_improved_on)]));
-  } else if (posOutcomeDue(pl)) {
-    // No reminder (Surbhi, V-8): the block states the fact; the buttons follow.
-    imp = (posToday() === pl.improvement_ends_on
+  var soon = d <= 14;
+
+  // Tier 1. Words carry the state and colour repeats it, never the other way
+  // round. At most two: one for hiring, one for the clock.
+  var chips = "";
+  if (pl.not_improved_on) chips += '<span class="pos-chip green">' + drT("Hiring may start") + "</span>";
+  else if (posOutcomeDue(pl)) chips += '<span class="pos-chip amber">' + drT("Outcome due") + "</span>";
+  else if (posOnHold(pl)) chips += '<span class="pos-chip amber">' + drT("Hiring on hold") + "</span>";
+  if (soon) {
+    chips += '<span class="pos-chip amber">'
+      + drT("Ends in {0} {1}", [d, d === 1 ? drT("day") : drT("days")]) + "</span>";
+  }
+
+  // Tier 2. Only the performance states leave anything to do, so only they get
+  // a sentence. Everything else is detail, and detail belongs in the grey line.
+  var body = "";
+  if (posOutcomeDue(pl)) {
+    body = (posToday() === pl.improvement_ends_on
         ? "<strong>" + posEsc(drT("The improvement period ends today, {0}.", [posLong(pl.improvement_ends_on)])) + "</strong>"
-        : "<strong>" + drT("The improvement period has ended.") + "</strong> " + posEsc(drT("It ended on {0}.", [posLong(pl.improvement_ends_on)])))
-      + (set ? "" : " " + drT("HR records the outcome."));
+        : "<strong>" + posEsc(drT("The improvement period ended on {0}.", [posLong(pl.improvement_ends_on)])) + "</strong>")
+      + " " + (set ? posEsc(drT("Record whether {0} improved.", [first])) : drT("HR records the outcome."));
   } else if (posOnHold(pl)) {
-    imp = "<strong>" + posEsc(drT("Improvement period ends on {0}.", [posLong(pl.improvement_ends_on)])) + "</strong> "
-      + drT("Hiring is on hold until then and until HR records the outcome.")
+    body = posEsc(drT("Hiring is on hold until {0} and until HR records whether {1} improved.",
+                      [posLong(pl.improvement_ends_on), first]))
       + (p.leaving ? " " + posEsc(drT("{0} has a leaving date, so hiring may start now.", [first])) : "");
   }
-  var tail = set ? drT(" unless you confirm it again.") : drT(" unless HR confirms it again.");
-  var left = d <= 14
-    ? '<span class="pos-chip amber">' + drT("Ends in {0} {1}, on {2}", [d, d === 1 ? drT("day") : drT("days"), posLong(pl.lapses_on)]) + "</span>" + tail
-    : drT("{0} days left. Ends on {1}", [d, posLong(pl.lapses_on)]) + tail;
+
+  // Tier 4. One line, middot-separated. Recording "Not improved" also confirms,
+  // so that is one item, not two.
+  var same = pl.not_improved_on && pl.confirmed_on === pl.not_improved_on && pl.confirmed_by === pl.not_improved_by;
+  var meta = [drT("Reason: {0}", [drT(pl.reason)]),
+              drT("Set by {0} on {1}", [pl.set_by, posLong(pl.set_on)])];
+  if (pl.confirmed_by && !same) {
+    meta.push(drT("Confirmed again by {0} on {1}", [pl.confirmed_by, posLong(pl.confirmed_on)]));
+  }
+  if (pl.not_improved_on) {
+    meta.push(drT("Not improved, recorded by {0} on {1}", [pl.not_improved_by, posLong(pl.not_improved_on)]));
+  }
+  meta.push(drT("Ends {0}", [posLong(pl.lapses_on)])
+            + (set ? drT(" unless you confirm it again") : drT(" unless HR confirms it again")));
+
   var b = '<div class="pos-plan private" role="group" aria-label="' + posEsc(drT("Replacement plan for {0}", [p.name])) + '">'
-    + '<div class="pt">' + POS_FLAG + drT("Replacement planned") + "</div>"
-    + '<div class="pm">' + posEsc(meta) + "</div>"
-    + '<div class="pm">' + posEsc(drT("Reason: {0}", [drT(pl.reason)])) + "</div>"
-    + (imp ? '<div class="pm">' + imp + "</div>" : "")
-    + '<div class="pm">' + left + "</div>"
-    + (pl.note ? '<div class="pn">&ldquo;' + posEsc(pl.note) + "&rdquo;</div>" : '<div class="pm">' + drT("No note.") + "</div>")
-    + '<div class="pw">' + posSeesLine() + (set ? "" : " " + drT("HR sets, confirms and removes plans.")) + "</div>";
+    + '<div class="pt">' + POS_FLAG + "<span>" + drT("Replacement planned") + "</span>" + chips + "</div>"
+    + (body ? '<p class="pb">' + body + "</p>" : "")
+    + (pl.note ? '<div class="pn">&ldquo;' + posEsc(pl.note) + "&rdquo;</div>" : "")
+    + '<div class="pm">' + posEsc(meta.join(" · ")) + "</div>";
+
   if (set && posOutcomeDue(pl)) {
+    // Equal weight and both outline: the outcome is a judgement about a person,
+    // and the screen must not lean on either answer.
     b += '<div class="pa"><button type="button" class="btn btn-outline btn-sm" onclick="posOutcomeSheet(' + a + ",'improved')\">"
       + drT("Improved – remove the plan") + '</button><button type="button" class="btn btn-outline btn-sm" onclick="posOutcomeSheet('
-      + a + ",'not_improved')\">" + drT("Not improved – hiring may start") + "</button></div>";
-  }
-  if (set) {
-    b += '<div class="pa"><button type="button" class="btn btn-outline btn-sm" onclick="posConfirmPlan(' + a + ',this)">'
+      + a + ",'not_improved')\">" + drT("Not improved – hiring may start") + "</button></div>"
+      + '<div class="pa"><button type="button" class="pos-link" onclick="posConfirmPlan(' + a + ',this)">'
       + drT("Confirm for 90 more days") + '</button><button type="button" class="pos-link" onclick="posRemoveSheet(' + a + ')">'
       + drT("Remove the plan") + "</button></div>";
+  } else if (set) {
+    // Primary only inside the same 14 days the chip warns about. A primary
+    // button 90 days out nudges HR to renew a plan nobody has revisited.
+    b += '<div class="pa"><button type="button" class="btn btn-sm ' + (soon ? "btn-primary" : "btn-outline")
+      + '" onclick="posConfirmPlan(' + a + ',this)">' + drT("Confirm for 90 more days")
+      + '</button><button type="button" class="pos-link" onclick="posRemoveSheet(' + a + ')">'
+      + drT("Remove the plan") + "</button></div>";
   }
+
+  b += '<div class="pw">' + posSeesLine() + (set ? "" : " " + drT("HR sets, confirms and removes plans.")) + "</div>";
   return b + "</div>";
 }
-
 function posPerson(id, asg) {
   var r = posById(id);
   return r ? r.people.filter(function (p) { return p.assignment === asg; })[0] || null : null;

@@ -421,3 +421,86 @@ class TestItNeverBreaksTheFrontDoor(LandingCase):
 			self.assertIsNone(auth.home_page_for(user))
 		finally:
 			frappe.db.exists = real
+
+
+class TestTheBareRootBeatsTheTenantsOwnSettings(LandingCase):
+	"""Surbhi, 28 Oct 2026: typing dtc.alvoraa.co gives an error.
+
+	The hook above is real and works on a plain site, which is why slice 024's
+	tests pass. But `get_home_page()` asks it FOURTH: a home_page on any role
+	wins first, then Portal Settings, and after everything a default workspace
+	REPLACES the answer outright. A tenant that has any of those set never
+	reaches our hook.
+
+	`route_the_bare_root` sets `frappe.local.flags.home_page`, which Frappe
+	reads before all five, so these tests pin the one behaviour that holds
+	whatever a tenant has been configured with.
+	"""
+
+	def at_root(self, user, path="/"):
+		"""Run the before_request hook as `user` asking for `path`."""
+		frappe.local.flags.pop("home_page", None)
+		req = mock.Mock()
+		req.path = path
+		with mock.patch.object(frappe.local, "request", req, create=True):
+			frappe.set_user(user)
+			try:
+				auth.route_the_bare_root()
+			finally:
+				frappe.set_user("Administrator")
+		return frappe.local.flags.get("home_page")
+
+	def test_the_hook_is_registered(self):
+		"""Without this line the bare address goes back to being a lottery."""
+		self.assertIn("alvoraa_portal.auth.route_the_bare_root",
+		              frappe.get_hooks("before_request"))
+
+	def test_staff_land_on_the_portal(self):
+		user = self.make_user()
+		self.make_employee_for(user)
+		self.assertEqual(self.at_root(user), PORTAL)
+
+	def test_the_answer_carries_no_leading_slash(self):
+		"""Frappe returns this flag unstripped and then serves it as a route,
+		so a leading slash would ask for a page called "/hrms-employee"."""
+		user = self.make_user()
+		self.make_employee_for(user)
+		self.assertFalse((self.at_root(user) or "").startswith("/"))
+
+	def test_a_visitor_gets_our_sign_in_page_not_frappes(self):
+		"""The /login redirect never covered "/", so a visitor was being shown
+		Frappe's own unbranded Login page on every tenant."""
+		self.assertEqual(self.at_root("Guest"), "alvoraa-login")
+
+	def test_somebody_still_on_an_issued_password_goes_to_change_it(self):
+		"""The bare address must not be a way around ALV-232."""
+		user = self.make_user(chose_own_password=False)
+		self.make_employee_for(user)
+		self.assertEqual(self.at_root(user), "update-password")
+
+	def test_a_platform_operator_is_left_alone(self):
+		"""A System Manager is what marks an operator - NOT the absence of an
+		Employee record. My first version of this test assumed the latter and
+		failed: a user with neither an Employee record nor a desk role is a
+		vendor or driver login, and they do belong in a portal."""
+		user = self.make_user(roles=["System Manager"])
+		self.assertIsNone(self.at_root(user))
+
+	def test_a_login_that_is_neither_staff_nor_operator_still_gets_a_portal(self):
+		"""Vendor and driver logins have no Employee record and no desk role.
+		The bare address must not strand them on the Frappe desk."""
+		user = self.make_user()
+		self.assertEqual(self.at_root(user), PORTAL)
+
+	def test_no_other_address_is_touched(self):
+		user = self.make_user()
+		self.make_employee_for(user)
+		for path in ("/hrms-employee", "/app", "/checkin", "/alvoraa-login", "/update-password"):
+			self.assertIsNone(self.at_root(user, path), path)
+
+	def test_it_fails_open(self):
+		"""A front door that breaks must not take the site with it."""
+		user = self.make_user()
+		self.make_employee_for(user)
+		with mock.patch.object(auth, "home_page_for", side_effect=RuntimeError("boom")):
+			self.assertIsNone(self.at_root(user))

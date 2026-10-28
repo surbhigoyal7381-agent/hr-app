@@ -17,6 +17,20 @@ app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = "alvoraa_portal.auth.on_login"
 
+# ── Nothing but the password screen, until they choose one (ALV-242) ──────
+# ALV-232 only chose where a first-use session LANDS. The back button walked
+# straight past it into the whole app, and since HR issues one password per
+# batch that meant signing in as a colleague and reading their pay. This runs
+# on every request, so it covers the portal, /me, /checkin and the desk at once.
+# It fails open by design - see alvoraa_portal.auth.lock_until_password_chosen.
+before_request = [
+    "alvoraa_portal.auth.lock_until_password_chosen",
+    # The bare "/" again. The get_website_user_home_page hook below is
+    # asked fourth and can be overruled by a default workspace, so it is
+    # not enough on its own. See auth.route_the_bare_root.
+    "alvoraa_portal.auth.route_the_bare_root",
+]
+
 # ── The bare address "/" lands where login does (slice 024) ───────────────
 # Frappe resolves "/" through get_home_page(), which asks this hook. Without
 # it, typing https://<tenant>/ dropped a signed-in employee into the desk,

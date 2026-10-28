@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from werkzeug.exceptions import HTTPException
 
 from alvoraa_portal.subscription import has_feature
 
@@ -155,6 +156,203 @@ def update_password(new_password, logout_all_sessions=0, key=None, old_password=
     # the right person to ask and the date is already stamped - which is why
     # this returns the portal and not /update-password again.
     return home_page_for(frappe.session.user) or answer
+
+
+# ── The lock behind the redirect (ALV-242) ─────────────────────────────────
+#
+# `home_page_for` only decides where somebody LANDS. Surbhi found what that
+# leaves open: sign in with the password HR issued, land on /update-password,
+# press the browser's back button, and the whole app is there - payslips and
+# all - with the shared password never changed. Since HR hands the same password
+# to a whole batch, that means anyone in the batch can sign in AS A COLLEAGUE
+# and read their pay.
+#
+# This is slice 072's US-5 ("a first-use session reaches nothing"), gate G-8.
+# That spec already recorded why nothing in Frappe can be reused: its own
+# `force_user_to_reset_password` is counted in DAYS and applies to the whole
+# site, so it cannot say "this one account, now".
+#
+# `before_request` is the one place that covers every door at once - the portal,
+# /me, /checkin and the Frappe desk - because it runs on every request, after
+# the session is set up (`frappe/app.py`).
+
+_PASSWORD_SCREEN = "/update-password"
+
+
+class _GoChooseAPassword(HTTPException):
+    """A 302 that Frappe hands straight back to the browser.
+
+    `frappe.Redirect` CANNOT be used from `before_request`, and this cost us a
+    live incident on 28 Oct. `app.py` turns an escaping exception into a page
+    through `handle_exception`, which has branches for 401, 403, 404, 429 and
+    500 and **none for a redirect** - so a redirect fell through to the generic
+    "Uncaught Exception" error page, wearing its own 301 status. Frappe's own
+    redirect is only understood deeper in, while a website page is rendering.
+
+    Two lines above that, `app.py` does something else entirely for a werkzeug
+    HTTPException: `e.get_response(request.environ)`, returned untouched. That
+    is the supported way out, so this is one.
+
+    302, and deliberately not werkzeug's own `RequestRedirect`, which is a
+    **308 - permanent**. A browser caches a permanent redirect, so the moment
+    somebody finished choosing their password the phone would carry on bouncing
+    every page back to this screen, with nothing on the server able to clear
+    it. `no-store` says the same thing again to anything in between.
+    """
+
+    code = 302
+
+    def get_response(self, environ=None, scope=None):
+        from werkzeug.utils import redirect
+
+        response = redirect(_PASSWORD_SCREEN, code=302)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+# What a person who has not chosen a password may still reach. Everything here
+# is either the way OUT (the password screen, sign-out) or something that screen
+# needs in order to work. Measured, not guessed: /update-password loads
+# /assets/.../frappe-web.bundle.js and /website_script.js, and calls exactly two
+# methods, `update_password` and `test_password_strength`.
+_FIRST_USE_MAY_REACH = (
+    "/update-password",
+    "/logout",
+    "/login",
+    "/alvoraa-login",
+    "/assets/",
+    "/files/",
+    "/website_script.js",
+    "/favicon.ico",
+    "/api/method/frappe.core.doctype.user.user.update_password",
+    "/api/method/frappe.core.doctype.user.user.test_password_strength",
+    "/api/method/alvoraa_portal.auth.update_password",
+    "/api/method/frappe.core.doctype.user.user.reset_password",
+    "/api/method/logout",
+    # Sign-in itself. Frappe completes the login inside `init_request`, which
+    # is also where this hook runs - so by the time we are called the session
+    # is ALREADY the new user and looks like first use. Leave this out and the
+    # login reply carries "Logged In" and a 403 in the same body: the person
+    # types the right password and is told it failed. Only a real request over
+    # HTTP showed this; every unit test passed without it.
+    "/api/method/login",
+)
+
+# Once somebody has chosen their own password they can never go back to not
+# having chosen one, so a "yes" is true for ever and is safe to remember. This
+# is what keeps the lock off the database on the ordinary request: everybody
+# who is past first use is answered out of redis.
+_CHOSEN_CACHE = "alvoraa_password_chosen"
+
+
+def _has_chosen_own_password(user):
+    cache = frappe.cache()
+    if cache.hget(_CHOSEN_CACHE, user):
+        return True
+    if frappe.db.get_value("User", user, "last_password_reset_date"):
+        cache.hset(_CHOSEN_CACHE, user, 1)
+        return True
+    return False
+
+
+def route_the_bare_root():
+    """Frappe `before_request` hook: decide what "/" means on a tenant.
+
+    We already answer this through `get_website_user_home_page`, but Frappe
+    asks that hook fourth. `get_home_page()` tries, in order: a home_page on
+    any role the person holds, Portal Settings' default_portal_home, our hook,
+    Website Settings' home_page - and then, last of all, a default workspace
+    REPLACES whatever any of that decided. So on a tenant where a role or a
+    workspace happens to be set, typing the bare address lands somewhere
+    nobody chose: the desk for a member of staff, and Frappe's own unbranded
+    Login page for a visitor, because our redirect only covers /login.
+
+    `frappe.local.flags.home_page` is read before all five, so this is the one
+    place the answer holds whatever a tenant has been configured with.
+
+    It changes nothing but the bare "/" - every other path returns at once -
+    and it fails open: if anything here raises, Frappe decides exactly as it
+    does today.
+    """
+    try:
+        request = getattr(frappe.local, "request", None)
+        if request is None or (request.path or "/") != "/":
+            return
+
+        user = frappe.session.user
+        if not user or user == "Guest":
+            # Our own sign-in page, with the tenant's name and colours on it.
+            frappe.local.flags.home_page = "alvoraa-login"
+            return
+
+        # Staff land where login sends them, which already answers the
+        # password-not-yet-chosen case. A platform operator gets None, and
+        # Frappe keeps sending them to the desk.
+        where = home_page_for(user)
+        if where:
+            # Frappe returns this flag unstripped, so strip it here.
+            frappe.local.flags.home_page = where.strip("/")
+    except Exception:
+        frappe.clear_last_message()
+
+
+def lock_until_password_chosen():
+    """Frappe `before_request` hook. Nothing but the password screen, until.
+
+    The order of the checks is the performance design, not habit. The cheap,
+    local tests come first and the database comes last, so an ordinary request
+    from an ordinary member of staff costs one redis read and nothing else.
+
+    **It fails open, on purpose.** If this function raises for any reason we
+    have not thought of, the person gets in. A lock that breaks must not become
+    441 people who cannot use the portal at shift change; the wrong answer here
+    costs a window, the other wrong answer costs the day's work.
+    """
+    try:
+        request = getattr(frappe.local, "request", None)
+        if request is None:
+            return
+
+        path = request.path or "/"
+        if path.startswith(_FIRST_USE_MAY_REACH):
+            return
+
+        user = frappe.session.user
+        if not user or user in ("Guest", "Administrator"):
+            return
+
+        if _has_chosen_own_password(user):
+            return
+
+        # Only staff. A platform operator's account is not handed out on a card,
+        # and locking the back office out of its own site would be worse than
+        # the hole this closes.
+        if not frappe.db.exists("Employee", {"user_id": user}):
+            return
+
+        if path.startswith("/api/"):
+            # Not a redirect: an XHR cannot follow one usefully, and a caller
+            # at this level is asking for data, not a page.
+            raise frappe.PermissionError(
+                _("Choose your own password before using the app.")
+            )
+
+        raise _GoChooseAPassword
+
+    except (_GoChooseAPassword, frappe.PermissionError):
+        raise
+    except Exception:
+        # The logging gets its own net, and this is not belt and braces. The
+        # most likely reason we are here at all is that the database is
+        # unreachable - and `frappe.log_error` writes to the database, so it
+        # would raise too and the failure would escape after all. The test
+        # `test_it_fails_open` caught exactly that. No user detail in the line;
+        # this runs on every request.
+        try:
+            frappe.log_error(title="First-use lock failed open")
+        except Exception:
+            pass
+        return
 
 
 def on_login(login_manager=None):

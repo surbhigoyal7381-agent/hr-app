@@ -9,9 +9,17 @@ tier: 1 (scope, the send job, email). Plan: 04-impact-and-strategy.md, Part B.
 
 # 076 Part B: sending a notice. Implementation notes
 
+## AC-18 narrowed (review Blocker 1), 28 Oct 2026
+
+Surbhi approved it. A repeat is now the same sender, the same text **and the same audience** (kind, company, branch, chosen people) within 2 minutes, and a Cancelled notice never counts as the first one. The double-tap and retry protection stays. The chosen ids are compared sorted, so the same people ticked in another order are the same audience. The send-now limit stays at 25.
+
+Tests (4 new, `test_announcements_076` now 59, all OK): the same words to branch A then branch B both send (Bina gets the second); schedule, cancel, send the same words now: it sends; a double tap returns the first notice with one record; two senders with the same words both send. Broken on purpose twice: ignoring the audience failed 10 tests, counting cancelled notices failed 1. DOM suite 18 files, 0 failed; scope-trap, integrity and brand checks OK.
+
+Not changed: when a true repeat comes back, the page still says "Sent to N people" (the first notice did go). The reviewer suggested a separate line for it; not asked for.
+
 ## Fix pass after the reviews (06-security-B.md, 06-review-B.md), 28 Oct 2026
 
-Surbhi's decisions: (a) "Send now" waits for at most 25 people; (b) the sender list is built as the prototype draws it. Local only, not pushed. **Not done on purpose:** the "same text within 2 minutes" rule (AC-18, review Blocker 1) is unchanged, waiting for her answer through the coordinator.
+Surbhi's decisions: (a) "Send now" waits for at most 25 people; (b) the sender list is built as the prototype draws it. Local only, not pushed. AC-18 was narrowed later the same day (section above).
 
 | # | Finding | What I did | Proof |
 |---|---|---|---|
@@ -34,7 +42,7 @@ Surbhi's decisions: (a) "Send now" waits for at most 25 people; (b) the sender l
 
 **Tests after the fix pass:** `test_announcements_076` 55 OK; `test_notices_076` 9 OK; `test_home_076` 6 + 18 OK; `test_portal_security_010` 45 + 5 OK; `test_grooming_066` 64 + 1 OK. DOM suite 18 files, 0 failed (the Part B file now 75 checks). `check_scope_traps.py`, `check_app_integrity.py`, `check_brand_spelling.py`, `check_design_system.py`, `check_tag_balance.py`, `check_api_paths.py`, `check_undefined_js.js`, `check_portal_handlers.js`: all OK.
 
-**Still open:** AC-18 (above); the residual risks in 01c section 12 are still not accepted by name; DTC's live `mute_emails` value is still not read; the reviewer's P4 (two indirect forms the scope-trap script misses) is not touched. 01c's PRIV-8 still says "names only"; her decision (b) overrides it.
+**Still open:** the residual risks in 01c section 12 are still not accepted by name; DTC's live `mute_emails` value is still not read; the reviewer's P4 (two indirect forms the scope-trap script misses) is not touched. 01c's PRIV-8 still says "names only"; her decision (b) overrides it.
 
 The sections below are the first write-up. Where they differ from this table, this table wins (the 200 limit, the role grant at install, the names-only list, the raw stored message).
 

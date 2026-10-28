@@ -184,7 +184,8 @@ def email_is_active():
 
 def _sent_today(sender, for_update=False):
 	return frappe.db.get_values(DOCTYPE, {"owner": sender, "creation": [">=", today()]},
-	                            ["name", "message", "creation", "status"], as_dict=True,
+	                            ["name", "message", "creation", "status", "audience_kind", "audience_company",
+	                             "audience_branch", "audience_people"], as_dict=True,
 	                            for_update=for_update)
 
 
@@ -269,10 +270,17 @@ def create_notice(message=None, audience_kind=None, company=None, branch=None, p
 	frappe.db.get_value("User", user, "name", for_update=True)
 	todays = _sent_today(user, for_update=True)
 
+	# A repeat is a double tap, or a retry after a lost answer: the same sender,
+	# the same text AND the same audience within 2 minutes. The first one stands.
+	# The same words to another branch are a new notice, and a cancelled notice
+	# never counts as the first one (AC-18 as narrowed by Surbhi, 28 Oct 2026).
 	soon = add_to_date(now_datetime(), seconds=-REPEAT_SECONDS)
+	audience = (kind, company if kind == "Company" else None, branch if kind == "Branch" else None,
+	            json.dumps(ids) if ids else None)
 	for t in todays:
-		if t.message == message and get_datetime(t.creation) >= soon:
-			# A double tap, or a retry after a lost answer: the first one stands.
+		if (t.message == message and t.status != "Cancelled" and get_datetime(t.creation) >= soon
+				and (t.audience_kind, t.audience_company or None, t.audience_branch or None,
+				     t.audience_people or None) == audience):
 			return _answer(frappe.get_doc(DOCTYPE, t.name), len(todays), repeat=True)
 	if len(todays) >= PER_DAY:
 		frappe.throw(_("You have sent 5 notices today. That is the limit for one day. You can send again tomorrow."))

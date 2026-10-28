@@ -426,6 +426,41 @@ class TestLimits(Case):
 		self.assertEqual(len(_rows(a["name"])), 3)
 		self.assertEqual(frappe.db.count("Announcement", {"owner": user("Hra")}), 1)
 
+	def test_the_same_text_to_another_branch_is_a_new_notice(self):
+		"""AC-18 as narrowed (28 Oct 2026): HR for company X sends one line to
+		branch A, then the same line to branch B. Both go."""
+		a = _send("Hrx", message="Office shut tomorrow", kind="branch", branch=A)
+		b = _send("Hrx", message="Office shut tomorrow", kind="branch", branch=B)
+		self.assertNotEqual(a["name"], b["name"])
+		self.assertEqual(b["repeat"], 0)
+		self.assertIn(user("Bina"), _rows(b["name"]))
+		self.assertNotIn(user("Bina"), _rows(a["name"]))
+
+	def test_a_cancelled_notice_is_never_the_first_one(self):
+		"""AC-18 as narrowed: schedule, cancel, then send the same text now. It sends."""
+		first = _send("Hra", message="Training at 3", later_minutes=30)["name"]
+		with as_user("Hra"):
+			ann.cancel_notice(first)
+		again = _send("Hra", message="Training at 3")
+		self.assertNotEqual(again["name"], first)
+		self.assertEqual((again["status"], again["repeat"], len(_rows(again["name"]))), ("Sent", 0, 3))
+
+	def test_a_double_tap_or_a_retry_still_returns_the_first_notice(self):
+		"""The protection AC-18 is for: same sender, text and audience, twice."""
+		ids = json.dumps([P["Asha"], P["Arun"]])
+		a = _send("Hra", message="Double tap", kind="people", people=ids)
+		b = _send("Hra", message="Double tap", kind="people", people=json.dumps([P["Arun"], P["Asha"]]))
+		self.assertEqual((a["name"], b["repeat"]), (b["name"], 1), "the same people in another order is the same audience")
+		self.assertEqual(frappe.db.count("Announcement", {"owner": user("Hra")}), 1)
+		self.assertEqual(len(_rows(a["name"])), 2)
+
+	def test_two_senders_with_the_same_text_both_send(self):
+		"""The rule is per sender: two HR people may say the same thing."""
+		a = _send("Hra", message="Same words, two senders", kind="branch", branch=A)
+		b = _send("Hrx", message="Same words, two senders", kind="branch", branch=A)
+		self.assertNotEqual(a["name"], b["name"])
+		self.assertEqual((a["repeat"], b["repeat"]), (0, 0))
+
 	def test_a_time_that_has_passed_is_refused(self):
 		"""AC-19."""
 		with self.assertRaises(frappe.ValidationError) as e:

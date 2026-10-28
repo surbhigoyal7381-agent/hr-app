@@ -168,6 +168,32 @@ const lines = b => b.querySelector(".hm-l1").textContent;
       /Messages from HR and management, and alerts about your work, appear here\./.test($("home-notices-body").textContent), "the empty Notices sentences are as drawn");
   yes($("home-notices-foot").style.display === "none", "no See all when there has never been a notice");
 
+  // ── shift changes stay out; goal updates open the Team panel ─────────
+  await loadHomeWith({
+    get_inbox: {ok: inbox([part("leave_approvals", []),
+      part("goal_updates", [goalRow("G1", "Charu Sethi", 6)]), part("attendance_fixes", []),
+      part("shift_requests", [{name: "SR1", employee_name: "Imran Khan", from_date: "2026-11-09", to_date: "2026-11-09", shift_type: "B", action: "shift_request", waiting_since: iso(4)}]),
+      part("policies", []), part("my_requests", [])])},
+    notices_feed: {ok: feed([], 0, false)},
+  });
+  eq(rowsOf("home-pending-body").map(lines), ["Charu Sethi"], "a shift change row is left out of Pending (no screen decides it)");
+  eq($("home-pending-chip").textContent, "1 waiting", "and the chip does not count it");
+  const panels = [];
+  const realSwitch = window.switchPanel;
+  window.switchPanel = (n) => panels.push(n);
+  click(rowsOf("home-pending-body")[0]);
+  window.switchPanel = realSwitch;
+  eq(panels, ["team"], "a goal update opens the Team panel, where the Approve buttons are");
+
+  // ── Team goals on Home: five people, then View all ───────────────────
+  const by = {};
+  for (let i = 0; i < 8; i++) by["E" + i] = {employee: {employee_name: "Person " + i}, goals: [{name: "g" + i, goal_name: "Goal", progress_pct: 10, trajectory: "On Track"}]};
+  window.renderTeamGoals({available: true, by_employee: by});
+  eq($("home-team-goals-list").querySelectorAll(".hg-member").length, 5, "Team goals shows five people");
+  yes(/View all 8/.test($("home-team-goals-list").textContent), "with a View all 8 link");
+  window.renderTeamGoals({available: true, by_employee: {E0: by.E0}});
+  yes(!/View all/.test($("home-team-goals-list").textContent), "no link when everyone fits");
+
   // ── a CXO: counts by kind, no people ─────────────────────────────────
   window._roles.is_system_manager = true;
   await loadHomeWith({
@@ -179,11 +205,12 @@ const lines = b => b.querySelector(".hm-l1").textContent;
     notices_feed: {ok: feed([], 0, false)},
   });
   rows = rowsOf("home-pending-body");
-  eq(rows.map(lines), ["Leave approvals", "Goal and KPI updates", "Attendance fixes", "Shift changes", "Policies to read"],
+  eq(rows.map(lines), ["Leave approvals", "Goal and KPI updates", "Attendance fixes", "Policies to read"],
      "a CXO sees one row per kind, most first");
   yes(!/Anita|Charu/.test($("home-pending-body").textContent), "a CXO's Pending names no person");
   yes(/14 waiting/.test(rows[0].textContent), "each row carries its count");
-  eq($("home-pending-chip").textContent, "32 waiting", "the CXO chip adds the kinds shown");
+  eq($("home-pending-chip").textContent, "29 waiting", "the CXO chip adds the kinds shown");
+  yes(/your queue/.test(rows[0].textContent) && !/across your companies/.test($("home-pending-body").textContent), "the CXO label says 'your queue'");
   window._roles.is_system_manager = false;
 
   // ── Notices: the card's number is the bell's ─────────────────────────

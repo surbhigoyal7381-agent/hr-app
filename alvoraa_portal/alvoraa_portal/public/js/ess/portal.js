@@ -6004,7 +6004,7 @@ var HM_STALE_MS = 60000;
 /* Where "Open" goes, by the row's own `action` word. The inbox's route strings
    belong to the discarded /hrms-employee-next page and mean nothing here. */
 var HM_SCREEN = {
-  goal_update: "goals", attendance_fix: "att-record", shift_request: "shift-req",
+  goal_update: "team", attendance_fix: "att-record",
   policy: "policies", my_leave: "attendance", my_attendance_fix: "att-record",
   my_shift_request: "shift-req", leave: "team"
 };
@@ -6013,7 +6013,6 @@ var HM_KIND = {
   leave_approvals: ["Leave approvals", "leave"],
   goal_updates: ["Goal and KPI updates", "goal_update"],
   attendance_fixes: ["Attendance fixes", "attendance_fix"],
-  shift_requests: ["Shift changes", "shift_request"],
   policies: ["Policies to read", "policy"]
 };
 var HM_TICK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="5 12 10 17 19 7"/></svg>';
@@ -6160,12 +6159,15 @@ function hmPendingRows(d) {
       var k = HM_KIND[p.key];
       if (!k || !p.count) return;
       out.push({count: p.count, action: k[1], av: String(p.count), title: drT(k[0]),
-        sub: drT("{0} waiting · across your companies", [p.count]), go: "Open"});
+        sub: drT("{0} waiting · your queue", [p.count]), go: "Open"});
     });
     out.sort(function (a, b) { return b.count - a.count; });
     return out;
   }
   (d.parts || []).forEach(function (p) {
+    /* The live portal has no screen where a manager decides a shift change, so
+       the row would lead nowhere. Out of Pending until Part C or a decide screen. */
+    if (p.key === "shift_requests") return;
     (p.rows || []).forEach(function (r) { out.push(hmRowView(p.key, r)); });
   });
   out.sort(function (a, b) {
@@ -6188,9 +6190,6 @@ function hmRowView(key, r) {
   } else if (key === "attendance_fixes") {
     v.title = r.employee_name || "";
     v.sub = drT("Attendance fix") + " · " + hmRange(r.from_date, r.to_date) + (w ? " · " + w : "");
-  } else if (key === "shift_requests") {
-    v.title = r.employee_name || "";
-    v.sub = drT("Shift change") + " · " + hmRange(r.from_date, r.to_date) + (w ? " · " + w : "");
   } else if (key === "policies") {
     v.title = r.title || "";
     v.sub = drT("Policy to read") + " · " + drT("version {0}", [r.version]);
@@ -6211,7 +6210,8 @@ function hmPaintPending() {
   if (!d || !body) return;
   HM.rows = hmPendingRows(d);
   var rows = HM.rows;
-  var total = hmIsCxo() ? rows.reduce(function (n, v) { return n + v.count; }, 0) : (d.total || 0);
+  var shifts = ((d.parts || []).filter(function (p) { return p.key === "shift_requests"; })[0] || {}).count || 0;
+  var total = hmIsCxo() ? rows.reduce(function (n, v) { return n + v.count; }, 0) : Math.max(0, (d.total || 0) - shifts);
   hmChip("home-pending-chip", total ? drT("{0} waiting", [total]) : "");
   if (!rows.length) {
     body.innerHTML = hmEmpty("Nothing waiting on you.", "Requests that need you, and policies to read, appear here.");
@@ -6424,6 +6424,7 @@ document.addEventListener("click", function (e) {
   else if (what === "leave-approve") hmDecide("approve");
   else if (what === "leave-decline") hmDecide("reject");
   else if (what === "note-all") ntOpenAll();
+  else if (what === "team-all") switchPanel("team", null);
   else if (what === "note") {
     var from = t.getAttribute("data-src") === "all" ? HM.all : HM.notes;
     var n = from && from.items && from.items[i];
@@ -9937,7 +9938,9 @@ function renderTeamGoals(data) {
     return;
   }
   let html = "";
-  Object.keys(byEmp).forEach(function(empId) {
+  /* Five people on Home; the rest are on the Team page (slice 076, so the grid stays balanced). */
+  const empIds = Object.keys(byEmp), HOME_TEAM_MAX = 5;
+  empIds.slice(0, HOME_TEAM_MAX).forEach(function(empId) {
     const ed   = byEmp[empId];
     const rec  = ed.employee || {};
     html += '<div class="hg-member">' + esc(rec.employee_name||empId) + (rec.designation ? ' · ' + esc(rec.designation) : '') + '</div>';
@@ -9952,6 +9955,9 @@ function renderTeamGoals(data) {
         '</div>';
     });
   });
+  if (empIds.length > HOME_TEAM_MAX) {
+    html += '<button type="button" class="hm-tbtn" data-hm="team-all">' + esc(drT("View all {0}", [empIds.length])) + '</button>';
+  }
   document.getElementById("home-team-goals-list").innerHTML = html;
 }
 

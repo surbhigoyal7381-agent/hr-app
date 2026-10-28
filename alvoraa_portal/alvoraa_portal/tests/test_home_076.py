@@ -16,8 +16,11 @@ import unittest
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_days, nowdate
 
+from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal import hr_api, inbox_api
+from alvoraa_portal.tests.test_decided_as_045 import _Corrections
 from alvoraa_portal.tests.leave_fixtures import (
 	WEEK_MON,
 	WEEK_TUE,
@@ -227,3 +230,34 @@ class TestLeaveDeclineReason(FrappeTestCase):
 		self.assertEqual(nav["total"], sum(p["count"] for p in nav["parts"]))
 		self.assertEqual(inbox["total"], nav["total"])
 		self.assertEqual([p["count"] for p in inbox["parts"]], [p["count"] for p in nav["parts"]])
+
+
+class TestTheQueueDoesNotCostAQueryPerFix(_Corrections):
+	"""AC-72. Deciding whether HR may press Approve asked the permission system
+	about the employee's manager once per queued fix, and the inbox did it twice
+	a call (count, then rows). It is once per manager now, once per call."""
+
+	def test_the_manager_is_asked_about_once_however_many_fixes_are_queued(self):
+		from unittest.mock import patch
+
+		real = frappe.has_permission
+		asked = []
+
+		def spy(doctype=None, ptype="read", doc=None, user=None, **kw):
+			if doctype == ac.REQUEST and ptype == "submit":
+				asked.append(user)
+			return real(doctype, ptype, doc, user=user, **kw)
+
+		self.as_user(self.priya_user)
+		rows = lambda n: [{"employee": e, "creation": "%s 09:00:00" % add_days(nowdate(), -1),
+		                   "owner": "someone@example.com"} for e in self.sandeep_reports[:n]]
+		with patch.object(frappe, "has_permission", spy):
+			ac._with_decide_flag(rows(1), self.priya_user)
+			one = len(asked)
+			asked.clear()
+			many = rows(len(self.sandeep_reports))
+			ac._with_decide_flag(many, self.priya_user)
+		self.assertGreaterEqual(len(many), 2, "the fixture must have several reports")
+		self.assertEqual(one, 1)
+		self.assertEqual(len(asked), 1, "one lookup for the manager, not one per fix")
+		self.assertTrue(all("can_decide" in r for r in many))

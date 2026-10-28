@@ -76,7 +76,10 @@ def main():
 		try:
 			src = open(path, encoding="utf-8-sig").read()
 			hits = find(src)
-		except (SyntaxError, UnicodeDecodeError):
+		except (SyntaxError, UnicodeDecodeError) as exc:
+			# A file the check cannot read is a file it cannot vouch for.
+			bad.append("%s: cannot be parsed (%s), so it was not checked"
+			           % (os.path.relpath(path, REPO).replace(os.sep, "/"), exc))
 			continue
 		for line, what in hits:
 			bad.append("%s:%d: %s lets a caller's id replace the scope. Check the id against "
@@ -106,6 +109,13 @@ def self_test():
 		if got != want:
 			print("SELF-TEST FAILED: %s gave %d hit(s), wanted %d" % (label, got, want))
 			return 1
+	try:
+		find("def f(:" + chr(10))
+	except SyntaxError:
+		pass
+	else:
+		print("SELF-TEST FAILED: a file that does not parse was not reported")
+		return 1
 	print("self-test OK: the check fails on the three unsafe shapes and ignores prose")
 	return 0
 

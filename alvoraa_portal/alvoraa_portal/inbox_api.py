@@ -698,15 +698,21 @@ def _part_attendance_fixes(who):
 	filters, is_hr_scope = (review_queue_filters(who.user) if available
 	                        else (no_rows(), False))
 
+	whole_queue = []
+
 	def decidable(filters, limit):
-		rows = frappe.get_list(
-			REQUEST, filters=filters,
-			fields=["name", "employee", "employee_name", "from_date", "to_date",
-			        "reason", "half_day", "creation", "owner"],
-			order_by="creation asc", limit_page_length=0)
-		# For the caller the part was built for, not whoever happens to be
-		# signed in when the count is read.
-		rows = [r for r in _with_decide_flag(rows, who.user) if r.can_decide]
+		# Worked out once per call: the count and the rows both need the whole
+		# queue, and each pass costs a permission check per distinct approver.
+		if not whole_queue:
+			rows = frappe.get_list(
+				REQUEST, filters=filters,
+				fields=["name", "employee", "employee_name", "from_date", "to_date",
+				        "reason", "half_day", "creation", "owner"],
+				order_by="creation asc", limit_page_length=0)
+			# For the caller the part was built for, not whoever happens to be
+			# signed in when the count is read.
+			whole_queue.append([r for r in _with_decide_flag(rows, who.user) if r.can_decide])
+		rows = whole_queue[0]
 		return rows[:limit] if limit else rows
 
 	def rows_fn(filters, limit):

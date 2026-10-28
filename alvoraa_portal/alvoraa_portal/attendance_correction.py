@@ -1400,7 +1400,10 @@ def not_yours_yet(doc, capacity, user=None):
 	# included - can never decide, so HR waiting two days for them was
 	# waiting for nobody. The wait gives first refusal only to a manager the
 	# permission system lets decide.
-	if not frappe.has_permission(REQUEST, "submit", user=mgr_user):
+	# One lookup per manager, not per request (slice 076: it was a DocShare query
+	# for every queued row, twice a call). With no cache open it runs each time.
+	if not once(("ac_mgr_submit", mgr_user),
+	            lambda: frappe.has_permission(REQUEST, "submit", user=mgr_user)):
 		return None
 	may_act_from, basis = hr_may_act_from(doc)
 	if getdate(nowdate()) >= getdate(may_act_from):

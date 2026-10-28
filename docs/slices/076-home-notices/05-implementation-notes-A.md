@@ -9,6 +9,24 @@ tier: 2 (usage-discipline). Strategy approved by Surbhi on 28 Oct 2026; her answ
 
 # 076 Part A: Home. Implementation notes
 
+## Fix pass after the review (06-review-A.md), 28 Oct 2026
+
+Surbhi approved these. Local only, not pushed.
+
+| # | Review finding | What I did | Result |
+|---|---|---|---|
+| 1 | Shift change rows lead nowhere | I checked: the live portal has **no screen where a manager decides a shift change** (only the employee's own request form; no approve endpoint). Shift-change rows are **left out of Pending**, and the chip and CXO rows no longer count them. **Gap for Part C (or a decide screen): a manager cannot see or act on shift requests from Home.** | DOM test: the row and the count are gone |
+| 2 | Goal update rows open My Goals | They open the **Team** panel, where the Approve buttons are. **Not checked:** that Team's list (`hr_api.get_pending_approvals`) shows the same updates the inbox counts; the two use different endpoints. Someone should compare them on a fixture with goal updates. | DOM test: opens `team` |
+| 3 | AC-72 | `attendance_correction.not_yours_yet` asked the permission system whether the employee's manager may submit, once per queued fix. It now asks **once per manager** (the existing per-call memo). `inbox_api` also works the whole queue out **once per call**, not once for the count and again for the rows. Behaviour is identical (all 042, 045, 068 attendance tests pass). New test `TestTheQueueDoesNotCostAQueryPerFix` fails with the old line (3 lookups) and passes with the new (1). | `get_inbox`, HR caller: **111 to 36 queries** at 980 people, **33 to 28** at 20 people. Payload unchanged (23 KB). p95 438 ms to 190 ms (a record, not a pass: wall time moves). **Still not perfectly flat:** 28 to 36, because it is now one lookup per distinct manager in the queue, and the large fixture has more managers. Employee 14 to 17, manager 23 to 23. |
+| 3b | My notes said `get_nav_counts` "already runs on every page" | **Wrong, corrected.** Only the discarded `/hrms-employee-next` page calls it. On the live portal this cost was entirely new with Part A. | |
+| 4 | CXO label | "across your companies" is now "{n} waiting · your queue". | DOM test |
+| 5 | Team goals uncapped | Home shows **five people** then a "View all N" button that opens the existing Team panel (no new screen). | DOM test. **Browser check: still 0 failures on the grid, but 24 of 45 cells (was 20) carry an existing card over 2x the median.** Capping people did not cure it: five people at three goals each is still about 1,500 px, and the median fell (302 px) because the new cards are short. Cells by card: My Goals 14, Team goals 6, My documents 4. A further cap (one goal per person, or five goals) or Surbhi's written acceptance is needed. |
+| 6 | `check_scope_traps.py` skipped unparsable files | It now reports "cannot be parsed, so it was not checked" and fails. `--self-test` proves a bad file is reported. | OK |
+
+Home's total queries, after the fix (before the fix in brackets), at 980 people: store HR 82 (157), company HR 82 (157), System Manager 72 (147), manager 69 (69), employee 62 (62). At 20 people: store and company HR 74 (79), System Manager 70 (75), manager 69, employee 59. `measure_076.py` was re-run on `test076l` and `test076s`.
+
+The sections below are the first write-up. Where they differ from this table, this table wins (bad news 1, the `get_nav_counts` sentence, and the CXO wording in difference 2).
+
 ## Bad news first
 
 1. **Home is not flat for HR and System Manager callers.** `get_inbox` (the Pending card) sends 33 queries on the 20-person fixture and **111 on the 980-person one** for an HR caller (104 for a System Manager). Payload 3 KB to 23 KB. p95 437 ms against a 500 ms budget, so it is inside the budget, but AC-72 says the count must be the same at both sizes, and it is not.

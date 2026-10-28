@@ -122,8 +122,11 @@ ROW_KEYS = (
 	# No colleague name for a goal or KPI update? There is one, and there has to
 	# be: an approver cannot approve "somebody's" progress. What is absent is the
 	# number's provenance and any note about the person.
+	# `document` is the Individual Goal or KPI the update belongs to, so Home can
+	# open it (slice 076, SEC-19). It is only ever read through the same scope
+	# subquery as the row itself, so it names nothing outside the caller's scope.
 	("goal_updates", ("name", "kind", "employee_name", "subject", "logged_on",
-	                  "value", "action", "waiting_since")),
+	                  "value", "action", "waiting_since", "document")),
 	# `can_decide`: whether the caller may decide it TODAY
 	# (`attendance_correction.not_yours_yet`). Only those rows are listed and
 	# counted, so it is always true; the buttons still follow it.
@@ -613,7 +616,7 @@ def _part_goal_updates(who):
 			       & (KPI.status != "Cancelled"))
 			.where(_pending(KPILog.approval_status))
 			.select(KPILog.name, KPI.kpi_name, KPI.employee, KPILog.value,
-			        KPILog.creation)
+			        KPILog.creation, KPI.name.as_("document"))
 			.orderby(KPILog.creation)
 		).run(as_dict=True)
 		Goal = frappe.qb.DocType("Individual Goal")
@@ -625,7 +628,7 @@ def _part_goal_updates(who):
 			       & (Goal.status != "Cancelled") & (Goal.docstatus != 2))
 			.where(_pending(GoalUpd.approval_status))
 			.select(GoalUpd.name, Goal.goal_name, Goal.employee, GoalUpd.value,
-			        GoalUpd.creation)
+			        GoalUpd.creation, Goal.name.as_("document"))
 			.orderby(GoalUpd.creation)
 		).run(as_dict=True)
 		merged = ([("kpi", r, r.get("kpi_name")) for r in kpi_rows]
@@ -652,6 +655,7 @@ def _part_goal_updates(who):
 				"value": r.get("value"),
 				"action": "goal_update",
 				"waiting_since": str(r.get("creation")) if r.get("creation") else None,
+				"document": r.get("document"),
 			})
 		return out
 

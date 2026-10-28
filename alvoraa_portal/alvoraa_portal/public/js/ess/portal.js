@@ -6241,6 +6241,13 @@ function hmPendOpen(i) {
   if (v.action === "leave" && !hmIsCxo()) { hmLeaveSheet(v); return; }
   var screen = HM_SCREEN[v.action];
   hmCloseSheet(true);
+  /* A goal or KPI update opens its own drawer, where Approve and Reject are
+     (the same drawers the old bell opened). Without the id, the Team page. */
+  var r = v.row;
+  if (v.action === "goal_update" && r && r.document && !hmIsCxo()) {
+    if (r.kind === "kpi" && window.pfOpenLog) { window.pfOpenLog(r.document, r.name); return; }
+    if (r.kind !== "kpi" && window.gpOpenGoalDetail) { window.gpOpenGoalDetail(r.document, r.name); return; }
+  }
   if (screen) switchPanel(screen, null);
 }
 

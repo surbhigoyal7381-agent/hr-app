@@ -77,7 +77,8 @@ function inbox(parts) {
 }
 const leaveRow = (name, who, ago) => ({name, employee_name: who, from_date: "2026-11-06", to_date: "2026-11-08",
   leave_type: "Casual Leave", total_days: 3, action: "leave", waiting_since: iso(ago)});
-const goalRow = (name, who, ago) => ({name, kind: "goal", employee_name: who, subject: "Sell 40 units", action: "goal_update", waiting_since: iso(ago)});
+const goalRow = (name, who, ago, kind) => ({name, kind: kind || "goal", document: (kind === "kpi" ? "KPI-" : "GOAL-") + name,
+  employee_name: who, subject: "Sell 40 units", action: "goal_update", waiting_since: iso(ago)});
 const fixRow = (name, who, ago) => ({name, employee_name: who, from_date: "2026-10-21", to_date: "2026-10-21", action: "attendance_fix", waiting_since: iso(ago)});
 const polRow = (name, title, ago) => ({name, title, version: 2, action: "policy", waiting_since: iso(ago)});
 const noteRow = (name, text, read) => ({name, text, link: null, when: "2026-10-27 16:10:00", read: read ? 1 : 0});
@@ -178,12 +179,25 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   });
   eq(rowsOf("home-pending-body").map(lines), ["Charu Sethi"], "a shift change row is left out of Pending (no screen decides it)");
   eq($("home-pending-chip").textContent, "1 waiting", "and the chip does not count it");
-  const panels = [];
-  const realSwitch = window.switchPanel;
-  window.switchPanel = (n) => panels.push(n);
+  const opened = [];
+  const real = {g: window.gpOpenGoalDetail, k: window.pfOpenLog, s: window.switchPanel};
+  window.gpOpenGoalDetail = (d, r) => opened.push(["goal", d, r]);
+  window.pfOpenLog = (d, r) => opened.push(["kpi", d, r]);
+  window.switchPanel = (n) => opened.push(["panel", n]);
   click(rowsOf("home-pending-body")[0]);
-  window.switchPanel = realSwitch;
-  eq(panels, ["team"], "a goal update opens the Team panel, where the Approve buttons are");
+  eq(opened, [["goal", "GOAL-G1", "G1"]], "a goal update opens its goal drawer, on that update, where Approve and Reject are");
+  opened.length = 0;
+  await loadHomeWith({get_inbox: {ok: inbox([part("leave_approvals", []), part("goal_updates", [goalRow("K1", "Dinesh Pal", 2, "kpi")]),
+    part("attendance_fixes", []), part("shift_requests", []), part("policies", []), part("my_requests", [])])}, notices_feed: {ok: feed([], 0, false)}});
+  click(rowsOf("home-pending-body")[0]);
+  eq(opened, [["kpi", "KPI-K1", "K1"]], "a KPI update opens the KPI log on that update");
+  opened.length = 0;
+  const noId = goalRow("G2", "Esha Ghosh", 2); delete noId.document;
+  await loadHomeWith({get_inbox: {ok: inbox([part("leave_approvals", []), part("goal_updates", [noId]),
+    part("attendance_fixes", []), part("shift_requests", []), part("policies", []), part("my_requests", [])])}, notices_feed: {ok: feed([], 0, false)}});
+  click(rowsOf("home-pending-body")[0]);
+  eq(opened, [["panel", "team"]], "a goal update with no goal id falls back to the Team panel");
+  window.gpOpenGoalDetail = real.g; window.pfOpenLog = real.k; window.switchPanel = real.s;
 
   // ── Team goals on Home: three people, one goal each, then View all ───────────────────
   const by = {};

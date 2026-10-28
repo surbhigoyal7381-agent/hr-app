@@ -52,7 +52,8 @@ class TestPartKeys(unittest.TestCase):
 	def test_every_part_row_is_the_old_keys_plus_waiting_since(self):
 		for key, old in OLD_KEYS.items():
 			with self.subTest(part=key):
-				self.assertEqual(set(inbox_api.row_keys(key)), old | {"waiting_since"})
+				extra = {"waiting_since"} | ({"document"} if key == "goal_updates" else set())
+				self.assertEqual(set(inbox_api.row_keys(key)), old | extra)
 
 	def test_the_part_list_did_not_change(self):
 		self.assertEqual([k for k, _r in inbox_api.PARTS], list(OLD_KEYS))
@@ -261,3 +262,101 @@ class TestTheQueueDoesNotCostAQueryPerFix(_Corrections):
 		self.assertEqual(one, 1)
 		self.assertEqual(len(asked), 1, "one lookup for the manager, not one per fix")
 		self.assertTrue(all("can_decide" in r for r in many))
+
+
+class TestGoalUpdateRowsCarryTheGoalOnlyInScope(FrappeTestCase):
+	"""SEC-19. A goal-update row names the goal it belongs to so Home can open it.
+	The id comes from the same scope subquery as the row, so a caller sees ids
+	only for goals inside their own scope."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		lt = ensure_leave_type("Alvoraa Casual")
+		cls.mgr_user = ensure_user("g076.mgr@example.com", roles=("Employee",))
+		cls.mgr_emp = ensure_employee_with_leave("G076Mgr", lt, days=1, last_name="Boss")
+		link_user_to_employee(cls.mgr_emp, cls.mgr_user)
+		cls.other_user = ensure_user("g076.other@example.com", roles=("Employee",))
+		cls.other_emp = ensure_employee_with_leave("G076Other", lt, days=1, last_name="Boss")
+		link_user_to_employee(cls.other_emp, cls.other_user)
+		cls.a_emp = ensure_employee_with_leave("G076A", lt, days=1, last_name="Staff")
+		cls.x_emp = ensure_employee_with_leave("G076X", lt, days=1, last_name="Staff")
+		cls.a_user = ensure_user("g076.a@example.com", roles=("Employee",))
+		link_user_to_employee(cls.a_emp, cls.a_user)
+		frappe.db.set_value("Employee", cls.a_emp, "reports_to", cls.mgr_emp)
+		frappe.db.set_value("Employee", cls.x_emp, "reports_to", cls.other_emp)
+		cls.hr_user = ensure_user("g076.hr@example.com", roles=("HR Manager", "Employee"))
+		hr_emp = ensure_employee_with_leave("G076Hr", lt, days=1, last_name="Hr")
+		link_user_to_employee(hr_emp, cls.hr_user)
+		cls.sm_user = ensure_user("g076.sm@example.com", roles=("System Manager", "Employee"))
+		sm_emp = ensure_employee_with_leave("G076Sm", lt, days=1, last_name="Sm")
+		link_user_to_employee(sm_emp, cls.sm_user)
+		cls.goals = {}
+		for key, emp in (("a", cls.a_emp), ("x", cls.x_emp)):
+			g = frappe.get_doc({
+				"doctype": "Individual Goal", "employee": emp, "goal_name": "G076 goal " + key,
+				"target_value": 100, "start_date": add_days(nowdate(), -30),
+				"end_date": add_days(nowdate(), 200), "status": "Active"})
+			g.flags.ignore_permissions = True
+			g.insert(ignore_permissions=True)
+			g.append("progress_updates", {"log_date": add_days(nowdate(), -2), "value": 5,
+			                              "approval_status": "Pending", "note": "G076"})
+			g.flags.ignore_permissions = True
+			g.save(ignore_permissions=True)
+			cls.goals[key] = g.name
+		frappe.db.commit()
+		frappe.clear_cache()      # roles were just set; no stale per-user permission cache
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		for name in cls.goals.values():
+			frappe.delete_doc("Individual Goal", name, force=True, ignore_permissions=True)
+		frappe.db.commit()
+		super().tearDownClass()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+
+	def _ids(self, user):
+		frappe.set_user(user)
+		part = [p for p in inbox_api.get_inbox()["parts"] if p["key"] == "goal_updates"][0]
+		return {r["document"] for r in part["rows"] if r["document"] in self.goals.values()}, part
+
+	def test_a_manager_gets_the_goal_of_their_own_report_and_no_other(self):
+		ids, part = self._ids(self.mgr_user)
+		self.assertEqual(ids, {self.goals["a"]})
+		self.assertEqual(set(part["rows"][0]), set(inbox_api.row_keys("goal_updates")))
+
+	def test_a_manager_outside_scope_gets_no_id_and_cannot_open_or_approve(self):
+		ids, _p = self._ids(self.other_user)       # manages X, not A
+		self.assertNotIn(self.goals["a"], ids)
+		frappe.set_user(self.other_user)
+		row = frappe.get_doc("Individual Goal", self.goals["a"]).progress_updates[0].name
+		from alvoraa_portal import goals_api
+		with self.assertRaises(frappe.PermissionError):
+			goals_api.approve_goal_update(self.goals["a"], row, "Approved")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.get_doc("Individual Goal", self.goals["a"]).progress_updates[0]
+		                 .approval_status, "Pending")
+
+	def test_a_normal_employee_gets_no_goal_ids(self):
+		ids, part = self._ids(self.a_user)
+		self.assertEqual((ids, part["count"], part["rows"]), (set(), 0, []))
+
+	def test_hr_and_system_manager_get_the_ids_in_their_scope(self):
+		for user in (self.hr_user, self.sm_user):
+			with self.subTest(user=user):
+				ids, _p = self._ids(user)
+				self.assertEqual(ids, set(self.goals.values()))
+
+	def test_the_manager_can_approve_the_update_the_row_points_at(self):
+		from alvoraa_portal import goals_api
+		frappe.set_user(self.mgr_user)
+		part = [p for p in inbox_api.get_inbox()["parts"] if p["key"] == "goal_updates"][0]
+		row = [r for r in part["rows"] if r["document"] == self.goals["a"]][0]
+		goals_api.approve_goal_update(row["document"], row["name"], "Approved")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.get_doc("Individual Goal", self.goals["a"]).progress_updates[0]
+		                 .approval_status, "Approved")

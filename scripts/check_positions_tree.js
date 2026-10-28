@@ -1586,6 +1586,66 @@ function ctx065(opts) {
 }
 const READER = { may_set: true, owners_see: true, self: "E-HR", hr_users: 6 };
 
+/* Pressing Save (Surbhi, 28 Oct 2026). Nothing here was covered: 383 checks
+   and not one of them pressed the button, so the dialog validated the tick and
+   then left it out of the call. The server refuses a Performance plan without
+   it, and the screen blamed the connection. These checks press Save and read
+   what actually goes down the wire. */
+function saveCtx065(opts) {
+  const c = ctx065({ plans: READER }).c;
+  const sent = [];
+  c.gpFetch = (method, args) => {
+    sent.push({ method, args });
+    return opts.refuse ? Promise.reject(opts.refuse) : Promise.resolve({});
+  };
+  const fields = {
+    "pos-pl-ends": opts.ends || "",
+    "pos-pl-told": null,
+    "pos-pl-note": opts.note || "",
+    "pos-pl-reason-err": null, "pos-pl-ends-err": null, "pos-pl-told-err": null,
+    "pos-pl-r0": null, "pos-sheet-err": null,
+  };
+  Object.keys(fields).forEach((id) => {
+    c.__els[id] = { id, value: fields[id] === null ? "" : fields[id],
+                    checked: id === "pos-pl-told" ? !!opts.told : false,
+                    hidden: false, style: {}, focus() {} };
+  });
+  const reason = opts.reason || "Performance";
+  c.document.querySelector = (sel) =>
+    (sel.indexOf("pos-pl-reason") > -1 && reason) ? { value: reason } : null;
+  return { c, sent };
+}
+
+{
+  // The bug itself: the tick must reach the server.
+  const t = saveCtx065({ reason: "Performance", ends: "2026-11-27", told: true, note: "x" });
+  t.c.posPlanSave("P-Sector34", "A-E-2", null);
+  const call = t.sent[0];
+  ok("065 SV-1: pressing Save calls set_plan",
+     !!call && /plans\.set_plan$/.test(call.method), call && call.method);
+  ok("065 SV-1: and the tick goes with it - without this EVERY performance plan is refused",
+     !!call && (call.args.told === 1 || call.args.told === true), call && JSON.stringify(call.args));
+  ok("065 SV-1: the reason and the end date go too",
+     !!call && call.args.reason === "Performance" && call.args.improvement_ends_on === "2026-11-27");
+}
+{
+  // A reason with no improvement period must not send a stale date.
+  const t = saveCtx065({ reason: "Personal reasons", told: false, note: "y" });
+  t.c.posPlanSave("P-Sector34", "A-E-2", null);
+  const call = t.sent[0];
+  ok("065 SV-2: a non-performance plan still saves",
+     !!call, "nothing was sent");
+  ok("065 SV-2: and carries no improvement period",
+     !!call && !call.args.improvement_ends_on);
+}
+{
+  // The tick is still required locally, so Save does not even leave the page.
+  const t = saveCtx065({ reason: "Performance", ends: "2026-11-27", told: false });
+  t.c.posPlanSave("P-Sector34", "A-E-2", null);
+  ok("065 SV-3: without the tick nothing is sent and the field is marked",
+     t.sent.length === 0 && t.c.__els["pos-pl-told-err"].hidden === false);
+}
+
 /* "Change this seat" (Surbhi, 28 Oct 2026). Whoever opens this dialog must be
    in the same context as the chart behind it, and nobody else may learn
    anything from it. posPaintPeople writes the "Who is in it" list. */

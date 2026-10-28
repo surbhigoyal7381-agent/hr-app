@@ -3074,7 +3074,9 @@ window.posPlanSheet = function (id, asg, failed, keep) {
     + ' <span id="pos-hold-date">' + (keep.ends ? posLong(keep.ends) : drT("the end of the improvement period")) + "</span>"
     + posEsc(drT(", and not until HR records whether {0} improved.", [first])) + "</span></li></ul></div>"
     + (failed ? '<p class="pos-sheet-err" role="alert"><strong>' + drT("We could not save the plan.") + "</strong> "
-        + drT("Check your connection, then try again. Your note is still here.") + "</p>" : "")
+        + (typeof failed === "string"
+            ? posEsc(failed) + " " + drT("Your note is still here.")
+            : drT("Check your connection, then try again. Your note is still here.")) + "</p>" : "")
     + '<fieldset class="pos-fs" id="pos-pl-reason"><legend class="pos-lab">' + drT("Reason") + "</legend>"
     + ["Performance", "Personal reasons", "Other business reason"].map(function (o, k) {
         return '<label class="pos-opt"><input type="radio" name="pos-pl-reason" id="pos-pl-r' + k + '" value="' + o + '"'
@@ -3132,8 +3134,17 @@ window.posPlanSave = async function (id, asg, btn) {
   var p = posPerson(id, asg);
   try {
     await gpFetch("hrms.alvoraa_org_structure.plans.set_plan", { assignment: asg, note: k.note.trim(),
-      reason: k.reason, improvement_ends_on: perf ? k.ends : null });
-  } catch (e) { posPlanSheet(id, asg, true, k); return; }
+      reason: k.reason, improvement_ends_on: perf ? k.ends : null,
+      // The server checks this too, and refuses a Performance plan without it.
+      // It was validated above and then left out of the call, so EVERY
+      // Performance plan was refused and the screen blamed the connection.
+      told: k.told ? 1 : 0 });
+  } catch (e) {
+    // Show what the server actually said. Inventing "check your connection"
+    // over a refusal sends the reader hunting for a fault that is not there.
+    posPlanSheet(id, asg, e && e.server && e.message ? e.message : true, k);
+    return;
+  }
   await posLoad();
   posSeatSheet(id, perf
     ? posEsc(drT("Plan saved for {0}. Hiring is on hold until {1} and until HR records the outcome.", [p.name, posLong(k.ends)]))
@@ -3144,7 +3155,11 @@ window.posConfirmPlan = async function (id, asg, btn) {
   var p = posPerson(id, asg);
   posBusy(btn, drT("Confirming…"));
   try { await gpFetch("hrms.alvoraa_org_structure.plans.confirm_plan", { plan: p.plan.name }); }
-  catch (e) { posSeatSheet(id, null, "<strong>" + drT("We could not confirm the plan.") + "</strong> " + drT("Check your connection, then try again. Nothing changed.")); return; }
+  catch (e) {
+    posSeatSheet(id, null, "<strong>" + drT("We could not confirm the plan.") + "</strong> "
+      + (e && e.server && e.message ? posEsc(e.message) : drT("Check your connection, then try again. Nothing changed.")));
+    return;
+  }
   await posLoad();
   posSeatSheet(id, posEsc(drT("Confirmed. The plan for {0} now ends on {1}.", [p.name, posLong(posShift(posToday(), 90))])));
 };

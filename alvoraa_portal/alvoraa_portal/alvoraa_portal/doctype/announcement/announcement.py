@@ -14,6 +14,8 @@ not come through here. Track Changes keeps a Version row for every save, so a
 cancel says who and when (PRIV-3).
 """
 
+import html
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -31,7 +33,8 @@ class Announcement(Document):
 		self.message = (self.message or "").strip()
 		if not self.message:
 			frappe.throw(_("Write a message first."))
-		if len(self.message) > 300:
+		# Stored HTML-escaped (SEC-9); the limit is on the text as typed.
+		if len(html.unescape(self.message)) > 300:
 			frappe.throw(_("A notice can be at most 300 characters."))
 		if self.is_new():
 			return

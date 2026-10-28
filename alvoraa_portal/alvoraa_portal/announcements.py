@@ -34,11 +34,12 @@ from hrms.alvoraa_hr_core.access import notice_audience_conditions, refuse
 
 ROLE = "Notice Sender"
 DOCTYPE = "Announcement"
+PORTAL = "/hrms-employee"
 
 MAX_CHARS = 300          # after trimming (decision 9: fixed in code)
 CONFIRM_ABOVE = 25       # more people than this needs `confirmed` (D2)
 PER_DAY = 5              # notices per sender per calendar day, cancelled ones too (D2)
-SEND_IN_REQUEST = 200    # "Now" to this many or fewer is written before the reply
+SEND_IN_REQUEST = 25     # "Now" to this many or fewer is written before the reply (Surbhi, 28 Oct)
 CHUNK = 200              # rows per commit
 REPEAT_SECONDS = 120     # the same text again this soon returns the first notice
 STALE_MINUTES = 10       # a "Sending" notice untouched this long is resumed
@@ -105,15 +106,20 @@ def _everyone_label(sender):
 def _targets(people):
 	"""The companies and branches a sender may choose, with counts. Companies
 	only when the scope has more than one (design 6, as drawn)."""
-	companies, branches = {}, {}
+	companies, branches, homes = {}, {}, {}
 	for p in people:
 		companies[p.company] = companies.get(p.company, 0) + 1
 		if p.branch:
 			branches[p.branch] = branches.get(p.branch, 0) + 1
+			homes.setdefault(p.branch, set()).add(p.company)
 	out = []
-	if len(companies) > 1:
+	many = len(companies) > 1
+	if many:
 		out += [{"kind": "company", "value": c, "label": c, "n": n} for c, n in sorted(companies.items())]
-	out += [{"kind": "branch", "value": b, "label": b, "n": n} for b, n in sorted(branches.items())]
+	# "Noida unit (Alvora Retail)" when the sender sees more than one company (as drawn).
+	out += [{"kind": "branch", "value": b, "n": n,
+	         "label": "{0} ({1})".format(b, ", ".join(sorted(homes[b]))) if many else b}
+	        for b, n in sorted(branches.items())]
 	return out
 
 
@@ -232,6 +238,9 @@ def create_notice(message=None, audience_kind=None, company=None, branch=None, p
 		frappe.throw(_("Write a message first."))
 	if len(message) > MAX_CHARS:
 		frappe.throw(_("A notice can be at most 300 characters."))
+	# Stored HTML-escaped, so no desk view (print, report) can run it (SEC-9).
+	# The limit above is on what the person typed; readers unescape it.
+	message = html.escape(message)
 	kind = KINDS.get(str(audience_kind or ""))
 	if not kind:
 		frappe.throw(_("Choose who it goes to."))
@@ -293,6 +302,8 @@ def create_notice(message=None, audience_kind=None, company=None, branch=None, p
 		frappe.flags.pop(CREATE_FLAG, None)
 
 	if not later and reach <= SEND_IN_REQUEST:
+		# Kept even if the send below stops: then the scheduler resumes it.
+		frappe.db.commit()
 		send_one(doc.name)
 		doc.reload()
 	elif not later:
@@ -356,7 +367,7 @@ def my_sent_notices():
 		else:
 			label = everyone
 		reached, read = counts.get(r.name, (0, 0))
-		out.append({"name": r.name, "message": r.message, "audience_label": label,
+		out.append({"name": r.name, "message": html.unescape(r.message or ""), "audience_label": label,
 		            "scheduled_for": str(r.send_at), "status": r.status,
 		            "reason": r.status_reason or r.email_note or "",
 		            "reached": reached, "read": read, "created": str(r.creation)})
@@ -365,7 +376,11 @@ def my_sent_notices():
 
 @frappe.whitelist()
 def notice_sender_holders():
-	"""Who holds Notice Sender: full names only, for HR (PRIV-8, AC-107)."""
+	"""Who holds Notice Sender, for HR (PRIV-8, as the prototype draws it -
+	Surbhi, 28 Oct 2026, over AC-107's "names only"): full name, job title, and
+	who last changed that person's Notice Sender access and when. No email, no
+	user id. "Last changed" is Frappe's own User history (Version), so it is
+	empty for anyone who got the role without a saved change."""
 	user = frappe.session.user
 	if user == "Guest":
 		frappe.throw(_("Please sign in."), frappe.PermissionError)
@@ -375,7 +390,26 @@ def notice_sender_holders():
 	holders = [h for h in holders if h not in ("Administrator", "Guest")]
 	if not holders:
 		return []
-	return sorted(frappe.get_all("User", filters={"name": ["in", holders], "enabled": 1}, pluck="full_name"))
+	users = frappe.get_all("User", filters={"name": ["in", holders], "enabled": 1}, fields=["name", "full_name"])
+	if not users:
+		return []
+	ids = [u.name for u in users]
+	titles = dict(frappe.get_all("Employee", filters={"user_id": ["in", ids], "status": "Active"},
+	                             fields=["user_id", "designation"], as_list=True))
+	changed = {}
+	for v in frappe.get_all("Version", filters={"ref_doctype": "User", "docname": ["in", ids],
+	                                             "data": ["like", "%" + ROLE + "%"]},
+	                        fields=["docname", "owner", "creation"], order_by="creation desc"):
+		changed.setdefault(v.docname, v)
+	names = dict(frappe.get_all("User", filters={"name": ["in", list({v.owner for v in changed.values()})]},
+	                            fields=["name", "full_name"], as_list=True)) if changed else {}
+	out = []
+	for u in users:
+		v = changed.get(u.name)
+		out.append({"name": u.full_name, "title": titles.get(u.name) or "",
+		            "changed_by": names.get(v.owner) or "" if v else "",
+		            "changed_on": str(v.creation)[:10] if v else ""})
+	return sorted(out, key=lambda x: x["name"] or "")
 
 
 # ── the send ─────────────────────────────────────────────────────────────────
@@ -402,12 +436,15 @@ def send_due_announcements():
 
 def _write_rows(doc, users):
 	"""One Notification Log row per person. Writing other people's rows is the
-	one thing here that needs `ignore_permissions` (spec 5.5)."""
-	safe = html.escape(doc.message)    # the desk draws `subject` as HTML (SEC-9)
+	one thing here that needs `ignore_permissions` (spec 5.5).
+
+	The message is already HTML-escaped (the desk draws `subject` as HTML,
+	SEC-9). `link` sends a desk bell click to the portal: a recipient may not
+	open the Announcement record itself."""
 	for u in users:
 		frappe.get_doc({"doctype": "Notification Log", "type": "Alert", "document_type": DOCTYPE,
-		                "document_name": doc.name, "from_user": doc.owner, "for_user": u,
-		                "subject": safe, "email_content": safe}).insert(ignore_permissions=True)
+		                "document_name": doc.name, "from_user": doc.owner, "for_user": u, "link": PORTAL,
+		                "subject": doc.message, "email_content": doc.message}).insert(ignore_permissions=True)
 
 
 def _email(doc, users):
@@ -416,7 +453,7 @@ def _email(doc, users):
 		return
 	frappe.sendmail(recipients=emails,
 	                subject=_("A notice from {0}").format(doc.sender_label.split(",")[0]),
-	                message="<p>" + html.escape(doc.message) + "</p>",
+	                message="<p>" + doc.message + "</p>",    # stored escaped
 	                reference_doctype=DOCTYPE, reference_name=doc.name, add_unsubscribe_link=0)
 
 
@@ -427,9 +464,27 @@ def _count_rows(name):
 def send_one(name):
 	"""Send one notice, once, as its sender (US-4, US-5).
 
-	The row lock is the first read, so two workers - or a worker and a cancel -
-	cannot both act on it. Moving it to Sending and committing releases the lock
-	and tells any later tick to leave it alone for 10 minutes."""
+	A thin wrapper on purpose (SEC-21). If the send stops on an unexpected
+	error, Frappe would log the traceback with every local value in it - the
+	notice text and up to 200 logins. Here the only local is the notice id: the
+	error is logged as the id and the error's class name, nothing else, and the
+	notice is left as it was. A Scheduled one goes on the next tick; a Sending
+	one resumes after 10 minutes, and three stalls end in Failed."""
+	try:
+		_send(name)
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(title="Notice send stopped",
+		                 message="{0}: {1}".format(name, type(e).__name__),
+		                 reference_doctype=DOCTYPE, reference_name=name)
+		frappe.db.commit()
+
+
+def _send(name):
+	"""The send itself. The row lock is the first read, so two workers - or a
+	worker and a cancel - cannot both act on it. Moving it to Sending and
+	committing releases the lock and tells any later tick to leave it alone for
+	10 minutes."""
 	started = time.monotonic()
 	doc = frappe.get_doc(DOCTYPE, name, for_update=True)
 	now = now_datetime()

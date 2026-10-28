@@ -310,29 +310,27 @@ class TestWhoMaySend(Case):
 			with self.assertRaises(frappe.ValidationError):
 				doc.save()
 
-	def test_the_role_is_given_once_and_never_again(self):
-		"""AC-1, AC-2: the patch on a site without the role gives it to HR Managers;
-		on a second run nobody changes, and someone it was taken from stays without."""
+	def test_the_patch_makes_the_role_and_gives_it_to_nobody(self):
+		"""AC-1, AC-2 as changed on 28 Oct 2026 (the Q1 retention gate): the patch
+		makes the role without desk access and gives it to NOBODY, so sending stays
+		off at every tenant until a System Manager gives it in Users. It saves no
+		User, so an HR Manager login with no Employee record keeps its Employee role."""
 		from alvoraa_portal.patches.v1_0 import notice_sender_role
-		frappe.get_doc("User", user("Hrq")).remove_roles(ROLE)
-		real, first = frappe.db.exists, []
-
-		def as_if_new(dt, *a, **k):
-			# Only the patch's own first question, "does the role exist yet?".
-			if (dt, a[:1]) == ("Role", (ROLE,)) and not first:
-				first.append(1)
-				return None
-			return real(dt, *a, **k)
-
-		with patch.object(frappe.db, "exists", side_effect=as_if_new):
-			notice_sender_role.execute()
-		self.assertIn(ROLE, frappe.get_roles(user("Hrq")), "an HR Manager at install time gets it")
-		self.assertEqual(frappe.db.get_value("Role", ROLE, "desk_access"), 0)
-		frappe.get_doc("User", user("Hrq")).remove_roles(ROLE)
+		frappe.db.set_value("Role", ROLE, "desk_access", 1)
+		_ensure_user("Hrlone", ["HR Manager", "Employee"])       # no Employee record points here
+		frappe.db.set_value("User", user("Hrlone"), "modified", "2026-01-01 10:00:00", update_modified=False)
+		lone_roles = sorted(frappe.get_all("Has Role", filters={"parent": user("Hrlone")}, pluck="role"))
 		before = sorted(frappe.get_all("Has Role", filters={"role": ROLE}, pluck="parent"))
 		notice_sender_role.execute()
-		self.assertNotIn(ROLE, frappe.get_roles(user("Hrq")), "taken away stays taken away")
-		self.assertEqual(sorted(frappe.get_all("Has Role", filters={"role": ROLE}, pluck="parent")), before)
+		notice_sender_role.execute()
+		self.assertEqual(frappe.db.get_value("Role", ROLE, "desk_access"), 0)
+		self.assertEqual(sorted(frappe.get_all("Has Role", filters={"role": ROLE}, pluck="parent")), before,
+		                 "nobody is given the role, on the first run or the second")
+		self.assertNotIn(ROLE, frappe.get_roles(user("Hrlone")))
+		self.assertEqual(sorted(frappe.get_all("Has Role", filters={"parent": user("Hrlone")}, pluck="role")),
+		                 lone_roles, "an HR Manager login with no Employee record keeps every role it had")
+		self.assertEqual(str(frappe.db.get_value("User", user("Hrlone"), "modified")), "2026-01-01 10:00:00",
+		                 "the patch saves no User")
 
 	def test_an_hr_manager_cannot_give_the_role(self):
 		"""AC-3: only who may edit Users (System Manager) gives it."""
@@ -443,6 +441,8 @@ class TestLimits(Case):
 		for f in ("subject", "email_content", "title"):
 			self.assertTrue(row[f].startswith("&lt;img"), f)
 		self.assertEqual(row["type"], "Alert")
+		self.assertTrue(frappe.db.get_value("Announcement", name, "message").startswith("&lt;img"),
+		                "stored escaped, so no desk view can run it")
 		with as_user("Asha"):
 			item = notices.notices_feed()["items"][0]
 		self.assertEqual(item["text"], bad)   # the page escapes it on the way in
@@ -596,19 +596,19 @@ class TestSend(Case):
 			real(doc, users)
 
 		with patch.object(ann, "CHUNK", 2), patch.object(ann, "_write_rows", side_effect=dies_on_second):
-			with self.assertRaises(RuntimeError):
-				ann.send_one(name)
+			ann.send_one(name)          # stops quietly (SEC-21); the error is logged by id only
 		frappe.db.rollback()
 		self.assertEqual(len(_rows(name)), 2, "the first chunk was committed")
 		self.assertEqual(frappe.db.get_value("Announcement", name, "status"), "Sending")
 
-	def test_now_to_200_or_fewer_is_sent_before_the_reply(self):
-		"""AC-30, first half."""
+	def test_now_to_25_or_fewer_is_sent_before_the_reply(self):
+		"""AC-30, first half, with Surbhi's 25 (28 Oct 2026)."""
+		self.assertEqual(ann.SEND_IN_REQUEST, 25)
 		res = _send("Hra")
 		self.assertEqual((res["status"], res["reached"]), ("Sent", 3))
 
-	def test_now_to_more_than_200_is_queued_on_long(self):
-		"""AC-30, second half (200 patched to 2)."""
+	def test_now_to_more_than_25_is_queued_on_long(self):
+		"""AC-30, second half (25 patched to 2: the fixture has 3 people)."""
 		with patch.object(ann, "SEND_IN_REQUEST", 2), patch("frappe.enqueue") as q:
 			res = _send("Hra")
 		self.assertEqual(res["status"], "Scheduled")
@@ -862,13 +862,91 @@ class TestRecipientFeed(Case):
 			self.assertEqual(notices.notices_feed(see_all=1)["items"], [])
 		self.assertEqual(_rows(name), _users("Asha"))
 
-	def test_the_holder_list_is_names_for_hr_only(self):
-		"""AC-107 (PRIV-8)."""
+	def test_the_holder_list_is_names_titles_and_last_change_for_hr_only(self):
+		"""AC-107 as changed by Surbhi on 28 Oct 2026 (the prototype): name, job
+		title, and who last changed the person's access. Never an email or a user id."""
+		frappe.get_doc("User", user("Hrx")).remove_roles(ROLE)
+		u = frappe.get_doc("User", user("Hrx"))
+		u.append("roles", {"role": ROLE})
+		u.save(ignore_version=False)                 # as Administrator; Frappe's own history row
 		with as_user("Hrx"):
-			names = ann.notice_sender_holders()
-		self.assertIn("Hra N076", names)
-		self.assertTrue(all(isinstance(n, str) and "@" not in n for n in names))
+			rows = ann.notice_sender_holders()
+		for r in rows:
+			self.assertEqual(set(r), {"name", "title", "changed_by", "changed_on"})
+		mine = {r["name"]: r for r in rows}
+		self.assertEqual(mine["Hra N076"]["title"], "Store HR N076")
+		self.assertEqual((mine["Hrx N076"]["changed_by"], mine["Hrx N076"]["changed_on"]),
+		                 ("Administrator", str(getdate(nowdate()))))
+		self.assertNotIn("@", json.dumps(rows))
 		for first in ("Asha", "Hra"):     # a plain employee; an HR User
 			with as_user(first):
 				with self.assertRaises(frappe.PermissionError):
 					ann.notice_sender_holders()
+
+	def test_a_cxo_sees_each_branch_with_its_company(self):
+		"""Parity (prototype line 239): "Noida unit (Alvora Retail)" for a sender
+		who sees more than one company; branch A's HR, one company, sees "A"."""
+		with as_user("Sm"):
+			labels = {t["value"]: t["label"] for t in ann.notice_reach()["targets"] if t["kind"] == "branch"}
+		self.assertTrue(labels[A].startswith(A + " (") and X in labels[A], labels[A])
+		with as_user("Hra"):
+			self.assertEqual([t["label"] for t in ann.notice_reach()["targets"]], [A])
+
+
+# -- the fixes from the Part B reviews ----------------------------------------
+
+class TestReviewFixes(Case):
+	def test_a_crashed_send_logs_only_the_id_and_the_error_type(self):
+		"""SEC-21 (security review, Blocker): a send that stops on an unexpected
+		error must not leave the notice text or a recipient's email in the Error
+		Log. The error here even carries an email in its own text."""
+		text = "Pay revision letters N076 crash"
+		name = _send("Hra", message=text, later_minutes=30)["name"]
+		_due_now(name)
+
+		def boom(doc, users):
+			raise ValueError("stopped while writing for " + users[0])
+
+		with patch.object(ann, "_write_rows", side_effect=boom):
+			ann.send_one(name)                     # the job's own entry point; it must not raise
+		logs = frappe.get_all("Error Log", filters={"reference_name": name}, fields=["error", "method"])
+		self.assertEqual(len(logs), 1)
+		self.assertEqual(logs[0].error, name + ": ValueError")
+		blob = json.dumps(logs)
+		for bad in ("@", "Pay revision", "N076 crash", "stopped while"):
+			self.assertNotIn(bad, blob)
+		self.assertEqual(frappe.db.get_value("Announcement", name, "status"), "Sending",
+		                 "left to resume after 10 minutes, not lost")
+		self.assertFalse(_rows(name))
+
+	def test_a_script_is_text_everywhere_the_notice_goes(self):
+		"""SEC-9 (security review, Major 1): stored escaped; the feed, the bell and
+		Notices I sent give the text back as typed for the page to escape; the
+		desk print view and a report cell show it as text."""
+		bad = "<script>alert(1)</script>"
+		name = _send("Hra", message=bad)["name"]
+		self.assertEqual(frappe.db.get_value("Announcement", name, "message"),
+		                 "&lt;script&gt;alert(1)&lt;/script&gt;")
+		row = frappe.get_all("Notification Log", filters={"document_name": name, "for_user": user("Asha")},
+		                     fields=["subject", "link"])[0]
+		self.assertTrue(row.subject.startswith("&lt;script"))
+		self.assertEqual(row.link, "/hrms-employee", "a desk bell click goes to the portal, not the record")
+		with as_user("Asha"):
+			card, bell = notices.notices_feed(), notices.notices_feed(see_all=1)
+		self.assertEqual(card["items"][0]["text"], bad)
+		self.assertEqual(bell["items"][0]["text"], bad)
+		self.assertIsNone(card["items"][0]["link"], "the portal opens the notice itself")
+		with as_user("Hra"):
+			self.assertEqual(ann.my_sent_notices()[0]["message"], bad)
+		printed = frappe.get_print("Announcement", name)
+		self.assertNotIn("<script>alert", printed)
+		self.assertIn("&lt;script", printed)
+		cell = frappe.format_value(frappe.db.get_value("Announcement", name, "message"),
+		                           frappe.get_meta("Announcement").get_field("message"))
+		self.assertNotIn("<script", cell)
+
+	def test_300_typed_characters_are_allowed_even_when_escaping_makes_them_longer(self):
+		ok = _send("Hra", message="<" * 300, later_minutes=30)
+		self.assertEqual(len(frappe.db.get_value("Announcement", ok["name"], "message")), 1200)
+		with self.assertRaises(frappe.ValidationError):
+			_send("Hra", message="<" * 301, later_minutes=30)

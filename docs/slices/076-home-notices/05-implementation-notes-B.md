@@ -9,6 +9,35 @@ tier: 1 (scope, the send job, email). Plan: 04-impact-and-strategy.md, Part B.
 
 # 076 Part B: sending a notice. Implementation notes
 
+## Fix pass after the reviews (06-security-B.md, 06-review-B.md), 28 Oct 2026
+
+Surbhi's decisions: (a) "Send now" waits for at most 25 people; (b) the sender list is built as the prototype draws it. Local only, not pushed. **Not done on purpose:** the "same text within 2 minutes" rule (AC-18, review Blocker 1) is unchanged, waiting for her answer through the coordinator.
+
+| # | Finding | What I did | Proof |
+|---|---|---|---|
+| 1 | SEC-21 (security Blocker): a crashed send would have put the notice text and up to 200 emails in the Error Log | `send_one(name)` is now a thin wrapper whose only local value is the id. On any error it rolls back, logs `"<id>: <ErrorClass>"` and nothing else, and returns. The notice stays as it was, so the scheduler resumes it, and three stalls end in Failed. `create_notice` commits the notice before an in-request send, so a crash cannot lose it | New test `test_a_crashed_send_logs_only_the_id_and_the_error_type`: the error even carries an email in its own text; the Error Log row is exactly `ANN-…: ValueError`. Broken on purpose (wrapper removed): 2 tests failed |
+| 2 | SEC-9 (security Major): the raw message could run as script in a System Manager's desk print or report view | The message is stored HTML-escaped. The "skip Frappe's cleaner" flag is gone and the field is required again. The 300 limit counts what was typed. `my_sent_notices` and the feed unescape for the page, which escapes again. The rows and the email use the stored, escaped text | New test `test_a_script_is_text_everywhere_the_notice_goes`: `<script>` stored as `&lt;script…`, literal in the card, the bell and Notices I sent, not code in `frappe.get_print` or a formatted report cell. Plus `test_300_typed_characters_…`. Broken on purpose (store raw): 4 tests failed |
+| 3 | Q1 retention gate had nothing behind it (review Major 3) | **I chose: the role is the switch, and it ships with nobody holding it.** The patch now only makes the role (no desk access) and gives it to nobody, on every site. Sending stays off at DTC and everywhere until a System Manager ticks the role on someone in Users, which Frappe records in the User's history. No new setting was needed. This replaces Q8 ("HR Managers get it at install") until counsel gives a number. Because the patch saves no User, it can never strip the Employee role from an HR Manager login with no Employee record (review Minor 7) | `test_the_patch_makes_the_role_and_gives_it_to_nobody` (an HR Manager login with no Employee record keeps every role, and is not even saved). Spec AC-1/AC-2 annotated |
+| 4a | Desk bell sent readers to a record they may not open | Each row's `link` is `/hrms-employee`. The portal feed still shows no link for announcements (it opens the notice itself) | Asserted in the script test |
+| 4b | CXO branch list without company | A sender who sees more than one company gets "Noida unit (Alvora Retail)"; one company stays "Noida unit" | `test_a_cxo_sees_each_branch_with_its_company` |
+| (a) | Send now holds the page | `SEND_IN_REQUEST = 25`. 26 or more: "Sending to N people. It will show under Notices I sent when it is done." (decision 1's words) | Spec AC-30 annotated; test pins 25 |
+| (b) | Sender list as drawn | Name, job title (the holder's Active Employee designation) and "Last changed by <name>, <date>", from the newest User history row that mentions Notice Sender. Empty lines are left out. No email, no user id | Python test (keys, title, Administrator as the changer); DOM test (title, the line, a hostile name as text). Spec AC-107 annotated |
+
+**Re-measured (my site test076l, Administrator sending to chosen people):**
+
+| Send | Page waits | Queries in the request | Background |
+|---|---|---|---|
+| Now, 25 people | 341 ms and 555 ms (two runs; the first colder) | 133 to 146 | none |
+| Now, 26 people | 55 ms (two runs) | 9 | about 330 ms, 125 queries, status Sent |
+
+25 people is around the 500 ms budget, not clearly under it. The rate is about 13 ms per person.
+
+**Tests after the fix pass:** `test_announcements_076` 55 OK; `test_notices_076` 9 OK; `test_home_076` 6 + 18 OK; `test_portal_security_010` 45 + 5 OK; `test_grooming_066` 64 + 1 OK. DOM suite 18 files, 0 failed (the Part B file now 75 checks). `check_scope_traps.py`, `check_app_integrity.py`, `check_brand_spelling.py`, `check_design_system.py`, `check_tag_balance.py`, `check_api_paths.py`, `check_undefined_js.js`, `check_portal_handlers.js`: all OK.
+
+**Still open:** AC-18 (above); the residual risks in 01c section 12 are still not accepted by name; DTC's live `mute_emails` value is still not read; the reviewer's P4 (two indirect forms the scope-trap script misses) is not touched. 01c's PRIV-8 still says "names only"; her decision (b) overrides it.
+
+The sections below are the first write-up. Where they differ from this table, this table wins (the 200 limit, the role grant at install, the names-only list, the raw stored message).
+
 ## Bad news first
 
 1. **"Send now" to 200 people takes about 3 seconds before the page answers.** Measured: 980 people took 14.4 s, which is about 15 ms per person (each Notification Log row is a full Frappe insert: the row, the "unseen" flag, the realtime push). The approved plan sends 200 or fewer inside the request. The budget is 500 ms for an API call, and our rule is "work over about 2 seconds goes to the background". Today the page shows the button switched off and waits; nothing breaks. **Decision for Surbhi:** keep 200, or send in the request only up to about 25 people (about 0.4 s) and put everything larger on the background queue with the "Sending to N people" line she already approved. Lowering it is one number (`SEND_IN_REQUEST`).

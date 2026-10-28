@@ -279,10 +279,17 @@ async function openCompose(routes) {
   // ── back, and the holders list (AC-107) ───────────────────────────────
   click(doc.querySelector("[data-nc=back]"));
   yes($("panel-home").classList.contains("active"), "Back to Home");
-  ROUTES.notice_sender_holders = {ok: ["Arjun Mehta", "Kavita Rao"]};
+  ROUTES.notice_sender_holders = {ok: [
+    {name: "Arjun Mehta", title: "Chief Executive", changed_by: "Kavita Rao", changed_on: "2026-10-20"},
+    {name: HOSTILE, title: "", changed_by: "", changed_on: ""}]};
   window.ncHolders(); await settle(30);
   yes($("org-senders-card").style.display !== "none", "HR sees who can send");
-  eq([...$("org-senders-list").children].map(c => c.textContent), ["Arjun Mehta", "Kavita Rao"], "names only");
+  const holders = [...$("org-senders-list").children];
+  eq([holders[0].querySelector(".hm-l1").textContent, holders[0].querySelector(".hm-l2").textContent],
+     ["Arjun Mehta", "Chief Executive"], "each sender's name and job title, as drawn");
+  yes(/Last changed by Kavita Rao, 20 Oct 2026/.test(holders[0].textContent), "who last changed their access, and when");
+  yes(!holders[1].querySelector(".hm-l2") && !/Last changed/.test(holders[1].textContent), "no empty lines when there is nothing to say");
+  yes(!$("org-senders-list").querySelector("img, script") && holders[1].textContent.includes(HOSTILE), "a hostile name is text");
   ROUTES.notice_sender_holders = {refuse: "Only HR can see who may send notices."};
   window.ncHolders(); await settle(30);
   yes($("org-senders-card").style.display === "none", "anyone the server refuses sees no list");

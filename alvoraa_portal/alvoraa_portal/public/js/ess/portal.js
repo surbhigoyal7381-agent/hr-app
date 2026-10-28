@@ -6764,13 +6764,16 @@ function ncCancel(name, btn) {
   });
 }
 
-/* ── Organisation settings: who holds Notice Sender (names only) ─────── */
+/* ── Organisation settings: who holds Notice Sender, as drawn ────────── */
 function ncHolders() {
   var card = hmEl("org-senders-card"), list = hmEl("org-senders-list");
   if (!card || !list) return;
-  gpFetch(NC_API + "notice_sender_holders", {}).then(function (names) {
-    list.innerHTML = (names || []).length ? names.map(function (n) {
-      return '<div class="nc-holder" role="listitem">' + esc(n) + '</div>';
+  gpFetch(NC_API + "notice_sender_holders", {}).then(function (rows) {
+    list.innerHTML = (rows || []).length ? rows.map(function (h) {
+      return '<div class="nc-holder" role="listitem"><span class="hm-rt"><span class="hm-l1">' + esc(h.name) + '</span>'
+        + (h.title ? '<span class="hm-l2">' + esc(h.title) + '</span>' : '')
+        + (h.changed_by ? '<span class="gp-hint" style="display:block">' + esc(drT("Last changed by {0}, {1}", [h.changed_by, fmtDate(h.changed_on)])) + '</span>' : '')
+        + '</span></div>';
     }).join("") : '<div class="gp-hint" role="listitem">' + esc(drT("Nobody has the Notice Sender access yet.")) + '</div>';
     card.style.display = "";
   }, function () { card.style.display = "none"; /* HR User and others: not theirs to see */ });

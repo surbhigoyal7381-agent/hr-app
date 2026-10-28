@@ -324,6 +324,7 @@ Test type key: **B** = `bench run-tests` test; **D** = DOM test (`run_dom_tests.
 ### US-1 Notice Sender role
 - **AC-1 (B)** Given a site with two HR Managers, when the seeding patch runs, then exactly one Role `Notice Sender` exists with `desk_access = 0` and both HR Managers hold it. When it runs again, then no User's roles change.
 - **AC-2 (B)** Given the role was removed from one HR Manager, when the patch runs again, then that user does not get it back.
+- **Changed 28 Oct 2026 (Part B fix pass, Q1 retention gate):** the patch makes the role (desk access 0) and gives it to **nobody**. Sending stays off at every tenant until a System Manager gives the role in Users, after counsel gives a retention number. This replaces Q8 ("HR Managers get it at install") for now. The patch saves no User, so it never removes the Employee role from an HR Manager login with no Employee record. Test: `test_the_patch_makes_the_role_and_gives_it_to_nobody`.
 - **AC-3 (B)** Given a user who holds HR Manager but not System Manager, when they save a User with Notice Sender added, then a `PermissionError` is raised. If this passes, it is a finding, not a test to relax.
 - **AC-4 (B)** Notice Sender is in no Role Profile and no default role list.
 
@@ -357,7 +358,7 @@ Test type key: **B** = `bench run-tests` test; **D** = DOM test (`run_dom_tests.
 - **AC-27 (B)** Given each of: role removed, User disabled, sender's own Employee not Active, sender no longer has any scope, when the job runs, then nothing is sent and status is Not sent with the reason in words. (SEC-5; 2 of the 4 apply to directors too.)
 - **AC-28 (B)** A recipient whose User was deleted is counted as skipped, others receive rows, no Error Log row is written for that.
 - **AC-29 (B)** Given 450 recipients, rows are written in chunks of 200 with a commit after each; if the process stops after chunk 1, 200 rows persist.
-- **AC-30 (B)** "Now" with 200 or fewer recipients finishes in the request: status Sent on return. "Now" with 201 or more returns status Scheduled with `send_at` = now, and a job is enqueued on `long`; the reply says "Sending".
+- **AC-30 (B)** (Changed 28 Oct 2026 by Surbhi: 25, not 200.) "Now" with 25 or fewer recipients finishes in the request: status Sent on return. "Now" with 26 or more returns status Scheduled with `send_at` = now, and a job is enqueued on `long`; the reply says "Sending".
 - **AC-31 (B)** One tick takes at most two due notices and only enqueues; it does not write recipient rows itself.
 
 ### US-5 Stuck, failed, not sent
@@ -465,7 +466,7 @@ Test type key: **B** = `bench run-tests` test; **D** = DOM test (`run_dom_tests.
 - **AC-104 (D)** Switching off shows "Switch off birthdays and anniversaries? Home will stop showing this card for everyone in the organisation (412 people)." with "Keep it on" and "Switch off"; switching on is one tap.
 - **AC-105 (B)** `set_birthday_hide` takes no employee argument and changes only the caller's own record; an HR Manager saving that field on someone else in Desk is refused or ignored.
 - **AC-106 (D)** The tick reads "Show my birthday and work anniversary on Home to colleagues in my branch" with "They see your name, the day and month, and your years of service. Never your age or birth year. You can change this at any time." **(wording differs from the drawing by "on Home"; Q5 working default; needs Surbhi's yes).** When the switch is off the tick is hidden and the page says "There is nothing to set here right now."
-- **AC-107 (B)** `notice_sender_holders` works for HR Manager only; keys are full names only; a plain employee is refused.
+- **AC-107 (B)** (Changed 28 Oct 2026 by Surbhi, to match the prototype.) `notice_sender_holders` works for HR Manager or System Manager only; each row is the full name, the job title, and who last changed that person's Notice Sender access and on which date (from the User's own history). No email, no user id. A plain employee or an HR User is refused.
 
 ### US-20 Remove Activity
 - **AC-108 (B+D)** `grep -rn get_portal_activity` returns nothing outside `docs/`; `homeActivity` and `renderActivityFeed` are gone; Home shows no Activity card; a call to the old method returns "not found".

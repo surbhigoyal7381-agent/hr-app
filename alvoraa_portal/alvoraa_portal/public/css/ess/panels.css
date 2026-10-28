@@ -757,7 +757,7 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .nc-t{font-size:var(--fs-base);color:var(--text);white-space:pre-wrap;word-break:break-word}
 .nc-m{font-size:var(--fs-sm);color:var(--text2);margin-top:4px}
 .nc-cancel{margin-left:-10px}
-.nc-holder{min-height:44px;display:flex;align-items:center;border-top:1px solid var(--border);font-size:var(--fs-base);color:var(--text)}
+.nc-holder{min-height:48px;display:flex;align-items:center;border-top:1px solid var(--border);padding:6px 0;font-size:var(--fs-base);color:var(--text)}
 .nc-opt input:focus-visible,.nc-back:focus-visible,.nc-cancel:focus-visible,.nc-send:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
 
 /* ── Today against your own shift ─────────────────────────────────────────

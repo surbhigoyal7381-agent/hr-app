@@ -26,11 +26,11 @@
  ],
  "fields": [
   {
-   "description": "Plain text, required (the controller checks it: Frappe would call a message made only of tags empty). Escaped wherever it is shown, so it is stored exactly as written.",
+   "description": "Plain text, stored HTML-escaped so that no view can run it as code.",
    "fieldname": "message",
    "fieldtype": "Small Text",
-   "ignore_xss_filter": 1,
-   "label": "Message"
+   "label": "Message",
+   "reqd": 1
   },
   {
    "fieldname": "audience_kind",

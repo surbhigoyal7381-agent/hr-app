@@ -1538,7 +1538,7 @@ async function seats072() {
    chart, tiles, Show list, every seat tray - must carry no plan word, no
    reason word and no end date. Searched in the Positions section only:
    the appraisal pages use "improvement" for their own reasons. */
-const PLAN_WORDS = /replacement|planned|Plan a|Performance|Personal reasons|Other business reason|improvement|on hold|outcome|pos-flag|pos-planned|pos-plan\b/i;
+const PLAN_WORDS = /replacement|planned|Plan a|Performance|Personal reasons|Other business reason|improvement|on hold|outcome|pos-planflag|pos-planned|pos-plan\b/i;
 const P_TODAY = "2026-10-27";
 function plan065(extra) {
   return Object.assign({ name: "RP-1", set_on: "2026-10-01", set_by: "you", confirmed_by: null,
@@ -1720,12 +1720,40 @@ function editor065(opts, hide) {
   ok("065 V5-5: the List view prints only the sentence too", list.startsWith('<div class="pos-printonly">')
      && list.includes("<div data-private>") && r.c.__els["pos-wall-btn"].style.display === "none");
   ok("065 V5-4: the List drops non-matches", list.includes("Kiran Gupta") && !list.includes("Ritika HR"));
+  // The column that makes the filtered list worth looking at (Surbhi, 28 Oct).
+  ok("065 L-1: the list carries a Replacement plan column", list.includes(">Replacement plan</th>"));
+  // .pos-flag was already the print-suppression marker on "50%", "covering",
+  // "leaving" and "key seat". Slice 065 must never colour it.
+  ok("065 L-3: the plan flag does not reuse the page's existing marker class",
+     !/<svg[^>]*class="[^"]*pos-flag/.test(list + r.page));
+  ok("065 L-1: and it says who, why and when it ends",
+     /Kiran Gupta · Personal reasons · ends /.test(list), list.slice(0, 400));
+  ok("065 L-1: the column is private, so print and Hide take it away",
+     /<th class="private">Replacement plan<\/th>/.test(list));
   r.c.__els["pos-f-view"].value = "tree";
   // Hiding the marks takes the plan option away with them.
   r.c.__els["pos-f-open"].value = "plan";
   r.c.posHidePlans(true);
   ok("065: Hide replacement plans clears a chosen plan option", r.c.__els["pos-f-open"].value === ""
-     && !/pos-flag|pos-planned/.test(r.c.__els["pos-body"].innerHTML));
+     && !/pos-planflag|pos-planned/.test(r.c.__els["pos-body"].innerHTML));
+}
+{
+  // L-2: the same table for someone who may not read plans - one column fewer
+  // and not a word about plans anywhere in it.
+  const mk = (plans) => {
+    const r = ctx065({ plans });
+    r.c.__els["pos-f-view"].value = "list";
+    r.c.posPaint();
+    return r.c.__els["pos-body"].innerHTML;
+  };
+  const reader = mk(READER), stranger = mk(null);
+  ok("065 L-2: a non-reader's list has no plan column", !stranger.includes("Replacement plan"));
+  ok("065 L-2: and says nothing about plans at all",
+     !PLAN_WORDS.test(stranger), (stranger.match(PLAN_WORDS) || [])[0]);
+  ok("065 L-2: both lists still name everyone",
+     reader.includes("Kiran Gupta") && stranger.includes("Kiran Gupta"));
+  ok("065 L-2: the reader's list has exactly one more column",
+     (reader.match(/<th/g) || []).length === (stranger.match(/<th/g) || []).length + 1);
 }
 
 

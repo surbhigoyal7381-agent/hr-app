@@ -775,6 +775,12 @@ function posPaintList() {
 
   var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
     + '<th>Department</th><th>Who is in it</th><th class="pos-leave-col">Notice period</th>'
+    // Surbhi, 28 Oct 2026: the Show option already narrowed the list to planned
+    // seats, but the list then said nothing about the plans. This column is the
+    // answer to "what and when", and it exists only for someone who may read
+    // plans and has not hidden the marks - so a non-reader's table is the same
+    // table, one column narrower, exactly as if no plan existed.
+    + (posPlanShown() ? '<th class="private">' + drT("Replacement plan") + "</th>" : "")
     + '<th style="text-align:right">Seats</th>'
     + '<th style="text-align:right">Open</th>'
     + (POS.may_edit ? "<th></th>" : "") + "</tr>";
@@ -857,6 +863,7 @@ function posCells(r, lead, tail) {
     + '<td class="pos-leave-col">' + (r.leaving_on
         ? "<strong>" + posEsc(posDay(r.leaving_on)) + "</strong>"
         : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
+    + (posPlanShown() ? '<td class="private">' + posPlanCell(r) + "</td>" : "")
     + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
     + '<td style="text-align:right">' + open + "</td>"
     + (POS.may_edit
@@ -2835,7 +2842,7 @@ function posWire() {
    removes and records an outcome; owners and the System Manager only read.
    No number anywhere counts plans, and a group box is never red. */
 
-var POS_FLAG = '<svg class="pos-flag private" viewBox="0 0 12 14" width="12" height="14" role="img" aria-label="'
+var POS_FLAG = '<svg class="pos-planflag private" viewBox="0 0 12 14" width="12" height="14" role="img" aria-label="'
   + drT("Replacement planned") + '"><path d="M2 1v12" stroke="currentColor" stroke-width="1.6"/>'
   + '<path d="M2.6 1.6h7.6l-1.8 2.7 1.8 2.7H2.6z" fill="currentColor"/></svg>';
 
@@ -2941,6 +2948,29 @@ function posPlanRow(r, p) {
   }
   return "";
 }
+/* One seat's plans, for the list's own column. The same facts the card leads
+   with - what happens next, why, and when it lapses - said in one line each,
+   because a table row has no room for a card and no need of one. */
+function posPlanCell(r) {
+  var lines = r.people.map(function (p) {
+    var pl = posPlanOf(p);
+    if (!pl) return "";
+    var chip = "";
+    if (pl.not_improved_on) chip = '<span class="pos-chip green">' + drT("Hiring may start") + "</span> ";
+    else if (posOutcomeDue(pl)) chip = '<span class="pos-chip amber">' + drT("Outcome due") + "</span> ";
+    else if (posOnHold(pl)) chip = '<span class="pos-chip amber">' + drT("Hiring on hold") + "</span> ";
+    var d = posDaysTo(pl.lapses_on);
+    if (d <= 14) {
+      chip += '<span class="pos-chip amber">'
+        + drT("Ends in {0} {1}", [d, d === 1 ? drT("day") : drT("days")]) + "</span> ";
+    }
+    return '<div class="pos-plan-line">' + chip + "<span>"
+      + posEsc(drT("{0} · {1} · ends {2}", [p.name, drT(pl.reason), posLong(pl.lapses_on)]))
+      + "</span></div>";
+  }).filter(Boolean).join("");
+  return lines || '<span class="pf-card-meta">&mdash;</span>';
+}
+
 function posPlanBlock(r, p) {
   /* Four tiers, prototype v6 (Surbhi, 28 Oct 2026). The block had grown to six
      sentences at one weight, so "who typed it" arrived before "hiring is on

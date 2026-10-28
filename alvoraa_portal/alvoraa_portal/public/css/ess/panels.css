@@ -2604,11 +2604,17 @@ a.gm-bell-item{display:block;text-decoration:none;color:inherit}
    Only a plan reader is ever sent a plan, so nothing here draws for anyone
    else. Every mark is .private: it never prints, and "Hide replacement plans"
    removes it. The red edge is screen only. Nothing here counts plans. */
-.pos-flag{display:inline-block;vertical-align:-2px;color:var(--red);margin-right:6px;flex:none}
+/* NOT .pos-flag: that name was already taken on the Positions page as a
+   print-suppression marker on "50%", "covering", "leaving" and "key seat".
+   Giving it a colour turned every one of those chips red. */
+.pos-planflag{display:inline-block;vertical-align:-2px;color:var(--red);margin-right:6px;flex:none}
 .pos-flagword{display:none;color:var(--red);font-weight:600}
 /* The same words inside "Change this seat", where pf-card-meta is grey. */
 .pos-planmeta{color:var(--red);font-weight:600}
 @media screen{.oc-box.pos-planned{border-left-color:var(--red)}}
+/* One plan per line inside the list's own column. */
+.pos-plan-line{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin:2px 0;
+  font-size:var(--fs-sm);color:var(--text2)}
 .pos-planline{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center;margin:-6px 0 16px;font-size:var(--fs-sm);color:var(--text2)}
 .pos-plan{margin:6px 0 2px;border-left:3px solid var(--red);background:var(--red-lt);border-radius:var(--r-sm);padding:8px 10px;color:var(--text)}
 .pos-plan .pt{font-weight:700;color:var(--red);display:flex;gap:8px;align-items:center;flex-wrap:wrap}

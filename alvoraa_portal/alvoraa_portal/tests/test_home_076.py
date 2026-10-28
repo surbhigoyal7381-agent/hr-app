@@ -360,3 +360,51 @@ class TestGoalUpdateRowsCarryTheGoalOnlyInScope(FrappeTestCase):
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.get_doc("Individual Goal", self.goals["a"]).progress_updates[0]
 		                 .approval_status, "Approved")
+
+	# ── KPI updates opened from Pending (the log says who may approve) ────────
+
+	def _kpi(self):
+		k = frappe.get_doc({"doctype": "KPI", "kpi_name": "G076 KPI", "employee": self.a_emp,
+							"target_value": 10})
+		k.append("progress_log", {"log_date": nowdate(), "value": 1, "approval_status": "Pending"})
+		k.insert(ignore_permissions=True)
+		frappe.db.commit()
+		self.addCleanup(lambda: (frappe.set_user("Administrator"),
+								 frappe.delete_doc("KPI", k.name, force=True, ignore_permissions=True),
+								 frappe.db.commit()))
+		return k.name, k.progress_log[0].name
+
+	def test_kpi_log_tells_the_in_scope_manager_and_hr_they_may_approve(self):
+		from alvoraa_portal import performance_api
+		kpi, _row = self._kpi()
+		for user in (self.mgr_user, self.hr_user):
+			frappe.set_user(user)
+			self.assertTrue(performance_api.get_kpi_update_log(kpi)[0]["can_action"], user)
+
+	def test_kpi_log_says_no_to_the_employee_themselves(self):
+		from alvoraa_portal import performance_api
+		kpi, row = self._kpi()
+		frappe.set_user(self.a_user)
+		self.assertFalse(performance_api.get_kpi_update_log(kpi)[0]["can_action"])
+		with self.assertRaises(frappe.PermissionError):
+			performance_api.approve_kpi_update(kpi, row, "Approved")
+
+	def test_an_outside_manager_can_neither_read_nor_approve_the_kpi(self):
+		from alvoraa_portal import performance_api
+		kpi, row = self._kpi()
+		frappe.set_user(self.other_user)
+		with self.assertRaises(frappe.PermissionError):
+			performance_api.get_kpi_update_log(kpi)
+		with self.assertRaises(frappe.PermissionError):
+			performance_api.approve_kpi_update(kpi, row, "Approved")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.get_doc("KPI", kpi).progress_log[0].approval_status, "Pending")
+
+	def test_the_manager_can_approve_what_the_log_offered(self):
+		from alvoraa_portal import performance_api
+		kpi, row = self._kpi()
+		frappe.set_user(self.mgr_user)
+		self.assertTrue(performance_api.get_kpi_update_log(kpi)[0]["can_action"])
+		performance_api.approve_kpi_update(kpi, row, "Approved")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.get_doc("KPI", kpi).progress_log[0].approval_status, "Approved")

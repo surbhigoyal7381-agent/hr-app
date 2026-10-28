@@ -41,6 +41,14 @@ Home's total queries, after the fix (before the fix in brackets), at 980 people:
 - **SEC-19 note for the review:** `document` is a second key added to `ROW_KEYS` for `goal_updates`; `test_every_part_row_is_the_old_keys_plus_waiting_since` now names it.
 - Balance check after this change: **45 of 45 pass, 0 noted.** DOM suite 17 of 17.
 
+### Fourth fix pass: the second review's recommendations (Surbhi said yes, 28 Oct 2026)
+
+1. **KPI dead end fixed.** `performance_api.get_kpi_update_log` now returns `can_action` on each row, by the rule `approve_kpi_update` already enforces: never your own KPI; the reporting manager; HR for companies they look after. 11 lines, in a file outside the slice, approved. **What HR may read is unchanged**: the read check was not touched, so the older gap (any HR-role user can read any KPI's log by id, across companies) is still there and is a separate item for the security engineer. The drawer then draws Approve and Reject, as it does for goals. New tests (4): the in-scope manager and HR get `can_action` true; the employee themselves get false and `approve_kpi_update` is refused; an outside manager can neither read nor approve and the update stays Pending; the manager can approve what the log offered. **I checked KPI end to end in the tests, not in the browser** (the browser end-to-end earlier used a goal).
+2. **AC-72, accepted in writing by Surbhi on 28 Oct 2026:** HR's Home cost grows with the number of *different managers* in the attendance-fix queue (28 to 36 queries for an HR caller between 20 and 980 people), no longer with the length of the queue. No code change.
+3. **Team goals button.** It opened the Team page on its attendance tab, which has no goals list, so "View all N" was untrue. It now says "See your team of N" and opens the Team page; goals are reached by tapping a person there. No new screen.
+
+Not changed and still open (from the review): CXO "Goal and KPI updates" opens the Team page, which lists none of them; goal and KPI rows have no "waiting N days"; shift changes appear nowhere for a manager; KPI log read scope (above).
+
 The sections below are the first write-up. Where they differ from this table, this table wins (bad news 1, the `get_nav_counts` sentence, and the CXO wording in difference 2).
 
 ## Bad news first

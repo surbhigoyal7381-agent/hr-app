@@ -643,6 +643,16 @@ def get_kpi_update_log(kpi):
         key=lambda r: (str(r.log_date or ""), str(r.creation or "")),
         reverse=True,
     )
+    # Whether THIS user may approve these updates: the rule approve_kpi_update
+    # enforces (never your own; the reporting manager; HR for companies they look
+    # after). Without it the screen never drew Approve (slice 076). Reading is
+    # unchanged: this widens nothing, it only says what the server will honour.
+    can_action = bool(
+        doc.employee != my_emp
+        and (my_emp == kpi_mgr
+             or (_is_hr() and frappe.db.get_value("Employee", doc.employee, "company")
+                 in permitted_companies()))
+    )
     result = []
     for r in rows:
         by_name  = frappe.db.get_value("User", r.logged_by,  "full_name") or r.logged_by or ""
@@ -663,6 +673,7 @@ def get_kpi_update_log(kpi):
             "approved_by":      r.approved_by      or "",
             "approved_by_name": apr_name,
             "approved_on":      str(r.approved_on) if r.approved_on else "",
+            "can_action":       can_action,
         })
     return result
 

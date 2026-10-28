@@ -9945,7 +9945,7 @@ function renderTeamGoals(data) {
     return;
   }
   let html = "";
-  /* Three people, one goal each, on Home; the rest are on the Team page (slice 076, so the grid stays balanced). */
+  /* Three people, one goal each, on Home; the button says where it goes (the Team page, which has no goals list: tap a person there); the rest are on the Team page (slice 076, so the grid stays balanced). */
   const empIds = Object.keys(byEmp), HOME_TEAM_MAX = 3;
   empIds.slice(0, HOME_TEAM_MAX).forEach(function(empId) {
     const ed   = byEmp[empId];
@@ -9963,7 +9963,7 @@ function renderTeamGoals(data) {
     });
   });
   if (empIds.length > HOME_TEAM_MAX) {
-    html += '<button type="button" class="hm-tbtn" data-hm="team-all">' + esc(drT("View all {0}", [empIds.length])) + '</button>';
+    html += '<button type="button" class="hm-tbtn" data-hm="team-all">' + esc(drT("See your team of {0}", [empIds.length])) + '</button>';
   }
   document.getElementById("home-team-goals-list").innerHTML = html;
 }

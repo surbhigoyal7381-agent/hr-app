@@ -204,9 +204,9 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   for (let i = 0; i < 8; i++) by["E" + i] = {employee: {employee_name: "Person " + i}, goals: [{name: "g" + i, goal_name: "Goal", progress_pct: 10, trajectory: "On Track"}]};
   window.renderTeamGoals({available: true, by_employee: by});
   eq($("home-team-goals-list").querySelectorAll(".hg-member").length, 3, "Team goals shows three people");
-  yes(/View all 8/.test($("home-team-goals-list").textContent), "with a View all 8 link");
+  yes(/See your team of 8/.test($("home-team-goals-list").textContent) && !/View all/.test($("home-team-goals-list").textContent), "with a button that says it opens the team, not a goals list");
   window.renderTeamGoals({available: true, by_employee: {E0: by.E0}});
-  yes(!/View all/.test($("home-team-goals-list").textContent), "no link when everyone fits");
+  yes(!/See your team/.test($("home-team-goals-list").textContent), "no button when everyone fits");
 
   // ── a CXO: counts by kind, no people ─────────────────────────────────
   window._roles.is_system_manager = true;

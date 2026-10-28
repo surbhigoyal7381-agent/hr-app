@@ -288,13 +288,13 @@ It needs a `--self-test` like the other scripts in `ci.yml`, so it can be shown 
 
 | Risk | Label | Owner | Accepted by, date |
 |---|---|---|---|
-| A sender puts personal data in a notice; only a warning stops it | intentional trade-off | Surbhi | **not yet accepted** |
-| No retention number for notices (Q1) | temporary debt; a counsel number removes it | Surbhi with counsel | **not yet accepted** |
-| Birthdays rest on oral counsel advice (Q2) | temporary debt; the written note removes it | Surbhi | **not yet accepted**; switch stays off until then |
-| Permission tests do not run in CI | temporary debt; a CI bench job removes it (separate decision) | Surbhi | **not yet accepted** |
-| Anniversary emails ignore the opt-out (Q5) | acceptable simplification if the wording says "Home only" | Surbhi | **not yet accepted** |
+| A sender puts personal data in a notice; only a warning stops it | intentional trade-off | Surbhi | **accepted by Surbhi, 28 Oct 2026** |
+| No retention number for notices (Q1) | temporary debt; a counsel number removes it | Surbhi with counsel | **accepted by Surbhi, 28 Oct 2026** |
+| Birthdays rest on oral counsel advice (Q2) | temporary debt; the written note removes it | Surbhi | **accepted by Surbhi, 28 Oct 2026**; switch stays off until then |
+| Permission tests do not run in CI | temporary debt; a CI bench job removes it (separate decision) | Surbhi | **accepted by Surbhi, 28 Oct 2026** |
+| Anniversary emails ignore the opt-out (Q5) | acceptable simplification if the wording says "Home only" | Surbhi | **accepted by Surbhi, 28 Oct 2026** |
 
-None of these is accepted yet. An unaccepted risk with no name and date is an accident waiting for an owner, so each needs Surbhi's yes before the slice goes to `dev`.
+All five were accepted by Surbhi on 28 Oct 2026 (her words: "Accept all 5"). Still to do for her, later: ask counsel for a retention number (risk 2) and a written birthday note (risk 3). Sending stays off at every tenant until a System Manager gives someone the Notice Sender role.
 
 ---
 

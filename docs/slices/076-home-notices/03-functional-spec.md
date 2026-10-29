@@ -180,7 +180,7 @@ All refuse Guest (`_refuse_guest` pattern) and run no `ignore_permissions` excep
 | `decide_expense(name, action, reason)` | approver | Section 4C |
 | `birthdays_this_month()` | any user | Section 4D. One counted `ignore_permissions` read (field rights level 2) |
 | `set_birthday_hide(value)` | any user | Own Employee only; no employee argument |
-| `set_birthdays_switch(value)` | HR Manager / System Manager | Writes HR Settings via the doc API |
+| `set_birthdays_switch(value)` | System Manager (changed 29 Oct 2026) | Writes HR Settings via the doc API |
 | `notice_sender_holders()` | HR Manager | Names only |
 
 Unavoidable `ignore_permissions` (counted against the CI number): writing another person's Notification Log row (one function), the birthdays read (one query). Removing Activity takes away three.
@@ -426,7 +426,7 @@ Test type key: **B** = `bench run-tests` test; **D** = DOM test (`run_dom_tests.
 
 ### US-13 Approver at filing
 - **AC-77 (B)** A claim filed through `apply_expense_claim` has `expense_approver` = the Employee's, else the Department's first expense approver, and is shared with that approver.
-- **AC-78 (B)** With neither, the claim is filed with an empty approver; no error; the count of such claims is reported.
+- **AC-78 (B)** (Replaced by Surbhi's decision 4, 27 Oct 2026, and widened 29 Oct 2026.) With no approver, or when the approver found is the claimant's own login, the claim is refused with "Ask HR to set your approver." A claimant cannot change the approver on their own claim (HR Manager and System Manager can).
 - **AC-79 (B)** The backfill patch sets the approver on open Draft claims with an empty approver using `doc.save` (so the share is made), reports "set N, unresolvable M", and a second run changes nothing.
 
 ### US-14 Expense in inbox
@@ -463,7 +463,7 @@ Test type key: **B** = `bench run-tests` test; **D** = DOM test (`run_dom_tests.
 - **AC-102 (B+M)** One query, with branch, status, opt-out and month filters in SQL; 5,000 employees in one branch is timed and its payload size recorded.
 
 ### US-19 Switch, opt-out, holders
-- **AC-103 (B)** After the patch, `alvoraa_birthdays_on_home = 0` on every tenant. Only HR Manager or System Manager can change it (others `PermissionError`); the change appears in Version history; the page shows "Last changed by <name>, <date>".
+- **AC-103 (B)** (Changed 29 Oct 2026 by Surbhi: System Manager only, because the switch changes Home for every company on the site.) After the patch, `alvoraa_birthdays_on_home = 0` on every tenant. Only a System Manager can change it (others `PermissionError`); the change appears in Version history; the page shows "Last changed by <name>, <date>".
 - **AC-104 (D)** Switching off shows "Switch off birthdays and anniversaries? Home will stop showing this card for everyone in the organisation (412 people)." with "Keep it on" and "Switch off"; switching on is one tap.
 - **AC-105 (B)** `set_birthday_hide` takes no employee argument and changes only the caller's own record; an HR Manager saving that field on someone else in Desk is refused or ignored.
 - **AC-106 (D)** The tick reads "Show my birthday and work anniversary on Home to colleagues in my branch" with "They see your name, the day and month, and your years of service. Never your age or birth year. You can change this at any time." **(wording differs from the drawing by "on Home"; Q5 working default; needs Surbhi's yes).** When the switch is off the tick is hidden and the page says "There is nothing to set here right now."

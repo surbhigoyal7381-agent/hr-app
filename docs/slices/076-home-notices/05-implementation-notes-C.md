@@ -9,6 +9,26 @@ tier: 1 (money and personal data). Plan: 04-impact-and-strategy.md, Part C, and 
 
 # 076 Part C: expenses from Pending, and birthdays. Implementation notes
 
+## Fixes after the reviews (06-review-C.md, 06-security-C.md), 29 Oct 2026
+
+Surbhi approved every recommendation. Local only, not pushed. Where the sections further down differ from this table, this table wins.
+
+| # | Finding | What I did | Proof |
+|---|---|---|---|
+| 1 | Review Major 1: a claimant whose approver is their own login filed a claim nobody could ever decide | Filing treats that as "no approver" and refuses with the same words, "Ask HR to set your approver." The backfill counts such claims as unresolvable and leaves them alone | `test_a_claimant_who_is_their_own_approver_is_refused_at_filing`, `test_backfill_never_makes_the_claimant_their_own_approver` |
+| 1 | Security Major 1: a claimant could change the approver on their own claim (through the API) to a friend | New Expense Claim `validate` hook `hr_api.keep_claim_approver`: when the person saving is the claim's own employee, the approver must be the one HR set ("You cannot choose your own approver. Ask HR to change your approver."). HR Manager and System Manager may still change it in Desk. The portal's own filing passes it | `test_the_claimant_cannot_choose_their_approver_but_hr_can` (REST `set_value` and a new claim naming a friend are refused; HR's change goes through) |
+| 2 | Security Major 2: people with no login appeared on the card and could not hide | The birthdays query now shows only people with a login (`user_id` set), inside the SQL | `test_own_branch_active_and_not_hidden_only` now includes a person with no login |
+| 3 | Security Minor 1: the switch changes Home for every company, yet any HR Manager could flip it | **System Manager only.** HR Manager and HR User are refused, and the Organisation settings card is hidden from them. Spec AC-103 annotated. The opt-out change now leaves history: one Comment on the person's own Employee record ("Hid their birthday on Home"), two lines | `test_only_a_system_manager_changes_the_switch_and_history_says_who`; the tick test checks the Comment and who wrote it |
+| 4 | Review Minor 2, security Minor 3: new files not in the `ignore_permissions` ceilings | `home_people.py` and the backfill patch added at 0, with a comment naming the birthdays query as the one deliberate bypass | `test_portal_security_010` |
+| 5 | Prototype differences | Recorded as **accepted by Surbhi, 29 Oct 2026** (parity section) | |
+| 6 | Release blockers | Unchanged: the switch ships off; the DTC approver count and counsel's written note still block release | |
+
+**Each new guard was broken on purpose and its test failed** (6 failures: own-approver filing, the approver hook, the backfill rule, the login filter, HR Manager on the switch), then the files were put back and the module passed: `test_expense_birthdays_076` **33 ran, OK**.
+
+**Re-run after the fixes, one module at a time, all OK:** `test_expense_and_scoping` 8; `test_erpnext_integration_178` 15; `test_portal_security_010` 45 + 5; `test_access_control` 34; `test_home_076` 6 + 18. DOM suite 19 run, 0 failed. `check_scope_traps.py` and its `--self-test`, `check_app_integrity.py`, tag balance, design system, brand spelling, handlers and undefined-JS checks: OK. Real-browser balance check: 90 of 90 cells passed.
+
+**Not done, by her choice of scope:** refusing new claims to an approver who has left (review open question 3); the possible DTC exposure of dates of birth through narrow User Permissions (security Escalation 1) - that needs a read-only query at DTC and its own ticket, not a Part C change.
+
 ## Bad news first
 
 1. **Two release blockers, both outside the code.**
@@ -28,7 +48,7 @@ tier: 1 (money and personal data). Plan: 04-impact-and-strategy.md, Part C, and 
 | `alvoraa_portal/hooks.py` | Four lines, each added at the end of its list: Expense Claim `before_submit: refuse_own_submit` (SEC-13); Employee `validate` gains `keep_hide_birthday` (the existing entry is kept); `home_people.after_migrate` in `after_migrate` and `after_install`. | 3. Same hook Leave Application, Attendance Request and Grooming Mark already carry. |
 | `patches.txt` + `patches/v1_0/expense_claim_approver_backfill.py` | Open Draft claims with no approver get one, through `doc.save` so Frappe HR makes its share. Prints "set N, unresolvable M"; names nobody; a claim that will not save is counted and left alone; a second run does nothing. On test076c: "set 0, unresolvable 0" (no claims there). | 4 (AC-79). |
 | `templates/includes/ess/parts/home.html` | The Birthdays card (after Leave balance, as drawn), hidden until the server says the switch is on. The My profile panel. | markup |
-| `templates/includes/ess/parts/org-settings.html` | The "Birthdays and anniversaries on Home" switch card, shown only when the server answers (HR Manager, System Manager). | markup |
+| `templates/includes/ess/parts/org-settings.html` | The "Birthdays and anniversaries on Home" switch card, shown only when the server answers (System Manager only, since 29 Oct). | markup |
 | `templates/includes/ess/frame.html` | "My profile" in the phone account menu; on a laptop, the name at the bottom of the sidebar opens My profile (it is a keyboard-reachable button). | markup |
 | `public/js/ess/portal.js` | Pending: expense rows ("Expense claim · ₹2,300 · Travel · waiting 8 days", Review), the CXO row "Expense claims", `hmExpenseSheet`, and `hmDecide` now also sends expense decisions (through `gpFetch`, so a refusal comes back in the server's own words). New `bd`/`mp`/`bs` block: Birthdays card and See all, My profile tick, the switch with the confirm before switching off. Claims screen: "Declined: <reason>". One line each in `loadHome`, `switchPanel` and the Home click handler. Nothing moved or re-indented. | 4 |
 | `public/css/ess/panels.css` | 15 lines at the end of the 076 block: static rows, the amount, the switch, the reason line. Tokens only. | CSS |
@@ -46,7 +66,7 @@ Not touched, and why: `subscription.py` and `translations/en.csv` (no new DocTyp
 | The decline reason is safe and private (SEC-15) | 1 to 140 characters after trimming; stored HTML-escaped in `alvoraa_decline_reason` (so Desk shows it as text, the lesson from Part B's review); unescaped only in the claimant's own `get_expense_claims`; the page escapes it again. `remark` (the claim's title) is never written. |
 | Amounts reach only the approver (SEC-16, SEC-19) | The part filters on `expense_approver = caller`; `get_list`; fixed key list; `no_rows()` for a caller with no Active Employee. |
 | No year or age leaves the server (PRIV-5) | `_month_rows` reads the two dates on the server, in one query-builder query, and each row is built from a fixed key list: name, kind, day, month (+ years). |
-| Switch and opt-out on the server (PRIV-6) | Switch off: `{"on": 0}` before any Employee query (a test counts the statements). Opt-out excluded inside the SQL. `set_birthday_hide` takes no employee argument. Any other save of the field is put back by `keep_hide_birthday`. Only HR Manager or System Manager reads or changes the switch; the change is saved through the HR Settings document, so its Version row is "Last changed by". |
+| Switch and opt-out on the server (PRIV-6) | Switch off: `{"on": 0}` before any Employee query (a test counts the statements). Opt-out excluded inside the SQL. `set_birthday_hide` takes no employee argument. Any other save of the field is put back by `keep_hide_birthday`. Only a System Manager reads or changes the switch (29 Oct); the change is saved through the HR Settings document, so its Version row is "Last changed by". |
 | Same company and branch, Active only (PRIV-7) | The viewer's own Active Employee gives company and branch; no branch or no Active Employee gives an empty list without a query on colleagues. |
 
 ## Surbhi's decisions applied
@@ -69,11 +89,12 @@ Not touched, and why: `subscription.py` and `translations/en.csv` (no new DocTyp
 | 20 | My profile tick, hidden when the switch is off ("There is nothing to set here right now."), the two toasts, the "Organisation settings" button for HR | yes, with "on Home" (her decision 5) |
 | 32 | Organisation settings switch: "On"/"Off" in words, the two hint sentences, the confirm "Switch off birthdays and anniversaries?" with "(412 people)", "Keep it on" / "Switch off", one tap to switch on, "Switched off for everyone.", "Last changed by …" | yes |
 
-**Differences that need her yes:**
+**Differences from the drawing - all accepted by Surbhi, 29 Oct 2026:**
 
 1. **Where My profile is opened.** The drawing shows "My profile" as an item in the left menu (and "Me" on the phone's bottom bar). Her decision 2 said "from the account menu". The live portal has an account menu only on the phone, so: on the phone it is in the account menu; on a laptop, the person's name at the bottom of the left menu opens it. No item was added to the left menu or the bottom bar. If she wants the drawn menu item, it is one line.
 2. **The prototype's review bar could show "Work anniversaries" only** (birthdays off, anniversaries on). The approved spec (Q2) has one switch for both, so that state does not exist in the product. Nothing built for it.
-3. **The prototype's "My profile" has no "Back to Home" link**, and neither does the build (the menu and the bottom bar take you back). Noted only because the Compose screen has one.
+3. **The CXO "Expense claims" row** opens the oldest claim's sheet ("opens the oldest"), not an Expense claims screen (the portal has none for approvers). Same as Part A's goal-update row.
+4. **The prototype's "My profile" has no "Back to Home" link**, and neither does the build (the menu and the bottom bar take you back). Noted only because the Compose screen has one.
 
 ## Acceptance criteria for C
 
@@ -84,7 +105,7 @@ Not touched, and why: `subscription.py` and `translations/en.csv` (no new DocTyp
 | 79 backfill | met | `test_backfill_sets_open_claims_and_a_second_run_changes_nothing` |
 | 80, 81 part filters and keys | met | `test_the_approver_sees_the_claim_with_exactly_the_agreed_keys` |
 | 82 nobody else; Guest; no Active Employee | met | `test_nobody_else_sees_it` (another approver, an HR Manager, the claimant, a colleague: count 0), `test_a_caller_with_no_active_employee_gets_no_rows` |
-| 83 existing inbox tests over the new part, with real portal claims | met | inbox modules below; the Part C tests file real claims with approvers |
+| 83 existing inbox tests over the new part, with real portal claims | **partial** (review Minor 4): the existing inbox tests run over zero claims for this part; Part C's own tests cover count equals rows and the total with real claims | inbox modules below; the Part C tests file real claims with approvers |
 | 84 not the approver, HR included | met | `test_only_the_named_approver_decides` (pin) |
 | 85 approver who has left | met | `test_an_approver_who_has_left_is_refused` |
 | 86 approve submits, GL entry, no shortcuts | met | `test_approve_posts_once…` (2 or more GL rows), `test_decide_expense_has_no_permission_shortcuts` |
@@ -102,7 +123,7 @@ Not touched, and why: `subscription.py` and `translations/en.csv` (no new DocTyp
 | 100 completed years, not this year's joiners, 29 Feb | met | `test_years…`, `test_29_february_shows_on_the_28th_in_a_short_year` |
 | 101 switch off: nothing, zero Employee queries, card absent | met | `test_switch_off_returns_nothing_and_reads_nobody` (pin), DOM, browser check |
 | 102 one query; 5,000 in one branch timed | **partly**: one query with every filter in SQL; timed at 245 in one branch, not 5,000 | Measurements |
-| 103 ships off; only HR Manager / System Manager; Version history; "Last changed by" | met | `test_the_switch_ships_off`, `test_only_hr_manager_changes_the_switch_and_history_says_who` (a plain employee and an HR User are refused) |
+| 103 ships off; only System Manager (changed 29 Oct); Version history; "Last changed by" | met | `test_the_switch_ships_off`, `test_only_a_system_manager_changes_the_switch_and_history_says_who` (a plain employee, an HR User and an HR Manager are refused) |
 | 104 the confirm when switching off | met | DOM |
 | 105 own record only; HR's Desk save ignored | met | `test_the_tick_changes_only_my_own_record`, `test_hr_cannot_change_someone_elses_tick` (doc save and `frappe.client.set_value`) |
 | 106 tick words; hidden when off | met | DOM |
@@ -116,7 +137,7 @@ All Python in my own container `hrlocal-076c`, site `test076c`, one module at a 
 
 | Module | Result |
 |---|---|
-| `test_expense_birthdays_076` (new) | 30 ran, OK (also re-run after the break checks: OK) |
+| `test_expense_birthdays_076` (new) | 30 ran, OK at first; **33 ran, OK** after the review fixes (also re-run after the break checks: OK) |
 | `test_home_076` | 6 OK, then 18 OK (one test changed on purpose: the part list) |
 | `test_expense_and_scoping` | 8 OK (fixtures changed on purpose: claimants get an approver). **Before that change, 4 failed with "Ask HR to set your approver."** - which is decision 4 working |
 | `test_inbox_parts_042` | 25 OK |

@@ -72,7 +72,10 @@ class TestPartKeys(unittest.TestCase):
 				self.assertEqual(set(inbox_api.row_keys(key)), old | extra)
 
 	def test_the_part_list_did_not_change(self):
-		self.assertEqual([k for k, _r in inbox_api.PARTS], list(OLD_KEYS))
+		# Part C adds exactly one part, expense_approvals, after leave (on purpose).
+		want = list(OLD_KEYS)
+		want.insert(1, "expense_approvals")
+		self.assertEqual([k for k, _r in inbox_api.PARTS], want)
 
 
 class TestActivityIsGone(unittest.TestCase):

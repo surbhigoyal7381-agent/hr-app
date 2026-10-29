@@ -48,6 +48,11 @@ HOME = {
 		("notices_feed (card and bell)", "alvoraa_portal.notices", "notices_feed"),
 	),
 }
+# Part C: the same Home plus the Birthdays card (the switch must be on to cost
+# anything; switched off it answers before any Employee query).
+HOME["after_c"] = HOME["after"] + (
+	("birthdays_this_month", "alvoraa_portal.home_people", "birthdays_this_month"),
+)
 
 
 def _thunk(module, name):

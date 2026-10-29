@@ -4454,6 +4454,7 @@ function switchPanel(name, triggerEl) {
   if (name === "org-chart") { ocLoad(); }
   if (name === "positions")          { posLoad(); }
   if (name === "data-review")        { drLoad(); }
+  if (name === "my-profile")         { mpLoad(); }
 
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   if (triggerEl) triggerEl.classList.add("active");
@@ -4488,7 +4489,7 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); }
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); bsLoad(); }
     if (name === "policies")    polLoad();
   }
 
@@ -6026,6 +6027,7 @@ var HM_SCREEN = {
 /* A CXO's row is one kind with a count. Name, then the row action it opens. */
 var HM_KIND = {
   leave_approvals: ["Leave approvals", "leave"],
+  expense_approvals: ["Expense claims", "expense"],
   goal_updates: ["Goal and KPI updates", "goal_update"],
   attendance_fixes: ["Attendance fixes", "attendance_fix"],
   policies: ["Policies to read", "policy"]
@@ -6176,7 +6178,7 @@ function hmPendingRows(d) {
       if (!k || !p.count) return;
       /* Goal and KPI updates have no Team-page list, so that row opens the
          oldest one in the caller's scope, and says so. */
-      var oldest = k[1] === "goal_update" && p.rows && p.rows[0] ? p.rows[0] : null;
+      var oldest = (k[1] === "goal_update" || k[1] === "expense") && p.rows && p.rows[0] ? p.rows[0] : null;
       out.push({count: p.count, action: k[1], av: String(p.count), title: drT(k[0]), row: oldest,
         sub: drT(oldest ? "{0} waiting · opens the oldest" : "{0} waiting · your queue", [p.count]), go: "Open"});
     });
@@ -6201,6 +6203,11 @@ function hmRowView(key, r) {
   if (key === "leave_approvals") {
     v.title = r.employee_name || "";
     v.sub = drT("Leave request") + " · " + hmRange(r.from_date, r.to_date) + " · " + hmDays(r.total_days)
+      + (w ? " · " + w : "");
+    v.go = "Review";
+  } else if (key === "expense_approvals") {
+    v.title = r.employee_name || "";
+    v.sub = drT("Expense claim") + " · " + fmtMoney(r.amount) + (r.expense_type ? " · " + r.expense_type : "")
       + (w ? " · " + w : "");
     v.go = "Review";
   } else if (key === "goal_updates") {
@@ -6258,6 +6265,7 @@ function hmPendOpen(i) {
   var v = HM.rows[i];
   if (!v) return;
   if (v.action === "leave" && !hmIsCxo()) { hmLeaveSheet(v); return; }
+  if (v.action === "expense" && v.row) { hmExpenseSheet(v.row); return; }
   var screen = HM_SCREEN[v.action];
   hmCloseSheet(true);
   /* A goal or KPI update opens its own drawer, where Approve and Reject are
@@ -6288,6 +6296,29 @@ function hmLeaveSheet(v) {
   var ov = hmOpenSheet(drT("Leave request"), body, foot);
   ov._row = r;
 }
+/* ── the expense sheet (slice 076, Part C): money first, then the act ───
+   The same Approve / Decline-with-a-reason flow as leave, so the same
+   buttons and hmDecide; ov._kind tells hmDecide which endpoint to call. */
+function hmExpenseSheet(r) {
+  var w = hmWaiting(r.waiting_since);
+  var body = '<div class="hm-sh-p"><div class="hm-l1" style="font-size:var(--fs-lg);white-space:normal">' + esc(r.employee_name || "") + '</div>'
+    + '<div class="hm-note" style="margin:2px 0 12px">' + esc(drT("Expense claim")) + '</div>'
+    + '<div class="hm-fact"><div class="hm-amt">' + esc(fmtMoney(r.amount)) + '</div><div class="hm-sub">'
+    + esc([r.expense_type, hmDay(r.expense_date)].filter(Boolean).join(" · ")) + '</div>'
+    + (r.note ? '<div class="hm-sub" style="color:var(--text)">' + esc(r.note) + '</div>' : '') + '</div>'
+    + '<div class="hm-note" style="margin-top:8px">' + esc((w ? w.charAt(0).toUpperCase() + w.slice(1) + ". " : "")
+    + drT("Approving passes it to accounts for payment. You cannot take it back here.")) + '</div>'
+    + '</div>'
+    + '<div class="hm-sh-p hm-reason" id="hm-reason" style="display:none;padding-top:0">'
+    + '<label for="hm-why">' + esc(drT("Why are you declining? {0} will read this.", [(r.employee_name || "").split(" ")[0]])) + '</label>'
+    + '<textarea id="hm-why" maxlength="140" aria-describedby="hm-why-e"></textarea>'
+    + '<div class="hm-err" id="hm-why-e" role="alert" style="display:none">' + esc(drT("Write a short reason first.")) + '</div></div>';
+  var foot = '<button type="button" class="btn btn-primary" data-hm="leave-approve" id="hm-approve">' + esc(drT("Approve")) + '</button>'
+    + '<button type="button" class="btn btn-outline" data-hm="leave-decline" id="hm-decline">' + esc(drT("Decline")) + '</button>';
+  var ov = hmOpenSheet(drT("Expense claim"), body, foot);
+  ov._row = r;
+  ov._kind = "expense";
+}
 function hmDecide(action) {
   var ov = hmEl("hm-ov"), r = ov && ov._row;
   if (!r || ov._busy) return;
@@ -6308,25 +6339,33 @@ function hmDecide(action) {
   ov._busy = true;
   var btns = ov.querySelectorAll(".hm-sh-f button");
   [].forEach.call(btns, function (b) { b.disabled = true; });
-  var args = {leave_id: r.name, action: action};
+  var exp = ov._kind === "expense";
+  var args = exp ? {name: r.name, action: action === "approve" ? "approve" : "decline"}
+                 : {leave_id: r.name, action: action};
   if (reason) args.reason = reason;
-  api("action_leave", args, function () {
+  function done() {
     var first = (r.employee_name || "").split(" ")[0];
     hmCloseSheet(true);
-    hmDropPending("leave_approvals", r.name);
-    toast(action === "approve" ? drT("Approved. {0}'s leave is approved.", [r.employee_name || ""])
-                               : drT("Declined. {0} will see your reason.", [first]), action === "approve" ? "ok" : "");
-    var badge = hmEl("sb-team-badge");
+    hmDropPending(exp ? "expense_approvals" : "leave_approvals", r.name);
+    toast(action !== "approve" ? drT("Declined. {0} will see your reason.", [first])
+      : exp ? drT("Approved. {0}'s claim of {1} goes to accounts.", [r.employee_name || "", fmtMoney(r.amount)])
+      : drT("Approved. {0}'s leave is approved.", [r.employee_name || ""]), action === "approve" ? "ok" : "");
+    var badge = !exp && hmEl("sb-team-badge");
     if (badge) {
       var bn = Math.max(0, (parseInt(badge.textContent) || 0) - 1);
       badge.textContent = bn; badge.style.display = bn ? "flex" : "none";
     }
-  }, function (e) {
+  }
+  function failed(e) {
     ov._busy = false;
     if (mayHaveGone(e)) { sayMayHaveGone(e, btns[btns.length - 1]); return; }
     [].forEach.call(btns, function (b) { b.disabled = false; });
     toast((e && e.message) || drT("Could not save that. Try again."), "err");
-  });
+  }
+  /* The expense decision goes through gpFetch, so a refusal ("This claim has
+     already been decided.") comes back as the server's own words. */
+  if (exp) gpFetch("alvoraa_portal.hr_api.decide_expense", args).then(done, failed);
+  else api("action_leave", args, done, failed);
 }
 /* The decided row leaves the card at once; the count follows it. */
 function hmDropPending(key, name) {
@@ -6440,6 +6479,130 @@ function ntOpenOne(n) {
   }, function () { /* left unread; it will be there next time */ });
 }
 
+/* ── Birthdays and anniversaries, My profile, the switch (slice 076, Part C)
+   Prefixes bd / mp / bs. The server decides who is listed: own branch, Active,
+   not hidden, and nothing at all while the organisation switch is off. Rows
+   carry a name, a kind, a day and a month, and years for an anniversary -
+   never a date, a year or an age. */
+var HM_BD = "alvoraa_portal.home_people.";
+var BD_CAKE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 21h16M5 21v-7h14v7M12 14V9M12 4c1 1 1 2 0 3-1-1-1-2 0-3"/></svg>';  /* as drawn */
+
+function bdToday() { var t = isoParts(localToday()); return t ? t[2] : 0; }
+function bdRowHtml(x) {
+  var today = bdToday();
+  var sub = x.kind === "birthday" ? drT("Birthday")
+    : (x.years === 1 ? drT("Work anniversary · 1 year") : drT("Work anniversary · {0} years", [x.years]));
+  if (x.day < today) sub += " · " + drT("earlier this month");
+  return '<div class="hm-row hm-static"><span class="hm-av" aria-hidden="true">' + esc(initials(x.name)) + '</span>'
+    + '<span class="hm-rt"><span class="hm-l1">' + esc(x.name) + '</span><span class="hm-l2">' + esc(sub) + '</span></span>'
+    + '<span class="hm-go hm-day">' + esc(x.day === today ? drT("Today") : x.day + " " + drT(MON3[x.month - 1])) + '</span></div>';
+}
+function homeBirthdays() {
+  var card = hmEl("home-bday-card"), body = hmEl("home-bday-body"), foot = hmEl("home-bday-foot");
+  if (!card) return;
+  gpFetch(HM_BD + "birthdays_this_month", {see_all: 0}).then(function (d) {
+    if (!d || !d.on) { card.style.display = "none"; return; }
+    var rows = d.rows || [];
+    body.innerHTML = rows.length ? rows.map(bdRowHtml).join("")
+      : '<div class="hm-empty"><span class="hm-tick">' + BD_CAKE + '</span><b>' + esc(drT("No birthdays or anniversaries this month."))
+        + '</b><span class="hm-es">' + esc(drT("People in your branch who share these dates appear here.")) + '</span></div>';
+    if (d.total > rows.length) {
+      foot.innerHTML = '<span class="hm-note">' + esc(drT("Showing {0} of {1}", [rows.length, d.total])) + '</span><span class="hm-sp"></span>'
+        + '<button type="button" class="hm-tbtn" data-hm="bday-all">' + esc(drT("See all {0}", [d.total])) + '</button>';
+      foot.style.display = "";
+    } else { foot.innerHTML = ""; foot.style.display = "none"; }
+    card.style.display = "";
+  }, function (e) {
+    card.style.display = "";
+    foot.style.display = "none";
+    failBox(body, e, homeBirthdays);
+  });
+}
+function bdAll() {
+  var opener = document.activeElement;
+  gpFetch(HM_BD + "birthdays_this_month", {see_all: 1}).then(function (d) {
+    var rows = (d && d.rows) || [];
+    var month = rows.length ? new Date(2000, rows[0].month - 1, 1).toLocaleString("en-GB", {month: "long"}) : "";
+    hmOpenSheet(drT("Birthdays and anniversaries, {0}", [month]), rows.map(bdRowHtml).join("")
+      + '<div class="hm-sh-p hm-note">' + esc(drT("Only people in your own branch who share their dates.")) + '</div>');
+    HM.opener = opener;
+  }, function (e) { toast(e.message || drT("Could not load that. Try again."), "err"); });
+}
+
+/* My profile: the one tick, or "nothing to set" while the switch is off. */
+function mpLoad() {
+  var body = hmEl("mp-body");
+  if (!body) return;
+  if (hmEl("mp-h")) hmEl("mp-h").focus();
+  gpFetch(HM_BD + "birthdays_this_month", {see_all: 0}).then(function (d) {
+    var org = hmEl("nav-org-settings");
+    body.innerHTML = (d && d.on
+      ? '<div class="nc-box"><h3 class="nc-h3" style="margin-top:0">' + esc(drT("Sharing with colleagues")) + '</h3>'
+        + '<label class="nc-opt" for="mp-share"><input type="checkbox" id="mp-share"' + (d.hidden ? '' : ' checked') + '><span>'
+        + esc(drT("Show my birthday and work anniversary on Home to colleagues in my branch"))
+        + '<span class="gp-hint" style="display:block">' + esc(drT("They see your name, the day and month, and your years of service. Never your age or birth year. You can change this at any time."))
+        + '</span></span></label></div>'
+      : '<div class="nc-box gp-hint">' + esc(drT("There is nothing to set here right now.")) + '</div>')
+      + (org && org.style.display !== "none" ? '<button type="button" class="btn btn-outline" style="margin-top:16px" onclick="switchPanel(\'org-settings\',null)">'
+        + esc(drT("Organisation settings")) + '</button>' : '');
+  }, function (e) { failBox(body, e, mpLoad); });
+}
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!t || t.id !== "mp-share") return;
+  var show = t.checked;
+  t.disabled = true;
+  gpFetch(HM_BD + "set_birthday_hide", {value: show ? 0 : 1}).then(function () {
+    t.disabled = false;
+    toast(show ? drT("Colleagues in your branch can see your birthday and anniversary.")
+               : drT("You are hidden from the birthdays and anniversaries card."), "ok");
+  }, function (err) {
+    t.disabled = false;
+    t.checked = !show;
+    toast(err.message || drT("Could not save that. Try again."), "err");
+  });
+});
+
+/* Organisation settings: the switch. Off asks first; on is one tap. */
+var BS = null;
+function bsLoad() {
+  var card = hmEl("org-bday-card");
+  if (!card) return;
+  gpFetch(HM_BD + "birthdays_switch_state", {}).then(function (s) { BS = s; bsPaint(); card.style.display = ""; },
+    function () { card.style.display = "none"; /* not HR Manager: not theirs to see */ });
+}
+function bsPaint() {
+  var btn = hmEl("bs-btn");
+  btn.setAttribute("aria-checked", BS.on ? "true" : "false");
+  btn.disabled = false;
+  hmEl("bs-state").textContent = drT(BS.on ? "On" : "Off");
+  hmEl("bs-hint").textContent = BS.on
+    ? drT("Staff see people in their own branch who have a birthday or work anniversary this month: name, day, and years of service. Never age. Each person can hide themselves in My profile.")
+    : drT("Home does not show a birthdays and anniversaries card.");
+  hmEl("bs-changed").textContent = BS.changed_by ? drT("Last changed by {0}, {1}", [BS.changed_by, fmtDate(BS.changed_on)]) : "";
+}
+function bsSave(on) {
+  var btn = hmEl("bs-btn");
+  btn.disabled = true;
+  hmCloseSheet(true);
+  gpFetch(HM_BD + "set_birthdays_switch", {value: on ? 1 : 0}).then(function (s) {
+    BS = s; bsPaint(); btn.focus();
+    if (!on) toast(drT("Switched off for everyone."), "ok");
+  }, function (e) { btn.disabled = false; toast(e.message || drT("Could not save that. Try again."), "err"); });
+}
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-bs]") : null;
+  if (!t || !BS) return;
+  var what = t.getAttribute("data-bs");
+  if (what === "toggle" && !BS.on) bsSave(1);
+  else if (what === "toggle") {
+    hmOpenSheet(drT("Switch off birthdays and anniversaries?"),
+      '<div class="hm-sh-p">' + esc(drT("Home will stop showing this card for everyone in the organisation ({0} people). You can switch it back on at any time.", [BS.people])) + '</div>',
+      '<button type="button" class="btn btn-outline" data-hm="close">' + esc(drT("Keep it on")) + '</button>'
+      + '<button type="button" class="btn btn-primary" data-bs="off">' + esc(drT("Switch off")) + '</button>');
+  } else if (what === "off") bsSave(0);
+});
+
 /* ── one click handler for everything on Home that is drawn above ─────── */
 document.addEventListener("click", function (e) {
   var t = e.target && e.target.closest ? e.target.closest("[data-hm]") : null;
@@ -6455,6 +6618,7 @@ document.addEventListener("click", function (e) {
   else if (what === "leave-approve") hmDecide("approve");
   else if (what === "leave-decline") hmDecide("reject");
   else if (what === "note-all") ntOpenAll();
+  else if (what === "bday-all") bdAll();
   else if (what === "team-all") switchPanel("team", null);
   else if (what === "compose") ncOpen();
   else if (what === "note") {
@@ -6869,6 +7033,7 @@ function loadHome() {
 
   homePending();
   homeNotices();
+  homeBirthdays();
   homeDashboard();
   hmWatchGrid();
 }
@@ -8557,7 +8722,10 @@ function loadExpenses() {
       return;
     }
     el.innerHTML = '<div style="display:flex;flex-direction:column;gap:10px">' + claims.map(function(c) {
-      return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div></div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
+      return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div>'
+        /* Slice 076 (US-17): the approver's reason, so a decline is not a dead end. */
+        + (c.approval_status === "Rejected" && c.decline_reason ? '<div class="expense-date expense-why">' + esc(drT("Declined: {0}", [c.decline_reason])) + '</div>' : '')
+        + '</div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
   }, function(e) { failBox("expense-list", e, loadExpenses); });
 }

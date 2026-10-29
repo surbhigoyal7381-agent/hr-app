@@ -396,7 +396,11 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# leave types marked leave without pay (read twice). Configuration
 			# records, never a person's - the HR scope itself stays on the
 			# Leave Application query, which is get_list.
-			"inbox_api.py": ("frappe.get_all",) * 6 + ("frappe.qb.from_",) * 4,
+			# +1 in slice 076 Part C: the first line (type, date, note) of the
+			# expense claims on the page. The claims themselves came from a
+			# get_list filtered to `expense_approver = the caller`; this reads
+			# only the child rows of those parents, by name.
+			"inbox_api.py": ("frappe.get_all",) * 7 + ("frappe.qb.from_",) * 4,
 			# home_api (slice 042, re-counted for 044 R1/D6, and again when
 			# Wave 4 rebased onto the fixed Wave 3). EIGHT reads and one
 			# aggregate, and all but one are the CALLER'S OWN record:

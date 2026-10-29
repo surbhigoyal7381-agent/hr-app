@@ -71,6 +71,17 @@
             </div>
           </div>
 
+          <!-- Birthdays and anniversaries this month (slice 076, Part C). Absent
+               while the organisation switch is off: the server answers "off"
+               before it reads anybody, and the grid reflows. -->
+          <section class="card hm-card" id="home-bday-card" aria-labelledby="home-bday-h" style="display:none">
+            <div class="hm-head">
+              <h2 class="hm-title" id="home-bday-h">Birthdays and anniversaries this month</h2>
+            </div>
+            <div class="hm-body" id="home-bday-body"></div>
+            <div class="hm-foot" id="home-bday-foot" style="display:none"></div>
+          </section>
+
           <!-- Upcoming Holidays -->
           <div class="card" id="home-holidays-card">
             <div class="card-header">
@@ -154,5 +165,15 @@
           <div id="nc-form"><div class="hm-skel" aria-hidden="true"></div></div>
           <h3 class="nc-h3">Notices I sent</h3>
           <div id="nc-sent"><div class="hm-skel" aria-hidden="true"></div></div>
+        </div>
+      </div>
+
+      <!-- My profile (slice 076, Part C, decision 2a): only the birthday tick.
+           Opened from the account menu. The tick changes the person's own
+           record only; the server takes no employee from the page. -->
+      <div id="panel-my-profile" class="panel">
+        <div class="nc-wrap">
+          <h2 class="nc-h" id="mp-h" tabindex="-1">My profile</h2>
+          <div id="mp-body"><div class="hm-skel" aria-hidden="true"></div></div>
         </div>
       </div>

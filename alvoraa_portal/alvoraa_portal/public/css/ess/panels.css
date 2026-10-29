@@ -759,6 +759,21 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .nc-cancel{margin-left:-10px}
 .nc-holder{min-height:48px;display:flex;align-items:center;border-top:1px solid var(--border);padding:6px 0;font-size:var(--fs-base);color:var(--text)}
 .nc-opt input:focus-visible,.nc-back:focus-visible,.nc-cancel:focus-visible,.nc-send:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+/* Slice 076 Part C: birthday rows (not buttons), the claim amount, the
+   birthdays switch, and the decline reason on the employee's own claim. */
+.hm-static{cursor:default}
+.hm-static:hover{background:none}
+.hm-day{color:var(--text)}
+.hm-amt{font-size:var(--fs-xl);font-weight:700;color:var(--text)}
+.bs-sw{display:flex;gap:12px;align-items:flex-start;padding:8px 0}
+.bs-sw button[role=switch]{width:56px;height:44px;border-radius:var(--r-full);border:1px solid var(--border2);background:var(--surface2);cursor:pointer;position:relative;flex:none}
+.bs-sw button[role=switch]::after{content:"";position:absolute;top:9px;left:6px;width:24px;height:24px;border-radius:50%;background:var(--text3);transition:left .15s}
+.bs-sw button[aria-checked=true]{background:var(--primary-lt);border-color:var(--primary)}
+.bs-sw button[aria-checked=true]::after{left:26px;background:var(--primary)}
+.bs-sw button[role=switch]:focus-visible,.sidebar-user:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.bs-state{font-weight:700;font-size:var(--fs-base);color:var(--text)}
+.expense-why{white-space:normal;color:var(--text2)}
+@media(prefers-reduced-motion:reduce){.bs-sw button[role=switch]::after{transition:none}}
 
 /* ── Today against your own shift ─────────────────────────────────────────
    Surbhi, 17 Oct 2026: show the quarters, the half-day line and the day's

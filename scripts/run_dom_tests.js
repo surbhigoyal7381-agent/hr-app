@@ -106,6 +106,11 @@ const RUN = [
      25, the 5-a-day screen, errors at the field, "It may have gone through",
      Notices I sent with Cancel, and the holders list. */
   { file: "portal_notices_send_076_test.js", args: [PAGE] },
+  /* Slice 076, Part C: the expense sheet (what Approve and Send decline
+     send, the server's refusal in its own words), "Declined: <reason>" on
+     the employee's claim, the Birthdays card, My profile's tick and the
+     organisation switch that asks before switching off. */
+  { file: "portal_expense_birthdays_076_test.js", args: [PAGE] },
 ];
 
 /* **Empty, and it stays empty.** AC-62: an entry here needs a ticket and a
@@ -114,7 +119,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 18;   // 076 B portal_notices_send_076_test.js, 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js, 066 portal_grooming_066_test.js, ALV-222 portal_signout_222_test.js, 076 portal_home_076_test.js
+const EXPECTED_BROWSER_TESTS = 19;   // 076 C portal_expense_birthdays_076_test.js, 076 B portal_notices_send_076_test.js, 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js, 066 portal_grooming_066_test.js, ALV-222 portal_signout_222_test.js, 076 portal_home_076_test.js
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

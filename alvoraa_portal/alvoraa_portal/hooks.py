@@ -190,7 +190,10 @@ doc_events = {
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
         # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank
         # field on their own record, HR included. See employee_field_rights.py.
-        "validate": "alvoraa_portal.employee_field_rights.refuse_own_locked_change",
+        "validate": ["alvoraa_portal.employee_field_rights.refuse_own_locked_change",
+                     # Slice 076 Part C (AC-105): only the person sets their
+                     # birthday opt-out; any other save puts it back.
+                     "alvoraa_portal.home_people.keep_hide_birthday"],
     },
     # ALV-215: an Employee import with a column the importer may not change is
     # refused with a message, instead of Frappe dropping the values silently.
@@ -389,6 +392,11 @@ doc_events = {
     "Tag Link": {
         "validate": "alvoraa_portal.grooming.refuse_side_record",
     },
+    # Slice 076 Part C (SEC-13): nobody approves their own expense claim, on
+    # any door, whatever HR Settings says about self-approval.
+    "Expense Claim": {
+        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -541,6 +549,9 @@ after_migrate = [
     # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
     # reset in Role Permission Manager is put right. See employee_field_rights.py.
     "alvoraa_portal.employee_field_rights.apply",
+    # Slice 076 Part C: the birthdays switch (ships off), the opt-out tick and
+    # the expense decline reason. See home_people.py.
+    "alvoraa_portal.home_people.after_migrate",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
@@ -598,6 +609,8 @@ after_install = [
     # WITH desk access while syncing the Announcement permissions; this runs
     # after that. Live sites get the same from the notice_sender_role patch.
     "alvoraa_portal.announcements.make_role",
+    # Slice 076 Part C: same three fields as after_migrate.
+    "alvoraa_portal.home_people.after_migrate",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

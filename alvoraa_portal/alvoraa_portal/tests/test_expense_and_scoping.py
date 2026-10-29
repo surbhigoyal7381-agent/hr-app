@@ -53,6 +53,15 @@ def ensure_expense_type(name="Alvoraa Travel", company=None):
 	return name
 
 
+def _give_an_approver(*employees):
+	"""Slice 076 Part C (decision 4): a claim with no approver is refused, so the
+	claimants here get one, as real data must have."""
+	approver = ensure_user("alvoraa.claim.approver@example.com", roles=("Expense Approver",))
+	for emp in employees:
+		frappe.db.set_value("Employee", emp, "expense_approver", approver)
+	frappe.db.commit()
+
+
 class TestExpenseClaims(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -66,6 +75,7 @@ class TestExpenseClaims(FrappeTestCase):
 		cls.emp_b = ensure_employee_with_leave("Claimant", lt, days=1, last_name="Bee")
 		cls.user_b = ensure_user("alvoraa.claimant.b@example.com", roles=("Employee",))
 		link_user_to_employee(cls.emp_b, cls.user_b)
+		_give_an_approver(cls.emp_a, cls.emp_b)
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -137,6 +147,7 @@ class TestEmployeeScoping(FrappeTestCase):
 		cls.emp_b = ensure_employee_with_leave("Scope", lt, days=5, last_name="Bee")
 		cls.user_b = ensure_user("alvoraa.scope.b@example.com", roles=("Employee",))
 		link_user_to_employee(cls.emp_b, cls.user_b)
+		_give_an_approver(cls.emp_a, cls.emp_b)
 
 	def setUp(self):
 		frappe.set_user("Administrator")

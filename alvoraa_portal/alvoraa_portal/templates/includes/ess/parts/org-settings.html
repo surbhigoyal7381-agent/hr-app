@@ -17,6 +17,18 @@
           <a class="btn btn-outline" style="margin-top:12px" href="/app/user" target="_blank" rel="noopener">Open Users</a>
         </div>
 
+        <!-- Birthdays and anniversaries on Home (slice 076, Part C): one switch,
+             off until HR turns it on. Shown only to HR Manager and System
+             Manager; the server refuses everyone else. Drawn by bsLoad(). -->
+        <div class="pf-card" style="margin-bottom:24px;display:none" id="org-bday-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Birthdays and anniversaries on Home</div>
+          <div class="bs-sw">
+            <button type="button" role="switch" aria-checked="false" aria-labelledby="bs-state" aria-describedby="bs-hint" id="bs-btn" data-bs="toggle"></button>
+            <div><div class="bs-state" id="bs-state">Off</div><div class="gp-hint" id="bs-hint"></div></div>
+          </div>
+          <div class="gp-hint" id="bs-changed" style="margin-top:8px"></div>
+        </div>
+
         <!-- Document Compliance (build B4) -->
         <div class="pf-card" style="margin-bottom:24px;display:none" id="org-docs-card">
           <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">

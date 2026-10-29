@@ -73,6 +73,8 @@ from frappe.utils import get_build_version
 # so the route is the Inbox's own "my requests" tab.
 PARTS = (
 	("leave_approvals", "#team"),
+	# Slice 076 Part C: decided from Home's sheet; the route is this page's own.
+	("expense_approvals", "#pay"),
 	("goal_updates", "#growth"),
 	("attendance_fixes", "#time/fix"),
 	("shift_requests", "#time/shift"),
@@ -83,7 +85,8 @@ PARTS = (
 # Which parts add up to "approvals waiting". The total is
 # approvals + policies + my own open requests (Wave 1 AC-20, Wave 2 section 6.2),
 # so the three groups are named rather than left as an arithmetic accident.
-APPROVAL_PARTS = ("leave_approvals", "goal_updates", "attendance_fixes", "shift_requests")
+APPROVAL_PARTS = ("leave_approvals", "expense_approvals", "goal_updates", "attendance_fixes",
+                  "shift_requests")
 
 # The attendance corrections screen reads at most this many rows
 # (`attendance_correction.to_review`'s default). The COUNT is not capped, so the
@@ -119,6 +122,11 @@ ROW_KEYS = (
 	                     # name at the top of the chain that will be told.
 	                     "half_day", "lwp_in_play", "lwp_limit", "special_day",
 	                     "chain_top")),
+	# Slice 076 Part C (SEC-16): the named approver sees what they are deciding -
+	# whose claim, the type, the day, the amount and the note. No bank, no
+	# account, no advance.
+	("expense_approvals", ("name", "employee_name", "expense_type", "expense_date",
+	                       "amount", "note", "waiting_since", "action")),
 	# No colleague name for a goal or KPI update? There is one, and there has to
 	# be: an approver cannot approve "somebody's" progress. What is absent is the
 	# number's provenance and any note about the person.
@@ -517,6 +525,65 @@ def _part_leave_approvals(who):
 		available=bool(who.employee),
 		label_one=_("{n} leave request to approve"),
 		label_many=_("{n} leave requests to approve"),
+	)
+
+
+def _part_expense_approvals(who):
+	"""Expense claims waiting on this person as the named expense approver
+	(slice 076 Part C, SEC-16). Draft and undecided only, never their own.
+
+	`get_list`: the approver reads the claim through Frappe HR's own share or
+	the Expense Approver role, and nobody else's claim comes back.
+	"""
+	filters = no_rows()
+	if who.employee:
+		filters = {
+			"expense_approver": who.user,
+			"docstatus": 0,
+			"approval_status": "Draft",
+			"employee": ["!=", who.employee],
+		}
+
+	def rows_fn(filters, limit):
+		rows = frappe.get_list(
+			"Expense Claim", filters=filters,
+			fields=["name", "employee_name", "total_claimed_amount", "creation"],
+			order_by="creation asc", limit_page_length=limit or 0)
+		# One read of the lines of every claim on the page, not one per row. A
+		# portal claim has one line; a desk claim shows its first.
+		first = {}
+		if rows:
+			for d in frappe.get_all(
+				"Expense Claim Detail",
+				filters={"parent": ["in", [r.name for r in rows]], "parenttype": "Expense Claim"},
+				fields=["parent", "expense_type", "expense_date", "description"],
+				order_by="idx asc"):
+				first.setdefault(d.parent, d)
+		out = []
+		for r in rows:
+			d = first.get(r.name) or {}
+			out.append({
+				"name": r.name,
+				"employee_name": r.employee_name,
+				"expense_type": d.get("expense_type"),
+				"expense_date": str(d["expense_date"]) if d.get("expense_date") else None,
+				"amount": r.total_claimed_amount,
+				"note": d.get("description") or None,
+				"waiting_since": str(r.creation) if r.creation else None,
+				"action": "expense",
+			})
+		return out
+
+	return Part(
+		"expense_approvals", "#pay",
+		scope="expense claims where this caller is the named expense_approver, Draft "
+		      "and undecided, minus their own",
+		filters=filters,
+		count_fn=_count_rows("Expense Claim"),
+		rows_fn=rows_fn,
+		available=bool(who.employee),
+		label_one=_("{n} expense claim to approve"),
+		label_many=_("{n} expense claims to approve"),
 	)
 
 
@@ -956,6 +1023,7 @@ def parts(user=None):
 	fixes, corrections_hr_scope = _part_attendance_fixes(who)
 	built = (
 		_part_leave_approvals(who),
+		_part_expense_approvals(who),
 		_part_goal_updates(who),
 		fixes,
 		_part_shift_requests(who),

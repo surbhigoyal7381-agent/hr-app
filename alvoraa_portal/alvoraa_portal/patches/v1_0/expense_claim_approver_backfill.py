@@ -22,7 +22,8 @@ def execute():
 	                                                     "expense_approver": ["is", "not set"]}, pluck="name"):
 		doc = frappe.get_doc("Expense Claim", name)
 		approver = expense_approver_for(doc.employee)
-		if not approver:
+		# The claimant as their own approver would be a claim nobody can decide.
+		if not approver or approver == frappe.db.get_value("Employee", doc.employee, "user_id"):
 			left += 1
 			continue
 		frappe.db.savepoint("alvoraa_ec_backfill")

@@ -31,7 +31,9 @@ from hrms.alvoraa_hr_core.access import refuse
 
 SWITCH = "alvoraa_birthdays_on_home"
 HIDE = "alvoraa_hide_birthday"
-HR_ROLES = {"HR Manager", "System Manager"}
+# The switch changes Home for every company on the site, so only a System
+# Manager may flip it (Surbhi, 29 Oct 2026, over "HR Manager or System Manager").
+SWITCH_ROLES = {"System Manager"}
 CARD_ROWS = 5
 
 FIELDS = {
@@ -96,6 +98,8 @@ def _month_rows(company, branch):
 		frappe.qb.from_(E)
 		.select(E.employee_name, E.date_of_birth, E.date_of_joining)
 		.where((E.status == "Active") & (E.company == company) & (E.branch == branch)
+		       # Only people with a login: they alone can hide themselves (security C, Major 2).
+		       & E.user_id.isnotnull() & (E.user_id != "")
 		       & ((E[HIDE] == 0) | E[HIDE].isnull()))
 		.where((Extract("month", E.date_of_birth) == now.month)
 		       | (Extract("month", E.date_of_joining) == now.month))
@@ -142,13 +146,15 @@ def set_birthday_hide(value):
 		frappe.throw(_("Your login is not linked to an active employee record. Ask HR to link it."),
 		             frappe.PermissionError)
 	frappe.db.set_value("Employee", me.name, HIDE, 1 if cint(value) else 0)
+	# History of the change, on the person's own record (who and when).
+	frappe.get_doc("Employee", me.name).add_comment("Info", _("Hid their birthday on Home") if cint(value) else _("Showed their birthday on Home"))
 	return {"hidden": 1 if cint(value) else 0}
 
 
-def _require_hr(endpoint):
+def _require_system_manager(endpoint):
 	_refuse_guest()
-	if not HR_ROLES & set(frappe.get_roles()):
-		refuse(_("Only an HR Manager can change this."), "076-PRIV-6", endpoint)
+	if not SWITCH_ROLES & set(frappe.get_roles()):
+		refuse(_("Only a System Manager can change this."), "076-PRIV-6", endpoint)
 
 
 def _last_change():
@@ -165,16 +171,16 @@ def _last_change():
 def birthdays_switch_state():
 	"""Organisation settings: the switch, who last changed it and when, and how
 	many people Home changes for (the confirm before switching off)."""
-	_require_hr("birthdays_switch_state")
+	_require_system_manager("birthdays_switch_state")
 	return dict({"on": 1 if _switch_on() else 0,
 	             "people": frappe.db.count("Employee", {"status": "Active"})}, **_last_change())
 
 
 @frappe.whitelist(methods=["POST"])
 def set_birthdays_switch(value):
-	"""HR Manager or System Manager. Saved through the document, so the change is
+	"""System Manager only. Saved through the document, so the change is
 	in HR Settings' own history (AC-103)."""
-	_require_hr("set_birthdays_switch")
+	_require_system_manager("set_birthdays_switch")
 	settings = frappe.get_doc("HR Settings")
 	settings.set(SWITCH, 1 if cint(value) else 0)
 	settings.save(ignore_version=False)  # the Version row is "last changed by" (tests too)

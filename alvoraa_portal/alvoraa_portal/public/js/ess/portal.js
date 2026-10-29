@@ -6569,7 +6569,7 @@ function bsLoad() {
   var card = hmEl("org-bday-card");
   if (!card) return;
   gpFetch(HM_BD + "birthdays_switch_state", {}).then(function (s) { BS = s; bsPaint(); card.style.display = ""; },
-    function () { card.style.display = "none"; /* not HR Manager: not theirs to see */ });
+    function () { card.style.display = "none"; /* not a System Manager: not theirs to see */ });
 }
 function bsPaint() {
   var btn = hmEl("bs-btn");

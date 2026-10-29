@@ -275,7 +275,15 @@ class TestExpenseFromPending(FrappeTestCase):
 
 	def test_nobody_decides_their_own_claim_on_any_door(self):
 		self.assertEqual(frappe.db.get_single_value("HR Settings", "prevent_self_expense_approval"), 0)
-		name = self._file(self.s)                 # S is their own approver
+		# Filing refuses S (own approver), so the claim is filed with M and HR
+		# points it at S in Desk - the shape a self-approval would need.
+		frappe.db.set_value("Employee", self.s_emp, "expense_approver", self.m)
+		try:
+			name = self._file(self.s)
+		finally:
+			frappe.db.set_value("Employee", self.s_emp, "expense_approver", self.s)
+		frappe.db.set_value("Expense Claim", name, "expense_approver", self.s)
+		frappe.db.commit()
 		with self.assertRaises(frappe.PermissionError):
 			self._decide(self.s, name, "approve")
 		self.assertNotIn(name, [r["name"] for r in _expense_part(self.s)["rows"]])
@@ -294,7 +302,39 @@ class TestExpenseFromPending(FrappeTestCase):
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Expense Claim", name, "docstatus"), 0)
 
+	def test_a_claimant_who_is_their_own_approver_is_refused_at_filing(self):
+		before = frappe.db.count("Expense Claim", {"employee": self.s_emp})
+		frappe.set_user(self.s)
+		with self.assertRaises(frappe.ValidationError) as ctx:
+			hr_api.apply_expense_claim(expense_type=self.etype, expense_date=today(), amount=10)
+		frappe.set_user("Administrator")
+		self.assertIn("Ask HR to set your approver.", str(ctx.exception))
+		self.assertEqual(frappe.db.count("Expense Claim", {"employee": self.s_emp}), before)
+
+	def test_the_claimant_cannot_choose_their_approver_but_hr_can(self):
+		name = self._file(self.a)
+		from frappe.client import set_value
+		frappe.set_user(self.a)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				set_value("Expense Claim", name, "expense_approver", self.x)       # the REST door
+			doc = frappe.get_doc({"doctype": "Expense Claim", "employee": self.a_emp,
+			                      "expense_approver": self.x, "expenses": []})
+			with self.assertRaises(frappe.PermissionError):
+				hr_api.keep_claim_approver(doc)                                      # a new claim naming a friend
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Expense Claim", name, "expense_approver"), self.m)
+		frappe.set_user(self.hr)
+		try:
+			set_value("Expense Claim", name, "expense_approver", self.x)           # HR may
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Expense Claim", name, "expense_approver"), self.x)
+
 	def test_the_hook_is_registered(self):
+		self.assertEqual(frappe.get_hooks("doc_events")["Expense Claim"]["validate"],
+		                 ["alvoraa_portal.hr_api.keep_claim_approver"])
 		self.assertIn("hrms.alvoraa_hr_core.access.refuse_own_submit",
 		              frappe.get_hooks("doc_events")["Expense Claim"]["before_submit"])
 
@@ -316,6 +356,17 @@ class TestExpenseFromPending(FrappeTestCase):
 		expense_claim_approver_backfill.execute()
 		self.assertEqual(frappe.db.get_value("Expense Claim", name, "modified"), modified)
 
+	def test_backfill_never_makes_the_claimant_their_own_approver(self):
+		frappe.db.set_value("Employee", self.s_emp, "expense_approver", self.m)
+		try:
+			name = self._file(self.s)
+		finally:
+			frappe.db.set_value("Employee", self.s_emp, "expense_approver", self.s)
+		frappe.db.set_value("Expense Claim", name, "expense_approver", None)
+		frappe.db.commit()
+		expense_claim_approver_backfill.execute()
+		self.assertFalse(frappe.db.get_value("Expense Claim", name, "expense_approver"))
+
 
 class TestBirthdays(FrappeTestCase):
 	@classmethod
@@ -333,8 +384,11 @@ class TestBirthdays(FrappeTestCase):
 		def born(day, month=None, year=1990):
 			return date(year, month or now.month, day)
 
-		def make(first, branch="C076 North", dob=None, doj=None, user=None, status="Active"):
+		def make(first, branch="C076 North", dob=None, doj=None, user=None, status="Active", login=True):
+			user = user or ("c076.bd.%s@example.com" % first.lower() if login else None)
 			emp = _person(first, user, last="Bday076")
+			if not login:
+				frappe.db.set_value("Employee", emp, "user_id", None)
 			frappe.db.set_value("Employee", emp, {
 				"branch": branch, "status": status,
 				"date_of_birth": dob or date(1990, other, 15),
@@ -352,6 +406,11 @@ class TestBirthdays(FrappeTestCase):
 		cls.leaver = make("LeftBirthday", dob=born(now.day), status="Left")
 		cls.hidden = make("HiddenBirthday", dob=born(now.day))
 		frappe.db.set_value("Employee", cls.hidden, home_people.HIDE, 1)
+		cls.nologin = make("NoLogin", dob=born(now.day), login=False)
+		cls.sm = "c076.bsm@example.com"
+		make("BdaySm", user=cls.sm)
+		ensure_user(cls.sm, roles=("Employee", "System Manager"))
+		link_user_to_employee(frappe.db.get_value("Employee", {"user_id": cls.sm}), cls.sm)
 		cls.extra = [make("Extra%d" % i, dob=born(now.day)) for i in range(4)]
 		cls.lost = "c076.lost@example.com"
 		make("NoBranchViewer", branch=None, user=cls.lost)
@@ -416,7 +475,7 @@ class TestBirthdays(FrappeTestCase):
 		names = [n for n, _k in self._names(self._as(self.viewer))]
 		self.assertIn("TodayBirthday Bday076", names)
 		self.assertIn("FiveYears Bday076", names)
-		for out in ("SouthBirthday", "NoBranch", "LeftBirthday", "HiddenBirthday", "JoinedThisYear"):
+		for out in ("SouthBirthday", "NoBranch", "LeftBirthday", "HiddenBirthday", "JoinedThisYear", "NoLogin"):
 			self.assertNotIn(out + " Bday076", names)
 
 	def test_years_today_first_and_the_card_cap(self):
@@ -456,6 +515,8 @@ class TestBirthdays(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("Employee", self.v_emp, home_people.HIDE), 1)
 		self.assertEqual(frappe.db.get_value("Employee", self.today_b, home_people.HIDE), 0)
 		self.assertEqual(self._as(self.viewer)["hidden"], 1)
+		self.assertTrue(frappe.db.exists("Comment", {"reference_doctype": "Employee", "reference_name": self.v_emp,
+		                                             "content": "Hid their birthday on Home", "owner": self.viewer}))
 		# Hidden from a colleague in the same branch, even with a birthday today.
 		frappe.db.set_value("Employee", self.v_emp, "date_of_birth", date(1990, self.now.month, self.now.day))
 		self.assertNotIn("Viewer Bday076", [n for n, _k in self._names(self._as(self.hr))])
@@ -478,8 +539,8 @@ class TestBirthdays(FrappeTestCase):
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Employee", self.today_b, home_people.HIDE), 0)
 
-	def test_only_hr_manager_changes_the_switch_and_history_says_who(self):
-		for user in (self.viewer, self.hr_user):
+	def test_only_a_system_manager_changes_the_switch_and_history_says_who(self):
+		for user in (self.viewer, self.hr_user, self.hr):
 			with self.subTest(user=user):
 				frappe.set_user(user)
 				with self.assertRaises(frappe.PermissionError):
@@ -487,11 +548,11 @@ class TestBirthdays(FrappeTestCase):
 				with self.assertRaises(frappe.PermissionError):
 					home_people.birthdays_switch_state()
 				frappe.set_user("Administrator")
-		frappe.set_user(self.hr)
+		frappe.set_user(self.sm)
 		got = home_people.set_birthdays_switch(0)
 		frappe.set_user("Administrator")
 		self.assertEqual(got["on"], 0)
-		self.assertEqual(got["changed_by"], frappe.db.get_value("User", self.hr, "full_name"))
+		self.assertEqual(got["changed_by"], frappe.db.get_value("User", self.sm, "full_name"))
 		self.assertEqual(got["changed_on"], today())
 		self.assertEqual(got["people"], frappe.db.count("Employee", {"status": "Active"}))
 		self.assertEqual(set(got), {"on", "people", "changed_by", "changed_on"})

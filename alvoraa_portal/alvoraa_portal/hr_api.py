@@ -2403,8 +2403,10 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
 
     # Slice 076 (SEC-12, Surbhi's decision 4): a claim carries its approver, or
     # it is not filed. Without one it would sit where nobody can see it.
+    # The claimant as their own approver is "no approver" too: nobody could
+    # ever decide the claim (review C, Major 1; Surbhi, 29 Oct 2026).
     approver = expense_approver_for(emp.name)
-    if not approver:
+    if not approver or approver == frappe.session.user:
         frappe.throw(_("Your expense claim could not be filed because nobody is set to approve it. "
                        "Ask HR to set your approver."), title=_("No approver"))
 
@@ -2456,6 +2458,20 @@ def expense_approver_for(employee):
             "Department Approver",
             {"parent": department, "parentfield": "expense_approvers", "idx": 1}, "approver")
     return approver or None
+
+
+def keep_claim_approver(doc, method=None):
+    """Expense Claim validate: the claimant cannot choose who approves their own
+    claim (security C, Major 1). Their approver is the one HR set; HR Manager
+    and System Manager may still change it in Desk."""
+    from hrms.alvoraa_hr_core.access import is_own_record
+
+    if not is_own_record(doc.employee) or {"HR Manager", "System Manager"} & set(frappe.get_roles()):
+        return
+    if (doc.is_new() or doc.has_value_changed("expense_approver")) \
+            and doc.expense_approver != expense_approver_for(doc.employee):
+        frappe.throw(_("You cannot choose your own approver. Ask HR to change your approver."),
+                     frappe.PermissionError)
 
 
 @frappe.whitelist(methods=["POST"])

@@ -396,6 +396,8 @@ doc_events = {
     # any door, whatever HR Settings says about self-approval.
     "Expense Claim": {
         "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        # Review C: the claimant cannot pick their own approver (HR may).
+        "validate": "alvoraa_portal.hr_api.keep_claim_approver",
     },
 }
 

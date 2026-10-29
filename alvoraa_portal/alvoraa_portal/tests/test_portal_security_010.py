@@ -848,6 +848,12 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "announcements.py"): 1,
 		("alvoraa_portal", "alvoraa_portal/doctype/announcement/announcement.py"): 0,
 		("alvoraa_portal", "patches/v1_0/notice_sender_role.py"): 0,
+		# Slice 076 Part C (new files): none. The birthdays read in home_people
+		# is the one deliberate bypass - a query-builder query no word counter
+		# sees - and it returns a fixed key list only (name, kind, day, month,
+		# years). The backfill runs as Administrator in a migrate.
+		("alvoraa_portal", "home_people.py"): 0,
+		("alvoraa_portal", "patches/v1_0/expense_claim_approver_backfill.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

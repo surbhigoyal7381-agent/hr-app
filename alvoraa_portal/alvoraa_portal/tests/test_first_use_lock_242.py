@@ -33,9 +33,11 @@ class _FakeRequest:
 class LockCase(FrappeTestCase):
 	def setUp(self):
 		self._real_request = getattr(frappe.local, "request", None)
+		self._real_form = getattr(frappe.local, "form_dict", None)
 
 	def tearDown(self):
 		frappe.local.request = self._real_request
+		frappe.local.form_dict = self._real_form
 		frappe.set_user("Administrator")
 		frappe.cache().delete_key(auth._CHOSEN_CACHE)
 		frappe.db.rollback()
@@ -77,10 +79,17 @@ class LockCase(FrappeTestCase):
 
 	# ── the call under test ─────────────────────────────────────────────────
 
-	def ask_for(self, path, user):
-		"""Run the hook as `user` asking for `path`. Returns what happened."""
+	def ask_for(self, path, user, cmd=None):
+		"""Run the hook as `user` asking for `path`. Returns what happened.
+
+		`cmd` is what a website page sends instead of a path - see
+		`auth._FIRST_USE_MAY_CALL`. Left out, the form is emptied, so a test
+		that says nothing about `cmd` is really asking with no `cmd` at all.
+		"""
 		frappe.local.request = _FakeRequest(path)
 		frappe.set_user(user)
+		# After set_user, never before: `frappe.set_user` empties form_dict.
+		frappe.local.form_dict = frappe._dict({"cmd": cmd} if cmd else {})
 		try:
 			auth.lock_until_password_chosen()
 			return "allowed"
@@ -326,3 +335,56 @@ class TestItStaysOffTheDatabase(LockCase):
 			self.assertEqual(self.ask_for("/assets/x.js", user), "allowed")
 		finally:
 			frappe.db.get_value = real
+
+
+class TestTheWayTheScreenActuallyCalls(LockCase):
+	"""The live fault of 29 Oct, and the shape of test that would have caught it.
+
+	Every test above asks with a path, because that is what the lock reads.
+	The password screen never sends one. It is a website page, and
+	`frappe.call` on a website page (`frappe/website/js/website.js`, not
+	`request.js`) posts to "/" with the method in a `cmd` field. So the real
+	Confirm button arrived as a bare POST to "/", matched nothing, and was
+	answered with our own 302 - which jQuery followed, landing on HTML where
+	it wanted JSON. No error was shown and the password never changed.
+	"""
+
+	def test_the_confirm_button_gets_through(self):
+		"""The one that was broken. Press it and the lock must stand aside."""
+		user = self.staff_on_an_issued_password()
+		self.assertEqual(
+			self.ask_for("/", user,
+			             cmd="frappe.core.doctype.user.user.update_password"),
+			"allowed")
+
+	def test_every_method_that_screen_calls_gets_through(self):
+		user = self.staff_on_an_issued_password()
+		for cmd in ("frappe.core.doctype.user.user.update_password",
+		            "frappe.core.doctype.user.user.test_password_strength",
+		            "frappe.core.doctype.user.user.reset_password",
+		            "alvoraa_portal.auth.update_password",
+		            "login", "logout"):
+			with self.subTest(cmd=cmd):
+				self.assertEqual(self.ask_for("/", user, cmd=cmd), "allowed")
+
+	def test_the_bare_root_is_still_shut(self):
+		"""Opening the site itself is not a password change."""
+		user = self.staff_on_an_issued_password()
+		self.assertTrue(self.ask_for("/", user).startswith("redirect:"))
+
+	def test_another_method_at_the_root_is_still_shut(self):
+		"""The cage must not open for everything that posts to "/"."""
+		user = self.staff_on_an_issued_password()
+		self.assertTrue(
+			self.ask_for("/", user, cmd="frappe.client.get_list")
+			.startswith("redirect:"))
+
+	def test_cmd_cannot_unlock_another_path(self):
+		"""Frappe routes an /api/ request by its URL and ignores the body's
+		`cmd`, so trusting `cmd` anywhere but "/" would be a way straight
+		past the lock."""
+		user = self.staff_on_an_issued_password()
+		self.assertEqual(
+			self.ask_for("/api/method/frappe.client.get_list", user,
+			             cmd="login"),
+			"refused")

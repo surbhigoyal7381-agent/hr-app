@@ -704,3 +704,114 @@ class TestTheCountIsComputedOnce(_WaveTwo):
 						owner, "frappe",
 						"%s queries the database directly - every number must "
 						"come out of parts()" % node.name)
+
+
+class _DenyRead:
+	"""Answer "no read" for ONE doctype and really answer for every other.
+
+	This is what a tenant looks like after somebody edits permissions for a
+	single doctype in Role Permissions Manager: Frappe writes its own rows and
+	throws the shipped ones away, so a role that had read can quietly lose it
+	for that doctype alone. Patching the question rather than the rows keeps
+	the test to one doctype and leaves the rest of the permission system real.
+	"""
+
+	def __init__(self, doctype):
+		self.doctype = doctype
+
+	def __enter__(self):
+		self._real = frappe.has_permission
+
+		def answer(doctype=None, ptype="read", *args, **kwargs):
+			if doctype == self.doctype and ptype in ("read", "select"):
+				return False
+			return self._real(doctype, ptype, *args, **kwargs)
+
+		frappe.has_permission = answer
+		return self
+
+	def __exit__(self, *exc):
+		frappe.has_permission = self._real
+		return False
+
+
+class TestATenantThatDroppedARolePermission(_WaveTwo):
+	"""ALV-250 — one unreadable doctype must not take the whole panel down.
+
+	Found live on DTC on 29 Oct 2026. Policy Document was installed, so the
+	policies part ran its query, and `frappe.get_list` raised PermissionError
+	because that tenant's role rows had dropped Employee's read. `parts()`
+	builds every part before it returns anything, so the one refusal killed
+	all seven - "Pending for you" showed "Something went wrong at the office."
+	for every employee on the tenant, and the badge counts died with it.
+
+	Nobody reported it. A dead panel looks like an empty panel.
+	"""
+
+	def test_the_panel_survives_and_only_that_part_goes_quiet(self):
+		self._as(self.rahul_login)
+		baseline = inbox_api.get_inbox()
+		with _DenyRead("Policy Document"):
+			box = inbox_api.get_inbox()
+		frappe.set_user("Administrator")
+
+		before = {p["key"]: p["count"] for p in baseline["parts"]}
+		after = {p["key"]: p["count"] for p in box["parts"]}
+		self.assertEqual(sorted(before), sorted(after),
+		                 "a part disappeared instead of going quiet")
+		self.assertEqual(after["policies"], 0)
+		before.pop("policies"), after.pop("policies")
+		self.assertEqual(before, after,
+		                 "losing read on one doctype changed another part")
+
+	def test_the_badge_counts_survive_too(self):
+		"""`get_nav_counts` builds the same parts, so it broke the same way."""
+		self._as(self.rahul_login)
+		with _DenyRead("Policy Document"):
+			counts = inbox_api.get_nav_counts()
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			[p["key"] for p in counts["parts"] if p["key"] == "policies"],
+			["policies"])
+
+	def test_the_query_that_was_throwing_never_runs(self):
+		"""Not "it was caught" - it is never asked. An unavailable part costs
+		no query, which is the same promise AC-37 makes for a caller with no
+		Employee record."""
+		self._as(self.rahul_login)
+		inbox_api.parts()  # warm the doctype-exists cache first
+		with _DenyRead("Policy Document"):
+			with _Recorder() as rec:
+				built, _hr = inbox_api.parts()
+				for part in built:
+					part.count()
+		frappe.set_user("Administrator")
+		self.assertEqual(rec.touched(("tabPolicy Document",)), [])
+		# The recorder works: without the denial the same block DOES ask.
+		self._as(self.rahul_login)
+		with _Recorder() as rec2:
+			built, _hr = inbox_api.parts()
+			for part in built:
+				part.count()
+		frappe.set_user("Administrator")
+		self.assertEqual(rec2.touched(("tabPolicy Document",)),
+		                 ["tabPolicy Document"],
+		                 "the recorder never saw the query even when it was "
+		                 "allowed, so the assertion above could not fail")
+
+	def test_every_part_is_covered_not_just_policies(self):
+		"""The fault was never about policies. Deny each table in turn and the
+		panel must still answer - including the expense part slice 076 added
+		after this bug was found."""
+		for doctype in ("Leave Application", "Expense Claim", "Shift Request",
+		                "Policy Document", "KPI", "Attendance Request"):
+			with self.subTest(doctype=doctype):
+				self._as(self.rahul_login)
+				try:
+					with _DenyRead(doctype):
+						box = inbox_api.get_inbox()
+						inbox_api.get_nav_counts()
+				finally:
+					frappe.set_user("Administrator")
+				self.assertEqual(len(box["parts"]), len(inbox_api.PARTS))
+

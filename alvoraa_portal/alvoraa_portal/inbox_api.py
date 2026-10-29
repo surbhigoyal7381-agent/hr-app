@@ -210,6 +210,32 @@ def _has_doctype(name):
 	return bool(seen)
 
 
+def _may_read(*doctypes):
+	"""Is this part available to THIS caller: installed, and readable by them?
+
+	`_has_doctype` answers for the site. This answers for the person, and both
+	have to be true before a part runs a query. The difference cost DTC a dead
+	Inbox on 29 Oct (ALV-250): Policy Document was installed, so the policies
+	part ran, and `frappe.get_list` raised PermissionError because that
+	tenant's own role rows had dropped Employee's read. One part throwing took
+	the whole panel down with it, and the badge counts too, because `parts()`
+	builds every part before anything is returned.
+
+	This belongs in `available` and nowhere else: `Part.available` already
+	means "this caller does not have this part at all", and already covers no
+	Employee record, no review permission, and a doctype that is not installed.
+	"May not read it" is the same kind of answer, so an unavailable part goes
+	on counting 0 and listing nothing without running a query.
+
+	Deliberately not cached, unlike `_has_doctype`. That one may be cached per
+	site because its answer changes only at a migration. This one changes per
+	user, and the moment somebody edits a role row - which is exactly the case
+	being fixed, so a cache here would re-create the bug with a delay on it.
+	"""
+	return all(_has_doctype(d) and frappe.has_permission(d, "read")
+	           for d in doctypes)
+
+
 def _my_employee(user):
 	"""The caller's own ACTIVE Employee record id, or None.
 
@@ -522,7 +548,7 @@ def _part_leave_approvals(who):
 		filters=filters,
 		count_fn=_count_rows("Leave Application"),
 		rows_fn=rows_fn,
-		available=bool(who.employee),
+		available=bool(who.employee) and _may_read("Leave Application"),
 		label_one=_("{n} leave request to approve"),
 		label_many=_("{n} leave requests to approve"),
 	)
@@ -581,7 +607,8 @@ def _part_expense_approvals(who):
 		filters=filters,
 		count_fn=_count_rows("Expense Claim"),
 		rows_fn=rows_fn,
-		available=bool(who.employee),
+		available=bool(who.employee) and _may_read("Expense Claim",
+		                                            "Expense Claim Detail"),
 		label_one=_("{n} expense claim to approve"),
 		label_many=_("{n} expense claims to approve"),
 	)
@@ -600,7 +627,7 @@ def _part_goal_updates(who):
 	took 16.4 seconds for an HR caller (042 AC-16).
 	"""
 	scope = None
-	available = bool(who.employee) and _has_doctype("KPI")
+	available = bool(who.employee) and _may_read("KPI", "Employee")
 	if available:
 		# `_is_hr` is imported rather than re-derived: it is the definition
 		# `get_pending_approvals_count` uses, and the scope helper is built for
@@ -765,7 +792,7 @@ def _part_attendance_fixes(who):
 		REQUEST, _may_review, _with_decide_flag, review_queue_filters,
 	)
 
-	available = bool(who.employee) and bool(_may_review())
+	available = bool(who.employee) and bool(_may_review()) and _may_read(REQUEST)
 	filters, is_hr_scope = (review_queue_filters(who.user) if available
 	                        else (no_rows(), False))
 
@@ -830,7 +857,7 @@ def _part_shift_requests(who):
 	their own shift changes is counted once, under "my requests" (042 AC-9's
 	rule, applied to part 4 as section 6.2 asks).
 	"""
-	available = bool(who.employee) and _has_doctype("Shift Request")
+	available = bool(who.employee) and _may_read("Shift Request")
 	filters = no_rows()
 	if available:
 		filters = {
@@ -879,7 +906,8 @@ def _part_policies(who):
 	The filter expression is the list of (policy, version) pairs still needed.
 	Both uses read that one list, so the count and the screen cannot drift.
 	"""
-	available = bool(who.employee) and _has_doctype("Policy Document")
+	available = bool(who.employee) and _may_read("Policy Document",
+	                                             "Policy Acknowledgement")
 	needed = []
 	if available:
 		# `get_list`, so this is what the caller may READ - the same set
@@ -937,9 +965,9 @@ def _part_my_requests(who):
 	"""
 	from alvoraa_portal.attendance_correction import DONE_STATES, REQUEST
 
-	available = bool(who.employee)
+	available = bool(who.employee) and _may_read("Leave Application", REQUEST)
 	filters = {"employee": who.employee} if available else no_rows()
-	has_shift = _has_doctype("Shift Request")
+	has_shift = _may_read("Shift Request")
 
 	def _collect(filters, limit):
 		"""All three kinds, newest first. One query each, never one per row."""

@@ -57,6 +57,10 @@ def _give_an_approver(*employees):
 	"""Slice 076 Part C (decision 4): a claim with no approver is refused, so the
 	claimants here get one, as real data must have."""
 	approver = ensure_user("alvoraa.claim.approver@example.com", roles=("Expense Approver",))
+	# An approver must be an enabled login with an Active Employee record, or
+	# the claim is refused too (Surbhi, 30 Oct 2026).
+	lt = ensure_leave_type("Alvoraa Casual")
+	link_user_to_employee(ensure_employee_with_leave("Claim", lt, days=1, last_name="Approver"), approver)
 	for emp in employees:
 		frappe.db.set_value("Employee", emp, "expense_approver", approver)
 	frappe.db.commit()

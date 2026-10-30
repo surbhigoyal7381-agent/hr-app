@@ -223,6 +223,38 @@ class TestExpenseFromPending(FrappeTestCase):
 			frappe.db.set_value("Employee", self.l_emp, "status", "Active")
 			frappe.db.commit()
 
+	def test_a_new_claim_to_an_approver_who_has_left_or_is_disabled_is_refused(self):
+		"""Surbhi, 30 Oct 2026: such an approver could never decide it."""
+		for change, undo in (
+			(("Employee", self.l_emp, "status", "Left"), ("Employee", self.l_emp, "status", "Active")),
+			(("User", self.l, "enabled", 0), ("User", self.l, "enabled", 1)),
+		):
+			with self.subTest(change=change[2]):
+				before = frappe.db.count("Expense Claim", {"employee": self.e_emp})
+				frappe.db.set_value(*change)
+				try:
+					frappe.set_user(self.e)
+					with self.assertRaises(frappe.ValidationError) as ctx:
+						hr_api.apply_expense_claim(expense_type=self.etype, expense_date=today(), amount=10)
+				finally:
+					frappe.set_user("Administrator")
+					frappe.db.set_value(*undo)
+					frappe.db.commit()
+				self.assertIn("Ask HR to set your approver.", str(ctx.exception))
+				self.assertEqual(frappe.db.count("Expense Claim", {"employee": self.e_emp}), before)
+
+	def test_backfill_leaves_a_claim_whose_approver_has_left(self):
+		name = self._file(self.e)
+		frappe.db.set_value("Expense Claim", name, "expense_approver", None)
+		frappe.db.set_value("Employee", self.l_emp, "status", "Left")
+		frappe.db.commit()
+		try:
+			expense_claim_approver_backfill.execute()
+		finally:
+			frappe.db.set_value("Employee", self.l_emp, "status", "Active")
+			frappe.db.commit()
+		self.assertFalse(frappe.db.get_value("Expense Claim", name, "expense_approver"))
+
 	def test_an_approver_without_the_role_is_told_what_to_ask_for(self):
 		name = self._file(self.c)
 		with self.assertRaises(frappe.PermissionError) as ctx:

@@ -2451,13 +2451,18 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
 def expense_approver_for(employee):
     """The Employee's expense approver, else the first expense approver of their
     Department - the same lookup Frappe HR's own form uses
-    (hrms.api.get_expense_approval_details). None when neither is set."""
+    (hrms.api.get_expense_approval_details). None when neither is set, and None
+    when the approver could never decide it: a disabled login or no Active
+    Employee record (Surbhi, 30 Oct 2026). Filing and the backfill both ask here."""
     approver, department = frappe.db.get_value("Employee", employee, ["expense_approver", "department"])
     if not approver and department:
         approver = frappe.db.get_value(
             "Department Approver",
             {"parent": department, "parentfield": "expense_approvers", "idx": 1}, "approver")
-    return approver or None
+    if not approver or not frappe.db.get_value("User", approver, "enabled") \
+            or not frappe.db.exists("Employee", {"user_id": approver, "status": "Active"}):
+        return None
+    return approver
 
 
 def keep_claim_approver(doc, method=None):

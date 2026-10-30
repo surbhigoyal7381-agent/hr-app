@@ -9,6 +9,21 @@ tier: 1 (money and personal data). Plan: 04-impact-and-strategy.md, Part C, and 
 
 # 076 Part C: expenses from Pending, and birthdays. Implementation notes
 
+## An approver who has left, 30 Oct 2026 (Surbhi said yes)
+
+**Bad news first: the Pending card on dev showed no expense claims to anyone.** The ALV-250 change that landed on dev on 29 Oct (`552916cb`, "one unreadable doctype must not kill the whole Inbox") checks that the caller may read every table a part uses. For the expense part it named `Expense Claim Detail` as well as `Expense Claim`. `Expense Claim Detail` is a child table: it has no permission rows of its own, so the check is false for every user who is not an administrator. The expense part was switched off for every approver, without an error. Two Part C tests caught it on my site. **Fix (one line, `inbox_api.py`):** check `Expense Claim` only, as the other parts already do for their child tables (the goal part names neither of its child logs). ALV-250's own guard is kept: an approver who may not read Expense Claim still gets an empty part rather than a dead panel. This is a change to another session's lines, made because it broke this slice; it is in its own commit so it can be looked at alone.
+
+**What changed for the approver who has left:**
+
+- `hr_api.expense_approver_for` now gives "no approver" when the approver's login is disabled or they have no Active Employee record. Such a person could never decide the claim (`decide_expense` already refuses them).
+- So a new claim to them is refused with the same words, "Ask HR to set your approver.", and no claim is made.
+- The backfill uses the same lookup, so an open claim whose approver has left is counted as unresolvable and left alone.
+- The claimant-cannot-choose rule (`keep_claim_approver`) uses the same lookup too, so nothing else changes for it.
+
+**Tests:** two new in `test_expense_birthdays_076` - `test_a_new_claim_to_an_approver_who_has_left_or_is_disabled_is_refused` (both shapes: Employee Left, login disabled) and `test_backfill_leaves_a_claim_whose_approver_has_left`. `test_expense_and_scoping` changed on purpose: its approver login now has an Active Employee record, as real data must. Results, one module at a time on my site: `test_expense_birthdays_076` 35 OK; `test_expense_and_scoping` 8 OK; `test_erpnext_integration_178` 15 OK; `test_inbox_parts_042` 29 OK (ALV-250's own four tests included); `test_inbox_counts_034` 17 + 2 OK; `test_frame_endpoint_registry_034` 9 OK. Before the one-line inbox fix, two Part C tests failed (the approver's expense part was empty). DOM suite 19 run, 0 failed. `check_scope_traps.py` and its self-test, `check_app_integrity.py`: OK.
+
+**Not changed:** a claim already filed whose approver leaves afterwards. It still waits for HR to re-assign it in Desk (the spec's rule for existing claims).
+
 ## Fixes after the reviews (06-review-C.md, 06-security-C.md), 29 Oct 2026
 
 Surbhi approved every recommendation. Local only, not pushed. Where the sections further down differ from this table, this table wins.
@@ -27,7 +42,7 @@ Surbhi approved every recommendation. Local only, not pushed. Where the sections
 
 **Re-run after the fixes, one module at a time, all OK:** `test_expense_and_scoping` 8; `test_erpnext_integration_178` 15; `test_portal_security_010` 45 + 5; `test_access_control` 34; `test_home_076` 6 + 18. DOM suite 19 run, 0 failed. `check_scope_traps.py` and its `--self-test`, `check_app_integrity.py`, tag balance, design system, brand spelling, handlers and undefined-JS checks: OK. Real-browser balance check: 90 of 90 cells passed.
 
-**Not done, by her choice of scope:** refusing new claims to an approver who has left (review open question 3); the possible DTC exposure of dates of birth through narrow User Permissions (security Escalation 1) - that needs a read-only query at DTC and its own ticket, not a Part C change.
+**Not done, by her choice of scope:** the possible DTC exposure of dates of birth through narrow User Permissions (security Escalation 1) - that needs a read-only query at DTC and its own ticket, not a Part C change.
 
 ## Bad news first
 

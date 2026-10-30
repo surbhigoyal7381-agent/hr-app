@@ -815,3 +815,49 @@ class TestATenantThatDroppedARolePermission(_WaveTwo):
 					frappe.set_user("Administrator")
 				self.assertEqual(len(box["parts"]), len(inbox_api.PARTS))
 
+	def test_no_part_guards_on_a_child_table(self):
+		"""ALV-256. Frappe answers a permission question about a child table
+		from its PARENT, and refuses when it is not told which parent - so
+		`has_permission("Expense Claim Detail", "read")` is False for
+		everybody but the Administrator.
+
+		ALV-250 named that child table in the expense part's guard, and took
+		expense approvals off the Inbox for every user. The tests that fix
+		wrote all patched `has_permission`, so none of them ever reached the
+		real check. This one reads the source instead: every doctype any part
+		guards on must be a parent, whatever the caller's roles are.
+		"""
+		import re
+		from pathlib import Path
+
+		src = Path(inbox_api.__file__).read_text(encoding="utf-8")
+		named = set()
+		for call in re.findall(r"_may_read\(([^)]*)\)", src):
+			named.update(re.findall(r'"([^"]+)"', call))
+		# The guards are built from constants too, so the literal scan must
+		# not be the only thing holding this up.
+		named.add(attendance_correction.REQUEST)
+		self.assertIn("Expense Claim", named,
+		              "the scan found no doctypes, so it proves nothing")
+
+		children = sorted(d for d in named
+		                  if frappe.db.exists("DocType", d)
+		                  and frappe.get_meta(d).istable)
+		self.assertEqual(children, [],
+		                 "these are child tables and can never be read by "
+		                 "anyone: guard on the parent instead")
+
+	def test_the_expense_guard_answers_yes_for_a_real_approver(self):
+		"""The same bug from the other side, with nothing patched: a caller
+		who can read Expense Claim must find the part available."""
+		self._as(self.rahul_login)
+		try:
+			can = frappe.has_permission("Expense Claim", "read")
+			self.assertEqual(inbox_api._may_read("Expense Claim"), can)
+			# And the trap itself, stated once so it is not re-learned.
+			self.assertFalse(inbox_api._may_read("Expense Claim Detail"),
+			                 "a child table always answers False - that is "
+			                 "why no guard may name one")
+		finally:
+			frappe.set_user("Administrator")
+

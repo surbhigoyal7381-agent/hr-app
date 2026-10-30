@@ -231,6 +231,14 @@ def _may_read(*doctypes):
 	site because its answer changes only at a migration. This one changes per
 	user, and the moment somebody edits a role row - which is exactly the case
 	being fixed, so a cache here would re-create the bug with a delay on it.
+
+	**Name a parent doctype here, never a child table.** Frappe answers a
+	permission question about a child table from its PARENT, and refuses
+	outright when it is not told which parent, so `has_permission` on one
+	returns False for everybody but the Administrator. ALV-250 passed
+	"Expense Claim Detail" and took expense approvals off the Inbox for every
+	user (ALV-256). A child table is read through its parent anyway, so the
+	parent's own permission is the whole answer.
 	"""
 	return all(_has_doctype(d) and frappe.has_permission(d, "read")
 	           for d in doctypes)
@@ -607,8 +615,10 @@ def _part_expense_approvals(who):
 		filters=filters,
 		count_fn=_count_rows("Expense Claim"),
 		rows_fn=rows_fn,
-		available=bool(who.employee) and _may_read("Expense Claim",
-		                                            "Expense Claim Detail"),
+		# The parent only. The claim lines are read with `frappe.get_all`,
+		# which checks no permissions and so can never raise - and asking
+		# about a child table on its own always answers False (ALV-256).
+		available=bool(who.employee) and _may_read("Expense Claim"),
 		label_one=_("{n} expense claim to approve"),
 		label_many=_("{n} expense claims to approve"),
 	)

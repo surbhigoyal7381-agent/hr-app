@@ -667,6 +667,10 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		"punches": list(marks),
 		"shift_starts": None, "shift_ends": None,
 		"late_by_mins": 0, "missing_punch": False,
+		# The span the hours were measured over, where the shift measures one
+		# span rather than pairing (ALV-251). None means the page pairs, which
+		# is what it has always done. See `_worked_span`.
+		"worked_span": None,
 		"request": claimed.get(date),
 	}
 	if not att:
@@ -738,6 +742,11 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 	if not marks and att.in_time and not att.out_time:
 		out["missing_punch"] = True
 
+	# Draw the day the way the shift counts it (ALV-251). `out["punches"]` is
+	# read, not `marks`, because the block above may have just labelled them.
+	out["worked_span"] = _worked_span(out["punches"],
+	                                  _shift_row(shift_cache, shift) if shift else None)
+
 	# Short only past the tolerance, and only when there is a shift to be short
 	# of. Without a shift there is no expectation, so inventing a shortfall
 	# would invent a problem - the same rule the analytics screen uses.
@@ -746,6 +755,37 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		if short > 0:
 			out["short_by"] = round(short, 2)
 	return out
+
+
+def _worked_span(marks, row):
+	"""First punch to last punch, where that is how the shift counts the day.
+
+	Frappe has two settings on a Shift Type, and `calculate_working_hours`
+	reads both. Set to "First Check-in and Last Check-out" it does not pair
+	anything at all: it takes ONE span and measures it. Set to "Every Valid
+	Check-in and Check-out" it adds each pair up.
+
+	The strip paired regardless, so on a first-to-last shift it drew slivers
+	beside a correct eight-hour total - DTC, 27 Oct 2026, three punches at
+	09:53, 09:53 and 18:21 against 8.47 hours worked (ALV-251). Returning the
+	span the hours were measured over is what keeps the picture and the number
+	telling one story.
+
+	None where the page should go on pairing: a shift that counts every pair,
+	a day with fewer than two punches, or a strictly-log-type shift with no In
+	or no Out. A lone punch deliberately falls back, because the page draws
+	that as an unfinished block to the end of the shift, and "we do not know
+	when you left" is the truer picture of that day than a zero-width mark.
+	"""
+	if not row or len(marks or ()) < 2:
+		return None
+	if row.get("working_hours_calculation_based_on") != "First Check-in and Last Check-out":
+		return None
+	if row.get("determine_check_in_and_check_out") == "Strictly based on Log Type in Employee Checkin":
+		ins = [m["at"] for m in marks if m.get("log_type") == "IN"]
+		outs = [m["at"] for m in marks if m.get("log_type") == "OUT"]
+		return [ins[0], outs[-1]] if ins and outs else None
+	return [marks[0]["at"], marks[-1]["at"]]
 
 
 def _grace_source(cache, shift):

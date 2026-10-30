@@ -5645,6 +5645,15 @@ function acPairs(x, from) {
     return (overnight && m < from) ? m + 24 * 60 : m;
   }
 
+  /* Some shifts do not pair at all. Set to "First Check-in and Last
+     Check-out", Frappe measures ONE span and ignores the In/Out order, and
+     the server sends that span as `worked_span` (ALV-251). Pairing it here
+     anyway is what drew two slivers against a correct 8.47-hour day. */
+  if (x.worked_span && x.worked_span.length === 2) {
+    var spanFrom = at(x.worked_span[0]), spanTo = at(x.worked_span[1]);
+    if (spanFrom !== null && spanTo !== null) return [[spanFrom, spanTo, false]];
+  }
+
   var out = [], openAt = null;
   (x.punches || []).forEach(function (p) {
     var when = at(p.at);

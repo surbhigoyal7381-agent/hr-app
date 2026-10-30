@@ -247,7 +247,9 @@ def _shift_row(cache, shift):
 	if shift not in cache:
 		cache[shift] = frappe.db.get_value(
 			"Shift Type", shift,
-			["start_time", "end_time", "late_entry_grace_period"], as_dict=True) or None
+			["start_time", "end_time", "late_entry_grace_period",
+			 "determine_check_in_and_check_out", "working_hours_calculation_based_on"],
+			as_dict=True) or None
 	return cache[shift]
 
 

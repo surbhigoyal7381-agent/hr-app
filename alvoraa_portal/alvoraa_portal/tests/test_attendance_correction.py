@@ -483,6 +483,104 @@ class TheShapeOfADay(CorrectionCase):
 		self.assertEqual(totals["hours_worked"], 6.0)
 
 
+class TheSpanTheHoursWereMeasuredOver(FrappeTestCase):
+	"""ALV-251. A shift set to "First Check-in and Last Check-out" does not
+	pair anything - Frappe takes one span and measures it. The strip paired
+	regardless, so at DTC on 27 Oct 2026 three punches (09:53, 09:53, 18:21)
+	drew two slivers beside a correct 8.47-hour day.
+
+	These are on the helper itself rather than through a site, because the
+	whole rule is in it and a pure function can be asked every combination
+	Frappe offers without building six Shift Types.
+	"""
+
+	FIRST_LAST = {"working_hours_calculation_based_on": "First Check-in and Last Check-out",
+	              "determine_check_in_and_check_out":
+	                  "Alternating entries as IN and OUT during the same shift"}
+	EACH_PAIR = {"working_hours_calculation_based_on": "Every Valid Check-in and Check-out",
+	             "determine_check_in_and_check_out":
+	                 "Alternating entries as IN and OUT during the same shift"}
+	BY_LABEL = {"working_hours_calculation_based_on": "First Check-in and Last Check-out",
+	            "determine_check_in_and_check_out":
+	                "Strictly based on Log Type in Employee Checkin"}
+
+	def marks(self, *pairs):
+		return [{"log_type": t, "at": a} for t, a in pairs]
+
+	def test_the_dtc_day_spans_the_first_punch_to_the_last(self):
+		marks = self.marks(("IN", "09:53"), ("OUT", "09:53"), ("IN", "18:21"))
+		self.assertEqual(ac._worked_span(marks, self.FIRST_LAST), ["09:53", "18:21"])
+
+	def test_a_shift_that_pairs_every_punch_is_left_alone(self):
+		"""Pairing is right there, and this fix must not take it away."""
+		marks = self.marks(("IN", "09:53"), ("OUT", "09:53"), ("IN", "18:21"))
+		self.assertIsNone(ac._worked_span(marks, self.EACH_PAIR))
+
+	def test_by_label_it_is_the_first_in_and_the_last_out(self):
+		"""Not the first and last punch: a day can open with a stray Out, and
+		Frappe looks for the labels. Here 08:50 is an Out and is skipped."""
+		marks = self.marks(("OUT", "08:50"), ("IN", "09:10"),
+		                   ("OUT", "13:00"), ("IN", "14:00"), ("OUT", "18:30"))
+		self.assertEqual(ac._worked_span(marks, self.BY_LABEL), ["09:10", "18:30"])
+
+	def test_by_label_with_no_out_at_all_falls_back_to_pairing(self):
+		marks = self.marks(("IN", "09:10"), ("IN", "14:00"))
+		self.assertIsNone(ac._worked_span(marks, self.BY_LABEL))
+
+	def test_a_single_punch_falls_back_to_pairing(self):
+		"""One punch means we do not know when they left, and the page draws
+		that as an unfinished block. A zero-width mark would say less."""
+		self.assertIsNone(ac._worked_span(self.marks(("IN", "09:00")), self.FIRST_LAST))
+
+	def test_no_punches_and_no_shift_are_both_quiet(self):
+		self.assertIsNone(ac._worked_span([], self.FIRST_LAST))
+		self.assertIsNone(ac._worked_span(self.marks(("IN", "09:00"),
+		                                             ("OUT", "18:00")), None))
+
+	def test_a_shift_with_neither_setting_filled_in_keeps_pairing(self):
+		"""Frappe computes zero hours for such a shift, so there is no span to
+		agree with. Pairing is the behaviour that was there before."""
+		marks = self.marks(("IN", "09:00"), ("OUT", "18:00"))
+		self.assertIsNone(ac._worked_span(marks, {}))
+
+
+class TheSpanReachesTheDay(CorrectionCase):
+	"""The same rule, this time through a real site, so the wiring is proved
+	and not only the arithmetic."""
+
+	def test_the_day_carries_the_span_its_hours_were_measured_over(self):
+		frappe.db.set_value("Shift Type", SHIFT, {
+			"working_hours_calculation_based_on": "First Check-in and Last Check-out",
+			"determine_check_in_and_check_out":
+				"Alternating entries as IN and OUT during the same shift"})
+		p, email = self.person("ACSpan")
+		att = self.day(p, self.d(3), 8.47)
+		for t in ("09:53:00", "09:53:30", "18:21:00"):
+			self.punch(p, self.d(3) + " " + t, None, att, "GRCDARIA1")
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual(day["worked_span"], ["09:53", "18:21"])
+
+	def test_a_shift_that_pairs_sends_no_span(self):
+		frappe.db.set_value("Shift Type", SHIFT, {
+			"working_hours_calculation_based_on": "Every Valid Check-in and Check-out",
+			"determine_check_in_and_check_out":
+				"Alternating entries as IN and OUT during the same shift"})
+		p, email = self.person("ACNoSpan")
+		att = self.day(p, self.d(3), 8.47)
+		for t in ("09:53:00", "09:53:30", "18:21:00"):
+			self.punch(p, self.d(3) + " " + t, None, att)
+		frappe.set_user(email)
+		self.assertIsNone(self.my_day(email, 3)["worked_span"])
+
+	def test_a_day_with_no_record_still_answers(self):
+		"""Every key on the day is read by the page unconditionally, so a day
+		that returns early must carry this one too."""
+		p, email = self.person("ACSpanEmpty")
+		frappe.set_user(email)
+		self.assertIsNone(self.my_day(email, 5)["worked_span"])
+
+
 class RaisingOne(CorrectionCase):
 	def test_forgetting_to_punch_in_goes_through(self):
 		"""The exact case this slice exists for, end to end. Before it, the

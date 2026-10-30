@@ -99,6 +99,10 @@ const base = {
   // are separate on purpose, so the sample data carries both.
   is_late: true, grace_mins: 0,
   missing_punch: false, request: null, state: "present",
+  // Null means "pair the punches", which is what every shift did before
+  // ALV-251. A shift that counts first check-in to last check-out sends the
+  // span instead, and the cases below cover both.
+  worked_span: null,
 };
 
 const cases = {
@@ -156,6 +160,36 @@ const cases = {
               explanation: "Left via the back gate."},
   },
   "a leave type with markup in it": {...base, leave_type: "<script>x</script>"},
+
+  /* DTC, 27 Oct 2026 - the day that found ALV-251. Three punches with no
+     In/Out of their own, so the server labelled them In, Out, In in order.
+     The shift counts first check-in to last check-out, which is where the
+     8.47 hours came from, and the server sends that span. Paired instead,
+     this drew a zero-width block at 09:53 and a stub at 18:21. */
+  "three unlabelled punches, counted first to last": {
+    ...base, shift_starts: "09:30", shift_ends: "18:30",
+    in_time: "09:53", out_time: "18:21", hours: 8.47, expected_hours: 9,
+    late_by_mins: 23, is_late: true, grace_mins: 15, missing_punch: true,
+    worked_span: ["09:53", "18:21"],
+    punches: [{log_type: "IN", at: "09:53", where: "GRCDARIA1"},
+              {log_type: "OUT", at: "09:53", where: "GRCDARIA1"},
+              {log_type: "IN", at: "18:21", where: "GRCDARIA1"}],
+  },
+  /* The same three punches on a shift that DOES pair every check-in and
+     check-out. No span is sent, and pairing is then the right answer - this
+     is the behaviour ALV-251 must not take away. */
+  "the same three punches on a shift that pairs": {
+    ...base, shift_starts: "09:30", shift_ends: "18:30",
+    in_time: "09:53", out_time: "18:21", hours: 0, missing_punch: true,
+    punches: [{log_type: "IN", at: "09:53"}, {log_type: "OUT", at: "09:53"},
+              {log_type: "IN", at: "18:21"}],
+  },
+  /* A span still has to be rolled over midnight like any other punch. */
+  "a night shift counted first to last": {
+    ...base, shift_starts: "22:00", shift_ends: "06:00", in_time: "22:05",
+    out_time: "06:02", hours: 7.9, worked_span: ["22:05", "06:02"],
+    punches: [{log_type: "IN", at: "22:05"}, {log_type: "OUT", at: "06:02"}],
+  },
 };
 
 /* What each case must actually look like, not just that it stays in bounds.
@@ -171,6 +205,14 @@ const expect = {
   // almost the whole track. Drawn on a collapsed track it started at 0 and
   // filled everything, which is what the scale bug looked like.
   "a night shift crossing midnight": {blocks: 1, startsNear: 1, endsNear: 100},
+  // 09:53 to 18:21 on a 09:30-18:30 shift: one block, starting 4% in and
+  // running to 98%. Before ALV-251 this drew two slivers.
+  "three unlabelled punches, counted first to last":
+    {blocks: 1, startsNear: 4.3, endsNear: 98.3},
+  // Pairing the same three: a zero-width first block, then the unfinished
+  // In drawn to the end of the shift and marked.
+  "the same three punches on a shift that pairs": {blocks: 2, gap: true},
+  "a night shift counted first to last": {blocks: 1, startsNear: 1, endsNear: 100},
 };
 
 let bad = 0;

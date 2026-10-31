@@ -54,7 +54,11 @@ from alvoraa_portal.field_app_limits import HR_KEY, _limited
 
 DOCTYPE = "Alvoraa Joiner Submission"
 REQUEST = "Web Form Request"
-WEB_FORM = "Alvoraa Joiner Details"
+# An INTERNAL anchor record, never rendered and never read by a person, so it
+# is named for what it is. Deliberately not a brand string: a visible
+# "Alvoraa" has to be "Alvora" (ALV-149), and the cleanest way to honour that
+# rule is not to put a brand name where nobody needs one.
+WEB_FORM = "Joiner details (internal anchor, not a form)"
 HR_ROLES = ("HR Manager", "System Manager")
 ENDPOINT = "joiner_invite"
 

@@ -2138,9 +2138,12 @@ body.panel-fullscreen{overflow:hidden}
 .oc-box-hd .ti{font-size:var(--fs-base);font-weight:650;color:var(--text);line-height:1.3}
 .oc-box .sub{font-size:var(--fs-xs);color:var(--text3);margin-top:1px}
 .oc-who{display:flex;gap:7px;align-items:center;margin-top:8px;font-size:var(--fs-sm);color:var(--text)}
+/* --fs-sm (12px), not --fs-xs (11px): slice 078 A7/PF15 - no text under 12 px
+   anywhere, and the initials were the only thing in this product under it.
+   12 px fits inside the same 24 px circle, so nothing else moves. */
 .oc-who .av{width:24px;height:24px;border-radius:50%;flex:none;object-fit:cover;
   background:var(--bg);display:flex;align-items:center;justify-content:center;
-  font-size:var(--fs-xs);font-weight:700;color:var(--text3)}
+  font-size:var(--fs-sm);font-weight:700;color:var(--text3)}
 .oc-who.oc-empty{color:var(--text3);font-style:italic}
 
 .oc-toggle{margin-top:-1px;position:relative;z-index:1;background:var(--surface);
@@ -2763,4 +2766,41 @@ body.panel-fullscreen{overflow:hidden}
   .myp-b{width:100%}
   .myp-face{width:84px;height:84px}
   .myp-face .myp-ini{font-size:var(--fs-xl)}
+}
+
+/* ── Faces on the chart and the table, slice 078 ──────────────────────────
+   `ocAvatar` now always draws the same circle with the person's initials in
+   it and layers the photograph over the top. The sizes stay exactly where
+   they were - 24 px in a hierarchy box, 34 px on a card - so a seat where one
+   person has a photograph and two do not has three identically sized circles
+   and nothing jumps when a face lands. */
+.av{position:relative;overflow:hidden}
+.av .av-i{line-height:1}
+.av .av-p{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity .15s linear;border-radius:50%}
+
+/* The table's faces. A table cell is ordinary markup, so a real link is safe
+   here - the chart's box must stay one <button> with nothing clickable inside
+   it, which a nested link already broke once. */
+.pos-who{display:flex;align-items:center;gap:6px;min-width:0}
+.pos-who + .pos-who{margin-top:4px}
+.pos-who .av{width:24px;height:24px;border-radius:50%;flex:none;background:var(--bg);
+  display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);
+  font-weight:700;color:var(--text3)}
+.pos-name-link{background:none;border:0;padding:0;font:inherit;color:var(--text);
+  text-align:left;text-decoration:underline;text-decoration-color:var(--border2);
+  text-underline-offset:2px;cursor:pointer;min-width:0;overflow-wrap:anywhere}
+.pos-name-link:hover{text-decoration-color:currentColor}
+.pos-name-link:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* NOTHING PRIVATE PRINTS. A face on a sheet pinned to a staff-room wall walks
+   past customers all day, so Ctrl+P strips every photograph and leaves the
+   initials that are already underneath - the printed chart is the same chart
+   with letters, not a page of holes. Beside slice 069's own suppression of
+   flags, tags and the notice column, and slice 065's `.private`.
+   The wall chart's own "Include photographs" tick re-enables them by adding
+   .pos-print-faces to the printed root, and loads every face first. */
+@media print{
+  .av .av-p{display:none!important}
+  .pos-print-faces .av .av-p{display:block!important;opacity:1!important}
 }

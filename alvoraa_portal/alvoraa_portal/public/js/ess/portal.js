@@ -273,11 +273,96 @@ function ocInitials(name) {
     .map(function (w) { return w[0]; }).join("").toUpperCase();
 }
 
+/* ONE circle, five states, three callers (slice 078).
+
+   It used to return EITHER an <img> OR a <span> of initials. Now it always
+   returns the same span with the initials in it, and layers the photograph over
+   the top. That single change gives, for nothing:
+
+     no photograph    the initials, exactly today's chart
+     still arriving   the initials, with the photograph fading in over them
+     arrived          the photograph
+     failed           the <img> removes itself; the initials are already there,
+                      so there is no broken-image icon, no message and no retry
+     printed          the photograph is hidden by a print rule and the initials
+                      are underneath, so a printed chart is the same chart with
+                      letters rather than a page of holes
+
+   Nothing reflows as photographs land, because the box is drawn at its final
+   size from the start - which is why `width` and `height` are ATTRIBUTES here
+   and not only CSS.
+
+   The src is on `data-src`, not `src`: `ocFaces()` decides when it is fetched.
+   That is OPS-19, and it is deliberately not `loading="lazy"` - the browser's
+   own threshold is about 2,500 px on 3G, which on the 120-row table reaches
+   60-70 rows and roughly 125 simultaneous requests through 8 worker slots, and
+   a browser-deferred image PRINTS AS A BLANK CIRCLE on the wall chart.
+
+   `thumb` is the 48 px copy and is what the chart and the table draw. `image`
+   is the stored 512 px picture, used when there is no thumbnail yet and by the
+   drawer's enlargement (OPS-13's fallback: thumbnail, photo, initials). */
 function ocAvatar(p) {
-  return p && p.image
-    ? '<img class="av" src="' + ocEsc(p.image) + '" alt="">'
-    : '<span class="av">' + ocEsc(ocInitials(p && p.name)) + "</span>";
+  var src = p && (p.thumb || p.image);
+  return '<span class="av' + (src ? " av-has" : "") + '">'
+    + '<span class="av-i" aria-hidden="true">' + ocEsc(ocInitials(p && p.name)) + "</span>"
+    + (src ? '<img class="av-p" data-src="' + ocEsc(src) + '" width="48" height="48"'
+             + ' alt="" onload="this.style.opacity=1" onerror="this.remove()">' : "")
+    + "</span>";
 }
+
+/* Which faces are fetched, and when. Called after every paint.
+
+   An IntersectionObserver with a 200 px margin, so what is on screen arrives
+   at once and the rest arrives on scroll. On the 16-box chart everything is in
+   view, so nothing is deferred and the first paint is unchanged; on the table
+   and on a filtered chart - where `posAnyFilter()` opens everything and the
+   count goes to about 215 - it is what keeps the request count bounded.
+
+   The same fifteen lines are used on both surfaces. Not two mechanisms. */
+var OC_FACES = null;
+function ocFaceOn(img) {
+  var src = img.getAttribute("data-src");
+  if (!src) return;
+  img.removeAttribute("data-src");
+  img.src = src;
+}
+function ocFaces(root) {
+  var imgs = (root || document).querySelectorAll("img.av-p[data-src]");
+  if (!imgs.length) return;
+  if (typeof IntersectionObserver !== "function") {
+    /* No observer: fetch them all rather than show empty circles. */
+    Array.prototype.forEach.call(imgs, ocFaceOn);
+    return;
+  }
+  if (!OC_FACES) {
+    OC_FACES = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        OC_FACES.unobserve(en.target);
+        ocFaceOn(en.target);
+      });
+    }, { rootMargin: "200px" });
+  }
+  Array.prototype.forEach.call(imgs, function (img) { OC_FACES.observe(img); });
+}
+/* Before a wall chart prints: every face, now, and wait for them. A deferred
+   image prints as a blank circle, which is worse than initials. */
+function ocFacesAllNow(root) {
+  var imgs = (root || document).querySelectorAll("img.av-p[data-src]");
+  Array.prototype.forEach.call(imgs, ocFaceOn);
+  var pending = Array.prototype.filter.call(
+    (root || document).querySelectorAll("img.av-p"),
+    function (i) { return !i.complete; });
+  if (!pending.length) return Promise.resolve(0);
+  return Promise.all(pending.map(function (i) {
+    return new Promise(function (done) {
+      i.addEventListener("load", done, { once: true });
+      i.addEventListener("error", done, { once: true });
+    });
+  })).then(function () { return pending.length; });
+}
+window.ocFaces = ocFaces;
+window.ocFacesAllNow = ocFacesAllNow;
 
 /* The worst thing wrong with a box decides its colour. Tinting a box for the
    mildest of three problems hides the serious one. */
@@ -328,6 +413,18 @@ function ocNodeCard(n, isRoot, opts) {
     : (n.people === null ? ""
        : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
          + "<span>" + (n.empty ? ocEsc(n.empty) : "Nobody in this seat") + "</span></div>");
+  /* Slice 078 (OPS-20): the Organisation page's cards used to list EVERY person
+     in a seat - one expansion from the root was measured at 94 boxes and 185
+     people, which nobody chose; it was what happened when nothing capped it.
+     The server now sends three and says how many more. This is the only chart
+     a frontline employee can open, so it is where the 3G budget actually binds.
+
+     Positions never sets `more_people`: it caps in `posFew()` and adds its own
+     "+22 more in this seat" line, so the two paths do not interfere. */
+  if (n.more_people) {
+    who += '<div class="oc-who oc-empty"><span class="av">&plus;</span><span>'
+      + ocEsc(n.more_people + " more in this seat") + "</span></div>";
+  }
   // Slice 072, Positions only: one grey line inside the box saying where the
   // rest of a shared seat is ("Same seat as under Owner · 6 in all"). Inside
   // the button, so it is part of the box's spoken name. The Organisation page
@@ -762,6 +859,11 @@ window.posPaint = function () {
     else if (POS._focusNext) { POS._focusNext = false; posFocusFirst(); }
     else if (recentre) posCentreTop();
   } else { posPaintList(); }
+  /* Slice 078 (OPS-19): decide which faces are fetched, after the paint.
+     Both views, one call - the structure view when a filter has opened
+     everything (`posAnyFilter` takes it to about 215 faces) and the 120-row
+     table, which is the surface the measurement was taken on. */
+  ocFaces(document.getElementById("pos-body"));
 };
 
 function posPaintList() {
@@ -806,6 +908,10 @@ var POS_NAMES_SHOWN = 3;
 function posOne(p) {
   var mk = posPlanMark(p);
   return { name: p.name, weight: p.weight, cover: p.covering,
+           // Slice 078: the face. `thumb` is the 48 px copy the card draws;
+           // `image` is the stored picture, kept so the drawer can enlarge it
+           // and as the fallback when no thumbnail has been derived yet.
+           employee: p.employee, thumb: p.thumb, image: p.image,
            note: p.leaving ? "leaving " + posDay(p.leaving) : null,
            pre: mk.pre, post: mk.post };
 }
@@ -829,15 +935,23 @@ function posCells(r, lead, tail) {
   var who = r.people.length
     ? shown.map(function (p) {
         var mk = posPlanMark(p);
-        return mk.pre + posEsc(p.name) + mk.post
+        /* Slice 078: a face, and the name as a real control that opens the
+           mini profile. A table cell is ordinary markup, so a <button> is
+           safe here - the chart's own box must stay ONE <button> with nothing
+           clickable inside it, which a nested button already broke once. */
+        return '<span class="pos-who">' + ocAvatar(p)
+          + '<span>' + mk.pre
+          + '<button type="button" class="pos-name-link" data-pos-who="'
+          + posEsc(p.employee || "") + '">' + posEsc(p.name) + "</button>" + mk.post
           // pos-flag: never printed (slice 069, SEC-3 - every Positions view)
           + (p.weight < 100 ? ' <span class="pf-card-meta pos-flag">' + posNum(p.weight) + "%</span>" : "")
           + (p.covering ? ' <span class="pf-card-meta pos-flag">covering</span>' : "")
           // "Who is leaving" was invisible in the view this screen opens on,
           // so one of the three questions it exists for had no answer here.
           + (p.leaving ? ' <span class="pf-card-meta pos-flag">leaving '
-             + posEsc(posDay(p.leaving)) + "</span>" : "");
-      }).join("<br>")
+             + posEsc(posDay(p.leaving)) + "</span>" : "")
+          + "</span></span>";
+      }).join("")
       + (rest > 0
           ? '<br><button class="btn btn-outline btn-sm" style="margin-top:4px"'
             + ' onclick="posOpenEditor(\'' + posEsc(r.id) + '\')">and '
@@ -4252,8 +4366,9 @@ window.ocTop = function () {
 window.ocMe = function () { ocLoad(null); };
 
 function ocPaint() {
-  document.getElementById("oc-body").innerHTML =
-    '<div class="oc-tree">' + ocRender(OC.root, true) + "</div>";
+  var body = document.getElementById("oc-body");
+  body.innerHTML = '<div class="oc-tree">' + ocRender(OC.root, true) + "</div>";
+  ocFaces(body);   /* slice 078 (OPS-19): which faces are fetched, and when */
 }
 
 window.ocLoad = async function (id) {

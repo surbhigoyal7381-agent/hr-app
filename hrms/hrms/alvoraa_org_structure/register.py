@@ -302,7 +302,12 @@ def position_table(branch=None, department=None, as_at=None):
 			filters={"position": ("in", names), "from_date": ("<=", as_at)},
 			fields=["name", "position", "employee", "employee_name", "weight",
 			        "assignment_type", "to_date", "from_date", "reason",
-			        "employee.reports_to as reports_to_emp", "employee.status as emp_status"],
+			        "employee.reports_to as reports_to_emp", "employee.status as emp_status",
+			        # Slice 078: the photograph rides on this same read, through
+			        # the same link-field join slice 072 already uses. NO extra
+			        # statement - `position_table` stays two queries for 403
+			        # people, which is the number the NFR budget sets.
+			        "employee.image as emp_image"],
 			limit_page_length=0):
 		if a.to_date and str(a.to_date) < str(as_at):
 			continue
@@ -316,6 +321,11 @@ def position_table(branch=None, department=None, as_at=None):
 			# the same seat twice over two periods.
 			"assignment": a.name,
 			"employee": a.employee, "name": a.employee_name,
+			# The stored 512 px picture, for the drawer's enlargement. The chart
+			# and the table draw `thumb` instead, filled in one batched read
+			# below. A face with no thumbnail falls back to the full picture and
+			# then to the person's initials (OPS-13).
+			"image": a.emp_image or None,
 			"weight": flt(a.weight),
 			"type": a.assignment_type or "Permanent",
 			"covering": (a.assignment_type or "Permanent") != "Permanent",
@@ -358,6 +368,20 @@ def position_table(branch=None, department=None, as_at=None):
 	for rows_ in people.values():
 		for a in rows_:
 			a["leaving"] = leaving.get(a["employee"])
+
+	# Slice 078 (OPS-6, OPS-43): the 48 px copies, in ONE statement for the whole
+	# page. Measured at 13.4 ms for 403 ids on the composite index `tabFile`
+	# already carries, which is what settled the spec's open question about
+	# whether a `File` row would defeat the batching. It does not, so there is
+	# no column on the HR master and no migration.
+	seen = {a["employee"] for rows_ in people.values() for a in rows_ if a["employee"]}
+	if seen:
+		from hrms.alvoraa_org_structure import people_fields
+
+		thumbs = people_fields.thumbnails_for(sorted(seen))
+		for rows_ in people.values():
+			for a in rows_:
+				a["thumb"] = thumbs.get(a["employee"])
 
 	# Slice 065: replacement plans, for plan readers looking at today only.
 	# Everybody else gets no key at all - not an empty one - so their reply is

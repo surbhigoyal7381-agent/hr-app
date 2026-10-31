@@ -106,18 +106,34 @@ DEFAULTS = {
 	# employee is told who sees it before they add it.
 	"alvoraa_my_profile_fields": "",
 
-	# How many days a joiner's pre-onboarding submission is kept when they never
-	# become an employee. **Unset or 0 means the feature is OFF**, never "keep
-	# for ever": counsel's 18 September 2026 policy prohibits indefinite
-	# retention in so many words, so `field_app_photos`' `0 = keep for ever`
-	# semantics must not be copied here.
+	# ── How long a joiner's submission is kept (counsel, 29 Oct 2026) ───────
 	#
-	# **It ships UNSET on purpose, and it is the only key here that does.**
-	# 078-PRIV-7's guard is that the form cannot be switched on at a tenant
-	# until this number has been set DELIBERATELY - proved by a `Version` row,
-	# which an untouched default cannot have. Counsel's figure is outstanding,
-	# so inventing one here would be the product answering a legal question.
-	"alvoraa_joiner_retention_days": "",
+	# Counsel's framing, which decides the shape of all of this: **our customers
+	# are the Data Controllers and we are a Data Processor.** Our job is to give
+	# the employer the settings, not to pick the periods. So every one of these
+	# is configurable, and the numbers below are the defaults Surbhi approved on
+	# 31 October 2026 - not a rule we invented.
+	#
+	# The single `alvoraa_joiner_retention_days` key that used to be here is
+	# GONE. It existed to be a number nobody had chosen, which is why 078-PRIV-7
+	# gated switching the form on until somebody set it deliberately. Counsel's
+	# answer replaced that with two periods that mean different things, so one
+	# key could not carry both and a key nothing reads is dead configuration.
+	#
+	# WHEN THEY DID NOT JOIN. Not erased the moment HR gives up on them -
+	# counsel reversed that - because the employer has its own candidate
+	# record-keeping duties. Counsel's range is 180 to 365 days; 180 is the
+	# conservative end and is the default.
+	"alvoraa_joiner_not_hired_days": 180,
+
+	# WHEN NOBODY EVER ACTIONED IT. A submission that just sits there would
+	# otherwise be held for ever, which the 18 September 2026 policy prohibits
+	# in so many words. 90 days from when it arrived, whatever state it is in.
+	"alvoraa_joiner_backstop_days": 90,
+
+	# And HR is WARNED before that happens, so the backstop is a safety net
+	# rather than a surprise. Day 75 of the 90.
+	"alvoraa_joiner_warn_days": 75,
 
 	# How many days an invite link works. **7 is the shipped default, and
 	# unlike retention there is every reason to have one**: this is not a legal
@@ -152,6 +168,12 @@ DEFAULTS = {
 	#
 	# A tenant that wants faces in its birthday mail ticks it on.
 	"alvoraa_photo_in_emails": 0,
+
+	# The pre-onboarding form. OFF, because a tenant turns a feature on
+	# deliberately. 078-PRIV-7's special precondition - that a retention period
+	# had to be set on purpose first - is GONE: counsel answered the question it
+	# existed for, so the periods above are no longer numbers we invented.
+	"alvoraa_joiner_form_on": 0,
 }
 
 # Slice 012 F1 (SEC-18): the keys that hand out privilege on the org chart.
@@ -175,8 +197,13 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_positions_profile_fields",
 	"alvoraa_positions_document_types",
 	"alvoraa_my_profile_fields",
-	"alvoraa_joiner_retention_days",
+	"alvoraa_joiner_not_hired_days",
+	"alvoraa_joiner_backstop_days",
+	"alvoraa_joiner_warn_days",
 	"alvoraa_joiner_link_days",
+	# Off by default. A tenant turns a feature on deliberately - which is the
+	# ordinary reason, now that counsel's answer has removed the special one.
+	"alvoraa_joiner_form_on",
 	# It decides whether a face goes out to every colleague by email, which is
 	# exactly the kind of decision this set exists for.
 	"alvoraa_photo_in_emails",
@@ -190,7 +217,10 @@ RULE_FOR_KEY = {
 	"alvoraa_positions_profile_fields": "078-SEC-5",
 	"alvoraa_positions_document_types": "078-SEC-5",
 	"alvoraa_my_profile_fields": "078-SEC-5",
-	"alvoraa_joiner_retention_days": "078-SEC-5",
+	"alvoraa_joiner_not_hired_days": "078-PRIV-6",
+	"alvoraa_joiner_backstop_days": "078-PRIV-6",
+	"alvoraa_joiner_warn_days": "078-PRIV-6",
+	"alvoraa_joiner_form_on": "078-SEC-5",
 	"alvoraa_joiner_link_days": "078-SEC-5",
 	"alvoraa_photo_in_emails": "078-PRIV-1",
 }
@@ -236,8 +266,16 @@ LABELS = {
 	# PLAIN WORDS, not "retention" and "expiry". The two are easy to read as
 	# the same thing - and were read that way once already - so each label says
 	# what it actually decides.
-	"alvoraa_joiner_retention_days": ("How long we keep a submission from someone who never joins",
-		"In days. Set it deliberately: until it is set, the joiner form cannot be switched on. Unset or 0 keeps the form off - it does not mean keep for ever."),
+	# PLAIN WORDS throughout. "Retention" and "expiry" were read as the same
+	# thing once already, so each label says what it actually decides.
+	"alvoraa_joiner_not_hired_days": ("How long we keep the details of someone who did not join",
+		"In days, from when their invite was closed. Your own candidate record-keeping rules decide this. Between 180 and 365."),
+	"alvoraa_joiner_backstop_days": ("How long an unactioned submission is kept at all",
+		"In days, from when it arrived. Nothing is ever kept indefinitely, so this is the last word whatever state a submission is in."),
+	"alvoraa_joiner_warn_days": ("Warn HR this many days after a submission arrives",
+		"So the line above is a safety net rather than a surprise. Must be less than it."),
+	"alvoraa_joiner_form_on": ("Ask new joiners for their details before day one",
+		"Off by default. It opens the only page in this product a person without a login can write to."),
 	"alvoraa_photo_in_emails": ("Include photographs in birthday and anniversary emails",
 		"Off by default. Email is the one place a person cannot see, check or recall who received their picture."),
 	"alvoraa_joiner_link_days": ("How long an invite link works",
@@ -333,19 +371,53 @@ def _set_access_setting(key, value):
 				key,
 			)
 
-	# The retention period is a number of days, set deliberately. There is no
-	# "keep for ever" value to save (078-PRIV-6, AC-131d).
-	if key == "alvoraa_joiner_retention_days" and cstr(value).strip():
+	# The three retention numbers. Each is range-checked, and **there is no
+	# "keep for ever" value to save** anywhere (078-PRIV-6, AC-131d): a blank is
+	# refused rather than read as "never delete", which is the semantic the
+	# check-in photo setting uses and the one thing counsel's September policy
+	# rules out.
+	_DAYS = {
+		# counsel's own range
+		"alvoraa_joiner_not_hired_days": (180, 365),
+		"alvoraa_joiner_backstop_days": (1, 365),
+		"alvoraa_joiner_warn_days": (1, 364),
+	}
+	if key in _DAYS:
+		low, high = _DAYS[key]
 		raw = cstr(value).strip()
-		if not raw.isdigit() or not (1 <= int(raw) <= 3650):
+		if not raw.isdigit() or not (low <= int(raw) <= high):
 			refuse(
-				_("Give the number of days a joiner's details are kept, "
-				  "between 1 and 3650."),
+				_("Give a number of days between {0} and {1}.").format(low, high),
 				rule,
 				endpoint,
 				"DefaultValue",
 				key,
 			)
+		# The warning has to come BEFORE the deletion it warns about, or it is
+		# not a warning. Checked against what is stored, not against a default,
+		# so changing either one in either order cannot leave them crossed.
+		warn = int(raw) if key == "alvoraa_joiner_warn_days" else cint(get("alvoraa_joiner_warn_days"))
+		stop = int(raw) if key == "alvoraa_joiner_backstop_days" else cint(get("alvoraa_joiner_backstop_days"))
+		if warn >= stop:
+			refuse(
+				_("The warning must come before the deletion: {0} days is not "
+				  "less than {1}.").format(warn, stop),
+				rule,
+				endpoint,
+				"DefaultValue",
+				key,
+			)
+
+	# The switch itself. 0 or 1, nothing else - a typo must not read as "on"
+	# for the only page in this product a person without a login can write to.
+	if key == "alvoraa_joiner_form_on" and cstr(value).strip() not in ("0", "1"):
+		refuse(
+			_("Give 0 or 1 for whether the joiner form is switched on."),
+			rule,
+			endpoint,
+			"DefaultValue",
+			key,
+		)
 
 	# A switch, so 0 or 1 and nothing else. A typo must not read as "on".
 	if key == "alvoraa_photo_in_emails" and cstr(value).strip() not in ("0", "1"):

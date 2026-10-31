@@ -1,0 +1,234 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-31 14:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "description": "A person who has told us about themselves and is not yet an employee. Nothing shipped means that, which is why this doctype exists; a Web Form onto Employee was refused, because a guest-writable Employee lets strangers consume the naming series and trips the absence-backfill trap.",
+ "field_order": [
+  "status",
+  "full_name",
+  "column_break_who",
+  "invited_by",
+  "expires_on",
+  "submitted_at",
+  "details_section",
+  "mobile",
+  "personal_email",
+  "current_address",
+  "column_break_details",
+  "emergency_contact_name",
+  "emergency_relation",
+  "emergency_phone",
+  "bring_on_day_one",
+  "outcome_section",
+  "employee",
+  "legal_hold",
+  "column_break_outcome",
+  "cancel_reason",
+  "closed_on",
+  "warned_on",
+  "erased_on",
+  "erased_why",
+  "web_form_request"
+ ],
+ "fields": [
+  {
+   "fieldname": "status",
+   "default": "Invited",
+   "description": "Terminal and irreversible once it leaves Invited or Submitted. Nothing here is reversible - a link cannot be revived.",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Invited\nSubmitted\nMade an employee\nExpired\nCancelled",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "full_name",
+   "description": "Inside 078-PRIV-9's closed allow-list. Cleared when the submission is erased.",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Full name"
+  },
+  {
+   "fieldname": "column_break_who",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "invited_by",
+   "description": "Who issued the link. Survives erasure - it holds no personal data about the joiner.",
+   "fieldtype": "Link",
+   "label": "Invited by",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "expires_on",
+   "description": "A mirror of the Web Form Request's own expires_on, so the list and the daily job can read it without opening that row. The FRAMEWORK enforces the expiry, not this field.",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Link works until",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted_at",
+   "fieldtype": "Datetime",
+   "label": "Sent at",
+   "read_only": 1
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "What the joiner sent"
+  },
+  {
+   "fieldname": "mobile",
+   "fieldtype": "Data",
+   "label": "Mobile number"
+  },
+  {
+   "fieldname": "personal_email",
+   "fieldtype": "Data",
+   "label": "Personal email"
+  },
+  {
+   "fieldname": "current_address",
+   "fieldtype": "Small Text",
+   "label": "Where they live now"
+  },
+  {
+   "fieldname": "column_break_details",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "emergency_contact_name",
+   "fieldtype": "Data",
+   "label": "Who to ring in an emergency"
+  },
+  {
+   "fieldname": "emergency_relation",
+   "fieldtype": "Data",
+   "label": "How they are related"
+  },
+  {
+   "fieldname": "emergency_phone",
+   "fieldtype": "Data",
+   "label": "Their phone number"
+  },
+  {
+   "fieldname": "bring_on_day_one",
+   "description": "Document types the joiner chose to bring rather than upload. Their words are never stored - only the type names they ticked.",
+   "fieldtype": "Small Text",
+   "label": "Bringing on the first day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "outcome_section",
+   "fieldtype": "Section Break",
+   "label": "What happened"
+  },
+  {
+   "fieldname": "employee",
+   "description": "Set by HR AFTER creating the personnel record by hand. NEVER set by the form, and no joining date ever comes from it - a back-dated joining date makes Frappe mark the person Absent for every day since, and deleting those rows does not help.",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "fieldname": "legal_hold",
+   "default": "0",
+   "description": "The erase job skips a flagged row however old it is. Deleting something somebody has asked you to preserve is worse than keeping it too long.",
+   "fieldtype": "Check",
+   "label": "Legal hold"
+  },
+  {
+   "fieldname": "column_break_outcome",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cancel_reason",
+   "fieldtype": "Select",
+   "label": "Cancelled because",
+   "options": "\nBy HR\nThe joiner is not coming\nSent to the wrong person\nA newer link was made",
+   "read_only": 1
+  },
+  {
+   "fieldname": "closed_on",
+   "fieldtype": "Datetime",
+   "label": "Invite closed on",
+   "read_only": 1,
+   "description": "When it stopped being live - cancelled, expired, or made an employee. The not-hired retention window runs from HERE and not from `modified`, because `modified` moves on ANY later edit: ticking legal hold and unticking it again would otherwise restart the clock."
+  },
+  {
+   "fieldname": "warned_on",
+   "fieldtype": "Datetime",
+   "label": "HR warned on",
+   "read_only": 1,
+   "description": "Set once, so the daily job does not warn about the same row every day."
+  },
+  {
+   "fieldname": "erased_on",
+   "fieldtype": "Datetime",
+   "label": "Details erased on",
+   "read_only": 1
+  },
+  {
+   "fieldname": "erased_why",
+   "description": "Which rule erased it: the not-hired window, the untouched backstop, HR's Purge, or because they became an employee.",
+   "fieldtype": "Data",
+   "label": "Erased because",
+   "read_only": 1
+  },
+  {
+   "fieldname": "web_form_request",
+   "description": "Frappe's own request row holds the key, its expiry and its single-use burn. OUR submit path DELETES that row the moment it is used, so the clear-text key exists only while the link still works (Surbhi, 31 Oct 2026).",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Token",
+   "options": "Web Form Request",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-31 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Joiner Submission",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  },
+  {
+   "role": "HR Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "report": 1,
+   "export": 1
+  },
+  {
+   "role": "HR User",
+   "read": 1,
+   "report": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "full_name",
+ "track_changes": 1
+}

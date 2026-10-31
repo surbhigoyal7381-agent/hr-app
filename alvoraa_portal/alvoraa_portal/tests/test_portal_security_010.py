@@ -887,6 +887,35 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# saving hands over to the access-granting path in hrms, which already
 		# holds the one Version bypass in its own ceiling above.
 		("alvoraa_portal", "people_settings.py"): 0,
+		# Slice 078 step 6, pre-onboarding. The FIRST public write path in this
+		# product, so every one of these is named rather than counted.
+		#
+		# joiner_invite.py: FOUR. The Web Form anchor record and the Web Form
+		# Request row (Frappe ships that doctype Website-Manager-only, and HR is
+		# not one); deleting the request row, which is the purge that makes the
+		# clear-text key short-lived; and the File listing behind Export, which
+		# reads names and dates and no bytes. Each runs after _require_hr().
+		("alvoraa_portal", "joiner_invite.py"): 4,
+		# joiner_public.py: FOUR, all on a GUEST path that has no session at
+		# all - which is the whole point of the feature. Each runs only after
+		# `_open()` has validated the token through Frappe's own validator, and
+		# there is no submission argument anywhere in that module, so there is
+		# nothing a caller can post that reaches a row other than their own: the
+		# submission save, the uploaded File insert, and the two reads that find
+		# what the token is bound to.
+		("alvoraa_portal", "joiner_public.py"): 4,
+		# joiner_housekeeping.py: SIX. The daily job runs with no session: the
+		# reads that find what is due, the status save that expires a dead link,
+		# and the Notification Log row that warns HR. It deletes nothing a user
+		# asked about.
+		("alvoraa_portal", "joiner_housekeeping.py"): 6,
+		# The controller: FOUR. The erase - the File deletes and the save that
+		# clears the fields - which is a retention duty rather than a request,
+		# and runs from the scheduler as well as from HR.
+		("alvoraa_portal",
+		 "alvoraa_portal/doctype/alvoraa_joiner_submission/alvoraa_joiner_submission.py"): 4,
+		# The public page itself: NONE. It reads no invite at all.
+		("alvoraa_portal", "www/joiner.py"): 0,
 		# people_fields.py (hrms): ONE - the batched thumbnail read. Frappe's
 		# own File query condition narrows a Website User to `owner = me`, so a
 		# scoped read here would hide every colleague's thumbnail and the one

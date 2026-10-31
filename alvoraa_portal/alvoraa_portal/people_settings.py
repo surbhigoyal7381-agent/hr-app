@@ -34,7 +34,10 @@ DOC_TYPE = "Employee Document Type"
 PROFILE_KEY = "alvoraa_positions_profile_fields"
 DOCS_KEY = "alvoraa_positions_document_types"
 MY_KEY = "alvoraa_my_profile_fields"
-RETENTION_KEY = "alvoraa_joiner_retention_days"
+NOT_HIRED_KEY = "alvoraa_joiner_not_hired_days"
+BACKSTOP_KEY = "alvoraa_joiner_backstop_days"
+WARN_KEY = "alvoraa_joiner_warn_days"
+FORM_ON_KEY = "alvoraa_joiner_form_on"
 LINK_KEY = "alvoraa_joiner_link_days"
 EMAIL_PHOTO_KEY = "alvoraa_photo_in_emails"
 
@@ -82,10 +85,13 @@ def get_people_settings():
 		# or sees a third role appear the day somebody widens it.
 		"audience_count": audience["people"],
 		"audience_roles": audience["roles"],
-		# Two numbers that are easy to read as one, so the card words each of
-		# them rather than calling either "retention" or "expiry".
-		"retention_days": frappe.db.get_default(RETENTION_KEY) or "",
+		# Four numbers that are easy to read as one another, so the card words
+		# each of them rather than calling any of them "retention" or "expiry".
 		"link_days": org_settings.get(LINK_KEY),
+		"not_hired_days": org_settings.get(NOT_HIRED_KEY),
+		"backstop_days": org_settings.get(BACKSTOP_KEY),
+		"warn_days": org_settings.get(WARN_KEY),
+		"joiner_form_on": bool(cint(org_settings.get(FORM_ON_KEY))),
 		"photo_in_emails": photo_in_emails(),
 		"last_changed": _last_changed(),
 	}
@@ -215,8 +221,8 @@ def set_people_setting(key=None, value=None):
 	`Version` row live. Nothing about who may change these settings is decided
 	twice.
 	"""
-	if key not in (PROFILE_KEY, DOCS_KEY, MY_KEY, RETENTION_KEY, LINK_KEY,
-	               EMAIL_PHOTO_KEY):
+	if key not in (PROFILE_KEY, DOCS_KEY, MY_KEY, LINK_KEY, EMAIL_PHOTO_KEY,
+	               NOT_HIRED_KEY, BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY):
 		from hrms.alvoraa_hr_core.access import refuse
 
 		refuse(_("That setting cannot be changed here."), "078-SEC-5",
@@ -232,8 +238,9 @@ def _last_changed():
 	rows = frappe.get_all(
 		"Version",
 		filters={"ref_doctype": "DefaultValue",
-		         "docname": ("in", [PROFILE_KEY, DOCS_KEY, MY_KEY, RETENTION_KEY,
-		                            LINK_KEY, EMAIL_PHOTO_KEY])},
+		         "docname": ("in", [PROFILE_KEY, DOCS_KEY, MY_KEY, LINK_KEY,
+		                            EMAIL_PHOTO_KEY, NOT_HIRED_KEY,
+		                            BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY])},
 		fields=["owner", "creation"], order_by="creation desc", limit=1)
 	if not rows:
 		return {"by": "", "on": ""}

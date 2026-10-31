@@ -217,8 +217,10 @@ def clear_lists():
 	# asserts against the previous one's leftovers - which has already happened
 	# twice in this suite.
 	for key in ("alvoraa_positions_profile_fields", "alvoraa_positions_document_types",
-	            "alvoraa_my_profile_fields", "alvoraa_joiner_retention_days",
-	            "alvoraa_photo_in_emails", "alvoraa_joiner_link_days"):
+	            "alvoraa_my_profile_fields", "alvoraa_photo_in_emails",
+	            "alvoraa_joiner_link_days", "alvoraa_joiner_not_hired_days",
+	            "alvoraa_joiner_backstop_days", "alvoraa_joiner_warn_days",
+	            "alvoraa_joiner_form_on"):
 		frappe.db.set_default(key, "")
 	frappe.db.commit()
 

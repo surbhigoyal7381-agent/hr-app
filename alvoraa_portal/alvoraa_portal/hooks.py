@@ -117,6 +117,14 @@ doctype_js = {
     # the dates are already chosen. The first click only previews - it writes
     # nothing until the numbers have been seen and agreed.
     "Payroll Entry": "public/js/payroll_entry_reprocess.js",
+    # Slice 078: Invite, Export and Purge on the joiner submission form. HR
+    # reviews a submission in Desk - that IS HR's own screen, and HR Manager
+    # already has Desk - so three buttons there need no new portal page.
+    #
+    # ONE dict, like override_whitelisted_methods below: a second
+    # `doctype_js = {...}` later in this file would REPLACE this one and
+    # silently drop every entry above.
+    "Alvoraa Joiner Submission": "public/js/alvoraa_joiner_submission.js",
 }
 
 # The phone list (slice 013 step 5, US-18): default "joined in the last 7
@@ -467,6 +475,13 @@ scheduler_events = {
         # The punch, the time and the place stay - they are the record of work
         # done. Only the photo goes.
         "alvoraa_portal.field_app_photos.purge_old_checkin_photos",
+        # Slice 078 (078-PRIV-6, counsel 29 Oct 2026): expires dead invite
+        # links - which also deletes the row holding their clear-text key - then
+        # erases what a joiner sent, on three clocks the employer sets: the
+        # not-hired window, the untouched backstop, and the warning before it.
+        # Nothing here is ever kept indefinitely, and legal hold wins.
+        # **The only scheduled job this slice adds.**
+        "alvoraa_portal.joiner_housekeeping.daily",
         "alvoraa_portal.scheduled_jobs.send_arrival_notifications",
         "alvoraa_portal.scheduled_jobs.check_compliance_alerts",
         # Pulls each tenant's error counts and scheduler state up to the control

@@ -854,6 +854,10 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# years). The backfill runs as Administrator in a migrate.
 		("alvoraa_portal", "home_people.py"): 0,
 		("alvoraa_portal", "patches/v1_0/expense_claim_approver_backfill.py"): 0,
+		# ALV-249 (new file): add and remove one own-record User Permission.
+		# Only System Manager may write User Permission, and these run when HR
+		# saves an Employee or a User. Nothing else in the file bypasses.
+		("alvoraa_portal", "own_record_permission.py"): 2,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

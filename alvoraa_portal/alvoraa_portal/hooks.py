@@ -186,6 +186,8 @@ doc_events = {
             # somebody's reporting line moves the permission with it, in the
             # same save, so the two can never disagree. See manager_scope.py.
             "alvoraa_portal.manager_scope.on_employee_update",
+            # ALV-249: a staff login sees its own record and nobody else's.
+            "alvoraa_portal.own_record_permission.on_employee_update",
         ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
         # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank
@@ -234,7 +236,10 @@ doc_events = {
                          # ALV-128: a disabled login stops the app phones it signed
                          # in. (A changed password signs them out on their next
                          # call instead - field_checkin, 26 Sep 2026.)
-                         "alvoraa_portal.field_app_device.block_phones_for_disabled_login"],
+                         "alvoraa_portal.field_app_device.block_phones_for_disabled_login",
+                         # ALV-249: promoted to HR loses the own-record row,
+                         # a disabled login loses it, back to staff gets it.
+                         "alvoraa_portal.own_record_permission.on_user_update"],
     },
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes

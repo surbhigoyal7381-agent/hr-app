@@ -8,7 +8,135 @@ function; D-2 managers keep the standard behaviour and see their whole reporting
 
 ---
 
-## Bad news first
+## Round 2, after the security review and senior review (07), 31 Oct 2026
+
+Surbhi approved D-1, D-2 and D-3. The 07 findings, and what was done about each.
+
+### Bad news first
+
+- **A second Frappe parameter, `ignore_permissions`, is also taken from callers** by five
+  whitelisted ERPNext and Frappe HR methods: `make_salary_slip`, `get_party_details`,
+  `make_sales_invoice`, `create_dunning` and `make_timesheet`. As a staff login on
+  `test249`, `make_salary_slip` with `ignore_permissions=1` got **past** the permission
+  check. It stopped at a later validation, so I did not see a slip come back. Without the
+  word it was refused. The guard now drops this word too.
+  - Only one shipped client sends it: Frappe's bulk "clear assignment", to a method that
+    does not take it. So dropping it costs nothing.
+- **There is no hook for `frappe.db.set_value`.** A login linked that way still gets its
+  row only at its **next sign-in**, or when the script calls `sync_user`, or at the next
+  `run_once`. A session that is already open keeps working without the row until it ends.
+  API-key access creates no session, so it is not caught at sign-in either.
+- **DTC's real account script is not in this repository.** I could not add the one line
+  to it. `demo/link_employee_users.py` is in `demo/`, which is `merge=ours`, so I did not
+  edit it (see D-3 below for the line and the rule).
+- **The doors were open on production before this branch,** for every tenant. This branch
+  shuts them only once it is deployed.
+
+### Doors 1 and 2: separate commit 53a3e9f5
+
+- New `alvoraa_portal/request_guard.py`, registered first in `before_request`. It drops
+  `ignore_user_permissions` and `ignore_permissions` from `frappe.local.form_dict` on every
+  request.
+- Every path is covered, including a website page's POST to "/" with `cmd`, because all of
+  them build the same `form_dict` before the hooks run (`frappe/app.py:239-245`).
+- Server code that passes either word in a Python call is untouched (tested).
+- New `tests/test_request_guard_alv249.py`, 9 tests. As a staff login with the row, for
+  Employee, Expense Claim, Attendance, Leave Application and Salary Structure Assignment,
+  through `reportview.get`, `get_list` and `get_count`, plus `search_widget` (with
+  `filter_fields`) and `search_link`:
+  - each test first shows the colleague's record **returned without the guard**, so it
+    can fail;
+  - then **not returned with the guard**.
+- **The CI check is a test, not new infrastructure.** It reads every installed app's
+  source and lists each whitelisted function argument named like `ignore_*permission*`.
+  It fails if one is not in the guard's drop list or in a short list of reviewed
+  exceptions. Today the only exception is `without_ignore_user_permissions_enabled`, which
+  only lists metadata. A Frappe, ERPNext or Frappe HR upgrade that adds a new such argument
+  fails CI until someone looks.
+- **The cost:** in Desk, a link field marked "Ignore User Permissions" shows a login that
+  holds User Permissions only its permitted records. HR and System Managers hold none, so
+  nothing changes for them.
+- Ceiling: `request_guard.py` at 1. The word appears once, as a string to drop, never as a
+  bypass.
+
+### D-3: new joiners (security finding 3, review P2-1)
+
+- **`on_login`:** a new hook syncs the signing-in login's row before the session is
+  handed back. This covers every login linked by a database write, and every role whose
+  Employee read changed in Role Permission Manager.
+- **`sync_user(email)`:** the one line for any account script, to call right after it sets
+  `Employee.user_id`.
+- **Role permission changes (finding 4, review P3-3):** a hook on Custom DocPerm would not
+  see them. Role Permission Manager changes a tick with a direct database write, so no
+  hook fires. Covered instead by `on_login`, and by this runbook line:
+  > **After any change to who reads Employee in Role Permission Manager, run
+  > `run_once` (`dry_run=0`) on that tenant.**
+- **The account script lines.** DTC's real script is not in the repo; please give it this
+  line after each `frappe.db.set_value("Employee", ..., "user_id", email)`:
+  `from alvoraa_portal.own_record_permission import sync_user; sync_user(email)`.
+  `demo/link_employee_users.py:84` and `demo/pp_jewellers/seed_onboarding.py:228` need the
+  same line.
+- **The `demo/` rule** (CLAUDE.md §5, `demo/.gitattributes`: `* merge=ours`). `demo/`
+  never reaches `main`. Edits to an existing demo file are made on `dev` only, in their own
+  commit with nothing else in it. A **new** demo file on `dev` needs an empty stub file of
+  the same name on `main` in the same session. Register the driver locally before any merge
+  (`git config merge.ours.driver true`). I made no demo edit; say if you want the two
+  one-line edits as a separate demo-only commit.
+- **Runbook line:** after any bulk login creation, run `run_once` (`dry_run=0`). Its
+  "every due login has its row" check names anyone missed.
+
+### D-2: managers see their whole tree (accepted by Surbhi, 31 Oct 2026)
+
+A manager's own-record row covers everyone below them, at any depth, on **every**
+document that links to Employee:
+- every Employee field at levels 0 and 2: date of birth, phone, address, passport,
+  emergency contact;
+- every expense claim, leave application and attendance record of that tree;
+- Salary Structure Assignments **with base pay**;
+- **Salary Slips, with bank account numbers, gross and net pay** (Salary Slip gives the
+  Employee role read with no "only if owner", and those fields are level 0).
+
+This is narrower than before the fix, when every staff login could read all of it.
+**Surbhi accepted this on 31 Oct 2026.**
+
+"Hide descendants" is not a switch: a promotion or a leave and rehire re-creates the row
+without the tick (review P3-1). Turning it on would be a code change.
+
+**Follow-up ticket idea:** a row rule on Salary Slip (and Salary Structure Assignment), so
+a slip is read only by its employee, payroll and HR, never by a manager through the tree.
+
+### Round 2 test runs (own container `hrlocal-249`, site `test249`, one module at a time)
+
+| Module | Result |
+|---|---|
+| `test_own_record_permission_alv249` | 25 + 1, OK |
+| `test_request_guard_alv249` | 5 + 4, OK |
+| `test_portal_security_010` | 45 + 5, OK |
+| `test_access_control` | 34, OK |
+| `test_manager_scope` | 12, OK |
+| `test_inbox_counts_034` | 17 + 2, OK |
+| `test_inbox_parts_042` | 31, OK |
+| `test_home_076` | 6 + 18, OK |
+| `test_expense_birthdays_076` | 35, 1 error: the known failure from before this branch (`..._but_hr_can`), follow-up ticket 2 |
+
+`check_app_integrity.py`: OK. `check_scope_traps.py`: OK. The full suites have not been
+run yet; that is one run before any push.
+
+### Rollback now removes only what it added (finding 5, review P3-2)
+
+- `run_once(dry_run=0)` saves the names of the rows it added to
+  `sites/<tenant>/alv249_rows_added.json`. Running it again adds to the list.
+- `rollback()` deletes only those names, and only while each row still has the exact
+  shape. Then it removes the file.
+- With no saved list it refuses: "No saved list of added rows; nothing removed."
+- Rows that existed before (41 on `test249`) and rows the hooks add later are never
+  touched (tested).
+- A rollback still needs the code reverted too, or the hooks add rows back at the next
+  save or sign-in.
+
+---
+
+## Bad news first (round 1)
 
 0. **The row breaks an approved behaviour: a non-HR reviewer loses their queue.**
    `test_inbox_counts_034.test_a_reviewer_who_is_not_hr_keeps_their_whole_queue` (AC-52,

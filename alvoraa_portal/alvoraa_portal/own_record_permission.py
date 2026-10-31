@@ -33,6 +33,9 @@ WHY A BYPASS. Only System Manager may write User Permission, and these run
 when HR saves an Employee or a User. The two writes below are the only ones.
 """
 
+import json
+import os
+
 import frappe
 
 ALLOW = "Employee"
@@ -63,9 +66,13 @@ def _rows(user, employee):
 		"apply_to_all_doctypes": 1}, pluck="name")
 
 
-def _remove(user, employee):
-	for name in _rows(user, employee):
+def _delete(names):
+	for name in names:
 		frappe.delete_doc("User Permission", name, force=True, ignore_permissions=True)
+
+
+def _remove(user, employee):
+	_delete(_rows(user, employee))
 
 
 def sync(user, employee, excluded=None):
@@ -97,11 +104,24 @@ def on_employee_update(doc, method=None):
 		sync(doc.user_id, doc.name)
 
 
+def sync_user(user):
+	"""Every Employee this login is linked to. The account script calls this after
+	it links logins with frappe.db.set_value, which runs no hook (D-3)."""
+	excluded = excluded_roles()
+	for employee in frappe.get_all("Employee", filters={"user_id": user}, pluck="name"):
+		sync(user, employee, excluded)
+
+
 def on_user_update(doc, method=None):
 	"""User on_update: roles changed (a promotion to HR), or the login disabled."""
-	excluded = excluded_roles()
-	for employee in frappe.get_all("Employee", filters={"user_id": doc.name}, pluck="name"):
-		sync(doc.name, employee, excluded)
+	sync_user(doc.name)
+
+
+def on_login(login_manager):
+	"""on_login: catches every login linked by a direct database write, and every
+	role whose Employee read was changed in Role Permission Manager since the
+	login's last save, before the session is handed back."""
+	sync_user(login_manager.user)
 
 
 # ── The one-off run on a live tenant (ALV-249 step 3). Never run by migrate. ──
@@ -138,6 +158,10 @@ def _expected(employee):
 	claims |= set(frappe.get_all("DocShare", filters={"share_doctype": "Expense Claim", "user": employee.user_id,
 	                                                   "read": 1}, pluck="share_name"))
 	return {"employee": len(tree), "employee_ref_todo": len(tree), "claims": len(claims)}
+
+
+def _added_file():
+	return frappe.get_site_path("alv249_rows_added.json")
 
 
 def run_once(dry_run=1, samples=None):
@@ -182,12 +206,17 @@ def run_once(dry_run=1, samples=None):
 		print("dry run: nothing written")
 		return 0
 
-	added = removed = 0
-	for e in linked:
-		out = sync(e.user_id, e.name, excluded)
-		added += out == "added"
-		removed += out == "removed"
-	print("added", added, "removed", removed)
+	before_names = {r.name for r in rows}
+	removed = sum(sync(e.user_id, e.name, excluded) == "removed" for e in linked)
+	added = sorted({r.name for r in _own_rows(linked)} - before_names)
+	# Keep what this run added, so rollback() removes exactly that and nothing ERPNext made.
+	known = []
+	if os.path.exists(_added_file()):
+		with open(_added_file()) as f:
+			known = json.load(f)
+	with open(_added_file(), "w") as f:
+		json.dump(sorted(set(known) | set(added)), f)
+	print("added", len(added), "removed", removed, "| row names saved to", _added_file())
 
 	fails = 0
 
@@ -211,11 +240,18 @@ def run_once(dry_run=1, samples=None):
 
 
 def rollback():
-	"""Remove every own-record row on a linked login. At DTC none existed before (31 Oct 2026)."""
+	"""Remove only the rows run_once added, from the list it saved. Rows that existed
+	before, and rows the hooks add later, are left alone. Refuses without the list.
+	Revert the code too, or the hooks add rows back on the next save or login."""
 	if frappe.session.user != "Administrator":
 		frappe.throw("Run as Administrator.", frappe.PermissionError)
-	rows = _own_rows(_linked())
-	for r in rows:
-		_remove(r.user, r.for_value)
-	print("removed", len(rows))
-	return len(rows)
+	if not os.path.exists(_added_file()):
+		frappe.throw("No saved list of added rows; nothing removed.", frappe.ValidationError)
+	with open(_added_file()) as f:
+		names = json.load(f)
+	own = {r.name for r in _own_rows(_linked())}
+	gone = [n for n in names if n in own]
+	_delete(gone)
+	os.remove(_added_file())
+	print("removed", len(gone), "of", len(names), "saved")
+	return len(gone)

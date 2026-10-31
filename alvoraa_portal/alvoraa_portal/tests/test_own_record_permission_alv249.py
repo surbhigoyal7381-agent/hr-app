@@ -264,13 +264,63 @@ class SafeToRunTwice(OwnRecordCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_rollback_removes_only_the_exact_shape(self):
+	def tearDown(self):
+		import os
+		if os.path.exists(orp._added_file()):
+			os.remove(orp._added_file())
+		super().tearDown()
+
+	def test_rollback_refuses_without_the_saved_list(self):
+		import os
+		if os.path.exists(orp._added_file()):
+			os.remove(orp._added_file())
+		self.assertRaises(frappe.ValidationError, orp.rollback)
+
+	def test_rollback_removes_only_what_run_once_added(self):
+		"""Security review finding 5: rows that existed before stay."""
 		boss, boss_user = self.person("RbBoss")
 		rep, _ = self.person("RbRep", reports_to=boss)
+		late, late_user = self.person("RbLate")
+		before = self.own_rows(boss_user, boss)
+		self.assertTrue(before)  # made by the hook, before run_once
+		frappe.db.delete("User Permission", {"user": late_user, "apply_to_all_doctypes": 1})
+		orp.run_once(dry_run=0, samples=[late_user])
+		added = self.own_rows(late_user, late)
+		self.assertTrue(added)
 		orp.rollback()
-		self.assertFalse(self.own_rows(boss_user, boss))
+		self.assertFalse(self.own_rows(late_user, late))
+		self.assertEqual(self.own_rows(boss_user, boss), before)
 		self.assertTrue(frappe.db.exists("User Permission", {"user": boss_user, "for_value": rep,
 		                                                     "applicable_for": "Attendance"}))
+
+
+class LinkedByDatabaseWrite(OwnRecordCase):
+	"""D-3: the account script links logins with frappe.db.set_value, which runs no hook."""
+
+	def test_a_set_value_link_gets_the_row_at_login(self):
+		email = "orpsv%d@example.com" % self.tag
+		frappe.get_doc({"doctype": "User", "email": email, "first_name": "OrpSv",
+		                "send_welcome_email": 0}).insert(ignore_permissions=True).add_roles("Employee")
+		emp, _ = self.person("SvTarget", user_id=None)
+		frappe.db.set_value("Employee", emp, "user_id", email)
+		self.assertFalse(self.own_rows(email, emp))  # no hook ran
+
+		class Login:
+			user = email
+		orp.on_login(Login())
+		self.assertTrue(self.own_rows(email, emp))
+
+	def test_sync_user_is_the_one_line_for_a_script(self):
+		email = "orpsu%d@example.com" % self.tag
+		frappe.get_doc({"doctype": "User", "email": email, "first_name": "OrpSu",
+		                "send_welcome_email": 0}).insert(ignore_permissions=True).add_roles("Employee")
+		emp, _ = self.person("SuTarget", user_id=None)
+		frappe.db.set_value("Employee", emp, "user_id", email)
+		orp.sync_user(email)
+		self.assertTrue(self.own_rows(email, emp))
+
+	def test_login_hook_is_wired(self):
+		self.assertIn("alvoraa_portal.own_record_permission.on_login", frappe.get_hooks("on_login"))
 
 
 class Wiring(FrappeTestCase):

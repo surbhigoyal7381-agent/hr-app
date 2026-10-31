@@ -15,7 +15,10 @@ required_apps = ["frappe/erpnext"]
 app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
 
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
-on_login = "alvoraa_portal.auth.on_login"
+on_login = ["alvoraa_portal.auth.on_login",
+            # ALV-249 D-3: a login linked by a direct database write, or whose
+            # role lost Employee read, gets its own-record row before it is in.
+            "alvoraa_portal.own_record_permission.on_login"]
 
 # ── Nothing but the password screen, until they choose one (ALV-242) ──────
 # ALV-232 only chose where a first-use session LANDS. The back button walked

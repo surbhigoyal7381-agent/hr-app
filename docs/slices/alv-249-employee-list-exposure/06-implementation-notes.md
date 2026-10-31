@@ -34,6 +34,23 @@ function; D-2 managers keep the standard behaviour and see their whole reporting
    Before choosing, count at DTC (read-only): which roles have submit on Attendance
    Request, and how many enabled logins hold them.
 
+   **Decided 31 Oct 2026: option A.** The DTC count (read-only) found four roles that can
+   submit Attendance Request: HR User (8 logins), HR Manager (7), System Manager (2) and
+   Location Manager (5). Location Manager already reads Employee, so the rule excludes it
+   by itself. None of the 5 holds an HR role. **No change to the rule.** The AC-52 test's
+   made-up reviewer role now gets read on Employee in its fixture only, with a comment
+   saying why. The test's assertion is unchanged.
+
+### Setup rule for tenants
+
+**Any role that reviews or acts on other people's documents needs read on Employee in
+Role Permission Manager.** Examples: a supervisor who approves attendance corrections, or
+a location manager. Without that read, everyone holding the role gets the own-record row,
+and their queue shrinks to their own reporting tree. With it, the rule leaves them alone,
+and they see employees as they do today. The dry run's "check by hand" list shows every
+login that holds an unusual role, so this can be checked before the one-off run on each
+tenant.
+
 1. **The module has two `ignore_permissions`, not zero.** Only System Manager may write a
    User Permission, and the hooks run when HR saves an Employee or a User. Without the
    bypass, an HR User saving an Employee would get an error. The two writes are one insert
@@ -191,8 +208,9 @@ bench --site <tenant> execute alvoraa_portal.own_record_permission.rollback
 | `test_employee_field_rights_alv215` | 20, OK |
 | `test_home_076` | 6 + 18, OK |
 | `test_expense_birthdays_076` | 35, **1 error, already there before this change**: `test_the_claimant_cannot_choose_their_approver_but_hr_can` fails the same way with my hooks switched off (an HR Manager may not delete the old approver's DocShare). Not mine; it needs its own ticket |
-| `test_inbox_counts_034` | 17 + 2, **1 failure caused by this change**: `test_a_reviewer_who_is_not_hr_keeps_their_whole_queue` (bad news 1). With my hooks switched off it passes |
-| `test_inbox_parts_042` | 31, OK |
+| `test_inbox_counts_034` | First run: 17 + 2, **1 failure caused by this change** (`test_a_reviewer_who_is_not_hr_keeps_their_whole_queue`, bad news 0; passes with my hooks off). **After option A, with the fixture role given Employee read: 17 + 2, OK** |
+| `test_inbox_parts_042` | 31, OK; re-run after option A: 31, OK |
+| `test_own_record_permission_alv249`, re-run after option A | 21 + 1, OK |
 | `test_manager_scope` | 12, OK |
 
 How "with my hooks switched off" was checked: the two hook lines were taken out of
@@ -240,6 +258,19 @@ Portal writes with the row in place, as a staff login and a manager:
 | Leave Balance report ignores Company scope for HR | Dangerous debt on multi-company tenants: its own ticket |
 | Portal writes untested locally | Temporary debt: removed by the dev test list above |
 | Rows made by a direct database write to `user_id` or roles are not caught until the next save or `run_once` | Acceptable simplification, same as `manager_scope` |
+
+## Follow-up tickets to open
+
+1. **ERPNext's Company row on HR people (multi-company tenants).** When an HR person's
+   Employee is saved with a new login and "Create User Permission" ticked, ERPNext adds a
+   Company row for all document types. On a tenant with more than one company, that limits
+   the HR person to one company. Harmless at DTC (one company). Not changed by ALV-249.
+2. **An HR Manager cannot change a claim's approver.**
+   `test_expense_birthdays_076.test_the_claimant_cannot_choose_their_approver_but_hr_can`
+   fails with or without this change. Frappe HR tries to delete the old approver's share,
+   and the HR Manager may not delete a DocShare.
+3. **The *Employee Leave Balance* report ignores Company permissions.** An HR Manager
+   limited to one company sees every company's leave balances (bad news 4).
 
 ## Subtract pass
 

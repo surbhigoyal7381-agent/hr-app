@@ -714,6 +714,29 @@ requirement?** On top of the nine things `00-impact-analysis.md` §10 removed.
   fetch to say "Cashier, Noida, 3 of 3 filled" is a page that can fail at
   saying it.
 
+**Removed in the second half - five more:**
+
+6. **The hand-built token, finally and completely.** Step 6 generates no key,
+   stores no hash and has no `Waiting/Used/Cancelled/Ran out` state machine of
+   its own. Our doctype has **no field that could hold a token**, and a test
+   asserts that by name.
+7. **Frappe's `accept()`, and with it its form, its route, its query string and
+   its shared rate bucket.** The anchor record is unpublished and nothing of
+   Frappe's own form is ever served.
+8. **The guest-upload switch, and the release step that would have turned it
+   on.** Our own endpoint does the work, so the site-wide hole is never opened
+   and AC-103/AC-104 became assertions that it is shut.
+9. **The `alvoraa_joiner_retention_days` key**, which after counsel's answer had
+   no reader. A key nothing reads is dead configuration.
+10. **A second portal screen for HR.** Three buttons on the Desk form they
+    already use.
+
+**And one thing I deleted twice, because the first attempt was wrong:** a broad
+`canvas` ban in PRIV-3's static test. It failed on the check-in camera, which
+legitimately captures a selfie, so it became a ban on the DOM-to-image
+libraries everywhere plus a ban on canvas export in the files that draw the
+chart. A rule nobody can keep is worse than no rule.
+
 **What I did not manage to delete:** the ~1,100 new lines in `portal.js`. Every
 block has its own prefix and its own one line in `switchPanel`, which is the
 rule, but the file is 1.12 MB and this slice made it bigger. That is OPS-11's

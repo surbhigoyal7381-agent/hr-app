@@ -489,7 +489,7 @@ exist and still look like pending work; cleaning them up is her call.
 | `python scripts/check_portal_assets_gate.py` | **OK** - no new asset file, so nothing to add to the deploy step |
 | `python scripts/check_tag_balance.py` | **OK** - both pages balance after the seat-page restructure |
 | `python scripts/check_design_system.py` | **OK** - it **failed first** on two raw `font-size` values I had written; fixed with tokens rather than by raising the limit |
-| `python scripts/check_brand_spelling.py` | **OK** |
+| `python scripts/check_brand_spelling.py` | **OK** - it **failed first**, on two real hits in step 6, and was right about both |
 | `python scripts/check_version_pins.py` | **OK** - no pin changed |
 | `node scripts/check_undefined_js.js` | **OK** - no undefined identifier |
 | `node scripts/check_portal_trays.js` (static half) | **OK, 27 of 27 in INVENTORY** - it **failed first** on the new picker's backdrop, which is the gate working |
@@ -520,7 +520,7 @@ its own redis (`hrlocal-078-redis`), and site `test078` on a **copy** of
 | `test_employee_documents_078` | **20 tests, OK** |
 | `test_joiner_078` | **42 tests, OK** |
 | `test_portal_security_010` | the `ignore_permissions` ceilings, with a row for each of the eleven new files |
-| **total** | **138 tests across six modules** |
+| **total** | **138 tests across six modules, 0 failures, 0 errors** - one clean SERIAL pass. Two processes on one site clash on shared fixtures, which cost two confusing red runs before I stopped running them in parallel |
 
 **`bench migrate` ran on `test078` only** - the two new columns on
 `Alvoraa Photo Access Log` need it, and the first run told me so with

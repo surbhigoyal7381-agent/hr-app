@@ -10788,7 +10788,20 @@ function mpfBigFailed(box, say) {
   if (say) say.textContent = drT("This is the small copy. The full picture did not load.");
 }
 
+/* The grace period, and WHY there has to be one. The photo sits in the drawer's
+   head, which has `padding:22px 22px 18px`, and the enlargement starts at the
+   top of the scrolling body - so a pointer moving from the photo ONTO the
+   picture crosses 18 px that belong to neither. Closing on the first mouseout
+   would make the picture vanish exactly when somebody reaches for it. A quarter
+   of a second, cancelled the moment the pointer is back on either of them. */
+var MPF_LEAVE = null;
+
+function mpfStay() {
+  if (MPF_LEAVE) { clearTimeout(MPF_LEAVE); MPF_LEAVE = null; }
+}
+
 function mpfCloseBig(byPointer) {
+  mpfStay();
   var box = document.querySelector(".mpf-big");
   if (box) box.remove();
   MPF.big = false;
@@ -10835,6 +10848,8 @@ document.addEventListener("click", function (e) {
 document.addEventListener("mouseover", function (e) {
   var t = e.target && e.target.closest ? e.target.closest('#ed-av [data-mpf="big"]') : null;
   if (t && !MPF.big) mpfBig();
+  /* Back on the photo or on the picture itself: it stays. */
+  if (t || (e.target && e.target.closest && e.target.closest(".mpf-big"))) mpfStay();
 });
 
 /* And the pointer leaving BOTH the photo and the enlargement closes it again
@@ -10850,7 +10865,11 @@ document.addEventListener("mouseout", function (e) {
   var to = e.relatedTarget;
   if (to && to.closest
       && (to.closest('#ed-av [data-mpf="big"]') || to.closest(".mpf-big"))) return;
-  mpfCloseBig(true);
+  mpfStay();
+  MPF_LEAVE = setTimeout(function () {
+    MPF_LEAVE = null;
+    mpfCloseBig(true);
+  }, 260);
 });
 
 /* ONE Escape handler for the whole drawer (AC-60, AC-62).

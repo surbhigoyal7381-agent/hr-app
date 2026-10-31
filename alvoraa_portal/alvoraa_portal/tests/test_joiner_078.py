@@ -308,8 +308,11 @@ class TestTheClearTextKeyIsShortLived(_Base):
 		request = frappe.db.get_value(DOCTYPE, out["submission"], "web_form_request")
 		self.assertTrue(frappe.db.exists("Web Form Request", request))
 		frappe.set_user("Guest")
-		joiner_public.submit_invite(web_form_request_key=self._key(out["link"]),
-		                            values=frappe.as_json({}))
+		# One real value, because an EMPTY submission is refused (AC-110a) and
+		# this test is about the row, not about what is in it.
+		joiner_public.submit_invite(
+			web_form_request_key=self._key(out["link"]),
+			values=frappe.as_json({"mobile": "+91 90000 00295"}))
 		frappe.set_user("Administrator")
 		self.assertFalse(frappe.db.exists("Web Form Request", request),
 		                 "the clear-text key must not outlive the link")
@@ -372,8 +375,10 @@ class TestItNeverCreatesAnEmployee(_Base):
 		"""AC-129. Declarative: there is no button to press by accident and no
 		endpoint that could be called with somebody else's id."""
 		out = self._invite()
-		joiner_public.submit_invite(web_form_request_key=self._key(out["link"]),
-		                            values=frappe.as_json({}))
+		# One real value: an EMPTY submission is refused (AC-110a).
+		joiner_public.submit_invite(
+			web_form_request_key=self._key(out["link"]),
+			values=frappe.as_json({"mobile": "+91 90000 00375"}))
 		frappe.set_user("Administrator")
 		doc = frappe.get_doc(DOCTYPE, out["submission"])
 		doc.employee = self.p["no_photo"]
@@ -734,10 +739,40 @@ class TestTheJoinersPage(_Base):
 		self.assertIn('var PHOTO = "%s"' % joiner_public.PHOTO_TYPE,
 		              self._read("joiner.html"))
 
-	def test_nothing_computes_a_setting_the_template_never_reads(self):
-		"""D-7. `joiner_on` was a settings read on every anonymous hit of the
-		most attacked page in the product, and no template ever read it."""
-		self.assertNotIn("joiner_on", self._read("joiner.py"))
+	def test_the_page_reads_nothing_from_the_database(self):
+		"""**D-7, asserted as behaviour rather than as a grep.**
+
+		It used to compute `context.joiner_on` - a settings read - on every
+		anonymous hit of the most attacked page in the product, and no template
+		ever read the value. So the test is the stronger statement: this page
+		touches the database **not at all**. Slice 013's `enrol.html` is held to
+		the same rule, and this is its test.
+
+		It checks the three security headers in the same breath, because they
+		are set inside a bare `try/except Exception: pass` - so a failure to set
+		them would otherwise be silent (078-SEC-15).
+		"""
+		from unittest import mock
+
+		from alvoraa_portal.www import joiner as page
+
+		# Put back an object of ITS OWN class afterwards: slice 013 learned that
+		# leaving a plain dict here fails another suite 900 tests later.
+		original = frappe.local.response_headers
+		frappe.local.response_headers = original.__class__()
+		try:
+			with mock.patch.object(
+					frappe.db, "sql",
+					side_effect=AssertionError("the public page read the database")):
+				context = page.get_context(frappe._dict())
+			said = frappe.local.response_headers
+			self.assertEqual(said.get("X-Robots-Tag"), "noindex, nofollow")
+			self.assertEqual(said.get("Cache-Control"), "no-store")
+			self.assertEqual(said.get("Referrer-Policy"), "no-referrer")
+		finally:
+			frappe.local.response_headers = original
+
+		self.assertNotIn("joiner_on", context)
 		self.assertNotIn("joiner_on", self._read("joiner.html"))
 
 

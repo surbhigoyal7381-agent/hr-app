@@ -143,11 +143,19 @@ class TestTheStoredPicture(_Base):
 		# what makes that read safe - a public one would be a face anybody
 		# could fetch. Both copies come out of one `_store`, so this is a pin
 		# rather than a second behaviour.
-		thumb = frappe.db.get_value(
-			"Employee", self.p["gps"], employee_photo.THUMB_FIELD)
+		# Read the way a chart reader's path reads it: THUMB_FIELD is not a
+		# column on Employee at all, it is the File row's `attached_to_field`,
+		# which is exactly what `people_fields.thumbnails_for` selects on.
+		thumb = frappe.get_all("File", filters={
+			"attached_to_doctype": "Employee",
+			"attached_to_field": employee_photo.THUMB_FIELD,
+			"attached_to_name": self.p["gps"],
+		}, fields=["file_url", "is_private"], ignore_permissions=True)
 		self.assertTrue(thumb, "the 48 px copy was not made")
-		self.assertEqual(
-			frappe.db.get_value("File", {"file_url": thumb}, "is_private"), 1)
+		for row in thumb:
+			self.assertEqual(row.is_private, 1,
+			                 "the 48 px copy is the one whose URL every chart "
+			                 "reader is handed, so it has to be private")
 
 	def test_the_stored_size_is_inside_the_build_ceiling(self):
 		"""Recorded, not asserted at 50 KB.

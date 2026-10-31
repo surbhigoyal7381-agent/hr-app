@@ -4109,8 +4109,15 @@ window.posSeatSheet = function (id, flash, err) {
     if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
     // Slice 072: whom they report to, on its own grey line, in Reporting lines only.
     var line = pl ? '<div class="su">' + posEsc(posReportsLine(p, r, pl)) + "</div>" : "";
-    return '<div class="pos-prow">' + posPlanMark(p).pre + posEsc(p.name) + c + line
-      + posPlanRow(r, p) + "</div>";
+    /* Slice 078: the name is a real control here too. The tray is the only
+       surface that holds a 25-person seat, so it is where the people beyond
+       the first three live - without this, there was no way to open the mini
+       profile of any of them. Same markup as the table and the seat page, so
+       the one delegated handler picks it up. */
+    return '<div class="pos-prow">' + posPlanMark(p).pre
+      + '<button type="button" class="pos-name-link" data-pos-who="'
+      + posEsc(p.employee || "") + '">' + posEsc(p.name) + "</button>"
+      + c + line + posPlanRow(r, p) + "</div>";
   }).join("") + "</div>";
   b += '<p class="pos-sheet-err" id="pos-sheet-err" role="alert" hidden></p>';
   var f = "";
@@ -7313,12 +7320,18 @@ function ocsDialog() {
     + esc(drT("Cancel")) + '">&times;</button></div>'
     + '<div class="ocs-dlg-bd" id="ocs-dlg-bd">' + ocsRows() + "</div>"
     + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="ocs-sum" role="status"></p>'
+    /* 01b line 604. Laptop: Preview, then Cancel, then OK - so the primary,
+       saving action is on the right where it is expected, and Cancel is not
+       where OK was drawn. The phone stacks these full width with OK FIRST,
+       which `.ocs-ft-b` does with one `order` rule rather than a second copy
+       of the markup. */
     + '<div class="ocs-ft-b">'
-    + '<button type="button" class="btn btn-primary ocs-b" data-ocs="ok" id="ocs-ok"></button>'
     + '<button type="button" class="btn btn-outline ocs-b" data-ocs="preview">'
     + esc(drT("Preview what a reader sees")) + "</button>"
     + '<button type="button" class="btn btn-outline ocs-b" data-ocs="cancel">'
-    + esc(drT("Cancel")) + "</button></div></div></div>";
+    + esc(drT("Cancel")) + "</button>"
+    + '<button type="button" class="btn btn-primary ocs-b" data-ocs="ok" id="ocs-ok"></button>'
+    + "</div></div></div>";
   document.body.appendChild(box);
   OCS.dlg = box;
   ocsSummary();
@@ -10431,6 +10444,7 @@ function closeEmpDrawer() {
   MPF.opener = null;
   MPF.emp = null;
   MPF.big = false;
+  MPF.pinned = false;
   if (back && back.focus && document.body.contains(back)) back.focus();
 }
 
@@ -10444,7 +10458,7 @@ function closeEmpDrawer() {
    It is deliberately short. What it answers is "who is this, what do they do,
    since when" - the three things somebody reading a structure chart actually
    wants - and it saves an HR hop into the Desk. It is not a personnel file. */
-var MPF = { emp: null, opener: null, big: false, data: null, pics: {} };
+var MPF = { emp: null, opener: null, big: false, pinned: false, data: null, pics: {} };
 var MPF_API = "alvoraa_portal.positions_profile.";
 
 /* THE one field list. The order is the allow-list's order, so the drawer reads
@@ -10483,6 +10497,7 @@ window.mpfOpen = function (employee, opener) {
   MPF.emp = employee;
   MPF.opener = opener || (window.event && window.event.target) || null;
   MPF.big = false;
+  MPF.pinned = false;
   MPF.data = null;
   overlay.classList.add("open");
   drawer.classList.add("open");
@@ -10773,10 +10788,15 @@ function mpfBigFailed(box, say) {
   if (say) say.textContent = drT("This is the small copy. The full picture did not load.");
 }
 
-function mpfCloseBig() {
+function mpfCloseBig(byPointer) {
   var box = document.querySelector(".mpf-big");
   if (box) box.remove();
   MPF.big = false;
+  MPF.pinned = false;
+  /* Focus goes back to the photograph when a PERSON closed it - Escape, a tap,
+     a click (AC-60). Not when the pointer simply moved away: a focus ring
+     appearing because somebody brushed past is not a choice they made. */
+  if (byPointer) return;
   var face = document.querySelector("#ed-av .mpf-face[data-mpf]");
   if (face && face.focus) face.focus();
 }
@@ -10785,7 +10805,19 @@ document.addEventListener("click", function (e) {
   var t = e.target && e.target.closest ? e.target.closest("[data-mpf]") : null;
   if (!t) return;
   var what = t.getAttribute("data-mpf");
-  if (what === "big") { MPF.big ? mpfCloseBig() : mpfBig(); }
+  if (what === "big") {
+    /* 01b 6.3.1: "A click PINS it." So a click on a picture the pointer
+       already opened makes it stay; only a click on a pinned one closes it -
+       which keeps touch exactly as it was, because a tap opens it pinned and a
+       second tap closes it. */
+    if (MPF.big && MPF.pinned) { mpfCloseBig(); }
+    else {
+      if (!MPF.big) mpfBig();
+      /* mpfBig() does nothing for a person with no picture, so this follows
+         what actually opened rather than what was asked for. */
+      MPF.pinned = MPF.big;
+    }
+  }
   else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
   else if (what === "settings") { closeEmpDrawer(); switchPanel("org-settings", null); }
   else if (what === "doc") { mpfOpenDoc(t.getAttribute("data-row"), t); }
@@ -10803,6 +10835,22 @@ document.addEventListener("click", function (e) {
 document.addEventListener("mouseover", function (e) {
   var t = e.target && e.target.closest ? e.target.closest('#ed-av [data-mpf="big"]') : null;
   if (t && !MPF.big) mpfBig();
+});
+
+/* And the pointer leaving BOTH the photo and the enlargement closes it again
+   (01b 6.3.1). Without this, brushing past a photograph left a colleague's
+   face filling the drawer until somebody pressed Escape - on the one screen
+   that also carries "Hide before I share my screen". A pinned picture stays:
+   that is what the click is for. */
+document.addEventListener("mouseout", function (e) {
+  if (!MPF.big || MPF.pinned) return;
+  var from = e.target;
+  if (!from || !from.closest) return;
+  if (!from.closest('#ed-av [data-mpf="big"]') && !from.closest(".mpf-big")) return;
+  var to = e.relatedTarget;
+  if (to && to.closest
+      && (to.closest('#ed-av [data-mpf="big"]') || to.closest(".mpf-big"))) return;
+  mpfCloseBig(true);
 });
 
 /* ONE Escape handler for the whole drawer (AC-60, AC-62).

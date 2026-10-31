@@ -2912,9 +2912,14 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 @media (max-width:640px){
   .ocs-back{padding:0;align-items:stretch}
   .ocs-dlg{width:100%;border-radius:0;max-height:none}
-  /* OK first on a phone, then Preview, then Cancel - stacked, full width. */
+  /* OK first on a phone, then Preview, then Cancel - stacked, full width. The
+     thumb reaches the bottom first, and the destructive-of-work button should
+     not be what it lands on. The laptop's row is Preview, Cancel, OK (01b line
+     604), which is the DOM order, so OK is lifted to the top here rather than
+     drawn twice. */
   .ocs-ft-b{flex-direction:column}
   .ocs-ft-b .ocs-b{width:100%}
+  .ocs-ft-b [data-ocs="ok"]{order:-1}
 }
 
 /* ── The seat page, slice 078 ─────────────────────────────────────────────

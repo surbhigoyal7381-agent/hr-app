@@ -877,6 +877,12 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# positions_profile.py: NONE. Every read runs as the caller, after
 		# may_view() and employee_in_scope(), and there is no new scope helper.
 		("alvoraa_portal", "positions_profile.py"): 0,
+		# employee_documents_read.py: ONE - the access-record insert. Nobody
+		# holds create on that doctype (read is System Manager and HR Manager
+		# only), and the row is written after the five ordered checks have
+		# passed. It is the only way an employee who cannot open the Positions
+		# page can ask "who looked at my Aadhaar" and get an answer.
+		("alvoraa_portal", "employee_documents_read.py"): 1,
 		# people_settings.py: NONE. The card reads as the System Manager asking;
 		# saving hands over to the access-granting path in hrms, which already
 		# holds the one Version bypass in its own ceiling above.

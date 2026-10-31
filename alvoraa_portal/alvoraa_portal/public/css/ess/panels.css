@@ -2955,3 +2955,17 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
   .sp-foot{flex-direction:column;align-items:stretch}
   .sp-foot .btn-danger{margin-right:0!important;order:3}
 }
+
+/* ── Documents on a person's profile, slice 078 ───────────────────────────
+   The row shape `loadMyDocuments` already uses on the employee's own card -
+   type, status, View - so a reader and the employee see the same kind of row
+   for the same thing. No inline preview, no thumbnail, no download-all. */
+.mpf-docs{margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)}
+.mpf-dh{margin:0 0 6px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+.mpf-doc{display:flex;gap:10px;align-items:center;padding:8px 0;
+  border-bottom:1px solid var(--border2)}
+.mpf-doc:last-child{border-bottom:0}
+.mpf-dt{flex:1;min-width:0;font-size:var(--fs-base);overflow-wrap:anywhere}
+/* Slice 065's screen-share link: SESSION ONLY, never remembered, so the next
+   time the drawer opens the documents are there again. */
+.mpf-docs.mpf-hidden .mpf-doc{display:none}

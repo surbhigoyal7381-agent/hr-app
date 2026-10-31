@@ -4968,6 +4968,12 @@ function loadMyDocuments() {
     if (!rows.length) { card.style.display = "none"; return; }
     card.style.display = "";
     document.getElementById("my-docs-summary").textContent = d.summary || "";
+    /* Slice 078, Surbhi's DECISION O. The person whose documents these are
+       CANNOT OPEN THE POSITIONS PAGE, so without this line they have no way at
+       all to find out which of them a reader can open. It is the difference
+       between a policy and a secret, and it narrows nothing: it states what the
+       organisation already chose. */
+    myDocsShown();
     document.getElementById("my-docs-list").innerHTML = rows.map(function(r) {
       var meta = [r.category, r.mandatory ? "mandatory" : "", r.expiry_date ? "expires " + r.expiry_date : "", r.remarks].filter(Boolean).join(" · ");
       var action = "";
@@ -4986,6 +4992,30 @@ function loadMyDocuments() {
         "<div style=\"display:flex;align-items:center;gap:6px\">" + action + "</div></div>";
     }).join("");
   }, function() { card.style.display = "none"; });
+}
+
+/* What of mine is on show. Types only - never a reader, never a person. */
+function myDocsShown() {
+  var card = document.getElementById("my-docs-card");
+  if (!card) return;
+  gpFetch("alvoraa_portal.employee_documents_read.what_is_shown_about_me", {})
+    .then(function (d) {
+      var types = (d && d.types) || [];
+      var line = document.getElementById("my-docs-shown")
+        || (function () {
+             var el = document.createElement("p");
+             el.id = "my-docs-shown";
+             el.className = "gp-hint";
+             el.style.marginTop = "10px";
+             card.appendChild(el);
+             return el;
+           })();
+      line.textContent = types.length
+        ? drT("Your organisation has chosen {0} of these to show on the organisation "
+            + "chart: {1}. The people who can open that page can open the file.",
+            [types.length, types.join(", ")])
+        : drT("None of these is shown on the organisation chart.");
+    }, function () { /* a line that cannot load is better absent than wrong */ });
 }
 
 window.uploadMyDocument = async function(input, row) {
@@ -10432,6 +10462,9 @@ window.mpfOpen = function (employee, opener) {
     if (MPF.emp !== employee) return;      /* a second name was clicked meanwhile */
     MPF.data = d;
     mpfPaint();
+    /* Its own call, after the profile: a document list that fails or is
+       refused must not take the profile down with it. */
+    mpfDocsLoad(employee);
   }, function (e) {
     if (MPF.emp !== employee) return;
     mpfFail(e);
@@ -10531,11 +10564,106 @@ function mpfList(d) {
     + '<p class="gp-hint mpf-promise">' + esc(mpfPromise()) + "</p>";
 }
 
-/* The documents section arrives in step 5. Until a document type is ticked AND
-   the plan is on, there is NO SECTION AT ALL - not an empty heading, not a
-   greyed tab, not a count of zero (AC-45). */
+/* The documents section. Until a document type is ticked AND the plan is on,
+   there is NO SECTION AT ALL - not an empty heading, not a greyed tab, not a
+   count of zero (AC-45). It is fetched separately, after the profile, so a
+   document read that fails or is refused cannot take the profile with it.
+
+   Three things the wording must get right:
+
+   * It says "the N types your organisation chose to show here. Opening one is
+     recorded." It does NOT say or imply that the other types are hidden,
+     protected or secure, because a reader who already holds a private-file url
+     can still fetch it - see employee_documents_read.py. A string test asserts
+     those three words do not appear about the un-ticked ones.
+   * A ticked type with no file says WHO COLLECTS IT, so a dead row becomes an
+     action rather than a shrug.
+   * No inline preview, no thumbnail, no download-all. */
+function mpfDocsLoad(employee) {
+  gpFetch(MPF_API.replace("positions_profile.", "employee_documents_read.")
+          + "get_employee_documents", { employee: employee }).then(function (d) {
+    if (MPF.emp !== employee) return;
+    var rows = (d && d.documents) || [];
+    if (!rows.length) return;               /* no section at all */
+    var box = document.createElement("div");
+    box.className = "mpf-docs";
+    box.innerHTML = '<h3 class="mpf-dh">' + esc(drT("Documents")) + "</h3>"
+      + '<p class="gp-hint">' + esc(drT(
+          "The {0} types your organisation chose to show here. Opening one is recorded.",
+          [rows.length])) + "</p>"
+      /* Slice 065's session-only link, which covers this section too and is
+         never remembered. */
+      + '<button type="button" class="btn btn-outline btn-sm" data-mpf="hide">'
+      + esc(drT("Hide before I share my screen")) + "</button>"
+      + rows.map(function (r) {
+          return '<div class="mpf-doc"><span class="mpf-dt"><b>'
+            + esc(r.document_type) + "</b>"
+            + (r.category ? '<span class="ocs-cat">' + esc(r.category) + "</span>" : "")
+            + "</span>"
+            + (r.row
+                ? '<span class="badge b-completed">' + esc(r.status || drT("Given"))
+                  + "</span><button type=\"button\" class=\"btn btn-outline btn-sm\""
+                  + ' data-mpf="doc" data-row="' + esc(r.row) + '">'
+                  + esc(drT("View")) + "</button>"
+                : '<span class="gp-hint">' + esc(drT("Not given")
+                    + (r.collect_from ? " · " + drT("collected by {0}", [r.collect_from]) : ""))
+                  + "</span>")
+            + "</div>";
+        }).join("");
+    var body = document.querySelector("#ed-body .mpf-body");
+    if (body) body.appendChild(box);
+  }, function () { /* no section rather than a broken one */ });
+}
+
 function mpfDocs(d) {
-  return "";   /* step 5 fills this in; until then there is no section at all */
+  /* Drawn by mpfDocsLoad, after its own call. Nothing here, so a profile that
+     renders is never waiting on a document list. */
+  return "";
+}
+
+/* The View link calls OUR endpoint, which checks the page's permission, the
+   reader's scope, the row's parent, the ticked type and the plan - in that
+   order - and then streams the file as an attachment.
+
+   It is a POST, not a link, for three reasons and the third is the one that
+   decided it:
+     * the browser is never handed a `/private/files/` address for a document,
+       and a blob url is not one;
+     * a POST carries the CSRF token, so the endpoint is not a bare GET
+       surface somebody else's page can point at;
+     * **the rate limit is per USER, and `field_app_limits` only applies to
+       POST** - it sets a hashed-user form field and runs Frappe's limiter on
+       it. A GET download would silently have no limit at all. */
+function mpfOpenDoc(row, btn) {
+  if (!row) return;
+  if (btn) { btn.disabled = true; }
+  fetch("/api/method/alvoraa_portal.employee_documents_read.open_employee_document", {
+    method: "POST",
+    headers: { "Content-Type": "application/json",
+               "X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || "" },
+    body: JSON.stringify({ row: row }),
+  }).then(function (res) {
+    if (!res.ok) throw new Error("refused");
+    var name = "document";
+    var cd = res.headers.get("Content-Disposition") || "";
+    var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+    if (m) name = decodeURIComponent(m[1]);
+    return res.blob().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = name;      /* saved, never rendered inline */
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    });
+  }).then(function () {
+    if (btn) btn.disabled = false;
+  }, function () {
+    if (btn) btn.disabled = false;
+    toast(drT("That document could not be opened. Ask HR if you need it."), "err");
+  });
 }
 
 /* ── the enlargement ─────────────────────────────────────────────────────── */
@@ -10612,6 +10740,14 @@ document.addEventListener("click", function (e) {
   if (what === "big") { MPF.big ? mpfCloseBig() : mpfBig(); }
   else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
   else if (what === "settings") { closeEmpDrawer(); switchPanel("org-settings", null); }
+  else if (what === "doc") { mpfOpenDoc(t.getAttribute("data-row"), t); }
+  else if (what === "hide") {
+    /* Slice 065's own behaviour: session only, never remembered. */
+    var sec = t.closest(".mpf-docs");
+    if (sec) sec.classList.toggle("mpf-hidden");
+    t.textContent = sec && sec.classList.contains("mpf-hidden")
+      ? drT("Show them again") : drT("Hide before I share my screen");
+  }
 });
 
 /* Hovering enlarges it too (brief decision 8). Tap and Enter are the handler

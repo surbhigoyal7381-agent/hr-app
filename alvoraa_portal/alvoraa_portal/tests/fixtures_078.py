@@ -241,3 +241,77 @@ def picture_rows(employee):
 		"attached_to_field": ("in", [employee_photo.IMAGE_FIELD,
 		                             employee_photo.THUMB_FIELD]),
 	}, pluck="name", ignore_permissions=True)
+
+
+# ── documents, with real files ───────────────────────────────────────────────
+#
+# AC-136, and it is the fixture without which every document control in this
+# slice passes against nothing: **dev holds no `Employee Document` rows and no
+# `Employee Document Type` rows at all**, so a document test there today
+# reports "0 findings" and has proved exactly nothing.
+#
+# Four rows: a TICKED and a NON-TICKED type, on an employee INSIDE the reader's
+# scope and on one OUTSIDE it. The ticked/non-ticked pair is what proves the
+# list is a control rather than decoration; the inside/outside pair is what
+# proves the scope check runs first.
+#
+# Made as fixtures, with invented content. **Never a real person's scan.**
+
+TICKED_TYPE = "S078 Ticked Identity Paper"
+UNTICKED_TYPE = "S078 Unticked Paper"
+
+
+def document_types():
+	"""Two types: one in a sensitive category, one not."""
+	for name, category in ((TICKED_TYPE, "Identity"), (UNTICKED_TYPE, "Education")):
+		if frappe.db.exists("Employee Document Type", name):
+			continue
+		frappe.get_doc({
+			"doctype": "Employee Document Type",
+			"document_type_name": name,
+			"category": category,
+			"collect_from": "HR",
+		}).insert(ignore_permissions=True)
+	frappe.db.commit()
+	return TICKED_TYPE, UNTICKED_TYPE
+
+
+def give_documents(employee):
+	"""One row of each type on this employee, each with a real file.
+
+	Returns {type: row name}. The file content is invented text, which is the
+	point: a test that needs a real scan is a test nobody should write.
+	"""
+	document_types()
+	emp = frappe.get_doc("Employee", employee)
+	out = {}
+	have = {d.document_type: d for d in (emp.get("employee_documents") or [])}
+	for kind in (TICKED_TYPE, UNTICKED_TYPE):
+		if kind in have and have[kind].attachment:
+			out[kind] = have[kind].name
+			continue
+		row = emp.append("employee_documents", {"document_type": kind, "status": "Received"})
+		emp.save(ignore_permissions=True)
+		f = frappe.get_doc({
+			"doctype": "File",
+			"file_name": f"s078-{kind.replace(' ', '-')}-{employee}.pdf",
+			"attached_to_doctype": "Employee",
+			"attached_to_name": employee,
+			"is_private": 1,
+			"content": b"%PDF-1.4\nS078 invented document, not a real person's.\n",
+		}).insert(ignore_permissions=True)
+		frappe.db.set_value("Employee Document", row.name, "attachment", f.file_url)
+		out[kind] = row.name
+	frappe.db.commit()
+	return out
+
+
+def document_views(employee=None):
+	"""Rows in the access log for document views. A count, for the tests."""
+	filters = {"source": "Employee document"}
+	if employee:
+		filters["employee"] = employee
+	return frappe.get_all("Alvoraa Photo Access Log", filters=filters,
+	                      fields=["name", "employee", "document_type", "viewed_by",
+	                              "viewed_on_date"], limit_page_length=0,
+	                      ignore_permissions=True)

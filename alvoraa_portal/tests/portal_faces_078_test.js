@@ -493,6 +493,66 @@ async function openMyProfile(routes) {
   yes(doc.getElementById("panel-positions").classList.contains("active"),
       "078 AC-54: and returns to the chart");
 
+  // ── 14. documents on the profile ────────────────────────────────────────
+  ROUTES.get_positions_profile = { ok: WHO };
+  ROUTES.get_employee_documents = { ok: { documents: [
+    { document_type: "Aadhaar card", category: "Identity", status: "Verified",
+      expiry_date: "", collect_from: "HR", row: "ED-1" },
+    { document_type: "Vault access authorisation", category: "Verification",
+      status: "", expiry_date: "", collect_from: "Manager", row: null },
+  ] } };
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(200);
+  const docs = $("emp-drawer").querySelector(".mpf-docs");
+  yes(!!docs, "078 AC-63: the documents section is drawn when types are ticked");
+  const dtext = text(docs);
+  yes(/2 types your organisation chose to show here/.test(dtext),
+      "078 AC-63: and says how many, in the organisation's own terms", dtext);
+  yes(/Opening one is recorded/.test(dtext),
+      "078 AC-63: and that opening one is recorded");
+  /* AC-65's honest half. A reader who already holds a private-file url can
+     still fetch it, so nothing here may imply the other types are protected. */
+  yes(!/hidden|protected|secure/i.test(dtext),
+      "078 AC-65: and NOTHING says or implies the other types are hidden, "
+      + "protected or secure", dtext);
+  yes(/Hide before I share my screen/.test(dtext),
+      "078 AC-80: slice 065's screen-share link covers this section too");
+  yes(/collected by Manager/.test(dtext),
+      "078 AC-64: a ticked type with no file says who collects it - a dead row "
+      + "becomes an action");
+  yes(!/\/private\/files/.test(docs.innerHTML),
+      "078 AC-66: the browser is NEVER handed a /private/files address for a "
+      + "document");
+  const view = docs.querySelector('[data-mpf="doc"]');
+  yes(!!view && view.tagName === "BUTTON" && view.getAttribute("data-row") === "ED-1",
+      "078 AC-66: View is a button carrying the ROW, which only our endpoint takes");
+  yes(!docs.querySelector("img") && !/download all/i.test(dtext),
+      "078 AC-63: no inline preview, no thumbnail, no download-all");
+
+  /* Session only, never remembered (slice 065's own rule). */
+  click(docs.querySelector('[data-mpf="hide"]'));
+  await settle(20);
+  yes(docs.classList.contains("mpf-hidden"), "078 AC-80: the hide link hides them");
+  key("Escape");
+  await settle(20);
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(200);
+  const again = $("emp-drawer").querySelector(".mpf-docs");
+  yes(again && !again.classList.contains("mpf-hidden"),
+      "078 AC-80: and it is NOT remembered the next time the drawer opens");
+  key("Escape");
+  await settle(20);
+
+  /* AC-45 again, from the other direction: the server sending an empty list
+     means no section at all - not an empty heading and not a count of zero. */
+  ROUTES.get_employee_documents = { ok: { documents: [] } };
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(200);
+  yes(!$("emp-drawer").querySelector(".mpf-docs"),
+      "078 AC-45: an empty list means NO SECTION AT ALL");
+  key("Escape");
+  await settle(20);
+
   console.log(`\n### 078 faces and profile DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

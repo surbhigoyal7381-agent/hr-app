@@ -137,6 +137,18 @@ class TestTheStoredPicture(_Base):
 		self.assertEqual(
 			frappe.db.get_value("File", {"file_url": out["image"]}, "is_private"), 1)
 
+		# **The 48 px copy too**, and it is the one that matters most: its URL
+		# is what `people_fields.thumbnails_for` hands to every chart reader,
+		# with `ignore_permissions=True`. The URL being to a PRIVATE file is
+		# what makes that read safe - a public one would be a face anybody
+		# could fetch. Both copies come out of one `_store`, so this is a pin
+		# rather than a second behaviour.
+		thumb = frappe.db.get_value(
+			"Employee", self.p["gps"], employee_photo.THUMB_FIELD)
+		self.assertTrue(thumb, "the 48 px copy was not made")
+		self.assertEqual(
+			frappe.db.get_value("File", {"file_url": thumb}, "is_private"), 1)
+
 	def test_the_stored_size_is_inside_the_build_ceiling(self):
 		"""Recorded, not asserted at 50 KB.
 

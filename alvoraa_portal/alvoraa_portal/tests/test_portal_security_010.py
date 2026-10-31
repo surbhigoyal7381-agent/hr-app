@@ -858,6 +858,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# Only System Manager may write User Permission, and these run when HR
 		# saves an Employee or a User. Nothing else in the file bypasses.
 		("alvoraa_portal", "own_record_permission.py"): 2,
+		# ALV-249 doors 1 and 2 (new file): drops the words from requests; the
+		# word appears only as a string to drop, never as a bypass.
+		("alvoraa_portal", "request_guard.py"): 1,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

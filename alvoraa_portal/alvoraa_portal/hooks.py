@@ -24,6 +24,9 @@ on_login = "alvoraa_portal.auth.on_login"
 # on every request, so it covers the portal, /me, /checkin and the desk at once.
 # It fails open by design - see alvoraa_portal.auth.lock_until_password_chosen.
 before_request = [
+    # ALV-249: no request may ask Frappe to skip User Permissions or
+    # permissions. Every path, "/" with cmd included. See request_guard.py.
+    "alvoraa_portal.request_guard.drop_permission_skips",
     "alvoraa_portal.auth.lock_until_password_chosen",
     # The bare "/" again. The get_website_user_home_page hook below is
     # asked fourth and can be overruled by a default workspace, so it is

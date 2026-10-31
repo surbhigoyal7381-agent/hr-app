@@ -150,13 +150,27 @@ class EmployeeWriteRulesAlv266(IntegrationTestCase):
 	def test_alv266_manager_without_ess_is_refused_on_a_report_on_every_path(self):
 		self._assert_refused(self.plain_manager, self.plain_report)
 
+	def test_alv266_a_refused_bulk_edit_logs_no_value_of_the_report(self):
+		from frappe.desk.doctype.bulk_update.bulk_update import submit_cancel_or_update_docs
+		frappe.db.set_value("Employee", self.report, "cell_number", "9111111266")
+		since = frappe.utils.now_datetime()
+		frappe.set_user(self.manager)
+		failed = submit_cancel_or_update_docs("Employee", [self.report], "update", {"cell_number": "9777777266"})
+		frappe.set_user("Administrator")
+		self.assertEqual(failed, [self.report])
+		logs = frappe.get_all("Error Log", filters={"creation": [">=", since]}, pluck="error")
+		self.assertTrue(logs, "the bulk edit should have logged its failure")
+		self.assertFalse([e for e in logs if "9111111266" in (e or "")], "the report's real mobile is in a log")
+
 	def test_alv266_refusal_says_what_to_do(self):
 		frappe.set_user(self.manager)
 		with self.assertRaises(frappe.PermissionError) as caught:
 			self._save(self.report, {"cell_number": "9000000267"})
 		self.assertIn("Ask HR", str(caught.exception))
 
-	def test_alv266_manager_opens_a_report_read_only_but_still_reads_it(self):
+	def test_alv266_manager_may_not_write_a_report_but_still_reads_it(self):
+		# The Desk form still opens editable (Frappe asks without a permission type);
+		# a save is refused with the Ask HR message - see the tests above.
 		frappe.set_user(self.manager)
 		self.assertFalse(frappe.has_permission("Employee", "write", self.report))
 		self.assertEqual(frappe.client.get("Employee", self.report).get("cell_number"), "9000000000")
@@ -219,6 +233,76 @@ class EmployeeWriteRulesAlv266(IntegrationTestCase):
 		values = self._values(self.report)
 		self.assertEqual((values.cell_number, str(values.contract_end_date), values.notice_number_of_days,
 		                  values.passport_number), ("9000000269", "2032-01-01", 60, "ALV266-HR"))
+
+	def test_alv266_hr_user_and_system_manager_change_a_report(self):
+		user = _user("hruser", "Employee", "HR User")
+		frappe.db.delete("User Permission", {"user": user})
+		frappe.set_user(user)
+		self._save(self.report, {"cell_number": "9000000301", "contract_end_date": "2033-01-01"})
+		frappe.set_user("Administrator")
+		v = frappe.db.get_value("Employee", self.report, ["cell_number", "contract_end_date"])
+		self.assertEqual((v[0], str(v[1])), ("9000000301", "2033-01-01"))
+		# System Manager: our rule must let it through. (Whether the site's role rows
+		# give System Manager Employee write at all is the tenant's own setting.)
+		doc = frappe.get_doc("Employee", self.report)
+		doc.cell_number = "9000000302"
+		self.assertIs(ef.employee_has_permission(doc, "write", _user("sysmgr", "System Manager")), True)
+
+	# Own saves that code touches (review M1) ------------------------------------
+	def test_alv266_own_save_with_an_expired_document_still_saves(self):
+		dtype = "Alv266 Licence"
+		if not frappe.db.exists("Employee Document Type", dtype):
+			frappe.get_doc({"doctype": "Employee Document Type", "document_type_name": dtype,
+			                "category": "Identity", "collect_from": "Employee"}).insert(ignore_permissions=True)
+		row = frappe.get_doc({"doctype": "Employee Document", "parent": self.ess_emp, "parenttype": "Employee",
+		                      "parentfield": "employee_documents", "document_type": dtype,
+		                      "status": "Received", "expiry_date": "2020-01-01"})
+		row.db_insert()
+		try:
+			frappe.set_user(self.ess)
+			self._save(self.ess_emp, {"cell_number": "9000000273"})
+			frappe.set_user("Administrator")
+			self.assertEqual(frappe.db.get_value("Employee", self.ess_emp, "cell_number"), "9000000273")
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.delete("Employee Document", {"name": row.name})
+
+	def test_alv266_own_save_with_a_work_history_row_still_saves(self):
+		# A level-2 table on your own record must not trip the own-record rule.
+		row = frappe.get_doc({"doctype": "Employee Internal Work History", "parent": self.ess_emp,
+		                      "parenttype": "Employee", "parentfield": "internal_work_history",
+		                      "from_date": "2016-01-01"})
+		row.db_insert()
+		try:
+			frappe.set_user(self.ess)
+			self._save(self.ess_emp, {"cell_number": "9000000275"})
+			frappe.set_user("Administrator")
+			self.assertEqual(frappe.db.get_value("Employee", self.ess_emp, "cell_number"), "9000000275")
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.delete("Employee Internal Work History", {"name": row.name})
+
+	def test_alv266_own_save_when_the_full_name_is_rebuilt_still_saves(self):
+		frappe.db.set_value("Employee", self.ess_emp, "employee_name", "Alv266 Name From A Sheet")
+		frappe.set_user(self.ess)
+		self._save(self.ess_emp, {"cell_number": "9000000274"})
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Employee", self.ess_emp, "cell_number"), "9000000274")
+
+	def test_alv266_a_new_custom_field_is_hr_only(self):
+		self.assertIn("alvoraa_portal.employee_field_rights.lock_new_custom_field",
+		              frappe.get_hooks("doc_events")["Custom Field"]["after_insert"])
+		frappe.get_doc({"doctype": "Custom Field", "dt": "Employee", "fieldname": "alv266_tshirt",
+		                "label": "Alv266 T-shirt", "fieldtype": "Data",
+		                "insert_after": "blood_group"}).insert(ignore_permissions=True)
+		try:
+			frappe.clear_cache(doctype="Employee")
+			self.assertEqual(frappe.get_meta("Employee").get_field("alv266_tshirt").permlevel, 2)
+		finally:
+			frappe.db.delete("Property Setter", {"doc_type": "Employee", "field_name": "alv266_tshirt"})
+			frappe.delete_doc("Custom Field", "Employee-alv266_tshirt", force=True, ignore_permissions=True)
+			frappe.db.commit()  # the column's DDL is committed; keep the site whole
+			frappe.clear_cache(doctype="Employee")
 
 	# Rule 4 -----------------------------------------------------------------
 	def test_alv266_a_granted_field_and_only_that_field(self):

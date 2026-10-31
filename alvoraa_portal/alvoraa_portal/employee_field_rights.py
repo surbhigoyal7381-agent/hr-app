@@ -37,7 +37,7 @@ import frappe
 from frappe import _
 from frappe.core.doctype.version.version import get_diff
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
-from frappe.model import display_fieldtypes
+from frappe.model import display_fieldtypes, table_fields
 from frappe.model.document import Document
 from frappe.permissions import add_permission, update_permission_property
 
@@ -177,10 +177,15 @@ def refuse_own_locked_change(doc, method=None):
 
 	Frappe has already put back any locked field the caller may not write, so a
 	change still showing here comes from someone who holds that level - HR.
+
+	Skips read-only fields and tables (ALV-266): code rewrites them on every
+	save (employee_name, documents_summary, a document row turning Expired). No
+	job, pay or bank field is either.
 	"""
 	if doc.is_new() or not doc.get_doc_before_save():
 		return
-	if not any(doc.has_value_changed(df.fieldname) for df in doc.meta.get_high_permlevel_fields()):
+	if not any(doc.has_value_changed(df.fieldname) for df in doc.meta.get_high_permlevel_fields()
+	           if not df.read_only and df.fieldtype not in table_fields):
 		return
 	if is_own_record(doc.name):
 		refuse(
@@ -287,6 +292,7 @@ def employee_has_permission(doc, ptype=None, user=None, debug=False):
 	diff = get_diff(frappe.get_doc(EMPLOYEE, doc.name), doc)  # None when nothing changed
 	changed = {c[0] for c in diff.changed if (c[1] or None) != (c[2] or None)} if diff else set()
 	changed |= {r[0] for r in diff.added + diff.removed + diff.row_changed} if diff else set()
+	del diff  # it holds the other person's values; a logged traceback must not (06-security, 1)
 	if not changed:
 		return bool(MANAGER_EDITABLE)
 	if changed - set(MANAGER_EDITABLE):

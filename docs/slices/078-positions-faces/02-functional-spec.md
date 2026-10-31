@@ -4,6 +4,12 @@ artifact: 02-functional-spec
 author: hrms-business-analyst
 date: 2026-10-31
 status: draft for Surbhi's ready check. Recommendations only — every ⚠ DECISION is hers.
+revision: 2 — 31 Oct 2026, after `04-test-report.md`. Three criteria reworded (AC-101,
+  AC-112, AC-125), AC-20 rewritten against the design's four-card My Profile, and 13
+  criteria added for things the prototype draws that no criterion covered. See §9a.
+acceptance_criteria_total: 164 criteria, highest id AC-143. Not a run to AC-164 — 142 base
+  numbers (no bare AC-131) plus 22 suffixed ids. There is no AC-144+ and no AC-72a; the
+  photograph's size target is AC-3a.
 inputs:
   - 01-product-brief.md (revision 2)
   - 01a-ux-opportunities.md
@@ -344,17 +350,18 @@ flowchart TD
   B --> C[HR sees the link once and sends it by email]
   C --> D[Joiner opens the link on a phone. The token is in the URL fragment, so it never reaches a server log or a Referer header]
   D --> E{Token live?}
-  E -- unknown, expired or cancelled --> E1[J-E1, one answer for all three: this link has run out, ring HR] --> Z
-  E -- already used --> E2[Already used: a narrower, deliberate answer to someone who held a live token] --> Z
+  E -- unknown, expired, cancelled or already used --> E1[J-E1, one answer for all four: this link has run out, ring HR. A used link is indistinguishable from an unknown one] --> Z
   E -- yes --> F[J1 Welcome: the notice BEFORE the first question, with the configured retention period and a real contact]
   F --> G[J2 Your details: the closed allow-list of fields]
   G --> H[J3 Your documents: Take a photo, Choose a file, or I will bring it on my first day]
   H --> H1{Inside the type, size, count and byte caps?}
   H1 -- no --> H2[J-E2: that photo did not reach us. Your other answers are safe on this phone] --> H
   H1 -- yes --> I[Images re-encoded. PDFs stored private, served attachment-only, never inline]
-  I --> J[J4 Your photo: optional, skippable]
+  I --> J[J4 Your photo: optional, skippable. Skip this carries on and stores nothing]
   J --> K[J5 Check and send]
-  K --> L[J6 Sent: thank you, there is nothing else to do. This link will not open again]
+  K --> K1{Is anything filled in at all - one ticked field, or one document?}
+  K1 -- no --> K2[Refused. The token is NOT used up. One plain line: fill in at least one question or send one document. They can send again] --> K
+  K1 -- yes --> L[J6 Sent: thank you, there is nothing else to do. This link will not open again]
   L --> M[HR reviews the submission in HR's own screen]
   M --> N[HR creates the Employee BY HAND and sets the joining date itself]
   N --> O[The submission row may then be deleted: the personnel record is the retained thing]
@@ -363,8 +370,10 @@ flowchart TD
 ```
 
 **Unhappy paths that are requirements:** the switch is off; the token is unknown, expired,
-cancelled or used; an upload is refused on type, size, count or total bytes; nothing is
-stored before the token is validated; and **no joining date ever comes from the form**.
+cancelled or used; an upload is refused on type, size, count or total bytes; **a joiner
+taps through and sends nothing — refused, and the link still works afterwards (AC-110a,
+AC-110b)**; nothing is stored before the token is validated; and **no joining date ever
+comes from the form**.
 
 ---
 
@@ -453,11 +462,11 @@ employee". It is also where the submission can be **reviewed**, and where it can
 | Fieldname | Type | Mandatory | Default | Notes |
 |---|---|---|---|---|
 | `status` | Select: `Invited` / `Submitted` / `Made an employee` / `Expired` / `Cancelled` | yes | `Invited` | §6.1 is the state table |
-| `full_name` | Data | yes | — | Inside 078-PRIV-9's closed allow-list |
+| `full_name` | Data | **no** | — | Inside 078-PRIV-9's closed allow-list. **Changed 31 Oct 2026 from mandatory to not mandatory**, because AC-110c says the only rule is "at least one ticked field or one document", and a `reqd` field here would be a restriction of ours on top of HR's ticked list. **⚠ If Surbhi wants the name always required, this is the one row to change** — see §21 |
 | the other joiner fields | one column each | — | — | Exact list is ⚠ DECISION F. **No bank, salary, CTC or statutory identifier as a typed field.** Where an identity number is genuinely needed it arrives as one of the ticked document types, where it is a file under HR's existing verification flow rather than a searchable column on a guest-writable table |
 | `employee` | Link → Employee, read-only | — | — | Set when HR creates the record. **Never set by the form** |
-| `token_hash` | Data, read-only, hidden | — | — | **SHA-256 only.** Pattern: `Alvoraa App Invite` |
-| `retired_token_hash` | Data, read-only, hidden | — | — | On use, expiry or cancellation the hash moves here, so a dead token can still be told "already used" while a leaked table never holds a live hash for a dead token |
+| `web_form_request` | Link → Web Form Request, read-only, hidden | — | — | **Corrected 31 Oct 2026.** Decision 11 chose Frappe's Web Form, so **Frappe's own `Web Form Request` row holds the key** and we hold only a link to it. The row is `autoname: hash`, so the name we store is not the key. **It is nulled when that row is destroyed**, which happens the moment the link stops working (AC-101) |
+| ~~`token_hash`, `retired_token_hash`~~ | — | — | — | **Dropped 31 Oct 2026.** Both described a token of our own, from before Decision 11. There is no hash of ours to store, and `retired_token_hash` existed only to tell a dead token *"already used"* — which **AC-112 no longer allows**: a used link is answered exactly like an unknown one |
 | `expires_at` | Datetime, read-only | yes | creation + 7 days | Frozen at creation |
 | `submitted_at` | Datetime, read-only | — | — | |
 | `legal_hold` | Check | — | 0 | The erase job skips a flagged row however old |
@@ -484,6 +493,7 @@ to the submission, **never to `Employee`**.
 | State | Who may move it | Next states | What becomes read-only | Who is notified |
 |---|---|---|---|---|
 | **Invited** | HR (create), the token holder (submit), the daily job (expire) | Submitted · Expired · Cancelled | Nothing yet | The joiner gets the link, sent by HR |
+| **Invited, and a submission was refused** | — | **It stays `Invited`** | Nothing | Nobody. A refused submission — nothing filled in at all — **is not a state change**: the row stays `Invited` and the link keeps working (AC-110a, AC-110b) |
 | **Submitted** | HR only | Made an employee · Cancelled | **Everything the joiner sent.** "You will not be able to change it here afterwards" (J5) | **Nobody automatically.** ⚠ DECISION H: I recommend no automatic notification — HR issued the invite and is watching for it, and an email naming a joiner is one more place their data travels |
 | **Made an employee** | — | **terminal** | All of it. `employee` is set | — |
 | **Expired** | the daily job, at 7 days | **terminal** | All of it | Nobody. The joiner is told at the door (J-E1) |
@@ -500,7 +510,9 @@ way out, and the Employee record is the retained thing.
 ### 6.2 Every UI state, with where it is drawn
 
 `01b` §7 lists 35 states across 7 screens. All of them are requirements.
-✓ = drawn in `prototype-v4.html`.
+✓ = drawn in `prototype-v4.html`. **One state here is not in the prototype**: the
+joiner who fills in nothing and presses Send. The designer did not draw it; the build
+let it through, consumed the link and lost the joiner (D-3), so it is a requirement now.
 
 | Area | State | Drawn | AC |
 |---|---|---|---|
@@ -511,6 +523,7 @@ way out, and the Employee record is the retained thing.
 | Chart | Print and the wall chart, faces off | ✓ | AC-38, AC-39 |
 | Chart | 24 px circle vs 40 px photo | ✓ | ⚠ DECISION C |
 | Chart | A 25-person seat — three names, then "+22 more in this seat" | ✓ | AC-30 |
+| Seat tray | The complete list for a big seat — **every name is a control that opens the shared drawer** | ✓ | AC-33a, AC-33b |
 | Table | Faces and linked names | ✓ | AC-32, AC-33 |
 | Drawer | Normal | ✓ | AC-42 |
 | Drawer | Loading, then the `POS-PROFILE` failure at 10 s with **Try again** | ✓ | AC-43 |
@@ -519,6 +532,7 @@ way out, and the Employee record is the retained thing.
 | Drawer | The person has left | ✓ | AC-46 |
 | Drawer | A field the reader may not see — the row is **absent** | described, §6.3 | AC-52 |
 | Drawer | Picture enlarged, 240 px | ✓ | AC-47 |
+| Drawer | Enlarged, then the pointer leaves — **it closes by itself**; a click **pins** it | ✓, §6.3.1 | AC-47a, AC-47b |
 | Drawer | Enlarged and still arriving — the 48 px copy blurred, no spinner | ✓ | AC-48 |
 | Drawer | Enlarged and the full picture failed — the blurred copy stays, no retry | ✓ | AC-49 |
 | Drawer | No photo — **the photo is not a button at all** | ✓ | AC-50 |
@@ -531,18 +545,21 @@ way out, and the Employee record is the retained thing.
 | My profile | Send failed, "may have gone through" | ✓ | AC-6, AC-19 |
 | My profile | Nothing ticked to edit | ✓ | AC-17 |
 | My profile | No Employee record (S1-E) | ✓ | AC-18 |
-| My profile | Documents card hidden when the plan is off | described | AC-20 |
+| My profile | **Four cards: picture, details, documents, password** — the documents card moved into this panel | ✓, §6.1 | AC-20 |
+| My profile | Documents card hidden when the plan is off | described | AC-20a |
 | Settings | At rest, showing every chosen field and type by name | ✓ | AC-82 |
 | Settings | Each picker open, laptop and full-screen phone | ✓ | AC-88, AC-91 |
+| Settings | The picker footer — laptop **Preview · Cancel · OK**, phone **OK first** | ✓, §6.5.4 | AC-89, AC-89a |
 | Settings | Nothing chosen | ✓ | AC-85 |
 | Settings | 12 document types chosen — the tall case | ✓ | AC-87 |
 | Settings | "Remove on the tag" | ✓ | **not adopted** — Decision 6 |
 | Settings | Saved, with the confirmation line | ✓ | AC-90 |
 | Settings | Both pre-onboarding options | ✓ | ⚠ DECISION B |
 | Settings | Not a System Manager — **the whole card absent**, not greyed | described, §8 | AC-96 |
-| Joiner | Welcome, details, documents, photo, check, sent | ✓ | AC-105 to AC-110 |
-| Joiner | Link expired, upload failed, already submitted | ✓ | AC-111, AC-117, AC-125 |
-| Everywhere | Hindi — Devanagari runs about 30 % longer | ✓ | AC-131 |
+| Joiner | Welcome, details, documents, photo, check, sent | ✓ | AC-105, AC-107, AC-108a, AC-108b, AC-108c, AC-109, AC-110, AC-113 |
+| Joiner | **Nothing filled in at all — refused, and the link still works** | not drawn; required by D-3 | AC-110a, AC-110b, AC-110c |
+| Joiner | Link expired, upload failed, already submitted — **the first and the third are the same screen** | ✓ | AC-111, AC-117, AC-125 |
+| Everywhere | Hindi — Devanagari runs about 30 % longer | ✓ | AC-142 |
 | Everywhere | Dark theme | ✓ | AC-133 |
 
 ---
@@ -635,11 +652,11 @@ split, and the splits are named.
 
 | ID | Story | Pts | Screen | Carries | ACs |
 |---|---|---|---|---|---|
-| **US-1** | As a **frontline employee**, I want to add my own photograph from my phone camera in one tap, so that colleagues recognise me and I do not have to ask HR | 5 | My profile · S1, S1-A, S1-B | 078-SEC-6, 078-PRIV-1, OPS-7, OPS-8, OPS-14 | AC-1 … AC-9 |
+| **US-1** | As a **frontline employee**, I want to add my own photograph from my phone camera in one tap, so that colleagues recognise me and I do not have to ask HR | 5 | My profile · S1, S1-A, S1-B | 078-SEC-6, 078-PRIV-1, OPS-7, OPS-8, OPS-14 | AC-1 … AC-9, AC-3a |
 | **US-2** | As an **employee**, I want to replace or remove my own photograph at any time, so that the picture of me is one I chose and I can withdraw it | 2 | My profile · S1-A | 078-PRIV-2, OPS-15 | AC-10 … AC-13 |
 | **US-3** | As an **employee**, I want to correct the details my organisation has opened to me — my mobile, my personal email, where I live and who to ring in an emergency — so that my record is right without a message to HR | 3 | My profile · S1-C | 078-SEC-7 | AC-14 … AC-16 |
 | **US-4** | As an **employee**, I want to reach the password page from My profile and come straight back, so that I am not locked out and do not have to ask HR for a new password | 1 | My profile · S1-F | — | AC-17a, AC-17b |
-| **US-5** | As an **administrator who is not a member of staff**, I want My profile to tell me plainly that this account has no employee record, so that I do not see a server failure on what is about to be every employee's main screen | 2 | My profile · S1-D, S1-E, S1-G | 078-SEC-8, PF13, PF17 | AC-17, AC-18, AC-19, AC-20 |
+| **US-5** | As an **administrator who is not a member of staff**, I want My profile to tell me plainly that this account has no employee record, so that I do not see a server failure on what is about to be every employee's main screen | 2 | My profile · S1-D, S1-E, S1-G | 078-SEC-8, PF13, PF17 | AC-17, AC-18, AC-19, AC-20, AC-20a |
 | **US-6** | **Must not.** As an **employee**, I must not be able to change my own job title, pay, bank or identity fields, nor anything on anybody else's record, so that a self-service screen never becomes a way around ALV-215 | 2 | — | 078-SEC-7, 078-SEC-8 | AC-21 … AC-24 |
 
 #### The stored picture
@@ -701,8 +718,8 @@ split, and the splits are named.
 | ID | Story | Pts | Screen | Carries | ACs |
 |---|---|---|---|---|---|
 | **US-31** | As an **HR Manager**, I want to invite one joiner with a link that runs out and works once, so that identity documents cannot be uploaded by anybody who finds or is forwarded it | 5 | — | 078-SEC-9, brief ⚠ DECISION 11 | AC-100, AC-101, AC-102, AC-111, AC-112 |
-| **US-32** | As a **new joiner with no account**, I want to read what happens to my data before the first question and then fill the form in once on my phone, so that I start the job without a morning of paperwork | 5 | Joiner · J1, J2, J5, J6 | 078-PRIV-8, 078-PRIV-9 | AC-105 … AC-110 |
-| **US-33** | As a **new joiner**, I want to photograph a document instead of scanning it, or say "I will bring it on my first day", so that the form is not a wall when I have no scanner and a poor signal | 5 | Joiner · J3, J4, J-E2 | 078-SEC-11, OPS-24, OPS-29 | AC-113 … AC-117 |
+| **US-32** | As a **new joiner with no account**, I want to read what happens to my data before the first question and then fill the form in once on my phone, so that I start the job without a morning of paperwork | 5 | Joiner · J1, J2, J5, J6 | 078-PRIV-8, 078-PRIV-9 | AC-105 … AC-110, **AC-110a, AC-110b, AC-110c** |
+| **US-33** | As a **new joiner**, I want to photograph a document instead of scanning it, or say "I will bring it on my first day", so that the form is not a wall when I have no scanner and a poor signal | 5 | Joiner · J3, J4, J-E2 | 078-SEC-11, OPS-24, OPS-29 | AC-113 … AC-117, **AC-108a, AC-108b, AC-108c (J4)** |
 | **US-34** | As the **person who runs this bench**, I want the guest-upload allow-list set in the **same change** that turns the switch on, so that there is never a moment when a guest can attach a file to any doctype on the site | 2 | — | OPS-25, Surbhi's verified fact | AC-103, AC-104 |
 | **US-35** | As the **person who runs this bench**, I want every public path rate-limited per token and per caller address, with the token hashed before it reaches Redis, so that one forwarded link cannot flood the disk and no secret is stored in clear | 3 | — | 078-SEC-10, OPS-26, OPS-30 | AC-120, AC-121, AC-122 |
 | **US-36** | As an **HR Manager**, I want to read what a stranger sent and then create the Employee myself, setting the joining date, so that nothing becomes a personnel record without a human and the absence-backfill trap is never tripped | 3 | — | 078-SEC-12 | AC-127, AC-128, AC-129 |
@@ -745,11 +762,11 @@ and US-13 (the two surfaces where the count actually bites).
 
 | Summary | Description (first line) | Persona | Pts | ACs | Requirements carried |
 |---|---|---|---|---|---|
-| 078 · Add my own picture from my phone | As a frontline employee I want to add my own photograph in one tap | Frontline employee | 5 | AC-1–AC-9 | 078-SEC-6, 078-PRIV-1, OPS-7/8/14 |
+| 078 · Add my own picture from my phone | As a frontline employee I want to add my own photograph in one tap | Frontline employee | 5 | AC-1–AC-9, AC-3a | 078-SEC-6, 078-PRIV-1, OPS-7/8/14 |
 | 078 · Replace or remove my own picture | As an employee I want to replace or remove my photograph at any time | Employee | 2 | AC-10–AC-13 | 078-PRIV-2, OPS-15 |
 | 078 · Correct my own details | As an employee I want to correct the details HR has opened to me | Employee | 3 | AC-14–AC-16 | 078-SEC-7 |
 | 078 · Change my password from My profile | As an employee I want to reach the password page and come back | Employee | 1 | AC-17a/b | — |
-| 078 · My profile when there is nothing to show | As an administrator who is not staff I want a plain message, not a failure | Employee / admin | 2 | AC-17–AC-20 | 078-SEC-8 |
+| 078 · My profile when there is nothing to show | As an administrator who is not staff I want a plain message, not a failure | Employee / admin | 2 | AC-17–AC-20, AC-20a | 078-SEC-8 |
 | 078 · Must not: self-service is not a way round field rights | As an employee I must not change my job, pay, bank or identity fields | Employee | 2 | AC-21–AC-24 | 078-SEC-7, 078-SEC-8 |
 | 078 · One bounded JPEG and one 48 px copy, made once | As the bench owner I want a handler that can never fail an Employee save | Ops | 5 | AC-5, AC-9, AC-13, AC-25a/b | OPS-12/13/15/16, 078-SEC-6 |
 | 078 · Must not: a photo never reaches matching or a model | As an employee my picture is never scored or matched | Employee | 1 | AC-25 | 078-PRIV-3 |
@@ -760,9 +777,9 @@ and US-13 (the two surfaces where the count actually bites).
 | 078 · Bound the Organisation page's expansion | As a frontline employee on 3G I want the one chart I can open to stay light | Frontline employee | 3 | AC-37, AC-37a | OPS-20, OPS-6 |
 | 078 · Nothing private prints | As an HR Manager I want no faces on Ctrl+P and no documents anywhere | HR Manager | 2 | AC-38–AC-40 | brief ⚠ DECISION 5 |
 | 078 · One scoped profile call from a closed list | As an HR Manager I want a short profile fetched when I open it | HR Manager | 5 | AC-41, AC-51–53, AC-61 | 078-SEC-1/2, 078-PRIV-4 |
-| 078 · One mini profile, six states, used everywhere | As a CXO I want the same answer from every entry point | CXO | 5 | AC-42–46, AC-58 | `01b` req 11 |
+| 078 · One mini profile, six states, used everywhere | As a CXO I want the same answer from every entry point | CXO | 5 | AC-42–46, AC-58, AC-33a, AC-33b | `01b` req 11 |
 | 078 · The drawer behaves like a dialog | As a keyboard user I want Escape, focus return and a name | Employee | 3 | AC-59, AC-60 | PF7 |
-| 078 · The picture enlarges to recognise a face | As a CXO I want about 240 px on hover, tap or Enter | CXO | 3 | AC-47–50, AC-62 | Decision 8 |
+| 078 · The picture enlarges to recognise a face | As a CXO I want about 240 px on hover, tap or Enter | CXO | 3 | AC-47–50, AC-47a, AC-47b, AC-62 | Decision 8 |
 | 078 · Must not: a reader sees no denied field and nobody out of scope | As an employee a reader must not see my pay or learn I exist | Employee | 3 | AC-51–53 | 078-SEC-1/2 |
 | 078 · Change this seat becomes a page | As an HR Manager I want an address I can send to a colleague | HR Manager | 5 | AC-54–56 | Decision 5 |
 | 078 · A name on the seat page opens the same drawer | As an HR Manager I want one behaviour for one job | HR Manager | 1 | AC-57 | Decision 5 |
@@ -771,13 +788,13 @@ and US-13 (the two surfaces where the count actually bites).
 | 078 · Who opened whose document is recorded | As an employee I want "who looked at my Aadhaar" answerable | Employee | 3 | AC-73–77 | 078-PRIV-5, OPS-23 |
 | 078 · Must not: nobody outside the page's audience, nothing printed | As an employee a faster door for HR is not a wider one | Employee | 2 | AC-78–81 | R1, 065, 069 |
 | 078 · The settings card says what is chosen and what it means | As a System Manager I want names and words, not counts | System Manager | 5 | AC-82–87 | R7, `01b` §6.5 |
-| 078 · One button, one dialog, OK saves, Cancel writes nothing | As a System Manager I want nothing left unsaved and nothing saved by accident | System Manager | 5 | AC-88–92 | Decision 6 |
+| 078 · One button, one dialog, OK saves, Cancel writes nothing | As a System Manager I want nothing left unsaved and nothing saved by accident | System Manager | 5 | AC-88–92, AC-89a | Decision 6 |
 | 078 · The four lists are access-granting settings | As a System Manager I want every change attributable a year later | System Manager | 3 | AC-93, 94, 97 | 078-SEC-5 |
 | 078 · The audience figure counts real people | As a System Manager I want "7 people" to mean seven people | System Manager | 2 | AC-98, AC-99 | `01b` ⚠ DECISION 7 |
 | 078 · Must not: an HR Manager cannot change the four lists | As an employee the System-Manager-only rule is not bypassed in Desk | Employee | 2 | AC-95, AC-96 | 078-SEC-5 |
 | 078 · Invite one joiner with a link that runs out | As an HR Manager I want single use, 7 days, hash only | HR Manager | 5 | AC-100–102, AC-111, AC-112 | 078-SEC-9 |
-| 078 · The joiner's form, with the notice first | As a new joiner I want to know what happens to my data before I answer | New joiner | 5 | AC-105–110 | 078-PRIV-8/9 |
-| 078 · The joiner's uploads are bounded and stripped | As a new joiner I want to photograph a document, or bring it on day one | New joiner | 5 | AC-113–117 | 078-SEC-11, OPS-24/29 |
+| 078 · The joiner's form, with the notice first | As a new joiner I want to know what happens to my data before I answer | New joiner | 5 | AC-105–110, AC-110a–c | 078-PRIV-8/9 |
+| 078 · The joiner's uploads are bounded and stripped | As a new joiner I want to photograph a document, or bring it on day one | New joiner | 5 | AC-113–117, AC-108a–c | 078-SEC-11, OPS-24/29 |
 | 078 · The guest-upload allow-list is set in the same change | As the bench owner I want no moment when a guest can upload anywhere | Ops | 2 | AC-103, AC-104 | OPS-25 |
 | 078 · Rate limits on every public path, token hashed | As the bench owner I want one forwarded link not to flood the disk | Ops | 3 | AC-120–122 | 078-SEC-10, OPS-26/30 |
 | 078 · HR turns a submission into an Employee by hand | As an HR Manager I want to set the joining date myself | HR Manager | 3 | AC-127–129 | 078-SEC-12 |
@@ -796,13 +813,23 @@ Every one is Given / When / Then with an **observable oracle** — a field value
 state, a response key, an HTTP refusal, a row count, a log line, a request count, or a
 string on a prototype-matched screen. "Works correctly" appears nowhere.
 
+**The count, stated once so nobody infers it.** There are **164 criteria**, and **the
+highest id is AC-143**. The ids are **not** a run from AC-1 to AC-164: there are 142 base
+numbers (AC-1 … AC-143, with **no bare AC-131** — only AC-131a to AC-131d) plus **22
+suffixed ids**: AC-3a, AC-17a, AC-17b, AC-20a, AC-25a, AC-25b, AC-33a, AC-33b, AC-37a,
+AC-47a, AC-47b, AC-89a, AC-108a, AC-108b, AC-108c, AC-110a, AC-110b, AC-110c, AC-131a,
+AC-131b, AC-131c, AC-131d. **There is no AC-144 and above, and there is no AC-72a** — the
+implementation notes used that id for the photograph's size target, which is **AC-3a**.
+(Before the 31 Oct corrections the figure was 151.)
+
 ### US-1 · Add my own picture
 
 | ID | Given | When | Then |
 |---|---|---|---|
 | **AC-1** | An Active employee with `Employee.image` empty, on a 390 px phone | They open My profile | The **first** card is "Your picture", showing a circle with their two initials, the heading **"Add your picture"**, the sentence **"Colleagues who can already see you on the organisation chart will see it next to your name. Nothing else changes. Nobody uses it to check who you are or when you arrived."**, then **[Take a photo]** and **[Choose a file]**, then **"We make it smaller before we keep it, so it uses almost none of your data."** Both buttons are ≥ 44 px high |
 | **AC-2** | The same | They inspect the DOM order | **The privacy sentence appears before the upload control**, not after it (078-PRIV-1) |
-| **AC-3** | The same, with a JPEG of 6 MB | They send it | `Employee.image` is set; the stored `File` has `is_private = 1`; the stored byte length is **under 200 KB**; over a sample of ten photographs **p95 is ≤ 50 KB** |
+| **AC-3** | The same, with a JPEG of 6 MB | They send it | `Employee.image` is set and the stored `File` has `is_private = 1` |
+| **AC-3a** | The same photograph, and a worst case: a 4000 × 3000 detailed source | It is stored | The stored byte length is **under 120 KB** — that is the number a test asserts and a build fails on — and the **actual stored size is written to the log on every upload**. **The 50 KB figure is a target we record, not an assertion.** DevOps measured 82 KB through these exact parameters (512 px, quality 82), so a 50 KB assertion would fail a build on one employee's busy photograph (OPS-42). **Correction, 31 Oct 2026:** the p95 ≤ 50 KB clause used to sit inside AC-3 and the implementation notes argued against it under the id **AC-72a, which was never issued**. This row is that criterion, properly numbered |
 | **AC-4** | The same, with a **HEIC** file | They send it | The response is a refusal whose message is the plain English **"We can only take a JPG or PNG picture. Most phones can take one — try again from the camera."**; `Employee.image` is unchanged; **no `File` row was created** (Decision 10) |
 | **AC-5** | The same, with a **PNG carrying GPS EXIF** (fixture, US-41) | They send it | The stored file's format is **JPEG**; reading its EXIF returns **empty**; its longest edge is **512 px** (078-SEC-6 step 3, OPS-8, OPS-14) |
 | **AC-6** | A photo upload in flight | The call has not answered yet | The card says **"Sending your picture… You can keep using the page."** and the rest of the page remains usable. At 15 s it says **"We could not reach the office. Your picture may have gone through. Open this page again in a minute and look before you send it a second time."** and **what was typed in the details card is not cleared** |
@@ -841,7 +868,8 @@ string on a prototype-matched screen. "Works correctly" appears nowhere.
 | **AC-17** | A tenant with **no** My-Profile fields ticked | An employee opens My profile | The details card **stays** and says **"Your organisation has not chosen any detail for you to change here yet. To correct something on your record, tell HR."** The picture card is unaffected — the photo is always on |
 | **AC-18** | A login with **no** `Employee` row (e.g. `hr@ppj.dev.alvoraa.co`, which is how `01b` E2 was found) | They open My profile | **S1-E** renders: "This account is not linked to an employee record…". The response is **not** a 500 and **not** the raw "Something went wrong at the office" the browser showed today |
 | **AC-19** | A save whose server write succeeds but whose reply is lost | The employee is watching | The "may have gone through" wording appears **and what was typed is still in the inputs**. Tested with a call that succeeds on the server and loses its reply |
-| **AC-20** | A tenant where `plan_employee_documents` is off | An employee opens My profile | The documents card is **absent**, as `loadMyDocuments` already does. Nothing else about that card changes in this slice |
+| **AC-20** | A tenant with the documents plan **on** | An employee opens My profile | `#panel-my-profile` holds **four** cards, in this order: **picture, details, documents, password** (`01b` §6.1). The documents card is the existing `my-docs-card`, **moved into this panel** — moved in the markup, not copied, not cloned by script: a test asserts `my-docs-card` appears **exactly once** in the whole portal HTML and that its parent is `#panel-my-profile`. **It is no longer inside `#panel-home`.** Nothing about what the card shows changes in this slice |
+| **AC-20a** | A tenant where `plan_employee_documents` is **off** | An employee opens My profile | The documents card is **absent from `#panel-my-profile`**, as `loadMyDocuments` already does, and **nothing is left in its place on Home either** — no empty card, no heading, no gap. The other three cards keep their order |
 
 ### US-6 · Must not — self-service is not a way round field rights
 
@@ -877,6 +905,8 @@ string on a prototype-matched screen. "Works correctly" appears nowhere.
 | **AC-31** | The PPJ-shaped fixture in the jsdom suite that already runs in CI (`scripts/run_dom_tests.js`, `ci.yml:235-238`) | The hierarchy paints for the first time | **No more than 60 `<img class="av">` elements exist**, and the test **also asserts `POS_OPEN_DEPTH === 1` and `POS_NAMES_SHOWN === 3`**. Raising either is a test failure. **This is OPS-21, and it is the guard that protects the whole design** — not lazy loading, which `07` §3 measured as contributing almost nothing at first paint |
 | **AC-32** | The table view, 120 rows | It renders | Each name in "Who is in it" is a real `<a>` or `<button>` in a table cell. **The chart card is still a single `<button>`** with nothing clickable inside it — asserted, because a nested button already broke this page once (`portal.js:376`) |
 | **AC-33** | The same | A name is activated | The shared mini-profile drawer opens for that employee |
+| **AC-33a** | The **seat tray** (`posSeatSheet`), open on any seat | A name in the tray's people list is activated | **The same shared drawer opens**, with the same content as the table and the seat page (AC-58). Each name in the tray carries `data-pos-who` and is a real control — **a name in the tray is not plain text**. `01b` §6.3 makes the tray *"the only surface that can hold a 25-person seat, so it is the complete list"*, and the handler's own comment at `portal.js:10834` already says *"the Positions table **and the seat tray**"* |
+| **AC-33b** | The 25-person seat, whose card shows three names and **"+22 more in this seat"** | The tray is opened | **All 25 names are controls**, not three — a test counts the elements carrying `data-pos-who` inside the tray and asserts it equals the number of people in the seat. **This is the only route to the other 22**, so if the tray's names are not controls there is no way to open their profiles at all |
 | **AC-34** | The chart on **dev**, read-only, before release | Somebody counts `<img class="av">` on first paint by hand | The figure matches AC-31's assertion. **Nobody has ever rendered this chart** — the local bench cannot (`Replacement Plan` not migrated) and the designer could not either. OPS-38 |
 | **AC-35** | The table at 390 px with 215 faces available over 120 rows (measured) | It loads | **At most 25 rows request a photograph** before any scroll, by our own bound and **not** by `loading="lazy"` — Chrome's threshold on 3G is 2,500 px and reaches 60–70 rows (OPS-19). The remainder arrive on scroll |
 | **AC-36** | A chart repaint (expand, filter or arrange — zoom does not repaint, it only sets `style.zoom`) | It happens | The number of image requests equals the number of **drawn** faces, and the spec records in one sentence that **private files go out with `Cache-Control: no-cache` so every repaint revalidates**, accepted at 16–29 faces (OPS-18). No caching is claimed in any product copy |
@@ -911,6 +941,8 @@ string on a prototype-matched screen. "Works correctly" appears nowhere.
 | **AC-45** | The plan is off, **or** no document types are ticked | The drawer opens | **No documents section at all** — not an empty heading, not a greyed tab, not a count of zero |
 | **AC-46** | An employee whose `relieving_date` has passed, opened from a historical view | The drawer opens | A warning line: **"Kiran Sandhu left on 30 Sep 2026. You are looking at how the seat was, not how it is."** (The relieving **date** may appear in this one sentence; it is never a profile row — it is on the deny list) |
 | **AC-47** | A photograph on file, a 480 px drawer | The reader hovers the photograph, or taps it, or Tabs to it and presses Enter or Space | It enlarges to a **240 px square** inside the drawer, with the name and job under it, and **no download, no "open in new tab" and no save action**. **Exactly one request** is made, for the 512 px stored photograph, and **the JavaScript keeps the loaded element or blob in memory for the life of the page** so a second enlargement of the same person makes no second request. **No HTTP caching is claimed anywhere** — private files go out `Cache-Control: no-cache` (`07` §3.10 point 2) |
+| **AC-47a** | The enlargement open, opened by **hovering** with a mouse, and never clicked | The pointer leaves **both** the photograph and the enlargement | **It closes by itself.** No Escape, no click, no Close press. A test fires `mouseleave` (or `mouseout` to a target outside both elements) and asserts the enlargement is gone from the DOM or hidden. `01b` §6.3.1 line 441 is explicit: *"Pointer leaves both the photo and the enlargement."* **A colleague's face must not stay on screen because somebody brushed past it** — the "Hide before I share my screen" link sits inches away |
+| **AC-47b** | The enlargement open from a hover | The reader **clicks** the photograph | **It pins.** The pointer then leaving both elements **does not** close it; it closes only on Escape, on the 44 px Close control, or on a tap or click outside the card. A test asserts that after a click, a `mouseleave` leaves it open. **A click must not close it** — that is the opposite of what was drawn |
 | **AC-48** | The full picture has not arrived | The enlargement is open | The **48 px copy is shown scaled up and blurred**, plus **"Getting the full picture…"**. **No spinner** — the smaller thing is already underneath |
 | **AC-49** | The full picture fails | The enlargement is open | The blurred copy **stays**, with **"This is the small copy. The full picture did not load."** **No retry** |
 | **AC-50** | An employee with **no** photograph | The drawer opens | The avatar is **not a button**: no `role`, no `tabindex`, no accessible name, and Enter does nothing. A control that does nothing is worse than no control |
@@ -964,6 +996,7 @@ string on a prototype-matched screen. "Works correctly" appears nowhere.
 | **AC-87** | **Twelve** document types chosen | The card renders at 390 px | Every one is listed by name with its category. **Nothing is paginated and nothing is truncated** — a long list of exposed identity documents should look like a lot. The card is about two screens tall and that is correct |
 | **AC-88** | The card | **[Add or remove document types]** is pressed | A dialog opens: **620 px centred on a laptop, a full-screen sheet on a phone**; the whole list **grouped by category** with the group name above each block (Identity, Address, Education, Employment, Statutory, Verification, Company Issued — all seven verified in `employee_document_type.json`); the real category as a chip on every row; who collects it; whether anybody has given one; a **red line the moment a sensitive type is ticked**; a running **"What you are about to share"** summary; and **Preview** inside the dialog showing what a reader sees for what is ticked *right now* |
 | **AC-89** | Three types ticked in the dialog | The footer renders | The confirm button reads **"OK — 3 document types, seen by 7 people"**. Footer order: laptop **Preview, Cancel, OK**; phone, stacked full width, **OK first, then Preview, then Cancel** |
+| **AC-89a** | Any of the pickers, on a **laptop** (the 620 px centred box) | The footer renders | Left to right the buttons read **Preview · Cancel · OK** (`01b` line 604). **The test asserts rendered position, not DOM order** — the footer is a flex row with `justify-content:flex-end` (`panels.css:2910`), so DOM order is what the reader sees: a test reads each button's left offset, or asserts the DOM order inside `.ocs-ft-b` is Preview, then Cancel, then OK. **OK must not be the leftmost button**, which is where the saving action sits today. On a **phone** the stack is unchanged and already correct: OK first, then Preview, then Cancel (AC-89) |
 | **AC-90** | The dialog, with changes made | **OK** is pressed | It **saves**. There is **no page Save button and no unsaved state anywhere on the page afterwards.** The page says **"Saved. 3 document types are now shown on the Positions page."**, the "Last changed by…" line updates, and **the `Version` row is written at that moment** |
 | **AC-91** | The dialog | It opens and closes | `role="dialog"`, `aria-modal="true"`, `aria-labelledby`; **Escape cancels**; focus moves to the dialog's heading on open and **returns to the button that opened it** on close; focus trapped while open; close control **44 × 44**. Measured at 390, 360 and 195 px as full-screen sheets |
 | **AC-92** | A dialog in which **every box was changed** | **Cancel** is pressed | **Zero `Version` rows** are written and **no `DefaultValue` changed.** This is the test `01b` requirement 13 asks for by name |
@@ -980,7 +1013,7 @@ string on a prototype-matched screen. "Works correctly" appears nowhere.
 | ID | Given | When | Then |
 |---|---|---|---|
 | **AC-100** | The feature on, and a joiner HR expects | HR presses **Invite** | A token is made with `secrets.token_urlsafe(32)` or longer; **only its SHA-256 hash is stored**; `expires_at` is creation + **7 days** and frozen; `status = "Invited"`; `invited_by` is set. **HR sees the link once** |
-| **AC-101** | A submission row | A test queries the table | **No field equals the token in plain text.** The limiter's Redis key does not contain the token either — `field_app_limits._hash` hashes first, because Frappe writes the limiter's key value into Redis in clear (`field_app_limits.py:43-48`) |
+| **AC-101** | A submission row, and Frappe's own `Web Form Request` row behind it | A test queries both | **No field of ours holds the token in any form** — a test asserts the token string appears nowhere in `doc.as_dict()`, and that the only related field, `web_form_request`, is a `Link` holding a **row name** (the row is `autoname: hash`, so its name is not the key) and is nulled when that row dies. **Frappe's own `Web Form Request.key` is a plain `Data` field and does hold the token in clear — and that row is deleted the moment the link stops working**, on submit, on cancel, by the daily job and by the erase button, all through one `_drop_request`. A test asserts the row is gone after each of those **four** paths. **Reworded 31 Oct 2026.** The old wording — *"no field equals the token in plain text"* — read as a claim about the whole database and was not true of Frappe's row; the behaviour was always right, the sentence was not. The limiter's Redis key does not contain the token either — `field_app_limits._hash` hashes first, because Frappe writes the limiter's key value into Redis in clear (`field_app_limits.py:43-48`) |
 | **AC-102** | The link | The joiner opens it | The token travels in the **URL fragment** (`#t=…`), exactly as `www/enrol.html` does, and the page **POSTs it in a request body**. A test greps the request log of a call and asserts **the token is absent**. **It must never appear in a query string.** The address bar is cleaned with `history.replaceState` without the page reading it |
 | **AC-103** | `allow_guests_to_upload_files` is off and `allowed_doctypes_for_guest_uploads` is empty (measured today) | The switch is turned on | **`allowed_doctypes_for_guest_uploads` is set naming only `Alvoraa Joiner Submission`, in the same change — never after.** The release step is a single change, and the test asserts that with the switch on the allow-list is non-empty. **Surbhi asked for this criterion by name** |
 | **AC-104** | The switch on, the allow-list set | A Guest posts an upload targeting **any other doctype** | **Refused** with a `PermissionError` — `frappe/handler.py:132-143`, which Surbhi verified, and which Frappe's own `test_guest_upload_for_empty_whitelist` proves fails open when the list is empty. **Surbhi asked for this criterion by name** |
@@ -988,10 +1021,16 @@ string on a prototype-matched screen. "Works correctly" appears nowhere.
 | **AC-106** | 078-PRIV-8 | A test reads J1 | The notice appears **before the first input in the DOM**; it renders **the setting's value and not a literal 90**; the contact details come **from the tenant's own settings**; and **the screen refuses to render with a blank contact** |
 | **AC-107** | J2 | It renders | One field per row, 48 px controls, 16 px text, nothing wider than the screen, a hint where a joiner hesitates ("As it appears on your PAN card"), and the footer **"Your answers are kept on this phone as you go, so you can stop and come back."** |
 | **AC-108** | 078-PRIV-9 | A test posts an **off-list** field name | It is **not stored**. A unit test asserts the joiner field constant's exact contents, and asserts the stored row has **no column holding a bank or salary value** |
+| **AC-108a** | A live token, J3 finished | The joiner goes forward | **J4 · Your photo renders.** It exists as its own screen with its own id (`j4`), between J3 and J5 — `01b` §6.4 draws six joiner screens and this is the fourth. It says: **"This is the picture colleagues will see next to your name on the organisation chart once you join. It is not used for anything else — nobody checks your face against it. You can skip it and add one later."** then **[Take a photo] [Choose a file] [Skip this]**, all three ≥ 44 px. **A test asserts the screen is reachable**, because today it does not exist at all |
+| **AC-108b** | J4 | **[Skip this]** is pressed | J5 opens, **nothing is stored**, and **no refusal and no warning appears** — it is optional and the screen says so. A later submit succeeds with no photograph. The joiner is **never** asked for it again |
+| **AC-108c** | J4, a JPEG or PNG from the camera, **carrying GPS EXIF** | It is sent | It gets **exactly the treatment an employee's own photograph gets**: re-encoded to JPEG, longest edge **512 px**, **EXIF empty**, stored `is_private = 1` (AC-5, AC-115 — the same code path, not a second one). It is held **on the submission row, never on an `Employee`** — no `Employee` exists yet (AC-127). A **HEIC** file is refused with the plain message of AC-4 |
 | **AC-109** | J5 | It renders | A summary of everything, then **"When you send this, PP Jewellers HR reads it and makes your staff record. You will not be able to change it here afterwards — ring HR if something is wrong."** and **[Send to … HR]** |
 | **AC-110** | **Send** is pressed | It succeeds | **J6**: "Thank you. There is nothing else to do.", who they will hear from, **"Bring on your first day: …"** listing anything deferred, a **real telephone number** from tenant settings, and **"This link will not open again."** `status` becomes `Submitted`, `submitted_at` is set, and **the joiner's own fields become read-only to them** |
+| **AC-110a** | A live token. The joiner taps **Start → Next → Next → Send** and has **typed nothing and sent no document** | **Send** is pressed | **It is refused.** No row reaches `Submitted`; `submitted_at` stays empty; **J6 does not render**. The joiner reads one plain line: **"We have not received anything yet. Fill in at least one of the questions above, or send one document, and then press Send."** They stay on J5 with every input still holding what they typed |
+| **AC-110b** | The same refusal | The joiner presses **Send** again, or closes the page and **opens the same link again** | **The token still works.** A test asserts, after the refusal: `status` is still **`Invited`**, the `Web Form Request` row holding the key **still exists**, `_drop_request` **was not called**, and reopening the link renders the form — **not J-E1 and not "this link will not open again"**. Then a second attempt **with something filled in succeeds**. **This is the whole defect:** today an empty tap-through consumes the link and the joiner has no way back in (D-3) |
+| **AC-110c** | The same endpoint | A test reads the rule | **The only rule is "at least one of the fields HR ticked has a value, or at least one document was sent."** **We impose no mandatory-field list of our own** — Surbhi's Decision 3 stands: HR ticks the field list and we add no restriction on top. A test asserts that a submission with **exactly one** field filled in and nothing else is **accepted**, and that **no field name appears in any "required" list in our code** |
 | **AC-111** | A token that is **unknown**, **expired** or **cancelled** | The page is opened | **One answer for all three** — **J-E1**: "This link has run out. Links last 7 days so your details cannot be opened by anybody else. Nothing you sent is lost. What to do: ring or message … and ask for a new link." A test calls with an empty, a malformed and a random token and asserts **byte-identical responses**; and calls with a cancelled token and asserts it is **not distinguishable from unknown** (078-SEC-13) |
-| **AC-112** | A token that was genuinely **used** | It is reused | It may say **"already used"** — a deliberate, narrower disclosure to somebody who once held a live token, as `Alvoraa App Invite` does. `Used`, `Cancelled` and `Expired` are **final** and cannot change again |
+| **AC-112** | A token that was genuinely **used** | It is reused | **It gives the same answer as an unknown token — J-E1, byte for byte** — because the row holding its key was destroyed on use, so afterwards a used key is simply a key nobody knows. A test calls with a used, a cancelled, an expired, an empty, a malformed and a random token and asserts **one byte-identical response and one exception class** for all of them. `Submitted`, `Cancelled` and `Expired` are **final** and cannot change again. **Reworded 31 Oct 2026.** The old wording allowed *"already used"* — a deliberate narrower disclosure, copied from `Alvoraa App Invite`. **The intent was wrong, not just the words**: the build cannot say it and should not, because saying it confirms to a stranger that a link once existed. The stronger behaviour is what ships, and 078-SEC-13 is met without an exception |
 | **AC-113** | J3 | It renders | One block per ticked type, each with **three equal-width buttons**: **[Take a photo] [Choose a file] [I will bring it on my first day]**, plus "A clear photograph of the document is fine. You do not need a scanner." **The third button is a valid answer to every upload** — a joiner may not own the document yet, may be on somebody else's phone, or may not be able to scan anything |
 | **AC-114** | An upload | It is posted | Accepted types are **JPEG, PNG, PDF and nothing else**, checked on **magic bytes** — not the extension, not the browser's content type. An `.exe` renamed `.pdf` is **refused**; a 40 MB file is **refused before the body is stored** |
 | **AC-115** | An uploaded **image** of a document, carrying GPS EXIF | It is stored | It is **re-encoded**, so the stored copy has **no metadata**. A photograph of a document taken at home carries the location of somebody's home |
@@ -1004,7 +1043,7 @@ string on a prototype-matched screen. "Works correctly" appears nowhere.
 | **AC-122** | The rate limiter | A test inspects Redis | The key is the **hash**, never the token. **No new limiter, no CAPTCHA and no new dependency** — `field_app_limits` already exists |
 | **AC-123** | **Guest** | They call `frappe.client.get_list` and `frappe.client.get` on `Alvoraa Joiner Submission` | **Refused** for both. A test asserts the doctype JSON has **no Guest permission row** |
 | **AC-124** | Any guest response in the whole flow | A test reads them all | **No employee name, no count, no email address, no tenant data beyond the public brand** appears in any of them. The tenant's name and colour may appear — they are already public on the login page |
-| **AC-125** | A token already submitted | It is opened again | **"This link will not open again."** Nothing the joiner sent is shown back to them |
+| **AC-125** | A token already submitted | It is opened again | **The generic J-E1 answer**, the same one an unknown token gets (AC-112) — which still says *"Nothing you sent is lost."* **Nothing the joiner sent is shown back to them.** The sentence **"This link will not open again"** is said **on J6, at the moment they send** (AC-110), which is where it is useful; it is **not** repeated on a second visit, because repeating it would confirm that a link existed. **Reworded 31 Oct 2026** — the old wording put the sentence on the second visit, which the single answer to all probing makes impossible |
 | **AC-126** | The new `allow_guest` endpoints | A registry test runs | **Only the named pre-onboarding endpoints** are new `allow_guest` endpoints — the shape `test_endpoint_guards_045.py` already uses. **No User is created by any path in this slice; there is no self sign-up; no new role is created** (078-SEC-14, and the new-Frappe-app checklist rows answered) |
 | **AC-127** | A submission in `Submitted` | A test checks the database | **No `Employee` row was created and the naming series did not move.** Creating the Employee is an HR action, in HR's own screen, by a signed-in HR user |
 | **AC-128** | HR creating the Employee | They set the record up | **No joining date comes from the form or from the submission's own dates.** HR sets it on the Employee. The absence-backfill trap is the reason: a back-dated joining date makes Frappe mark the person Absent for every day since **and deleting the rows does not help** |
@@ -1044,6 +1083,35 @@ slice 028 exactly, and it is worse here because the numbers are already known.
 
 ---
 
+### 9a · What changed on 31 Oct 2026, and why
+
+The test engineer's report found four things wrong with this section: three criteria that
+cannot pass as worded, one that cannot be checked at all, an id that was never issued, and
+five behaviours the prototype draws that **no criterion covered — which is why no test
+could fail**. Surbhi has decided every one is to be fixed, including the parity gaps, so
+this spec now describes the feature **as the prototype draws it**, not as it was built.
+
+| ID | Change | Why |
+|---|---|---|
+| **AC-3** | The p95 clause taken out; it now asserts only that the photograph is stored and private | It was three oracles in one row. Not atomic |
+| **AC-3a** | **New.** The stored size: **under 120 KB asserted**, the real size logged, 50 KB a recorded target | This is the criterion the implementation notes argued about under **AC-72a, an id that was never issued**. It is AC-3a now. DevOps measured 82 KB in the worst case (OPS-42), so a 50 KB assertion would fail a build on one employee's busy photograph |
+| **AC-20** | **Rewritten.** The documents card is the **third of four** cards inside `#panel-my-profile` | It said "an employee opens My profile → the documents card is absent", which could never be checked because the card was never on that page. The engineer is moving `my-docs-card` into the panel as `01b` S1-G drew it |
+| **AC-20a** | **New.** The plan-off case, which is what the old AC-20 was trying to say | Split out so each row has one oracle |
+| **AC-33a, AC-33b** | **New.** The **seat tray** opens the mini profile, and **all 25** names in a big seat are controls | `01b` §6.3 makes the tray the complete list for a large seat, and the handler's own comment already names it. It was never wired up, and **no criterion covered the tray as an entry point**, so the other 22 people in the biggest seat had no route to a profile at all |
+| **AC-47a, AC-47b** | **New.** The enlarged photograph **closes when the pointer leaves** both elements; a **click pins** it | `01b` §6.3.1 line 441 is explicit and the build does the opposite: a click closes it and nothing closes on leaving. A colleague's face that will not go away works against the "Hide before I share my screen" link sitting inches from it |
+| **AC-89a** | **New.** The laptop picker footer renders **Preview · Cancel · OK** left to right, asserted on position, not DOM order | `01b` line 604. AC-89 names the order but was read as a label criterion; nothing asserted what the reader sees. Today OK is the leftmost button |
+| **AC-101** | **Reworded.** No field **of ours** holds the token in any form; Frappe's own request row, which holds it in clear, is **destroyed the moment the link stops working** — on all four paths | The old wording read as a claim about the whole database and was untrue of Frappe's row. **The behaviour was always right; the sentence was not** |
+| **AC-108a, AC-108b, AC-108c** | **New.** **J4 · Your photo** — it exists, it is skippable, and a photograph gets the same treatment as an employee's own | `01b` draws six joiner screens. `j4` was never built, §4.4 still lists it, J1 still promises it, and **no criterion covered it** |
+| **AC-110a, AC-110b, AC-110c** | **New.** An **empty** submission is refused, **the link is not used up**, the joiner is told in plain words, and they can send again. **The rule is "at least something", never a mandatory-field list of ours** | D-3. Today a joiner can tap through and send nothing; the link then burns itself and cannot be reopened, and HR gets a blank record. **Decision 3 stands: HR ticks the field list and we add no restriction on top** |
+| **AC-112** | **Reworded, and the intent was wrong too.** A used link gives the **same answer as an unknown one**, byte for byte | The old wording allowed *"already used"*. The build cannot say it, because the row holding the key is gone — and **it should not say it**, because saying it confirms to a stranger that a link once existed. The build is stronger than the spec asked for |
+| **AC-125** | **Reworded.** A second visit gets the generic answer; **"This link will not open again" is said on J6, at the moment it matters** | Same reason as AC-112 |
+| **AC-142** | No change to the row. The §6.2 state table pointed Hindi at **AC-131**, which has no bare row. It now points at AC-142 | A pointer to an id that does not exist |
+| Data model §5.6 | `token_hash` and `retired_token_hash` **dropped**; `web_form_request` described instead; `full_name` **no longer mandatory** | The two hash fields were from before Decision 11 chose Frappe's Web Form, and `retired_token_hash` existed only to say *"already used"*, which AC-112 no longer allows. A mandatory `full_name` would be a restriction of ours on top of HR's ticked list, which AC-110c forbids — **⚠ this one is Surbhi's to overrule if she wants the name always required** |
+
+**Nothing was re-pointed quietly.** Every reworded row says in the row that it was
+reworded and on what date.
+
+
 ## 10 · Edge cases and boundaries
 
 The ones that actually bite. Each has an owner in the code.
@@ -1062,7 +1130,7 @@ The ones that actually bite. Each has an owner in the code.
 | E10 | **The 25-person seat** | Three names and a count on the card; the **tray** holds all 25. The tray is the only surface that can (AC-30) |
 | E11 | **Concurrent photo uploads by the same person** from two devices | Last write wins on `Employee.image`; **both old files are deleted**; exactly two `File` rows remain (AC-13). No locking is specified — this is one person's own picture, and a lock for a problem nobody has is banned |
 | E12 | **Two System Managers editing the settings at once** | Last OK wins, and **both `Version` rows exist**, each naming its own old and new value. That is the record, and it is enough |
-| E13 | **The same token opened on two phones** | Single use. The first submit retires the hash; the second gets "already used" (AC-112) |
+| E13 | **The same token opened on two phones** | Single use. The first **successful** submit destroys the row holding the key; the second phone then gets **J-E1, the same answer an unknown link gets** (AC-112). A **refused** empty submit does not count as a use — the link still works on both phones (AC-110b) |
 | E14 | **A bulk Employee import carrying an `image` column** | `refuse_import_of_locked_columns` already exists for locked fields. `image` is permlevel 0, so an import may set it — and the 48 px handler fires per row on `on_update`. **At 403 rows that is 403 Pillow calls inside one import.** ⚠ DECISION K: I recommend the handler stay as it is (it is tens of milliseconds and bounded), and that the release notes say an import of photographs will be slow rather than that it be moved to a queue, which is banned without a measured number |
 | E15 | **Back-dated anything** | The only back-dating risk here is the joiner's joining date, and **no joining date ever comes from the form** (AC-128) |
 | E16 | **A cancelled or amended document** | `Employee Document` is a child table with no submit/cancel lifecycle. Nothing to handle |
@@ -1398,13 +1466,16 @@ at `https://claude.ai/artifact/BPRXMnUmpCi3wGBRcrVdN6` — **7 screens, 35 state
 |---|---|---|---|---|
 | 1 | **Chart — faces** | 7 | **Yes**, except one open choice | **⚠ DECISION C**: 24 px circle or 40 px photograph. Both drawn. My recommendation and `01b`'s: **24 px**, with the big picture one click away |
 | 2 | **Table — faces and linked names** | 1 | **Yes, with one addition** | **The table's faces are bounded by our own rule (first 25 rows, or an IntersectionObserver), not by `loading="lazy"`.** `01b` §5.6 says "about 15 of 120"; that is the desktop figure, and on a 3G phone it is 60–70 rows and ~125 photographs. **Operations followed.** AC-35 |
-| 3 | **My profile** | 7 | **Yes** | **One subtraction**: the password card's copy gains `01b` ⚠ DECISION 6 option (b)'s single line, "You will come back here afterwards" — my recommendation, because the page it opens is Frappe's own, in English, with "Back to sign in". ⚠ DECISION I |
-| 4 | **Mini profile drawer** | 10 | **Yes, except the field count** | **Ten details, not eleven. "Work phone" has no field on `Employee`** (verified). ⚠ DECISION A. And **"cached for the rest of the session" is built as a JavaScript in-memory hold, not an HTTP cache** — AC-47 |
+| 3 | **My profile** | 7 | **Yes — now that the documents card is being moved** | **The build had three cards, not four**: `my-docs-card` stayed inside `#panel-home` instead of moving into `#panel-my-profile` as S1-G drew it (D-5(c)). **Surbhi's decision, 31 Oct 2026: fix it.** The card moves, and AC-20 is written against the four-card panel. **One subtraction remains**: the password card's copy gains `01b` ⚠ DECISION 6 option (b)'s single line, "You will come back here afterwards" — my recommendation, because the page it opens is Frappe's own, in English, with "Back to sign in". ⚠ DECISION I |
+| 4 | **Mini profile drawer** | 10 | **Yes, once two gaps are closed** | **Two differences found at test, both being fixed (Surbhi, 31 Oct 2026).** First, **the seat tray never opened the mini profile** — `data-pos-who` was emitted in the table and on the seat page but not in the tray, so the other 22 people in a 25-person seat had no route to a profile (AC-33a, AC-33b). Second, **the enlarged photograph did not close when the pointer left, and a click closed it instead of pinning it** — the opposite of `01b` §6.3.1 line 441 (AC-47a, AC-47b). And the field count: **ten details, not eleven. "Work phone" has no field on `Employee`** (verified). ⚠ DECISION A. And **"cached for the rest of the session" is built as a JavaScript in-memory hold, not an HTTP cache** — AC-47 |
 | 5 | **Seat page** | 3 drawn, 1 not built | **Yes** | **"Open in place" is not built** — Decision 5 chose the drawer. The content is identical either way, so nothing is lost |
-| 6 | **Organisation Settings card** | 7 | **Yes for three lists; the fourth differs** | **⚠ DECISION B: the fourth section states the facts and links to the Web Form's own builder, rather than being a fourth picker.** Decision 11 put the joiner's field list in the Web Form. And **"Remove on the tag" is not built** — Decision 6 refused it |
-| 7 | **Pre-onboarding, the joiner** | 8 | **Yes, with the retention number live** | **J1 renders the configured retention period, never the prototype's literal 90** — 078-PRIV-7, AC-106. The prototype's 90 is ours, not counsel's |
+| 6 | **Organisation Settings card** | 7 | **Yes for three lists; the fourth differs** | **⚠ DECISION B: the fourth section states the facts and links to the Web Form's own builder, rather than being a fourth picker.** Decision 11 put the joiner's field list in the Web Form. And **"Remove on the tag" is not built** — Decision 6 refused it. **One difference found at test and being fixed:** the picker footer on a laptop rendered **OK · Preview · Cancel**, not the drawn **Preview · Cancel · OK** (AC-89a) |
+| 7 | **Pre-onboarding, the joiner** | 8 | **Not yet — one screen of six was missing** | **`J4 · Your photo` was never built** (D-5(b)): the design draws six screens and `joiner.html` had `j1, j2, j3, j5, j6`. **Surbhi's decision, 31 Oct 2026: build it** — AC-108a, AC-108b, AC-108c. And **J1 renders the configured retention period, never the prototype's literal 90** — 078-PRIV-7, AC-106. The prototype's 90 is ours, not counsel's |
+| 7a | **Pre-onboarding — one state the prototype does not draw** | — | **Being added** | **A joiner who fills in nothing and presses Send.** The design never drew it, and the build accepted it, used the link up and lost the joiner (D-3). Refused now, with the link still working: AC-110a, AC-110b, AC-110c |
 
-**Everything else is built exactly as drawn**, including the sample photograph being a
+**Everything else is built exactly as drawn.** The four differences above were found at
+test, not raised at build; **Surbhi decided on 31 Oct 2026 that all four are to be fixed**,
+so this spec now describes the drawing, not the build. That includes the sample photograph being a
 tinted disc rather than an invented face, which is correct: nobody at PP Jewellers has a
 photograph and drawing one would be inventing data.
 
@@ -1465,7 +1536,7 @@ criterion, or is marked **not adopted** with whose decision it was.
 | Brief | ⚠ DECISION 12 — the joiner's field list on the card or in the Web Form | US-32 | AC-108 | **the Web Form (Decision 11). The card's fourth section is ⚠ DECISION B** |
 | Brief | ⚠ DECISION 13 — the joiner's retention period | US-37, US-38 | AC-118, AC-119, AC-131a–d | **covered as a setting shipped unset (Decision 12). The number is ⚠ COMPLIANCE 2** |
 | Brief | §8 refusals — never matched, scored or used for check-in | US-8 | AC-25 | covered |
-| Brief | §9 "a phone photo is 3–8 MB" | US-1, US-7 | AC-3, AC-72 | covered |
+| Brief | §9 "a phone photo is 3–8 MB" | US-1, US-7 | AC-3, AC-3a, AC-72 | covered |
 | Brief | §9 "a PNG or HEIC selfie keeps its GPS" | US-1 | AC-4, AC-5 | covered |
 | Brief | §9 "an unsuitable photo is uploaded" | — | — | **not adopted, deliberately. No moderation queue.** HR can already replace or clear `Employee.image` in Desk, and the chart says whose it is |
 | Brief | §9 "the child-table trap, again" (ALV-256) | US-23 | AC-66 … AC-70 | covered |
@@ -1481,12 +1552,12 @@ criterion, or is marked **not adopted** with whose decision it was.
 |---|---|---|---|
 | 1 · Chart, faces | US-9, US-11, US-14 | AC-26 … AC-31, AC-38 … AC-40 | covered |
 | 2 · Table, faces and links | US-10, US-12 | AC-32, AC-33, AC-35, AC-36 | covered |
-| 3 · My profile | US-1 … US-5 | AC-1 … AC-20 | covered |
-| 4 · Mini profile drawer | US-15 … US-19 | AC-41 … AC-53, AC-58 … AC-62 | covered |
+| 3 · My profile | US-1 … US-5 | AC-1 … AC-20, **AC-3a, AC-20a** | covered. **S1-G, the documents card moved into the panel, is AC-20** — it was the one screen clause with no checkable criterion |
+| 4 · Mini profile drawer | US-15 … US-19 | AC-41 … AC-53, AC-58 … AC-62, **AC-33a, AC-33b, AC-47a, AC-47b** | covered. **The tray as an entry point and the enlargement's close-on-leave were the two clauses with no criterion** |
 | 5 · Seat page | US-20, US-21 | AC-54 … AC-57 | covered |
-| 6 · Organisation Settings card | US-26 … US-30 | AC-82 … AC-99 | covered |
-| 7 · Pre-onboarding, the joiner | US-31 … US-40 | AC-100 … AC-135 | covered |
-| All 35 states | — | §6.2 maps every one | **covered. Two are marked "not adopted"** ("open in place", "remove on the tag"), both by Surbhi's decisions |
+| 6 · Organisation Settings card | US-26 … US-30 | AC-82 … AC-99, **AC-89a** | covered |
+| 7 · Pre-onboarding, the joiner | US-31 … US-40 | AC-100 … AC-135, **AC-108a … AC-108c (J4), AC-110a … AC-110c (nothing filled in)** | covered. **J4 was the one screen of six with no criterion**, which is why no test could fail |
+| All 35 states | — | §6.2 maps every one | **covered. Two are marked "not adopted"** ("open in place", "remove on the tag"), both by Surbhi's decisions. **One state is added that the prototype does not draw**: the joiner who sends nothing |
 
 ### 19.3 `01c` — 16 SEC and 9 PRIV
 
@@ -1528,7 +1599,7 @@ criterion, or is marked **not adopted** with whose decision it was.
 | OPS-4 · stream documents through our own endpoint | US-23 | AC-66, AC-67 | covered |
 | OPS-5 · a `show_in_positions` Check on `Employee Document Type` | — | **AC-95** | **not adopted — 078-SEC-5 followed, on Surbhi's instruction.** The reason is a permission row: that doctype grants HR Manager `write: 1`, verified |
 | OPS-6 · batch the photo read | US-13 | AC-37a | covered |
-| OPS-7 · cap and resize server-side | US-1 | AC-3, AC-72 | covered |
+| OPS-7 · cap and resize server-side | US-1 | AC-3, AC-3a, AC-72 | covered |
 | OPS-8 · strip metadata for every image type | US-1 | AC-5 | covered |
 | OPS-9 · asset refresh and an `assets.json` bump | §18 item 7 | — | **superseded by OPS-36, by DevOps' own downgrade.** The pipeline does it |
 | OPS-10 · no new container, queue, worker, cache, CDN or bucket | §11 | — | covered — **stated as a requirement so nobody adds one later** |
@@ -1569,6 +1640,33 @@ because the field does not exist** (brief ⚠ DECISION 6's eleventh field — D1
 
 ---
 
+### 19.5 The criteria added or reworded on 31 Oct 2026 — and the named test for each
+
+**Every one lands in a test that exists, or in a named new test in a file that exists.**
+Nothing here is left to "the suite covers it".
+
+| AC | Story | Named test | File | New? |
+|---|---|---|---|---|
+| **AC-3** | US-1 | `test_the_photo_is_stored_private` | `alvoraa_portal/tests/test_my_photo_078.py` | reword only — the existing test already asserts the private flag |
+| **AC-3a** | US-1, US-7 | `test_the_stored_size_is_inside_the_build_ceiling` | `alvoraa_portal/tests/test_my_photo_078.py` | **exists already** — written by the engineer under the phantom id. It now has a real id, and gains one assertion: **the size is written to the log** |
+| **AC-20** | US-5 | `test_my_profile_holds_four_cards_in_order` | `alvoraa_portal/tests/portal_faces_078_test.js` | **new.** Asserts `my-docs-card` appears **once** in the HTML and its parent is `#panel-my-profile`, in third place |
+| **AC-20a** | US-5 | `test_the_documents_card_is_absent_when_the_plan_is_off` | `alvoraa_portal/tests/portal_faces_078_test.js` | **new.** This is what the old AC-20 was trying to say, and it is checkable now the card is on the page |
+| **AC-33a** | US-16 | `test_a_name_in_the_seat_tray_opens_the_one_mini_profile` | `alvoraa_portal/tests/portal_faces_078_test.js` | **new** |
+| **AC-33b** | US-16 | `test_all_25_names_in_a_big_seat_are_controls` | `alvoraa_portal/tests/portal_faces_078_test.js` | **new.** Counts `data-pos-who` inside the tray against the seat's people count |
+| **AC-47a** | US-18 | `test_the_enlargement_closes_when_the_pointer_leaves` | `alvoraa_portal/tests/portal_faces_078_test.js` | **new.** The file already drives the enlargement for Escape (AC-62), so the fixture is there |
+| **AC-47b** | US-18 | `test_a_click_pins_the_enlargement` | `alvoraa_portal/tests/portal_faces_078_test.js` | **new** |
+| **AC-89a** | US-29 | `test_the_laptop_picker_footer_reads_preview_cancel_ok` | `alvoraa_portal/tests/portal_faces_078_test.js` | **new.** Asserts the order inside `.ocs-ft-b`, not the labels |
+| **AC-101** | US-31 | `test_our_own_row_never_holds_the_key` **plus a new** `test_frappes_request_row_dies_on_all_four_paths` | `alvoraa_portal/tests/test_joiner_078.py` | the first exists; **the second is new** and covers the fourth caller, `purge_submission`, which had no test |
+| **AC-108a, AC-108b, AC-108c** | US-33 | `test_j4_renders_and_can_be_skipped` (DOM) and `test_a_joiner_photo_is_stripped_and_resized` (Python) | `alvoraa_portal/tests/portal_faces_078_test.js` · `alvoraa_portal/tests/test_joiner_078.py` | **both new.** The Python one reuses the GPS-carrying PNG fixture in `fixtures_078.py:60` |
+| **AC-110a, AC-110b, AC-110c** | US-32 | `test_an_empty_submission_is_refused`, `test_a_refused_submission_does_not_use_the_link_up`, `test_one_field_is_enough` | `alvoraa_portal/tests/test_joiner_078.py` | **all three new.** The second is the one that matters: it asserts `status` is still `Invited`, the `Web Form Request` row still exists, and the link reopens |
+| **AC-112** | US-31, US-39 | `test_seven_wrong_inputs_one_answer` — **extended to eight**, adding a genuinely used token | `alvoraa_portal/tests/test_joiner_078.py` | the test exists; **the used-token case is new** |
+| **AC-125** | US-39 | `test_a_second_visit_gets_the_generic_screen` and the J6 clause in the browser walk | `alvoraa_portal/tests/test_joiner_078.py` · `alvoraa_portal/tests/portal_faces_078_test.js` | **the second-visit test is new**; J6's own wording is already proved in a browser (`04` §5.3) |
+
+**One count to raise with these:** `scripts/run_dom_tests.js` carries
+`EXPECTED_BROWSER_TESTS = 20`. Nothing here adds a **file**, so the number does not move —
+every new DOM test goes inside `portal_faces_078_test.js`. **Said here so nobody raises it
+by accident.**
+
 ## 20 · ⚠ DECISIONS — Surbhi's, with my recommendation beside each
 
 **None of her thirteen settled decisions is reopened.** These are the things still open,
@@ -1608,6 +1706,8 @@ plus the ones her decisions created.
 | **Q8** | **Who sends the joiner's invite, and over what — email, or WhatsApp?** | **Surbhi** | Nothing blocks. **Email is the only channel this product has**, and a copyable link covers the rest |
 | **Q9** | **How long is the document-open record kept?** Counsel's 18 Sep policy does not cover access logs | **Surbhi** | Nothing blocks. **Fail-closed default: keep it.** R8 |
 | **Q10** | **Somebody should open Positions on `dev` and count the faces on first paint.** Nobody has ever rendered this chart | **Engineer**, before the build (AC-34, OPS-38) | Nothing blocks, but **the whole design rests on a count nobody has seen** |
+
+| **Q11** | **Must a joiner's name always be filled in?** AC-110c's rule is "at least one ticked field, or one document", which honours Decision 3 — HR ticks the list and we add no restriction. **That means a joiner could send only a document and no name.** Making `full_name` mandatory would be the one restriction of ours, and it is arguably the one worth having, because HR cannot do much with an unnamed scan | **Surbhi** | Nothing blocks — AC-110c is buildable as written. **My recommendation: leave it as "at least something", as Decision 3 says, and let HR tick `full_name` if they want it asked for.** One row in §5.6 changes if she says otherwise |
 
 **Nice to know, noted and moved past:** whether the ~16 MB of photographs per tenant
 changes the deploy disk gate (DevOps says no: +10 % on a 169 MB volume); and whether a
@@ -1688,6 +1788,32 @@ Read back once, asking only *what can I delete and still meet the requirement?*
   time, the thing to cut is **chart faces**, not the photo upload — and that is a cut, not a
   phase.
 
+**The second subtract pass, 31 Oct 2026, over the 13 criteria I added.** Adding criteria is
+the easiest way to smuggle scope in, so I read them back once asking only what can go.
+**Removed:**
+
+- **A "nothing filled in" warning on J5 before Send is pressed.** I had written it, and
+  deleted it. The refusal already says what is needed, in one line, at the moment it
+  matters. A pre-emptive warning on a form somebody has not finished is nagging.
+- **A mandatory-field list of our own for the joiner.** Written, then deleted on Decision 3:
+  HR ticks the list and we impose nothing. **The rule is "at least something".** This is the
+  single biggest subtraction in the batch and it is why AC-110c exists — to stop the next
+  reader putting the list back.
+- **An attempt counter on a refused submission** (how many empty sends before we stop
+  answering). Deleted. The per-token rate limits in AC-120 already bound it; a second
+  counter for the same problem is banned.
+- **A "you skipped your photo" reminder after joining.** Deleted. J4 says *"You can skip it
+  and add one later"*, and My profile is where later happens.
+- **`token_hash` and `retired_token_hash`** from the data model — two fields with no reader
+  once Decision 11 chose Frappe's Web Form, one of them existing only to say *"already
+  used"*, which AC-112 no longer allows.
+- **A criterion for the tray's layout.** AC-33a and AC-33b assert the names are **controls
+  and complete**. What they look like is `01b`'s job and nothing changed about it.
+
+**Nothing else came out.** Four of the five new behaviours are prototype parity — the
+prototype is the approved picture, so they are not scope, they are the requirement — and the
+fifth, the empty form, is a defect with a joiner locked out at the end of it.
+
 **Not removed, and the measured reason each survived:**
 
 - **The 48 px copy** — 720 KB vs 48 KB on first paint, against a 2.5 s / 3G budget. Two
@@ -1755,6 +1881,15 @@ Read back once, asking only *what can I delete and still meet the requirement?*
       decides the chart CSS and the wall-chart print, D decides the Organisation page's
       renderer, and N decides the upload's accepted types. **Each is one sentence from
       Surbhi, and all five have my recommendation beside them in §20.**
+
+**Revision 2, 31 Oct 2026.** Every box above still holds, with one addition: **13 criteria
+were added and three reworded after the test report** (§9a). Four of the additions are
+prototype parity — the seat tray, J4, the enlargement's close-on-leave and the picker
+footer — and **Surbhi decided on 31 Oct 2026 that all four are to be built as drawn**. The
+fifth is the joiner who sends nothing. **The traceability box is ticked again on the new
+numbers**: every one lands in a named test in a file that already exists (§19.5). Nothing
+in this revision is a new requirement; each one closes a gap between the approved drawing
+and what a test could check.
 
 **Verdict: one box fails, and the rule is that more than two sends the slice back.
 This slice is ready to start once ⚠ DECISIONS A to D and N are answered** — and the

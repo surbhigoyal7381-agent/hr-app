@@ -259,7 +259,7 @@ signature on v16.35.0 is all that is left of OPS-41.
 |---|---|
 | AC-1, AC-7 | The picture card is first in `#panel-my-profile`, with the initials circle, the heading, the sentence, both ≥ 44 px buttons and the "we make it smaller" line. Replace/Remove once a photograph exists |
 | **AC-2** | `myp-notice` is **before** the control in the DOM. Asserted by `compareDocumentPosition`, not by reading the source |
-| AC-3 | `is_private = 1`; the stored size is logged and checked against a 120 px… 120 **KB** ceiling (see AC-72a below) |
+| AC-3 | `is_private = 1`; the stored size is logged and checked against a 120 **KB** ceiling (see AC-3a below) |
 | AC-4 | HEIC refused with the plain sentence; no `File` row created. Pillow 12.3.0 cannot read HEIC, so it could be neither resized nor stripped |
 | **AC-5** | A PNG carrying a GPS block goes in; the stored file is a JPEG whose EXIF reads back **empty**, longest edge 512. The fixture asserts the GPS really was in the source first |
 | AC-6, AC-19 | "Sending your picture…", the 15 s "may have gone through" wording, and **what was typed is not cleared** - asserted on the input's value while the answer is lost |
@@ -295,7 +295,7 @@ signature on v16.35.0 is all that is left of OPS-41.
 | AC-39 (wall-chart photo tick) | **Not built** | ⚠ DECISION C's second half. `ocFacesAllNow()` and the `.pos-print-faces` rule are in and tested, so the tick is ~10 lines on slice 069's dialog - but it is slice 069's dialog, and faces are off on Ctrl+P either way |
 | AC-47's in-memory hold | **Built and asserted - and it was BROKEN** | The test written to cover this debt caught it making two requests instead of one, because it copied the `src` onto a fresh `<img>`. It now reuses the held element. §0 #5 |
 | AC-72 (`max_file_size = 5`) | **Not done, deliberately** | A per-site setting, Surbhi's word at release. **Not mine** |
-| **AC-72a** - the spec's `p95 ≤ 50 KB` | **Changed to a record, per OPS-42** | DevOps measured a worst case at **82 KB** through these exact parameters. 50 KB is a good target and a bad assertion: it fails a build on one employee's busy photograph. The build ceiling is **120 KB** and the real size is logged on every upload |
+| **AC-3a** - the spec's `p95 ≤ 50 KB` (**referenced as AC-72a until 31 Oct 2026; that id was never issued. The spec now carries this as AC-3a**) | **Changed to a record, per OPS-42** | DevOps measured a worst case at **82 KB** through these exact parameters. 50 KB is a good target and a bad assertion: it fails a build on one employee's busy photograph. The build ceiling is **120 KB** and the real size is logged on every upload |
 | AC-100 to AC-135 (pre-onboarding) | **Built.** 42 tests | §3A |
 | **AC-101** | **Built differently.** The criterion is wrong as worded | §2.1 |
 | **AC-112, AC-125** | **Built differently.** Both are wrong as worded, and the build is stronger than they ask | §3A.4 |
@@ -741,3 +741,257 @@ chart. A rule nobody can keep is worse than no rule.
 block has its own prefix and its own one line in `switchPanel`, which is the
 rule, but the file is 1.12 MB and this slice made it bigger. That is OPS-11's
 standing debt and I did not quietly start fixing it.
+
+---
+
+## 11 · The defect fixes, 31 October 2026 — after the test report
+
+`04-test-report.md` returned **Fail**. Surbhi decided two things before this
+work started: **a joiner's personal data is tenant-side**, and **all the
+remaining defects are to be fixed, including the four prototype-parity gaps,
+built as drawn.** This section is what I did about each one, on
+`slice/078-positions-faces` in the worktree, five commits, nothing pushed.
+
+### 11.1 What is fixed
+
+| # | Fix | Where | Rung |
+|---|---|---|---|
+| **D-1** | `Alvoraa Joiner Submission` is named in `TENANT_DOCTYPES`, with the comment saying why: the tenant's own record about a person it is hiring, read and written inside the tenant by its HR. Its three Link fields — `User`, `Employee`, `Web Form Request` — were checked and none widens the derivation, so no further guard | `subscription.py` | **configuration** — one line on an existing list |
+| **D-2** | The arguments gate now **reads the raw-fetch shape** instead of excusing it | `tests/test_browser_call_args_045.py` | **new code in a test** — see 11.2 for why not `NO_ARG_CALL` |
+| **D-3** | An empty submission is refused **before** the key is burnt and before the row that holds it is purged, so the link still works and the joiner can send again. The browser checks the same thing first | `joiner_public.py`, `www/joiner.html` | **new code** — the cheapest rung that exists; no `reqd` was added, see 8.3 |
+| **D-5(a)** | A name in the **seat tray** opens the mini profile | `portal.js` `posSeatSheet` | **customisation** — the same markup the other two surfaces already emit, picked up by the one delegated handler |
+| **D-5(b)** | **J4, the photo screen**, built: optional, skippable, and it travels through the existing documents endpoint under one reserved type name | `www/joiner.html`, `joiner_public.py` | **new code** — but see 11.4: no fourth guest endpoint, no new DocType field |
+| **D-5(c)** | `my-docs-card` **moved** out of `#panel-home` into `#panel-my-profile`, between the details and the password | `templates/includes/ess/parts/home.html` | **already there** — the card is unchanged; only its place moved |
+| **D-5(d)** | The enlarged photograph closes when the pointer leaves both it and the photo; a **click pins** it | `portal.js` | **customisation** — one `mouseout` listener and one boolean |
+| **D-6** | The picker's laptop footer renders **Preview · Cancel · OK** | `portal.js`, `panels.css` | **configuration** — DOM order plus one `order` rule |
+| **D-7** | `context.joiner_on` deleted | `www/joiner.py` | **deletion** |
+| **P4** | `test_the_stored_file_is_private` now asserts privacy on the **48 px** copy too | `tests/test_my_photo_078.py` | **new code in a test** |
+
+### 11.2 D-2 — why the report's own suggested fix was not taken
+
+The report said: add the endpoint to `NO_ARG_CALL` with a reason. One line,
+and the suite goes green.
+
+**I did not do that, and this is the reason.** That gate exists because
+`next-inbox.js` sent `{name, action, reason}` to `action_leave(leave_id,
+action)` — Frappe drops what a function does not declare, so every Approve and
+Decline failed for two months and nothing went red. An entry in `NO_ARG_CALL`
+would have made CI green while leaving **a new endpoint on the documents path
+permanently outside the check**, which is the exact hole the gate was written
+to close.
+
+So the reader was taught the shape instead:
+
+```
+fetch("/api/method/<literal alvoraa_portal path>", { ... body: JSON.stringify({ ...keys... }) })
+```
+
+The one thing to know about that shape: **the arguments are not the second
+argument**, as they are for every helper. The second argument is `fetch`'s own
+options, and the names the server sees are the keys of the object inside
+`JSON.stringify` in its `body`. One new call site is found, and
+`open_employee_document` is now checked: the browser sends `{ row }`, the
+server declares `open_employee_document(row=None)`.
+
+A fetch whose **path** is built at run time — `next-frame.js:281`,
+`portal.js:13792` — names no endpoint to read, and every endpoint reached that
+way already goes through a helper shape the reader does read. The docstring now
+says six shapes, not five, and the "What this does NOT cover" list names the
+dynamic-path case by file and line, so the file still describes itself honestly.
+
+`MIN_CALL_SITES` **200 → 201**, up by the one site found. Never down. Measured
+today: **226 sites read, 0 orphans.**
+
+### 11.3 D-3 — the rule, and what I deliberately did not add
+
+The defect was irreversible for the person it happened to, which is why it was
+labelled dangerous debt. Tapping Start → Next → Next → Send with nothing typed
+reached J6. `submit_invite` set `status = "Submitted"` and then called
+`_drop_request`, which destroys the `Web Form Request` row holding the key — so
+the page's *"This link will not open again"* was true, HR got a blank record,
+and the joiner had no route back.
+
+Both of those now happen **after** the check, so a refusal leaves `status` at
+`Invited` and the key's row untouched. `get_web_form_request` does not set
+`first_used_on` — I read Frappe's own source to confirm it, because the whole
+fix rests on it — so nothing else burns the key either.
+
+**The rule is the spec's new AC-110c and nothing more: one field with a value,
+or one document.** Surbhi's standing decision holds — HR ticks the field list
+and we impose no restriction on top of it. So:
+
+- **No `reqd` was added to any joiner field**, and a test reads that off the
+  DocType meta rather than off the prose, so a `reqd` added later fails;
+- `full_name` is **not** treated as mandatory. The spec's §21 names it as the
+  one row to change if Surbhi wants it always required;
+- the browser's check is the same rule, and it stays on **J5** with every box
+  still holding what was typed, which is what AC-110a asks for. I built it at
+  J2's Next first and **removed that**, because documents alone are a valid
+  submission and blocking Next would have been our restriction, not HR's;
+- the refusal the joiner reads on a round trip is **the server's own sentence**,
+  parsed out of `_server_messages`, never "check your connection". That path
+  already existed and I left it alone.
+
+### 11.4 D-5(b) — J4 without a fourth public surface
+
+J4 needed somewhere to put a photograph. The ladder:
+
+- **a new guest endpoint** — rejected. §7.3 of the test report confirms three
+  `allow_guest` endpoints and no more, and AC-126 asks for them to stay
+  enumerable. A fourth public write surface for one optional picture is the
+  most expensive thing in the slice;
+- **a new field on the DocType** — rejected. AC-108c only asks that the picture
+  be held *on the submission row, never on an `Employee`*, and a `File`
+  attached to that row already is;
+- **the existing `upload_invite_file`**, with one reserved type name. Taken.
+
+So `PHOTO_TYPE = "__photo__"` goes through the same endpoint: the same token
+check first, the same per-file and per-token ceilings, the same magic-byte
+check, the same private `File`, the same re-encode that strips the metadata.
+The only two differences are the edge and the refusal:
+
+- **512 px at quality 82, read off `employee_photo.STORED_EDGE` and
+  `STORED_QUALITY`** rather than typed again, so the joiner's face and a member
+  of staff's face are one treatment and cannot drift apart (AC-108c);
+- a PDF, or anything Pillow cannot read, is refused with
+  `employee_photo._refused_type_message()` — AC-4's own words. The documents
+  refusal offers *"I will bring it on my first day"*, which is no answer to a
+  photograph.
+
+It cannot collide with a real document type: a type is named by its own title,
+and `__photo__` is not a title. A test asserts that rather than assuming it.
+
+### 11.5 The seven non-functional dimensions, against the code I actually wrote
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| **Performance** | **improves** | One settings read **deleted** from every anonymous hit of the public page (D-7). D-3's check adds **one** `File` count, and only on the submit path, and only when every field came in empty — the normal submission never runs it. The tray's button is markup, not a request. The moved documents card is the same one call it always was |
+| **Security** | **improves** | D-3 closes a path that let an unauthenticated caller consume a token for nothing. J4 adds **no new public endpoint** — the guest surface is still exactly three, all POST. The photo goes through the same five-step check the documents do, and the stored `File` is `is_private = 1`, asserted |
+| **Reliability** | **improves** | The refusal is now recoverable: `status` stays `Invited`, the key's row survives, and a test proves the link reopens and a second attempt works. Before, one stray tap was final |
+| **Scalability** | **neutral** | No new index, job, queue, cache or denormalised field. Nothing here grows with headcount |
+| **Maintainability** | **improves slightly** | The gate reads one more real shape instead of carrying an excuse. Three lazy imports of `employee_photo` in one function became one. Against that: `sendPhoto` repeats ~15 lines of `sendFile`'s FileReader dance — left duplicated on purpose, because two uses do not earn a helper and a merged one would need four parameters |
+| **Data integrity** | **improves** | No blank submission can reach `Submitted` any more, so HR's list stops carrying empty rows that cannot be chased |
+| **Compliance / privacy** | **improves** | **No visibility widened anywhere.** The tray exposes no field the table did not already — it opens the same `get_profile`, which intersects the same server-side allow-list with the same `may_view` and `employee_in_scope`. Moving the documents card changes who sees it not at all; it is the person's own card, on their own page. D-5(d) **narrows** exposure: a colleague's enlarged face no longer stays on screen after the pointer leaves, on the one screen that also carries *"Hide before I share my screen"*. D-1 puts a non-employee's personal data **inside** the tenant access derivation, which is the stricter side |
+
+### 11.6 NFR notes
+
+- **Query counts.** D-3: `+1` statement, submit path only, only on an
+  all-empty submission. D-7: `-1` settings read per public page load. Everything
+  else: `0`.
+- **Permission enforcement points.** Unchanged. The tray's name goes to
+  `positions_profile.get_profile`, which already runs `may_view()` **and**
+  `employee_in_scope()`. J4's upload goes through `_open`, which is the token
+  check and the only way into that module. No `ignore_permissions` added
+  anywhere; `_has_a_document` uses it to count the row's own attachments, which
+  is the same pattern `upload_invite_file` already used four lines later.
+- **Sensitive fields touched.** The joiner's photograph is new stored personal
+  data. It is EXIF-stripped, 512 px, `is_private = 1`, attached to the
+  submission row, and it falls under the same `_drop_request`/erase machinery as
+  the joiner's documents — `TestRetention`'s `test_the_erase_takes_the_files_with_it`
+  covers files attached to that row, and the photo is one.
+- **Fallbacks.** J4 is skippable, and a failed upload says so and offers the way
+  on. The mini profile's enlargement degrades to the blurred 48 px copy, as
+  before.
+- **Logging.** The photo's log line carries the row, `__photo__` as the type,
+  the byte count and the time. No name, no file address, no bytes.
+
+### 11.7 What else moved while I worked
+
+- **`docs/slices/078-positions-faces/02-functional-spec.md`** was being edited by
+  `hrms-business-analyst` **at the same time**, in this worktree. I read their
+  new rows before finishing D-3 and **changed my implementation to follow them**
+  — AC-110a's exact sentence and its "stay on J5", AC-110c's "or one document",
+  and AC-108a/b/c's wording for J4. My first version blocked J2's Next and
+  demanded a typed field; the spec says documents alone are enough, so that
+  version was wrong and was removed. Their file is still uncommitted and is
+  **not** in any of my five commits.
+- **`03-implementation-notes.md`** was corrected by somebody else while I worked:
+  the `AC-72a` id the test report flagged as never issued is now `AC-3a`, in two
+  places. **I kept their edit** and appended this section below it.
+- **`.claude/context/ux-learnings.md`** has been modified since before I started.
+  It is the UX designer's and I have not touched it.
+- **A leftover chained test run.** `hrlocal-078` was running
+  `/home/frappe/full078.sh` — `run-tests --app alvoraa_portal` then `--app hrms`
+  — started at 11:56 and still going at 13:44. It was reading this worktree's
+  apps by bind mount, so it was testing my **half-finished** edits and its
+  portal numbers could not be trusted. I stopped the portal half. A live session
+  then started its own `hrms` run on the same site, which I let finish: **I
+  changed no `hrms` file in this work**, so that result stands on its own.
+
+### 11.8 Commands I ran, and what they said
+
+| Command | Result |
+|---|---|
+| `python scripts/check_app_integrity.py` | **OK — 881 checks** |
+| `python scripts/check_scope_traps.py` | **OK** |
+| `python scripts/check_design_system.py` | **OK** |
+| `python scripts/check_brand_spelling.py` | **OK** |
+| `python scripts/check_tag_balance.py` | **OK** |
+| `python scripts/check_version_pins.py` | **OK** |
+| `python scripts/check_api_paths.py --max 0` | **OK** |
+| `python scripts/check_portal_assets_gate.py` | **OK** |
+| `node scripts/check_undefined_js.js` | **OK — none** |
+| `node scripts/check_positions_tree.js` | **OK — 404 checks** |
+| `node scripts/check_wall_chart.js` | **OK — 225 checks** |
+| `node scripts/check_portal_handlers.js` | **OK — all reachable and callable** |
+| `node scripts/check_portal_trays.js` | **static half OK — 27 of 27.** The browser half still cannot run: `playwright` does not resolve from the worktree. Pre-existing (T1 / N-1), not mine |
+| `node scripts/run_dom_tests.js` | **OK — 20 run, 0 not run, 0 failed.** The 078 suite alone **116 passed, 0 failed** |
+| `node --check portal.js`, `python -m ast` on every changed `.py` | **parse clean** |
+| The 045 gate, re-run standalone outside the bench | **226 sites, 0 orphans, floor 201** |
+| `bench --site test078 run-tests --app alvoraa_portal` | **see 11.9** |
+
+### 11.9 What I could NOT close
+
+| # | Thing | Why |
+|---|---|---|
+| **R-1** | **The full `alvoraa_portal` Python suite has not been re-run by me at the time of writing.** `test078` was occupied by another live session's `hrms` run for the whole of my build, and two `bench run-tests` against one site clash on shared fixtures — the trap that has already cost this slice two red runs | Needs the site free. It is one command and it must be run before anybody calls this green |
+| **R-2** | **The joiner's page has not been re-driven in a browser since J4 was added.** The test engineer's 46-assertion harness lives in their scratchpad, not in the repository | A committed `joiner_078_test.js` in the DOM suite is the right home, with `EXPECTED_BROWSER_TESTS` raised to 21 in the same commit. That is the test engineer's call, not mine to add unasked |
+| **R-3** | **D-4 is untouched.** Cross-company isolation for the two new read endpoints is still untested, and no CXO persona exists in this slice | The brief did not list it, and `fixtures_078.py` explains why a second company was not built. It stays an **untested control** and belongs in the release note |
+
+### 11.10 Decisions Surbhi should see
+
+1. **A photograph counts as "something sent".** AC-110c says "one field with a
+   value, **or one document**". A joiner who sends only their J4 picture and
+   types nothing is **accepted**, by both the browser and the server, because
+   refusing somebody who has just sent us their face reads as a fault. Strictly,
+   a photograph is not a document. **If that is wrong, it is one condition in
+   `_has_a_document` and one in `nothingSent()`.**
+2. **`full_name` is still not mandatory.** Per Decision 3 and AC-110c, we add no
+   field of our own. The spec's §21 names the one row to change if she wants the
+   name always required.
+3. **A click now pins the enlarged photograph.** On touch nothing changes — a tap
+   opens it pinned and a second tap closes it, exactly as before. On a mouse the
+   behaviour is new: a click no longer closes a picture the pointer opened. That
+   is what `01b` §6.3.1 draws, and it is a real change to a gesture people may
+   have learned in testing.
+
+### 11.11 Subtract pass
+
+Read back with one question: **what can I delete and still meet the
+requirement?**
+
+**Removed:**
+
+1. **The J2 error paragraph and the block on J2's Next.** My first version
+   stopped the joiner at *Your details* with its own message. The spec says
+   documents alone are a valid submission, so that block was our restriction on
+   top of HR's ticked list — the exact thing Decision 3 forbids. Both the markup
+   and the handler went, along with the `keep()` line that cleared it.
+2. **`askForSomething()`**, the helper that bounced the joiner back to J2 and
+   focused the first input. AC-110a says stay on J5, so there was nowhere to
+   bounce to and nothing to focus.
+3. **Two of three lazy imports of `employee_photo`** inside
+   `upload_invite_file`. One import of the module, used three times, says the
+   same thing.
+4. **A 48 px thumbnail for the joiner's photograph.** Tempting, for symmetry
+   with the employee's. Nothing reads it: there is no `Employee`, so no chart
+   draws a joiner's face. It would have been a second file per joiner for a
+   reader that does not exist.
+5. **A second copy of the picker's footer markup** for the phone. One `order`
+   rule on `[data-ocs="ok"]` does it.
+
+**Not removed, and why:** `sendPhoto` in `joiner.html` repeats about fifteen
+lines of `sendFile`'s FileReader handling. Merging them needs four parameters
+(the status element, the type, what to do on success, what to say on failure)
+and makes both harder to read for one caller each. Two uses do not earn a
+helper; the third would.

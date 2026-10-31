@@ -14,8 +14,12 @@ from alvoraa_portal import people_settings
 from alvoraa_portal.tests import fixtures_078 as fx
 from alvoraa_portal.tests.fixtures_045 import Wave4Base, own_user
 
+# The three LIST keys plus the email switch. The joiner's own five periods and
+# its switch are asserted in `test_joiner_078`, where the rules that read them
+# live - `alvoraa_joiner_retention_days` is gone, replaced by counsel's two
+# periods on 29 Oct 2026.
 KEYS = ("alvoraa_positions_profile_fields", "alvoraa_positions_document_types",
-        "alvoraa_my_profile_fields", "alvoraa_joiner_retention_days")
+        "alvoraa_my_profile_fields", "alvoraa_photo_in_emails")
 
 
 class _Base(Wave4Base):
@@ -32,7 +36,7 @@ class _Base(Wave4Base):
 
 
 class TestTheyAreAccessGranting(_Base):
-	def test_all_four_keys_are_in_the_access_granting_set(self):
+	def test_they_are_all_in_the_access_granting_set(self):
 		"""So they inherit System-Manager-only, the logged refusal and the
 		Version row without any of it being written a second time."""
 		for key in KEYS:
@@ -41,21 +45,33 @@ class TestTheyAreAccessGranting(_Base):
 				self.assertIn(key, org_settings.DEFAULTS)
 				self.assertIn(key, org_settings.LABELS)
 
-	def test_all_four_ship_empty(self):
+	def test_they_ship_empty_or_off(self):
 		"""The safest value at every existing tenant: nothing a tenant sees
 		changes until a System Manager ticks something. It is also the rollback
 		- three levers, all data, none needing a release."""
 		for key in KEYS:
 			with self.subTest(key=key):
-				self.assertEqual(org_settings.DEFAULTS[key], "")
+				# "" for the lists, 0 for the switch. Both are "nothing yet".
+				self.assertIn(org_settings.DEFAULTS[key], ("", 0))
 
 	def test_they_are_logged_under_their_own_rule_id(self):
 		"""Slice 012's four keys are SEC-18; these four are 078-SEC-5. One grep
 		must not conflate them - plain SEC-17 and SEC-18 already mean field
 		rights and org-chart access in this codebase."""
+		# Each key is logged under the rule it actually serves, not under one
+		# blanket id: the three lists and the switch are access decisions
+		# (078-SEC-5), and the email tick is about who sees a face, which is
+		# PRIV-1's whole subject. A reviewer grepping either id should find the
+		# right change.
+		expected = {
+			"alvoraa_positions_profile_fields": "078-SEC-5",
+			"alvoraa_positions_document_types": "078-SEC-5",
+			"alvoraa_my_profile_fields": "078-SEC-5",
+			"alvoraa_photo_in_emails": "078-PRIV-1",
+		}
 		for key in KEYS:
 			with self.subTest(key=key):
-				self.assertEqual(org_settings.RULE_FOR_KEY.get(key), "078-SEC-5")
+				self.assertEqual(org_settings.RULE_FOR_KEY.get(key), expected[key])
 		self.assertEqual(org_settings.RULE_FOR_KEY.get("alvoraa_org_reach_up"), None)
 		self.assertEqual(org_settings.DEFAULT_RULE, "SEC-18")
 
@@ -77,22 +93,28 @@ class TestTheyAreAccessGranting(_Base):
 		self.assertIn("designation,branch", new[0].data)
 
 	def test_a_value_set_straight_into_defaultvalue_writes_no_version_row(self):
-		"""AC-97, and 078-PRIV-7 depends on it: a default that was never
-		deliberately set cannot satisfy the switch's precondition, because a
-		default writes no Version row."""
+		"""AC-97. A default that was never deliberately set has no history, and
+		that is exactly why "a Version row exists" was a usable precondition.
+
+		078-PRIV-7 USED to depend on this: the joiner form could not be switched
+		on until somebody had set a retention period on purpose, proved by a
+		Version row. Counsel answered the question that gate existed for on
+		29 October 2026, so the gate is gone - but the property it rested on is
+		still true and still worth pinning, because it is what makes every
+		access-granting change attributable a year later.
+		"""
+		key = "alvoraa_positions_document_types"
 		before = frappe.get_all("Version", filters={
-			"ref_doctype": "DefaultValue",
-			"docname": "alvoraa_joiner_retention_days"}, pluck="name")
-		frappe.db.set_default("alvoraa_joiner_retention_days", "90")
+			"ref_doctype": "DefaultValue", "docname": key}, pluck="name")
+		frappe.db.set_default(key, "Aadhaar card")
 		frappe.db.commit()
 		after = frappe.get_all("Version", filters={
-			"ref_doctype": "DefaultValue",
-			"docname": "alvoraa_joiner_retention_days"}, pluck="name")
+			"ref_doctype": "DefaultValue", "docname": key}, pluck="name")
 		self.assertEqual(sorted(before), sorted(after))
 
 
 class TestWhatItRefuses(_Base):
-	def test_an_hr_manager_is_refused_on_every_one_of_the_four(self):
+	def test_an_hr_manager_is_refused_on_every_one_of_them(self):
 		"""N3, AC-93. **This is the one that matters at DTC**, where the
 		Positions audience IS HR Manager: without it the audience could widen
 		its own view."""
@@ -134,18 +156,20 @@ class TestWhatItRefuses(_Base):
 				with self.assertRaises(frappe.PermissionError):
 					people_settings.set_people_setting(key=key, value="1")
 
-	def test_a_retention_period_that_is_not_a_number_of_days_is_refused(self):
-		"""AC-131d: there is no "keep for ever" value to save."""
+	def test_the_link_lifetime_must_be_a_number_of_days(self):
+		"""Surbhi's decision of 31 Oct 2026: the invite link's lifetime is a
+		setting, seven days by default. A BLANK is refused rather than read as
+		"for ever" - a link with no expiry is the thing the whole token design
+		exists to avoid."""
 		frappe.set_user(self.sm_user)
-		for value in ("0", "-1", "for ever", "9999", "90 days", "1.5"):
+		for value in ("0", "", "-1", "for ever", "91", "7 days", "1.5"):
 			with self.subTest(value=value):
 				with self.assertRaises(frappe.PermissionError):
 					people_settings.set_people_setting(
-						key="alvoraa_joiner_retention_days", value=value)
-		# A real number of days is accepted.
-		people_settings.set_people_setting(key="alvoraa_joiner_retention_days",
+						key="alvoraa_joiner_link_days", value=value)
+		people_settings.set_people_setting(key="alvoraa_joiner_link_days",
 		                                   value="30")
-		self.assertEqual(frappe.db.get_default("alvoraa_joiner_retention_days"), "30")
+		self.assertEqual(frappe.db.get_default("alvoraa_joiner_link_days"), "30")
 
 	def test_employee_document_type_has_no_show_in_positions_field(self):
 		"""AC-95, and the whole of conflict 1. `Employee Document Type` grants

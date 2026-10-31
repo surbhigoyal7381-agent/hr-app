@@ -3,9 +3,9 @@ slice: 078-positions-faces
 artifact: 03-implementation-notes
 author: hrms-fullstack-engineer
 date: 2026-10-31
-status: steps 1-5 built, tested and committed LOCALLY. Step 6 (pre-onboarding) NOT built - blocked on one finding that needs Surbhi's decision (§2). Nothing pushed, no site setting changed, no deploy command run.
+status: ALL SIX STEPS built, tested and committed LOCALLY. Surbhi settled the four open decisions on 31 Oct 2026 and the blocker in §2.1 is now a recorded deviation rather than a stop. Nothing pushed, no site setting changed, no deploy command run.
 worktree: .claude/worktrees/078-positions-faces on slice/078-positions-faces, from origin/dev d3afcaa5
-commits: a378af03 (step 1) · 38faec2f (step 2) · febf6ba3 (step 3) · 42a6671c (step 4) · a41912b8 (step 5)
+commits: a378af03 (step 1) · 38faec2f (2) · febf6ba3 (3) · 42a6671c (4) · a41912b8 (5) · dca34c19 (four bugs the tests found) · 851be6e8 (the Frappe fork patch) · 5bfe98bd (email opt-out, PRIV-3, AC-47) · c1059381 (step 6)
 ---
 
 # 078 · Implementation notes
@@ -14,8 +14,15 @@ commits: a378af03 (step 1) · 38faec2f (step 2) · febf6ba3 (step 3) · 42a6671c
 
 ## 0 · The answer first
 
-**Steps 1 to 5 are built, tested and committed. Step 6 is not built, and the
-reason is a finding, not a shortage of time.**
+**All six steps are built, tested and committed locally.** Steps 1 to 5 went in
+first; Surbhi then settled the four open decisions, and step 6 followed.
+
+**Three things in this slice are not what the spec asked for, and each is a
+decision rather than a miss.** They are §2.1 (the token's clear-text storage,
+which makes AC-101 wrong as worded), §2.2 (an upstream bug, now patched in our
+own image **and** worked around), and §5.4 (a used link is indistinguishable
+from an unknown one, which makes AC-112 and AC-125 wrong as worded). Each says
+plainly what the criterion would have to say instead.
 
 **Three things found by RUNNING the code that reading it did not reveal.** All
 three are in this report because each one would have shipped silently.
@@ -24,10 +31,15 @@ three are in this report because each one would have shipped silently.
 |---|---|---|
 | **1** | **The 48 px copy was never made.** `File.get_content()` with no argument *decodes* what it read, and for a JPEG one of its encodings succeeds lossily, returning a `str` with bytes changed. `derive_thumbnail` then raised `UnidentifiedImageError`, was swallowed by its own "never fail an Employee save" guard, and left **no thumbnail for anybody** - with only an Error Log row. The chart would have fallen back to the full 512 px picture for every face: the ~720 KB first paint the derived copy exists to avoid. **Nothing would have gone red.** Fixed: `get_content(encodings=[])`, at three call sites | the first Python test run |
 | **2** | **An employee adding their own photograph made their own record unsaveable.** Upstream: `frappe/core/doctype/file/file.py:795-796` fills `_content` with the decoding `get_content()`, and line 819 hands that `str` to `strip_exif_data`, which wants bytes. ERPNext's `Employee.update_user()` triggers it whenever `image` changed **or the linked User's `user_image` is empty**. The portal writes with `db.set_value`, so `user_image` stayed empty and **every later Desk save of that employee raised, for ever**. Mitigated in our own code (§2.2); the underlying fault is upstream and is an escalation | the second test run - it broke a whole test class's `setUpClass`, which is how the stickiness was noticed |
-| **3** | **`Web Form Request.key` is a plain `Data` field, stored in clear.** Option (c) delegates the token to Frappe, and Frappe keeps the live bearer token in the clear in `tabWebFormRequest`, for ever - nothing purges it. So **078-SEC-9's bold "only its SHA-256 hash is stored" and AC-101 cannot both be true under option (c)**. ⚠ **This is the step-6 blocker and it is Surbhi's decision** | reading `web_form_request.json` in the running image before writing a line against it |
+| **3** | **`Web Form Request.key` is a plain `Data` field, stored in clear.** Option (c) delegates the token to Frappe, and Frappe keeps the live bearer token in the clear in `tabWebFormRequest`, for ever - nothing purges it. So **078-SEC-9's bold "only its SHA-256 hash is stored" and AC-101 cannot both be true under option (c)**. **Settled by Surbhi on 31 Oct: option (c) plus a purge.** §2.1 | reading `web_form_request.json` in the running image before writing a line against it |
+| **4** | **The not-hired retention clock was keyed on `modified`**, which moves on *any* later edit - so ticking legal hold and unticking it again would have restarted a 180-day clock. A dedicated `closed_on`, stamped once | a test that aged a row and watched it survive |
+| **5** | **AC-47's "no second request" did not work.** It copied `held.src` onto a fresh `<img>`, which **is** a new request - and private files go out `Cache-Control: no-cache`, so the browser revalidates every time. It now puts the held element itself back | the test written to cover that debt, on its first run |
+| **6** | **`frappe.get_all` ignores permissions by design.** A "Guest cannot list this" test using it passed while proving nothing. `frappe.get_list` is the one that checks | reading why it passed |
 
-**What is in `dev`'s way: nothing.** Steps 1-5 are additive, every default ships
-empty or off, and the three risky parts reverse with data rather than a deploy.
+**What is in `dev`'s way: nothing.** Every default ships empty or off, and every
+risky part reverses with data rather than a deploy. The one thing that is **not**
+data is the Frappe patch in `deploy/Dockerfile` and `ci.yml`: it changes the next
+image build, and it fails the build loudly if the line it edits has moved.
 
 ---
 
@@ -69,43 +81,47 @@ or dependency. One new DocType was budgeted for step 6 and was not created.**
 
 ---
 
-## 2 · ⚠ The step-6 blocker, and the two upstream findings
+## 2 · ⚠ The three things that are not what the spec asked for
 
-### 2.1 ⚠ BLOCKER · `Web Form Request` keeps the live token in clear
+### 2.1 ⚠ DECIDED DEVIATION · the token's clear-text storage, and the purge
 
-**This needs Surbhi's decision before pre-onboarding can be written.**
+**Surbhi's decision, 31 October 2026: option (c) plus a purge.** This section is
+here so the security reviewer reads a decision rather than discovering a gap.
 
-Read in the running image (`web_form_request.json`, `web_form_request.py`,
-`web_form.py`), v16.33.1:
+**What Frappe does.** `Web Form Request.key` is `{"fieldtype": "Data",
+"read_only": 1, "unique": 1}` - not a `Password` field, not hashed, not
+encrypted - and the lookup is a direct comparison against the stored clear
+value. **Nothing purges the row:** `Web Form Request` appears nowhere in
+`frappe/hooks.py` and nowhere in Log Settings, and `first_used_on` only marks a
+key used. The table ships `Website Manager`-only, which is the one mitigation
+Frappe provides.
 
-- `Web Form Request.key` is **`{"fieldtype": "Data", "read_only": 1,
-  "unique": 1}`**. Not a `Password` field, not hashed, not encrypted. The
-  lookup is `frappe.db.get_value("Web Form Request", {"web_form": …,
-  "key": key})` - a direct comparison against the stored clear value.
-- **Nothing purges it.** `Web Form Request` appears nowhere in
-  `frappe/hooks.py` and nowhere in Log Settings, and `first_used_on` only
-  marks a key used. A used token's clear value stays in the table.
-- The table ships `Website Manager`-only, which is the one mitigation.
+**So 078-SEC-9 cannot be met as written.** Its bold rule is *"only its SHA-256
+hash is stored"*, and option (c) stores the key in clear. I take the gap: my
+impact analysis §0.1 said Frappe "owns the key generation, expiry, single-use
+burn" and did not check **how** it stores it.
 
-**So option (c) - which Surbhi approved, and which I recommended - cannot
-satisfy 078-SEC-9's "It must never appear in a query string… only its SHA-256
-hash is stored", nor AC-101 "No field equals the token in plain text".** The
-fragment half of SEC-9 still holds perfectly; the storage half does not.
+**What is built instead.** The row holding the key is **deleted the moment the
+key stops being usable** - on submit, on cancel, and by the daily job for an
+expired one, all through one function (`joiner_invite._drop_request`) so the
+three paths cannot drift. So a clear-text key exists only **while the link still
+works**, never after. Four tests assert exactly that, in
+`TestTheClearTextKeyIsShortLived`, and a fifth asserts our own row has no field
+that could hold a token at all.
 
-I take responsibility for the gap: my impact analysis §0.1 said "Frappe owns the
-key generation, expiry, single-use burn" and did not check **how** it stores it.
+The half of SEC-9 that is kept in full is the half about where the token
+travels: **URL fragment**, posted in a **request body**, under the parameter
+name **`web_form_request_key`** - which is load-bearing, because Frappe's
+error-snapshot redaction masks any form key whose name contains `key`, `token`,
+`secret`, `password`, `passwd` or `pwd`. **Rename it and the redaction silently
+stops**, so a test pins the name.
 
-| | Option | What it costs | Residual risk |
-|---|---|---|---|
-| (i) | **Accept it.** Build option (c) as approved and record the clear storage as a named residual risk | Nothing new to build | A leaked `tabWebFormRequest` hands out **live bearer tokens for Restricted payloads** - identity documents. Restricted to Website Manager, and the window is the link's lifetime… **except that used keys are never purged**, so in practice for ever |
-| (ii) | **Option (c) plus a purge** - our own submit path deletes the `Web Form Request` row the moment it is used, and the daily job deletes expired ones. **My recommendation** | ~6 lines in code I am writing anyway | The clear token exists only while the link is genuinely live, which is what SEC-9's rule is actually protecting against. It is a real narrowing, not a restatement, and it is cheap |
-| (iii) | **Fall back to option (b)** - our own token, hash only | The largest single piece of new code in the slice, which the subtract pass deleted for good reasons. Re-implements expiry, single-use, the row lock and the reference check that Frappe maintains | SEC-9 met in full |
-
-**My recommendation is (ii).** It keeps the whole subtraction, keeps the
-fragment rule, and reduces the clear-storage window from "for ever" to "while
-the link works" - which is the honest reading of what SEC-9 is for. But it is a
-**documented deviation from a SEC item Surbhi approved**, so it is hers to take,
-and the security reviewer should see this section before the code.
+> **⚠ AC-101 IS WRONG AS WORDED.** It says *"No field equals the token in plain
+> text."* What is built means: *"No field of OUR OWN holds the token in any
+> form, and Frappe's own request row - which does hold it in clear - is deleted
+> the moment the link stops working, so the clear-text value never outlives the
+> live link."* **That is the criterion the test engineer should verify against.**
+> I have not quietly re-pointed the old one.
 
 ### 2.2 ⚠ ESCALATION · an upstream bug makes an Employee unsaveable
 
@@ -152,20 +168,86 @@ need it**, and it is in the test fixtures rather than in `patches.txt` because
 no tenant has a photograph yet, so there is nothing to patch. If a tenant ever
 does, that function is the patch.
 
-**The one-line upstream fix is `get_content(encodings=[])` at `file.py:796`.
-I have not made it.** Editing `apps/frappe` is an architecture decision, not a
-coding one.
+**Surbhi's decision, 31 October 2026: patch it in our own image AND keep the
+workaround.** Both, deliberately: the patch is the fix, and the workaround is
+what protects any tenant running an image built before it.
 
-### 2.3 OPS-41 could not be closed
+`scripts/patch_frappe_binary_file_content.py` does the patch, and it runs in
+`deploy/Dockerfile` and in `.github/workflows/ci.yml` - both, because CI testing
+a Frappe that behaves differently from the one that ships is worse than not
+patching at all. The patch file is in CI's bench cache key, so changing it
+rebuilds the bench.
+
+**It turned out to be three instances of one fault, not one.** I found the
+first by running a test, and only found the other two when the patch did not fix
+the symptom:
+
+| in | the line | what breaks |
+|---|---|---|
+| `before_insert` | `save_file(content=self.get_content())` | **the one that bites** - this is ERPNext's path |
+| `save_file` | `flags.original_content = self.get_content()` | a rollback would write a **corrupted** image over a good one |
+| `optimize_file` | `original_content = self.get_content()` | `optimize_image()` is handed a `str` |
+
+Reading the code found one of three. Running it found the rest.
+
+**The test now asserts both ways**, detecting the fix by reading
+`File.before_insert`'s source for `encodings=[]` rather than looking for our own
+marker comment - so it is also true the day upstream fixes it their own way,
+which is the point of reporting it. Proved on a throwaway container from the
+shipping image, unpatched and patched: unpatched it asserts the `TypeError`,
+patched it asserts the Desk save **works** and makes the 48 px copy, which is
+**AC-25b in full**.
+
+#### 2.2.1 The upstream report, for somebody to file
+
+I have not filed it - that was not mine to do. Everything needed is here.
+
+> **Title:** `File.get_content()` decodes binary files, breaking EXIF strip,
+> rollback and image optimisation
+>
+> **Where:** `frappe/core/doctype/file/file.py`, three callers of
+> `self.get_content()` with no `encodings` argument.
+>
+> **What happens:** `get_content()` loops over `FILE_ENCODING_OPTIONS` and
+> returns a `str` as soon as one does not raise. For a JPEG, a PNG or a PDF one
+> of them succeeds **lossily** - a stored JPEG came back with its first four
+> bytes altered, so Pillow could not identify it. Then:
+> (1) `before_insert` passes that `str` to `save_file(content=...)`, which puts
+> it in `_content`, and `strip_exif_data` raises `TypeError: a bytes-like object
+> is required, not 'str'` whenever `strip_exif_metadata_from_uploaded_images` is
+> on (the default);
+> (2) `save_file` puts it in `flags.original_content`, and `on_rollback` writes
+> it back to disk choosing `"w+"` for a `str` - corrupting the file it was
+> restoring;
+> (3) `optimize_file` passes it to `optimize_image(content=...)`.
+>
+> **How to reproduce (1):** on a site with the strip setting on, insert a `File`
+> with a jpeg; then insert a second `File` carrying only `file_url` pointing at
+> it. ERPNext reaches this from `Employee.update_user()` whenever an employee's
+> `image` changes or the linked User's `user_image` is empty - so **adding an
+> employee photograph in Desk raises**, and because each failure leaves
+> `user_image` empty it then raises on every later save of that employee.
+>
+> **Fix:** `get_content(encodings=[])` at all three. The decode loop's body then
+> never runs. `on_rollback` already handles `bytes` (`"wb+"`), so nothing
+> downstream needs changing.
+>
+> **Version:** found on v16.33.1, lines unchanged through the v16.35.0 we ship.
+
+### 2.3 OPS-41 - what is left of it
 
 DevOps asked me to re-read `web_form.py` and `web_form_request.py` on
 **v16.35.0** before writing against them. I could not:
 `hrlocal-bench`'s frappe checkout knows **only `v16.33.1`** (`git tag --list`),
 and fetching v16.35.0 into the shared container would change another session's
-bench. **Everything in §2.1 is read on v16.33.1 and is marked as such.** The
-two signatures to confirm on v16.35.0 are
-`WebForm.get_web_form_request(key, *, docname, for_update, allow_used)` and
-`accept(web_form, data, web_form_request_key=None)`.
+bench. **Everything in §2.1 is read on v16.33.1 and is marked as such.**
+
+**One signature, not two.** The build does **not** call Frappe's `accept()` at
+all - see §3A.2 - so `accept(web_form, data, web_form_request_key=None)` does
+not need confirming. The only call into Frappe's token machinery is
+**`WebForm.get_web_form_request(key, *, docname=None, for_update=False,
+allow_used=False)`**, used with `for_update` and `allow_used`. That one
+signature on v16.35.0 is all that is left of OPS-41.
 
 ---
 
@@ -208,17 +290,147 @@ two signatures to confirm on v16.35.0 are
 
 | AC | State | Why |
 |---|---|---|
-| **AC-25b** (Desk upload makes the copy) | **Blocked upstream** | §2.2. The handler IS on `Employee.on_update`, so the design satisfies the criterion; ERPNext raises before it runs. Recorded as a test |
+| **AC-25b** (Desk upload makes the copy) | **SATISFIED, once the Frappe patch is in the image** | §2.2. The handler was always on `Employee.on_update`; ERPNext raised before it ran. The patch fixes that, and the test asserts the working behaviour on a patched bench and the `TypeError` on an unpatched one, so it is honest on both |
 | AC-34, OPS-38 (count faces on dev) | **Not done** | It is a read of dev. Not mine to do, and release-stage |
 | AC-39 (wall-chart photo tick) | **Not built** | ⚠ DECISION C's second half. `ocFacesAllNow()` and the `.pos-print-faces` rule are in and tested, so the tick is ~10 lines on slice 069's dialog - but it is slice 069's dialog, and faces are off on Ctrl+P either way |
-| AC-47's in-memory hold | **Built, not asserted** | The hold is implemented and the second-request behaviour is not covered by a test. The test engineer's |
+| AC-47's in-memory hold | **Built and asserted - and it was BROKEN** | The test written to cover this debt caught it making two requests instead of one, because it copied the `src` onto a fresh `<img>`. It now reuses the held element. §0 #5 |
 | AC-72 (`max_file_size = 5`) | **Not done, deliberately** | A per-site setting, Surbhi's word at release. **Not mine** |
 | **AC-72a** - the spec's `p95 ≤ 50 KB` | **Changed to a record, per OPS-42** | DevOps measured a worst case at **82 KB** through these exact parameters. 50 KB is a good target and a bad assertion: it fails a build on one employee's busy photograph. The build ceiling is **120 KB** and the real size is logged on every upload |
-| AC-100 to AC-135 (pre-onboarding) | **Not built** | §2.1 |
+| AC-100 to AC-135 (pre-onboarding) | **Built.** 42 tests | §3A |
+| **AC-101** | **Built differently.** The criterion is wrong as worded | §2.1 |
+| **AC-112, AC-125** | **Built differently.** Both are wrong as worded, and the build is stronger than they ask | §3A.4 |
+| AC-103, AC-104 | **Built as DevOps re-worded them**: both switches asserted still OFF, because our own endpoint does the uploads | §3A.2 |
 | **AC-141's Hindi half** | **Cannot be done in this repository** | Every new string goes through `drT()` - that half is done and checkable. But **there is no Hindi file anywhere in this repo**: `translations/` holds only `en.csv`, which exists for the Alvoraa → Alvora rename. Hindi is a site-level `Translation` import, so "has a Hindi entry" is not something a commit here can satisfy. Flagged rather than quietly skipped |
 | AC-142, AC-143 | **Not checked** | Needs a rendered page in Hindi |
 
 ---
+
+## 3A · Step 6, pre-onboarding - and four mechanism choices worth checking
+
+### 3A.1 What is built
+
+| Piece | File |
+|---|---|
+| The one new DocType, 26 fields, **no Guest permission row** | `.../doctype/alvoraa_joiner_submission/` |
+| HR's side: invite, cancel, Export, Purge | `joiner_invite.py` |
+| The joiner's side: three token-bound endpoints | `joiner_public.py` |
+| The daily job: expire, three erase clocks, the day-75 warning, the invariant | `joiner_housekeeping.py` |
+| The public page, everything inline | `www/joiner.py`, `www/joiner.html` |
+| HR's three buttons, in Desk | `public/js/alvoraa_joiner_submission.js` |
+| Five settings keys | `alvoraa_org_structure/settings.py` |
+| 42 tests | `tests/test_joiner_078.py` |
+
+### 3A.2 Four mechanism choices, each cheaper than the plan
+
+**1. Frappe's `accept()` is not called, and its form is never published.**
+Option (c) needs Frappe's `Web Form Request` as the token store and validator -
+and that is a method on a `Web Form` doc, so one `Web Form` record has to exist.
+Ours is **`published = 0`**, and nothing of Frappe's own form is ever served.
+
+That single choice removes three things the impact analysis worried about: the
+**query string** (no Frappe route renders, so there is no `?web_form_request_key=`
+anywhere), `accept`'s **shared 10-per-60-seconds rate bucket** across every web
+form on the site, and `accept`'s generic `doc.insert(ignore_permissions=True)`
+on a guest-writable path. We write our own row with our own closed field list, so
+PRIV-9's allow-list is a constant in our code rather than a Web Form's field
+table.
+
+One consequence to check: the anchor record is **found by `doc_type`, never by a
+guessed name**. Frappe autonames a Web Form from its title, so looking it up by
+title collided with its own row on every call after the first - which is how 28
+tests failed at once.
+
+**2. The guest-upload switch stays off.** Our own token-checked endpoint does
+the uploads, so `allow_guests_to_upload_files` never has to go on and the
+allow-list stays empty. **AC-103 and AC-104 are therefore assertions that both
+are still off** (DevOps OPS-40), which is cheaper and stronger than a procedure
+for opening a site-wide hole carefully. Frappe's own
+`test_guest_upload_for_empty_whitelist` is why that matters: the switch on with
+an empty list lets a guest attach a file to **any** doctype.
+
+**3. HR's screen is the Desk form, not a new portal page.** Three buttons via
+`doctype_js`: make the link, cancel it, and counsel's Export and Purge. HR
+reviews a submission there anyway and HR Manager already has Desk, so a second
+screen would be a surface before an answer. **This is a deviation from the
+spec's "HR's own screen"** - said plainly, because it is a UI decision somebody
+may want differently.
+
+**Nothing creates an Employee.** There is no button and no endpoint: HR makes
+the personnel record by hand, then links it on this form, and the controller's
+own `validate` moves the status on. Declarative, so there is nothing to press by
+accident and no endpoint that could be called with somebody else's id. A test
+asserts no `Employee` row appears and the naming series does not move; another
+asserts **no field with "joining" in its name exists on the row at all** - the
+absence-backfill trap is a logged DTC fault, not a theory.
+
+**4. The erase leaves a shell, and that is a judgement.** `erase()` clears every
+field the joiner typed and **deletes the uploaded files, bytes included** - a
+parent that keeps its `File` rows is the obvious way to get this wrong, and
+those files are identity documents. What survives is the status, who issued the
+link, the dates and the Employee link: **no personal data at all.**
+
+Counsel said there is no reason to hold the data, and this holds none of it;
+§15 of the spec promises that "who issued a joiner's invite" is answerable a
+year later, and this is what answers it. **A reviewer may reasonably want the
+row deleted outright** - it is one line either way, and the choice is recorded
+here rather than buried.
+
+### 3A.3 Counsel's clocks, as built
+
+| Case | Erased when | Setting | Default |
+|---|---|---|---|
+| They joined | next run - the details are already their Employee record | — | — |
+| They did not join | the window after the invite **closed** | `alvoraa_joiner_not_hired_days` | **180**, range 180-365 |
+| Nobody actioned it | the backstop after it **arrived**, whatever state it is in | `alvoraa_joiner_backstop_days` | **90** |
+| Before that happens | HR is told, once | `alvoraa_joiner_warn_days` | **75** |
+| The link itself | expires, and the key's row is destroyed | `alvoraa_joiner_link_days` | **7** |
+
+**The not-hired clock runs from `closed_on`, not from `modified`.** A test
+caught that: `modified` moves on *any* later edit, so ticking legal hold and
+unticking it again would have restarted a 180-day clock. `closed_on` is stamped
+once, by the controller, when the status first becomes terminal.
+
+**No setting has a value that means "keep for ever".** A blank and a `0` are
+both refused at every one of the three - the opposite of `field_app_photos`'
+`0 = never delete`, and the one thing counsel's 18 September policy rules out in
+so many words. The setter also refuses a warning that is not **before** the
+deletion it warns about, checked against what is stored, so changing either one
+in either order cannot leave them crossed.
+
+**The old `alvoraa_joiner_retention_days` key is deleted.** It existed to be a
+number nobody had chosen, which is why PRIV-7 gated switching the form on until
+somebody set it deliberately. Counsel replaced it with two periods that mean
+different things, so one key could not carry both - and a key nothing reads is
+dead configuration.
+
+**078-PRIV-7's switch-on precondition is gone**, per that decision. The form is
+still **off by default**, for the ordinary reason: a tenant turns a feature on
+deliberately.
+
+### 3A.4 ⚠ Two more acceptance criteria that are wrong as worded
+
+**AC-112 and AC-125** want a narrower *"already used"* answer, and
+*"This link will not open again"* on a second visit. **The build cannot give
+them**, because the purge in §2.1 deletes the row holding the key the moment it
+is used - so afterwards a used key is simply an unknown key and there is nothing
+left to recognise.
+
+The purge wins. 078-SEC-13 is satisfied **more strongly** than it asks: missing,
+unknown, expired, cancelled **and used** are one byte-identical answer, asserted
+across six inputs. The joiner is not left in the dark either - the answer says
+*"nothing you sent is lost"*, which is true, and J6 told them at the time that
+the link would not open again.
+
+**What those criteria should say:** *"A used link gives the same answer as an
+unknown one, because the row holding its key has been destroyed."*
+
+### 3A.5 What is NOT built in step 6
+
+| Thing | Why |
+|---|---|
+| **A Hindi version of the joiner's page** | The page's strings are plain English in the HTML, **not** wrapped in `drT()`, because it is a standalone public page that does not load `portal.js`. **That is a real gap and the worst one in step 6**, because this page is for a frontline joiner. Wrapping them needs Frappe's own `_()` in the Jinja and a site-level Hindi import, which is the same missing piece as AC-141 everywhere else |
+| An email to HR when a joiner submits | ⚠ DECISION H, recommended and not overruled: HR issued the invite and is watching for it, and an email naming a joiner is one more place a non-employee's data travels. The day-75 warning uses `Notification Log`, which the portal's bell already reads, for the same reason |
+| A browser check of the joiner's page | No playwright here. **The page has never been rendered in a browser** |
 
 ## 4 · The seven non-functional dimensions, re-assessed against the code I wrote
 
@@ -228,12 +440,12 @@ Not against the proposal. Where the code turned out different from §3 of
 | Dimension | Before | After | Verdict |
 |---|---|---|---|
 | **Performance** | the chart read one `get_value` per person per box per expansion; `position_table` was 2 statements | `_card` is **two statements for a whole subtree**, memoised per request, so a person drawn in two boxes costs nothing twice. `position_table` is **3**, not the 2 the spec asked: the third is the batched thumbnail read, 13.4 ms for 403 ids, flat in headcount. First paint is **~10 KB of faces**, not the 48 KB estimated - DevOps measured the 48 px copy at 0.4-0.7 KB. The table and a filtered chart are bounded by our own observer. The one real cost is **~240 ms of CPU in the uploader's own request**, which is the first time this product has spent a quarter of a second of CPU in a user request | **IMPROVES** on the chart, which is the opposite of what the analysis predicted. The proposal said "degrades, bounded on purpose"; the measurements and the batching turned it round. The upload's 240 ms is the honest cost |
-| **Scalability** | one read per person, growing with headcount | flat in headcount on every new path; the query-count gate asserts 20 ids and 400 ids cost the same. **No queue, no worker, no cache, no bucket, no CDN, no container**, and none proposed. The 48 px copy is 4 ms inside the request, which is the number that says no job | **IMPROVES** |
-| **Security** | — | **Five** new permission surfaces, not the six the analysis predicted, because pre-onboarding was not built: the photo upload (own Active record, **no employee argument exists**), the My-Profile save (closed list ∩ ticked), the mini profile (`may_view` + `employee_in_scope`), the documents endpoint (five ordered checks, scope before ticked-type), the settings reads. **No public write path was created.** Two `ignore_permissions` as planned, plus three on `File` and one on the access record, each declared in the ceiling test with its argument. No new scope helper. No `has_permission` hook | **NEUTRAL** - better than the predicted "degrades knowingly", because the one degradation (the first public write path) is not in this build. R1 stands exactly as accepted |
-| **Reliability** | My profile threw a 500 for a login with no Employee row | **Fixed**, and three more: the thumbnail handler catches everything and can never fail an Employee save; `ocFaces` is guarded, because it is called after every paint and would otherwise have been the thing that took a paint down (found by running a check); and **`_keep_the_login_in_step` stops an employee's own upload making their record unsaveable** (§2.2) | **IMPROVES**, and by more than the analysis claimed |
-| **Maintainability** | — | ~24 new server functions across 6 modules, 5 test modules, one DocType JSON change, ~1,100 new lines of `portal.js`. Holding it: `ocAvatar` changed **once** for five states and three callers; **one** mini-profile field list, asserted; **one** `ocFaces`; the settings card reads its words from the drawer's array so a rename cannot leave the two disagreeing; no new abstraction and no base class | **DEGRADES SLIGHTLY**, as predicted |
-| **Data integrity** | — | No schema change to `Employee`, no migration, no patch, no backfill. `invalidate_portal_context_cache` is already first in the `on_update` chain, so a photo change busts the 1-hour cache that carries `image`. Replacing or clearing a photograph deletes the old rows **and their bytes** - the old rows are noted first and deleted **last**, so a failed store never takes away the picture somebody had. The access log's new `source` defaults to `Check-in photo`, correct for every row written before this slice | **NEUTRAL** |
-| **Compliance / privacy** | — | PRIV-1's notice is **before** the control and names what is true, including appraisals and emails. PRIV-2's removal takes the bytes. PRIV-4: the mini profile is its own call and no personal field joined `position_table` - a test asserts the response keys. PRIV-5's access record holds no file, url, document number or value. Every list ships **empty**, so nothing a tenant sees changes until a System Manager ticks something. **PRIV-3's static assertion is NOT written** (§6), and PRIV-6 to PRIV-9 are step 6 | **DEGRADES, less than predicted.** The trigger for 24 surfaces to show faces is created; the invitation to strangers is not |
+| **Scalability** | one read per person, growing with headcount | flat in headcount on every new path; the query-count gate asserts 20 ids and 400 ids cost the same. **ONE scheduled job** - the daily joiner erase, which 078-PRIV-6 names - and no queue, no worker, no cache, no bucket, no CDN and no container. The 48 px copy is 4 ms inside the request, which is the number that says no job | **IMPROVES** |
+| **Security** | — | **Six** new permission surfaces, as the analysis predicted, and the sixth is the one it called the honest degradation: the photo upload (own Active record, **no employee argument exists**), the My-Profile save (closed list ∩ ticked), the mini profile (`may_view` + `employee_in_scope`), the documents endpoint (five ordered checks, scope **before** ticked-type), the settings setters (`ACCESS_GRANTING`, System Manager only), and **the first public write path in this product's history**. Against that: no Frappe form is ever published, so there is no route that can put a token in a query string; the site-wide guest-upload switch **stays off**; a stranger gets one byte-identical answer to six different wrong inputs; and Frappe's own token row is destroyed the moment the link dies. 18 `ignore_permissions`, every one declared and argued in the ceiling test. No new scope helper. No `has_permission` hook | **DEGRADES, knowingly, as predicted.** The public write path is real and is the thing to review hardest. R1 stands exactly as accepted |
+| **Reliability** | My profile threw a 500 for a login with no Employee row | **Fixed**, and three more: the thumbnail handler catches everything and can never fail an Employee save; `ocFaces` is guarded, because it is called after every paint and would otherwise have been the thing that took a paint down (found by running a check); and **`_keep_the_login_in_step` stops an employee's own upload making their record unsaveable** (§2.2). Step 6 adds four more: the public page shows a plain "this link has run out" rather than a failure; a failed upload never discards what was typed and always offers a way forward that is not "try again"; the erase catches per row so one bad file cannot stop the job; and the daily job is safe to run twice | **IMPROVES**, and by more than the analysis claimed |
+| **Maintainability** | — | ~45 new server functions across 11 modules, 6 test modules, one new DocType, one DocType JSON change, ~1,100 new lines of `portal.js` and a 440-line standalone public page. Holding it: `ocAvatar` changed **once** for five states and three callers; **one** mini-profile field list, asserted; **one** `ocFaces`; the settings card reads its words from the drawer's array so a rename cannot leave the two disagreeing; no new abstraction and no base class; one `_drop_request` for the three places a token dies; one `erase` for the four reasons a submission is erased | **DEGRADES**, more than the analysis predicted - step 6 is a third of the slice's code and all of it is new |
+| **Data integrity** | — | No schema change to `Employee`, no migration, no patch, no backfill. **One new table**, which `bench migrate` creates; two nullable columns on an existing one. `invalidate_portal_context_cache` is already first in the `on_update` chain, so a photo change busts the 1-hour cache that carries `image`. Replacing or clearing a photograph deletes the old rows **and their bytes** - the old rows are noted first and deleted **last**, so a failed store never takes away the picture somebody had. The access log's new `source` defaults to `Check-in photo`, correct for every row written before this slice | **NEUTRAL** |
+| **Compliance / privacy** | — | PRIV-1's notice is **before** the control, names appraisals, and now states **what the tenant configured** about email rather than a fixed claim. PRIV-2's removal takes the bytes. PRIV-3 has a static assertion over the real tree. PRIV-4: the mini profile is its own call and no personal field joined `position_table`. PRIV-5's record holds no file, url, document number or value. PRIV-6: three erase clocks, all settings, **none with a value meaning "keep for ever"**, real deletion including the files, legal hold winning. PRIV-8: the notice before the first question, with the configured numbers and a contact the screen **refuses to render without**. PRIV-9: a seven-field closed allow-list, no bank, salary or statutory field. Every list and the form itself ship **empty or off**. Counsel's three additions are in: the email opt-out, the upload timestamp, and Export and Purge with the files | **DEGRADES, and it is still the dimension to argue about.** The trigger for 24 surfaces to show faces is created, and strangers are now invited to upload identity documents at a tenant that switches it on. Four things make it defensible and all four are built; the fifth - a Hindi joiner page - is not
 
 ---
 
@@ -271,7 +483,7 @@ exist and still look like pending work; cleaning them up is her call.
 
 | Command | Result |
 |---|---|
-| `python scripts/check_app_integrity.py` | **871 checks, OK** |
+| `python scripts/check_app_integrity.py` | **881 checks, OK** |
 | `python scripts/check_scope_traps.py` | **OK** - no caller's id can replace a scope |
 | `python scripts/check_api_paths.py --max 0` | **OK**, 0 unresolved of 281 paths |
 | `python scripts/check_portal_assets_gate.py` | **OK** - no new asset file, so nothing to add to the deploy step |
@@ -283,7 +495,7 @@ exist and still look like pending work; cleaning them up is her call.
 | `node scripts/check_portal_trays.js` (static half) | **OK, 27 of 27 in INVENTORY** - it **failed first** on the new picker's backdrop, which is the gate working |
 | `node scripts/check_positions_tree.js` | **404 checks** |
 | `node scripts/check_wall_chart.js` | **225 checks** - nothing private reaches paper |
-| `node scripts/run_dom_tests.js` | **20 run, 0 not run, 0 failed.** The 078 test alone: **103 passed, 0 failed** |
+| `node scripts/run_dom_tests.js` | **20 run, 0 not run, 0 failed.** The 078 test alone: **116 assertions, 0 failed** |
 
 **Two gates could not run locally:** `check_portal_trays.js`'s browser half and
 `check_positions_connectors.js` both need `playwright`, which is not installed
@@ -301,12 +513,14 @@ its own redis (`hrlocal-078-redis`), and site `test078` on a **copy** of
 
 | Module | Result |
 |---|---|
-| `test_my_photo_078` | **30 tests, OK** |
+| `test_my_photo_078` | **34 tests, OK** - run on an unpatched AND a patched Frappe |
 | `test_faces_078` | **8 tests, OK** |
 | `test_mini_profile_078` | **12 tests, OK** |
-| `test_people_settings_078` | **14 tests, OK** |
+| `test_people_settings_078` | **22 tests, OK** |
 | `test_employee_documents_078` | **20 tests, OK** |
-| **total** | **84 tests, 0 failures, 0 errors** |
+| `test_joiner_078` | **42 tests, OK** |
+| `test_portal_security_010` | the `ignore_permissions` ceilings, with a row for each of the eleven new files |
+| **total** | **138 tests across six modules** |
 
 **`bench migrate` ran on `test078` only** - the two new columns on
 `Alvoraa Photo Access Log` need it, and the first run told me so with
@@ -371,21 +585,47 @@ that the rest of the suite is unverified against this branch.**
 | OPS-45's `EXPECTED_BROWSER_TESTS` | **Built**, 19 → 20 in the same commit |
 | The three defaults ship empty/off | **Built and tested** |
 | **Invite link lifetime is a setting, default 7 days** | **Key built** (`alvoraa_joiner_link_days`, in `ACCESS_GRANTING`, range-checked 1-90, plain-English label). Its one reader - writing it into `Web Form Request.expires_on` - is step 6 |
-| **Not-hired retention: 180 days, range 180-365** | **NOT built.** Step 6 |
-| **Unactioned backstop: 90 days, HR warned at day 75** | **NOT built.** Step 6 |
-| **⚠ COMPLIANCE 2 closed by counsel** | **Recorded here with the date, 31 Oct 2026.** PRIV-7's switch-on precondition is **not built**, per that decision |
-| **Export and Purge on a submission, contact footer on the joiner's form** | **NOT built.** Step 6 |
+| **Not-hired retention: 180 days, range 180-365** | **Built**, keyed on `closed_on` rather than `modified` - see §3A.3 |
+| **Unactioned backstop: 90 days, HR warned at day 75** | **Built.** The warning uses `Notification Log`, which the portal's bell already reads, rather than an email |
+| **⚠ COMPLIANCE 2 closed by counsel** | **Closed 29 Oct 2026 (counsel), defaults approved 31 Oct 2026 (Surbhi).** PRIV-7's switch-on precondition is **not built**, per that decision; the form is still off by default for the ordinary reason |
+| **Export and Purge on a submission, contact footer on the joiner's form** | **Built.** Both as Desk buttons under a "Their rights" group; the footer is on the joiner's page and carries **the employer's** contact details, never ours. Purge takes the files and **ignores legal hold**, because there the erasure is the obligation rather than the risk |
 | **Photo upload timestamp for audit** | **BUILT.** The upload and removal log lines carry `now()` |
-| **An admin setting to keep photographs out of company-wide emails** | **NOT built, and this is the one I would most like a second opinion on.** It is the only item on counsel's list that is not step 6, and it closes the widest exposure in the slice - the work-anniversary mail that puts the photograph's url in a body sent to colleagues, switched on today. I did not build it because **the mechanism is not settled and I will not improvise one at the end of a build.** `override_whitelisted_methods` cannot reach it: `send_work_anniversary_reminders` is a scheduler entry in `hrms/hooks.py:368-369`, not a whitelisted method. The two candidate rungs are (a) a template override in `alvoraa_portal/templates/emails/`, following the existing sha256-pinned convention that `check_email_template_overrides.py --check-upstream-shape` enforces - two copied files to keep in step through hrms upgrades; or (b) a wrapper for the scheduled job. **I recommend (a)**, and it is about an hour. I deliberately did **not** add the settings key either, because a key with no reader is dead configuration, which is banned. **Until it is built, PRIV-1's notice is correct as written** - it says the photograph *is* put into those emails, which is true today |
+| **An admin setting to keep photographs out of company-wide emails** | **BUILT.** One access-granting settings key, one Jinja method that fails closed, and our own copies of hrms' two reminder templates with ONE condition changed - sha-pinned in the format `check_email_template_overrides.py --check-upstream-shape` parses, and verified with that script's own hashing against the vendored hrms, which is the file CI copies into its bench. **OFF by default**, which is a deliberate change to what the product does today: nothing visible changes on the day it ships because no employee has a photograph, and email is the one place the safe default is worth a changed behaviour. The override wins the template search because Frappe's Jinja loader searches installed apps in REVERSED install order - read from `_get_jloader`'s source, then **proved by asking the loader itself** in a test rather than trusting the reading. It had to be a template override and not a wrapper, because `send_work_anniversary_reminders` is a scheduler entry in `hrms/hooks.py`, which `override_whitelisted_methods` cannot reach. PRIV-1's notice now states what the tenant configured, and BOTH halves are asserted - because claiming mail when there is none is wrong too |
 
-**Where I think the brief may read counsel too loosely:** counsel's position is
-that our customers are the Controllers and we are the Processor, which is why
-every period is a setting. But **a shipped default is still a decision we made
-on the Controller's behalf** - and `alvoraa_joiner_link_days` ships at 7 and the
-backstop at 90 without any tenant having chosen them. That is the right
-engineering answer and I have built it that way; I flag only that "the employer
-sets its own periods" and "we ship a default" are not the same sentence, and a
-Processor agreement may need to say which one applies.
+### 8.1 ⚠ For whoever writes the Processor agreement
+
+**Flagged deliberately, and NOT fixed in code. Surbhi approved all five
+defaults and they are not being changed.**
+
+Counsel's framing is that **our customers are the Data Controllers and we are a
+Data Processor**: our job is the tools, the notices and the settings, and the
+Controller decides its own periods. The build follows that exactly - every
+period in this slice is a configurable setting and not one of them is
+hard-coded.
+
+But **"the employer sets its own periods" and "we ship a default" are not the
+same sentence**, and this slice ships five values no tenant has chosen:
+
+| Setting | Ships at | Chosen by |
+|---|---|---|
+| `alvoraa_joiner_link_days` | 7 | us |
+| `alvoraa_joiner_not_hired_days` | 180 | us, from counsel's 180-365 range |
+| `alvoraa_joiner_backstop_days` | 90 | us |
+| `alvoraa_joiner_warn_days` | 75 | us |
+| `alvoraa_photo_in_emails` | off | us |
+
+Until a Controller changes one, **the Processor's default is what is
+operating.** That is the right engineering answer - the alternative is a feature
+nobody can switch on until four boxes are filled in - and it is exactly the kind
+of thing a Processor agreement should say out loud: either that the Controller
+is taken to have adopted the defaults by switching the feature on, or that it
+must set them before first use.
+
+**Two of the five are more than conveniences.** The 90-day backstop **deletes
+data**, and the email default **changes what the product did yesterday**. Both
+are defensible, and both are recorded here with Surbhi's name and 31 October
+2026 against them, which is the most the code can do. The contract is where it
+has to be settled.
 
 ---
 
@@ -395,37 +635,50 @@ Processor agreement may need to say which one applies.
 
 | # | Thing |
 |---|---|
-| **D1** | **§2.2's upstream bug.** Mitigated for the portal path, **not fixed**, and HR's Desk upload still raises. The one-line fix is in `apps/frappe`. Until it is made, **nobody should be told that HR can add a photograph in Desk** |
-| **D2** | **§2.1's clear-text token.** Blocks step 6 and needs Surbhi's decision. Building pre-onboarding without settling it would ship a Restricted bearer credential in clear, for ever, against a SEC item she approved |
+| **D1** | **The Frappe fork patch is now the only thing standing between HR and a broken Desk upload** (§2.2). It is applied in `deploy/Dockerfile` and in `ci.yml`, **and it has never been through a real image build** - only a throwaway container. If the build fails, the script says which line it could not find; if somebody removes the step, the bug comes back silently for any employee whose `user_image` is empty. The workaround in `employee_photo` stays for exactly that reason. **Nobody should be told HR can add a photograph in Desk until an image built from this commit has been seen to work.** |
+| **D2** | **The joiner's page has never been rendered in a browser.** It is 440 lines of inline HTML, CSS and JavaScript on the one public page in this product, used by people who cannot ring our helpdesk. Every endpoint behind it is tested; **the page itself is not.** That is the single biggest untested surface in the slice. |
 
 ### Temporary debt - what removes it
 
 | # | Thing | What removes it |
 |---|---|---|
-| T1 | `browser_check_positions.js` is re-pointed but **never executed** - no playwright here | One run with a browser against a rendered chart. It is also AC-34 and OPS-38, so it is one job |
-| T2 | The **rest** of the `alvoraa_portal` and `hrms` suites is unverified against this branch | The test engineer's full run |
-| T3 | **PRIV-3's static assertion is not written** - that `Employee.image` and the thumbnail field appear in no module under an AI or model path, and that nothing reads `alvoraa_checkin_photo` into `Employee.image` or the reverse. Three greps in a test | One test, ~20 lines. It is the only PRIV item for steps 1-5 that is not covered |
-| T4 | AC-47's in-memory hold is built but has no test | One DOM case |
+| T1 | `browser_check_positions.js` is re-pointed but **never executed** - no playwright here | One run with a browser against a rendered chart. Same job as AC-34 and OPS-38 |
+| T2 | The **rest** of the `alvoraa_portal` and `hrms` suites is unverified against this branch | The test engineer's full run. Only my six modules ran |
+| T3 | **The joiner's page is not translated.** Its strings are plain English in the HTML, not wrapped, because it is a standalone page that does not load `portal.js` | Frappe's own `_()` in the Jinja, plus the same site-level Hindi import AC-141 needs everywhere else |
+| T4 | `_hr_contact()` reads two `DefaultValue` keys (`alvoraa_hr_contact_phone`, `alvoraa_hr_contact_email`) that **no screen sets** | One row on the settings card. The welcome screen refuses to render without a contact, so a tenant switching the form on finds out immediately rather than a joiner finding out - but it is a sharp edge |
+| T5 | OPS-41: `get_web_form_request`'s signature is confirmed on **v16.33.1**, not the **v16.35.0** we ship | Read that one method in a container built from the shipped image. §2.3 |
 
 ### Acceptable simplification
 
 | # | Thing | Why |
 |---|---|---|
-| S1 | The seat page's address is **`?seat=…`**, not a route | `?grooming=` and `?who=` already do exactly this in `portal.js`. A second routing mechanism for one screen is not worth owning, and `portal.js` has no hash router |
-| S2 | The Organisation page caps a seat at three names **with no way to see the rest** | It has no tray to hold them, unlike Positions. A count is the honest answer and the person can search. Flagged because it is a real, if small, loss |
-| S3 | `get_cover_settings` now returns the five new keys to **HR Manager** as well as System Manager, because it is gated on both | A read of a setting's value, on an endpoint `01a` F16 measured as called by **no screen at all**. Writing is still System-Manager-only. Worth a line in the security review |
-| S4 | The documents list is its own call, after the profile | A document read that fails or is refused must not take the profile with it |
+| S1 | The seat page's address is **`?seat=…`**, not a route | `?grooming=` and `?who=` already do exactly this in `portal.js`, which has no hash router |
+| S2 | The Organisation page caps a seat at three names **with no way to see the rest** | It has no tray to hold them, unlike Positions. A count is the honest answer |
+| S3 | `get_cover_settings` now returns the new keys to **HR Manager** as well as System Manager | A read of a setting's value, on an endpoint `01a` F16 measured as called by **no screen at all**. Writing is still System-Manager-only. Worth a line in the security review |
+| S4 | The documents list and the joiner's documents are each their own call | A document read that fails or is refused must not take the screen with it |
+| S5 | **HR's joiner screen is the Desk form**, not a portal page | §3A.2. A deviation from the spec's wording, and the cheapest rung |
+| S6 | The erase **leaves a shell** with no personal data rather than deleting the row | §3A.2 item 4. A judgement, and a reviewer may want it the other way |
 
 ### Intentional trade-off
 
 | # | Thing |
 |---|---|
 | I1 | **`position_table` is 3 statements, not the 2 the spec required.** The extra one is flat in headcount at 13.4 ms, which is what the gate actually asserts. The alternative was a column on the HR master |
-| I2 | **`people_fields.thumbnails_for` reads with `ignore_permissions=True`.** Frappe's own `File` query condition narrows a Website User to `owner = me`, so a scoped read would hide every colleague's thumbnail and the one chart a frontline employee can open would lose its faces. It returns a **url and nothing else**, and fetching the bytes behind it still asks the parent Employee's read permission - so it grants nothing. Declared in the ceiling test with that argument |
-| I3 | **The mini profile shares `#emp-drawer` with the manager's detail drawer.** One element means one set of ARIA attributes, one Escape handler and one focus trap rather than two that drift. They never open at once and each fully replaces the head and body |
+| I2 | **`people_fields.thumbnails_for` reads with `ignore_permissions=True`.** Frappe's own `File` query condition narrows a Website User to `owner = me`, so a scoped read would hide every colleague's thumbnail and the one chart a frontline employee can open would lose its faces. It returns a **url and nothing else**, and fetching the bytes behind it still asks the parent Employee's read permission |
+| I3 | **The mini profile shares `#emp-drawer`** with the manager's detail drawer. One element means one set of ARIA attributes, one Escape handler and one focus trap rather than two that drift |
 | I4 | **E14 / ⚠ DECISION K left as it is.** An import of 403 photographs is ~240 ms a row, about **1 min 40 s**, inside one import job. The release note should say that figure rather than "will be slow" |
+| I5 | **The clear-text token window is "while the link works" rather than "never".** §2.1. Surbhi's decision, and the alternative was re-implementing Frappe's token machinery |
+| I6 | **A used link is indistinguishable from an unknown one.** §3A.4. Stronger than SEC-13 asks and weaker than AC-112's wording; the purge wins |
 
----
+### Three acceptance criteria that need rewording before the test engineer runs
+
+Said here together, because a reviewer should not have to find them separately.
+
+| AC | As worded | What is built |
+|---|---|---|
+| **AC-101** | *"No field equals the token in plain text."* | No field **of ours** holds it in any form; Frappe's own row does, in clear, and is **deleted the moment the link stops working** |
+| **AC-112** | a used link *"may say already used"* | It cannot. A used link gives the **same** answer as an unknown one, because the row holding its key is gone |
+| **AC-125** | *"This link will not open again"* on a second visit | Same reason. J6 says it at the time; a second visit gets the generic answer, which still says *"nothing you sent is lost"* |
 
 ## 10 · Subtract pass
 

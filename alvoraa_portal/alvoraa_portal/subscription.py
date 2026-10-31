@@ -610,6 +610,11 @@ TENANT_DOCTYPES = [
     # Slice 076: a notice the tenant's own HR or management sent to its own
     # staff. The tenant's record, read and written inside the tenant.
     "Announcement",
+    # Slice 078: what a person the tenant is hiring sent in before their first
+    # day. The tenant's own record about its own joiner, read and written inside
+    # the tenant by its HR - not our billing or provisioning plumbing. So it is
+    # tenant-side, and stays inside the tenant access derivation.
+    "Alvoraa Joiner Submission",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

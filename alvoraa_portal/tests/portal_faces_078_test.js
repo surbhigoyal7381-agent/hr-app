@@ -678,6 +678,14 @@ async function openMyProfile(routes) {
     yes(inOrder,
         "078 D-5(c): in the order 01b 6.1 draws them - picture, details, "
         + "documents, password");
+    /* AC-20's own clause, which the report listed as BLOCKED by the parity
+       gap: with the plan off nothing fills the card, so it must not be on the
+       page as an empty heading. It ships hidden and `loadMyDocuments()` is
+       what reveals it - and nothing in this run answered that call. */
+    yes(card && (card.style.display === "none"
+                 || window.getComputedStyle(card).display === "none"),
+        "078 AC-20: and with nothing filling it the card is HIDDEN, not an "
+        + "empty heading on My profile", card && card.style.display);
   }
 
   /* D-6. The laptop footer is Preview, Cancel, OK, so the primary action is on

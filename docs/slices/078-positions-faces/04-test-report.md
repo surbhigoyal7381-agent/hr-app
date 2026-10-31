@@ -3,10 +3,11 @@ slice: 078-positions-faces
 artifact: 04-test-report
 author: hrms-test-automation-engineer
 date: 2026-10-31
-status: TESTED. Verdict FAIL - two defects caused by this slice turn CI red, and both fixes are small. Separately, neither app's suite completed on the throwaway site (portal terminated part-way, hrms ran zero tests), so CI is where the rest must be answered.
-worktree: .claude/worktrees/078-positions-faces on slice/078-positions-faces, head 30660e28
-tested: a378af03..30660e28 (13 commits), against origin/dev d3afcaa5
-note: the worktree moved to 363758d3 (six defect-fix commits) WHILE this run was in progress. None of those commits is tested here - see the Postscript.
+status: RE-RUN, 31 Oct 2026 evening. See section -1 for what changed and section 13 for the verdict.
+worktree: .claude/worktrees/078-positions-faces on slice/078-positions-faces, head c5494a29 (d3696e82 plus this run's own tests)
+tested: a378af03..d3696e82 (22 commits), against origin/dev d3afcaa5
+site: test078f - a site BUILT FROM NOTHING for this run, the way CI builds one. 0 companies, 0 fiscal years, 0 Alvoraa Position rows at the start. The rotted test078 was not used.
+note: this run tests the nine defect-fix commits the first run could not. The first run's postscript is replaced by section -1.
 epic: ALV-260
 ---
 
@@ -14,44 +15,35 @@ epic: ALV-260
 
 ---
 
-## ⚠ Postscript · fixes landed after this run, and I have NOT tested them
+## -1 · This is the re-run, and what it changes
 
-**Everything in this report was produced against `30660e28`.** While I was
-running the suites, the engineer acted on these findings. By the time I finished
-writing, the worktree had moved to **`363758d3`**, six commits ahead, and a test
-run of its own was in flight on the bench.
+The first run of this report tested **`30660e28`** and ended with a postscript
+saying nine commits of defect fixes had landed that it had **not** verified.
+**This run verifies them.** It also closes the one defect nobody had touched.
 
-| Commit | Claims to fix |
+**Everything below is from today, 31 October 2026, on a site built from
+nothing.** Where a section carries evidence from the first run that this run
+did not need to repeat, it says so in its own first line.
+
+| What the postscript asked for | Answer |
 |---|---|
-| `9aa4d115` | **D-1** — classifies `Alvoraa Joiner Submission` as **tenant-side**, per Surbhi, 31 Oct 2026, with its three Link fields checked for access widening |
-| `daca7224` | **D-2** — **teaches the gate to read a raw `fetch`** instead of excusing the endpoint in `NO_ARG_CALL`, and raises `MIN_CALL_SITES` 200 → 201 |
-| `5ab76ebd` | **D-3**, **D-5(b)**, **D-7** — an empty form can no longer lose the link, and **J4 exists** |
-| `1c61b5e1` | **D-5(a, c, d)**, **D-6** — the portal parity gaps, built as drawn |
-| `3eda205a` | the **P4** in §14 — pins the 48 px thumbnail as private, not only the 512 px file |
-| `363758d3` | the implementation notes for all of the above |
+| The full `alvoraa_portal` suite green **to the end**, including the batch that never finished | **Done, on a fresh site, in one serial pass.** §2.2 |
+| `test_browser_call_args_045` passes **and still catches a genuinely unread endpoint** | **Proven by mutation.** 226 sites read, floor 201, and a planted endpoint with no call site is still caught. §3.2 |
+| The J4 screen and the parity fixes **seen in a browser** | **J4 driven in Chromium: 37 assertions, 0 failures.** The parity fixes now have tests, and each was watched going red without its fix. §4.3, §5.3 |
+| **D-4 — cross-company isolation, still untested** | **Closed.** `test_company_scope_078.py`, 9 tests, and the first CXO persona in the slice. §4.2 |
 
-**I have verified none of them.** Not one line of this report's evidence comes
-from that code. Two of those commits change a **test** rather than the product
-(`daca7224` edits the gate itself, and the D-1 fix is a list entry), and a fix
-that edits the test it failed is exactly the kind that needs an independent
-eye — I read `daca7224`'s reasoning and think it took the **right** option, the
-stronger one, but reading is not running.
+**The site matters, so it is stated first.** `test078` had rotted: 54
+accumulated companies, no default company, disturbed `Fiscal Year` rows, and an
+`hrms` suite that died in discovery. That rot had already produced one failure
+that depended on run order against junk rather than on any code (ALV-268). So
+this run built **`test078f`** from `bench new-site` plus four `install-app`
+calls, in the same order and with the same two config keys CI uses. At the
+start it held **0 companies, 0 fiscal years and 0 `Alvoraa Position` rows** -
+the honest baseline.
 
-**What this does to the verdict.** The verdict below stands **for `30660e28`,
-which is what I tested.** It is not a verdict on `363758d3`. Before release
-somebody must re-run against the new head and confirm:
-
-1. The full `alvoraa_portal` suite is green **to the end** — including batch 3,
-   which never finished here (§2.2).
-2. `test_browser_call_args_045` passes **and still catches a genuinely unread
-   endpoint** — the gate must not have been loosened to go green. `MIN_CALL_SITES`
-   going 200 → 201 is the right sign; confirm the new reader finds the site and
-   checks its arguments.
-3. The new J4 screen and the parity fixes behave — **none of them has been seen
-   in a browser.** My joiner-page harness (§5.3) was written against a page with
-   **no J4**, so it does not cover the new screen.
-4. D-4 is unchanged by any of this: **cross-company isolation is still untested**
-   for the two new read endpoints.
+**Three things this run found that the first run did not.** They are in the
+table in §0 as D-9, D-10 and D-11, and one of them is a hollow assertion in an
+existing security test.
 
 ---
 
@@ -101,20 +93,21 @@ looked for all four and name the evidence below.
 ## 1 · What I could NOT check — read this before the coverage tables
 
 Named here, at the top, not in a footnote. Each of these is **unproven**, not
-passed.
+passed. Items the first run listed and this run closed are struck through.
 
 | # | Not checked | Why |
 |---|---|---|
-| **N-1** | **The Positions chart, the seat tray and the chart card have never been rendered in a real browser.** `browser_check_positions.js` is still unexecuted | Two reasons, and the second is the real one. It needs a served site and a login, and the test container publishes no port — but more to the point, **`test078` holds `0` rows in `tabAlvoraa Position`** (533 employees, 3 photographs, no seats). The chart would have had **nothing to draw**, so every check would have failed for want of data rather than for want of correctness. jsdom covers the markup with synthetic data (404 + 225 + 116 checks); **a real browser against real seats does not exist yet.** This needs dev, or a purpose-seeded throwaway — not this site |
-| **N-1b** | **The `hrms` suite ran ZERO tests**, twice, and the `alvoraa_portal` suite **did not finish** — its third batch was terminated part-way. So neither app's suite is fully verified against this branch | ERPNext's test bootstrap cannot build master data on `test078`; and a `Terminated` on the portal run. Both are environment, not code — §2.2 has the evidence and the restoration I did. **CI, on a fresh site, is where this gets answered** |
-| **N-2** | **No image has been built from this commit.** The patch is proved against the exact v16.35.0 source, and both build steps are correctly wired — but the Docker build and the CI run themselves have not happened | A real image build is a deploy-stage action and needs approval |
-| **N-3** | **Hindi is unprovable in this repository.** AC-141, AC-142, AC-143 cannot pass: there is no Hindi file anywhere (`translations/` holds only `en.csv`), and the joiner's page is not wrapped in `drT()` at all | A site-level `Translation` import, which no commit here can supply |
-| **N-4** | **Nothing was checked on dev or production.** AC-34, AC-72, AC-130, AC-135, OPS-38 and every release/monitoring OPS item are untouched | Release-stage, and not mine |
-| **N-5** | **No performance number was measured at volume by me.** Every NFR figure in §9 is the engineer's, re-reported as theirs | The query-count gate is asserted in code and passes; wall-clock at 400 employees was not re-measured |
-| **N-6** | **Dark theme (AC-133) and the a11y focus traps** were not swept | No automated a11y tooling in this repo; the drawer's focus trap does not exist to test (§7) |
-| **N-7** | **The joiner page's real HTTP response headers** were not observed | I rendered the template, not a server response. The three headers are set in a `try/except Exception: pass`, so a failure to set them is silent — see §8 |
-
----
+| **N-1** | **The Positions chart, the seat tray and the chart card in a real browser.** §2.5 says exactly how far I got | See §2.5. The chart's markup is covered by **407 + 225 + 134** static and jsdom checks, and D-5(a)'s tray fix is pinned — but a real browser against real seats is a different check |
+| ~~N-1b~~ | ~~Neither app's suite completed~~ | **CLOSED for `alvoraa_portal`** — the full suite ran to the end on a fresh site, §2.2. **Still open for `hrms`** — see **N-8** |
+| **N-8** | **The full `hrms` suite.** Four hrms files changed in this slice and `test_company_scope_194.py` is the multi-company test I cited as the reason D-4 was only P2 | §2.6 |
+| **N-2** | **No image has been built from this commit** | A real image build is a deploy-stage action and needs approval |
+| **N-3** | **Hindi is unprovable in this repository.** AC-141, AC-142, AC-143 cannot pass | There is no Hindi file anywhere and the joiner's page is not wrapped in `drT()` |
+| **N-4** | **Nothing was checked on dev or production.** AC-34, AC-72, AC-130, AC-135, OPS-38 and every release/monitoring OPS item | Release-stage, and not mine |
+| **N-5** | **No performance number measured at volume by me.** Every NFR figure in §9 is the engineer's, re-reported as theirs | The query-count gate is asserted in code and passes in the full suite; wall-clock at 400 employees was not re-measured |
+| **N-6** | **Dark theme (AC-133) and the a11y focus traps** | No automated a11y tooling in this repo; the drawer's focus trap is still unasserted (§7) |
+| **N-7** | **The joiner page's real HTTP response headers** | I rendered the template and served it myself; I did not observe a Frappe response. The three headers are set in a bare `try/except Exception: pass`, so a failure to set them is silent |
+| **N-9** | **`check_app_integrity.py`'s doctype-shadowing check** | It needs `BENCH_APPS_PATH` to point at a bench holding frappe and erpnext. The bench is inside the container, the script runs on the host, so it **skipped and said so**. CI runs it properly |
+| **N-10** | **Which test errored on the first-ever run against the bare site** | D-10. I read only the tail of that output and could not reproduce it in two further runs |
 
 ## 2 · The commands I ran, and what they said
 
@@ -316,13 +309,14 @@ children, so the likelihood is that there were none — but I cannot prove it, a
 **`test078` is a throwaway that should be rebuilt rather than trusted on this
 point.** Nothing shared was touched at any stage.
 
-### 2.3 The static gates — all re-run by me, independently
+### 2.3 The static gates — re-run on the new head
 
-Not taken from the engineer's report. I ran each one myself.
+Every one run again by me at `d3696e82`, and then again at `c5494a29` with my
+own tests in the tree.
 
 | Command | Result |
 |---|---|
-| `python scripts/check_app_integrity.py` | **OK** |
+| `python scripts/check_app_integrity.py` | **OK — 881 checks** |
 | `python scripts/check_scope_traps.py` | **OK** |
 | `python scripts/check_design_system.py` | **OK** |
 | `python scripts/check_brand_spelling.py` | **OK** |
@@ -330,36 +324,61 @@ Not taken from the engineer's report. I ran each one myself.
 | `python scripts/check_version_pins.py` | **OK** |
 | `python scripts/check_api_paths.py --max 0` | **OK** |
 | `python scripts/check_portal_assets_gate.py` | **OK** |
-| `node scripts/check_undefined_js.js` | **OK** |
-| `node scripts/check_positions_tree.js` | **OK — 404 checks** |
+| `node scripts/check_undefined_js.js` | **OK — none** |
+| `node scripts/check_positions_tree.js` | **OK — 407 checks** (404 before; **+3 for D-5(a)**) |
 | `node scripts/check_wall_chart.js` | **OK — 225 checks** |
-| `node scripts/run_dom_tests.js` | **OK — 20 run, 0 not run, 0 failed**; the 078 suite alone **116 passed, 0 failed** |
+| `node scripts/check_portal_handlers.js` | **OK — all reachable and callable** |
+| `node scripts/run_dom_tests.js` | **OK — 20 run, 0 not run, 0 failed**; the 078 suite alone **134 passed, 0 failed** (116 before; **+18 for D-5(c), D-5(d), D-6 and AC-20**) |
+| `node scripts/check_portal_trays.js` | **static half OK — 27 of 27.** The browser half still did not run — see below |
+| The 045 arguments gate, run standalone outside the bench, **with a mutation** | **226 sites, 0 orphans, floor 201; a planted unread endpoint is still caught.** §3.2 |
+| `node --check portal.js`, `python -m ast` on every changed `.py` | parse clean |
 
-All twelve green. The engineer's static-gate numbers are confirmed exactly.
+**One gate could not be run with a bench**, and it is the same one as last
+time: `check_app_integrity.py`'s **doctype-shadowing** check needs
+`BENCH_APPS_PATH` to point at a bench that holds frappe and erpnext too. The
+bench lives inside the container and the script runs on the host, so the check
+**skipped** — it says so itself. CI runs it with a bench. **Not run**, not
+passed.
 
-### 2.4 The browser work — new, and not in the engineer's report
+### 2.4 The browser work
 
 | What | Result |
 |---|---|
-| The joiner's public page, Chromium 390×844 and 1280×900, driven through J1→J2→J3→J5→J6 | **46 assertions, 0 failed** (34 + 12). §5.3 |
-| `scripts/patch_frappe_binary_file_content.py` against the shipped image's Frappe **v16.33.1** | applied **3 of 3**, idempotent, `--check` correct both ways |
-| The same patch against **Frappe v16.35.0**, fetched from the tag CI and the Dockerfile pin | applied **3 of 3**, patched file **compiles** |
-| `scripts/browser_check_positions.js` | **NOT RUN.** N-1 |
+| **The joiner's page, including the new J4 screen**, Chromium at 1280×900 and 390×900, driven through J1→J2→J3→**J4**→J5→J6 five ways | **37 assertions, 0 failed.** §5.3 |
+| **The drawer's geometry**, Chromium against the real stylesheet — the measurement behind D-5(d)'s 260 ms | **4 of 5**; the head's `padding-bottom` is **18 px** and the gap between the photo and the enlargement is **26 px**. §4.3 |
+| `scripts/browser_check_positions.js` | see §2.5 |
+| `scripts/check_portal_trays.js` browser half | **still not run**, and now for a narrower reason: Playwright resolves fine with `NODE_PATH` set to a copy on this machine — the script then stops at `set PROBE_USR and PROBE_PWD`, because it wants **a served site and a login**, which the throwaway container publishes no port for |
 
-**Playwright is in fact available on this machine** — `npx playwright --version`
-reports 1.64.1 and the Chromium builds are installed under
-`~/AppData/Local/ms-playwright`. The module does not resolve from the worktree,
-but the scripts accept `PLAYWRIGHT=<path>` and one is in the npx cache. **The
-engineer's "no playwright here" was wrong**, and that is worth knowing: T1 and
-the browser halves of `check_portal_trays.js` and
-`check_positions_connectors.js` are blocked only by the want of a served site
-and a login, not by the browser.
-
----
+**The "no playwright here" belief is wrong and stays corrected.** Chromium
+builds are installed under `~/AppData/Local/ms-playwright` and the `playwright`
+module resolves from other checkouts on this machine; both harnesses above drive
+real Chromium through it. What blocks the two repo scripts is a **served site
+with a login**, not the browser.
 
 ## 3 · The two defects that make CI red
 
-### 3.1 D-1 · A new DocType nobody has classified — **P1**
+### 3.1 D-1 · A new DocType nobody had classified — **FIXED, by a decision**
+
+Fixed in `9aa4d115`. **Surbhi decided it, 31 Oct 2026: a joiner's personal data
+is tenant-side**, and `Alvoraa Joiner Submission` is now named in
+`TENANT_DOCTYPES`. The gate passes in the full suite (§2.2).
+
+**I checked the claim that none of its three Link fields widens the
+derivation**, because that is the half a one-line list entry can get wrong.
+Tracing it: `linked_dependencies()` scans Link fields of doctypes in **allowed
+modules**, skipping `CONTROL_PLANE_DOCTYPES`, and its output only **removes
+modules from the blocked set** - it grants no DocPerm. Of the three links,
+`Employee` and `User` are already reached by Frappe HR's own doctypes, and
+`Web Form Request` belongs to a module of the **frappe app**, which
+`blocked -= {m for m, app in module_apps.items() if app == "frappe"}` already
+unblocks whatever this list says. **So the claim holds** - and the thing that
+actually proves it is `test_access_control`, which asserts the derivation and
+is green in the full suite.
+
+Labelled: **Inference from reading, confirmed by a passing suite** - not
+Proven, because no test asserts "this doctype's links added nothing".
+
+
 
 **Proved by construction, with no baseline needed.**
 
@@ -401,7 +420,32 @@ control-plane list and not to excuse the test.
 **Fix:** one line, plus the comment that says why. **Owner:**
 `hrms-security-privacy-engineer` to decide, `hrms-fullstack-engineer` to write.
 
-### 3.2 D-2 · An endpoint the arguments gate cannot read — **P1 as a red build, P2 as a risk**
+### 3.2 D-2 · An endpoint the arguments gate could not read — **FIXED, and the gate is STRONGER**
+
+**This is the fix that needed an independent eye, because it edits the test
+that failed.** A gate loosened to go green is worse than a red build. It was
+not loosened.
+
+The report's own suggestion was one line in `NO_ARG_CALL`. The engineer refused
+it and taught the reader the raw-`fetch` shape instead, which is the stronger
+option: an entry in `NO_ARG_CALL` would have left a new endpoint **on the
+documents path** permanently outside the check, which is the exact hole the gate
+exists to close.
+
+**Proven by mutation, run outside the bench against the real portal source:**
+
+| Check | Result |
+|---|---|
+| Call sites read | **226**, against a floor of **201** (was 200) |
+| Endpoints named but unread | **0** |
+| The raw-`fetch` site for `open_employee_document` | **found**, and its arguments read as exactly `{row}` — which is what the server declares |
+| **A fake endpoint planted in `portal.js` with no call site** | **caught.** The gate still refuses an unread endpoint |
+| A raw `fetch` whose argument names live inside `JSON.stringify` in the `body` | read correctly — the names come from the body, not from `fetch`'s options |
+
+**The floor went up, never down**, which is the right sign. And
+`test_browser_call_args_045` passes in the full suite (§2.2).
+
+
 
 `test_browser_call_args_045.py::test_no_endpoint_is_named_but_never_read` fails.
 
@@ -463,54 +507,87 @@ record.
 caught it. **Owner:** `hrms-business-analyst` for the AC, then
 `hrms-fullstack-engineer`.
 
-### 4.2 D-4 · Cross-company isolation is untested — **P2, untested control**
+### 4.2 D-4 · Cross-company isolation — **CLOSED by this run**
 
-The three personas this project tests against are CXO (all companies), HR
-Manager (their companies) and Employee (own record). This slice's fixtures build:
+**This was the one defect nobody had touched**, and it was the only persona gap
+in the slice: the two new read endpoints were exercised against **one company**,
+and **no CXO appeared anywhere**.
 
-| Persona | Built? |
+**Now:** `alvoraa_portal/alvoraa_portal/tests/test_company_scope_078.py`,
+**9 tests, OK** — run three times on `test078f`, including once deliberately
+cold after its own fixture rows were dropped.
+
+| What it proves | Test |
 |---|---|
-| Employee (own record) | yes — three of them |
-| HR Manager, whole company | yes |
-| HR Manager, scoped to one **branch** | yes |
-| HR Manager with **no** company (fails closed) | yes |
-| Guest | yes, throughout the joiner tests |
-| **CXO / multi-company leader** | **no — absent from this slice entirely** |
-| **A second company** | **no** |
+| An HR Manager scoped to one company is **refused** a person in another company — on `positions_profile.get_positions_profile` | `test_the_mini_profile_refuses_a_person_in_another_company` |
+| … on `employee_documents_read.get_employee_documents`, **as a refusal and not `{"documents": []}`** — an empty list is an answer, and an answer confirms the person exists | `test_the_documents_list_refuses_a_person_in_another_company` |
+| … and on the **document stream itself**, with a real row id of a ticked type, so the company is the only thing stopping the read | `test_a_document_row_in_another_company_cannot_be_opened` |
+| The refusal names **no** company, person, branch or document type — a message is a disclosure too | `test_the_refusal_names_no_company_person_branch_or_type` |
+| A refused read writes **no access-log row**, so the log cannot be used to confirm that a person in another company exists | `test_a_refused_read_writes_no_access_log_row` |
+| **A CXO reads both companies** — profile and document | `test_a_cxo_reads_a_profile_in_either_company`, `test_a_cxo_opens_a_document_in_either_company` |
+| An ordinary **Employee** holds neither surface, in either company | `test_an_ordinary_employee_holds_neither_surface` |
+| A reader with **no company of their own** fails closed, in either company | `test_a_reader_with_no_company_of_their_own_fails_closed` |
 
-`fixtures_078.py` says the omission is deliberate: building a second company
-*"would have made `ensure_company()` hand every other suite a company with no
-holiday …"*. That is a fair engineering reason, and it still leaves the control
-unproven.
+**Why the CXO tests are not padding.** Without them the five refusals above
+could every one of them be passing because the far company's data is simply
+unreachable — a wrong fixture rather than a working boundary. The CXO reads the
+same rows the HR Manager was refused, so the refusal is **the scope check** and
+nothing else.
 
-**Two things lower the severity, and they are worth being precise about.**
+**The constraint `fixtures_078` records was respected.** That file says in its
+own docstring why it builds no second company: `ensure_company()` would then
+hand every other suite a company with no holiday list and no fiscal year, which
+slice 010 already paid to learn. **So `fixtures_078` is untouched.** The company
+used is `fixtures_045.second_company()` — which already exists, is backdated for
+exactly that reason, and is already used this way by
+`test_directory_contact_045`. No shared fixture behaviour was changed to make
+these tests pass.
 
-**First, the new code reuses the shared helpers** rather than reimplementing
-scope: `positions_profile.py` references `may_view`/`employee_in_scope` 9
-times, `employee_documents_read.py` twice, and there is **no home-rolled
-company filter anywhere** in the new code.
+**The out-of-company person sits in STORE_A**, the same branch as everybody in
+scope, so **the company is the only difference** between them and somebody
+readable. A person put in another branch as well would have let the branch
+check pass these tests with the company check broken.
 
-**Second — and I did not expect this — the chart and register path *is*
-company-scope tested, on the hrms side.**
-`hrms/alvoraa_org_structure/tests/test_company_scope_194.py` runs a real
-multi-company case against `register.py` and `api.py`, which are **exactly the
-two hrms files this slice changed** (+26 and +194 lines). So the faces work —
-the batched thumbnail read and `_card` — runs through a genuine cross-company
-test, provided the hrms suite is green (§2.2).
+**Both endpoints are called directly**, not through a screen, because a
+whitelisted method is reachable without one.
 
-**What is left uncovered is narrower than "cross-company isolation", and that
-is the honest statement:** the **two new `alvoraa_portal` read endpoints** —
-`positions_profile.get_profile` (the mini profile) and
-`employee_documents_read` (the documents) — are exercised against **one
-company** only. Those are the two surfaces that hand a reader another person's
-details and documents, so they are the ones where a company leak would matter
-most, and they are the ones with no company test.
+**What D-4 still does not cover, said plainly.** Both endpoints reach their
+scope check through the same `positions_profile._guard`, so these nine tests
+prove **one** enforcement point twice over rather than two independent ones.
+That is the code's design, not a gap in the tests - but if a third surface is
+ever added that does not call `_guard`, these tests will not notice. The
+`hrms`-side chart and register path has its own company test
+(`test_company_scope_194.py`) and is not re-proved here.
 
-**It is still an untested control for these six new endpoints**, in the one
-slice whose purpose is to show more personal detail to more people. Say so in
-the release note rather than letting it look covered.
+### 4.3 D-5 · Four prototype-parity gaps — **ALL FOUR FIXED, and now pinned**
 
-### 4.3 D-5 · Four prototype-parity gaps — **P2**
+**Fixed in `5ab76ebd` and `1c61b5e1`. Verified by this run — and the fix
+commits changed no DOM test at all, so until now each fix had no assertion of
+its own. A parity fix with no test is a parity gap again after the next
+refactor, so each is pinned here and each was watched going RED against
+`30660e28` first.**
+
+| Gap | Where it is now proved | Fails without the fix? |
+|---|---|---|
+| **D-5(a)** the seat tray never opened the mini profile | `scripts/check_positions_tree.js`, **404 → 407 checks** — every name in the tray is a `pos-name-link` button carrying `data-pos-who`, and it is the **same markup** the table uses so the one delegated handler serves all three surfaces | **yes — 3 of 3 red** on `30660e28` ("0 of 1" names found) |
+| **D-5(b)** J4 did not exist | **Driven in Chromium**: J3's Next opens J4, the screen says what the picture is for and that it can be skipped, all three controls ≥ 44 px and ≥ 16 px text, Skip sends nothing, a chosen picture goes up under `__photo__` with the token in the body, J5's summary names it, and with no document types asked for J3 is skipped and J4 is still reached. §5.3. Server side: `test_joiner_078.TestTheJoinersOwnPhotograph` | yes — the screen did not exist |
+| **D-5(c)** My Profile had three cards, not four | `portal_faces_078_test.js` — the card is inside `#panel-my-profile`, **not** inside `#panel-home`, and the four cards are in the drawn order picture, details, documents, password. **This also unblocks AC-20**, which the first run had to list as blocked: with nothing filling it the card is hidden, not an empty heading | **yes — 4 red** on `30660e28` |
+| **D-5(d)** the enlarged photo never closed when the pointer left | `portal_faces_078_test.js` — and the 260 ms grace period is **measured, not described**: still open 120 ms after the pointer leaves, closed by ~380 ms, cancelled the instant the pointer is back on the picture, a click pins it, a pinned picture survives the pointer leaving, and a second click closes it so touch is unchanged. Focus does **not** move on a pointer-leave close (AC-60) | **yes — 4 red** on `30660e28` |
+
+**The engineer's own number, checked.** The 260 ms grace exists because of
+18 px of head padding between the photograph and the enlargement — read off the
+CSS, never measured. **Measured now, in Chromium against the real stylesheet:
+the head's `padding-bottom` is `18px` and the vertical gap between the bottom of
+the photo and the top of `.mpf-big` is `26 px`.** So the reason for the grace
+period is real; closing on the first `mouseout` would have closed the picture as
+somebody reached for it. **The length of 260 ms is still a judgement**, not a
+measurement of how a hand moves - but it is now pinned by a test, so it cannot
+drift silently. H-6 keeps the question of whether it *feels* right.
+
+`portal_faces_078_test.js`: **116 → 134 checks, 0 failed.** `run_dom_tests.js`:
+**20 run, 0 not run, 0 failed.**
+
+
 
 Parity matters more than usual here: the standing rule is that every feature in
 the approved prototype is built exactly as drawn, and any difference needs
@@ -587,7 +664,15 @@ to P2 than it looks.**
 Touch users are fine: the avatar lives in the drawer's fixed head, above the
 enlargement, so a second tap still reaches it.
 
-### 4.4 D-6 · The picker's footer order is reversed on a laptop — **P3**
+### 4.4 D-6 · The picker's footer order — **FIXED and pinned**
+
+Fixed in `1c61b5e1`. The DOM order is now **Preview, Cancel, OK**, with the
+phone lifting OK to the top through one `order` rule rather than a second copy
+of the markup. Pinned in `portal_faces_078_test.js` by reading the footer's
+children in document order, and it **fails on `30660e28`** with
+`["ok","preview","cancel"]`.
+
+
 
 `01b` line 604: *"Laptop: Preview on the left, then Cancel, then **OK**."*
 
@@ -598,7 +683,15 @@ saving action sits furthest left and Cancel sits where OK was drawn.
 
 The phone layout is correct: `flex-direction:column` puts OK first, as designed.
 
-### 4.5 D-7 · Dead work on the most-attacked page in the product — **P3**
+### 4.5 D-7 · Dead work on the most-attacked page — **FIXED**
+
+Fixed in `5ab76ebd`: `context.joiner_on` is gone, and `test_joiner_078` asserts
+it appears neither in the context nor in the template. Checked independently by
+grep across every `.py` and `.html` in the app: the only occurrences left are
+the comment that says why it is absent, and the two assertions. **One settings
+read removed from every anonymous hit of the public page.**
+
+
 
 `www/joiner.py:44-52` computes `context.joiner_on` — including a call to
 `form_is_on()`, which reads a setting — and comments that it is *"Used only to
@@ -617,6 +710,59 @@ changes nothing. Delete it, or wire it up.
   (only a/b/c/d), and no AC-144…151. The "151 criteria" count is 143 base ids
   plus 9 suffixed ones minus the missing AC-131.
 - **AC-101, AC-112 and AC-125 are wrong as worded.** See §6.
+
+---
+
+### 4.7 D-9, D-10, D-11 · Three things this re-run found
+
+**D-9 · A hollow half in an existing security test — P2, and it is not this
+slice's.** `test_endpoint_guards_045.py:82` asserts
+`assertFalse(getattr(fn, "allow_guest", False))` for every Wave 4 endpoint.
+**That assertion can never fail.** `frappe.whitelist()` sets no `allow_guest`
+attribute on the function at all — it adds the function to a module-level set,
+`frappe.guest_methods` (`frappe/__init__.py:468`) — so the `getattr` default is
+what is being asserted, for every endpoint, forever. The test's **other** half,
+which calls each endpoint as Guest, is real and does the work, so the module
+still has teeth; but the half that claims to check **the declaration** proves
+nothing. The fix is one line: test membership of `frappe.guest_methods`.
+**I have not changed that file** — it belongs to slice 045 and the whole
+Wave 4 set would want re-running. Raised for a ticket.
+
+**I used the right registry in my own new test.** AC-126 had no test at all
+(the first run listed it as a gap, and the claim "no fourth public surface"
+lived only in a docstring). `test_joiner_078.
+TestTheJoinersOwnPhotograph.test_the_guest_surface_is_still_exactly_three_endpoints`
+now enumerates `frappe.guest_methods` and asserts the joiner's public surface
+is **exactly** `open_invite`, `submit_invite`, `upload_invite_file`, and that
+each is **POST only**. **AC-126 is closed.**
+
+**D-10 · One error on the first-ever run against a bare site — P3, not
+reproduced.** The very first test run on `test078f`, when the site held zero
+companies and every fixture was being created for the first time, ended
+`Ran 9 tests … FAILED (errors=1)` with
+`PermissionError: You cannot open that document.` — which is
+`employee_documents_read._refuse`, raised where a read was expected to
+**succeed**. **Two further runs of the same module on the same site passed 9 of
+9**, including one deliberately run cold after its own fixture rows were
+dropped, and the module passes in the full suite. So the condition is "the
+first run on a site with no ERPNext master data at all", which I could not
+reproduce without building a third site.
+
+**Said plainly: I do not know which test it was**, because I read only the tail
+of that output. What I can say is where it came from — that message is reached
+by a missing row, an unticked type or the plan being off, never by the scope
+guard — and that **the same dependency exists in the pre-existing
+`test_employee_documents_078`**, which opens a document as the same reader. So
+if this is real it is not confined to my new file. **CI builds a bare site for
+every run**, which makes it CI's to show. Added to **ALV-268**.
+
+**D-11 · A photograph alone counts as "something sent" — P4, product
+question.** `_has_a_document` counts any `File` on the submission row, and
+J4's picture is one, so a joiner who uploads a photograph and types nothing
+passes the empty-submission check. **The browser and the server agree**, so
+there is no inconsistency to fix. But AC-110c's words are "one field with a
+value, or one document", and the photograph is not one of the types HR ticked.
+Worth one line of Surbhi's time, not a code change on anybody's own authority.
 
 ---
 
@@ -709,6 +855,33 @@ passed. **They are not reported as defects**, because they were not.
 If `frappe.local.response_headers` is ever absent, **all three security headers
 vanish silently**. The meta tags survive; the headers do not. Worth one line in
 the security review.
+
+**And the re-run, with J4 in it (31 Oct, evening).** The first run's harness
+was written against a page with **no J4**, so it did not cover the new screen
+at all. The page was re-rendered and re-driven at head `d3696e82`, served over
+HTTP so the token still arrives on the address fragment, with the three
+endpoints stubbed to the contract in `joiner_public.py`.
+
+**37 assertions, 0 failures.** What is now proved by a render:
+
+| Area | Proved |
+|---|---|
+| **J4 exists and is reachable** | J3's **Next** opens **J4**, not the check screen. With **no document types asked for**, J3 is skipped and **J4 is still reached** - the picture is the joiner's, not something HR ticked |
+| **AC-108a** | The screen says what the picture is for ("organisation chart"), that it is used for nothing else, and that it can be skipped |
+| **AC-108b** | **Skip this** goes on to J5, sends **nothing** to the server, and J5's summary says nothing about a photo that was skipped |
+| **D-5(b)** | A chosen picture makes **one** upload call, under the server's own reserved name **`__photo__`**, with the token in the **body** and neither the token nor the type in the URL; the screen says it was sent and J5's summary names it |
+| **D-3 / AC-110a** | An empty **Send** leaves the joiner **on J5**, reads **the server's own sentence**, and makes **no `submit_invite` request at all** - so the link cannot be burnt by a stray tap. One filled field then sends, reaches J6, and the payload carries only the seven allow-listed names |
+| a11y | All three J4 controls are ≥ 44 px high and ≥ 16 px text; at 390 px the screen does not scroll sideways and the controls are full width |
+| **OPS-44** | J4's markup added **nothing** that loads from another host - zero external `src`/`href` after boot |
+| Reliability | **No uncaught error and no console error** on any of the five paths driven |
+
+**One behaviour recorded rather than judged.** A joiner who sends **only a
+photograph** and types nothing passes the empty-submission check - on the
+browser **and** on the server, because `_has_a_document` counts any `File` on
+the row and the photo is one. The two layers agree, so this is not an
+inconsistency. Whether a photograph alone *should* count is a product question;
+AC-110c says "one field with a value, or one document", and the photograph is
+not one of the types HR ticked. **Raised as D-11, P4.**
 
 ### 5.4 The Frappe fork patch — D1 and T5, both much smaller now
 
@@ -850,12 +1023,24 @@ Four claims that matter for the security review, each verified against
 | No `has_permission` hook, no `permission_query_conditions` | **Yes — none added.** Which matters, because `has_permission` on a child table is always False, and `Employee Document` is a child table (ALV-256). The guard is on the parent, as it must be |
 | The joiner's page does not trip the "website pages post to `/`" trap | **Yes, it is clear.** `joiner.html:165` sets `var API = "/api/method/alvoraa_portal.joiner_public."` — a real API path, not a website-page POST to `/` carrying `cmd`. A path-based gate can see these calls. Worth recording, because that trap has bitten this product before |
 
-**One gap this confirms (AC-126).** `test_endpoint_guards_045.py` asserts that
-**slice 045's** endpoints are *not* `allow_guest`. It is a deny-list for that
-slice, so it does **not** enumerate the new ones. **Nothing anywhere asserts
-that the three new `allow_guest` endpoints are the only three**, which is what
-AC-126 asked for. A future fourth would be added in silence. **P2 — and it is a
-cheap test to write.**
+**That gap (AC-126) is now CLOSED, and closing it uncovered D-9.**
+`test_joiner_078.…test_the_guest_surface_is_still_exactly_three_endpoints`
+enumerates the module against **`frappe.guest_methods`** and asserts the
+joiner's public surface is exactly `open_invite`, `submit_invite`,
+`upload_invite_file`, each **POST only**. A fourth can no longer be added in
+silence.
+
+**Re-checked on the new head (`d3696e82`), not carried over:** the guest
+endpoint count is **still exactly three**. J4 reuses `upload_invite_file`
+under the reserved type name `__photo__`, so the biggest addition in the
+defect-fix round added **no new public surface at all** — which was its whole
+design and is now asserted rather than described.
+
+**And writing that test found D-9.** `test_endpoint_guards_045.py:82` reads
+`getattr(fn, "allow_guest", False)`, and **Frappe sets no such attribute** —
+`frappe.whitelist()` adds the function to the module-level set
+`frappe.guest_methods` (`frappe/__init__.py:468`). So that assertion is hollow:
+it asserts a default, for every endpoint, and can never fail. §4.7, **P2**.
 
 ### 7.4 Personal data in logs — checked by reading every line
 
@@ -974,7 +1159,7 @@ reader needs:
 | AC | What it wanted | Why there is no test | Now? |
 |---|---|---|---|
 | AC-17a, AC-17b | The password card's wording; landing back on the portal | not written | gap |
-| **AC-20** | Documents card absent when the plan is off | **the card is not on My Profile at all** — D-5(c) | **blocked by a parity gap** |
+| ~~AC-20~~ | Documents card absent when the plan is off | the card was not on My Profile at all | **CLOSED.** D-5(c) is fixed and `portal_faces_078_test.js` asserts the card is on My profile, in the drawn order, and **hidden** when nothing fills it |
 | AC-34 | Count faces by hand on dev | release-stage, on dev | N-4 |
 | AC-37 | The Organisation page's ⚠ DECISION D choice | it is a decision row, not behaviour | n/a |
 | **AC-38, AC-40** | `@media print` strips faces and the drawer | **CSS rules with no assertion.** The notes list these as satisfied; they are not proved | gap |
@@ -987,7 +1172,7 @@ reader needs:
 | AC-117 | The J-E2 wording on a failed upload | built (`joiner.html:355`), untested | still a gap — my stub never failed an upload |
 | AC-118, AC-119 | The retention precondition | **superseded** — PRIV-7's gate was removed by decision | n/a |
 | **AC-121** | A limit refusal carries a retry time | `retry_after` does not exist in the code | **real gap, SEC-10** |
-| AC-126 | A registry test enumerating the new `allow_guest` endpoints | `test_endpoint_guards_045.py` covers only the 045 set; the three new guest endpoints are unenumerated | gap |
+| ~~AC-126~~ | A registry test enumerating the new `allow_guest` endpoints | was a gap | **CLOSED.** `test_joiner_078.…test_the_guest_surface_is_still_exactly_three_endpoints` enumerates `frappe.guest_methods` — exactly three, all POST only. And see **D-9**: the 045 test's own `allow_guest` assertion is hollow |
 | **AC-132** | The public page's headers and meta | no test fetched the page | **meta tags and asset isolation now proved** (§5.3); **the HTTP headers are still unobserved** (N-7) |
 | AC-133 | Dark-theme sweep | no tooling | N-6 |
 | AC-135, AC-139 | Files-tree size per release; a pre-onboarding tenant | release / environment | N-4 |
@@ -1053,11 +1238,15 @@ report contains a real person's details.
 | H-7 | **Hindi** — there is no Hindi file in this repository and the joiner's page is not wrapped in `drT()`. AC-141/142/143 cannot be met here (N-3) | Product | decide: defer, or do the site-level import |
 | H-8 | **Read the joiner's page as a joiner would**, on a real phone, on a poor connection | UX | before any tenant switches it on |
 | H-9 | **Confirm the three security headers** really reach the browser on a served site — they are set inside a silent `except` (N-7) | Security | before release |
-| H-10 | **Decide D-1**: is a joiner's submission tenant-side or control-plane? | Security / Privacy | **blocks** |
+| ~~H-10~~ | ~~Decide D-1~~ | **DONE** — Surbhi decided it on 31 Oct 2026: tenant-side | closed |
 | H-11 | **Restore drill** with `--with-files` on dev — OPS-46 | DevOps | before release |
-| **H-12** | **Re-run the `alvoraa_portal` suite cleanly to the end.** Batch 3 was terminated part-way and I had a `bench execute` running against the same site at the time. Give the container room (the host had 310 MB free) and touch nothing else while it runs. It must also settle `test_attendance_correction::test_switched_off_refuses_in_plain_words` | Test | **before release** |
-| **H-14** | **Judge the `hrms` suite on CI, not locally.** It ran zero tests here because ERPNext's bootstrap cannot build master data on `test078`. CI builds a fresh bench, so it can. **`test_company_scope_194.py` is the one that matters** — it is the multi-company test over the two hrms files this slice changed | DevOps / Test | **before release** |
-| **H-13** | **Build the site's assets** (`bench build`, with approval) before judging any email test on a throwaway site, or accept that 8 of the 11 failures seen here are noise. `sites/assets` does not exist on `hrlocal-078` | DevOps | whenever that container is reused |
+| **H-15** | **Fix D-9** — `test_endpoint_guards_045.py:82`'s `allow_guest` assertion can never fail. One line, then re-run the whole Wave 4 set | Security / Test | before release |
+| **H-16** | **Decide D-11** — should a photograph alone count as "something sent" on the joiner's form? One line of Surbhi's time | Surbhi | before any tenant switches the form on |
+| **H-17** | **Watch for D-10 on CI** — one unexplained error on a bare site's first run, not reproduced. CI builds a bare site every push, so CI is where it shows. On **ALV-268** | Test | next CI run |
+| **H-18** | **The 260 ms grace period before the enlarged photo closes** is now pinned by a test, and the 26 px gap that makes it necessary is measured — but whether a quarter of a second *feels* right to a hand is a human judgement | UX | with H-6 |
+| ~~H-12~~ | ~~Re-run the `alvoraa_portal` suite cleanly to the end~~ | **DONE in this run** — a fresh site, one serial pass, nothing else touching it, every batch reported in §2.2 | closed |
+| **H-14** | **The `hrms` suite** — see §2.6 for exactly how far a fresh site got. **Note: CI never runs `run-tests --app hrms` either.** `ci.yml` builds a separate `hrms_test_site` and runs **six named doctypes** on it, none of them `Alvoraa Position`. So **nothing in CI runs `test_company_scope_194.py`**, which is the multi-company test over the hrms files this slice changed. That is a gap in CI, not only in my run | DevOps / Test | **before release** |
+| **H-13** | **Build the site's assets** (`bench build`, with approval) before judging any email test on a throwaway site. See §2.2 for how the email tests behaved on a freshly built site | DevOps | whenever that container is reused |
 
 ---
 
@@ -1103,7 +1292,7 @@ command was run, and no setting was changed on any shared site.
 
 | Label | Items |
 |---|---|
-| **Dangerous debt — escalate** | **D-1** — an unclassified DocType means an unmade tenancy decision about a non-employee's personal data. **D-3** — irreversible for the person it happens to |
+| **Dangerous debt — escalate** | **D-9** — a hollow assertion in a security test, which reads as a check and is not one (see below). *D-1 and D-3 were on this row in the first run; both are fixed and verified.* |
 | **Temporary debt — what removes it** | **N-1** one browser run against a served chart · **N-2** one real image build · **SEC-10/SEC-11** four small tests · **SEC-9's purge path** one test · **AC-126** one registry test |
 | **Intentional trade-off** | The clear-text token window (Surbhi's, 31 Oct) · a used link indistinguishable from an unknown one · `position_table` at 3 statements not 2 · **`thumbnails_for`'s `ignore_permissions` — I checked this one and it is sound** (see below) · the shared `#emp-drawer` |
 
@@ -1129,12 +1318,22 @@ handed to every chart reader, so it is the one worth pinning. **P4.**
 | **Acceptable simplification** | `?seat=` instead of a route · the Organisation page capping at three names with no tray · HR's joiner screen being the Desk form · the erase leaving a shell with no personal data |
 | **Test debt (P4)** | SEC-13's stale *"four cases"* message · `test_our_own_row_never_holds_the_key` keying partly on field **names** · the document fixture setting a child field with `db.set_value` rather than the way the app writes it |
 
-**No hollow tests found.** I went looking for tests that pass whatever the code
-does — the usual shapes are a `frappe.get_all` standing in for `get_list`, a
-string test matching its own comment, and an assertion with no teeth. The
-engineer had already found and fixed all three of those in their own suite and
-said so. The tests I read assert real behaviour, and several of them caught real
-bugs during the build.
+**⚠ One hollow assertion found, and it corrects what the first run said
+here.** The first run wrote "No hollow tests found". That was wrong, and the
+re-run found it: `test_endpoint_guards_045.py:82`'s
+`assertFalse(getattr(fn, "allow_guest", False))` can never fail, because
+`frappe.whitelist()` sets no such attribute (**D-9**). It is slice 045's, not
+this slice's, and the module's other half does real work — but a hollow
+assertion is always **dangerous debt**, because it reads as a check and is not
+one. Raised for a ticket, with a one-line fix.
+
+Everything else I read in this slice's own suite asserts real behaviour, and
+several of those tests caught real bugs during the build. The three shapes I
+went looking for — a `frappe.get_all` standing in for `get_list`, a string test
+matching its own comment, and an assertion with no teeth — the engineer had
+already found and fixed in their own suite and said so. I also checked **my
+own** new work for the same fault: one of the three D-5(a) checks would have
+passed on an empty list, and it was tightened before it was committed.
 
 ---
 
@@ -1143,43 +1342,50 @@ bugs during the build.
 Read back once, asking only: **what can I delete and still meet the
 requirement?**
 
-**Removed:**
+**Removed from this re-run:**
 
-1. **A 151-row AC table.** It would have been three pages restating the
-   subagent's inventory. §10 keeps only the ACs with **no** test, which is the
-   only part a reader acts on, plus the count.
-2. **A second baseline test run** against `origin/dev` to attribute the
-   remaining failures. D-1 and D-2 are **proved by construction** — the DocType
-   is new and classified nowhere; the orphan endpoint is new and unreadable — so
-   a baseline would have cost an hour and proved nothing more. The other nine
-   were attributed by **reproducing their root cause directly** instead, which
-   was cheaper and stronger.
-3. **Chasing ERPNext's test bootstrap any further.** After the fiscal-year
-   clash came a missing Item Group root, and behind that would have been more.
-   Rebuilding ERPNext master data on a throwaway would have been me reshaping
-   the site rather than testing the branch — and CI already builds the fresh
-   site that makes it work. I stopped, restored what I had changed, and wrote
-   it down.
-4. **Three "failures" from my first browser run.** They were my harness, not the
-   product. I fixed the harness and report the corrected result, rather than
-   listing them as defects with a footnote.
-5. **A per-OPS 53-row table.** §8 groups them by what a reader does about them.
-6. **My own re-measurement of the NFR numbers.** The gate that matters asserts
-   *flatness* (20 ids cost the same as 400), and it passes; re-timing a wall
-   clock on a laptop would have been a worse number than the engineer's, not a
-   better one.
+1. **A second fresh site to reproduce D-10.** One error on the first-ever run
+   against a bare site, not reproduced in two further runs. A third
+   `bench new-site` would have cost twenty minutes to chase a condition **CI
+   rebuilds on every push anyway**. Reported as what it is - an unexplained
+   one-off with the message traced to three possible causes - and added to
+   ALV-268 rather than hidden or over-investigated.
+2. **A new DOM test file for the parity fixes.** Four fixes, four homes that
+   already exist: `check_positions_tree.js` for the tray and
+   `portal_faces_078_test.js` for the other three. A fifth file would have
+   needed `EXPECTED_BROWSER_TESTS` raised and a new pattern maintained. **No
+   new test framework, runner or helper library was added.**
+3. **Re-proving what the first run proved.** The Frappe patch against v16.35.0
+   (§5.4), the GPS PNG (§5.1), SEC-13's byte-identical answer (§5.2) and the
+   SEC/PRIV walk (§7) are **carried over unchanged** - no commit since touched
+   them. Each says so in its own first line. Re-running them would have been
+   theatre.
+4. **Fixing D-9 myself.** It is slice 045's file and its whole Wave 4 set would
+   want re-running. One line of someone else's code, changed by me at the end of
+   a release run, is how a green suite stops meaning anything. **Raised, not
+   touched.**
+5. **Three "failures" that were my own harnesses.** `#j5-sum` for
+   `#j5-summary`, a `values` payload that is a JSON **string** not an object,
+   and two key comparisons against a `set` where the reader returns a `list`.
+   All four were mine. **Corrected and not reported as defects**, because they
+   were not.
+6. **Re-measuring the NFR numbers.** Unchanged reasoning from the first run:
+   the gate that matters asserts *flatness*, and it passes.
 
-**Not removed, and why:** §5's four subsections look like a lot of space for
-things that *passed*. They stay because each one converts a **"could not
-check"** in the engineer's notes into a checked result — which is the whole
-point of this report, and the reader cannot tell the difference without the
-evidence.
+**Not removed, and why:** the CXO tests in §4.2 look like they prove a
+capability nobody asked to be tested. They stay because without them the five
+refusals beside them could all be passing on unreachable data - they are what
+makes the other five mean something.
 
-**Tests I wrote:** none that live in the repository. My browser work is a
-harness in the scratchpad, not committed — deliberately, because
-`browser_check_positions.js` and the DOM suite are where this repo keeps browser
-checks, and adding a third pattern would be a cost. **If the team wants the
-joiner page covered in CI** — and SEC-15, OPS-44 and AC-132 say it should be —
-the right home is a `joiner_078_test.js` in the existing DOM suite, which would
-need `EXPECTED_BROWSER_TESTS` raised to 21 in the same commit, per OPS-45. That
-is a recommendation, not a thing I did.
+**Tests I wrote, and they ARE in the repository this time** (commit
+`c5494a29`): `test_company_scope_078.py` (9), three checks in
+`check_positions_tree.js`, eighteen in `portal_faces_078_test.js`, and one
+registry test in `test_joiner_078.py`. **31 assertions, every one of them
+tied to a named defect or AC.** The two browser harnesses are still scratchpad
+only, for the same reason as last time - `browser_check_positions.js` and the
+DOM suite are where this repo keeps browser checks, and a third pattern is a
+cost. **The recommendation stands:** if the team wants the joiner page in CI -
+and SEC-15, OPS-44 and AC-132 say it should be - the home is a
+`joiner_078_test.js` in the existing DOM suite, with `EXPECTED_BROWSER_TESTS`
+raised to 21 in the same commit per OPS-45. My harness in the scratchpad is
+the content for it.

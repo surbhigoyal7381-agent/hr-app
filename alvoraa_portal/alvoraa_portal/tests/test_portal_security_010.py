@@ -896,14 +896,23 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# clear-text key short-lived; and the File listing behind Export, which
 		# reads names and dates and no bytes. Each runs after _require_hr().
 		("alvoraa_portal", "joiner_invite.py"): 4,
-		# joiner_public.py: FOUR, all on a GUEST path that has no session at
+		# joiner_public.py: FIVE, all on a GUEST path that has no session at
 		# all - which is the whole point of the feature. Each runs only after
 		# `_open()` has validated the token through Frappe's own validator, and
 		# there is no submission argument anywhere in that module, so there is
 		# nothing a caller can post that reaches a row other than their own: the
 		# submission save, the uploaded File insert, and the two reads that find
 		# what the token is bound to.
-		("alvoraa_portal", "joiner_public.py"): 4,
+		#
+		# The fifth arrived with D-3 (ALV-260): `_has_a_document` reads the
+		# File rows attached to the token's own submission, to answer "did this
+		# joiner send us anything at all" before the form is accepted. A guest
+		# holds no File permission whatsoever, and the read is filtered to the
+		# submission `_open()` already bound the token to, so it can see
+		# nothing else. Named here rather than counted, because an unargued
+		# bypass slipping in is exactly what this ceiling exists to catch - and
+		# it caught this one.
+		("alvoraa_portal", "joiner_public.py"): 5,
 		# joiner_housekeeping.py: SIX. The daily job runs with no session: the
 		# reads that find what is due, the status save that expires a dead link,
 		# and the Notification Log row that warns HR. It deletes nothing a user

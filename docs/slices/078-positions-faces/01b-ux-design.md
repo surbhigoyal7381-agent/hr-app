@@ -11,8 +11,8 @@ inputs: [ux-learnings.md, product-context.md §1 §2 §5 §6, nfr-budget.md §2 
   portal.js, positions.html, home.html, org-settings.html, drawers.html, settings.py, register.py,
   employee_field_rights.py, auth.py, employee_document_type.json,
   PPJ local copy — read-only queries AND browser capture, 31 Oct 2026]
-prototype: C:/Surbhi-Git/hrlocal-data/prototypes/078-positions-faces/prototype-v4.html  (v1-v3 kept beside it; not yet published - see section 12)
-revision: v4, 31 Oct 2026 - after Surbhi asked for the photo to enlarge on the mini profile. v4 changes 5, 6.3.1, 7, 9, 11, 12 and 16. DECISION 10 and 11 are still open.
+prototype: C:/Surbhi-Git/hrlocal-data/prototypes/078-positions-faces/prototype-v5.html  (v1-v4 kept beside it; not yet published - see sections 12 and 17.11)
+revision: v5, 31 Oct 2026 - after Surbhi decided HR may mark fields and document types required. v5 adds section 17, which supersedes 6.5.3 (the list of lists), 6.5.5 and 6.6's fixed six screens. DECISIONS 10, 11, 14 and 15 are open; 14 is the one to answer first.
 screens: C:/Surbhi-Git/hrlocal-data/ux-review/2026-10-31/
 ---
 
@@ -1188,3 +1188,353 @@ Read back once asking only *what can I remove and still meet the requirement?*
 **Kept, with the measured reason:** the **48 px copy made once at upload** (§5 measure 4).
 165 full-size originals against a 2.5 s / 3G budget is two orders of magnitude out, which is
 exactly the kind of number `no-over-engineering.md` §5 asks for before an extra is allowed.
+
+---
+
+## 17 · v5, 31 Oct 2026 — "must fill in", one list ticked twice, and a document that never walls anybody
+
+**What this supersedes.** §6.5.3's list of four (there are now five), §6.5.5 (the two ways of
+choosing the joiner's fields — settled), and §6.6's fixed six screens. §6.5.1, §6.5.2,
+§6.5.4 and §6.5.6 stand: the button → dialog → tags pattern you approved is what all of this
+is built inside, and nothing here replaces it. §5, §6.1–§6.4 and §8–§10 are untouched.
+
+**The headline.** HR can now mark a detail or a document **must fill in**. It is a second
+tick inside the picker you already approved, and it only exists on a row that is already
+ticked, so an impossible setting cannot be made and nothing is greyed out. **The part worth
+your time is not the tick. It is the two places a required thing can trap somebody** — an
+employee who cannot save their own record (§17.5, ⚠ DECISION 14, the one I want you to look
+at first) and a joiner standing on a factory floor whose PAN card is at home (§17.6, now
+settled as a requirement).
+
+### 17.1 Three corrections arrived while I was drawing. All three made it smaller
+
+| What I started with | What you decided | Effect on the design |
+|---|---|---|
+| Three pickers get a required tick, including one for the joiner's fields | There was no joiner field picker — the seven were a closed constant | No control built for a list that did not exist |
+| The joiner form asks **the My Profile list**, so a tick could put PAN on a public page | **One candidate list, ticked twice** — once for My profile, once for the joiner form. The joiner's **ships empty** | The accident I was designing against **cannot happen**. Two selections, two warnings, no "careful, this also goes public" |
+| Design for a long, possibly statutory joiner form | **No official number is ever typed on the public form.** A photograph of the card is enough | The sensitive screen, the extra confirm and the heavy pagination scheme all deleted |
+
+**Three-persona check.** **Employee:** meets a required field on My profile — §17.5.
+**HR Manager:** can insist, and can see at a glance what is compulsory and what is public.
+**CXO:** nothing changes.
+
+### 17.2 The control: a second tick that only exists on a ticked row
+
+**Rung 3 — a second state on a control that is already there.** No new component.
+
+```
+[✓] Full name                                      ← the tick you already approved
+      asked on a public page, before they work here  ← who sees it: a fact, not a control
+      [✓] Must fill in                               ← appears only once the row is ticked
+```
+
+- **A detail cannot be compulsory unless it is asked for**, so the required tick is not
+  rendered until the row is ticked. The impossible combination cannot be made, and nothing
+  is greyed out — a greyed control is on our anti-pattern list three times.
+- Unticking a row takes its "must fill in" with it, and the dialog says so in one line.
+- **Measured 44 px on a phone** (390, 360 and 195 px wide), `aria-label="Must fill in — Full
+  name"` so a screen-reader user never hears "Must fill in" six times with nothing attached.
+
+**Rejected:** *two always-visible columns with "required" auto-ticking "shown"* — one tap
+cheaper, but it doubles the furniture on 18 document rows and on the Positions picker, where
+required has no meaning at all. *A three-way segmented control* — a new component for a
+two-state problem. *Tapping the tag on the main screen* — the main screen is the answer, not
+the editor, and that distinction is the whole point of the pattern you approved.
+
+### 17.3 Where a required tick bites — said on the screen, list by list
+
+| List | Feeds | What "must fill in" does there |
+|---|---|---|
+| **What an employee may change** | My profile (signed in) | ⚠ DECISION 14 — §17.5 |
+| **What a new joiner is asked for** | The public form, `/pre-onboarding` | Stops the form being sent with it blank. Named in the refusal; link keeps working |
+| **Document types** | A person's Positions card **and** the joiner's uploads | **The joiner form only, and it never stops them sending** — §17.6. On Positions the file is only displayed, so there is nobody to require anything of |
+| **Positions fields** | The Positions card | **Nothing.** No tick exists, and the dialog says why |
+
+The fourth row matters: *"Nothing here can be made compulsory. This page only shows what is
+already on the record, so there is nobody to ask."* Hide what a person cannot use, and say
+why once.
+
+### 17.4 The settings card: five lists, and the public one looks public
+
+**One candidate list of details, ticked twice**, is why the card now has five sections rather
+than four. It costs one more card and buys the thing that was most likely to go wrong: an HR
+person helping employees fix their own details **cannot** put a field on a public page as a
+side effect, because that is a different tick, in a different dialog, with a different
+warning.
+
+**Tags, grouped by name rather than marked by symbol.** The chips stay; they gain headings:
+
+> **MUST FILL IN (3)** `Full name` `Mobile number` `Emergency contact phone`
+> **THEY CAN LEAVE THESE BLANK (4)** `Personal email` `Current address` `Emergency contact name` `Relation`
+> **HR KEEPS THESE — SHOWN TO THE EMPLOYEE, NOT EDITABLE (2)** `Bank account number` `IFSC code`
+
+Words, not colour and not an asterisk; the count is in the heading, so no extra sentence is
+needed; and it reads the same at three chosen and at twelve. On the document list, which is
+rows rather than chips, required is a **`Must answer` chip in the row** — the row already
+carries chips, so nothing new is introduced. Two shapes, because the two lists already had
+two shapes.
+
+**The public list says so, in red, above its tags:**
+
+> **This list is public.** Whatever you tick is asked of anybody holding the link, including
+> somebody it was forwarded to. Ask only what you need before their first day.
+> [ See what a joiner is asked ]
+
+and, immediately under it, the sentence that closes the statutory question for good:
+
+> **Official numbers are not on this list at all.** PAN, Aadhaar, provident fund and bank
+> details can never be typed into the public form. Where you need one, ask for a
+> **photograph of the card** in the documents list below — the number is never read as data.
+
+**The empty state is the shipped state, and it reads as a fact, not a gap.** The joiner list
+starts empty:
+
+> Nothing is asked. A joiner who opens the link is asked for documents and a photograph only.
+> That is the starting setting, and it is the safe one.
+
+No "add your first", no empty-state picture, no nudge. It is a prototype state of its own
+("The joiner list on day one — nothing ticked") so you can see the day-one screen.
+
+**One small thing to settle.** You asked that the joiner's **name ship ticked as required**,
+and you have since asked that the list **ship empty**. I have taken the empty list as the
+newer answer, and reconciled the two like this: *the saved list is empty; the picker opens
+with Full name pre-ticked and marked must-fill-in*, so an HR person who opens it and presses
+OK gets a safe, sensible minimum, and nothing is public until somebody acts. One line to
+change if you meant the other thing.
+
+**I removed a per-row confirm in v3 as a nag; I briefly added one back when the lists were
+merged, and this decision deleted it again.** With two separate ticks and no statutory field
+on the public form, the standing red block is proportionate and a confirm would be a nag.
+Said out loud so the reversal is visible rather than quiet.
+
+### 17.5 My Profile's refusal — the judgement you asked for
+
+**My recommendation: do not block the save. Save what is valid and keep asking.** Both are
+built so you can click one against the other (`1 · My profile`, the two "Something needed"
+states). ⚠ **DECISION 14** — and this is the one place where a setting can lock an employee
+out of their own record.
+
+The case, from the real record: Nandini has no mobile number, no address and no emergency
+phone on file. HR marks all three must-fill-in. She comes to the page to **change her mobile
+number** — exactly what the page is for.
+
+**(A) Block the save — what you chose.** Drawn as well as it can be drawn: the server's own
+words, everything she typed kept, each missing one named and tappable, the Save button never
+greyed (so pressing it moves focus to the error rather than doing nothing), each field marked
+`Needed`, each refused field with a red 2 px edge **and** a sentence, and a closing line
+naming who can take a field off the list.
+
+> **We could not save your details.** PP Jewellers needs these 3 before anything on this page
+> can be saved: · **Mobile number** · **Current address** · **Emergency contact phone**
+> Everything you typed is still here, and nothing has been saved yet. Fill these in and press
+> Save again.
+> *If you cannot give one of these, ring HR on 0172 450 1180 and ask them to take it off the list.*
+
+**What it costs, plainly.** An employee who cannot supply a required field — no permanent
+address, nobody to name in an emergency — **can never change anything on this page again**.
+Their only way out is a phone call to HR. That is the call this product exists to remove, and
+it is a one-way-rule problem: HR's completeness is bought with the employee's ability to
+correct their own record. **P2, and it is a trap rather than an obstacle however well the
+screen is written.**
+
+**(B) Save what is valid, keep asking — my proposal.** The save goes through. A standing
+amber block at the top names what is still needed, every time she opens the page, and each
+field keeps its `Needed` mark until it is filled.
+
+> **Saved.** Your new mobile number is on your record.
+> **PP Jewellers still needs 3 things from you:** Mobile number, Current address and Emergency
+> contact phone. They are marked **Needed** below. You can change anything else on this page in
+> the meantime — this will keep asking until they are filled in.
+
+**What (B) costs you:** completeness on My profile is chased, not guaranteed, and HR needs a
+list of who is still missing what — which is a report over the same ticked fields, not a new
+screen. **What it buys:** nobody is locked out of their own record, and the support call does
+not happen.
+
+**Blocking still holds where it belongs — the joiner form** — because a joiner is sending
+something once, as a stranger, before anything exists, while an employee is maintaining a
+record they live in. Same word, two situations, and only one of them can take a hostage. I
+would not call (B) weaker enforcement; it is enforcement that cannot trap anybody.
+
+**If you keep (A):** one narrowing removes the worst case for little work — let HR record
+that a particular person genuinely cannot supply a field, and treat it as satisfied for them.
+That is a conversation with the analyst, not a screen, and I would still rather you took (B).
+
+### 17.6 The joiner's refusal, and the document they have not got
+
+**Two things are requirements now, not good manners, and the design is built on both:** the
+refusal is the **server's own words** (the browser decides nothing, so the two can never
+disagree), and **a refused send never burns the link**.
+
+**The centre of the flow: a compulsory document must be *answered*, never *had*.** Every
+compulsory type has **two answers, both one tap, and both send the form**: a photograph now,
+or *"I will bring it on my first day"*. So:
+
+- The documents screen says it before anything goes wrong: *"If you have not got one with
+  you, say so and carry on — **you can still send this form today**."*
+- Choosing the promise shows what it did: a green `You are bringing it on your first day`
+  chip, *"Told PP Jewellers HR. It is on the list on your last screen… You can still send a
+  photograph later on this same link, until 7 November."*, and **the promise button
+  disappears**, because it is the answer already given.
+- What "compulsory" still buys HR: **it cannot be ignored.** Tap neither and the send is
+  refused and names it — and **the refusal offers the promise in place**, so the way out is
+  inside the message.
+- The "Sent" screen repeats it: *"Bring on your first day: your PAN card. You told us you
+  would bring it, and HR has that on their list."*
+
+**Why the rule splits between answers and documents:** a compulsory *answer* is in the
+person's head, so asking is fair. A compulsory *document* is a piece of paper somewhere else
+— a wall there punishes people who fully intend to comply, and it falls hardest on exactly
+the joiner this product is for. HR gets the paper a day later either way, and gets the rest
+of the form today instead of nothing.
+
+**The refusal itself.** On a form of six screens or more, "something is missing" is a maze,
+so every missing item is a **tap, not a hunt** — each line goes to the screen holding that
+answer, with the field marked and focused.
+
+> **We could not send your form. 3 answers are still needed.**
+> · **Full name** — *on About you*
+> · **Emergency contact phone** — *on In an emergency*
+> · **PAN card** — *send a photograph, or say you will bring it on your first day*
+> **Nothing has been sent, and your link still works.** Tap any of them to go straight to it.
+> Everything else you typed is safe on this phone.
+> [ I will bring the PAN card on my first day ]
+
+The refusal is the backstop, not the mechanism: required details carry a `Needed` chip on
+their own screen, and each group screen opens with *"Anything marked **Needed** has to be
+filled in before you can send the form. You can leave the rest blank."* **Next is never
+blocked mid-form** — a joiner may legitimately come back for an answer later, and blocking
+each step turns a six-screen form into six walls.
+
+### 17.7 A form for a list nobody has written yet
+
+HR decides the list, so the screens cannot be drawn in advance. **The rule, and it is the
+whole rule:**
+
+> **One screen per group, in the order the details sit on the record. A group of more than 8
+> questions splits into pages of 8.**
+
+At PP Jewellers' ticks that is *About you · Where you live · In an emergency · Your documents
+· A photograph of you · Check and send* — six steps for seven questions. The prototype also
+draws the heavy case (the state "Many fields — how the form paces them"), where one group has
+split and says so rather than renaming itself.
+
+**The old "1 · 2 · 3 · 4" step line is replaced by a step list.** That line was drawn for
+four fixed steps; at eight it wraps onto three rows on a 360 px phone. A list of named steps
+costs one line each, says how much is left — the question a joiner on a slow phone actually
+has — and does not break as the list grows. "Check and send" is grouped the same way.
+
+**This got smaller on 31 Oct, and the design says so rather than keeping the scaffolding
+quietly.** With no official numbers typed and an empty starting list, the realistic case is a
+handful of ordinary questions. I kept the rule because the list is still HR's — not because
+I expect twenty. **I did not build grouping configuration, a progress bar, or a save-and-
+resume scheme.**
+
+**⚠ DECISION 15, worth seeing now rather than after the build.** If HR ever does tick twenty,
+the honest answer is not more screens — it is letting a joiner **send what they have and come
+back on the same link**. Not built, not drawn beyond the note; say the word and it is a small
+change (the submission stays editable until the link expires) rather than a redesign.
+
+### 17.8 Accessibility, privacy and the states drawn
+
+- **Measured, not eyeballed** (Chrome, 31 Oct 2026; every new state at 1440, 390, 360 and
+  195 px, light and dark): **nothing wider than the app, no sideways scroll, no text under
+  12 px, no button or link under 44 px.** The required sub-row label measures exactly 44 px
+  on a phone.
+- Every refusal is `role="alert"`; every confirmation is `role="status"`; a missing required
+  field carries `aria-required`, and when refused `aria-invalid`, a red 2 px edge **and** a
+  sentence — colour is never the only signal.
+- Escape closes a picker and changes nothing; OK saves, so there is never an unsaved state to
+  lose (§6.5.2 unchanged).
+- **Privacy.** Required raises collection, so it is named where it is set. The joiner list
+  carries a standing "this list is public" block; the document dialog says a compulsory type
+  is asked of every joiner. The card keeps its System Manager-only, versioned,
+  refusal-logged behaviour (078-SEC-5) — **the required tick adds no new permission
+  surface**. HR-only fields are excluded from the public list entirely, and in My profile
+  they are **shown as text, not as a box** that would be refused.
+- **New states drawn:** the required tick on a ticked row · three grouped tag lists · the
+  joiner list on day one, empty · My profile blocked · My profile saved and still asking ·
+  a joiner group screen · the documents screen · the promised document · the refused send
+  with tappable items · the step list at a heavy configuration.
+
+### 17.9 What the business analyst must turn into acceptance criteria (added to §11)
+
+1. A detail or document type **cannot be marked required unless it is ticked**; unticking
+   clears required. The UI makes the invalid state unreachable; the server refuses it anyway.
+2. **The joiner's field selection and My profile's field selection are two settings over one
+   candidate list.** Changing one must not change the other. Negative criterion.
+3. **The joiner's selection ships empty.** A tenant that has never configured it asks for
+   documents and a photograph only.
+4. **No field marked HR-only, and no official-number field (PAN, Aadhaar, UAN, bank), is ever
+   offered on the joiner picker or accepted by the joiner form.** Negative criterion, and the
+   server enforces it whatever is stored.
+5. Required on a **detail** blocks the joiner's send and is named in the refusal. Required on
+   a **document** must be **answered** — a file **or** an explicit "bringing it on my first
+   day" — and **may never block the send on the absence of a file**.
+6. A refused send **does not consume the link** (AC-110b holds) and returns the **server's**
+   list of missing items; the client renders only what it was given.
+7. A refused My profile save keeps every typed value and names every missing field — **or, if
+   DECISION 14 goes to (B), the save succeeds and the page keeps asking.** Mutually
+   exclusive; the analyst must write one, not both.
+8. The joiner form renders **one screen per field group, splitting a group over 8 fields**,
+   and the step list is generated, not hard-coded.
+9. HR sees, per submission, which answer was given for each compulsory document, and the
+   promised ones appear on a day-one list.
+
+### 17.10 Subtract pass — what I deleted on this pass
+
+- **A joiner field picker of its own invention**, then **a merged single list**, then **a
+  per-tick public confirm** — all three were real work that three decisions removed. Deleted
+  rather than kept "in case".
+- **The "our own list vs Frappe's Web Form" toggle and its two prototype states.** The field
+  source is settled; only the build mechanism (DECISION 5) is open, and that is one sentence.
+- **The sensitive-field screen on the joiner form**, with its own explanation of why a PAN is
+  asked for — no statutory field can be typed there any more.
+- **The "HR-only fields went public" state.** Decided; the alternative is not drawn.
+- **The hard version of the compulsory document** (no promise, come back with the card). You
+  settled it the other way, so only one behaviour is drawn.
+- **A "required" badge on every chip.** Two group headings instead, which carry the count.
+- **A progress bar**, and **blocking Next at the end of each group**.
+- **A per-document choice of hard or soft.** One product rule, decided once.
+- **Four primary buttons on the documents screen.** "Take a photo" is first but no longer
+  purple; only **Next** is primary, so the screen has one main action.
+- **The repeated "I will bring it" button after the promise is given.** No button where no
+  action would work.
+
+**Nothing was kept on a "we will need it later" argument.** The only thing I kept against my
+own subtract instinct is the group-splitting rule, and the reason is named in §17.7: the list
+belongs to HR, not to us.
+
+### 17.11 Prototype v5
+
+`C:/Surbhi-Git/hrlocal-data/prototypes/078-positions-faces/prototype-v5.html` — built from
+v4, **with v4's hover-to-enlarge code kept exactly as it is**. Every v4 screen and state still
+works (all 60 screen/state/device combinations render clean). v1–v4 are kept beside it. Not
+published by me — the session that ran me publishes it.
+
+**Four things to look at, in this order:**
+
+1. `1 · My profile` → **Something needed — block the save** against **— save what is valid**.
+   This is ⚠ DECISION 14 and the only place a setting can lock an employee out.
+2. `7 · The joiner's form` → **A document you have not got**, then **Send refused**. The
+   factory-floor case, and the two requirements that must never break.
+3. `6 · Organisation settings` → **The page** — five lists, the red public block, the grouped
+   tags — then **Choosing: what a joiner is asked**.
+4. `6` → **The joiner list on day one — nothing ticked**. What every tenant gets before HR
+   touches anything.
+
+**One prototype, not two.** The extra scope shrank rather than grew, and the settings screen
+and the joiner form are the same decision seen from two ends: what HR ticks *is* what a
+stranger is asked. Splitting them would hide the connection the screen exists to show.
+
+### 17.12 Open items
+
+| Item | Owner | Blocks |
+|---|---|---|
+| ⚠ **DECISION 14** — block the save on My profile, or save what is valid and keep asking. **Look at this first** | Surbhi | The My profile acceptance criteria; they are mutually exclusive |
+| ⚠ **DECISION 15** — may a joiner send part of a long form and come back on the same link? | Surbhi | Nothing today; it gets harder once the form is built |
+| **The joiner picker's starting tick** — list ships empty, picker opens with Full name pre-ticked and required (§17.4). One line either way | Surbhi | The default fixture |
+| ⚠ **COMPLIANCE** — the security engineer is writing the replacement for the privacy cap that the earlier wider list removed. Even with no statutory field typed, **a public page collecting name, address and emergency contact is a DPDP question before it is a design one** | `hrms-security-privacy-engineer`, then Surbhi | Switching the joiner form on at a tenant |
+| The candidate field list in the prototype is **mine, not measured** — 16 rows chosen to show the shapes that matter (ordinary, HR-only, official number). The real list is whatever the Employee doctype and field rights allow. `[ASSUMPTION]` | Analyst, with the engineer | The real counts on the card |
+| Nothing in v5 was seen on the local site — the joiner form does not exist yet. The measurements are of the prototype in Chrome | — | Nothing; the flows are new |
+| Hindi: the new strings are **not** translated. The existing machine drafts cover v4's wording only | Surbhi, or a native reviewer | Showing Hindi for this part |

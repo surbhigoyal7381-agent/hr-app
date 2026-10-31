@@ -708,6 +708,40 @@ class TestTheJoinersOwnPhotograph(_Base):
 		self.assertFalse(
 			frappe.db.exists("Employee Document Type", joiner_public.PHOTO_TYPE))
 
+	def test_the_guest_surface_is_still_exactly_three_endpoints(self):
+		"""**AC-126, which had no test.** The claim in this class's docstring -
+		that J4 added no fourth public surface - was prose. It is the whole
+		reason the photograph travels under a reserved type name through an
+		endpoint that already existed, so it is asserted here by ENUMERATING
+		the module rather than by reading it.
+
+		Named after the obligation: the guest endpoints of the joiner's form
+		must stay enumerable, and every one of them must be POST only.
+
+		Read from **Frappe's own registry**, `frappe.guest_methods`, and not
+		from an attribute on the function. `frappe.whitelist()` sets NO
+		`allow_guest` attribute - it adds the function to a module-level set
+		(`frappe/__init__.py:468`) - so `getattr(fn, "allow_guest", False)` is
+		always False and an assertion written that way can never fail.
+		"""
+		import inspect
+
+		guests = []
+		for name, fn in inspect.getmembers(joiner_public, inspect.isfunction):
+			if fn in frappe.guest_methods:
+				guests.append(name)
+		self.assertEqual(
+			sorted(guests), ["open_invite", "submit_invite", "upload_invite_file"],
+			"The joiner's public surface changed. A new `allow_guest` endpoint "
+			"here is a new unauthenticated write surface on the most attacked "
+			"page in the product (AC-126): %s" % sorted(guests))
+		for name in guests:
+			with self.subTest(endpoint=name):
+				fn = getattr(joiner_public, name)
+				self.assertEqual(
+					list(frappe.allowed_http_methods_for_whitelisted_func[fn]),
+					["POST"], "%s must be POST only" % name)
+
 
 class TestTheJoinersPage(_Base):
 	"""The template itself, which no Python test read before.

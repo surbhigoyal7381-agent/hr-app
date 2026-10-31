@@ -493,6 +493,8 @@ has_permission = {
     # Slice 066 (SEC-4): one gate per record, the same rules as the list above.
     "Grooming Mark": "alvoraa_portal.grooming.mark_has_permission",
     "Grooming Review": "alvoraa_portal.grooming.review_has_permission",
+    # ALV-266: only HR changes someone else's Employee record. See employee_field_rights.py.
+    "Employee": "alvoraa_portal.employee_field_rights.employee_has_permission",
 }
 
 scheduler_events = {

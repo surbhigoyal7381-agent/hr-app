@@ -7,12 +7,20 @@ API - and, once DTC's rule set is on, raise their own leave credit. Frappe's
 field permission levels stop that; this file applies them on every site.
 
 THREE LEVELS
-  0  the employee's own details (phone, address, emergency contact) - as today.
-  2  job, pay settings, approvers, identity, and every Employee field a pay rule
-     set names. HR User, HR Manager and System Manager write; every role that
-     reads Employee also reads these, so no screen loses a field.
+  0  only SELF_EDITABLE: the person's own contact, address, emergency contact,
+     passport, health and CV details (ALV-266).
+  2  everything else that holds a value: job, pay settings, approvers, identity,
+     employment and exit dates, and any field added later. HR User, HR Manager
+     and System Manager write; every role that reads Employee also reads these,
+     so no screen loses a field.
   1  bank, statutory IDs and salary (the 13 PPJ already locked). HR Manager only
      (Surbhi, D2 and D3, 25 Oct 2026): no other role keeps a level-1 row.
+
+AND NOBODY BUT HR CHANGES SOMEONE ELSE'S RECORD (ALV-266). A manager reaches
+their reports through their own User Permission (ALV-249), and Employee Self
+Service writes level 0 - so without `employee_has_permission` below, a manager
+could change a report's phone or passport. It refuses that, out loud, on every
+path that saves the document.
 
 WHY A MIGRATE FUNCTION, NOT A FIXTURE OR A PATCH. A patch never runs on a new
 install (Frappe marks every patch done), so new tenants would ship open. A
@@ -27,7 +35,10 @@ from each field, so it needs no second list.
 
 import frappe
 from frappe import _
+from frappe.core.doctype.version.version import get_diff
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+from frappe.model import display_fieldtypes
+from frappe.model.document import Document
 from frappe.permissions import add_permission, update_permission_property
 
 from hrms.alvoraa_hr_core.access import is_own_record, refuse
@@ -55,6 +66,23 @@ LEVEL_1 = (
 	"salary_currency", "pan_number", "esi_number", "provident_fund_account",
 	"payroll_cost_center", "employee_advance_account",
 )
+
+# The only fields a person changes on their own record (ALV-266, Surbhi, 31 Oct
+# 2026). Every other Employee field that holds a value is put at level 2.
+SELF_EDITABLE = (
+	"cell_number", "personal_email", "prefered_contact_email", "prefered_email", "unsubscribed",
+	"current_address", "current_accommodation_type", "permanent_address",
+	"permanent_accommodation_type", "person_to_be_contacted", "emergency_phone_number", "relation",
+	"passport_number", "date_of_issue", "valid_upto", "place_of_issue", "marital_status",
+	"blood_group", "health_details", "family_background", "bio", "image", "salutation",
+	"education", "external_work_history",
+)
+
+# Fields someone who is not HR may change on ANOTHER person's record they can
+# reach (a manager, for their reports). Empty: nobody may. Add a fieldname here
+# to grant it. Only a SELF_EDITABLE field works - any other is level 2, and Frappe
+# would put it back.
+MANAGER_EDITABLE = ()
 
 LEVEL_2_WRITERS = ("HR User", "HR Manager", "System Manager")
 LEVEL_1_ROLE = "HR Manager"
@@ -112,7 +140,9 @@ def apply():
 def lock_fields():
 	"""Property Setters only, so an HR Manager saving a rule set can run it too."""
 	meta = frappe.get_meta(EMPLOYEE)
-	wanted = dict.fromkeys(LEVEL_2 + rule_set_fields(), 2)
+	wanted = {df.fieldname: 2 for df in meta.fields
+	          if df.fieldtype not in display_fieldtypes and df.fieldname not in SELF_EDITABLE}
+	wanted.update(dict.fromkeys(LEVEL_2 + rule_set_fields(), 2))
 	wanted.update(dict.fromkeys(LEVEL_1, 1))
 	changed = False
 	for fieldname, level in wanted.items():
@@ -226,13 +256,48 @@ def lock_new_custom_field(doc, method=None):
 	is set up - after install - so without this they stay open until the next
 	migrate. Same for a pay field a rule set already names.
 	"""
-	if doc.dt != EMPLOYEE or doc.permlevel:
+	if doc.dt != EMPLOYEE or doc.permlevel or doc.fieldtype in display_fieldtypes:
 		return
-	level = 1 if doc.fieldname in LEVEL_1 else 2 if doc.fieldname in LEVEL_2 + rule_set_fields() else 0
+	# ALV-266: a new field is HR's to write unless it is on SELF_EDITABLE.
+	level = 1 if doc.fieldname in LEVEL_1 else 0 if doc.fieldname in SELF_EDITABLE else 2
 	if level:
 		make_property_setter(EMPLOYEE, doc.fieldname, "permlevel", level, "Int",
 		                     validate_fields_for_doctype=False)
 		frappe.clear_cache(doctype=EMPLOYEE)
+
+
+def employee_has_permission(doc, ptype=None, user=None, debug=False):
+	"""has_permission hook (ALV-266): only HR changes someone else's Employee record.
+
+	Frappe v16 treats anything but True as a denial, so every allowed case
+	returns True. Runs before Frappe quietly puts back fields the caller may not
+	write, so a manager's change to a report's `reports_to` is refused too, not
+	silently undone. An unchanged document (the form asking "may I edit?")
+	gets False, so the form opens read-only - unless MANAGER_EDITABLE grants a
+	field.
+	"""
+	if ptype != "write" or not isinstance(doc, Document) or doc.is_new():
+		return True
+	user = user or frappe.session.user
+	if user == "Administrator" or set(LEVEL_2_WRITERS) & set(frappe.get_roles(user)):
+		return True
+	if is_own_record(doc.name, user):
+		return True  # own record: the field levels decide, as in ALV-215
+
+	diff = get_diff(frappe.get_doc(EMPLOYEE, doc.name), doc)  # None when nothing changed
+	changed = {c[0] for c in diff.changed if (c[1] or None) != (c[2] or None)} if diff else set()
+	changed |= {r[0] for r in diff.added + diff.removed + diff.row_changed} if diff else set()
+	if not changed:
+		return bool(MANAGER_EDITABLE)
+	if changed - set(MANAGER_EDITABLE):
+		refuse(
+			_("Only HR can change another person's employee record. Ask HR to make this change."),
+			"ALV-266",
+			"Employee save",
+			EMPLOYEE,
+			doc.name,
+		)
+	return True
 
 
 @frappe.whitelist()

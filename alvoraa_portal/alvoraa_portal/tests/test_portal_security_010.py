@@ -861,6 +861,26 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# ALV-249 doors 1 and 2 (new file): drops the words from requests; the
 		# word appears only as a string to drop, never as a bypass.
 		("alvoraa_portal", "request_guard.py"): 1,
+		# Slice 078 (078-SEC-16). Four new files, each argued rather than
+		# rounded up.
+		#
+		# employee_photo.py: THREE, all about `File`, on which an employee holds
+		# no permission at all. The insert of their own picture; the read of
+		# their File rows so the old one can be found; the delete of the old one,
+		# bytes included. Each runs only after the endpoint has established the
+		# record is the caller's own, and there is no employee argument to post.
+		("alvoraa_portal", "employee_photo.py"): 3,
+		# my_profile.py: ONE - the Version row. Nobody holds create on Version;
+		# Frappe writes its own the same way. `db.set_value` writes no history,
+		# and "who changed my emergency contact" has to have an answer.
+		("alvoraa_portal", "my_profile.py"): 1,
+		# people_fields.py (hrms): ONE - the batched thumbnail read. Frappe's
+		# own File query condition narrows a Website User to `owner = me`, so a
+		# scoped read here would hide every colleague's thumbnail and the one
+		# chart a frontline employee can open would lose its faces. The row
+		# returns a URL and nothing else, and fetching the BYTES behind it still
+		# asks the parent Employee's read permission - so this grants nothing.
+		("hrms", "alvoraa_org_structure/people_fields.py"): 1,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

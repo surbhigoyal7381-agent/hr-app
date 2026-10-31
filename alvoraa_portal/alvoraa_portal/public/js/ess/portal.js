@@ -6543,6 +6543,7 @@ function mpLoad() {
   var body = hmEl("mp-body");
   if (!body) return;
   if (hmEl("mp-h")) hmEl("mp-h").focus();
+  mypLoad();   /* slice 078: the picture, the details and the password cards */
   gpFetch(HM_BD + "birthdays_this_month", {see_all: 0}).then(function (d) {
     var org = hmEl("nav-org-settings");
     body.innerHTML = (d && d.on
@@ -6570,6 +6571,265 @@ document.addEventListener("change", function (e) {
     t.checked = !show;
     toast(err.message || drT("Could not save that. Try again."), "err");
   });
+});
+
+/* ── My profile, slice 078: my picture, my details, my password ───────────
+   Prefix myp. Three cards ABOVE the sharing tick 076 Part C put here, drawn
+   by mypLoad(), which mpLoad() calls. The picture comes first: it is what this
+   screen exists for, it needs nothing ticked, and until photographs exist
+   every face in this product is a pair of initials.
+
+   The server sends field NAMES and VALUES. Every label, hint and sentence is
+   here, through drT(), so there is one place to read them and one place to
+   change them. */
+var MYP = { data: null, sending: false };
+var MYP_API = "alvoraa_portal.my_profile.";
+var MYP_PHOTO = "alvoraa_portal.employee_photo.";
+
+/* The six an organisation may open, each with the words it needs. A field the
+   organisation has not ticked is ABSENT from the card - never disabled, never
+   greyed: a control that does nothing is worse than no control. */
+var MYP_FIELDS = {
+  cell_number:            ["Mobile number", "The number HR and your manager will ring."],
+  personal_email:         ["Personal email", "Used if you ever lose your work login."],
+  current_address:        ["Where you live now", "Where post reaches you today. Not your permanent address."],
+  person_to_be_contacted: ["Who to ring in an emergency", "A name we can ask for."],
+  relation:               ["How they are related to you", "Wife, brother, friend. Whatever is true."],
+  emergency_phone_number: ["Their phone number", "A number that will be answered."]
+};
+var MYP_LONG = { current_address: 1 };   /* a textarea rather than one line */
+
+/* 078-PRIV-1, and it is the whole privacy position of this slice.
+
+   It must be TRUE, because the employee relies on it and because the person
+   whose face this is cannot open most of the screens it appears on. So it
+   names the widest reader (the staff directory, which is company-wide),
+   APPRAISALS (Appraisal.employee_image copies the photograph onto a
+   submittable record, so Employee permissions stop applying), and EMAILS -
+   the birthday and work anniversary reminder puts the photograph's URL in a
+   mail body sent to colleagues, and that reminder is switched ON today.
+
+   A notice that understates the audience is worse than no notice at all. If a
+   later slice puts the photograph anywhere else, THIS SENTENCE BECOMES WRONG
+   and has to be changed in the same slice. */
+function mypNotice() {
+  return drT("Your picture appears next to your name wherever colleagues can already see you: "
+    + "the staff directory, the organisation chart, team pages, Home, your goals and your appraisals. "
+    + "It is also put into the birthday and work anniversary emails your organisation sends to colleagues. "
+    + "Nothing else changes. Nobody uses it to check who you are or when you arrived. "
+    + "You can replace it or remove it at any time.");
+}
+
+function mypLoad() {
+  var pic = hmEl("myp-pic");
+  if (!pic) return;
+  gpFetch(MYP_API + "get_my_profile", {}).then(function (d) {
+    MYP.data = d || {};
+    mypPaint();
+  }, function (e) { failBox(pic, e, mypLoad); });
+}
+
+function mypPaint() {
+  var d = MYP.data || {};
+  /* S1-E. An administrator who is not a member of staff opens what is about to
+     be every employee's main screen. Before this slice it was a 500. */
+  if (d.no_employee) {
+    hmEl("myp-pic").innerHTML = '<div class="nc-box"><b>'
+      + esc(drT("This account is not linked to an employee record.")) + '</b><span class="gp-hint" style="display:block;margin-top:6px">'
+      + esc(drT("There is nothing here to change. Ask HR to link it to this account."))
+      + '</span></div>';
+    hmEl("myp-det").innerHTML = "";
+    hmEl("myp-pw").innerHTML = "";
+    return;
+  }
+  mypPaintPicture();
+  mypPaintDetails();
+  mypPaintPassword();
+}
+
+/* ── the picture ─────────────────────────────────────────────────────────── */
+
+function mypPaintPicture() {
+  var d = MYP.data || {};
+  var has = !!d.image;
+  var circle = '<span class="myp-face' + (has ? " has" : "") + '">'
+    + '<span class="myp-ini" aria-hidden="true">' + esc(initials(d.employee_name || "?")) + '</span>'
+    + (has ? '<img src="' + esc(d.image) + '" width="96" height="96" alt=""'
+             + ' onload="this.style.opacity=1" onerror="this.remove()">' : "")
+    + '</span>';
+  var buttons = has
+    ? '<button type="button" class="btn btn-outline myp-b" data-myp="pick">' + esc(drT("Replace")) + '</button>'
+      + '<button type="button" class="btn btn-outline myp-b" data-myp="remove">' + esc(drT("Remove")) + '</button>'
+    : '<button type="button" class="btn btn-primary myp-b" data-myp="camera">' + esc(drT("Take a photo")) + '</button>'
+      + '<button type="button" class="btn btn-outline myp-b" data-myp="pick">' + esc(drT("Choose a file")) + '</button>';
+
+  hmEl("myp-pic").innerHTML = '<div class="nc-box myp-card">'
+    + '<h3 class="nc-h3" style="margin-top:0">' + esc(drT(has ? "Your picture" : "Add your picture")) + '</h3>'
+    + '<div class="myp-pic-row">' + circle
+    + '<p class="myp-said">' + esc(has
+        ? drT("That is you. Colleagues who can see you on the organisation chart will see this picture.")
+        : drT("Colleagues will recognise you, and you do not have to ask HR."))
+    + '</p></div>'
+    /* THE NOTICE IS BEFORE THE CONTROL IN THE DOM (AC-2). Not under it, not
+       behind a link, not after the camera has opened. */
+    + '<p class="myp-notice">' + esc(mypNotice()) + '</p>'
+    + '<div class="myp-acts">' + buttons + '</div>'
+    + '<p class="gp-hint" style="margin-top:8px">'
+    + esc(drT("We make it smaller before we keep it, so it uses almost none of your data.")) + '</p>'
+    + '<p class="myp-say" id="myp-say" role="status"></p>'
+    /* capture="user" opens the front camera where the phone has one, and is
+       ignored on a laptop, which then shows the ordinary file chooser. */
+    + '<input type="file" id="myp-file" accept="image/jpeg,image/png,image/webp" style="display:none">'
+    + '<input type="file" id="myp-cam" accept="image/jpeg,image/png,image/webp" capture="user" style="display:none">'
+    + '</div>';
+}
+
+function mypSay(words, bad) {
+  var el = hmEl("myp-say");
+  if (!el) return;
+  el.textContent = words || "";
+  el.className = "myp-say" + (bad ? " bad" : "");
+}
+
+/* The file to a base64 string. The SERVER does every check that matters - the
+   length before any decode, the magic bytes, the size, the re-encode - so this
+   side only has to send it and say what is happening. */
+function mypSend(file) {
+  if (!file || MYP.sending) return;
+  MYP.sending = true;
+  mypSay(drT("Sending your picture… You can keep using the page."));
+  var reader = new FileReader();
+  reader.onerror = function () {
+    MYP.sending = false;
+    mypSay(drT("That picture could not be read from your phone. Try taking a new one."), 1);
+  };
+  reader.onload = function () {
+    gpFetch(MYP_PHOTO + "upload_my_photo", {photo: String(reader.result || "")},
+            {lostAnswerHandled: true}).then(function (r) {
+      MYP.sending = false;
+      MYP.data.image = r && r.image;
+      mypPaintPicture();
+      toast(drT("That is you."), "ok");
+    }, function (e) {
+      MYP.sending = false;
+      /* A write whose answer was lost MAY have been saved. Never "check your
+         connection" when the office may have succeeded. */
+      mypSay(mayHaveGone(e)
+        ? drT("We could not reach the office. Your picture may have gone through. "
+            + "Open this page again in a minute and look before you send it a second time.")
+        : (e && e.message) || drT("That picture did not reach us. Try again."), 1);
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function mypRemove() {
+  if (MYP.sending) return;
+  MYP.sending = true;
+  mypSay(drT("Removing your picture…"));
+  gpFetch(MYP_PHOTO + "remove_my_photo", {}, {lostAnswerHandled: true}).then(function () {
+    MYP.sending = false;
+    MYP.data.image = null;
+    mypPaintPicture();
+    toast(drT("Your picture has been removed."), "ok");
+  }, function (e) {
+    MYP.sending = false;
+    mypSay(mayHaveGone(e)
+      ? drT("We could not reach the office. It may have gone through. Open this page again in a minute.")
+      : (e && e.message) || drT("Could not remove it. Try again."), 1);
+  });
+}
+
+/* ── the details ─────────────────────────────────────────────────────────── */
+
+function mypPaintDetails() {
+  var rows = (MYP.data && MYP.data.fields) || [];
+  if (!rows.length) {
+    /* The card STAYS and says so. The picture card is unaffected: the photo is
+       always on and is not one of the ticked details. */
+    hmEl("myp-det").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
+      + esc(drT("Your details")) + '</h3><p class="gp-hint">'
+      + esc(drT("Your organisation has not chosen any detail for you to change here yet. "
+              + "To correct something on your record, tell HR.")) + '</p></div>';
+    return;
+  }
+  hmEl("myp-det").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
+    + esc(drT("Your details")) + '</h3>'
+    + '<p class="gp-hint">' + esc(drT("Only you can change these. HR sees the change.")) + '</p>'
+    + rows.map(function (r) {
+        var w = MYP_FIELDS[r.fieldname] || [r.fieldname, ""];
+        var id = "myp-f-" + r.fieldname;
+        var input = MYP_LONG[r.fieldname]
+          ? '<textarea class="gp-input myp-in" id="' + id + '" rows="2" placeholder="'
+              + esc(drT("Not given yet")) + '">' + esc(r.value || "") + '</textarea>'
+          : '<input class="gp-input myp-in" id="' + id + '" type="text" value="'
+              + esc(r.value || "") + '" placeholder="' + esc(drT("Not given yet")) + '">';
+        return '<div class="myp-field"><label class="gp-label" for="' + id + '">'
+          + esc(drT(w[0])) + '</label>' + input
+          + (w[1] ? '<span class="gp-hint">' + esc(drT(w[1])) + '</span>' : "") + '</div>';
+      }).join("")
+    + '<div class="myp-acts"><button type="button" class="btn btn-primary myp-b" data-myp="save">'
+    + esc(drT("Save my details")) + '</button></div>'
+    + '<p class="myp-say" id="myp-dsay" role="status"></p></div>';
+}
+
+function mypSaveDetails() {
+  var rows = (MYP.data && MYP.data.fields) || [];
+  var out = {}, note = hmEl("myp-dsay");
+  rows.forEach(function (r) {
+    var el = hmEl("myp-f-" + r.fieldname);
+    if (el) out[r.fieldname] = el.value;
+  });
+  if (note) { note.textContent = drT("Saving…"); note.className = "myp-say"; }
+  gpFetch(MYP_API + "save_my_profile", {values: JSON.stringify(out)},
+          {lostAnswerHandled: true}).then(function (r) {
+    rows.forEach(function (x) { if (x.fieldname in out) x.value = out[x.fieldname]; });
+    if (note) note.textContent = "";
+    toast(r && r.saved ? drT("Saved. HR can see the change.") : drT("Nothing had changed."), "ok");
+  }, function (e) {
+    /* WHAT WAS TYPED IS NOT CLEARED. The inputs are left exactly as they are,
+       so a lost answer never costs somebody their typing (AC-19). */
+    if (note) {
+      note.className = "myp-say bad";
+      note.textContent = mayHaveGone(e)
+        ? drT("We could not reach the office. Your change may have gone through. "
+            + "Open this page again in a minute and look before you save it a second time.")
+        : (e && e.message) || drT("Could not save that. Try again.");
+    }
+  });
+}
+
+/* ── the password ────────────────────────────────────────────────────────── */
+
+function mypPaintPassword() {
+  var when = MYP.data && MYP.data.password_last_set;
+  hmEl("myp-pw").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
+    + esc(drT("Your password")) + '</h3>'
+    + '<p class="gp-hint">' + esc(when ? drT("You last set it on {0}.", [fmtDate(when)])
+                                       : drT("HR set the password you are using.")) + '</p>'
+    + '<div class="myp-acts"><a class="btn btn-outline myp-b" href="/update-password">'
+    + esc(drT("Change my password")) + ' →</a></div>'
+    + '<p class="gp-hint" style="margin-top:8px">'
+    + esc(drT("Opens the password page. When you have changed it you come straight back here."))
+    + '</p></div>';
+}
+
+/* One handler for everything on the three cards. */
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-myp]") : null;
+  if (!t) return;
+  var what = t.getAttribute("data-myp");
+  if (what === "camera") { hmEl("myp-cam").click(); }
+  else if (what === "pick") { hmEl("myp-file").click(); }
+  else if (what === "remove") { mypRemove(); }
+  else if (what === "save") { mypSaveDetails(); }
+});
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!t || (t.id !== "myp-file" && t.id !== "myp-cam")) return;
+  var f = t.files && t.files[0];
+  t.value = "";            /* so choosing the same file twice still fires */
+  mypSend(f);
 });
 
 /* Organisation settings: the switch. Off asks first; on is one tap. */

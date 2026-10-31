@@ -2715,3 +2715,52 @@ body.panel-fullscreen{overflow:hidden}
   .pos-opt{min-height:44px}
   .pos-sheet input[type=date]{min-height:44px;max-width:none}
 }
+
+/* ── My profile, slice 078: my picture, my details, my password ───────────
+   Prefix myp. Appended, nothing above reformatted. The frontline bar this is
+   built to: a cheap Android at 390 px, in Hindi, on a poor network - so 48 px
+   controls, 16 px text (never smaller: iOS zooms the page on a smaller input),
+   one primary action per card, and no text under 12 px anywhere. */
+.myp-card{margin-bottom:16px}
+.myp-pic-row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.myp-said{margin:0;flex:1;min-width:180px;font-size:var(--fs-base);color:var(--text2)}
+
+/* The circle is drawn at its FINAL SIZE with the initials in it, and the
+   photograph fades in over the top. One box, five states: no photo, photo
+   arriving, photo there, photo failed (the <img> removes itself and the
+   initials are already underneath), and printed. Nothing reflows, there is no
+   spinner, no skeleton and no placeholder shape. */
+.myp-face{position:relative;width:96px;height:96px;flex:none;border-radius:50%;
+  overflow:hidden;background:var(--bg);border:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:center}
+.myp-face .myp-ini{font-size:var(--fs-2xl);font-weight:700;color:var(--text3);line-height:1}
+.myp-face img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity .15s linear}
+
+/* 078-PRIV-1. Before the control in the DOM, and it looks like something to
+   read rather than small print: 13 px is the floor here, never 11 px. */
+.myp-notice{margin:14px 0 0;font-size:var(--fs-base);line-height:1.55;color:var(--text2);
+  background:var(--bg);border-left:3px solid var(--border2);
+  border-radius:var(--r-sm);padding:10px 12px}
+
+.myp-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.myp-b{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.myp-b:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+.myp-field{margin-top:14px}
+.myp-field .gp-label{display:block;margin-bottom:4px}
+.myp-in{width:100%;box-sizing:border-box;font:inherit;font-size:16px;min-height:44px;
+  padding:8px 10px}
+.myp-field .gp-hint{display:block;margin-top:4px}
+
+/* role="status", so a screen reader hears it without the focus moving. Colour
+   is never the only signal: the failure wording says what to do next. */
+.myp-say{margin:10px 0 0;font-size:var(--fs-sm);color:var(--text2);min-height:1px}
+.myp-say.bad{color:var(--red);font-weight:600}
+
+@media (max-width:640px){
+  .myp-in{min-height:48px}
+  .myp-b{width:100%}
+  .myp-face{width:84px;height:84px}
+  .myp-face .myp-ini{font-size:var(--fs-xl)}
+}

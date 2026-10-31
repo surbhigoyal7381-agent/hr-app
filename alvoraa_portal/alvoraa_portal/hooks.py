@@ -194,6 +194,13 @@ doc_events = {
             "alvoraa_portal.manager_scope.on_employee_update",
             # ALV-249: a staff login sees its own record and nobody else's.
             "alvoraa_portal.own_record_permission.on_employee_update",
+            # Slice 078 (OPS-12, OPS-13): derive the 48 px copy of a changed
+            # photograph. LAST in the chain and guarded on
+            # has_value_changed("image"), so the four handlers above are
+            # untouched on an ordinary save. It catches everything and can
+            # never fail an Employee save - this fires on every save of every
+            # employee, payroll work included.
+            "alvoraa_portal.employee_photo.on_employee_update",
         ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
         # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank

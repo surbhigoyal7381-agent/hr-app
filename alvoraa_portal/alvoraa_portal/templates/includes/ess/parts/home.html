@@ -171,9 +171,21 @@
       <!-- My profile (slice 076, Part C, decision 2a): only the birthday tick.
            Opened from the account menu. The tick changes the person's own
            record only; the server takes no employee from the page. -->
+      <!-- Slice 078 (US-1 to US-5) adds three cards ABOVE the birthday tick,
+           in this order: the picture, the details, the password. The picture is
+           first because it is what this screen exists for - every employee can
+           add one, nothing is ticked for it, and until photographs exist every
+           face in this product is a pair of initials.
+
+           The sharing tick that 076 Part C put here stays exactly where it was,
+           in #mp-body, drawn by mpLoad(). The three cards are drawn by
+           mypLoad(), which mpLoad calls. -->
       <div id="panel-my-profile" class="panel">
         <div class="nc-wrap">
           <h2 class="nc-h" id="mp-h" tabindex="-1">My profile</h2>
+          <div id="myp-pic"><div class="hm-skel" aria-hidden="true"></div></div>
+          <div id="myp-det"></div>
+          <div id="myp-pw"></div>
           <div id="mp-body"><div class="hm-skel" aria-hidden="true"></div></div>
         </div>
       </div>

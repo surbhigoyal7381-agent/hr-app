@@ -329,6 +329,27 @@ def _subject(employee):
 		if employee not in _reports_to(me.name, deep=True):
 			frappe.throw(_("You can only open the attendance of people who report to you."),
 			             frappe.PermissionError)
+	else:
+		# **HR is scoped too (ALV-259).** The read below is `get_value`, which
+		# applies no permissions, so without this a store's HR person could put
+		# a name to any employee ID on the site - and `raise_for_report` and the
+		# team page's one-person filter both come through here.
+		#
+		# The condition, and the separate branch question, are `team_days`'.
+		from hrms.alvoraa_hr_core.access import (employee_in_scope, permitted_branches,
+		                                         permitted_companies)
+
+		outside = None
+		if permitted_companies():
+			outside = not employee_in_scope(employee)
+		else:
+			branches = permitted_branches()
+			if branches is not None:
+				outside = frappe.db.get_value("Employee", employee,
+				                              "branch") not in branches
+		if outside:
+			frappe.throw(_("That employee is outside the companies and branches "
+			               "you look after."), frappe.PermissionError)
 
 	subject = frappe.db.get_value("Employee", employee,
 	                              ["name", "employee_name", "company", "default_shift",
@@ -1692,10 +1713,13 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 	caller may see. The team is settled first, every row is inside it, and the
 	read is explicit.
 	"""
+	from hrms.alvoraa_hr_core.access import (permitted_branches, permitted_companies,
+	                                         permitted_employee_filters)
+
 	me = _employee_for(frappe.session.user)
 	may_review = _may_review()
 	if may_review:
-		team = None                       # HR: anybody, narrowed below if asked
+		team = None              # HR: their entitlement, narrowed below if asked
 	else:
 		if not me:
 			frappe.throw(_("Your user is not linked to an employee record, so "
@@ -1713,7 +1737,41 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 		subject, _is_self = _subject(employee)
 		people_ids = [subject.name]
 	elif team is None:
-		people_ids = frappe.get_all("Employee", filters={"status": "Active"},
+		# **The HR ENTITLEMENT, not every employee on the site (ALV-259).**
+		#
+		# This read is `get_all`, which applies no permissions - deliberately,
+		# for the reason in the docstring above - so the scope has to be in the
+		# filters, and it was not. A store's HR person, entitled to one branch,
+		# was shown everybody with their arrival times, departure times and
+		# punches, while the picker beside it correctly offered only their own
+		# store. The screen looked right, which is why it went unseen.
+		#
+		# `permitted_employee_filters` is the same definition the review queue
+		# uses, so the two surfaces cannot drift. Active only, because this page
+		# is about who is in today; the helper returns every status on purpose.
+		#
+		# NARROWED WHENEVER THERE IS ANY ENTITLEMENT TO NARROW BY. A tenant's
+		# central HR login - HR Manager with no Employee record and no Company
+		# permission, which is how the admin logins are set up - has no
+		# companies, and the helper fails closed, so applying it unconditionally
+		# would show them NOBODY. Hence the condition.
+		#
+		# BUT THE BRANCH IS ASKED SEPARATELY, and that is not a tidy-up.
+		# `permitted_companies` falls back to the caller's own ACTIVE Employee
+		# record, so a store HR person whose record stops being Active has no
+		# companies - and a company-keyed guard would then hand them the whole
+		# site. The ordinary way that happens is somebody leaving: the Employee
+		# is marked Left, the login is not disabled yet, and they would GAIN
+		# site-wide attendance instead of losing it. `attendance_analytics`
+		# already asks the branch on its own for this reason (DEF-8).
+		scope = {"status": "Active"}
+		if permitted_companies():
+			scope = dict(permitted_employee_filters(), status="Active")
+		else:
+			branches = permitted_branches()
+			if branches is not None:
+				scope["branch"] = ["in", branches]
+		people_ids = frappe.get_all("Employee", filters=scope,
 		                            pluck="name", limit_page_length=0)
 	else:
 		people_ids = list(team)

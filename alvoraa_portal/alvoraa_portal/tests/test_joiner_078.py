@@ -15,6 +15,8 @@ it refuses. Four tests carry it:
     not move.
 """
 
+import io
+
 import frappe
 import hrms.alvoraa_org_structure.settings as org_settings
 from frappe.utils import add_to_date, now
@@ -544,6 +546,199 @@ class TestRetention(_Base):
 		out = hk.joiner_counts(days=7)
 		self.assertTrue(out["invariant_holds"])
 		self.assertLessEqual(out["submissions"], out["links_issued"])
+
+
+class TestAnEmptySubmission(_Base):
+	"""**AC-110a, AC-110b, AC-110c.** The defect was irreversible for the person
+	it happened to: tapping Start, Next, Next, Send without typing was accepted,
+	and sending BURNS THE KEY and deletes the row that holds it - so HR got a
+	blank record and the joiner had no way back in.
+
+	The rule is AC-110c and no more: one field with a value, or one document.
+	HR ticks the field list and we add no restriction on top of it.
+	"""
+
+	def _row(self, link):
+		return frappe.db.get_value(
+			"Web Form Request", {"key": self._key(link)}, "name")
+
+	def test_an_entirely_empty_submission_is_refused(self):
+		"""AC-110a. No row reaches Submitted and `submitted_at` stays empty."""
+		out = self._invite()
+		with self.assertRaises(frappe.ValidationError):
+			joiner_public.submit_invite(
+				web_form_request_key=self._key(out["link"]),
+				values=frappe.as_json({f: "" for f in JOINER_FIELDS}))
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc(DOCTYPE, out["submission"])
+		self.assertEqual(doc.status, "Invited")
+		self.assertFalse(doc.submitted_at)
+
+	def test_the_refusal_does_not_burn_the_link(self):
+		"""**AC-110b, and the whole point of the fix.** The key's row survives,
+		the link still opens, and a second attempt with something in it works -
+		so a refusal costs the joiner nothing."""
+		out = self._invite()
+		key = self._key(out["link"])
+		with self.assertRaises(frappe.ValidationError):
+			joiner_public.submit_invite(
+				web_form_request_key=key,
+				values=frappe.as_json({f: "   " for f in JOINER_FIELDS}))
+
+		frappe.set_user("Administrator")
+		self.assertTrue(self._row(out["link"]),
+		                "_drop_request must NOT have run on a refusal")
+		frappe.set_user("Guest")
+		# Not J-E1, and not "this link will not open again".
+		self.assertTrue(joiner_public.open_invite(web_form_request_key=key))
+
+		joiner_public.submit_invite(
+			web_form_request_key=key,
+			values=frappe.as_json({"mobile": "+91 90000 00110"}))
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, out["submission"], "status"), "Submitted")
+
+	def test_exactly_one_field_is_enough(self):
+		"""AC-110c. We impose no mandatory field of our own - not even a name."""
+		out = self._invite()
+		joiner_public.submit_invite(
+			web_form_request_key=self._key(out["link"]),
+			values=frappe.as_json({"emergency_phone": "+91 90000 00111"}))
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, out["submission"], "status"), "Submitted")
+
+	def test_the_doctype_makes_no_joiner_field_mandatory(self):
+		"""AC-110c's second half, read off the schema rather than the prose. A
+		`reqd` here would be our restriction on top of HR's ticked list."""
+		meta = frappe.get_meta(DOCTYPE)
+		for field in JOINER_FIELDS:
+			with self.subTest(field=field):
+				self.assertFalse(meta.get_field(field).reqd)
+
+	def test_one_document_and_nothing_typed_is_enough(self):
+		"""AC-110c. A joiner who sends only their PAN card has sent us
+		something, so the submission is not empty."""
+		ticked, _un = fx.document_types()
+		fx.set_lists(document_types=[ticked])
+		out = self._invite()
+		key = self._key(out["link"])
+		with fx.with_documents_plan():
+			joiner_public.upload_invite_file(
+				web_form_request_key=key, document_type=ticked,
+				filename="pan.pdf", data=fx.as_b64(fx._one_page_pdf()))
+			joiner_public.submit_invite(
+				web_form_request_key=key,
+				values=frappe.as_json({f: "" for f in JOINER_FIELDS}))
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, out["submission"], "status"), "Submitted")
+
+
+class TestTheJoinersOwnPhotograph(_Base):
+	"""**AC-108a, AC-108b, AC-108c.** J4, which did not exist at all.
+
+	It travels under one reserved type name through the documents endpoint, so
+	there is no fourth `allow_guest` surface for one optional picture.
+	"""
+
+	def test_it_gets_the_employees_own_treatment(self):
+		"""AC-108c. 512 px, no EXIF, private, on the submission row - the same
+		constants an employee's own photograph uses, not a second code path."""
+		from PIL import Image
+
+		from alvoraa_portal import employee_photo
+
+		out = self._invite()
+		source = fx.png_with_gps(size=(1600, 1200))
+		self.assertIn(0x8825, fx.exif_of(source))
+		res = joiner_public.upload_invite_file(
+			web_form_request_key=self._key(out["link"]),
+			document_type=joiner_public.PHOTO_TYPE,
+			filename="me.png", data=fx.as_b64(source))
+
+		frappe.set_user("Administrator")
+		row = frappe.db.get_value(
+			"File", {"file_name": res["file_name"]},
+			["file_url", "is_private", "attached_to_doctype", "attached_to_name"],
+			as_dict=True)
+		self.assertEqual(row.is_private, 1)
+		# On the submission row, never on an Employee - there is no Employee yet.
+		self.assertEqual(row.attached_to_doctype, DOCTYPE)
+		self.assertEqual(row.attached_to_name, out["submission"])
+		blob = fx.file_bytes(row.file_url)
+		with Image.open(io.BytesIO(blob)) as img:
+			self.assertEqual(img.format, "JPEG")
+			self.assertEqual(max(img.size), employee_photo.STORED_EDGE)
+		self.assertEqual(fx.exif_of(blob), {})
+
+	def test_a_pdf_is_not_a_photograph(self):
+		"""AC-108c, refused with AC-4's own plain words."""
+		out = self._invite()
+		with self.assertRaises(frappe.ValidationError):
+			joiner_public.upload_invite_file(
+				web_form_request_key=self._key(out["link"]),
+				document_type=joiner_public.PHOTO_TYPE,
+				filename="me.pdf", data=fx.as_b64(fx._one_page_pdf()))
+
+	def test_skipping_it_stores_nothing_and_refuses_nothing(self):
+		"""AC-108b. It is optional, so a submission with no picture succeeds and
+		no `File` is left behind."""
+		out = self._invite()
+		joiner_public.submit_invite(
+			web_form_request_key=self._key(out["link"]),
+			values=frappe.as_json({"full_name": "S078 No Picture"}))
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			frappe.db.get_value(DOCTYPE, out["submission"], "status"), "Submitted")
+		self.assertEqual(frappe.get_all("File", filters={
+			"attached_to_doctype": DOCTYPE,
+			"attached_to_name": out["submission"],
+		}), [])
+
+	def test_the_reserved_name_is_not_a_type_anybody_can_make(self):
+		"""The collision guard, asserted rather than assumed: a document type is
+		named by its own title, and `__photo__` is not a title."""
+		self.assertFalse(
+			frappe.db.exists("Employee Document Type", joiner_public.PHOTO_TYPE))
+
+
+class TestTheJoinersPage(_Base):
+	"""The template itself, which no Python test read before.
+
+	It is the most attacked page in the product, so what it does NOT do matters
+	as much as what it draws. `test_browser_call_args_045` reads the portal's
+	JavaScript only, so nothing else looks at this file.
+	"""
+
+	@staticmethod
+	def _read(name):
+		import os
+
+		return open(os.path.join(frappe.get_app_path("alvoraa_portal"),
+		                         "www", name), encoding="utf-8").read()
+
+	def test_the_j4_photo_screen_is_there(self):
+		"""**AC-108a.** 01b 6.4 draws six joiner screens; `j4` was missing."""
+		page = self._read("joiner.html")
+		for screen in ("j1", "j2", "j3", "j4", "j5", "j6"):
+			with self.subTest(screen=screen):
+				self.assertIn('id="%s"' % screen, page)
+		self.assertIn("Skip this", page)
+		self.assertIn("nobody checks your face against it", page)
+
+	def test_it_sends_the_photo_under_the_servers_own_reserved_name(self):
+		"""A name the page and the server disagreed on would be a dead screen,
+		and no argument-names gate reads this file."""
+		self.assertIn('var PHOTO = "%s"' % joiner_public.PHOTO_TYPE,
+		              self._read("joiner.html"))
+
+	def test_nothing_computes_a_setting_the_template_never_reads(self):
+		"""D-7. `joiner_on` was a settings read on every anonymous hit of the
+		most attacked page in the product, and no template ever read it."""
+		self.assertNotIn("joiner_on", self._read("joiner.py"))
+		self.assertNotIn("joiner_on", self._read("joiner.html"))
 
 
 class TestTheUploads(_Base):

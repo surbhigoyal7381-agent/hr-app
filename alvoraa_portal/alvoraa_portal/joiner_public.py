@@ -80,6 +80,16 @@ MAX_FILE_B64 = int(MAX_FILE_BYTES * 4 / 3) + 128
 MAX_FILES_PER_TOKEN = 6
 MAX_BYTES_PER_TOKEN = 20 * 1024 * 1024
 
+# **J4's own photograph travels under this one reserved name** (AC-108a), through
+# the same endpoint as the documents - the same token check, the same ceilings,
+# the same magic bytes, the same private `File`. A fourth `allow_guest` endpoint
+# would have been a fourth public surface for one optional picture, and AC-126
+# asks for the guest endpoints to stay enumerable at three.
+#
+# It cannot collide with a real type: an `Employee Document Type` is named by
+# its own title, and `__photo__` is not a title anybody can type into Desk.
+PHOTO_TYPE = "__photo__"
+
 
 # ── one answer for every dead token ─────────────────────────────────────────
 
@@ -192,6 +202,17 @@ def open_invite(web_form_request_key=None):
 	}
 
 
+def _has_a_document(submission):
+	"""Whether one file has already reached this row. AC-110c's second half.
+
+	A joiner who sends only their PAN card has sent us something, so the
+	submission is not empty and must not be refused.
+	"""
+	return bool(frappe.get_all("File", filters={
+		"attached_to_doctype": DOCTYPE, "attached_to_name": submission,
+	}, limit_page_length=1, ignore_permissions=True))
+
+
 def _hr_contact():
 	"""A REAL way to reach a person, from the tenant's own settings.
 
@@ -257,6 +278,17 @@ def submit_invite(web_form_request_key=None, values=None, bringing=None):
 
 	Three at a time is the limit, per token, per hour - a joiner correcting a
 	typo twice is ordinary; a hundred submissions from one link is not.
+
+	**An empty submission is refused, and refusing costs the joiner nothing**
+	(AC-110a, AC-110b). Tapping Next, Next, Send without typing used to be
+	accepted: HR got a blank row and the joiner lost their only link, because
+	sending burns the key and deletes the row that holds it. Both of those
+	happen AFTER the check below, so a refused submission leaves `status` at
+	`Invited`, leaves the key's row alone, and the joiner can send again.
+
+	**The rule is AC-110c and no more: one field with a value, or one document.**
+	Which of the seven HR wants is HR's business - we add no mandatory field
+	list of our own on top of the list HR ticked.
 	"""
 	doc, request = _open(web_form_request_key, for_update=True)
 
@@ -267,6 +299,13 @@ def submit_invite(web_form_request_key=None, values=None, bringing=None):
 			values = None
 	if not isinstance(values, dict):
 		frappe.throw(_("Nothing to send."), frappe.ValidationError)
+
+	if not any(cstr(values.get(f) or "").strip() for f in JOINER_FIELDS) \
+			and not _has_a_document(doc.name):
+		frappe.throw(
+			_("We have not received anything yet. Fill in at least one of the "
+			  "questions above, or send one document, and then press Send."),
+			frappe.ValidationError)
 
 	# **THE CLOSED ALLOW-LIST (078-PRIV-9).** Anything not on it is not stored.
 	# Dropped silently rather than refused, deliberately and unlike the
@@ -331,10 +370,14 @@ def upload_invite_file(web_form_request_key=None, document_type=None,
 	**never rendered inline**. We do not scan for malware and no product copy
 	or questionnaire answer may say we do.
 	"""
+	# Kept lazy, as it always was here, so this module loads without Pillow.
+	from alvoraa_portal import employee_photo
+
 	doc, _request = _open(web_form_request_key)
 
+	is_photo = cstr(document_type) == PHOTO_TYPE
 	asked = {t["name"] for t in _document_types()}
-	if cstr(document_type) not in asked:
+	if not is_photo and cstr(document_type) not in asked:
 		frappe.throw(_("That document is not one we asked for."),
 		             frappe.ValidationError)
 
@@ -370,21 +413,37 @@ def upload_invite_file(web_form_request_key=None, document_type=None,
 		_bad_type()
 	ext, family = kind
 
+	if is_photo and family != "image":
+		# A PDF is not a photograph of a face. AC-108c, in AC-4's own words,
+		# from the employee's own module so the two cannot drift apart.
+		frappe.throw(employee_photo._refused_type_message(),
+		             frappe.ValidationError)
+
 	if family == "image":
 		try:
-			from alvoraa_portal.employee_photo import _reencode
-
 			# 1600 px is a readable photograph of an A4 page; quality 82 is the
 			# usual floor. The re-encode is what strips the metadata, and it is
 			# why an image is safer here than a PDF.
-			blob = _reencode(blob, 1600, 82)
+			#
+			# **J4's picture gets the employee's own numbers**, 512 px at 82,
+			# read off the employee's own constants - so the joiner's face and
+			# a member of staff's face are one treatment, not two (AC-108c).
+			blob = (employee_photo._reencode(blob, employee_photo.STORED_EDGE,
+			                                 employee_photo.STORED_QUALITY)
+			        if is_photo else employee_photo._reencode(blob, 1600, 82))
 			ext = "jpg"
 		except Exception:
+			# The documents wording offers "I will bring it on my first day",
+			# which is not an answer on the photo screen.
+			if is_photo:
+				frappe.throw(employee_photo._refused_type_message(),
+				             frappe.ValidationError)
 			_bad_type()
 
 	f = frappe.get_doc({
 		"doctype": "File",
-		"file_name": f"joiner-{doc.name}-{cstr(document_type)[:40]}.{ext}",
+		"file_name": (f"joiner-{doc.name}-photo.{ext}" if is_photo
+		              else f"joiner-{doc.name}-{cstr(document_type)[:40]}.{ext}"),
 		"attached_to_doctype": DOCTYPE,
 		"attached_to_name": doc.name,
 		"is_private": 1,

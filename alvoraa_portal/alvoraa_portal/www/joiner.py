@@ -40,16 +40,11 @@ def get_context(context):
 	context.no_header = 1
 	context.no_sidebar = 1
 	context.update(get_branding())
-	# Slice 078: whether the feature is on at all. Used only to draw the "this
-	# link has run out" screen without a round trip - the ENDPOINTS refuse
-	# regardless, and they give the same answer whether the feature is off or
-	# the token is wrong, so this leaks nothing a stranger could use.
-	try:
-		from alvoraa_portal.joiner_invite import form_is_on
-
-		context.joiner_on = 1 if form_is_on() else 0
-	except Exception:
-		context.joiner_on = 0
+	# There is deliberately NO `joiner_on` here. It was computed - a settings
+	# read - and no template ever read it: the "this link has run out" screen is
+	# drawn from what `open_invite` answers, which is the only honest source
+	# because the endpoints are where the token check runs. On the most attacked
+	# page in the product, every anonymous hit was paying for it.
 	try:
 		frappe.local.response_headers["X-Robots-Tag"] = "noindex, nofollow"
 		frappe.local.response_headers["Cache-Control"] = "no-store"

@@ -132,6 +132,25 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
     <button class="btn go" id="to-check">Next</button>
   </div>
 
+  <!-- J4. Optional, skippable, and the screen says both out loud. The picture
+       is for the organisation chart and for nothing else; "Skip this" is a real
+       answer that stores nothing and is never asked about again (AC-108a,
+       AC-108b). -->
+  <div id="j4" class="card hide">
+    <h1>Your photo</h1>
+    <p class="soft">This is the picture colleagues will see next to your name on
+      the organisation chart once you join. It is not used for anything else —
+      nobody checks your face against it. You can skip it and add one later.</p>
+    <div class="row3">
+      <button class="btn" id="j4-cam">Take a photo</button>
+      <button class="btn" id="j4-file">Choose a file</button>
+      <button class="btn" id="j4-on">Skip this</button>
+    </div>
+    <p class="soft" id="j4-say" role="status"></p>
+    <input type="file" id="j4-f" accept="image/jpeg,image/png" style="display:none">
+    <input type="file" id="j4-c" accept="image/jpeg,image/png" capture="user" style="display:none">
+  </div>
+
   <!-- J5. -->
   <div id="j5" class="card hide">
     <h1>Check and send</h1>
@@ -179,11 +198,12 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
   var D = null;                        /* what open_invite returned */
   var FILES = {};                      /* type -> file name, for the summary */
   var BRING = {};                      /* type -> true, "bringing it" */
+  var PHOTO = "__photo__";             /* joiner_public.PHOTO_TYPE */
   var KEEP = "alvoraa-joiner-answers"; /* TYPED ANSWERS ONLY. Never bytes. */
 
   function $(id) { return document.getElementById(id); }
   function show(id) {
-    ["loading", "gone", "j1", "j2", "j3", "j5", "j6"].forEach(function (s) {
+    ["loading", "gone", "j1", "j2", "j3", "j4", "j5", "j6"].forEach(function (s) {
       $(s).classList.toggle("hide", s !== id);
     });
   }
@@ -307,11 +327,30 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
     try { localStorage.setItem(KEEP, JSON.stringify(values())); } catch (e) {}
   }
 
+  /* AC-110a. An empty send used to be accepted, and sending BURNS THE LINK -
+     so the joiner lost their only way in and HR got a blank row. The server
+     refuses it as well (`joiner_public.submit_invite`), which is the check
+     that counts; this one is here so nobody makes the round trip to be told.
+
+     AC-110c is the whole rule: one field with a value, or one document. HR
+     ticks the field list and we add no restriction on top of it, so there is
+     no mandatory field of ours here - and a joiner who sends only their PAN
+     card has sent us something. */
+  function nothingSent() {
+    var v = values();
+    var typed = (D.fields || []).some(function (f) {
+      return String(v[f] == null ? "" : v[f]).trim();
+    });
+    return !typed && !Object.keys(FILES).length;
+  }
+
   /* ── J3 ───────────────────────────────────────────────────────────────── */
 
   function drawDocs() {
     var list = D.documents || [];
-    if (!list.length) { toCheck(); return; }
+    /* No types asked for still goes through J4 - the picture is theirs, not
+       something HR ticked. */
+    if (!list.length) { show("j4"); return; }
     $("j3-docs").innerHTML = list.map(function (t, i) {
       return '<div class="doc"><b>' + esc(t.name) + "</b>"
         + (t.description ? '<span class="hint">' + esc(t.description) + "</span>" : "")
@@ -326,6 +365,38 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
         + "</div>";
     }).join("");
     show("j3");
+  }
+
+  /* ── J4 ───────────────────────────────────────────────────────────────── */
+
+  function sendPhoto(file) {
+    var say = $("j4-say");
+    if (!file) return;
+    say.textContent = "Sending…";
+    say.className = "soft";
+    var r = new FileReader();
+    r.onerror = function () {
+      say.textContent = "That picture could not be read from this phone.";
+      say.className = "bad";
+    };
+    r.onload = function () {
+      post("upload_invite_file", {
+        document_type: PHOTO, filename: file.name,
+        data: String(r.result || ""),
+      }).then(function (out) {
+        FILES[PHOTO] = out.file_name || file.name;
+        say.textContent = "Sent.";
+        say.className = "ok";
+        /* The way forward is the same button either way. */
+        $("j4-on").textContent = "Next";
+      }, function (err) {
+        /* The server's own words. It is optional, so there is always a way on. */
+        say.textContent = (err && err.message)
+          || "That did not reach us. You can skip this and add a picture later.";
+        say.className = "bad";
+      });
+    };
+    r.readAsDataURL(file);
   }
 
   function sendFile(i, file) {
@@ -378,7 +449,14 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
     }
   });
   document.addEventListener("change", function (e) {
-    var m = /^d-[fc]-(\d+)$/.exec(e.target && e.target.id ? e.target.id : "");
+    var id = e.target && e.target.id ? e.target.id : "";
+    if (id === "j4-f" || id === "j4-c") {
+      var pic = e.target.files && e.target.files[0];
+      e.target.value = "";
+      sendPhoto(pic);
+      return;
+    }
+    var m = /^d-[fc]-(\d+)$/.exec(id);
     if (!m) return;
     var f = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -399,7 +477,8 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
             + (FILES[t.name] ? '<span class="ok">sent</span>'
                : BRING[t.name] ? '<span class="soft">bringing it on the first day</span>'
                : '<span class="warn">nothing yet</span>') + "</p>";
-        }).join("");
+        }).join("")
+      + (FILES[PHOTO] ? '<p><b>Your photo:</b> <span class="ok">sent</span></p>' : "");
     var who = (D.brand && D.brand.name) ? D.brand.name + " HR" : "the HR team";
     $("j5-words").textContent = "When you send this, " + who
       + " reads it and makes your staff record. You will not be able to change "
@@ -410,8 +489,21 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
 
   $("start").addEventListener("click", drawFields);
   $("to-docs").addEventListener("click", function () { keep(); drawDocs(); });
-  $("to-check").addEventListener("click", toCheck);
+  $("to-check").addEventListener("click", function () { show("j4"); });
+  $("j4-cam").addEventListener("click", function () { $("j4-c").click(); });
+  $("j4-file").addEventListener("click", function () { $("j4-f").click(); });
+  /* Skipping stores nothing and says nothing further about it (AC-108b). */
+  $("j4-on").addEventListener("click", toCheck);
   $("send").addEventListener("click", function () {
+    if (nothingSent()) {
+      /* On J5, not back on J2: everything they typed stays where it is, and
+         the sentence is the server's own (AC-110a). */
+      $("j5-err").textContent = "We have not received anything yet. Fill in at"
+        + " least one of the questions above, or send one document, and then"
+        + " press Send.";
+      $("j5-err").classList.remove("hide");
+      return;
+    }
     var btn = $("send");
     btn.disabled = true;
     $("j5-err").classList.add("hide");

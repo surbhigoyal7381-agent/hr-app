@@ -6859,12 +6859,20 @@ var MYP_LONG = { current_address: 1 };   /* a textarea rather than one line */
    A notice that understates the audience is worse than no notice at all. If a
    later slice puts the photograph anywhere else, THIS SENTENCE BECOMES WRONG
    and has to be changed in the same slice. */
-function mypNotice() {
+function mypNotice(inEmails) {
+  /* The email sentence is now CONDITIONAL, because the organisation can switch
+     it off - and off is the default. Before that setting existed this sentence
+     said the photograph IS put into those emails, which was true. Saying it
+     unconditionally AFTER the setting exists would be the notice overstating
+     the audience, which is the one thing a notice must never do. */
   return drT("Your picture appears next to your name wherever colleagues can already see you: "
     + "the staff directory, the organisation chart, team pages, Home, your goals and your appraisals. "
-    + "It is also put into the birthday and work anniversary emails your organisation sends to colleagues. "
     + "Nothing else changes. Nobody uses it to check who you are or when you arrived. "
-    + "You can replace it or remove it at any time.");
+    + "You can replace it or remove it at any time.")
+    + " " + (inEmails
+      ? drT("Your organisation has also chosen to put it into the birthday and work "
+          + "anniversary emails it sends to colleagues.")
+      : drT("It is not put into the birthday or work anniversary emails your organisation sends."));
 }
 
 function mypLoad() {
@@ -6919,7 +6927,7 @@ function mypPaintPicture() {
     + '</p></div>'
     /* THE NOTICE IS BEFORE THE CONTROL IN THE DOM (AC-2). Not under it, not
        behind a link, not after the camera has opened. */
-    + '<p class="myp-notice">' + esc(mypNotice()) + '</p>'
+    + '<p class="myp-notice">' + esc(mypNotice(d.photo_in_emails)) + '</p>'
     + '<div class="myp-acts">' + buttons + '</div>'
     + '<p class="gp-hint" style="margin-top:8px">'
     + esc(drT("We make it smaller before we keep it, so it uses almost none of your data.")) + '</p>'
@@ -7202,6 +7210,18 @@ function ocsPaint() {
     + '<p class="gp-hint">' + esc(drT(
         "A photo is always on. Every employee may add or replace their own picture, and "
       + "they are told who sees it before they do.")) + "</p>"
+    /* Counsel, 29 Oct 2026. The widest reach a photograph has, and the one
+       surface the person in it cannot see, check or recall - so it is a tick of
+       its own rather than part of the photograph feature, and it is OFF until
+       somebody turns it on. The employee's own notice follows this setting. */
+    + '<label class="ocs-opt" for="ocs-mail"><input type="checkbox" id="ocs-mail"'
+    + (d.photo_in_emails ? " checked" : "") + ' data-ocs-mail="1"><span><b>'
+    + esc(drT("Include photographs in birthday and anniversary emails")) + "</b>"
+    + '<span class="gp-hint" style="display:block">' + esc(drT(
+        "Off by default. Email is the one place a person cannot see, check or recall "
+      + "who received their picture. Turning it on does not change who can open the "
+      + "chart; turning it off does not stop the reminders."))
+    + "</span></span></label>"
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-my">'
     + esc(drT("Add or remove details")) + "</button></div></div>";
 
@@ -7410,9 +7430,29 @@ document.addEventListener("click", function (e) {
 
 document.addEventListener("change", function (e) {
   var t = e.target;
-  if (!t || !t.getAttribute || !t.getAttribute("data-ocs-v")) return;
-  OCS.pick[t.getAttribute("data-ocs-v")] = t.checked ? 1 : 0;
-  ocsSummary();
+  if (!t || !t.getAttribute) return;
+  if (t.getAttribute("data-ocs-v")) {
+    OCS.pick[t.getAttribute("data-ocs-v")] = t.checked ? 1 : 0;
+    ocsSummary();
+    return;
+  }
+  if (!t.getAttribute("data-ocs-mail")) return;
+  /* Saved on the tick, like the birthdays switch beside it: there is nothing to
+     confirm, and nothing to undo that a second tick does not undo. */
+  var on = t.checked;
+  t.disabled = true;
+  gpFetch(OCS_API + "set_people_setting",
+          { key: "alvoraa_photo_in_emails", value: on ? "1" : "0" },
+          { lostAnswerHandled: true }).then(function () {
+    t.disabled = false;
+    if (OCS.data) OCS.data.photo_in_emails = on;
+    toast(on ? drT("Photographs will be included in those emails.")
+             : drT("Photographs will not be included in those emails."), "ok");
+  }, function (err) {
+    t.disabled = false;
+    t.checked = !on;
+    toast((err && err.message) || drT("Could not save that. Try again."), "err");
+  });
 });
 
 /* Escape CANCELS the picker, and writes nothing. */
@@ -10701,8 +10741,16 @@ function mpfBig() {
      no-cache`, so the browser would revalidate every time. */
   var held = MPF.pics[MPF.emp];
   if (held === "failed") { mpfBigFailed(box, say); }
-  else if (held) { full.src = held.src; full.style.opacity = 1; say.remove(); }
-  else {
+  else if (held) {
+    /* THE HELD ELEMENT ITSELF is put back, not its address.
+       Copying `held.src` onto a fresh <img> is a NEW REQUEST - and private
+       files go out `Cache-Control: no-cache`, so the browser revalidates every
+       time and the second enlargement costs exactly what the first did. That
+       is what AC-47 forbids, and a test caught it doing precisely that. */
+    held.style.opacity = 1;
+    full.parentNode.replaceChild(held, full);
+    say.remove();
+  } else {
     full.addEventListener("load", function () {
       full.style.opacity = 1;
       if (say.parentNode) say.remove();

@@ -234,9 +234,9 @@ class TestThe48pxCopy(_Base):
 		"""AC-25b. The handler is on `Employee.on_update`, so Desk, an import
 		and a script are all covered. A portal-only derivation is a failure.
 
-		Run on an employee with NO login, because an employee WITH one cannot
-		be saved with a changed photograph at all - see
-		`test_a_desk_save_for_an_employee_with_a_login_hits_an_upstream_bug`.
+		Run on an employee with NO login, so it is testing THIS handler rather
+		than the Frappe fault that `test_a_desk_save_for_an_employee_with_a_login`
+		covers - that one needs a login to reach `update_user()` at all.
 		"""
 		who = fx.employee_without_a_login()
 		fx.strip_photo(who)
@@ -248,47 +248,64 @@ class TestThe48pxCopy(_Base):
 		frappe.db.commit()
 		self.assertTrue(people_fields.thumbnails_for([who]))
 
-	def test_a_desk_save_for_an_employee_with_a_login_hits_an_upstream_bug(self):
-		"""**RECORDED, not asserted away. This is a defect to escalate, and it
-		is in Frappe, not in this slice.**
+	def test_a_desk_save_for_an_employee_with_a_login(self):
+		"""The Frappe fault behind AC-25b's Desk route, asserted BOTH WAYS.
 
-		`frappe/core/doctype/file/file.py:795-796` fills `_content` with the
-		DECODING `get_content()`, which for a JPEG returns a lossy `str`. Line
-		819 then hands that `str` to `strip_exif_data`, which wants bytes, and
-		raises `TypeError: a bytes-like object is required, not 'str'`. It fires
-		whenever an existing JPEG `File` row is re-saved, or a second `File` row
-		is created pointing at an existing jpeg `file_url`, while
-		`strip_exif_metadata_from_uploaded_images` is on - which it is.
+		`frappe/core/doctype/file/file.py`'s `save_file` fills
+		`flags.original_content` with the DECODING `get_content()`, which for a
+		jpeg returns a lossy `str`; `strip_exif_data` a few lines later wants
+		bytes and raises `TypeError`. ERPNext's `Employee.update_user()` walks
+		into it whenever `image` changes or the linked User's `user_image` is
+		empty - so HR adding a photograph in Desk raised, in ERPNext's own
+		`on_update`, before this slice's handler ever ran.
 
-		`erpnext/.../employee.py:240-251` does exactly that: when `image`
-		changes and the employee has a `user_id`, `update_user()` inserts a
-		`File` carrying only `file_url`. So **HR adding a photograph in Desk for
-		an employee who has a login raises, and it raises in ERPNext's own
-		`on_update` BEFORE this slice's handler runs.**
+		**Surbhi's decision, 31 Oct 2026: patch it in our own image and report
+		it upstream.** `scripts/patch_frappe_binary_file_content.py` does that,
+		and runs in both `deploy/Dockerfile` and `ci.yml`.
 
-		It is pre-existing and nobody has met it, because no employee anywhere
-		has a photograph - which is the premise of this whole slice. This slice
-		is what makes it reachable.
+		So this test asks the bench which Frappe it is running and asserts the
+		matching behaviour:
 
-		**The portal path is unaffected**, which is the path the slice is for:
-		`upload_my_photo` writes with `db.set_value` and derives the copy
-		itself, so `update_user()` never runs. The one-line upstream fix is
-		`get_content(encodings=[])` at `file.py:796`, and editing upstream is an
-		architecture decision, not this slice's.
+		  * **patched** - the Desk route WORKS and the 48 px copy is made,
+		    which is AC-25b in full;
+		  * **not patched** - it raises the `TypeError`, recorded so an
+		    unpatched image (an older release, or a bench somebody built by
+		    hand) is described rather than silently passing.
+
+		Written this way on purpose. A test pinned to one of the two would go
+		red the day the other became true, and the reason would be invisible.
 		"""
-		fx.strip_photo(self.p["with_photo"])
+		import inspect
+
+		from frappe.core.doctype.file.file import File
+
+		from alvoraa_portal.tests.fixtures_078 import strip_photo
+
+		# Detect the FIX, not our marker comment. Reading the source of the one
+		# method that matters means this is also True the day upstream fixes it
+		# their own way - which is the whole point of reporting it.
+		patched = "encodings=[]" in inspect.getsource(File.before_insert)
+
+		strip_photo(self.p["with_photo"])
 		jpeg = employee_photo._reencode(fx.plain_jpeg(), 512, 82)
 		url = employee_photo._store(self.p["with_photo"],
 		                            employee_photo.IMAGE_FIELD, jpeg, "photo")
 		doc = frappe.get_doc("Employee", self.p["with_photo"])
 		self.assertTrue(doc.user_id, "this test needs an employee WITH a login")
 		doc.image = url
-		with self.assertRaises(TypeError) as caught:
-			doc.save(ignore_permissions=True)
-		self.assertIn("bytes-like object is required", str(caught.exception),
-		              "If this stops raising, Frappe has fixed file.py:796 and "
-		              "AC-25b's Desk route works. Read the docstring first.")
-		frappe.db.rollback()
+
+		if patched:
+			doc.save(ignore_permissions=True)      # the Desk route, working
+			frappe.db.commit()
+			self.assertTrue(
+				people_fields.thumbnails_for([self.p["with_photo"]]),
+				"AC-25b: with Frappe patched, a DESK save must make the 48 px copy")
+		else:
+			with self.assertRaises(TypeError) as caught:
+				doc.save(ignore_permissions=True)
+			self.assertIn("bytes-like object is required", str(caught.exception))
+			frappe.db.rollback()
+
 
 	def test_a_save_that_does_not_touch_the_picture_does_no_picture_work(self):
 		"""The guard. `Employee.on_update` fires on every save of every
@@ -452,3 +469,125 @@ class TestTheLoginStaysSaveable(_Base):
 		employee_photo.remove_my_photo()
 		user = frappe.db.get_value("Employee", self.p["with_photo"], "user_id")
 		self.assertFalse(frappe.db.get_value("User", user, "user_image"))
+
+
+class TestAPhotoNeverReachesAModel(_Base):
+	"""078-PRIV-3, AC-25. A STATIC test over the real source tree.
+
+	A directory picture must never become facial recognition at work. There is
+	nothing to assert at runtime, because the point is that the code does not
+	exist - so this reads the tree and proves it.
+
+	Three greps, and each one is a different way the line gets crossed:
+
+	  1. **A photo field inside an AI module.** `alvoraa_portal/ai_leads/` is
+	     the only place in this product that talks to a model. If
+	     `Employee.image` or the 48 px copy is ever named in there, somebody is
+	     putting a face in a prompt.
+	  2. **The two photo stores being joined.** `alvoraa_checkin_photo` is the
+	     attendance selfie - evidence, kept 90 days. `Employee.image` is a
+	     directory picture the employee chose. Reading one into the other, in
+	     either direction, is how "is this the person who punched in" gets
+	     built without anybody deciding to build it.
+	  3. **A chart that downloads as an image.** A page of faces saved as a
+	     file leaves the permission system behind entirely.
+	"""
+
+	@classmethod
+	def _tree(cls):
+		import os
+
+		import alvoraa_portal
+
+		root = os.path.dirname(alvoraa_portal.__file__)
+		out = {}
+		for base, dirs, names in os.walk(root):
+			dirs[:] = [d for d in dirs
+			           if d not in ("__pycache__", "node_modules", "tests")]
+			for n in names:
+				if n.endswith((".py", ".js", ".html")):
+					path = os.path.join(base, n)
+					out[os.path.relpath(path, root).replace(os.sep, "/")] = open(
+						path, encoding="utf-8", errors="ignore").read()
+		return out
+
+	def test_no_photo_field_is_named_inside_an_ai_module(self):
+		from alvoraa_portal import employee_photo
+
+		fields = ("alvoraa_photo_48", "employee_photo", "Employee.image")
+		for rel, text in self._tree().items():
+			if not rel.startswith("ai_leads/"):
+				continue
+			for field in fields:
+				with self.subTest(file=rel, field=field):
+					self.assertNotIn(field, text,
+					                 f"{rel} names {field}. A face must not reach "
+					                 f"a model (078-PRIV-3)")
+		# And the constant really is what the grep looked for, so a rename
+		# cannot make this test pass by looking for nothing.
+		self.assertEqual(employee_photo.THUMB_FIELD, "alvoraa_photo_48")
+
+	def test_the_two_photo_stores_are_never_joined(self):
+		"""The check-in selfie and the directory picture never meet."""
+		import re
+
+		both = re.compile(r"alvoraa_checkin_photo")
+		for rel, text in self._tree().items():
+			if not both.search(text):
+				continue
+			with self.subTest(file=rel):
+				# A module may mention the check-in photo. It may NOT mention
+				# the directory picture's own field in the same breath.
+				self.assertNotIn("alvoraa_photo_48", text,
+				                 f"{rel} names BOTH photo stores")
+				if rel != "field_app_photos.py":
+					self.assertNotRegex(
+						text, r"alvoraa_checkin_photo[^\n]{0,80}\bimage\b",
+						f"{rel} reads the check-in photo into an image field")
+
+	def test_nothing_turns_the_chart_or_a_profile_into_an_image(self):
+		"""A page of faces saved as a file leaves the permission system behind.
+
+		Two separate assertions, because one broad grep over the whole tree was
+		WRONG and this test caught itself being wrong: the check-in camera in
+		`employee_field_app.js` legitimately calls `canvas.toBlob` to capture a
+		selfie the employee is deliberately taking, which has nothing to do with
+		turning a chart into a picture. Banning canvas everywhere would have
+		been a rule nobody could keep.
+
+		So: the DOM-to-image LIBRARIES are banned outright, because they have no
+		legitimate use anywhere in this product; and a canvas export is banned
+		in the files that draw the chart, the table and the profile.
+		"""
+		import re
+
+		libs = re.compile(r"html2canvas|dom-to-image|domtoimage|html-to-image", re.I)
+		export = re.compile(r"toPng|toJpeg|toBlob|toDataURL", re.I)
+		chart_files = ("public/js/ess/portal.js",
+		               "templates/includes/ess/parts/positions.html",
+		               "templates/includes/ess/parts/drawers.html",
+		               "templates/includes/ess/parts/org-settings.html")
+		tree = self._tree()
+		for rel, text in tree.items():
+			with self.subTest(file=rel):
+				self.assertNotRegex(text, libs,
+				                    f"{rel} pulls in a DOM-to-image library")
+		for rel in chart_files:
+			self.assertIn(rel, tree, f"{rel} moved - fix this test's list")
+			with self.subTest(file=rel):
+				self.assertNotRegex(
+					tree[rel], export,
+					f"{rel} can export the chart, the table or a profile as an image")
+
+
+	def test_no_matching_scoring_or_emotion_wording_exists_about_a_face(self):
+		"""Not a grep for a library - a grep for the INTENTION, so a hand-rolled
+		one is caught too."""
+		import re
+
+		banned = re.compile(
+			r"face_match|face_recognit|facial_recognit|face_score|face_verif"
+			r"|verify_face|match_face|emotion", re.I)
+		for rel, text in self._tree().items():
+			with self.subTest(file=rel):
+				self.assertNotRegex(text, banned, f"{rel} looks like face matching")

@@ -26,6 +26,7 @@ import frappe
 import hrms.alvoraa_org_structure.people_fields as people_fields
 import hrms.alvoraa_org_structure.settings as org_settings
 from frappe import _
+from frappe.utils import cint
 
 POSITION = "Alvoraa Position"
 DOC_TYPE = "Employee Document Type"
@@ -35,6 +36,7 @@ DOCS_KEY = "alvoraa_positions_document_types"
 MY_KEY = "alvoraa_my_profile_fields"
 RETENTION_KEY = "alvoraa_joiner_retention_days"
 LINK_KEY = "alvoraa_joiner_link_days"
+EMAIL_PHOTO_KEY = "alvoraa_photo_in_emails"
 
 # A document of one of these categories is an identity, statutory or
 # background-check paper. Ticking one puts the FILE itself one click from a
@@ -84,6 +86,7 @@ def get_people_settings():
 		# them rather than calling either "retention" or "expiry".
 		"retention_days": frappe.db.get_default(RETENTION_KEY) or "",
 		"link_days": org_settings.get(LINK_KEY),
+		"photo_in_emails": photo_in_emails(),
 		"last_changed": _last_changed(),
 	}
 
@@ -212,7 +215,8 @@ def set_people_setting(key=None, value=None):
 	`Version` row live. Nothing about who may change these settings is decided
 	twice.
 	"""
-	if key not in (PROFILE_KEY, DOCS_KEY, MY_KEY, RETENTION_KEY, LINK_KEY):
+	if key not in (PROFILE_KEY, DOCS_KEY, MY_KEY, RETENTION_KEY, LINK_KEY,
+	               EMAIL_PHOTO_KEY):
 		from hrms.alvoraa_hr_core.access import refuse
 
 		refuse(_("That setting cannot be changed here."), "078-SEC-5",
@@ -229,10 +233,35 @@ def _last_changed():
 		"Version",
 		filters={"ref_doctype": "DefaultValue",
 		         "docname": ("in", [PROFILE_KEY, DOCS_KEY, MY_KEY, RETENTION_KEY,
-		                            LINK_KEY])},
+		                            LINK_KEY, EMAIL_PHOTO_KEY])},
 		fields=["owner", "creation"], order_by="creation desc", limit=1)
 	if not rows:
 		return {"by": "", "on": ""}
 	return {"by": frappe.db.get_value("User", rows[0].owner, "full_name")
 	              or rows[0].owner,
 	        "on": str(rows[0].creation)}
+
+
+# ── the one thing a Jinja email template is allowed to ask us ────────────────
+
+def photo_in_emails():
+	"""May an employee's photograph go into a company-wide reminder email?
+
+	Counsel, 29 October 2026: the employer must be able to stop photographs
+	going out in mail without turning off the photograph feature and without
+	turning off the reminders. **Off unless a System Manager has ticked it on**
+	(`alvoraa_org_structure.settings`, in the access-granting set, so the change
+	leaves a `Version` row).
+
+	Read from two Jinja templates in `templates/emails/`, which is why it is
+	registered in `hooks.py`'s `jinja.methods`. It takes no arguments and
+	returns a bool, so a template cannot ask it about anybody in particular.
+
+	**Fails CLOSED.** Anything unreadable means no photograph in the mail - the
+	cost of a missing face in a birthday email is nobody noticing; the cost of
+	the other answer is a face in every colleague's inbox.
+	"""
+	try:
+		return bool(cint(org_settings.get("alvoraa_photo_in_emails")))
+	except Exception:
+		return False

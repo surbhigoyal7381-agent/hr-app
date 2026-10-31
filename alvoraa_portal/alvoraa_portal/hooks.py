@@ -89,6 +89,11 @@ jinja = {"methods": [
     # ALV-175: our own templates/emails/standard.html calls this to close the
     # gap where no outgoing Email Account has our lockup set at all.
     "alvoraa_portal.email_brand.resolve_header_logo",
+    # Slice 078, counsel 29 Oct 2026: our own copies of hrms'
+    # templates/emails/{birthday,anniversary}_reminder.html ask this before
+    # putting a person's photograph into a company-wide email. Off unless a
+    # System Manager has ticked it on; fails closed.
+    "alvoraa_portal.people_settings.photo_in_emails",
 ]}
 
 # ── Doctype event hooks ────────────────────────────────────────────────────

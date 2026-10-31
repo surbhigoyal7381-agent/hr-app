@@ -34,6 +34,7 @@ import hrms.alvoraa_org_structure.people_fields as people_fields
 from frappe import _
 from frappe.utils import cstr
 
+from alvoraa_portal import people_settings
 from alvoraa_portal.employee_photo import IMAGE_FIELD, _my_employee
 from alvoraa_portal.field_app_limits import SELF_KEY, _limited
 
@@ -89,6 +90,12 @@ def get_my_profile():
 		"fields": [{"fieldname": f, "value": cstr((values or {}).get(f) or "")}
 		           for f in fields],
 		"password_last_set": str(last_set) if last_set else None,
+		# 078-PRIV-1. The notice has to say what this organisation has actually
+		# chosen, not a fixed claim: counsel's setting (29 Oct 2026) lets the
+		# employer keep photographs out of company-wide mail, and it is OFF by
+		# default. A notice that overstates the audience is the one failure a
+		# notice cannot have.
+		"photo_in_emails": people_settings.photo_in_emails(),
 	}
 
 

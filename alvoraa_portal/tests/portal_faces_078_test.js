@@ -135,9 +135,16 @@ async function openMyProfile(routes) {
   yes(/organisation chart/i.test(said), "078 PRIV-1: and the organisation chart");
   yes(/team pages/i.test(said), "078 PRIV-1: and team pages");
   yes(/appraisals/i.test(said), "078 PRIV-1: and APPRAISALS", said);
-  yes(/emails/i.test(said), "078 PRIV-1: and EMAILS", said);
   yes(/Nobody uses it to check who you are or when you arrived/.test(said),
       "078 PRIV-1: and it still makes the two promises it always made");
+  /* EMAILS, and the sentence must say what the ORGANISATION CHOSE rather than
+     a fixed claim (counsel, 29 Oct 2026). The fixture above sends no
+     `photo_in_emails`, so the notice must say it is NOT in the mail. */
+  yes(/not put into the birthday or work anniversary emails/i.test(said),
+      "078 PRIV-1: with the setting off, the notice says the picture is NOT in "
+      + "those emails", said);
+  yes(!/has also chosen to put it into/i.test(said),
+      "078 PRIV-1: and does not claim it is");
 
   // ── 2. what the upload sends ─────────────────────────────────────────────
   const picked = card.querySelector("#myp-file");
@@ -342,6 +349,23 @@ async function openMyProfile(routes) {
       + "a count", body);
   yes(/2 of these 3 is an identity, statutory, verification, employment or address/.test(body),
       "078 AC-84: and says how many of them are sensitive");
+
+  /* Counsel's email tick, on the card, and it SENDS only the key and the
+     value - the thing the screen draws is not the thing being tested. */
+  const mail = $("ocs-mail");
+  yes(!!mail && mail.type === "checkbox" && !mail.checked,
+      "078 (counsel): the email tick is on the card and starts OFF");
+  CALLS.length = 0;
+  ROUTES.set_people_setting = { ok: { ok: true } };
+  mail.checked = true;
+  mail.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await settle(120);
+  const sent2 = callsTo("set_people_setting")[0];
+  yes(!!sent2, "078 (counsel): ticking it saves");
+  if (sent2) {
+    eq([sent2.args.key, sent2.args.value], ["alvoraa_photo_in_emails", "1"],
+       "078 (counsel): sending exactly the key and the value, nothing else");
+  }
 
   // ── 11. the picker: OK names the consequence, Cancel writes nothing ──────
   CALLS.length = 0;
@@ -552,6 +576,75 @@ async function openMyProfile(routes) {
       "078 AC-45: an empty list means NO SECTION AT ALL");
   key("Escape");
   await settle(20);
+
+  // ── 15. AC-47: the enlarged picture is held for the life of the page ────
+  /* "Cached for the rest of the session" is built as a JAVASCRIPT hold, not as
+     an HTTP cache - private files go out `Cache-Control: no-cache`, so the
+     browser would revalidate every single time and no product copy claims
+     otherwise. What is pinned here is that a second enlargement of the SAME
+     person makes no second request. */
+  ROUTES.get_positions_profile = { ok: WHO };
+  ROUTES.get_employee_documents = { ok: { documents: [] } };
+  /* Count every request the page makes for the 512 px picture. jsdom does not
+     fetch an <img> at all, so the observable is the `src` assignment itself. */
+  let fullLoads = 0;
+  const imgProto = window.HTMLImageElement.prototype;
+  const srcDesc = Object.getOwnPropertyDescriptor(imgProto, "src")
+    || Object.getOwnPropertyDescriptor(window.Element.prototype, "src");
+  Object.defineProperty(imgProto, "src", {
+    configurable: true,
+    get() { return this.getAttribute("src") || ""; },
+    set(v) {
+      if (String(v) === WHO.image) fullLoads++;
+      this.setAttribute("src", String(v));
+      /* jsdom never fires load for a fake url, so stand in for the browser:
+         the element is now "complete" as far as the page is concerned. */
+      const ev = new window.Event("load");
+      setTimeout(() => this.dispatchEvent(ev), 0);
+    },
+  });
+
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(200);
+  click($("emp-drawer").querySelector('#ed-av [data-mpf="big"]'));
+  await settle(60);
+  yes(fullLoads === 1, "078 AC-47: enlarging asks for the 512 px picture ONCE",
+      String(fullLoads));
+
+  /* Close the enlargement and open it again - same person, same page. */
+  key("Escape");
+  await settle(20);
+  click($("emp-drawer").querySelector('#ed-av [data-mpf="big"]'));
+  await settle(60);
+  yes(fullLoads === 1,
+      "078 AC-47: a SECOND enlargement of the same person makes NO second "
+      + "request - the loaded element is held for the life of the page",
+      String(fullLoads));
+  yes(!!$("emp-drawer").querySelector(".mpf-big .mpf-big-f"),
+      "078 AC-47: and the full picture is shown, not the blurred copy");
+
+  key("Escape"); await settle(20);
+  key("Escape"); await settle(20);
+  if (srcDesc) Object.defineProperty(imgProto, "src", srcDesc);
+
+  // ── 16. PRIV-1's notice follows the email setting ───────────────────────
+  /* The one failure a privacy notice cannot have is overstating the audience.
+     So the email sentence is conditional on what the tenant configured - and
+     both halves are asserted, because a notice that is wrong in the OTHER
+     direction (claiming mail when there is none) is also wrong. */
+  await openMyProfile({ get_my_profile: { ok: Object.assign(PROFILE(), { photo_in_emails: true }) },
+    birthdays_this_month: { ok: { on: 0 } } });
+  const onSaid = text($("myp-pic").querySelector(".myp-notice"));
+  yes(/has also chosen to put it into the birthday and work anniversary emails/i.test(onSaid),
+      "078 PRIV-1: with the setting ON, the notice says so plainly", onSaid);
+  yes(!/not put into the birthday/i.test(onSaid),
+      "078 PRIV-1: and does not also say the opposite");
+  /* Everything else in the notice is unconditional - the surfaces that are
+     always true stay named whichever way the setting goes. */
+  for (const must of ["staff directory", "organisation chart", "team pages", "appraisals"]) {
+    yes(onSaid.toLowerCase().includes(must),
+        "078 PRIV-1: and still names " + must);
+  }
 
   console.log(`\n### 078 faces and profile DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

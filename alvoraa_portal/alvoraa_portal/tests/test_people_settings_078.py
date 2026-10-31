@@ -181,3 +181,96 @@ class TestTheAudienceFigure(_Base):
 		frappe.set_user(self.p["hr_wide_user"])
 		with self.assertRaises(frappe.PermissionError):
 			people_settings.who_can_open_positions()
+
+
+class TestPhotographsInEmails(_Base):
+	"""Counsel, 29 October 2026: the employer must be able to stop photographs
+	going out in company-wide mail **without** turning off the photograph
+	feature and without turning off the reminders.
+
+	This is the widest reach a photograph has in the product and the only one
+	the person in it cannot see, cannot check and cannot recall. `hrms` puts the
+	photograph's URL straight into the mail body, and
+	`send_work_anniversary_reminders` is switched on on dev - so the gap was
+	live, not theoretical.
+	"""
+
+	def test_it_is_off_unless_somebody_ticks_it_on(self):
+		"""A changed default, said out loud. Nothing visible changes on the day
+		this ships, because no employee at any tenant has a photograph."""
+		self.assertEqual(org_settings.DEFAULTS["alvoraa_photo_in_emails"], 0)
+		self.assertFalse(people_settings.photo_in_emails())
+
+	def test_a_system_manager_can_tick_it_on(self):
+		frappe.set_user(self.sm_user)
+		people_settings.set_people_setting(key="alvoraa_photo_in_emails", value="1")
+		self.assertTrue(people_settings.photo_in_emails())
+
+	def test_an_hr_manager_cannot(self):
+		"""It decides whether a face goes to every colleague, so it belongs in
+		the access-granting set like the other five."""
+		self.assertIn("alvoraa_photo_in_emails", org_settings.ACCESS_GRANTING)
+		frappe.set_user(self.p["hr_wide_user"])
+		with self.assertRaises(frappe.PermissionError):
+			people_settings.set_people_setting(key="alvoraa_photo_in_emails", value="1")
+
+	def test_only_0_or_1_can_be_saved(self):
+		"""A typo must not read as "on"."""
+		frappe.set_user(self.sm_user)
+		for bad in ("", "yes", "2", "true", "-1"):
+			with self.subTest(bad=bad):
+				with self.assertRaises(frappe.PermissionError):
+					people_settings.set_people_setting(
+						key="alvoraa_photo_in_emails", value=bad)
+
+	def test_it_fails_closed(self):
+		"""An unreadable setting means NO photograph in the mail. A missing face
+		in a birthday email is nobody noticing; the other answer is a face in
+		every colleague's inbox."""
+		real = org_settings.get
+		org_settings.get = lambda key: (_ for _ in ()).throw(RuntimeError("boom"))
+		try:
+			self.assertFalse(people_settings.photo_in_emails())
+		finally:
+			org_settings.get = real
+
+	def test_our_own_copies_of_the_two_templates_win_the_search(self):
+		"""Frappe's Jinja loader searches installed apps in REVERSED install
+		order, and `alvoraa_portal` is installed after `hrms` on every site - so
+		our copies are found first. Proved by asking the loader, not assumed."""
+		import frappe.utils.jinja as fj
+
+		for name in ("birthday_reminder", "anniversary_reminder"):
+			with self.subTest(template=name):
+				src = fj.get_jenv().loader.get_source(
+					fj.get_jenv(), f"templates/emails/{name}.html")[0]
+				self.assertIn("photo_in_emails()", src,
+				              f"hrms' own {name}.html won the search - our "
+				              f"override is not being used")
+				self.assertIn("Slice 078", src)
+
+	def test_the_templates_ask_before_putting_a_face_in_the_mail(self):
+		"""The one changed condition, in both files, read from the real source."""
+		import os
+
+		import alvoraa_portal
+
+		base = os.path.join(os.path.dirname(alvoraa_portal.__file__),
+		                    "templates", "emails")
+		for name in ("birthday_reminder", "anniversary_reminder"):
+			with self.subTest(template=name):
+				text = open(os.path.join(base, f"{name}.html"),
+				            encoding="utf-8").read()
+				self.assertIn("{% if person.image and photo_in_emails() %}", text)
+				# And the initials block upstream already draws is still there,
+				# so the email looks like itself with the setting off.
+				self.assertIn("get_abbr(person.name)", text)
+
+	def test_the_jinja_method_is_registered(self):
+		"""A template calling an unregistered method renders nothing and says
+		nothing, so the email would silently lose every face - or every face
+		would silently come back."""
+		from alvoraa_portal import hooks
+
+		self.assertIn("alvoraa_portal.people_settings.photo_in_emails",
+		              hooks.jinja["methods"])

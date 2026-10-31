@@ -132,6 +132,26 @@ DEFAULTS = {
 	# Easy to confuse with the key above, which is why both labels say what
 	# they mean in plain words rather than "retention" and "expiry".
 	"alvoraa_joiner_link_days": 7,
+
+	# Whether an employee's photograph is included in the company-wide birthday
+	# and work anniversary emails. Counsel asked for this by name on 29 Oct
+	# 2026: the employer must be able to stop photographs going out in mail
+	# WITHOUT turning off the photograph feature, and without turning off the
+	# reminders either.
+	#
+	# **OFF by default, and that is a deliberate change from what the product
+	# does today.** `hrms` puts the photograph's URL straight into the mail body
+	# (`controllers/employee_reminders.py`, rendered by
+	# `templates/emails/{birthday,anniversary}_reminder.html`), and
+	# `send_work_anniversary_reminders` is switched ON on dev. Mail is the one
+	# surface the person in the photograph cannot see, cannot check and cannot
+	# recall, so it is the one place the safe default is worth a changed
+	# behaviour. Nothing visible changes on the day this ships, because no
+	# employee at any tenant has a photograph yet - which is the whole premise
+	# of slice 078.
+	#
+	# A tenant that wants faces in its birthday mail ticks it on.
+	"alvoraa_photo_in_emails": 0,
 }
 
 # Slice 012 F1 (SEC-18): the keys that hand out privilege on the org chart.
@@ -157,6 +177,9 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_my_profile_fields",
 	"alvoraa_joiner_retention_days",
 	"alvoraa_joiner_link_days",
+	# It decides whether a face goes out to every colleague by email, which is
+	# exactly the kind of decision this set exists for.
+	"alvoraa_photo_in_emails",
 })
 
 # Which rule id a refusal and a change are logged under. Slice 012's four keys
@@ -169,6 +192,7 @@ RULE_FOR_KEY = {
 	"alvoraa_my_profile_fields": "078-SEC-5",
 	"alvoraa_joiner_retention_days": "078-SEC-5",
 	"alvoraa_joiner_link_days": "078-SEC-5",
+	"alvoraa_photo_in_emails": "078-PRIV-1",
 }
 DEFAULT_RULE = "SEC-18"
 
@@ -214,6 +238,8 @@ LABELS = {
 	# what it actually decides.
 	"alvoraa_joiner_retention_days": ("How long we keep a submission from someone who never joins",
 		"In days. Set it deliberately: until it is set, the joiner form cannot be switched on. Unset or 0 keeps the form off - it does not mean keep for ever."),
+	"alvoraa_photo_in_emails": ("Include photographs in birthday and anniversary emails",
+		"Off by default. Email is the one place a person cannot see, check or recall who received their picture."),
 	"alvoraa_joiner_link_days": ("How long an invite link works",
 		"In days, counted from when HR sends it. Seven by default. Longer suits a joiner who starts next month."),
 }
@@ -320,6 +346,17 @@ def _set_access_setting(key, value):
 				"DefaultValue",
 				key,
 			)
+
+	# A switch, so 0 or 1 and nothing else. A typo must not read as "on".
+	if key == "alvoraa_photo_in_emails" and cstr(value).strip() not in ("0", "1"):
+		refuse(
+			_("Give 0 or 1 for whether photographs go into birthday and "
+			  "anniversary emails."),
+			rule,
+			endpoint,
+			"DefaultValue",
+			key,
+		)
 
 	# How long an invite link works. A blank is refused rather than treated as
 	# "for ever": a link with no expiry is the thing the whole token design is

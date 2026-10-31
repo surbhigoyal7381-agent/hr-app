@@ -646,6 +646,141 @@ async function openMyProfile(routes) {
         "078 PRIV-1: and still names " + must);
   }
 
+  // ── 17. the four prototype-parity fixes (D-5(c), D-5(d), D-6) ───────────
+  /* These four were found by the test report and fixed afterwards, and NONE of
+     them had a test of its own - the fix commits changed no DOM test at all.
+     A parity fix with no assertion is a parity gap again after the next
+     refactor, so each one is pinned here. */
+
+  /* D-5(c). The documents card BELONGS on My profile, not on Home - and this
+     is also what makes AC-20 checkable at all, because AC-20 asks for the card
+     to be ABSENT when the plan is off, on that page. Asserted by where the
+     element sits in the document, not by a class, because the card itself is
+     unchanged: only its place moved. */
+  {
+    const card = $("my-docs-card");
+    yes(!!card, "078 D-5(c): the My Documents card is still in the page");
+    yes(!!card && !!card.closest("#panel-my-profile"),
+        "078 AC-20 / D-5(c): and it now lives on MY PROFILE");
+    yes(!!card && !card.closest("#panel-home"),
+        "078 D-5(c): and no longer on Home");
+    /* The design draws the picture, the details, the documents, the password.
+       Compared by document order so a card moved out of sequence fails. */
+    const order = ["myp-pic", "myp-det", "my-docs-card", "myp-pw"]
+      .map(id => $(id)).filter(Boolean);
+    yes(order.length === 4, "078 D-5(c): all four cards are present",
+        String(order.length));
+    let inOrder = true;
+    for (let i = 1; i < order.length; i++) {
+      if (!(order[i - 1].compareDocumentPosition(order[i])
+            & window.Node.DOCUMENT_POSITION_FOLLOWING)) inOrder = false;
+    }
+    yes(inOrder,
+        "078 D-5(c): in the order 01b 6.1 draws them - picture, details, "
+        + "documents, password");
+  }
+
+  /* D-6. The laptop footer is Preview, Cancel, OK, so the primary action is on
+     the right where it is expected and Cancel is not where OK was drawn. The
+     phone lifts OK to the top with one `order` rule rather than a second copy
+     of the markup - which is why the DOM order is the laptop's. */
+  {
+    doc.querySelectorAll(".ocs-dlg").forEach(d => d.remove());
+    window.ocsLoad();
+    await settle(60);
+    const picker = doc.querySelector('[data-ocs="pick-profile"]');
+    yes(!!picker, "078 D-6: the picker can be opened");
+    if (picker) {
+      click(picker);
+      await settle(40);
+      const row = doc.querySelector(".ocs-ft-b");
+      const got = row ? [...row.children].map(b => b.getAttribute("data-ocs")) : [];
+      eq(got, ["preview", "cancel", "ok"],
+         "078 D-6: the footer's DOM order is Preview, Cancel, OK - the "
+         + "primary action is not where Cancel is expected");
+      click(doc.querySelector('[data-ocs="cancel"]'));
+      await settle(20);
+    }
+  }
+
+  /* D-5(d). The pointer leaving BOTH the photograph and the enlargement closes
+     it; a click PINS it. Before this, brushing past a colleague's photograph
+     left their face filling the drawer until somebody pressed Escape - on the
+     one screen that also carries "Hide before I share my screen".
+
+     The 260 ms grace period is the engineer's own number and was unmeasured.
+     It is MEASURED here: still open well inside it, closed well outside it,
+     and cancelled the instant the pointer comes back. The reason it has to
+     exist is geometry - `.emp-drawer-head` has 18 px of bottom padding
+     between the photo and the enlargement, belonging to neither - so the
+     "comes back" case is the one that matters. */
+  {
+    ROUTES.get_positions_profile = { ok: WHO };
+    ROUTES.get_employee_documents = { ok: { documents: [] } };
+    const over = (el, from) => el.dispatchEvent(new window.MouseEvent(
+      "mouseover", { bubbles: true, relatedTarget: from || null }));
+    const out = (el, to) => el.dispatchEvent(new window.MouseEvent(
+      "mouseout", { bubbles: true, relatedTarget: to || null }));
+    const big = () => $("emp-drawer").querySelector(".mpf-big");
+
+    window.mpfOpen("HR-EMP-9", opener);
+    await settle(200);
+    const face2 = $("emp-drawer").querySelector('#ed-av [data-mpf="big"]');
+
+    /* a) hovering opens it, and it was already doing that. */
+    over(face2);
+    await settle(30);
+    yes(!!big(), "078 D-5(d): hovering the photograph still enlarges it");
+
+    /* b) the pointer leaving for somewhere else closes it - after the grace,
+          not before. Both halves, because a close that is instant is the bug
+          the grace period exists to prevent. */
+    out(face2, doc.body);
+    await settle(120);
+    yes(!!big(),
+        "078 D-5(d): it is still open 120 ms after the pointer left - the "
+        + "grace period is real, so the 18 px of head padding between the "
+        + "photo and the picture cannot close it");
+    await settle(260);
+    yes(!big(),
+        "078 D-5(d): and it IS closed ~380 ms after the pointer left, so a "
+        + "colleague's face does not stay on screen");
+    yes($("emp-drawer").classList.contains("open"),
+        "078 D-5(d): the drawer itself stays open - only the picture closed");
+    yes(doc.activeElement !== face2,
+        "078 AC-60: and a pointer leaving does NOT move focus - a focus ring "
+        + "appearing because somebody brushed past is not a choice they made");
+
+    /* c) coming back cancels it. This is the case the geometry demands. */
+    over(face2);
+    await settle(30);
+    yes(!!big(), "the picture is open again");
+    out(face2, doc.body);
+    await settle(100);
+    over(big() || face2);
+    await settle(300);
+    yes(!!big(),
+        "078 D-5(d): the pointer arriving ON THE PICTURE inside the grace "
+        + "period cancels the close - reaching for it does not dismiss it");
+
+    /* d) a click pins it, and then the pointer leaving does nothing. */
+    click(face2);
+    await settle(30);
+    yes(!!big(), "078 D-5(d): a click on an open picture PINS it, not closes it");
+    out(face2, doc.body);
+    await settle(400);
+    yes(!!big(),
+        "078 D-5(d): and a pinned picture survives the pointer leaving");
+    click(face2);
+    await settle(30);
+    yes(!big(),
+        "078 D-5(d): a second click on a PINNED picture closes it - so touch "
+        + "is unchanged: one tap opens, a second tap closes");
+
+    key("Escape"); await settle(20);
+    key("Escape"); await settle(20);
+  }
+
   console.log(`\n### 078 faces and profile DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

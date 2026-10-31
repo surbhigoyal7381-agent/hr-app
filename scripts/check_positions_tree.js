@@ -1648,6 +1648,31 @@ async function seats072() {
        !/<img class="av-p" src=/.test(list));
     doc.getElementById("pos-f-view").value = "tree";
     W.posPaint();
+
+    /* **D-5(a), the third entry point.** The test report found that only two
+       of the three surfaces the design draws opened the mini profile: the
+       chart's table and the seat page did, and the SEAT TRAY did not. The
+       tray is the only surface that shows every person in a 25-person seat,
+       so without it there was no way at all to open the profile of anybody
+       past the first three names. Same markup as the other two, so the one
+       delegated handler picks it up - which is the thing to assert, because a
+       second handler is how the three drift apart. */
+    draw(withFaces, "reporting", { names: 3 });
+    const seatWithPeople = W.POS.rows.find((r) => (r.people || []).length);
+    W.posSeatSheet(seatWithPeople.id);
+    const tray = doc.getElementById("pos-layer");
+    const trayNames = [...tray.querySelectorAll(".pos-prow .pos-name-link")];
+    ok("078 D-5(a): every name in the SEAT TRAY is a real control",
+       trayNames.length === seatWithPeople.people.length,
+       trayNames.length + " of " + seatWithPeople.people.length);
+    ok("078 D-5(a): carrying the employee it is about",
+       trayNames.length > 0 && trayNames.every(
+         (b) => !!b.getAttribute("data-pos-who")));
+    ok("078 D-5(a): and it is the SAME markup the table uses, so the one "
+       + "delegated handler opens all three surfaces",
+       trayNames.length > 0 && trayNames.every(
+         (b) => b.tagName === "BUTTON" && b.className === "pos-name-link"));
+    W.posCloseSheet(true);
   }
 
   /* 22h. the error state (AC-63) */

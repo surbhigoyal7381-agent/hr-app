@@ -32,7 +32,7 @@ Surbhi approved D-1, D-2 and D-3. The 07 findings, and what was done about each.
 - **The doors were open on production before this branch,** for every tenant. This branch
   shuts them only once it is deployed.
 
-### Doors 1 and 2: separate commit 53a3e9f5
+### Doors 1 and 2: separate commit 5b552ca2 (53a3e9f5 before the rebase onto 81be44a4)
 
 - New `alvoraa_portal/request_guard.py`, registered first in `before_request`. It drops
   `ignore_user_permissions` and `ignore_permissions` from `frappe.local.form_dict` on every
@@ -122,17 +122,110 @@ a slip is read only by its employee, payroll and HR, never by a manager through 
 `check_app_integrity.py`: OK. `check_scope_traps.py`: OK. The full suites have not been
 run yet; that is one run before any push.
 
-### Rollback now removes only what it added (finding 5, review P3-2)
+### Rollback (round 2 version replaced in round 3, below)
 
-- `run_once(dry_run=0)` saves the names of the rows it added to
-  `sites/<tenant>/alv249_rows_added.json`. Running it again adds to the list.
-- `rollback()` deletes only those names, and only while each row still has the exact
-  shape. Then it removes the file.
-- With no saved list it refuses: "No saved list of added rows; nothing removed."
-- Rows that existed before (41 on `test249`) and rows the hooks add later are never
-  touched (tested).
-- A rollback still needs the code reverted too, or the hooks add rows back at the next
-  save or sign-in.
+The round 2 rollback removed only what `run_once` added, so rows made by the sign-in and
+save hooks stayed after a rollback (08 P2-A). Replaced in round 3.
+
+---
+
+## Round 3, after the re-review and re-security review (08), 31 Oct 2026
+
+### Bad news first
+
+- **A rollback needs the deploy time from the deploy log.** User Permission has no spare
+  field to mark our rows. A row made at sign-in is owned by Guest, and one made by a save
+  is owned by whoever saved. So the only reliable split is the row's creation time
+  against the deploy time. The operator types that time once, into `save_existing_rows`.
+- **A rollback also undoes ERPNext's own rows made after the deploy.** These are rows
+  ERPNext adds when someone saves an Employee with "Create User Permission" ticked.
+  ERPNext makes them again at that person's next save, if the tick is still on.
+- **Not done in this round (08 P3-2):** the CI scan does not yet flag a whitelisted
+  method on a document class that takes a skip argument. Today there is none (08 scan).
+- **Still open from 08-re-security:**
+  - `get_unmarked_days` shows a colleague's missing-attendance days (P2);
+  - ESS holders can write their tree's contact and passport fields (P2, needs the DTC
+    count);
+  - `get_my_kras` and `get_leave_allocation_for_posting_date` (P4).
+
+  None of these are in this branch.
+
+### 1. Rollback undoes everything this change made
+
+- **New `save_existing_rows(deployed_at)`** (Administrator only). It writes
+  `sites/<tenant>/alv249_rows_before.json` with the deploy time and the names of every
+  own-record row created **before** that time.
+- **`rollback()` now deletes every own-record row on a linked login except those names.**
+  That covers rows from `run_once`, from the Employee and User save hooks, and from the
+  sign-in hook.
+- **Without the file it refuses.** `rollback(force=1)` removes every own-record row, which
+  is right only where there were none before (DTC had 0 on 31 Oct).
+- **Why a time and not a list taken at once.** Sign-ins start making rows the moment the
+  code is live, so no list can be taken before them. And no field on the row can carry a
+  marker. So the operator gives the deploy time, and rows created after it count as ours.
+- The `run_once` dry run prints whether the file exists, and says to run
+  `save_existing_rows` first if it does not.
+- The round 2 "rows added" file is gone (subtract).
+- Test: rows made by the save hook, the sign-in hook and `run_once` all go. A row dated
+  before the deploy, and a manager's narrow rows, stay. Without the file it refuses;
+  `force=1` removes all.
+
+### 2. Sign-in never blocks
+
+- `on_login` catches every error. The person gets in without the row, which is the state
+  before this change.
+- One Error Log line: title "ALV-249 own-record sync skipped at sign-in", and a message of
+  the form "login sha1:<12 characters> error <type>". No email, no name, no traceback.
+- Test: a sync that raises does not stop `on_login`, and the log line holds the error type
+  but not the email.
+
+### 3. Smaller fixes
+
+- **Guard docstring corrected.** An HR person who holds ERPNext's Company row sees only
+  their company in an "Ignore User Permissions" picker on a multi-company tenant. Nothing
+  changes with one company (DTC). Follow-up ticket 1 covers the Company row.
+- **The guard test that could not fail is deleted**
+  (`test_server_code_passing_the_word_is_untouched`). It only checked that
+  Administrator's list was not empty.
+- **The commit id is fixed above:** 5b552ca2 after the rebase.
+
+### Decisions recorded
+
+- **Surbhi accepted in writing on 31 Oct 2026** that the rule applies at each login's
+  first sign-in after the deploy, before anyone reads the "check by hand" list.
+- **Role check done on all five tenants** (aahr, alvoraa.co, demo, dtc, grace): no custom
+  reviewer roles, except DTC's Location Manager, which already reads Employee and so is
+  excluded.
+- **Residual, owner Surbhi:** DTC's 5 Location Managers, and any role given Employee read
+  under option A, keep reading every employee's date of birth, address and passport
+  number.
+
+### Round 3 test runs (own container `hrlocal-249`, site `test249`, one module at a time)
+
+| Module | Result |
+|---|---|
+| `test_own_record_permission_alv249` | 26 + 1, OK |
+| `test_request_guard_alv249` | 5 + 3, OK (one test deleted, see above) |
+| `test_portal_security_010` | 45 + 5, OK (ceiling still 2 for the module) |
+| `test_access_control` | 34, OK |
+| `test_inbox_counts_034` | 17 + 2, OK |
+| `test_manager_scope` | 12, OK |
+
+`check_app_integrity.py`: OK. `check_scope_traps.py`: OK. Full suites not run yet.
+
+### Runbook for each tenant (in this order)
+
+1. Deploy. Note the deploy time from the deploy log.
+2. Straight after: `bench --site <t> execute alvoraa_portal.own_record_permission.save_existing_rows --kwargs "{'deployed_at': '<deploy time>'}"`.
+3. `run_once` with `dry_run=1`. Read the "check by hand" list. Pass plain staff as
+   `samples`, never a manager: a manager's hand-made Expense Claim rows can print a false
+   FAIL (08 P3-5).
+4. `run_once` with `dry_run=0`. This also covers sessions already open at the deploy and
+   API-key logins, which never pass through sign-in.
+5. After any bulk login creation, or any change to who reads Employee: `run_once` again.
+6. **Rows made at sign-in show "Guest" as owner.** Frappe runs the hook before the
+   session exists. That is expected, not an anonymous change.
+7. To roll back: revert the code first, then run `rollback()`.
 
 ---
 

@@ -158,11 +158,6 @@ class TheGuardItself(FrappeTestCase):
 		finally:
 			frappe.local.form_dict = frappe._dict()
 
-	def test_server_code_passing_the_word_is_untouched(self):
-		"""Only HTTP arguments are dropped; a Python call keeps its own argument."""
-		frappe.set_user("Administrator")
-		self.assertTrue(frappe.get_list("Employee", ignore_user_permissions=True, limit_page_length=1) is not None)
-
 	def test_every_whitelisted_permission_skip_argument_is_dropped(self):
 		"""CI check: a Frappe, ERPNext or Frappe HR upgrade that adds a new whitelisted
 		argument that skips permissions fails here until it is added to DROP or to

@@ -17,8 +17,11 @@ Python call is untouched; this only sees what came over HTTP.
 
 Cost: Frappe's own Desk link field sends `ignore_user_permissions` for a link
 marked "Ignore User Permissions". With it dropped, a login that holds User
-Permissions sees its own permitted records in that picker. HR and System Managers
-hold none, so they see what they saw before.
+Permissions sees only its permitted records in that picker. That includes an HR
+person who holds ERPNext's Company row (made when their Employee is saved with
+"Create User Permission" ticked): on a tenant with more than one company, such a
+picker shows them only their own company. With one company, as at DTC, nothing
+changes. System Managers hold no rows.
 """
 
 import frappe

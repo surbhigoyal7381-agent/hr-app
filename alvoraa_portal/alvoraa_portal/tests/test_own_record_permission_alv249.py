@@ -266,31 +266,49 @@ class SafeToRunTwice(OwnRecordCase):
 
 	def tearDown(self):
 		import os
-		if os.path.exists(orp._added_file()):
-			os.remove(orp._added_file())
+		if os.path.exists(orp._before_file()):
+			os.remove(orp._before_file())
 		super().tearDown()
 
-	def test_rollback_refuses_without_the_saved_list(self):
+	def test_rollback_refuses_without_the_saved_list_unless_forced(self):
 		import os
-		if os.path.exists(orp._added_file()):
-			os.remove(orp._added_file())
+		if os.path.exists(orp._before_file()):
+			os.remove(orp._before_file())
+		me, me_user = self.person("Forced")
 		self.assertRaises(frappe.ValidationError, orp.rollback)
+		self.assertTrue(self.own_rows(me_user, me))
+		orp.rollback(force=1)
+		self.assertFalse(self.own_rows(me_user, me))
 
-	def test_rollback_removes_only_what_run_once_added(self):
-		"""Security review finding 5: rows that existed before stay."""
-		boss, boss_user = self.person("RbBoss")
-		rep, _ = self.person("RbRep", reports_to=boss)
-		late, late_user = self.person("RbLate")
-		before = self.own_rows(boss_user, boss)
-		self.assertTrue(before)  # made by the hook, before run_once
-		frappe.db.delete("User Permission", {"user": late_user, "apply_to_all_doctypes": 1})
-		orp.run_once(dry_run=0, samples=[late_user])
-		added = self.own_rows(late_user, late)
-		self.assertTrue(added)
+	def test_rollback_removes_every_row_made_after_the_deploy_and_keeps_the_rest(self):
+		"""08 P2-A: run_once's rows, the save hooks' rows and the sign-in hook's rows all go;
+		rows from before the deploy and manager_scope's narrow rows stay."""
+		old, old_user = self.person("RbOld")
+		rep, _ = self.person("RbRep", reports_to=old)
+		for name in self.own_rows(old_user, old):
+			frappe.db.set_value("User Permission", name, "creation", "2020-01-01 00:00:00")
+		self.assertEqual(orp.save_existing_rows(deployed_at="2026-01-01 00:00:00") >= 1, True)
+		saved, saved_user = self.person("RbSaved")          # made by the Employee save hook
+		email = "orprbsign%d@example.com" % self.tag          # made by the sign-in hook
+		frappe.get_doc({"doctype": "User", "email": email, "first_name": "OrpRbSign",
+		                "send_welcome_email": 0}).insert(ignore_permissions=True).add_roles("Employee")
+		signed, _ = self.person("RbSignTarget", user_id=None)
+		frappe.db.set_value("Employee", signed, "user_id", email)
+
+		class Login:
+			user = email
+		orp.on_login(Login())
+		ran, ran_user = self.person("RbRun")                 # made by run_once
+		frappe.db.delete("User Permission", {"user": ran_user, "apply_to_all_doctypes": 1})
+		orp.run_once(dry_run=0, samples=[ran_user])
+		for u, e in ((saved_user, saved), (email, signed), (ran_user, ran)):
+			self.assertTrue(self.own_rows(u, e))
+		kept = self.own_rows(old_user, old)
 		orp.rollback()
-		self.assertFalse(self.own_rows(late_user, late))
-		self.assertEqual(self.own_rows(boss_user, boss), before)
-		self.assertTrue(frappe.db.exists("User Permission", {"user": boss_user, "for_value": rep,
+		for u, e in ((saved_user, saved), (email, signed), (ran_user, ran)):
+			self.assertFalse(self.own_rows(u, e), u)
+		self.assertEqual(self.own_rows(old_user, old), kept)
+		self.assertTrue(frappe.db.exists("User Permission", {"user": old_user, "for_value": rep,
 		                                                     "applicable_for": "Attendance"}))
 
 
@@ -318,6 +336,23 @@ class LinkedByDatabaseWrite(OwnRecordCase):
 		frappe.db.set_value("Employee", emp, "user_id", email)
 		orp.sync_user(email)
 		self.assertTrue(self.own_rows(email, emp))
+
+	def test_a_failing_sync_never_blocks_the_sign_in(self):
+		"""08 P3-1: the person gets in; one Error Log line with no email in it."""
+		from unittest.mock import patch
+		email = "orpfail%d@example.com" % self.tag
+
+		class Login:
+			user = email
+		before = frappe.db.count("Error Log")
+		with patch.object(orp, "sync_user", side_effect=RuntimeError("boom " + email)):
+			orp.on_login(Login())  # must not raise
+		logs = frappe.get_all("Error Log", fields=["method", "error"], order_by="creation desc",
+		                      limit=frappe.db.count("Error Log") - before)
+		self.assertEqual(len(logs), 1)
+		self.assertIn("ALV-249", logs[0].method)
+		self.assertNotIn(email, logs[0].error)
+		self.assertIn("RuntimeError", logs[0].error)
 
 	def test_login_hook_is_wired(self):
 		self.assertIn("alvoraa_portal.own_record_permission.on_login", frappe.get_hooks("on_login"))

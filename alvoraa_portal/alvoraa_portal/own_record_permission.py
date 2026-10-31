@@ -31,12 +31,17 @@ set. That is ERPNext's standard behaviour, chosen on 31 Oct 2026 (D-2).
 
 WHY A BYPASS. Only System Manager may write User Permission, and these run
 when HR saves an Employee or a User. The two writes below are the only ones.
+
+OWNER. A row made at sign-in shows "Guest" as its owner: Frappe runs on_login
+before the session exists. A row made by a save shows the person who saved.
 """
 
+import hashlib
 import json
 import os
 
 import frappe
+from frappe.utils import get_datetime
 
 ALLOW = "Employee"
 SELF_SERVICE = {"Employee", "Employee Self Service"}
@@ -120,8 +125,18 @@ def on_user_update(doc, method=None):
 def on_login(login_manager):
 	"""on_login: catches every login linked by a direct database write, and every
 	role whose Employee read was changed in Role Permission Manager since the
-	login's last save, before the session is handed back."""
-	sync_user(login_manager.user)
+	login's last save, before the session is handed back.
+
+	Never blocks a sign-in. On any error the person gets in without the row (the
+	state before this change), and one short Error Log line says so: a hash of the
+	login and the error's type, no name, no email, no traceback."""
+	try:
+		sync_user(login_manager.user)
+	except Exception as e:
+		user = str(getattr(login_manager, "user", ""))
+		frappe.log_error(title="ALV-249 own-record sync skipped at sign-in",
+		                 message="login sha1:%s error %s" % (
+		                     hashlib.sha1(user.encode()).hexdigest()[:12], type(e).__name__))
 
 
 # ── The one-off run on a live tenant (ALV-249 step 3). Never run by migrate. ──
@@ -134,7 +149,7 @@ def _linked():
 def _own_rows(linked):
 	own = {(e.user_id, e.name) for e in linked}
 	rows = frappe.get_all("User Permission", filters={"allow": ALLOW, "apply_to_all_doctypes": 1},
-	                      fields=["name", "user", "for_value"], limit_page_length=0)
+	                      fields=["name", "user", "for_value", "creation"], limit_page_length=0)
 	return [r for r in rows if (r.user, r.for_value) in own]
 
 
@@ -160,8 +175,27 @@ def _expected(employee):
 	return {"employee": len(tree), "employee_ref_todo": len(tree), "claims": len(claims)}
 
 
-def _added_file():
-	return frappe.get_site_path("alv249_rows_added.json")
+def _before_file():
+	return frappe.get_site_path("alv249_rows_before.json")
+
+
+def save_existing_rows(deployed_at):
+	"""Run once per tenant, right after the deploy: save the own-record rows that
+	existed before the deploy, so rollback() can leave exactly those.
+
+	deployed_at: the deploy time from the deploy log, in the site's time zone.
+	Rows created after it were made by this change (sign-in, saves, run_once).
+	Why a time and not a list taken at once: sign-ins start the moment the code is
+	live, and a User Permission has no spare field to mark ours with."""
+	if frappe.session.user != "Administrator":
+		frappe.throw("Run as Administrator.", frappe.PermissionError)
+	cutoff = get_datetime(deployed_at)
+	names = sorted(r.name for r in _own_rows(_linked()) if r.creation < cutoff)
+	deployed_at = str(cutoff)
+	with open(_before_file(), "w") as f:
+		json.dump({"deployed_at": deployed_at, "names": names}, f)
+	print("saved", len(names), "rows that existed before", deployed_at, "to", _before_file())
+	return len(names)
 
 
 def run_once(dry_run=1, samples=None):
@@ -202,21 +236,15 @@ def run_once(dry_run=1, samples=None):
 		print("BEFORE", u, _counts_as(u))
 	for u in other:
 		print("BEFORE (no row)", u, before_other[u])
+	print("rollback list:", _before_file() if os.path.exists(_before_file()) else
+	      "MISSING - run save_existing_rows(deployed_at=<deploy time>) before the real run")
 	if dry_run:
 		print("dry run: nothing written")
 		return 0
 
 	before_names = {r.name for r in rows}
 	removed = sum(sync(e.user_id, e.name, excluded) == "removed" for e in linked)
-	added = sorted({r.name for r in _own_rows(linked)} - before_names)
-	# Keep what this run added, so rollback() removes exactly that and nothing ERPNext made.
-	known = []
-	if os.path.exists(_added_file()):
-		with open(_added_file()) as f:
-			known = json.load(f)
-	with open(_added_file(), "w") as f:
-		json.dump(sorted(set(known) | set(added)), f)
-	print("added", len(added), "removed", removed, "| row names saved to", _added_file())
+	print("added", len({r.name for r in _own_rows(linked)} - before_names), "removed", removed)
 
 	fails = 0
 
@@ -239,19 +267,22 @@ def run_once(dry_run=1, samples=None):
 	return fails
 
 
-def rollback():
-	"""Remove only the rows run_once added, from the list it saved. Rows that existed
-	before, and rows the hooks add later, are left alone. Refuses without the list.
-	Revert the code too, or the hooks add rows back on the next save or login."""
+def rollback(force=0):
+	"""Remove every own-record row on a linked login except those saved by
+	save_existing_rows(): run_once's, the sign-in hook's and the save hooks'.
+	Refuses without the saved list; force=1 removes every own-record row (right
+	only where there were none before, as at DTC on 31 Oct 2026).
+	Revert the code first, or the hooks add rows back on the next save or sign-in."""
 	if frappe.session.user != "Administrator":
 		frappe.throw("Run as Administrator.", frappe.PermissionError)
-	if not os.path.exists(_added_file()):
-		frappe.throw("No saved list of added rows; nothing removed.", frappe.ValidationError)
-	with open(_added_file()) as f:
-		names = json.load(f)
-	own = {r.name for r in _own_rows(_linked())}
-	gone = [n for n in names if n in own]
+	keep = set()
+	if os.path.exists(_before_file()):
+		with open(_before_file()) as f:
+			keep = set(json.load(f)["names"])
+	elif not int(force):
+		frappe.throw("No list of rows from before the deploy; nothing removed. Run "
+		             "save_existing_rows, or pass force=1 if there were none.", frappe.ValidationError)
+	gone = [r.name for r in _own_rows(_linked()) if r.name not in keep]
 	_delete(gone)
-	os.remove(_added_file())
-	print("removed", len(gone), "of", len(names), "saved")
+	print("removed", len(gone), "kept", len(keep))
 	return len(gone)

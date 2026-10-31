@@ -2916,3 +2916,42 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
   .ocs-ft-b{flex-direction:column}
   .ocs-ft-b .ocs-b{width:100%}
 }
+
+/* ── The seat page, slice 078 ─────────────────────────────────────────────
+   Prefix sp. This was a 560 px modal; it is now a page, so it gets a page's
+   measure rather than a dialog's - 760 px, which keeps a line of text
+   readable without the form sprawling across a laptop. */
+.sp-wrap{max-width:760px}
+/* A labelled way back, not a cross. It is an <a> with a real href, so it
+   works from a keyboard with no handler at all. */
+.sp-back{display:inline-flex;align-items:center;min-height:44px;
+  font-size:var(--fs-base);color:var(--text2);text-decoration:none}
+.sp-back:hover{color:var(--text);text-decoration:underline}
+.sp-back:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.sp-h{margin:4px 0 2px;font-size:var(--fs-xl);font-weight:700;color:var(--text)}
+.sp-h:focus{outline:none}
+.sp-sub{margin:0 0 18px;font-size:var(--fs-base);color:var(--text3)}
+.sp-card{margin-bottom:20px}
+.sp-h2{margin:0 0 12px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+/* Part 3 runs on from part 2 inside the same card, so its heading needs the
+   same break the card boundary gives the others. */
+.sp-card .sp-h2:not(:first-child){margin-top:24px;padding-top:20px;
+  border-top:1px solid var(--border2)}
+.sp-person{display:flex;gap:10px;align-items:center;padding:8px 0;
+  border-bottom:1px solid var(--border2)}
+.sp-person:last-child{border-bottom:0}
+.sp-person > span{flex:1;min-width:0;font-size:var(--fs-base);overflow-wrap:anywhere}
+.sp-person .av{width:28px;height:28px;border-radius:50%;flex:none;background:var(--bg);
+  display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);
+  font-weight:700;color:var(--text3)}
+.sp-out{flex:none}
+.sp-foot{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:20px;
+  padding-top:16px;border-top:1px solid var(--border2)}
+.sp-b{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.sp-b:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+@media (max-width:640px){
+  .sp-foot .sp-b{width:100%}
+  .sp-foot{flex-direction:column;align-items:stretch}
+  .sp-foot .btn-danger{margin-right:0!important;order:3}
+}

@@ -76,7 +76,13 @@ const INVENTORY = {
                                   ["#goal-drawer", "#goal-drawer-overlay"]] },
   ".emp-drawer-overlay":  { page: "portal", kind: "scrim" },
   // Full-window backdrops of centred dialogs (every .gp-backdrop dialog,
-  // including #pos-editor, #pos-delete, #pos-person, #pos-setup, #dr-confirm)
+  // including #pos-delete, #pos-person, #pos-setup, #dr-confirm).
+  //
+  // `#pos-editor` is NOT in that list any more: slice 078 made the seat editor
+  // a page with its own address, so there is no backdrop for it and nothing
+  // here to prove about one. The entry stays on the CLASS, which is where the
+  // real rule always was - a stale comment naming a dialog that no longer
+  // exists is how the next person comes to believe it still does.
   ".gp-backdrop":         { page: "portal", kind: "dialog", open: "class" },
   ".tv-pop-backdrop":     { page: "portal", kind: "dialog", open: "class" },
   // Slice 076: Home's sheets (Pending, Notices, the leave decision). Built by

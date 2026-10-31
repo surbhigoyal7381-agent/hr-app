@@ -327,8 +327,13 @@ function ocFaceOn(img) {
   img.src = src;
 }
 function ocFaces(root) {
-  var imgs = (root || document).querySelectorAll("img.av-p[data-src]");
-  if (!imgs.length) return;
+  /* Called after EVERY paint, so it must never be the thing that takes a paint
+     down: a chart with unfetched faces is a chart, and a chart that threw is a
+     blank screen. */
+  var where = root || document;
+  if (!where || typeof where.querySelectorAll !== "function") return;
+  var imgs = where.querySelectorAll("img.av-p[data-src]");
+  if (!imgs || !imgs.length) return;
   if (typeof IntersectionObserver !== "function") {
     /* No observer: fetch them all rather than show empty circles. */
     Array.prototype.forEach.call(imgs, ocFaceOn);
@@ -348,10 +353,11 @@ function ocFaces(root) {
 /* Before a wall chart prints: every face, now, and wait for them. A deferred
    image prints as a blank circle, which is worse than initials. */
 function ocFacesAllNow(root) {
-  var imgs = (root || document).querySelectorAll("img.av-p[data-src]");
-  Array.prototype.forEach.call(imgs, ocFaceOn);
+  var where = root || document;
+  if (!where || typeof where.querySelectorAll !== "function") return Promise.resolve(0);
+  Array.prototype.forEach.call(where.querySelectorAll("img.av-p[data-src]"), ocFaceOn);
   var pending = Array.prototype.filter.call(
-    (root || document).querySelectorAll("img.av-p"),
+    where.querySelectorAll("img.av-p"),
     function (i) { return !i.complete; });
   if (!pending.length) return Promise.resolve(0);
   return Promise.all(pending.map(function (i) {
@@ -1984,13 +1990,19 @@ function posPaintPeople() {
 
   box.innerHTML = r.people.length
     ? r.people.map(function (p) {
-        return '<div style="display:flex;gap:8px;align-items:center;'
-          + 'justify-content:space-between;padding:4px 0">'
-          // Surbhi, 28 Oct 2026: whoever opens this dialog must be in the same
+        return '<div class="sp-person">'
+          // Slice 078: the face, and the name opens the SAME mini profile the
+          // Positions table and the seat tray open - one behaviour for one job
+          // (AC-57). The field list and every state come from one place, so
+          // the two surfaces cannot drift into different answers (AC-58).
+          + ocAvatar(p)
+          // Surbhi, 28 Oct 2026: whoever opens this must be in the same
           // context as the chart behind it. posPlanMark gives nothing to a
           // non-reader (the server sends them no plan) and nothing while marks
-          // are hidden, so the dialog is identical in both cases.
-          + "<span>" + posPlanMark(p).pre + posEsc(p.name)
+          // are hidden, so this is identical in both cases.
+          + "<span>" + posPlanMark(p).pre
+          + '<button type="button" class="pos-name-link" data-pos-who="'
+          + posEsc(p.employee || "") + '">' + posEsc(p.name) + "</button>"
           + (posPlanOf(p)
               ? ' <span class="pf-card-meta pos-planmeta private">'
                 + drT("replacement planned") + "</span>" : "")
@@ -2004,12 +2016,14 @@ function posPaintPeople() {
                 + "</span>" : "")
           + "</span>"
           + (POS.may_edit
-              ? '<button class="btn btn-outline btn-sm" onclick="posTakeOut('
+              ? '<button class="btn btn-outline btn-sm sp-out" onclick="posTakeOut('
                 + "'" + posEsc(p.assignment) + "'" + ')">Take out</button>'
               : "")
           + "</div>";
       }).join("")
     : '<div class="pf-card-meta">Nobody is in this seat.</div>';
+  /* The faces are fetched by the same rule as everywhere else (OPS-19). */
+  ocFaces(box);
 }
 
 /* What a seat offers, and only what it can actually do.
@@ -2536,7 +2550,7 @@ window.posSetupGo = async function () {
 window.posOpenEditor = function (id) {
   if (!POS.may_edit) return;
   var r = POS.rows.filter(function (x) { return x.id === id; })[0] || null;
-  document.getElementById("pos-editor-title").textContent =
+  document.getElementById("sp-title").textContent =
     r ? "Change this seat" : "Add a seat";
   document.getElementById("pos-e-name").value = r ? r.id : "";
   document.getElementById("pos-e-title").value = r ? r.title : "";
@@ -2593,8 +2607,88 @@ window.posOpenEditor = function (id) {
 
   posPaintPeople();
   posErr("");
-  document.getElementById("pos-editor").classList.add("open");
+  /* SLICE 078: a page, not a dialog. Everything above is unchanged - the same
+     fields filled the same way - and only the last three lines differ.
+
+     Its own address, so HR can send it to a colleague and reopen it. A query
+     parameter rather than a hash, because `?grooming=` and `?who=` already do
+     exactly this in this file and a second routing mechanism for one screen is
+     not worth owning. `replaceState`, not `pushState`: Back should leave
+     Positions, not walk through every seat somebody looked at. */
+  spAddress(r ? r.id : null);
+  spAbout(r);
+  switchPanel("seat", null);
+  var h = document.getElementById("sp-title");
+  if (h) h.focus();
 };
+
+/* The address, and the one place it is read back.
+
+   `?seat=` is the whole of "its own address". It is not a router: there is one
+   screen behind one parameter, and the server still decides whether this
+   person may read that seat at all. */
+function spAddress(id) {
+  try {
+    var url = new URL(window.location.href);
+    if (id) url.searchParams.set("seat", id);
+    else url.searchParams.delete("seat");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  } catch (e) { /* an old browser keeps the page, loses the address */ }
+}
+
+/* Part 1 of the page: what the seat IS. Facts only, from the row the chart
+   already has - no extra call, because a page that needs its own fetch to say
+   "Cashier, Noida, 3 of 3 filled" is a page that can fail at saying it. */
+function spAbout(r) {
+  var box = document.getElementById("sp-about");
+  var sub = document.getElementById("sp-sub");
+  if (!box) return;
+  if (!r) {
+    box.style.display = "none";
+    if (sub) sub.textContent = drT("A new seat. Fill it in below and save.");
+    return;
+  }
+  if (sub) {
+    sub.textContent = [r.branch, r.department].filter(Boolean).join(" · ");
+  }
+  var filled = posNum(r.filled), seats = posNum(r.seats);
+  box.innerHTML = '<h2 class="sp-h2">' + esc(drT("The seat")) + "</h2>"
+    + '<dl class="mpf-dl">'
+    + spRow(drT("What it is called"), r.title)
+    + spRow(drT("Job role"), r.designation)
+    + spRow(drT("Branch"), r.branch)
+    + spRow(drT("Department"), r.department)
+    + spRow(drT("Reports to"), r.reports_to_title)
+    + spRow(drT("How full"), drT("{0} of {1} filled", [filled, seats]))
+    + "</dl>";
+  box.style.display = "";
+}
+function spRow(label, value) {
+  return "<dt>" + esc(label) + "</dt><dd>"
+    + (value ? esc(value) : '<span class="gp-hint">' + esc(drT("Not set")) + "</span>")
+    + "</dd>";
+}
+
+/* Opening the page straight from an address. The server still decides whether
+   this person may read the chart, so a seat somebody is not allowed to see
+   never gets this far: `posLoad` refuses first and this finds no row. */
+window.addEventListener("load", function () {
+  var want = /[?&]seat=([^&]+)/.exec(location.search);
+  if (!want || typeof switchPanel !== "function") return;
+  var id = decodeURIComponent(want[1]);
+  switchPanel("positions", null);
+  /* posLoad is already running from switchPanel; wait for the rows before
+     asking for one of them. */
+  var tries = 0;
+  var timer = setInterval(function () {
+    if (POS && POS.rows && POS.rows.length) {
+      clearInterval(timer);
+      posOpenEditor(id);
+    } else if (++tries > 40) {
+      clearInterval(timer);
+    }
+  }, 150);
+});
 
 function flt_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
@@ -2654,14 +2748,18 @@ window.posSeatsNote = function () {
 };
 
 function posErr(msg) {
-  var el = document.getElementById("pos-editor-err");
+  var el = document.getElementById("sp-err");
   if (!el) return;
   el.textContent = msg || "";
   el.style.display = msg ? "" : "none";
 }
 
+/* Leaving the seat page. The name is kept because three call sites and a
+   browser check already use it, and because "close the editor" is still what it
+   means - it simply goes back to the chart now instead of hiding a layer. */
 window.posCloseEditor = function () {
-  document.getElementById("pos-editor").classList.remove("open");
+  spAddress(null);
+  switchPanel("positions", null);
 };
 
 /* `then` is "close" or "another".
@@ -2761,6 +2859,10 @@ window.posDelete = async function () {
     return;
   }
   document.getElementById("pos-delete").classList.remove("open");
+  /* Slice 078: a deleted seat LEAVES THE SEAT PAGE and returns to the chart.
+     It used to close two dialogs; the intention is the same and the mechanism
+     is different, which is why the check that asserted it was re-pointed
+     rather than dropped. */
   posCloseEditor();
   toast("“" + r.title + "” was deleted.");
   posLoad();

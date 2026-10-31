@@ -705,10 +705,17 @@ async function deleteChecks() {
     ctx.__els["pos-e-name"] = { id: "pos-e-name", value: "P-Cashier" };
     const toasts = [];
     const opened = new Set();
+    /* Where the page went. `posCloseEditor` now calls switchPanel instead of
+       removing a class, so this is the observable that replaced `opened`. */
+    const left = [];
     const cls = (id) => ({ add: () => opened.add(id), remove: () => opened.delete(id),
                           contains: () => opened.has(id) });
-    for (const id of ["pos-delete", "pos-editor"])
-      ctx.__els[id] = { id, style: {}, classList: cls(id) };
+    /* SLICE 078: the seat editor is a PAGE now, not the `#pos-editor`
+       backdrop, so "did it close" becomes "did it navigate away". The delete
+       flow is what this block tests and it still has to work from the page, so
+       the assertions below were RE-POINTED and none was dropped. */
+    ctx.__els["pos-delete"] = { id: "pos-delete", style: {}, classList: cls("pos-delete") };
+    ctx.switchPanel = (name) => { left.push(name); };
     for (const id of ["pos-delete-text", "pos-delete-go", "pos-delete-keep", "pos-delete-btn", "pos-delete-err"])
       ctx.__els[id] = { id, style: {}, textContent: "", disabled: false, hidden: false, focus() {} };
     ctx.__els["toast-wrap"] = { appendChild: (t) => toasts.push(t) };
@@ -717,7 +724,7 @@ async function deleteChecks() {
     ctx.POS.may_delete = mayDelete;
     ctx.posLoad = async () => {};
     ctx.gpFetch = async () => { if (answer instanceof Error) throw answer; return answer; };
-    return { ctx, toasts, opened };
+    return { ctx, toasts, opened, left };
   }
 
   {
@@ -730,10 +737,14 @@ async function deleteChecks() {
     t.ctx.posAskDelete();
     ok("the confirm opens", t.opened.has("pos-delete"));
     ok("and names the seat", t.ctx.__els["pos-delete-text"].textContent.includes("Cashier"));
-    t.opened.add("pos-editor");
     await t.ctx.posDelete();
-    ok("a deleted seat closes both dialogs",
-       !t.opened.has("pos-delete") && !t.opened.has("pos-editor"));
+    /* SAME INTENTION, different mechanism (078 AC-54, AC-56): the confirm
+       closes AND the seat page is left for the chart. This is the assertion
+       that would have quietly passed if it had simply been removed, which is
+       why it is worded as what the user sees rather than as what closes. */
+    ok("078: a deleted seat closes the confirm and LEAVES THE SEAT PAGE for the chart",
+       !t.opened.has("pos-delete") && t.left.includes("positions"),
+       JSON.stringify(t.left));
     ok("and says so", t.toasts.length === 1 && t.toasts[0].textContent.includes("was deleted"));
   }
   {

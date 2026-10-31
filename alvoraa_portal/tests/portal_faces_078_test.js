@@ -412,6 +412,87 @@ async function openMyProfile(routes) {
       "078 AC-29: a failed face removes itself and leaves the initials - no broken "
       + "icon, no message, no retry");
 
+  // ── 13. the seat page, and its own pin test ─────────────────────────────
+  /* The seat editor was `#pos-editor`, a .gp-backdrop modal that three CI
+     scripts named. It is a page now, and this is the test that ships with it
+     (parallel-work.md section 7), so a bad merge that drops the page fails
+     here by name instead of a user finding out. */
+  yes(!doc.getElementById("pos-editor"),
+      "078 AC-56: the #pos-editor backdrop is retired, not left beside the page");
+  const seatPanel = doc.getElementById("panel-seat");
+  yes(!!seatPanel && seatPanel.classList.contains("panel"),
+      "078 AC-54: the seat page exists as a panel of its own");
+  const back = doc.getElementById("sp-back");
+  yes(!!back && back.tagName === "A" && /Positions/.test(back.textContent),
+      "078 AC-54: with a LABELLED way back, not a cross", back ? back.textContent : "missing");
+  yes(!!back && !!back.getAttribute("href"),
+      "078 AC-54: and it is a real link, so it works from a keyboard with no handler");
+  /* AC-55: three parts, in the order of the question. */
+  yes(!!doc.getElementById("sp-about"), "078 AC-55: part 1, the seat");
+  yes(!!doc.getElementById("pos-people-wrap"), "078 AC-55: part 2, who is in it");
+  yes(!!doc.getElementById("pos-e-title") && !!doc.getElementById("pos-save-btn"),
+      "078 AC-55: part 3, the seat itself - the form that was in the dialog");
+
+  window.POS.may_edit = true;
+  window.POS.may_delete = false;
+  window.POS.rows = [{ id: "P-CASH", title: "Cashier", branch: "Noida Sector 18",
+    department: "Retail", designation: "Cashier", grade: "", company: "DTC",
+    status: "Active", key: false, seats: 3, filled: 2, open: 1, opening: null,
+    reports_to: "", reports_to_title: "Retail Head", leaving_on: null,
+    people: [{ assignment: "A1", employee: "HR-EMP-9", name: "Kiran Sandhu",
+               weight: 100, type: "Permanent", covering: false, leaving: null,
+               thumb: "/private/files/k-48.jpg" },
+             { assignment: "A2", employee: "HR-EMP-10", name: "Ravi Kumar",
+               weight: 100, type: "Permanent", covering: false, leaving: null }] }];
+  window.posOpenEditor("P-CASH");
+  await settle(60);
+  yes(seatPanel.classList.contains("active"),
+      "078 AC-54: opening a seat shows the page");
+  yes(/seat=P-CASH/.test(window.location.search),
+      "078 AC-54: and puts it in the address, so it can be sent to a colleague",
+      window.location.search);
+  yes(/3 of 3 filled|2 of 3 filled/.test(text(doc.getElementById("sp-about"))),
+      "078 AC-55: part 1 says how full the seat is",
+      text(doc.getElementById("sp-about")));
+  yes(/Retail Head/.test(text(doc.getElementById("sp-about"))),
+      "078 AC-55: and who it reports to");
+
+  const inIt = [...doc.querySelectorAll("#pos-people .sp-person")];
+  yes(inIt.length === 2, "078 AC-55: part 2 lists every person in the seat",
+      String(inIt.length));
+  yes(inIt[0].querySelector(".av") && inIt[1].querySelector(".av"),
+      "078 AC-55: each with their face, or their initials where there is none");
+  const whoBtn = inIt[0].querySelector("[data-pos-who]");
+  yes(!!whoBtn && whoBtn.getAttribute("data-pos-who") === "HR-EMP-9",
+      "078 AC-57: and the name is a control carrying the employee it is about");
+
+  ROUTES.get_positions_profile = { ok: WHO };
+  click(whoBtn);
+  await settle(120);
+  yes($("emp-drawer").classList.contains("open"),
+      "078 AC-57: a name on the seat page opens THE SAME drawer the rest of the "
+      + "product opens - one behaviour for one job");
+  /* AC-58: identical content from both entry points, because there is only one
+     place that builds it. */
+  const fromSeat = [...$("emp-drawer").querySelectorAll(".mpf-dl dt")].map(d => d.textContent);
+  key("Escape");
+  await settle(20);
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(120);
+  const fromTable = [...$("emp-drawer").querySelectorAll(".mpf-dl dt")].map(d => d.textContent);
+  eq(fromSeat, fromTable,
+     "078 AC-58: the seat page and the table give the drawer IDENTICAL content - "
+     + "two copies of the field list would be a test failure, not a style note");
+  key("Escape");
+  await settle(20);
+
+  window.posCloseEditor();
+  await settle(40);
+  yes(!/seat=/.test(window.location.search),
+      "078 AC-54: going back clears the address", window.location.search);
+  yes(doc.getElementById("panel-positions").classList.contains("active"),
+      "078 AC-54: and returns to the chart");
+
   console.log(`\n### 078 faces and profile DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

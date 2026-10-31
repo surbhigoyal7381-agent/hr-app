@@ -762,7 +762,7 @@ built as drawn.** This section is what I did about each one, on
 | **D-5(a)** | A name in the **seat tray** opens the mini profile | `portal.js` `posSeatSheet` | **customisation** — the same markup the other two surfaces already emit, picked up by the one delegated handler |
 | **D-5(b)** | **J4, the photo screen**, built: optional, skippable, and it travels through the existing documents endpoint under one reserved type name | `www/joiner.html`, `joiner_public.py` | **new code** — but see 11.4: no fourth guest endpoint, no new DocType field |
 | **D-5(c)** | `my-docs-card` **moved** out of `#panel-home` into `#panel-my-profile`, between the details and the password | `templates/includes/ess/parts/home.html` | **already there** — the card is unchanged; only its place moved |
-| **D-5(d)** | The enlarged photograph closes when the pointer leaves both it and the photo; a **click pins** it | `portal.js` | **customisation** — one `mouseout` listener and one boolean |
+| **D-5(d)** | The enlarged photograph closes when the pointer leaves both it and the photo; a **click pins** it | `portal.js` | **customisation** — one `mouseout` listener, one boolean and one 260 ms grace timer, for the reason in 11.4a |
 | **D-6** | The picker's laptop footer renders **Preview · Cancel · OK** | `portal.js`, `panels.css` | **configuration** — DOM order plus one `order` rule |
 | **D-7** | `context.joiner_on` deleted | `www/joiner.py` | **deletion** |
 | **P4** | `test_the_stored_file_is_private` now asserts privacy on the **48 px** copy too | `tests/test_my_photo_078.py` | **new code in a test** |
@@ -861,6 +861,28 @@ The only two differences are the edge and the refusal:
 It cannot collide with a real document type: a type is named by its own title,
 and `__photo__` is not a title. A test asserts that rather than assuming it.
 
+### 11.4a D-5(d) — why there is a timer, which the design did not ask for
+
+The plain rule — close on the first `mouseout` from both elements — **does not
+work**, and I found it by reading the geometry rather than in a browser, which
+is the honest provenance.
+
+`.emp-drawer-head` is `padding:22px 22px 18px` (`panels.css:550`). The photo is
+a 40 px circle inside that head; `.mpf-big` is `position:absolute;inset:0`
+inside the scrolling body below it. **So 18 px of head padding sits between the
+two, belonging to neither.** A pointer moving from the photo onto the picture
+crosses it, and the plain rule would close the picture exactly when somebody
+reaches for it.
+
+So: a **260 ms** grace period, cleared the instant the pointer is back on
+either element, and cleared by every other close path. Evidence first, then the
+extra — and it is six lines, not a hover-intent library.
+
+**Unmeasured, and said out loud:** 260 ms is a judgement, not a measurement. I
+could not try it, because `playwright` does not resolve from this worktree
+(`check_portal_trays.js`'s browser half has the same problem). **H-6's
+keyboard-and-pointer pass should look at this specifically.**
+
 ### 11.5 The seven non-functional dimensions, against the code I actually wrote
 
 | Dimension | Verdict | Why |
@@ -938,13 +960,54 @@ and `__photo__` is not a title. A test asserts that rather than assuming it.
 | `node scripts/run_dom_tests.js` | **OK — 20 run, 0 not run, 0 failed.** The 078 suite alone **116 passed, 0 failed** |
 | `node --check portal.js`, `python -m ast` on every changed `.py` | **parse clean** |
 | The 045 gate, re-run standalone outside the bench | **226 sites, 0 orphans, floor 201** |
-| `bench --site test078 run-tests --app alvoraa_portal` | **see 11.9** |
+| `bench --site test078 run-tests --module …` x 7, run **serially** | **see 11.8a** |
+
+### 11.8a The Python suites, module by module
+
+Run on `test078` in `hrlocal-078`, **one at a time**, never two against the one
+site. Every module that owns a surface this work touched:
+
+| Module | Result |
+|---|---|
+| `test_invoicing` — **the D-1 gate** | the gate itself run alone: **1 test, OK.** `test_every_billing_doctype_is_named_as_control_plane_only` passes |
+| `test_browser_call_args_045` — **the D-2 gate** | **6 tests, OK**, `test_no_endpoint_is_named_but_never_read` among them |
+| `test_joiner_078` | **54 tests, OK** — 41 that were there plus my 13 |
+| `test_my_photo_078` | **34 tests, OK** |
+| `test_mini_profile_078` | **12 tests, OK** |
+| `test_employee_documents_078` | **20 tests, OK** |
+| `test_expense_birthdays_076` | **35 tests, 1 error — and it is not mine.** See below |
+| `node scripts/run_dom_tests.js`, re-run after the last change | **20 run, 0 failed; the 078 suite 116 passed** |
+
+**The whole `test_invoicing` module, run for its own sake, is 20 tests with 1
+failure and 10 errors** — all of them about multi-site billing on
+`sharma.alvoraa.co` and a `Party Account Debtors - TPC currency (USD)`
+mismatch. None of them is the gate, and none of them touches anything this work
+changed. The gate is the one I was asked about, and it is green on its own.
+
+**`test_expense_birthdays_076`'s one error, and why it is the site's and not
+mine.** The failing test is
+`test_the_department_approver_is_used_when_the_employee_has_none`, and the error
+is hrms's own `MismatchError: Department C076 Dept - TPC does not belong to
+company: N076 Co Y`. I proved the cause rather than asserting it: **`test078`
+carries two leftover `C076 Dept` rows** — `C076 Dept - N76Y` under `N076 Co Y`
+and `C076 Dept - TPC` under `Test PCV Company` — **54 companies accumulated from
+months of runs, and no default company set at all.** `N076 Co Y` belongs to
+`test_announcements_076`, a different module.
+
+Two more things place it outside my diff: the module imports `home_people`,
+`hr_api`, `inbox_api` and five test helpers, **none of which I changed**; and it
+contains **no reference to `home.html`, `my-docs-card` or
+`#panel-my-profile`** — the only surfaces this work touched that it could
+possibly see. It was green in the test engineer's full-app run earlier the same
+day, on the same site, under a different order. **It is fixture accumulation on
+a long-lived test database.** Worth a separate ticket; not this slice's.
 
 ### 11.9 What I could NOT close
 
 | # | Thing | Why |
 |---|---|---|
-| **R-1** | **The full `alvoraa_portal` Python suite has not been re-run by me at the time of writing.** `test078` was occupied by another live session's `hrms` run for the whole of my build, and two `bench run-tests` against one site clash on shared fixtures — the trap that has already cost this slice two red runs | Needs the site free. It is one command and it must be run before anybody calls this green |
+| **R-1** | **The full 1,118-test `alvoraa_portal` suite has not been re-run end to end.** I ran the **seven modules that own every surface I touched**, serially, and they are in 11.8a — but the whole app, in one pass, I did not. It takes about 75 minutes and `test078` was held by another live session for most of my build | One command, once the site is free. It should run before anybody calls this green |
+| **R-1a** | **The `hrms` suite cannot run on `test078` at all.** It fails in **discovery**, before a single test: `TestRunnerError: Failed to discover tests for ['hrms']: Could not find Parent Item Group: All Item Groups`. That is why `04-test-report.md` §2.2 still carries an empty `<!--HRMS-RESULTS-->`. **I changed no `hrms` file in this work**, so nothing here depends on it — but it needs fixing before anybody can claim the hrms side is green | A site bootstrap gap, the same shape as the fiscal-year one. Its own ticket |
 | **R-2** | **The joiner's page has not been re-driven in a browser since J4 was added.** The test engineer's 46-assertion harness lives in their scratchpad, not in the repository | A committed `joiner_078_test.js` in the DOM suite is the right home, with `EXPECTED_BROWSER_TESTS` raised to 21 in the same commit. That is the test engineer's call, not mine to add unasked |
 | **R-3** | **D-4 is untouched.** Cross-company isolation for the two new read endpoints is still untested, and no CXO persona exists in this slice | The brief did not list it, and `fixtures_078.py` explains why a second company was not built. It stays an **untested control** and belongs in the release note |
 

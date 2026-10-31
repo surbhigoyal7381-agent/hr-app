@@ -109,10 +109,41 @@ def as_b64(blob):
 
 # ── people ───────────────────────────────────────────────────────────────────
 
+def repair_unsaveable_logins():
+	"""Put right the records the upstream bug leaves unsaveable.
+
+	**This is the remediation a real tenant needs too, which is why it is a
+	named function and not two lines inside a fixture.**
+
+	ERPNext's `Employee.update_user()` inserts a `File` carrying only a url
+	whenever `image` changed or the linked User's `user_image` is empty, and
+	Frappe's `File.save_file` then hands a decoded `str` to `strip_exif_data`
+	and raises. An employee who has a photograph but whose User has no
+	`user_image` therefore cannot be saved AT ALL - and every failed attempt
+	leaves it that way, so the state is sticky.
+
+	Setting `user_image` to the picture the Employee already has removes the
+	trigger. One UPDATE, no save, no file written.
+	"""
+	rows = frappe.get_all("Employee",
+	                      filters={"image": ("is", "set"), "user_id": ("is", "set")},
+	                      fields=["name", "image", "user_id"], limit_page_length=0)
+	fixed = 0
+	for r in rows:
+		if not frappe.db.get_value("User", r.user_id, "user_image"):
+			frappe.db.set_value("User", r.user_id, "user_image", r.image,
+			                    update_modified=False)
+			fixed += 1
+	if fixed:
+		frappe.db.commit()
+	return fixed
+
+
 def people():
 	"""The three for photographs, plus the two HR readers and their scopes."""
 	own_company()
 	own_branches()
+	repair_unsaveable_logins()
 
 	out = {}
 	out["with_photo_user"] = own_user("s078withphoto", ("Employee",))
@@ -204,6 +235,10 @@ def give_photo(employee, blob=None):
 	employee_photo._delete_files(employee, employee_photo.IMAGE_FIELD)
 	url = employee_photo._store(employee, employee_photo.IMAGE_FIELD, jpeg, "photo")
 	frappe.db.set_value("Employee", employee, employee_photo.IMAGE_FIELD, url)
+	# The same mirror the endpoint does. Without it, any later `doc.save()` of
+	# this employee raises inside ERPNext - which broke a whole class's
+	# setUpClass the first time this fixture ran.
+	employee_photo._keep_the_login_in_step(employee, url)
 	employee_photo.derive_thumbnail(employee, url)
 	frappe.db.commit()
 	return url
@@ -215,6 +250,7 @@ def strip_photo(employee):
 	employee_photo._delete_files(employee, employee_photo.IMAGE_FIELD)
 	employee_photo._delete_files(employee, employee_photo.THUMB_FIELD)
 	frappe.db.set_value("Employee", employee, employee_photo.IMAGE_FIELD, None)
+	employee_photo._keep_the_login_in_step(employee, None)
 	frappe.db.commit()
 
 
@@ -228,7 +264,9 @@ def exif_of(blob):
 
 
 def file_bytes(url):
-	return frappe.get_doc("File", {"file_url": url}).get_content()
+	"""The stored bytes, undecoded - `encodings=[]`. See
+	`employee_photo._raw_bytes` for why the default would mangle them."""
+	return frappe.get_doc("File", {"file_url": url}).get_content(encodings=[])
 
 
 def picture_rows(employee):
@@ -276,6 +314,15 @@ def document_types():
 	return TICKED_TYPE, UNTICKED_TYPE
 
 
+def _one_page_pdf():
+	"""A genuine, blank, one-page PDF."""
+	from PIL import Image
+
+	buf = io.BytesIO()
+	Image.new("RGB", (300, 400), (245, 245, 245)).save(buf, format="PDF")
+	return buf.getvalue()
+
+
 def give_documents(employee):
 	"""One row of each type on this employee, each with a real file.
 
@@ -298,7 +345,11 @@ def give_documents(employee):
 			"attached_to_doctype": "Employee",
 			"attached_to_name": employee,
 			"is_private": 1,
-			"content": b"%PDF-1.4\nS078 invented document, not a real person's.\n",
+			# A REAL one-page PDF, built from a blank image. A hand-written
+			# "%PDF" string is not a PDF, and Frappe PARSES what it is given:
+			# `pypdf.errors.PdfStreamError: Stream has ended unexpectedly`.
+			# Invented content either way - never a real person's scan.
+			"content": _one_page_pdf(),
 		}).insert(ignore_permissions=True)
 		frappe.db.set_value("Employee Document", row.name, "attachment", f.file_url)
 		out[kind] = row.name
@@ -315,3 +366,45 @@ def document_views(employee=None):
 	                      fields=["name", "employee", "document_type", "viewed_by",
 	                              "viewed_on_date"], limit_page_length=0,
 	                      ignore_permissions=True)
+
+
+def employee_without_a_login():
+	"""An employee with NO `user_id`.
+
+	Needed because ERPNext's `Employee.update_user()` runs only when there is a
+	login, and it walks into an upstream Frappe bug the moment `image` changes
+	(the trace is in `test_my_photo_078`). A Desk-route test therefore has to
+	use somebody without one to be testing this slice's handler rather than
+	that bug.
+	"""
+	return own_employee("S078NoLogin")
+
+
+class with_documents_plan:
+	"""Turn the `employee_documents` entitlement on for the duration.
+
+	`test_site`'s own config carries `"features": []` - an EXPLICIT empty list,
+	so nothing is entitled and every document endpoint correctly answers
+	"nothing to show". A document test therefore has to grant the plan or it is
+	testing the plan gate rather than the five checks.
+
+	The same shape `test_checkin_security_014` already uses: set
+	`frappe.conf["features"]` and put it back. Nothing is written to the site.
+	"""
+
+	def __enter__(self):
+		from alvoraa_portal import subscription
+
+		self._before = frappe.conf.get("features")
+		frappe.conf["features"] = sorted(
+			set(self._before or []) | {"employee_documents"})
+		subscription.enabled_features.cache_clear() if hasattr(
+			subscription.enabled_features, "cache_clear") else None
+		return self
+
+	def __exit__(self, *exc):
+		if self._before is None:
+			frappe.conf.pop("features", None)
+		else:
+			frappe.conf["features"] = self._before
+		return False

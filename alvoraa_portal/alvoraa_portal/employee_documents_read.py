@@ -180,9 +180,11 @@ def open_employee_document(row=None):
 		_refuse(row)
 
 	f = frappe.get_doc("File", {"file_url": doc.attachment})
-	content = f.get_content()
-	if isinstance(content, str):
-		content = content.encode("utf-8", "ignore")
+	# `encodings=[]`, because `get_content()` with no argument tries to DECODE
+	# what it read and hands back a lossy `str` for anything binary - which for
+	# a scanned PDF or a photographed document means serving a corrupted file
+	# that opens as nothing. See `employee_photo._raw_bytes` for the trace.
+	content = f.get_content(encodings=[])
 
 	log_document_view(employee, doc.document_type)
 

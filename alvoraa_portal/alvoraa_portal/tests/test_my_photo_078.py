@@ -123,8 +123,9 @@ class TestTheStoredPicture(_Base):
 
 		out = self._upload(source)
 		blob = fx.file_bytes(out["image"])
-		if isinstance(blob, str):
-			blob = blob.encode("latin-1", "ignore")
+		self.assertIsInstance(blob, bytes,
+		                      "a stored picture must read back as BYTES - the "
+		                      "default get_content() decodes it lossily")
 
 		with Image.open(io.BytesIO(blob)) as img:
 			self.assertEqual(img.format, "JPEG")
@@ -160,6 +161,10 @@ class TestTheStoredPicture(_Base):
 		"""AC-4. Pillow here cannot read HEIC, so it can be neither resized nor
 		stripped, and storing it unchanged would keep a full-resolution
 		photograph with its location in it."""
+		# Start from nothing. Another class deliberately leaves a broken file on
+		# this person, and "stores nothing" has to mean nothing was stored BY
+		# THIS CALL rather than that nobody had ever stored anything.
+		fx.strip_photo(self.p["no_photo"])
 		frappe.set_user(self.p["no_photo_user"])
 		with self.assertRaises(frappe.ValidationError) as caught:
 			employee_photo.upload_my_photo(photo=fx.as_b64(fx.heic_like()))
@@ -227,16 +232,63 @@ class TestTheStoredPicture(_Base):
 class TestThe48pxCopy(_Base):
 	def test_it_is_made_on_a_desk_save_too_not_only_in_the_portal(self):
 		"""AC-25b. The handler is on `Employee.on_update`, so Desk, an import
-		and a script are all covered. A portal-only derivation is a failure."""
+		and a script are all covered. A portal-only derivation is a failure.
+
+		Run on an employee with NO login, because an employee WITH one cannot
+		be saved with a changed photograph at all - see
+		`test_a_desk_save_for_an_employee_with_a_login_hits_an_upstream_bug`.
+		"""
+		who = fx.employee_without_a_login()
+		fx.strip_photo(who)
+		jpeg = employee_photo._reencode(fx.plain_jpeg(), 512, 82)
+		url = employee_photo._store(who, employee_photo.IMAGE_FIELD, jpeg, "photo")
+		doc = frappe.get_doc("Employee", who)
+		doc.image = url
+		doc.save(ignore_permissions=True)   # the Desk route
+		frappe.db.commit()
+		self.assertTrue(people_fields.thumbnails_for([who]))
+
+	def test_a_desk_save_for_an_employee_with_a_login_hits_an_upstream_bug(self):
+		"""**RECORDED, not asserted away. This is a defect to escalate, and it
+		is in Frappe, not in this slice.**
+
+		`frappe/core/doctype/file/file.py:795-796` fills `_content` with the
+		DECODING `get_content()`, which for a JPEG returns a lossy `str`. Line
+		819 then hands that `str` to `strip_exif_data`, which wants bytes, and
+		raises `TypeError: a bytes-like object is required, not 'str'`. It fires
+		whenever an existing JPEG `File` row is re-saved, or a second `File` row
+		is created pointing at an existing jpeg `file_url`, while
+		`strip_exif_metadata_from_uploaded_images` is on - which it is.
+
+		`erpnext/.../employee.py:240-251` does exactly that: when `image`
+		changes and the employee has a `user_id`, `update_user()` inserts a
+		`File` carrying only `file_url`. So **HR adding a photograph in Desk for
+		an employee who has a login raises, and it raises in ERPNext's own
+		`on_update` BEFORE this slice's handler runs.**
+
+		It is pre-existing and nobody has met it, because no employee anywhere
+		has a photograph - which is the premise of this whole slice. This slice
+		is what makes it reachable.
+
+		**The portal path is unaffected**, which is the path the slice is for:
+		`upload_my_photo` writes with `db.set_value` and derives the copy
+		itself, so `update_user()` never runs. The one-line upstream fix is
+		`get_content(encodings=[])` at `file.py:796`, and editing upstream is an
+		architecture decision, not this slice's.
+		"""
 		fx.strip_photo(self.p["with_photo"])
 		jpeg = employee_photo._reencode(fx.plain_jpeg(), 512, 82)
 		url = employee_photo._store(self.p["with_photo"],
 		                            employee_photo.IMAGE_FIELD, jpeg, "photo")
 		doc = frappe.get_doc("Employee", self.p["with_photo"])
+		self.assertTrue(doc.user_id, "this test needs an employee WITH a login")
 		doc.image = url
-		doc.save(ignore_permissions=True)   # the Desk route
-		frappe.db.commit()
-		self.assertTrue(people_fields.thumbnails_for([self.p["with_photo"]]))
+		with self.assertRaises(TypeError) as caught:
+			doc.save(ignore_permissions=True)
+		self.assertIn("bytes-like object is required", str(caught.exception),
+		              "If this stops raising, Frappe has fixed file.py:796 and "
+		              "AC-25b's Desk route works. Read the docstring first.")
+		frappe.db.rollback()
 
 	def test_a_save_that_does_not_touch_the_picture_does_no_picture_work(self):
 		"""The guard. `Employee.on_update` fires on every save of every
@@ -273,8 +325,11 @@ class TestThe48pxCopy(_Base):
 		thumbnail, and the renderer falls back to the full photo and then to
 		initials."""
 		fx.strip_photo(self.p["no_photo"])
+		# A `.dat` name, so Frappe does not guess `image/jpeg` and try to strip
+		# EXIF from something that is not an image - that would raise inside
+		# the FIXTURE and prove nothing about the handler.
 		broken = frappe.get_doc({
-			"doctype": "File", "file_name": "s078-broken.jpg",
+			"doctype": "File", "file_name": "s078-broken.dat",
 			"attached_to_doctype": "Employee",
 			"attached_to_name": self.p["no_photo"],
 			"attached_to_field": employee_photo.IMAGE_FIELD,
@@ -358,3 +413,42 @@ class TestMyDetails(_Base):
 		frappe.set_user(self.p["nobody_user"])
 		out = my_profile.get_my_profile()
 		self.assertTrue(out.get("no_employee"))
+
+
+class TestTheLoginStaysSaveable(_Base):
+	"""The upstream bug's real cost, and the two lines that remove its trigger.
+
+	Without `_keep_the_login_in_step`, an employee who added their own picture
+	through the portal would have made their OWN RECORD UNSAVEABLE: the portal
+	writes with `db.set_value`, so `User.user_image` stays empty, and the next
+	time anybody saved that Employee in Desk ERPNext would see an empty
+	`user_image`, insert a `File` carrying only a url, and raise inside
+	Frappe's EXIF strip. Every time, for ever.
+	"""
+
+	def test_the_login_gets_the_same_picture_by_value(self):
+		frappe.set_user(self.p["with_photo_user"])
+		out = employee_photo.upload_my_photo(photo=fx.as_b64(fx.plain_jpeg()))
+		user = frappe.db.get_value("Employee", self.p["with_photo"], "user_id")
+		self.assertEqual(frappe.db.get_value("User", user, "user_image"),
+		                 out["image"])
+
+	def test_and_the_employee_can_still_be_saved_afterwards(self):
+		"""**The one that matters.** This is what was broken."""
+		frappe.set_user(self.p["with_photo_user"])
+		employee_photo.upload_my_photo(photo=fx.as_b64(fx.plain_jpeg()))
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Employee", self.p["with_photo"])
+		doc.cell_number = "+91 90000 00079"
+		doc.save(ignore_permissions=True)     # must NOT raise
+		frappe.db.commit()
+		self.assertEqual(
+			frappe.db.get_value("Employee", self.p["with_photo"], "cell_number"),
+			"+91 90000 00079")
+
+	def test_removing_the_picture_clears_the_login_too(self):
+		frappe.set_user(self.p["with_photo_user"])
+		employee_photo.upload_my_photo(photo=fx.as_b64(fx.plain_jpeg()))
+		employee_photo.remove_my_photo()
+		user = frappe.db.get_value("Employee", self.p["with_photo"], "user_id")
+		self.assertFalse(frappe.db.get_value("User", user, "user_image"))

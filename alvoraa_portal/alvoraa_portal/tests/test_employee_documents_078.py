@@ -35,6 +35,10 @@ class _Base(Wave4Base):
 
 	def setUp(self):
 		super().setUp()
+		# The plan has to be ON, or every case here tests the plan gate rather
+		# than the five checks. `test_site` ships `"features": []`.
+		self._plan = fx.with_documents_plan().__enter__()
+		self.addCleanup(self._plan.__exit__)
 		fx.set_lists(profile_fields=["designation"], document_types=[self.ticked])
 		for row in fx.document_views():
 			frappe.delete_doc("Alvoraa Photo Access Log", row.name, force=True,
@@ -189,13 +193,22 @@ class TestTheFiveChecks(_Base):
 		import alvoraa_portal
 
 		root = os.path.dirname(alvoraa_portal.__file__)
+		import re
+
 		js = open(os.path.join(root, "public", "js", "ess", "portal.js"),
 		          encoding="utf-8").read()
 		# The sentence that IS said.
 		self.assertIn("Opening one is recorded", js)
-		# The three that must not be said about the others.
+		# COMMENTS STRIPPED FIRST. This file's own comments explain at length
+		# that nothing may imply the other types are hidden - and the first run
+		# of this test failed on that very sentence. A comment cannot mislead a
+		# reader of the screen. Same reasoning as
+		# `test_portal_security_010`'s ignore_permissions ceiling, which blanks
+		# docstrings for exactly this reason.
+		code = re.sub(r"/\*[\s\S]*?\*/", " ", js)
+		code = re.sub(r"(?m)^\s*//.*$", " ", code)
 		for word in ("types are hidden", "types are protected", "types are secure"):
-			self.assertNotIn(word, js)
+			self.assertNotIn(word, code)
 
 
 class TestTheAccessRecord(_Base):

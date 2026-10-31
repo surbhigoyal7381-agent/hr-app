@@ -41,6 +41,7 @@ import io
 
 import frappe
 from frappe import _
+from frappe.utils import now
 
 # Imported as a MODULE, not `from ... import THUMB_FIELD`: the cross-app import
 # check in `scripts/check_app_integrity.py` resolves an `ImportFrom` against the
@@ -189,6 +190,44 @@ def _delete_files(employee, field):
 	_delete_rows(_file_rows(employee, field), employee)
 
 
+def _keep_the_login_in_step(employee, url):
+	"""Put the same picture on the person's User record, by value.
+
+	**This is not a nicety. Without it, saving that Employee in Desk RAISES.**
+
+	ERPNext's `Employee.update_user()` (`employee.py:240-251`) inserts a `File`
+	carrying only a `file_url` whenever `image` has changed OR the linked
+	User's `user_image` is empty. Frappe's `File.save_file` then fills
+	`_content` with the DECODING `get_content()` (`file.py:795-796`) and hands
+	that `str` to `strip_exif_data` at line 819, which wants bytes:
+	`TypeError: a bytes-like object is required, not 'str'`.
+
+	This endpoint writes with `db.set_value`, so `update_user()` never runs and
+	`user_image` would stay empty - and then the NEXT time anybody saved that
+	employee in Desk, ERPNext would see an empty `user_image`, try the insert,
+	and raise. Every time. So an employee adding their own picture would have
+	quietly made their own record unsaveable.
+
+	Setting `user_image` to the same url, by value, removes the trigger: there
+	is nothing for ERPNext to create. It is also simply correct - the Desk
+	avatar and the portal avatar are then the same picture.
+
+	The underlying fault is upstream and is NOT fixed here. HR uploading a
+	photograph in Desk still raises, because ERPNext's own path is what calls
+	`save_file`. That is an escalation, not a line of code in this slice.
+	"""
+	try:
+		user = frappe.db.get_value(EMPLOYEE, employee, "user_id")
+		if user:
+			frappe.db.set_value("User", user, "user_image", url,
+			                    update_modified=False)
+	except Exception:
+		# A picture that reached the Employee but not the User is untidy, not
+		# broken. Never fail the upload over it.
+		frappe.log_error(f"Could not mirror the picture onto the login for "
+		                 f"{employee}", "Employee photo")
+
+
 def _store(employee, field, jpeg, suffix):
 	"""One private File row, and its url."""
 	f = frappe.get_doc({
@@ -208,6 +247,30 @@ def _store(employee, field, jpeg, suffix):
 
 # ── the 48 px copy ───────────────────────────────────────────────────────────
 
+def _raw_bytes(file_url):
+	"""The file's bytes, UNDECODED.
+
+	**`File.get_content()` with no argument tries to DECODE what it read**, by
+	looping over `FILE_ENCODING_OPTIONS` until one of them does not raise
+	(`frappe/core/doctype/file/file.py:715-731`). On a JPEG one of them
+	succeeds - lossily - and hands back a `str` with bytes changed or dropped:
+	a probe showed a stored JPEG coming back with its first four bytes
+	changed, so Pillow could not identify it at all.
+
+	So `encodings=[]`. The loop body then never runs and the raw bytes come
+	back untouched.
+
+	**This was a live bug, found by running the tests rather than by reading the
+	code.** With the decode in place, `derive_thumbnail` raised
+	`UnidentifiedImageError` on every real photograph, was caught by its own
+	"never fail an Employee save" guard, and left NO 48 px copy for anybody -
+	silently, with only an Error Log row. The chart would have fallen back to
+	the full 512 px picture for every face, which is the ~720 KB first paint the
+	derived copy exists to avoid, and nothing would have gone red.
+	"""
+	return frappe.get_doc("File", {"file_url": file_url}).get_content(encodings=[])
+
+
 def derive_thumbnail(employee, image_url=None):
 	"""Make (or remake, or remove) the 48 px copy for one employee.
 
@@ -223,9 +286,7 @@ def derive_thumbnail(employee, image_url=None):
 		_delete_files(employee, THUMB_FIELD)
 		if not image_url:
 			return None
-		blob = frappe.get_doc("File", {"file_url": image_url}).get_content()
-		if isinstance(blob, str):
-			blob = blob.encode("latin-1", "ignore")
+		blob = _raw_bytes(image_url)
 		return _store(employee, THUMB_FIELD, _reencode(blob, THUMB_EDGE, THUMB_QUALITY), "48")
 	except Exception:
 		frappe.log_error(f"Could not make the 48 px copy for {employee}",
@@ -323,6 +384,7 @@ def upload_my_photo(photo=None):
 	old = _file_rows(me.name, IMAGE_FIELD)
 	url = _store(me.name, IMAGE_FIELD, jpeg, "photo")
 	frappe.db.set_value(EMPLOYEE, me.name, IMAGE_FIELD, url)
+	_keep_the_login_in_step(me.name, url)
 	derive_thumbnail(me.name, url)
 	_delete_rows(old, me.name)
 	# Who and when, on the person's own record. Frappe writes its own Version
@@ -332,9 +394,12 @@ def upload_my_photo(photo=None):
 	except Exception:
 		pass
 	frappe.db.commit()
+	# WHEN, by name: counsel asked for the upload timestamp for audit
+	# (29 Oct 2026). The document name, the actor, the size and the time - and
+	# nothing about the person.
 	frappe.logger("alvoraa").info(
-		f"employee photo: set on {me.name} by {frappe.session.user}, "
-		f"{len(jpeg)} bytes")
+		f"employee photo: set on {me.name} by {frappe.session.user} at "
+		f"{now()}, {len(jpeg)} bytes")
 	return {"image": url, "bytes": len(jpeg)}
 
 
@@ -351,11 +416,13 @@ def remove_my_photo():
 	_delete_files(me.name, IMAGE_FIELD)
 	_delete_files(me.name, THUMB_FIELD)
 	frappe.db.set_value(EMPLOYEE, me.name, IMAGE_FIELD, None)
+	_keep_the_login_in_step(me.name, None)
 	try:
 		frappe.get_doc(EMPLOYEE, me.name).add_comment("Info", _("Removed their own picture"))
 	except Exception:
 		pass
 	frappe.db.commit()
 	frappe.logger("alvoraa").info(
-		f"employee photo: removed from {me.name} by {frappe.session.user}")
+		f"employee photo: removed from {me.name} by {frappe.session.user} "
+		f"at {now()}")
 	return {"image": None}

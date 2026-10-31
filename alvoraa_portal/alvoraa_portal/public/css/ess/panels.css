@@ -2804,3 +2804,115 @@ body.panel-fullscreen{overflow:hidden}
   .av .av-p{display:none!important}
   .pos-print-faces .av .av-p{display:block!important;opacity:1!important}
 }
+
+/* ── The one mini profile, slice 078 ──────────────────────────────────────
+   Prefix mpf. It lives in the existing .emp-drawer - 480 px, sliding from the
+   right, max-width:100vw so it is full screen at 360 px - which the payslip,
+   the scorecard and goals already share. Nothing new is positioned. */
+.mpf-body{padding:16px 18px 24px}
+.mpf-left{margin:0 0 14px;padding:10px 12px;border-radius:var(--r-sm);
+  background:var(--bg);border-left:3px solid var(--amber);
+  font-size:var(--fs-base);line-height:1.5;color:var(--text)}
+.mpf-dl{margin:0;display:grid;grid-template-columns:minmax(0,40%) minmax(0,60%);
+  gap:8px 14px;align-items:start}
+.mpf-dl dt{margin:0;font-size:var(--fs-sm);color:var(--text3)}
+.mpf-dl dd{margin:0;font-size:var(--fs-base);color:var(--text);overflow-wrap:anywhere}
+.mpf-promise{margin-top:16px;padding-top:12px;border-top:1px solid var(--border2);
+  line-height:1.55}
+
+/* The face in the drawer's FIXED head. A button only when there is something
+   to enlarge: no photograph means no role, no tabindex and no spoken name. */
+.mpf-face{position:relative;display:flex;width:40px;height:40px;border-radius:50%;
+  overflow:hidden;background:var(--bg);align-items:center;justify-content:center;
+  border:0;padding:0;font:inherit}
+button.mpf-face{cursor:zoom-in}
+button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.mpf-face .mpf-ini{font-size:var(--fs-base);font-weight:700;color:var(--text3);line-height:1}
+.mpf-face img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity .15s linear}
+
+/* The enlargement, inside the drawer rather than over the page: pinned to the
+   APP FRAME and not the browser viewport, which the prototype learned twice. */
+.mpf-big{position:absolute;inset:0;z-index:5;background:var(--surface);
+  display:flex;align-items:center;justify-content:center;padding:20px}
+.mpf-big-in{position:relative;width:240px;max-width:100%;text-align:center}
+.mpf-big-s,.mpf-big-f{width:240px;height:240px;max-width:100%;border-radius:var(--r);
+  object-fit:cover;display:block}
+/* The 48 px copy scaled up: blurred on purpose, so it reads as "not the real
+   one yet" rather than as a bad photograph. */
+.mpf-big-s{filter:blur(6px)}
+.mpf-big-f{position:absolute;inset:0 auto auto 0;opacity:0;transition:opacity .15s linear}
+.mpf-big-say{margin:10px 0 0;font-size:var(--fs-sm);color:var(--text3)}
+.mpf-big-nm{margin:8px 0 0;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+.mpf-big-nm .gp-hint{display:block;font-weight:400;margin-top:2px}
+/* So the enlargement can be absolute INSIDE the drawer. */
+.emp-drawer-body{position:relative}
+
+@media (max-width:640px){
+  .mpf-dl{grid-template-columns:1fr;gap:2px}
+  .mpf-dl dd{margin-bottom:8px}
+  .emp-drawer-close{min-width:44px;min-height:44px}
+}
+/* NOTHING IN THE DRAWER PRINTS - slices 065 and 069 already set that for the
+   whole layer; said again here so a future change to this drawer cannot
+   quietly put a face or a document on a printed page. */
+@media print{.emp-drawer,.emp-drawer-overlay,.mpf-big{display:none!important}}
+
+/* ── "What people can see and change about each other", slice 078 ─────────
+   Prefix ocs. The card follows the ten pf-cards already on Organisation
+   Settings; only the chips, the amber line and the picker dialog are new. */
+.ocs-sec{padding-top:16px;margin-top:16px;border-top:1px solid var(--border2)}
+.ocs-sec:first-child{padding-top:0;margin-top:0;border-top:0}
+.ocs-h{margin:0 0 8px;font-size:var(--fs-base);font-weight:650;color:var(--text)}
+.ocs-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+/* Every chip carries a WORD, never only a colour (A10). */
+.ocs-chip{display:inline-block;padding:3px 9px;border-radius:var(--r-full);
+  background:var(--bg);border:1px solid var(--border2);font-size:var(--fs-sm);
+  color:var(--text)}
+.ocs-list{margin:0 0 8px;padding:0;list-style:none}
+.ocs-list li{padding:6px 0;border-bottom:1px solid var(--border2);font-size:var(--fs-base)}
+.ocs-cat{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:var(--r-full);
+  background:var(--bg);font-size:var(--fs-sm);color:var(--text3)}
+.ocs-gone{color:var(--red)}
+/* A SENTENCE in amber, not a red row. Colour is never the only signal, so the
+   warning says what will happen in words that stand on their own. */
+.ocs-warn{display:block;margin:0 0 10px;padding:10px 12px;border-radius:var(--r-sm);
+  background:var(--bg);border-left:3px solid var(--amber);font-size:var(--fs-base);
+  line-height:1.5;color:var(--text)}
+.ocs-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.ocs-b{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.ocs-b:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* The picker. 620 px centred on a laptop, a full-screen sheet on a phone -
+   pinned to the app frame, in px, never in vw: a fixed sheet sized in vw is
+   sized to the browser and not to the frame it is drawn in (A11). */
+.ocs-back{position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;padding:16px}
+.ocs-dlg{background:var(--surface);border-radius:var(--r);width:620px;max-width:100%;
+  max-height:100%;display:flex;flex-direction:column;box-shadow:var(--sh1)}
+.ocs-dlg-hd{display:flex;align-items:center;gap:10px;padding:14px 16px;
+  border-bottom:1px solid var(--border2)}
+.ocs-dlg-hd h3{margin:0;flex:1;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+.ocs-x{min-width:44px;min-height:44px;background:none;border:0;font-size:var(--fs-xl);
+  line-height:1;color:var(--text3);cursor:pointer}
+.ocs-x:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.ocs-dlg-bd{padding:8px 16px 16px;overflow-y:auto;flex:1;min-height:0}
+.ocs-grp{margin:14px 0 4px;font-size:var(--fs-sm);font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.04em}
+/* The checkbox is 20 px; the TARGET is the whole 44 px row, and clicking
+   anywhere on it toggles (A6). */
+.ocs-opt{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:6px 0;
+  cursor:pointer}
+.ocs-opt input{width:20px;height:20px;margin:3px 0 0;flex:none;accent-color:var(--primary)}
+.ocs-opt b{font-weight:650;font-size:var(--fs-base);color:var(--text)}
+.ocs-dlg-ft{padding:12px 16px;border-top:1px solid var(--border2)}
+.ocs-sum{margin:0 0 10px;font-size:var(--fs-sm);color:var(--text2)}
+.ocs-ft-b{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+
+@media (max-width:640px){
+  .ocs-back{padding:0;align-items:stretch}
+  .ocs-dlg{width:100%;border-radius:0;max-height:none}
+  /* OK first on a phone, then Preview, then Cancel - stacked, full width. */
+  .ocs-ft-b{flex-direction:column}
+  .ocs-ft-b .ocs-b{width:100%}
+}

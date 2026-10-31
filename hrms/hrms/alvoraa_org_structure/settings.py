@@ -111,7 +111,27 @@ DEFAULTS = {
 	# for ever": counsel's 18 September 2026 policy prohibits indefinite
 	# retention in so many words, so `field_app_photos`' `0 = keep for ever`
 	# semantics must not be copied here.
+	#
+	# **It ships UNSET on purpose, and it is the only key here that does.**
+	# 078-PRIV-7's guard is that the form cannot be switched on at a tenant
+	# until this number has been set DELIBERATELY - proved by a `Version` row,
+	# which an untouched default cannot have. Counsel's figure is outstanding,
+	# so inventing one here would be the product answering a legal question.
 	"alvoraa_joiner_retention_days": "",
+
+	# How many days an invite link works. **7 is the shipped default, and
+	# unlike retention there is every reason to have one**: this is not a legal
+	# question, and getting it wrong is an inconvenience rather than an
+	# exposure. HR's real case for changing it is a joiner who starts next
+	# month and needs longer than a week.
+	#
+	# It is written into Frappe's own `Web Form Request.expires_on` when a link
+	# is issued. There is NO second expiry mechanism anywhere - the framework
+	# already owns the expiry, the single-use burn and the row lock.
+	#
+	# Easy to confuse with the key above, which is why both labels say what
+	# they mean in plain words rather than "retention" and "expiry".
+	"alvoraa_joiner_link_days": 7,
 }
 
 # Slice 012 F1 (SEC-18): the keys that hand out privilege on the org chart.
@@ -136,6 +156,7 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_positions_document_types",
 	"alvoraa_my_profile_fields",
 	"alvoraa_joiner_retention_days",
+	"alvoraa_joiner_link_days",
 })
 
 # Which rule id a refusal and a change are logged under. Slice 012's four keys
@@ -147,6 +168,7 @@ RULE_FOR_KEY = {
 	"alvoraa_positions_document_types": "078-SEC-5",
 	"alvoraa_my_profile_fields": "078-SEC-5",
 	"alvoraa_joiner_retention_days": "078-SEC-5",
+	"alvoraa_joiner_link_days": "078-SEC-5",
 }
 DEFAULT_RULE = "SEC-18"
 
@@ -187,8 +209,13 @@ LABELS = {
 		"Whoever can open the Positions page can open the file itself, for everyone in their own companies and branches."),
 	"alvoraa_my_profile_fields": ("Details an employee may correct about themselves",
 		"A photo is always on. These are the other details they may change."),
-	"alvoraa_joiner_retention_days": ("Days a joiner's details are kept when they never join",
-		"Set deliberately. Unset or 0 keeps the pre-onboarding form switched off - it does not mean keep for ever."),
+	# PLAIN WORDS, not "retention" and "expiry". The two are easy to read as
+	# the same thing - and were read that way once already - so each label says
+	# what it actually decides.
+	"alvoraa_joiner_retention_days": ("How long we keep a submission from someone who never joins",
+		"In days. Set it deliberately: until it is set, the joiner form cannot be switched on. Unset or 0 keeps the form off - it does not mean keep for ever."),
+	"alvoraa_joiner_link_days": ("How long an invite link works",
+		"In days, counted from when HR sends it. Seven by default. Longer suits a joiner who starts next month."),
 }
 
 
@@ -288,6 +315,21 @@ def _set_access_setting(key, value):
 			refuse(
 				_("Give the number of days a joiner's details are kept, "
 				  "between 1 and 3650."),
+				rule,
+				endpoint,
+				"DefaultValue",
+				key,
+			)
+
+	# How long an invite link works. A blank is refused rather than treated as
+	# "for ever": a link with no expiry is the thing the whole token design is
+	# there to avoid. 90 days is the ceiling - past that it is not an invite.
+	if key == "alvoraa_joiner_link_days":
+		raw = cstr(value).strip()
+		if not raw.isdigit() or not (1 <= int(raw) <= 90):
+			refuse(
+				_("Give the number of days an invite link works, between 1 "
+				  "and 90."),
 				rule,
 				endpoint,
 				"DefaultValue",

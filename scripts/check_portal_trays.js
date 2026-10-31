@@ -82,6 +82,10 @@ const INVENTORY = {
   // Slice 076: Home's sheets (Pending, Notices, the leave decision). Built by
   // script when opened, appended to <body>, so no panel can be their frame.
   ".hm-ov":               { page: "portal", kind: "dialog", open: "script" },
+  // Slice 078: the "what people can see about each other" picker. Built by
+  // script when the button is pressed and appended to <body>, like 076's
+  // sheets, so no panel can be its frame. Escape cancels and writes nothing.
+  ".ocs-back":            { page: "portal", kind: "dialog", open: "script" },
   "#cal-signoff-modal":   { page: "portal", kind: "dialog", open: "style" },
   // The -next page (a separate document; left rail and bottom sheet only)
   ".nf-rail":             { page: "next", kind: "shell" },

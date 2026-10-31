@@ -29,6 +29,23 @@
           <div class="gp-hint" id="bs-changed" style="margin-top:8px"></div>
         </div>
 
+        <!-- What people can see and change about each other (slice 078).
+
+             ABSENT for anyone who is not a System Manager, never greyed: a
+             greyed control says somebody else can do this, which is true and
+             useless. The server refuses everyone else and ocsLoad() hides the
+             card when it does - the same shape the birthdays switch uses.
+
+             Everything inside is drawn by ocsLoad(). Nothing is truncated and
+             nothing is paginated, however long the lists get: a long list of
+             exposed identity documents SHOULD look like a lot. -->
+        <div class="pf-card ocs-card" style="margin-bottom:24px;display:none" id="org-people-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">What people can see and change about each other</div>
+          <div class="gp-hint" style="margin-bottom:12px">Only a System Manager can change these, and every change is recorded with who made it and when.</div>
+          <div id="ocs-body"><div class="hm-skel" aria-hidden="true"></div></div>
+          <div class="gp-hint" id="ocs-changed" style="margin-top:12px"></div>
+        </div>
+
         <!-- Document Compliance (build B4) -->
         <div class="pf-card" style="margin-bottom:24px;display:none" id="org-docs-card">
           <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">

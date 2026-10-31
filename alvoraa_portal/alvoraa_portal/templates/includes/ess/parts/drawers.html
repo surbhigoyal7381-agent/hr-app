@@ -108,15 +108,28 @@
   <div class="emp-drawer-body" id="ps-body"></div>
 </div>
 
+<!-- Slice 078 (A1, A2, AC-59, AC-60): this drawer behaves like a dialog.
+
+     It had none of it - no role, no aria-modal, no accessible name, no Escape
+     and no focus move - while the payslip drawer eleven lines above already had
+     the first three. So the attributes are copied from the one beside it rather
+     than invented, Escape closes it, focus moves in on open and returns to
+     whatever opened it on close, and the close control is 44 x 44.
+
+     The mini profile shares this element rather than adding a second one: the
+     two never open at once, each fully replaces the head and the body, and one
+     element means one set of attributes, one Escape handler and one focus trap
+     instead of two that can drift apart. -->
 <div class="emp-drawer-overlay" id="emp-drawer-overlay" onclick="closeEmpDrawer()"></div>
-<div class="emp-drawer" id="emp-drawer">
+<div class="emp-drawer" id="emp-drawer" role="dialog" aria-modal="true"
+     aria-labelledby="ed-name" tabindex="-1">
   <div class="emp-drawer-head">
     <div class="emp-drawer-av" id="ed-av"></div>
     <div class="emp-drawer-meta">
-      <div class="emp-drawer-name" id="ed-name"></div>
+      <div class="emp-drawer-name" id="ed-name" tabindex="-1"></div>
       <div class="emp-drawer-role" id="ed-role"></div>
     </div>
-    <button class="emp-drawer-close" onclick="closeEmpDrawer()"><i class=ic-x></i></button>
+    <button class="emp-drawer-close" onclick="closeEmpDrawer()" aria-label="Close"><i class=ic-x></i></button>
   </div>
   <div class="emp-drawer-body" id="ed-body">
     <div style="padding:40px;text-align:center;color:var(--text3)">Select an employee to view details.</div>

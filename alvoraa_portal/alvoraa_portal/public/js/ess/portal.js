@@ -4604,7 +4604,7 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); bsLoad(); }
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); bsLoad(); ocsLoad(); }
     if (name === "policies")    polLoad();
   }
 
@@ -6945,6 +6945,360 @@ document.addEventListener("change", function (e) {
   var f = t.files && t.files[0];
   t.value = "";            /* so choosing the same file twice still fires */
   mypSend(f);
+});
+
+/* ── "What people can see and change about each other", slice 078 ─────────
+   Prefix ocs. One card, two pickers, one dialog pattern.
+
+   Three rules this card is built to, each paid for by somebody else's product:
+
+   NAMES, NOT COUNTS. "8 details" and "and 3 more" are how a wrong tick made six
+   months ago survives every person who scrolls past it. Everything chosen is
+   listed by name, nothing is truncated and nothing is paginated - a long list
+   of exposed identity documents should look like a lot.
+
+   ONE BUTTON, ONE DIALOG, OK SAVES, CANCEL WRITES NOTHING. There is no page
+   Save button and no unsaved state anywhere, so nothing can be left half done
+   and nothing can be saved by accident.
+
+   THE CONSEQUENCE IS ON THE BUTTON. "OK - 3 document types, seen by 7 people",
+   not "OK". */
+var OCS = { data: null, dlg: null, pick: {}, opener: null, kind: null, types: null };
+var OCS_API = "alvoraa_portal.people_settings.";
+var OCS_PROFILE_KEY = "alvoraa_positions_profile_fields";
+var OCS_DOCS_KEY = "alvoraa_positions_document_types";
+var OCS_MY_KEY = "alvoraa_my_profile_fields";
+
+/* The words for each ticked detail. The same list the drawer uses for the
+   Positions fields - MPF_FIELDS - because one of them being renamed and not
+   the other is how a settings page comes to describe a screen that says
+   something else. */
+var OCS_MY_WORDS = {
+  cell_number: "Mobile number",
+  personal_email: "Personal email",
+  current_address: "Where they live now",
+  person_to_be_contacted: "Emergency contact name",
+  relation: "How they are related",
+  emergency_phone_number: "Emergency contact number"
+};
+function ocsWord(key, field) {
+  if (key === OCS_MY_KEY) return drT(OCS_MY_WORDS[field] || field);
+  for (var i = 0; i < MPF_FIELDS.length; i++) {
+    if (MPF_FIELDS[i][0] === field) return drT(MPF_FIELDS[i][1]);
+  }
+  return field;
+}
+
+function ocsLoad() {
+  var card = hmEl("org-people-card");
+  if (!card) return;
+  gpFetch(OCS_API + "get_people_settings", {}).then(function (d) {
+    OCS.data = d;
+    ocsPaint();
+    card.style.display = "";
+  }, function () {
+    /* Not a System Manager: not theirs to see, so the card is not there. */
+    card.style.display = "none";
+  });
+}
+
+function ocsChips(words) {
+  if (!words.length) return "";
+  return '<div class="ocs-chips">' + words.map(function (w) {
+    return '<span class="ocs-chip">' + esc(w) + "</span>";
+  }).join("") + "</div>";
+}
+
+function ocsPaint() {
+  var d = OCS.data || {};
+  var people = d.audience_count || 0;
+  var roles = (d.audience_roles || []).join(", ");
+
+  /* The Positions details. */
+  var profile = '<div class="ocs-sec"><h4 class="ocs-h">'
+    + esc(drT("Details a Positions reader may see about a colleague")) + "</h4>"
+    + (d.profile_fields && d.profile_fields.length
+        ? ocsChips(d.profile_fields.map(function (f) { return ocsWord(OCS_PROFILE_KEY, f); }))
+          + '<p class="gp-hint">' + esc(drT(
+              "These {0} details are visible to the {1} people who can open the Positions "
+            + "page, for everyone in their own companies and branches.",
+            [d.profile_fields.length, people])) + " "
+          + '</p><button type="button" class="btn btn-outline btn-sm" data-ocs="who">'
+          + esc(drT("See who")) + "</button>"
+        : '<p class="gp-hint">' + esc(drT(
+            "No extra details are shown. A reader sees a name and a job role, and nothing else."))
+          + "</p>")
+    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-profile">'
+    + esc(drT("Add or remove details")) + "</button></div></div>";
+
+  /* The document types - and the amber line, standing, without opening
+     anything. AC-84: it names the actual ROLES, not only a count. */
+  var docs = d.document_types || [];
+  var sens = d.sensitive || [];
+  var docsSec = '<div class="ocs-sec"><h4 class="ocs-h">'
+    + esc(drT("Document types shown on a person's profile")) + "</h4>"
+    + (sens.length
+        ? '<p class="ocs-warn" role="note">' + esc(drT(
+            "{0} of these {1} is an identity, statutory, verification, employment or "
+          + "address document. The {2} people who can open the Positions page - {3} - "
+          + "can open the file itself, for everyone in their own companies and branches.",
+            [sens.length, docs.length, people, roles])) + "</p>"
+        : "")
+    + (docs.length
+        ? '<ul class="ocs-list">' + docs.map(function (t) {
+            return "<li><b>" + esc(t.name) + "</b>"
+              + (t.category ? '<span class="ocs-cat">' + esc(t.category) + "</span>" : "")
+              + (t.known ? "" : '<span class="ocs-cat ocs-gone">'
+                  + esc(drT("no longer exists")) + "</span>")
+              + "</li>";
+          }).join("") + "</ul>"
+        /* Read as a statement of fact. No prompt, no "add your first", no
+           empty-state picture: nothing ticked is a perfectly good answer. */
+        : '<p class="gp-hint">' + esc(drT(
+            "No document types are shown on the Positions page. Nobody can open an "
+          + "employee's documents from there.")) + "</p>")
+    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-docs">'
+    + esc(drT("Add or remove document types")) + "</button></div></div>";
+
+  /* What an employee may change about themselves. */
+  var mine = '<div class="ocs-sec"><h4 class="ocs-h">'
+    + esc(drT("Details an employee may correct about themselves")) + "</h4>"
+    + (d.my_profile_fields && d.my_profile_fields.length
+        ? ocsChips(d.my_profile_fields.map(function (f) { return ocsWord(OCS_MY_KEY, f); }))
+        : '<p class="gp-hint">' + esc(drT(
+            "Nothing. My profile tells them to ask HR instead.")) + "</p>")
+    + '<p class="gp-hint">' + esc(drT(
+        "A photo is always on. Every employee may add or replace their own picture, and "
+      + "they are told who sees it before they do.")) + "</p>"
+    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-my">'
+    + esc(drT("Add or remove details")) + "</button></div></div>";
+
+  /* Pre-onboarding states FACTS and links to the form's own builder. It is not
+     a fourth picker: the Web Form owns the joiner's field list, and two
+     pickers for one form will disagree in front of the joiner. */
+  var joiner = '<div class="ocs-sec"><h4 class="ocs-h">'
+    + esc(drT("What a new joiner is asked for before day one")) + "</h4>"
+    + '<p class="gp-hint">' + esc(d.retention_days
+        ? drT("Kept for {0} days if the person never joins, then deleted.", [d.retention_days])
+        : drT("Switched off. It cannot be switched on until somebody sets how long a "
+            + "joiner's details are kept.")) + "</p></div>";
+
+  hmEl("ocs-body").innerHTML = profile + docsSec + mine + joiner;
+  hmEl("ocs-changed").textContent = d.last_changed && d.last_changed.by
+    ? drT("Last changed by {0}, {1}", [d.last_changed.by, fmtDate(d.last_changed.on)])
+    : "";
+}
+
+/* ── the picker dialog ───────────────────────────────────────────────────── */
+
+function ocsPick(kind) {
+  var d = OCS.data || {};
+  OCS.kind = kind;
+  OCS.opener = document.activeElement;
+  if (kind === "docs" && !OCS.types) {
+    gpFetch(OCS_API + "get_document_type_choices", {}).then(function (t) {
+      OCS.types = t; ocsPick("docs");
+    }, function (e) { toast((e && e.message) || drT("Could not load that. Try again."), "err"); });
+    return;
+  }
+  OCS.pick = {};
+  (kind === "docs" ? (d.document_types || []).map(function (t) { return t.name; })
+   : kind === "my" ? (d.my_profile_fields || [])
+   : (d.profile_fields || [])).forEach(function (v) { OCS.pick[v] = 1; });
+  ocsDialog();
+}
+
+function ocsRows() {
+  var d = OCS.data || {};
+  if (OCS.kind === "docs") {
+    var types = (OCS.types && OCS.types.types) || [];
+    var byCat = {}, order = [];
+    types.forEach(function (t) {
+      var c = t.category || drT("Other");
+      if (!byCat[c]) { byCat[c] = []; order.push(c); }
+      byCat[c].push(t);
+    });
+    /* GROUPED BY CATEGORY, with the group name above each block and the real
+       category as a chip on every row - so a sensitive type cannot be read as
+       an ordinary one because it happens to be next to one. */
+    return order.map(function (c) {
+      return '<h5 class="ocs-grp">' + esc(c) + "</h5>" + byCat[c].map(function (t) {
+        return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(t.name) + '"'
+          + (OCS.pick[t.name] ? " checked" : "") + '><span><b>' + esc(t.name) + "</b>"
+          + '<span class="ocs-cat">' + esc(t.category || drT("Other")) + "</span>"
+          + '<span class="gp-hint" style="display:block">'
+          + esc([t.collect_from ? drT("collected by {0}", [t.collect_from]) : "",
+                 t.given ? drT("{0} given so far", [t.given]) : drT("nobody has given one"),
+                 t.mandatory ? drT("needed to join") : ""].filter(Boolean).join(" · "))
+          + "</span></span></label>";
+      }).join("");
+    }).join("");
+  }
+  var choices = OCS.kind === "my" ? (d.my_profile_choices || []) : (d.profile_choices || []);
+  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+  /* THE SAFE LIST ONLY. Bank account, PAN, salary and date of birth are not
+     offered, and would be refused at the setter and again at every reader if
+     they were. A picker that offers a field it will then refuse is how a tenant
+     comes to believe a field is visible. */
+  return choices.map(function (f) {
+    return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(f) + '"'
+      + (OCS.pick[f] ? " checked" : "") + '><span><b>' + esc(ocsWord(key, f))
+      + "</b></span></label>";
+  }).join("");
+}
+
+function ocsDialog() {
+  var d = OCS.data || {};
+  var title = OCS.kind === "docs" ? drT("Document types shown on a person's profile")
+            : OCS.kind === "my" ? drT("Details an employee may correct about themselves")
+            : drT("Details a Positions reader may see");
+  var box = document.createElement("div");
+  box.className = "ocs-back";
+  box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true"'
+    + ' aria-labelledby="ocs-dlg-h" tabindex="-1">'
+    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">' + esc(title) + "</h3>"
+    + '<button type="button" class="ocs-x" data-ocs="cancel" aria-label="'
+    + esc(drT("Cancel")) + '">&times;</button></div>'
+    + '<div class="ocs-dlg-bd" id="ocs-dlg-bd">' + ocsRows() + "</div>"
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="ocs-sum" role="status"></p>'
+    + '<div class="ocs-ft-b">'
+    + '<button type="button" class="btn btn-primary ocs-b" data-ocs="ok" id="ocs-ok"></button>'
+    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="preview">'
+    + esc(drT("Preview what a reader sees")) + "</button>"
+    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="cancel">'
+    + esc(drT("Cancel")) + "</button></div></div></div>";
+  document.body.appendChild(box);
+  OCS.dlg = box;
+  ocsSummary();
+  box.querySelector("#ocs-dlg-h").focus();
+}
+
+function ocsSummary() {
+  if (!OCS.dlg) return;
+  var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
+  var people = (OCS.data || {}).audience_count || 0;
+  var sensCats = (OCS.types && OCS.types.sensitive_categories) || [];
+  var sens = OCS.kind === "docs"
+    ? chosen.filter(function (n) {
+        var t = ((OCS.types && OCS.types.types) || []).filter(function (x) { return x.name === n; })[0];
+        return t && sensCats.indexOf(t.category) >= 0;
+      })
+    : [];
+  /* The CONSEQUENCE on the button, not the word "OK". */
+  hmEl("ocs-ok").textContent = OCS.kind === "docs"
+    ? drT("OK - {0} document types, seen by {1} people", [chosen.length, people])
+    : OCS.kind === "my"
+      ? drT("OK - {0} details an employee may change", [chosen.length])
+      : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
+  /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
+  hmEl("ocs-sum").innerHTML = sens.length
+    ? '<span class="ocs-warn">' + esc(drT(
+        "{0} of these is an identity, statutory, verification, employment or address "
+      + "document. The {1} people who can open the Positions page will be able to open "
+      + "the file itself.", [sens.length, people])) + "</span>"
+    : OCS.kind === "docs" && chosen.length === 0
+      ? esc(drT("Nothing ticked. Nobody will be able to open an employee's documents "
+              + "from the Positions page."))
+      : "";
+}
+
+function ocsClose() {
+  /* CANCEL WRITES NOTHING, even if every box was changed. */
+  if (OCS.dlg && OCS.dlg.parentNode) OCS.dlg.parentNode.removeChild(OCS.dlg);
+  OCS.dlg = null;
+  OCS.pick = {};
+  var back = OCS.opener;
+  OCS.opener = null;
+  if (back && back.focus && document.body.contains(back)) back.focus();
+}
+
+function ocsSave() {
+  var key = OCS.kind === "docs" ? OCS_DOCS_KEY
+          : OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+  var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
+  var btn = hmEl("ocs-ok");
+  btn.disabled = true;
+  gpFetch(OCS_API + "set_people_setting", { key: key, value: chosen.join(",") },
+          { lostAnswerHandled: true }).then(function () {
+    var n = chosen.length;
+    ocsClose();
+    ocsLoad();
+    toast(key === OCS_DOCS_KEY
+      ? drT("Saved. {0} document types are now shown on the Positions page.", [n])
+      : drT("Saved."), "ok");
+  }, function (e) {
+    btn.disabled = false;
+    toast(mayHaveGone(e)
+      ? drT("No answer from the office. It may have gone through. Close this and look "
+          + "before you save it again.")
+      : (e && e.message) || drT("Could not save that. Try again."), "err");
+  });
+}
+
+function ocsPreview() {
+  /* What a reader sees for what is ticked RIGHT NOW - inside the dialog, so
+     nobody has to save to find out, which is the mistake this exists to stop. */
+  var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
+  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+  var body = OCS.kind === "docs"
+    ? (chosen.length
+        ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
+          + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
+        : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>")
+    : (chosen.length
+        ? '<dl class="mpf-dl">' + chosen.map(function (f) {
+            return "<dt>" + esc(ocsWord(key, f)) + "</dt><dd>"
+              + esc(drT("the person's value")) + "</dd>";
+          }).join("") + "</dl>"
+        : "<p>" + esc(drT("A reader would see a name and a job role, and nothing else."))
+          + "</p>");
+  hmOpenSheet(drT("What a reader sees"), '<div class="hm-sh-p">' + body + "</div>");
+}
+
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-ocs]") : null;
+  if (!t) return;
+  var what = t.getAttribute("data-ocs");
+  if (what === "pick-profile") ocsPick("profile");
+  else if (what === "pick-docs") ocsPick("docs");
+  else if (what === "pick-my") ocsPick("my");
+  else if (what === "cancel") ocsClose();
+  else if (what === "ok") ocsSave();
+  else if (what === "preview") ocsPreview();
+  else if (what === "who") {
+    gpFetch(OCS_API + "who_can_open_positions", {}).then(function (d) {
+      hmOpenSheet(drT("Who can open the Positions page"),
+        '<div class="hm-sh-p"><p>' + esc(drT("Roles: {0}", [(d.roles || []).join(", ")]))
+        + "</p><ul>" + (d.people || []).map(function (p) {
+            return "<li>" + esc(p.full_name) + "</li>";
+          }).join("") + "</ul></div>");
+    }, function (err) { toast((err && err.message) || drT("Could not load that."), "err"); });
+  }
+});
+
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!t || !t.getAttribute || !t.getAttribute("data-ocs-v")) return;
+  OCS.pick[t.getAttribute("data-ocs-v")] = t.checked ? 1 : 0;
+  ocsSummary();
+});
+
+/* Escape CANCELS the picker, and writes nothing. */
+document.addEventListener("keydown", function (e) {
+  if ((e.key !== "Escape" && e.key !== "Esc") || !OCS.dlg) return;
+  e.preventDefault();
+  ocsClose();
+});
+
+/* Focus stays inside the picker while it is open. */
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Tab" || !OCS.dlg) return;
+  var able = OCS.dlg.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), [tabindex="0"]');
+  if (!able.length) return;
+  var first = able[0], last = able[able.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 });
 
 /* Organisation settings: the switch. Off asks first; on is one tap. */
@@ -9898,7 +10252,306 @@ function closeEmpDrawer() {
   document.getElementById("emp-drawer-overlay").classList.remove("open");
   document.getElementById("emp-drawer").classList.remove("open");
   document.body.style.overflow = "";
+  /* Slice 078 (AC-60): focus goes back to whatever opened it. Without this a
+     keyboard user lands at the top of the page and has to tab back through the
+     whole chart to the name they were reading. */
+  var back = MPF.opener;
+  MPF.opener = null;
+  MPF.emp = null;
+  MPF.big = false;
+  if (back && back.focus && document.body.contains(back)) back.focus();
 }
+
+/* ── The ONE mini profile, slice 078 ──────────────────────────────────────
+   Prefix mpf. Used from the Positions table, the seat tray, and the seat page,
+   and there is exactly ONE place in this file that decides which details a
+   reader is shown and how each one is worded. The spec has an acceptance
+   criterion (AC-58) that FAILS if that list exists twice, because two copies
+   will drift and then the same question gets two answers.
+
+   It is deliberately short. What it answers is "who is this, what do they do,
+   since when" - the three things somebody reading a structure chart actually
+   wants - and it saves an HR hop into the Desk. It is not a personnel file. */
+var MPF = { emp: null, opener: null, big: false, data: null, pics: {} };
+var MPF_API = "alvoraa_portal.positions_profile.";
+
+/* THE one field list. The order is the allow-list's order, so the drawer reads
+   the same whatever order somebody ticked things in.
+
+   The wording is not the fieldname and not Frappe's label. "In the company
+   since" rather than "Date of joining", because that is the fact a reader
+   wants and it does not read like a payroll field. "Work email", because
+   `company_email` means nothing to anybody. */
+var MPF_FIELDS = [
+  ["designation",     "Job role"],
+  ["department",      "Department"],
+  ["branch",          "Branch"],
+  ["company",         "Company"],
+  ["reports_to",      "Reports to"],
+  ["grade",           "Grade"],
+  ["employment_type", "Kind of employment"],
+  ["date_of_joining", "In the company since"],
+  ["default_shift",   "Usual shift"],
+  ["company_email",   "Work email"]
+];
+var MPF_DATE = { date_of_joining: 1 };
+
+/* The sentence under the list. It is a promise, so it has to be true - and it
+   is true because `POSITIONS_PROFILE_FIELDS` is a closed server constant that
+   the reader intersects with as well as the setter. */
+function mpfPromise() {
+  return drT("These are the details your organisation chose to show. Pay, bank details, "
+    + "identity numbers, date of birth and personal contact details are never shown here.");
+}
+
+window.mpfOpen = function (employee, opener) {
+  if (!employee) return;
+  var overlay = document.getElementById("emp-drawer-overlay");
+  var drawer = document.getElementById("emp-drawer");
+  MPF.emp = employee;
+  MPF.opener = opener || (window.event && window.event.target) || null;
+  MPF.big = false;
+  MPF.data = null;
+  overlay.classList.add("open");
+  drawer.classList.add("open");
+  document.body.style.overflow = "hidden";
+
+  document.getElementById("ed-av").innerHTML = "";
+  document.getElementById("ed-name").textContent = drT("Getting the details…");
+  document.getElementById("ed-role").textContent = "";
+  /* Three grey bars, not a spinner: the shape of what is coming. */
+  document.getElementById("ed-body").innerHTML =
+    '<div class="mpf-body"><div class="hm-skel" aria-hidden="true"></div>'
+    + '<div class="hm-skel" aria-hidden="true"></div>'
+    + '<div class="hm-skel" aria-hidden="true"></div></div>';
+  document.getElementById("ed-name").focus();
+
+  gpFetch(MPF_API + "get_positions_profile", { employee: employee }).then(function (d) {
+    if (MPF.emp !== employee) return;      /* a second name was clicked meanwhile */
+    MPF.data = d;
+    mpfPaint();
+  }, function (e) {
+    if (MPF.emp !== employee) return;
+    mpfFail(e);
+  });
+};
+
+function mpfFail(e) {
+  document.getElementById("ed-name").textContent = drT("That person");
+  /* A refusal is NOT a failure, and must not be dressed as one: a reader
+     scoped out of a branch is told they cannot see that person, and learns
+     nothing about whether such a person or such a branch exists. */
+  var refused = e && (e.kind === "refused" || e.http_status_code === 403);
+  document.getElementById("ed-body").innerHTML = '<div class="mpf-body">'
+    + '<div class="fail" role="alert"><h3>'
+    + esc(refused ? drT("You cannot see that person's details.")
+                  : drT("We could not reach the office."))
+    + "</h3><p>" + esc(refused
+        ? drT("Ask HR if you need them.")
+        : drT("Nothing has changed about this person. Check your connection and try "
+            + "again. If it keeps happening, tell your administrator: code POS-PROFILE."))
+    + "</p>"
+    + (refused ? "" : '<button type="button" class="btn btn-outline" data-mpf="retry">'
+        + esc(drT("Try again")) + "</button>")
+    + "</div></div>";
+}
+
+function mpfPaint() {
+  var d = MPF.data || {};
+  var name = d.employee_name || "";
+  var pic = d.thumb || d.image;
+
+  /* The photograph lives in the drawer's FIXED HEADER, not in the scrolling
+     body, so a scroll can never open the enlargement by accident (AC-62).
+
+     AC-50: with no photograph the circle is NOT a button - no role, no
+     tabindex, no accessible name, and Enter does nothing. A control that does
+     nothing is worse than no control. */
+  document.getElementById("ed-av").innerHTML = pic
+    ? '<button type="button" class="mpf-face" data-mpf="big" aria-label="'
+      + esc(drT("Show a bigger picture of {0}", [name])) + '">'
+      + '<span class="mpf-ini" aria-hidden="true">' + esc(initials(name)) + "</span>"
+      + '<img src="' + esc(pic) + '" width="40" height="40" alt=""'
+      + ' onload="this.style.opacity=1" onerror="this.remove()"></button>'
+    : '<span class="mpf-face"><span class="mpf-ini" aria-hidden="true">'
+      + esc(initials(name)) + "</span></span>";
+  document.getElementById("ed-name").textContent = name;
+  document.getElementById("ed-role").textContent =
+    [d.designation, mpfValue(d, "branch")].filter(Boolean).join(" · ");
+
+  document.getElementById("ed-body").innerHTML = '<div class="mpf-body">'
+    + mpfLeftLine(d) + mpfList(d) + mpfDocs(d) + "</div>";
+  document.getElementById("ed-body").scrollTop = 0;
+}
+
+/* AC-46. The leaving DATE may appear in this one sentence. It is never a
+   profile row, and the REASON for leaving is never anywhere near this screen. */
+function mpfLeftLine(d) {
+  if (!d.left_on) return "";
+  return '<p class="mpf-left" role="note">' + esc(d.still_here
+    ? drT("{0} leaves on {1}.", [d.employee_name || "", fmtDate(d.left_on)])
+    : drT("{0} left on {1}. You are looking at how the seat was, not how it is.",
+          [d.employee_name || "", fmtDate(d.left_on)])) + "</p>";
+}
+
+function mpfValue(d, field) {
+  var row = (d.rows || []).filter(function (r) { return r.fieldname === field; })[0];
+  return row ? row.value : "";
+}
+
+function mpfList(d) {
+  var rows = d.rows || [];
+  if (!rows.length) {
+    /* AC-44. And only a System Manager is told where the setting is: telling
+       everybody else about a setting they cannot change is just noise. */
+    return '<p class="gp-hint">'
+      + esc(drT("Your organisation has not chosen any other detail to show here."))
+      + "</p>"
+      + (d.can_change_setting
+          ? '<p><button type="button" class="btn btn-outline btn-sm" data-mpf="settings">'
+            + esc(drT("Choose what is shown")) + "</button></p>"
+          : "");
+  }
+  var have = {};
+  rows.forEach(function (r) { have[r.fieldname] = r.value; });
+  var out = MPF_FIELDS.filter(function (f) { return f[0] in have; }).map(function (f) {
+    var value = have[f[0]];
+    /* E1: somebody with no manager gets NO "Reports to" row - not the word
+       "None", which reads like a fact about them. Every other field with no
+       value reads "Not recorded", which is honest and keeps the list steady. */
+    if (f[0] === "reports_to" && !value) return "";
+    if (MPF_DATE[f[0]] && value) value = fmtDate(value);
+    return "<dt>" + esc(drT(f[1])) + "</dt><dd>"
+      + (value ? esc(value) : '<span class="gp-hint">' + esc(drT("Not recorded")) + "</span>")
+      + "</dd>";
+  }).join("");
+  return '<dl class="mpf-dl">' + out + "</dl>"
+    + '<p class="gp-hint mpf-promise">' + esc(mpfPromise()) + "</p>";
+}
+
+/* The documents section arrives in step 5. Until a document type is ticked AND
+   the plan is on, there is NO SECTION AT ALL - not an empty heading, not a
+   greyed tab, not a count of zero (AC-45). */
+function mpfDocs(d) {
+  return "";   /* step 5 fills this in; until then there is no section at all */
+}
+
+/* ── the enlargement ─────────────────────────────────────────────────────── */
+
+function mpfBig() {
+  var d = MPF.data || {};
+  if (!d.image && !d.thumb) return;
+  MPF.big = true;
+  var small = d.thumb || d.image;
+  var body = document.getElementById("ed-body");
+  var box = document.createElement("div");
+  box.className = "mpf-big";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("tabindex", "-1");
+  box.setAttribute("aria-label", drT("Picture of {0}", [d.employee_name || ""]));
+  /* The 48 px copy, scaled up and blurred, is shown FIRST and the full picture
+     is laid over it. No spinner: the smaller thing is already underneath, and a
+     spinner over a picture that is visibly there reads as broken (AC-48).
+
+     There is no download, no "open in new tab" and no save action. */
+  box.innerHTML = '<div class="mpf-big-in">'
+    + '<img class="mpf-big-s" src="' + esc(small) + '" alt="">'
+    + '<img class="mpf-big-f" alt="">'
+    + '<p class="mpf-big-say" role="status">' + esc(drT("Getting the full picture…")) + "</p>"
+    + '<p class="mpf-big-nm">' + esc(d.employee_name || "")
+    + (d.designation ? '<span class="gp-hint">' + esc(d.designation) + "</span>" : "")
+    + "</p></div>";
+  body.appendChild(box);
+
+  var full = box.querySelector(".mpf-big-f");
+  var say = box.querySelector(".mpf-big-say");
+  /* AC-47: the JavaScript keeps the loaded element for the life of the page, so
+     a second enlargement of the same person makes NO second request. No HTTP
+     caching is claimed anywhere - private files go out `Cache-Control:
+     no-cache`, so the browser would revalidate every time. */
+  var held = MPF.pics[MPF.emp];
+  if (held === "failed") { mpfBigFailed(box, say); }
+  else if (held) { full.src = held.src; full.style.opacity = 1; say.remove(); }
+  else {
+    full.addEventListener("load", function () {
+      full.style.opacity = 1;
+      if (say.parentNode) say.remove();
+      MPF.pics[MPF.emp] = full;
+    }, { once: true });
+    full.addEventListener("error", function () {
+      MPF.pics[MPF.emp] = "failed";
+      mpfBigFailed(box, say);
+    }, { once: true });
+    full.src = d.image || small;
+  }
+  box.focus();
+}
+
+function mpfBigFailed(box, say) {
+  /* The blurred copy STAYS, and there is no retry: a retry is another request
+     through 8 worker slots for something nobody is waiting on (AC-49). */
+  var f = box.querySelector(".mpf-big-f");
+  if (f) f.remove();
+  if (say) say.textContent = drT("This is the small copy. The full picture did not load.");
+}
+
+function mpfCloseBig() {
+  var box = document.querySelector(".mpf-big");
+  if (box) box.remove();
+  MPF.big = false;
+  var face = document.querySelector("#ed-av .mpf-face[data-mpf]");
+  if (face && face.focus) face.focus();
+}
+
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-mpf]") : null;
+  if (!t) return;
+  var what = t.getAttribute("data-mpf");
+  if (what === "big") { MPF.big ? mpfCloseBig() : mpfBig(); }
+  else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
+  else if (what === "settings") { closeEmpDrawer(); switchPanel("org-settings", null); }
+});
+
+/* Hovering enlarges it too (brief decision 8). Tap and Enter are the handler
+   above; a pointer gets it without a click. */
+document.addEventListener("mouseover", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest('#ed-av [data-mpf="big"]') : null;
+  if (t && !MPF.big) mpfBig();
+});
+
+/* ONE Escape handler for the whole drawer (AC-60, AC-62).
+   The first Escape closes the ENLARGEMENT ONLY and puts focus back on the
+   photograph. A second closes the drawer. Getting that order wrong means a
+   reader who presses Escape to put a picture away loses the whole profile. */
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape" && e.key !== "Esc") return;
+  var drawer = document.getElementById("emp-drawer");
+  if (!drawer || !drawer.classList.contains("open")) return;
+  e.preventDefault();
+  if (MPF.big) { mpfCloseBig(); return; }
+  closeEmpDrawer();
+});
+
+/* Focus stays inside while it is open. */
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Tab") return;
+  var drawer = document.getElementById("emp-drawer");
+  if (!drawer || !drawer.classList.contains("open")) return;
+  var able = drawer.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex="0"]');
+  if (!able.length) return;
+  var first = able[0], last = able[able.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+/* The Positions table and the seat tray: a name opens the one mini profile. */
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-pos-who]") : null;
+  if (!t) return;
+  var who = t.getAttribute("data-pos-who");
+  if (who) mpfOpen(who, t);
+});
 
 /* ── Employee Scorecard ──────────────────────────── */
 var _scBackPanel = "team";

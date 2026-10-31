@@ -874,6 +874,13 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# Frappe writes its own the same way. `db.set_value` writes no history,
 		# and "who changed my emergency contact" has to have an answer.
 		("alvoraa_portal", "my_profile.py"): 1,
+		# positions_profile.py: NONE. Every read runs as the caller, after
+		# may_view() and employee_in_scope(), and there is no new scope helper.
+		("alvoraa_portal", "positions_profile.py"): 0,
+		# people_settings.py: NONE. The card reads as the System Manager asking;
+		# saving hands over to the access-granting path in hrms, which already
+		# holds the one Version bypass in its own ceiling above.
+		("alvoraa_portal", "people_settings.py"): 0,
 		# people_fields.py (hrms): ONE - the batched thumbnail read. Frappe's
 		# own File query condition narrows a Website User to `owner = me`, so a
 		# scoped read here would hide every colleague's thumbnail and the one

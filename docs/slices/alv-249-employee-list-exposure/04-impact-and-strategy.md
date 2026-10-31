@@ -4,6 +4,11 @@ Status: **proposal only. No code written, nothing pushed, no dev or production d
 Written 31 Oct 2026 by the full-stack engineer, on `origin/dev` d3afcaa5, in worktree
 `.claude/worktrees/alv-249` (branch `slice/alv-249-employee-list-exposure`).
 
+> **Superseded in part, 31 Oct 2026.** `05-test-results-standard-row-vs-code-rule.md`
+> tested the standard own-record row (A-prime) next to option B. The recommendation is now
+> **A-prime plus a sync hook**, not B: it also closes the two reports and expense claims
+> (ALV-261), and B as written here cut off the System Manager. Read 05 first.
+
 ---
 
 ## Bad news first

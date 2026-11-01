@@ -505,20 +505,24 @@ def log_an_export(submission, masked):
 	modules and asserts exactly one line per call. Never a field value, never a
 	file.
 
-	**`warning`, not `info`, and that is the whole point of this line existing.**
-	Frappe's default logger level is `WARNING` on a dev server and `ERROR`
-	anywhere else (`frappe/utils/logger.py:12`), and **no site in this product
-	sets `log_level`** - so every `logger.info` line we write is dropped before
-	it reaches a file. Counsel's ruling 9 says every export is *logged*, and a
-	line nobody can read is not logged. An audit record of somebody's personal
-	data leaving the system is not a debug trace.
+	**This line does not reach a file at any tenant today, and that is not
+	something the level can fix.** `frappe/utils/logger.py:12` sets the default
+	level to `WARNING` on a dev server and **`ERROR` everywhere else**;
+	`DEV_SERVER` is unset in our images and **no site in this product sets
+	`log_level`** - both read on 1 Nov 2026. So `info` is dropped, and so is
+	`warning`. The only level that survives is `error`, and an export is not an
+	error.
 
-	The other `info` lines in these modules are a wider finding and are named in
-	`03-implementation-notes.md`: the fix for those is `log_level: "INFO"` in the
-	bench's own configuration, which is DevOps's to make, not ours to work
-	around sixteen times.
+	So it stays `info`, which is the honest level for an audit trace, and
+	**counsel's ruling 9 is not discharged by this code alone**: it needs
+	`log_level: "INFO"` in the bench's own configuration. That is a DevOps change
+	and a **blocker for switching the form on at a tenant with real joiners**,
+	recorded in `03-implementation-notes.md` beside ALV-215. The same finding
+	silences 078's invite line and the retention counts, which is
+	`joiner_housekeeping`'s own docstring promising something that does not
+	happen.
 	"""
-	frappe.logger("alvoraa").warning(
+	frappe.logger("alvoraa").info(
 		f"joiner submission exported: {submission} by {frappe.session.user} "
 		f"at {now()}, masked={bool(masked)}")
 

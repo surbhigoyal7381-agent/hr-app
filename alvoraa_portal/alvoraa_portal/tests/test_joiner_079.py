@@ -472,13 +472,7 @@ class TestTheForm(_Base):
 		"""
 		fx.a_document_type(required=True)
 		doc, _out = self._sign_in()
-		frappe.get_doc({
-			"doctype": "File",
-			"file_name": f"joiner-{doc.name}-{fx.DOC_NAME}.jpg",
-			"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name,
-			"is_private": 1, "content": b"\xff\xd8\xffinvented",
-		}).insert(ignore_permissions=True)
-		frappe.db.commit()
+		fx.attach_a_file(doc.name)
 		self._as_the_joiner(doc)
 		page = joiner_public.open_invite()
 		# And a compulsory document that has arrived no longer blocks the send.
@@ -707,16 +701,22 @@ class TestExport(_Base):
 		handler = logging.StreamHandler(stream)
 		logger = frappe.logger("alvoraa")
 		logger.addHandler(handler)
+		# **The level is forced, and the reason is a finding rather than a test
+		# detail.** Frappe's default is `WARNING` on a dev server and `ERROR`
+		# everywhere else, `DEVSERVER` is unset in our images, and no site in
+		# this product sets `log_level` - so NO line below `error` reaches a file
+		# at any tenant. This test proves the line exists and is shaped right;
+		# whether anybody can read it is configuration, and it is escalated as a
+		# blocker for switch-on in `03-implementation-notes.md`.
+		was = logger.level
+		logger.setLevel(logging.DEBUG)
 		frappe.set_user(self.hr)
 		try:
 			joiner_invite.export_submission(submission=doc.name)
 		finally:
+			logger.setLevel(was)
 			logger.removeHandler(handler)
 			frappe.set_user("Administrator")
-		# **No level fiddling here, and that is the assertion.** The export line
-		# is written at `warning` on purpose: counsel's ruling 9 says every
-		# export is logged, and Frappe's default level drops `info`. If somebody
-		# demotes it back to `info`, this test goes red.
 		lines = [ln for ln in stream.getvalue().splitlines() if "exported" in ln]
 		self.assertEqual(len(lines), 1, stream.getvalue())
 		self.assertIn("masked=True", lines[0])
@@ -739,15 +739,7 @@ class TestExport(_Base):
 
 class TestTwoClocks(_Base):
 	def _with_a_file(self, doc):
-		frappe.get_doc({
-			"doctype": "File",
-			"file_name": f"joiner-{doc.name}-{fx.DOC_NAME}.jpg",
-			"attached_to_doctype": DOCTYPE,
-			"attached_to_name": doc.name,
-			"is_private": 1,
-			"content": b"\xff\xd8\xffinvented",
-		}).insert(ignore_permissions=True)
-		frappe.db.commit()
+		fx.attach_a_file(doc.name)
 
 	def _files(self, doc):
 		return frappe.get_all("File", filters={"attached_to_doctype": DOCTYPE,
@@ -869,12 +861,7 @@ class TestErasure(_Base):
 		joiner_public.submit_invite(values=frappe.as_json(values))
 		frappe.set_user("Administrator")
 
-		frappe.get_doc({
-			"doctype": "File",
-			"file_name": f"joiner-{doc.name}-{fx.DOC_NAME}.jpg",
-			"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name,
-			"is_private": 1, "content": b"\xff\xd8\xffinvented",
-		}).insert(ignore_permissions=True)
+		fx.attach_a_file(doc.name)
 
 		# **HR's own edit.** It writes a Version row holding the old values, and
 		# it is the only thing the sweep can possibly be needed for.
@@ -924,8 +911,24 @@ class TestErasure(_Base):
 			"Until this is 0, both of counsel's clocks are a claim.")
 
 		self.assertFalse(frappe.db.exists("User", account))
+		# **No `Deleted Document` holding the ACCOUNT, and none holding their
+		# NAME** - which is what 079-PRIV-2 clause 4 is about: the point of
+		# `delete_permanently=True` is that Frappe keeps no JSON copy.
+		#
+		# Scoped to `deleted_doctype = "User"` on purpose, and the reason is
+		# worth knowing: `User.on_trash` deletes the account's
+		# `Notification Settings`, which is named after the login id, so a row
+		# with that `deleted_name` survives for a different doctype. It holds
+		# nothing about the person - the login id is opaque and non-routable by
+		# construction (079-SEC-1 clause 4) - and it is recorded as a known
+		# residue in `03-implementation-notes.md` rather than chased.
 		self.assertFalse(frappe.db.exists("Deleted Document",
-		                                  {"deleted_name": account}))
+		                                  {"deleted_doctype": "User",
+		                                   "deleted_name": account}))
+		for row in frappe.get_all("Deleted Document", fields=["data"],
+		                          limit_page_length=0, ignore_permissions=True):
+			self.assertNotIn("S079 Every Field", row.data or "",
+				"A Deleted Document is holding a JSON copy of the person's name.")
 		for value in values.values():
 			with self.subTest(value=value):
 				self.assertEqual(frappe.db.sql(

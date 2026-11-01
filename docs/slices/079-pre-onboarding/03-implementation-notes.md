@@ -29,7 +29,7 @@ That is closed, it fails **closed**, and it has fourteen door tests on it.
 | **2** | **The lockout copy says 10 tries and 60 seconds, not 30 minutes.** I read Frappe's own settings instead of guessing: `allow_consecutive_login_attempts = 10`, `allow_login_after_fail = 60` | `01b` §4.2 wrote "Locked for 30 minutes". The design's number was wrong. **If you want 30 minutes, it is a System Settings change** and the copy follows it automatically |
 | **3** | **No Hindi is shipped.** Every new string is translatable and a reviewed `hi.csv` drops straight in, but I did not machine-draft one | There is no Hindi file anywhere in this product (ALV-267), and the biggest new string is a **privacy notice**. An unreviewed machine translation of a notice is worse than an honest gap. **US-23 / AC-116 is NOT satisfied** |
 | **4** | **A tenant's HR telephone number is now on a page a visitor can open** — `/alvoraa-login?for=joining`, inside "I cannot sign in" | The design asks for it, and the journey does not work without it: both of today's escape routes are dead ends for somebody with no email address. It is a small new disclosure and **the security reviewer should look at it** |
-| **5** | **Every `logger.info` line this product writes is thrown away.** Frappe's default level is WARNING on a dev server and ERROR elsewhere, and **no site here sets `log_level`** — so 16 lines, including 078's own invite and retention counts, reach no file at any tenant | Not mine, and not something to work around 16 times. **I moved the export line to `warning`**, because counsel's ruling 9 makes it an audit record. The rest is one line of bench configuration and it is **DevOps's call** — see §6 defect 4 |
+| **5** | **No log line this product writes reaches a file at any tenant, and that silences counsel's ruling 9.** Frappe's default level is `WARNING` on a dev server and **`ERROR` everywhere else**; `DEV_SERVER` is unset in our images and no site sets `log_level`. So all 16 `logger("alvoraa").info` lines — the export, 078's invite, the retention counts — are discarded | Not mine, pre-existing, and **the level cannot fix it**: `warning` is dropped too, and an export is not an `error`. **It needs `log_level: "INFO"` in the bench configuration, and that makes it a blocker for switching the form on** at a tenant with real joiners, beside ALV-215. See §6 defect 4 |
 
 ---
 
@@ -262,26 +262,32 @@ the whole time I was writing it. It now turns `frappe.in_test` off for the
 duration of the call under test, so the `ignore_version=True` we pass is the only
 thing stopping a row.
 
-**4 · Not mine: every `logger.info` line this product writes is dropped.**
-Frappe's default logger level is `WARNING` on a dev server and `ERROR` anywhere
-else (`frappe/utils/logger.py:12`), and **no site in this product sets
-`log_level`** — not the local bench, not `deploy/`, nowhere. There are **16**
-`frappe.logger("alvoraa").info(...)` calls across `alvoraa_portal` and `hrms`,
-including 078's invite line and the retention counts, and **none of them reaches
-a file.**
+**4 · Not mine: no log line this product writes reaches a file at any tenant.**
 
-That matters here because counsel's ruling 9 says every export is *logged*, and
-a line nobody can read is not logged. So **the export line moved to `warning`** —
-one line, with the reason written beside it, because an audit record of somebody's
-personal data leaving the system is not a debug trace, and the test now proves it
-without touching the level.
+Three readings, all on 1 November 2026:
 
-**The other fifteen are a DevOps item and I did not touch them.** The fix is
-`log_level: "INFO"` in the bench's own configuration, not fifteen edits of mine,
-and the decision about log volume and retention is DevOps's. **Until it is made,
-"are these actually being deleted" and "who invited this person" have no answer
-in any log at any tenant** — which is `joiner_housekeeping`'s own docstring
-promising something that does not happen.
+- `frappe/utils/logger.py:12` — `default_log_level = logging.WARNING if frappe._dev_server else logging.ERROR`
+- `frappe/__init__.py:85` — `_dev_server = int(sbool(os.environ.get("DEV_SERVER", False)))`, and **`DEV_SERVER` is unset** in the container
+- **no site, and nothing in `deploy/`, sets `log_level`**
+
+So the effective level is **`ERROR`**, and all **16** `frappe.logger("alvoraa").info(...)`
+calls across `alvoraa_portal` and `hrms` are discarded — the export line, 078's
+invite line, and the retention counts.
+
+**I tried moving the export line to `warning` and it does not help**: `warning` is
+below `ERROR` too. The only level that survives is `error`, and an export is not
+an error. So the line stays `info`, which is the honest level for an audit trace,
+and the gap is escalated rather than dressed up:
+
+> **Counsel's ruling 9 — "every export logged" — is not discharged by this code
+> alone. It needs `log_level: "INFO"` in the bench's own configuration, and until
+> that is set the form must not be switched on at a tenant with real joiners.**
+
+That is a DevOps change and a blocker for switch-on, beside ALV-215. The same
+finding silences `joiner_housekeeping`'s own docstring promise that *"are these
+actually being deleted"* has an answer in the log, and AC-8's detection story
+depends on Frappe's `Activity Log` rather than on our logger, so that one is
+unaffected.
 
 ---
 

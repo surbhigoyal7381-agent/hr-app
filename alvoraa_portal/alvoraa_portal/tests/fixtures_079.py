@@ -12,6 +12,8 @@ line of it is the one that matters: **the form ships off, so a run that reports
 is therefore called by the suite's own `setUp`, not left to a tenant.
 """
 
+import base64
+
 import frappe
 from frappe.utils import cstr
 
@@ -81,6 +83,38 @@ def a_document_type(required=False):
 	                      DOC_NAME if required else "")
 	frappe.db.commit()
 	return DOC_NAME
+
+
+# **A genuinely valid 1x1 PNG, and it has to be genuine.** Frappe parses
+# what it stores: `File.before_insert` hands an image to Pillow for EXIF
+# stripping and a PDF to pypdf, so three magic bytes followed by the word
+# "invented" raises `UnidentifiedImageError`, and a hand-written stub PDF
+# raises `PdfReadError: startxref not found`. Both blew the FIXTURE up
+# rather than failing the test, which cost two twenty-minute runs to see.
+#
+# An image is also the realistic shape: a joiner photographs a document.
+A_FILE = base64.b64decode(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AA"
+	"AwAB/AF+6nJ7AAAAAElFTkSuQmCC")
+
+
+def attach_a_file(submission, document_type=DOC_NAME):
+	"""One stored document on a row, named the way the endpoint names them.
+
+	The name matters: `_sent_types` works out which type a file belongs to
+	from `joiner-<row>-<type>.<ext>`, so a fixture that invented its own name
+	would make "already sent" untestable.
+	"""
+	doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": f"joiner-{submission}-{document_type}.png",
+		"attached_to_doctype": DOCTYPE,
+		"attached_to_name": submission,
+		"is_private": 1,
+		"content": A_FILE,
+	}).insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc
 
 
 def a_row(full_name="S079 Priya Khanna", login_id="+91 98100 10079", invited_by=None):

@@ -66,6 +66,32 @@ What they typed is kept. They can close the page and return to finish. The
 access stays valid until they send or it expires. Cheap now, expensive to
 retrofit.
 
+## 4a · Send ends the form, not the sign-in — **and the refusal says which**
+
+Two answers from Surbhi, 1 Nov, both reversing or settling an earlier reading.
+
+**Send ends the form only.** The joiner stays signed in afterwards. This
+reverses §4's "the account dies at Send", and the reason is the case the
+designer named: somebody who finds their PAN card the next evening should not
+have to ring HR. What they already sent is sent; they can still add a document
+or correct something until the access expires.
+
+So **the access ends on its own expiry date, or when HR ends it** — not on
+Send. If the person is hired, the pre-onboarding account must be **closed, not
+promoted**: their real staff login is a separate thing, and promoting this one
+would lock the new employee out of their own record.
+
+**The sign-in page may say "your access has ended" rather than "wrong
+password".** Design decision D4, and the right call: a joiner typing the
+*correct* password a day late, told they got it wrong, tries again, gets locked
+out, and we lose them.
+
+The trade, stated once so nobody rediscovers it as a finding: this tells
+somebody holding the credential that an account existed and has ended. That is
+a small disclosure about a person HR already chose to contact, by a credential
+HR handed over by hand. It is worth it. The refusal still names no person, no
+employer detail and no reason beyond the state.
+
 ## 5 · The joiner's field list — **its own tick, shipping empty**
 
 One candidate list of fields, ticked twice: once for My Profile, once for the
@@ -114,6 +140,36 @@ the most work by a distance.
 Alternative IDs (PAN, passport, driving licence, voter ID) are still offered
 and are still the easier path for everybody. Counsel's ruling that Aadhaar is
 **voluntary with alternatives accepted** holds regardless.
+
+## 6b · Four more, settled 1 November after the spec
+
+**The Aadhaar masker is HELD, not cancelled.** US-11 and US-12 — 13 of the
+slice's 83 points, and its largest single piece of work — wait for counsel's
+two written answers: may an employer ask for an Aadhaar card at all before
+employment, and does the card's QR code carry the full number anyway. Nothing
+else waits on them, because the Aadhaar document type is only a tick. If the
+answer is no, we will not have built the biggest thing in the slice for
+nothing. **Build the other 23 stories now.**
+
+**Sign-in by mobile number is ON.** The joiner's username is the mobile the
+employer already reached them on. This needs Frappe's tenant-wide
+`allow_login_using_mobile_number`, so **every employee at that tenant can then
+also sign in with their mobile number** — a change made for the joiners' sake
+that reaches everybody. Surbhi chose it with that named. The login id itself
+stays opaque and non-routable (079-SEC-1); the number lives on
+`User.mobile_no` and Frappe resolves it.
+
+**My Profile offers the six fields the code allows, not the sixteen the
+prototype drew.** The drawing was wrong, not the code: the extra ten include
+**bank account and IFSC**, and offering those would give an employee
+self-service write on their own bank details, which is how payroll fraud
+happens. Correct the prototype, not the allow-list. Widen later case by case if
+HR asks, each considered on its own.
+
+**The two-column My Profile ships in this slice**, even though it changes a
+page already live in production. It is Surbhi's own fix to a real fault — a
+1280 px box for a ten-digit phone number — and shipping it here means one
+change and one test pass rather than two.
 
 ## 7 · Counsel's rulings, 31 October — all binding
 

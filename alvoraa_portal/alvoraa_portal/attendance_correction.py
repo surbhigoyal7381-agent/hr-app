@@ -1030,6 +1030,25 @@ def withdraw(name):
 		frappe.throw(_("That request is not yours."), frappe.PermissionError)
 	if doc.docstatus != 0:
 		frappe.throw(_("HR has already decided this one, so it cannot be withdrawn."))
+	# **A DECLINE IS A DECISION, AND IT STAYS A DRAFT (ALV-275).** Frappe will
+	# not move a draft to cancelled, so `decide` leaves a declined request at
+	# docstatus 0 with HR's reason on it - which the check above cannot see.
+	# Without this the employee who raised it could withdraw their own refusal:
+	# the `db_set` below would overwrite "Declined" with "Withdrawn" and put
+	# their own name in `alvoraa_reviewed_by` over HR's, leaving HR's note on a
+	# record that says the employee took it back. The decision would vanish and
+	# the row would contradict itself.
+	#
+	# Asked through `DONE_STATES`, the module's one definition of "stopped
+	# waiting" - the HR queue below already asks it, and it is read at call
+	# time, so being defined further down the file is fine.
+	if doc.get("alvoraa_review_status") in DONE_STATES:
+		if doc.get("alvoraa_review_status") == "Declined":
+			# Says what happened, and what to do next - the day may still be
+			# wrong, and a fresh request is how they say so.
+			frappe.throw(_("HR has already declined this one, so it cannot be "
+			               "withdrawn. Raise it again if the day is still wrong."))
+		frappe.throw(_("You have already withdrawn this one."))
 	doc.db_set({"alvoraa_review_status": "Withdrawn",
 	            "alvoraa_reviewed_by": frappe.session.user,
 	            "alvoraa_reviewed_on": frappe.utils.now()}, update_modified=False)

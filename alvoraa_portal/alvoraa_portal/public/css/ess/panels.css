@@ -801,6 +801,27 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 /* The widget. On the page surface, so ordinary tokens apply. */
 .dw{background:var(--surface);border:1px solid var(--border);
   border-radius:var(--r);overflow:hidden}
+/* **The two columns under the head.** Equal halves, because the point was
+   that one full-width stack read too wide. `1fr 1fr` rather than `auto` so
+   the divider sits in the middle whatever the lists happen to hold today.
+   `min-width:0` lets a long line wrap instead of pushing the column open.
+
+   The breakpoint is 1023px, the one `.home-grid` already collapses at, so the
+   whole Home page goes to one column at the same width rather than this card
+   alone deciding when the page is narrow. */
+.dw-cols{display:grid;grid-template-columns:1fr 1fr;align-items:stretch}
+.dw-col{min-width:0}
+.dw-col-ref{border-left:1px solid var(--border)}
+/* The blocks carry their own bottom rule, which on the last one of a column
+   would be a line stopping halfway across the card. */
+.dw-col>:last-child{border-bottom:0}
+@media(max-width:1023px){
+  .dw-cols{grid-template-columns:1fr}
+  /* Stacked, the divider has to turn with them, and the block that is now
+     above the fold gets its rule back. */
+  .dw-col-ref{border-left:0;border-top:1px solid var(--border)}
+  .dw-col:first-child>:last-child{border-bottom:1px solid var(--border)}
+}
 .dw-head{padding:13px 18px;border-bottom:1px solid var(--border);
   background:var(--surface2)}
 .dw-title{font-size:var(--fs-md);font-weight:700;color:var(--text)}

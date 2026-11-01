@@ -8201,7 +8201,29 @@ function dmWidget(m) {
       + esc(dmCost(w.next.quarters + w.extra).toLowerCase()) + ".</span></div>";
   }
 
-  return head + facts + verdict + nextUp + dmLadder(m, w) + dmMarks(m);
+  // **TWO COLUMNS ON A WIDE SCREEN.** Surbhi, 1 Nov 2026: the card was one
+  // tall full-width stack and read as too wide.
+  //
+  // The split is by what the block is FOR, not by length. The left column is
+  // the whole "where am I right now" story, read top to bottom: the three
+  // numbers, the sentence about them, and the next time that changes it. The
+  // right column is the two lists you SCAN rather than read.
+  //
+  // The head stays full width. It names the day and the shift for both
+  // columns, and its tinted bar would otherwise stop halfway across the card.
+  //
+  // ONE COLUMN WHEN THERE IS NOTHING TO PUT IN THE SECOND. Before any ladder
+  // or mark exists - a day with no rungs, or nothing earned or missed yet -
+  // both helpers return "". Wrapping that in a grid would draw an empty
+  // half-card with a divider down the middle of nothing.
+  var reference = dmLadder(m, w) + dmMarks(m);
+  var now = facts + verdict + nextUp;
+  if (!reference) return head + now;
+  return head
+    + '<div class="dw-cols">'
+    + '<div class="dw-col">' + now + "</div>"
+    + '<div class="dw-col dw-col-ref">' + reference + "</div>"
+    + "</div>";
 }
 
 function dmFact(label, value, note) {

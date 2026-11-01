@@ -503,9 +503,20 @@ class TestTheForm(_Base):
 
 	def test_send_is_refused_until_what_hr_marked_is_answered(self):
 		"""AC-38, AC-39. **A refusal costs the joiner nothing**: nothing is sent,
-		nothing is burned, they stay signed in."""
+		nothing is burned, they stay signed in.
+
+		It saves a draft first, and that is the real sequence rather than a
+		convenience: the joiner presses Next before they reach Check and send.
+		It also matters for what can honestly be asserted - a refused
+		`submit_invite` throws **before** the write, so it stores nothing at all.
+		AC-38's *"every input still holds what was typed"* is a promise about the
+		BROWSER; the promise about the row is that a refusal does not destroy
+		what was already kept, and that is what this asserts.
+		"""
 		doc, _out = self._sign_in()
 		self._as_the_joiner(doc)
+		joiner_public.save_draft(values=frappe.as_json(
+			{"personal_email": "s079priya@example.com"}))
 		with self.assertRaises(frappe.ValidationError):
 			joiner_public.submit_invite(values=frappe.as_json(
 				{"personal_email": "s079priya@example.com"}))
@@ -513,7 +524,7 @@ class TestTheForm(_Base):
 		row = frappe.get_doc(DOCTYPE, doc.name)
 		self.assertEqual(row.status, "Invited")
 		self.assertFalse(row.submitted_at)
-		# What was typed is kept, and the session is untouched.
+		# The draft survived the refusal, and the session is untouched.
 		self.assertEqual(row.personal_email, "s079priya@example.com")
 		self.assertEqual(frappe.db.get_value("User", doc.user, "enabled"), 1)
 

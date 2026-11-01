@@ -31,6 +31,11 @@ before_request = [
     # permissions. Every path, "/" with cmd included. See request_guard.py.
     "alvoraa_portal.request_guard.drop_permission_skips",
     "alvoraa_portal.auth.lock_until_password_chosen",
+    # Slice 079 (079-SEC-3): a new joiner's sign-in opens their joining
+    # form and nothing else. The same shape as the line above and the
+    # OPPOSITE failure mode - it fails CLOSED. See
+    # alvoraa_portal.auth.lock_to_the_joining_page.
+    "alvoraa_portal.auth.lock_to_the_joining_page",
     # The bare "/" again. The get_website_user_home_page hook below is
     # asked fourth and can be overruled by a default workspace, so it is
     # not enough on its own. See auth.route_the_bare_root.

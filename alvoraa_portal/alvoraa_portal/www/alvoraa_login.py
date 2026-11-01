@@ -8,11 +8,18 @@ no_cache = 1
 def get_context(context):
     # Already logged in → send to the right portal immediately
     if frappe.session.user != "Guest":
-        from alvoraa_portal.auth import _portal_home_for
+        from alvoraa_portal.auth import JOINER_ROLE, JOINING_PAGE, _portal_home_for
         roles = set(frappe.get_roles(frappe.session.user))
         desk_roles = {"System Manager", "HR Manager", "HR User", "Administrator",
                       "Accounts Manager", "Accounts User"}
-        if desk_roles.intersection(roles):
+        if JOINER_ROLE in roles:
+            # Slice 079. This door answered before `home_page_for` existed and
+            # never learnt about it, so a signed-in joiner reloading the sign-in
+            # page was sent to _portal_home_for() - the staff portal. The gate in
+            # `auth.lock_to_the_joining_page` would turn that into a redirect
+            # loop through a refusal screen; answering here is the honest fix.
+            frappe.local.flags.redirect_location = JOINING_PAGE
+        elif desk_roles.intersection(roles):
             frappe.local.flags.redirect_location = "/app"
         else:
             frappe.local.flags.redirect_location = _portal_home_for(frappe.session.user)

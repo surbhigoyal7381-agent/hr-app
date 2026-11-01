@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import cint
 from werkzeug.exceptions import HTTPException
 
 from alvoraa_portal.subscription import has_feature
@@ -9,6 +10,13 @@ from alvoraa_portal.subscription import has_feature
 _DESK_ROLES = frozenset({
     "System Manager", "Administrator",
 })
+
+# Slice 079. Named here as well as in `joiner_invite` so that neither module has
+# to import the other on the front door of every tenant: `auth` is imported by
+# `hooks.py` on every request, and `joiner_invite` pulls in the submission
+# controller and the settings layer behind it.
+JOINER_ROLE = "Alvoraa Joiner"
+JOINING_PAGE = "/joining"
 
 
 def home_page_for(user):
@@ -43,7 +51,25 @@ def home_page_for(user):
                 return "/update-password"
             return _portal_home_for(user)
 
-        if _DESK_ROLES.intersection(set(frappe.get_roles(user))):
+        roles = set(frappe.get_roles(user))
+
+        # Slice 079, 079-SEC-3, and this branch IS the slice's P1.
+        #
+        # A new joiner is a signed-in account with NO Employee record and no
+        # desk role, which is exactly the user the fall-through below sends to
+        # /hrms-employee - the staff portal. Without this line a joiner's
+        # sign-in opens the employee portal, which would make the login WIDER
+        # than the bearer link it replaced, because a link at least reached one
+        # page.
+        #
+        # It sits here, in the one function three doors already share, rather
+        # than in each door - which is why that function exists. And it costs
+        # nothing: the roles set below was already being read for the same
+        # request.
+        if JOINER_ROLE in roles:
+            return JOINING_PAGE
+
+        if _DESK_ROLES.intersection(roles):
             return None  # Platform operator — the desk is their workplace
 
         return _portal_home_for(user)
@@ -391,6 +417,178 @@ def lock_until_password_chosen():
         except Exception:
             pass
         return
+
+
+# ── One page and nothing else (slice 079, 079-SEC-3) ───────────────────────
+#
+# **The load-bearing control of slice 079.** Counsel preferred a restricted
+# login to an expiring link because a login identifies the person. That is only
+# true if the restriction is real: an account inside the site is a bigger thing
+# than a URL, and this is the only reason the login is safer than the link.
+#
+# It is deliberately the SAME SHAPE as `lock_until_password_chosen` above - a
+# path allow-list, a `cmd` allow-list honoured only on "/", and an order that
+# keeps the cheap checks first - because that shape is built, reviewed and paid
+# for twice over in live incidents. Copying it was the cheapest rung available:
+# Frappe has no "this role may reach one page" switch (`Role.home_page` decides
+# a landing, not a boundary), and a per-route permission DocType would buy a
+# permission surface and a migration for a list of ten strings.
+#
+# **It differs from its ancestor in exactly one way, and the difference is the
+# point: this one fails CLOSED.** `lock_until_password_chosen` fails open on
+# purpose, because locking 441 staff out at shift change is worse than the hole
+# it closes. Here the trade is the other way round: a false denial costs ONE
+# person a telephone call to HR, and a false allow puts an unidentified account
+# inside a tenant's portal.
+
+_JOINER_MAY_REACH = (
+    "/joining",
+    "/logout",
+    "/login",
+    "/alvoraa-login",
+    "/assets/",
+    "/favicon.ico",
+    # Sign-in and sign-out themselves. Frappe completes the login inside
+    # `init_request`, which is also where this hook runs - so by the time we are
+    # called the session is ALREADY the joiner. Leave `/api/method/login` out
+    # and the login reply carries "Logged In" and a 403 in the same body: the
+    # person types the right password and is told it failed. Only a real HTTP
+    # request shows this; every unit test passes without it.
+    "/api/method/login",
+    "/api/method/logout",
+    # The joining page's own four calls, by their dotted names, because the page
+    # posts to /api/method/<dotted> with `fetch` rather than through Frappe's
+    # website `frappe.call`.
+    "/api/method/alvoraa_portal.joiner_public.",
+)
+
+# **Empty, and that is not an oversight.** The joining page uses `fetch` to
+# /api/method/<dotted>, never a website-page `frappe.call`, so there is no
+# legitimate `cmd` for a joiner at all. The set exists so that the check on "/"
+# exists: honouring a `cmd` the allow-list does not name would hand over the
+# key, and a POST to "/" with `cmd=frappe.client.get_list` is a door a path
+# check cannot see. This product has paid for the missing-`cmd` half twice.
+_JOINER_MAY_CALL = frozenset()
+
+# "Has this account got the joiner role?" A joiner account is created with the
+# role and never gains or loses one until it is closed, at which point the
+# cache entry is dropped by hand (`joiner_invite.end_the_sign_in`). So the
+# answer is stable for the life of the account and is safe to remember - which
+# is what keeps this gate off the database for everybody.
+_JOINER_CACHE = "alvoraa_is_a_joiner"
+
+
+def _is_a_joiner(user):
+    cache = frappe.cache()
+    seen = cache.hget(_JOINER_CACHE, user)
+    if seen is not None:
+        return bool(cint(seen))
+    answer = JOINER_ROLE in set(frappe.get_roles(user))
+    cache.hset(_JOINER_CACHE, user, 1 if answer else 0)
+    return answer
+
+
+class _GoToTheJoiningPage(HTTPException):
+    """A 302 to the one page this sign-in opens.
+
+    A werkzeug `HTTPException`, and deliberately not `frappe.Redirect`, for the
+    reason recorded on `_GoChooseAPassword` above: `app.py` has no branch for a
+    redirect in `handle_exception`, so a `frappe.Redirect` escaping a
+    `before_request` hook renders the generic "Uncaught Exception" page. A
+    werkzeug exception is handed back untouched, which is the supported way out.
+
+    302 rather than werkzeug's own 308, which a browser caches - a permanent
+    redirect here would go on bouncing the person's pages after they start work
+    and become an employee, with nothing on the server able to clear it.
+
+    `?one-page=1` is what makes the joining page draw the refusal the design
+    asks for - *"This sign-in only opens your joining form"*, one button that
+    works, code `JOIN-ONEPAGE` - instead of silently showing the form. The
+    refusal names no page, no menu and no count.
+    """
+
+    code = 302
+
+    def get_response(self, environ=None, scope=None):
+        from werkzeug.utils import redirect
+
+        response = redirect(f"{JOINING_PAGE}?one-page=1", code=302)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+def lock_to_the_joining_page():
+    """Frappe `before_request` hook. A joiner reaches their form and nothing else.
+
+    Three blocks, and the split is the fail-closed design rather than style.
+
+    The first two blocks establish facts and **fail open**, because a failure
+    there means we never found out who is asking, and refusing every request on
+    a database blip would take a tenant down. The third block runs only once we
+    KNOW the session holds the joiner role and is asking for something that is
+    not theirs - and from there a failure **refuses**, because at that point the
+    only thing we could get wrong is our own refusal.
+    """
+    try:
+        request = getattr(frappe.local, "request", None)
+        if request is None:
+            return
+
+        path = request.path or "/"
+        if path.startswith(_JOINER_MAY_REACH):
+            return
+
+        # Only ever on "/", and deliberately so - see _JOINER_MAY_CALL.
+        if path == "/":
+            form = getattr(frappe.local, "form_dict", None)
+            asked = (form or {}).get("cmd")
+            if asked and asked in _JOINER_MAY_CALL:
+                return
+
+        user = frappe.session.user
+        if not user or user in ("Guest", "Administrator"):
+            return
+    except Exception:
+        # The logging gets its own net: the likeliest reason we are here at all
+        # is that the database is unreachable, and `frappe.log_error` writes to
+        # the database. No user detail - this runs on every request.
+        _quietly("Joiner gate could not read the request")
+        return
+
+    try:
+        if not _is_a_joiner(user):
+            return
+    except Exception:
+        # We never established what this account is. Everybody else keeps
+        # working; a joiner whose roles we cannot read gets in, and that window
+        # is narrower than a tenant locked out of its own portal.
+        _quietly("Joiner gate could not read the roles")
+        return
+
+    try:
+        if path.startswith("/api/"):
+            # Not a redirect: an XHR cannot follow one usefully, and a caller at
+            # this level is asking for data, not a page. The refusal names
+            # nothing - no doctype, no page, no count.
+            raise frappe.PermissionError(
+                _("This sign-in only opens your joining form."))
+        raise _GoToTheJoiningPage
+    except (_GoToTheJoiningPage, frappe.PermissionError):
+        raise
+    except Exception:
+        # **FAIL CLOSED.** We know this session is a joiner and we know it is
+        # asking for something that is not theirs. The inverse of
+        # `test_it_fails_open`, and it must never be copied from it.
+        _quietly("Joiner gate failed, and refused")
+        raise frappe.PermissionError(
+            _("This sign-in only opens your joining form."))
+
+
+def _quietly(title):
+    try:
+        frappe.log_error(title=title)
+    except Exception:
+        pass
 
 
 def on_login(login_manager=None):

@@ -133,6 +133,21 @@ def is_denied(fieldname):
 LIST_KEYS = {
 	"alvoraa_positions_profile_fields": POSITIONS_PROFILE_FIELDS,
 	"alvoraa_my_profile_fields": MY_PROFILE_WRITE_FIELDS,
+	# Slice 079. All three are the SAME SIX as My Profile, by identity rather
+	# than by copy (079 AC-104), so a third candidate list cannot appear and
+	# drift away from the one the code actually allows.
+	#
+	# **HR-only fields are excluded, and the reason is `01c` §6's, not the old
+	# one.** A joiner holds no write right on `Employee` at any level, so the
+	# intersection `candidate ∩ has_permlevel_access_to(write)` is the empty set
+	# for them, and admitting one would be a hard-coded exception for the
+	# least-trusted principal in the system. The sentence this used to be
+	# justified by - "there is no permission level on a path opened without a
+	# login" - is FALSE now that the joiner has a login, and must not be quoted
+	# again.
+	"alvoraa_joiner_fields": MY_PROFILE_WRITE_FIELDS,
+	"alvoraa_joiner_required_fields": MY_PROFILE_WRITE_FIELDS,
+	"alvoraa_my_profile_required_fields": MY_PROFILE_WRITE_FIELDS,
 }
 
 
@@ -156,6 +171,23 @@ def off_list(key, raw):
 	whitelist = set(LIST_KEYS[key])
 	return tuple(sorted({v.strip() for v in str(raw or "").split(",") if v.strip()}
 	                    - whitelist))
+
+
+def asked_and_required(asked_key, required_key):
+	"""Slice 079: what is asked, and which of it is compulsory.
+
+	Two intersections, in order, and the second one is the point: a name on the
+	required list that is **not** being asked for is dropped, so a required mark
+	can never widen what may be asked or written (078-SEC-18, 079 AC-40). The
+	setter refuses it too, but a value written straight into `DefaultValue` by
+	any other route has to produce nothing - that is the half that survives a
+	future UI.
+
+	Returns (asked, required), both in allow-list order.
+	"""
+	asked = allowed(asked_key, frappe.db.get_default(asked_key))
+	wanted = set(allowed(required_key, frappe.db.get_default(required_key)))
+	return asked, tuple(f for f in asked if f in wanted)
 
 
 # ── the 48 px copy ───────────────────────────────────────────────────────────

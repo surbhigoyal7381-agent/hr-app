@@ -230,6 +230,8 @@ doc_events = {
                      # Slice 076 Part C (AC-105): only the person sets their
                      # birthday opt-out; any other save puts it back.
                      "alvoraa_portal.home_people.keep_hide_birthday"],
+        # ALV-266: only HR renames (or merges) an Employee ID.
+        "before_rename": "alvoraa_portal.employee_field_rights.refuse_rename_unless_hr",
     },
     # ALV-215: an Employee import with a column the importer may not change is
     # refused with a message, instead of Frappe dropping the values silently.

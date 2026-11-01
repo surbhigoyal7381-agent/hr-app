@@ -304,6 +304,45 @@ class EmployeeWriteRulesAlv266(IntegrationTestCase):
 			frappe.db.commit()  # the column's DDL is committed; keep the site whole
 			frappe.clear_cache(doctype="Employee")
 
+	# Rename (06-security, blocker 2) --------------------------------------------
+	def test_alv266_only_hr_renames_an_employee(self):
+		self.assertEqual(frappe.get_hooks("doc_events")["Employee"]["before_rename"],
+		                 ["alvoraa_portal.employee_field_rights.refuse_rename_unless_hr"])
+		for user, old, new, merge in ((self.ess, self.ess_emp, "ALV266-OWN-ID", False),
+		                              (self.manager, self.report, "ALV266-REPORT-ID", False),
+		                              (self.ess, self.ess_emp, self.manager_emp, True)):
+			with self.subTest(user=user, merge=merge):
+				frappe.set_user(user)
+				with self.assertRaises(frappe.PermissionError):
+					frappe.rename_doc("Employee", old, new, merge=merge)
+				frappe.set_user("Administrator")
+				self.assertTrue(frappe.db.exists("Employee", old))
+		spare = _employee("Spare")
+		frappe.set_user(self.hr_mgr)
+		try:
+			frappe.rename_doc("Employee", spare, "ALV266-HR-RENAMED")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(frappe.db.exists("Employee", "ALV266-HR-RENAMED"))
+		frappe.delete_doc("Employee", "ALV266-HR-RENAMED", force=True, ignore_permissions=True)
+
+	# Share and assign (06-security, major 3) -------------------------------------
+	def test_alv266_staff_cannot_share_or_assign_a_report_open(self):
+		self.assertFalse(frappe.db.get_value("Custom DocPerm", {"parent": "Employee", "role": "Employee Self Service",
+		                                                        "permlevel": 0}, "share"))
+		from frappe.desk.form.assign_to import add as assign
+		frappe.db.savepoint("alv266_share")
+		frappe.set_user(self.manager)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				frappe.share.add("Employee", self.report, self.ess, read=1)
+			with self.assertRaises(frappe.PermissionError):
+				assign({"doctype": "Employee", "name": self.report, "assign_to": [self.ess]})
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.rollback(save_point="alv266_share")
+		self.assertFalse(frappe.has_permission("Employee", "read", self.report, user=self.ess))
+
 	# Rule 4 -----------------------------------------------------------------
 	def test_alv266_a_granted_field_and_only_that_field(self):
 		with patch.object(ef, "MANAGER_EDITABLE", ("cell_number",)):

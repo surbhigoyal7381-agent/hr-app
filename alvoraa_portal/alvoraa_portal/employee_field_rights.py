@@ -86,6 +86,7 @@ MANAGER_EDITABLE = ()
 
 LEVEL_2_WRITERS = ("HR User", "HR Manager", "System Manager")
 LEVEL_1_ROLE = "HR Manager"
+ESS_ROLE = "Employee Self Service"
 
 
 def apply():
@@ -125,6 +126,12 @@ def apply():
 		if not (have and have.write):
 			update_permission_property(EMPLOYEE, LEVEL_1_ROLE, 1, "write", 1)
 			changed = True
+
+	# ALV-266: Employee Self Service may not share an Employee record. A manager
+	# could open a report's whole record to anyone; assigning shares it too.
+	if frappe.db.exists("Custom DocPerm", {"parent": EMPLOYEE, "role": ESS_ROLE, "permlevel": 0, "share": 1}):
+		update_permission_property(EMPLOYEE, ESS_ROLE, 0, "share", 0)
+		changed = True
 
 	# D2: PPJ's Payroll Users (and anyone else) lose level 1. Custom rows only -
 	# a standard DocPerm row cannot be deleted, and Employee ships none at level 1.
@@ -277,9 +284,9 @@ def employee_has_permission(doc, ptype=None, user=None, debug=False):
 	Frappe v16 treats anything but True as a denial, so every allowed case
 	returns True. Runs before Frappe quietly puts back fields the caller may not
 	write, so a manager's change to a report's `reports_to` is refused too, not
-	silently undone. An unchanged document (the form asking "may I edit?")
-	gets False, so the form opens read-only - unless MANAGER_EDITABLE grants a
-	field.
+	silently undone. An unchanged document (a plain "may this login write it?"
+	check) gets False unless MANAGER_EDITABLE grants a field. The Desk form asks
+	without a type, so it still opens editable; its Save is refused.
 	"""
 	if ptype != "write" or not isinstance(doc, Document) or doc.is_new():
 		return True
@@ -289,10 +296,7 @@ def employee_has_permission(doc, ptype=None, user=None, debug=False):
 	if is_own_record(doc.name, user):
 		return True  # own record: the field levels decide, as in ALV-215
 
-	diff = get_diff(frappe.get_doc(EMPLOYEE, doc.name), doc)  # None when nothing changed
-	changed = {c[0] for c in diff.changed if (c[1] or None) != (c[2] or None)} if diff else set()
-	changed |= {r[0] for r in diff.added + diff.removed + diff.row_changed} if diff else set()
-	del diff  # it holds the other person's values; a logged traceback must not (06-security, 1)
+	changed = changed_fieldnames(doc)
 	if not changed:
 		return bool(MANAGER_EDITABLE)
 	if changed - set(MANAGER_EDITABLE):
@@ -304,6 +308,32 @@ def employee_has_permission(doc, ptype=None, user=None, debug=False):
 			doc.name,
 		)
 	return True
+
+
+def changed_fieldnames(doc):
+	"""Names of the fields this save changes - never their values.
+
+	Its own function so that no frame left on the stack when the hook refuses
+	holds the other person's old values: a bulk edit logs the traceback with
+	every local variable (06-security, blocker 1).
+	"""
+	diff = get_diff(frappe.get_doc(EMPLOYEE, doc.name), doc)  # None when nothing changed
+	if not diff:
+		return set()
+	return ({c[0] for c in diff.changed if (c[1] or None) != (c[2] or None)}
+	        | {r[0] for r in diff.added + diff.removed + diff.row_changed})
+
+
+def refuse_rename_unless_hr(doc, method=None, *args, **kwargs):
+	"""Employee before_rename (ALV-266): only HR renames an Employee ID.
+
+	A rename relinks every record that points at the ID, and breaks every
+	outside sheet keyed by it (06-security, blocker 2). Merging goes this way too.
+	"""
+	if frappe.session.user == "Administrator" or set(LEVEL_2_WRITERS) & set(frappe.get_roles()):
+		return
+	refuse(_("Only HR can change an employee ID. Ask HR to make this change."),
+	       "ALV-266", "Employee rename", EMPLOYEE, doc.name)
 
 
 @frappe.whitelist()

@@ -313,9 +313,33 @@ a fresh site: I ran the gate's half and not the permission layer's half.**
 **Everything above is a unit-level drive of the gate function, not a real HTTP
 request.** The gate's own ancestor has a recorded incident
 (`auth.py:231-239`) that **only a real HTTP request found**, and I have not run
-one. **That is the single biggest gap in this hand-off** and it belongs to
-`hrms-test-automation-engineer` on a freshly created site, as three logins:
-plain staff, manager, HR Manager.
+one. **That is the single biggest gap in this hand-off.**
+
+### 7.1 · For `hrms-test-automation-engineer`, in priority order
+
+1. **The ten doors as real HTTP requests, on a freshly created site**, as four
+   logins: a joiner, a plain staff member, a manager and an HR Manager. A
+   copied site hides failures — ALV-249 broke two tests that passed on a copy.
+   The one that matters most is **`POST /` with a `cmd`**, because that is the
+   door a path check cannot see and the one this product has paid for twice.
+2. **Sign in as a joiner over HTTP and read the reply body.** The recorded
+   incident is a login reply carrying "Logged In" and a 403 in the same body —
+   found by a real request and by nothing else. `/api/method/login` and
+   `/api/method/alvoraa_portal.auth.get_portal_redirect` are both on the gate's
+   allow-list for exactly that reason, and only a request proves it.
+3. **A jsdom test for `www/joining.html`** — the `Needed` chips, the
+   coming-back strip and its counts, the send refusal listing each item as a
+   tap, and the Sent screen not saying "this will not open again". The harness
+   is `alvoraa_portal/tests/portal_joiner_079_test.js`'s shape; the page needs
+   its own file because it is not the portal page.
+4. **A jsdom or request test for the sign-in page's joiner state** — the four
+   refusal screens and their codes, the 44 px reveal, the marketing panel's
+   absence, and that `JOIN-ENDED` appears for a correct password on a closed
+   account while `JOIN-BADPASS` appears for a wrong one.
+5. **Frappe's own `reset_password` against a joiner's login id** (AC-18), to
+   pin its answer either way.
+6. **Measure the joiner's page against NFR-2** (2.5 s p95 on a 3G profile,
+   skeleton within 300 ms). I have not measured it at all.
 
 **Also not tested:**
 

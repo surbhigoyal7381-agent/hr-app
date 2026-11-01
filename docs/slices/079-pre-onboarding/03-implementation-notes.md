@@ -345,7 +345,8 @@ plain staff, manager, HR Manager.
 | **Came in** | `94b1862c` — ALV-278, `alvoraa_portal/alvoraa_portal/tests/fixtures_078.py`, 8 lines, test fixture only. I read the whole diff: it re-reads the `Employee` before each child-row save, because saving a stale copy put `None` back on the previous row's attachment, and it now refuses to return a row without a file |
 | **Conflicts** | **None.** I rebased onto it before writing a line of code and again before this commit |
 | **How I know nothing of theirs was lost** | I never opened `fixtures_078.py`. My own fixtures are a new file, `fixtures_079.py`, created for exactly that reason. `git log --oneline origin/dev..HEAD` shows their commit below mine, unmodified, and `git show 94b1862c --stat` matches what came in |
-| **Not mine, left alone** | `docs/legal/2026-11-01-aadhaar-before-employment.md` appeared untracked in this worktree while I worked — a draft letter to counsel about the two Aadhaar questions. **I did not stage it, change it or delete it.** Whoever wrote it should commit it |
+| **Not mine, left alone** | `docs/legal/2026-11-01-aadhaar-before-employment.md` appeared untracked in this worktree while I worked — a draft letter to counsel about the two Aadhaar questions (⚠ C2 and ⚠ C6, the ones that gate the masker). **I did not stage it, change it or delete it.** Whoever wrote it should commit it |
+| **One decision I made about somebody else's file** | `test_joiner_078.py` has **no `Version` coverage**, deliberately: 079-PRIV-2 clause 3 is pinned once, in `test_joiner_079.TestErasure`. A second copy of the same pin in the other file was offered and I declined it — one test that can fail is better than two that say the same thing, and the no-over-engineering rule covers test code too |
 
 ---
 

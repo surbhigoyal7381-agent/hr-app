@@ -357,6 +357,55 @@ class TestThe48pxCopy(_Base):
 		self.assertTrue(fresh)
 		self.assertEqual(calls, [])
 
+	def test_the_guard_is_right_in_all_four_corners(self):
+		"""**The whole truth table, because each half has its own hole.**
+
+		`has_value_changed` is True on every INSERT (there is no previous
+		document), so the one-part guard fires a Pillow call for every Employee
+		created while a tenant is being provisioned. DevOps' suggested fix -
+		`has_value_changed(...) and doc.image` - closes that and opens the
+		opposite hole: clearing a photograph in Desk would then skip this
+		handler and leave the 48 px copy behind, so the chart would keep drawing
+		a face that has been removed.
+
+		The test above proves only the first corner, which means the guard could
+		be over-tightened to "return on any insert" and still pass. This asserts
+		all four, so neither hole can be reopened quietly.
+		"""
+		class _Doc:
+			name = "HR-EMP-GUARD-078"
+
+			def __init__(self, inserting, image):
+				self._inserting, self._image = inserting, image
+
+			def has_value_changed(self, _field):
+				# True on an INSERT and on a real change alike - the framework's
+				# own behaviour, which is the thing being guarded against.
+				return True
+
+			def get_doc_before_save(self):
+				return None if self._inserting else self
+
+			def get(self, _field):
+				return self._image
+
+		cases = [
+			(True, None, False, "a new Employee with no picture"),
+			(True, "/private/files/new.jpg", True, "a new Employee arriving WITH one"),
+			(False, "/private/files/set.jpg", True, "an existing picture changed"),
+			(False, None, True, "a picture CLEARED in Desk - the copy must go too"),
+		]
+		for inserting, image, should_run, why in cases:
+			calls = []
+			real = employee_photo.derive_thumbnail
+			employee_photo.derive_thumbnail = lambda *a, **k: calls.append(a)
+			try:
+				employee_photo.on_employee_update(_Doc(inserting, image))
+			finally:
+				employee_photo.derive_thumbnail = real
+			with self.subTest(case=why):
+				self.assertEqual(bool(calls), should_run, why)
+
 	def test_a_picture_pillow_cannot_read_does_not_fail_the_save(self):
 		"""AC-25a. The save succeeds, an Error Log row appears, there is no
 		thumbnail, and the renderer falls back to the full photo and then to

@@ -1058,3 +1058,116 @@ lines of `sendFile`'s FileReader handling. Merging them needs four parameters
 (the status element, the type, what to do on success, what to say on failure)
 and makes both harder to read for one caller each. Two uses do not earn a
 helper; the third would.
+
+---
+
+## 12 · The query budget CI was red on, 1 November 2026
+
+`test_unseated_071.test_statement_count_is_a_fixed_handful` failed on dev at
+**43 statements against a ceiling of 40**. I measured it rather than reasoned
+about it: every statement dumped and read.
+
+**The answer: nothing this slice added appears in the 43, and the ceiling did
+not need raising. 19 of them were a cold `get_meta` load the gate never meant
+to measure.** Warmed properly, the same call is **24**.
+
+### 12.1 What the 43 actually were
+
+Measured on `test078f`, with `frappe.db.sql` wrapped so every statement was
+written out in order.
+
+| Group | Count | What |
+|---|---|---|
+| The plain assignment path | **13** | the seat's row, the caller's company twice, the person's company and branch, their name, their joining date, the seat's status, their other assignments (3 reads), the `INSERT`, then the seat and its holders read back |
+| **Frappe's cold `get_meta("Alvoraa Position")`** | **12** | `tabDocType`, `tabDocField`, `tabDocPerm`, `tabDocType Action`, `tabDocType Link`, `tabDocType State`, `tabCustom Field`, `tabProperty Setter`, `tabCustom DocPerm`, and the three `custom=1` counterparts |
+| Two `information_schema` reads | **2** | `tables.table_rows`, then `columns.column_name` |
+| Frappe's standard save machinery | **5** | `tabNotification`, `tabWorkflow`, two `tabAssignment Rule`, `tabMilestone Tracker` |
+| The `add_place` branch's own work | **5** | the `FOR UPDATE` lock, the seat's holders, the children check, the `UPDATE` of the position, the `old_parent` nested-set write |
+| Re-reads after the save | **6** | the position again, its children, the person's name, the seat, their other assignments, the holders |
+
+**The second, third and fourth groups — 19 statements — happen once per
+process**, the first time any `Alvoraa Position` is *saved*. They are not per
+click and not per person.
+
+### 12.2 Why the gate was measuring them
+
+The test warmed the **plain** path (`register.assign_person(roomy, warm)`) and
+not the `add_place` path. Only `add_place` **saves** a position, so the cold
+meta load landed inside the measured block — and the number then moved with
+whatever order the suites happened to run in. That is why it was 43 here and
+had been under 40 when slice 071 wrote the ceiling.
+
+**The fix is in the test, and it is the test's own convention:** warm the
+`add_place` path too, with one position save before the measured block. The
+ceiling **stays at 40**, and the measurement is now **24** — 16 statements of
+headroom, and it measures what it claims to.
+
+I did not raise the ceiling. There was nothing to raise it for.
+
+### 12.3 The `has_value_changed` question, settled
+
+The suspicion was that `employee_photo.on_employee_update` was firing on every
+Employee **insert**, because `has_value_changed` returns True whenever there is
+no previous document.
+
+**It is not, and this path never reaches it at all.** Two separate proofs:
+
+1. **Measured.** The 43 statements contain **no `tabFile` read, no
+   `alvoraa_photo_48`, and no `UPDATE tabEmployee`**. `assign_person` saves an
+   `Alvoraa Position` and inserts an `Alvoraa Position Assignment`. It saves no
+   Employee, so an `Employee.on_update` hook cannot run.
+2. **The guard was already two-part**, and the docstring says DevOps found the
+   trap during the build (OPS §4). It skips an insert that carries no picture,
+   and otherwise runs — because the one-part fix DevOps suggested
+   (`has_value_changed(...) and doc.image`) would close that hole and open the
+   opposite one: clearing a photograph in Desk would leave the 48 px copy
+   behind and the chart would keep drawing a face that had been removed.
+
+**What was missing was the test, not the guard.** One existing test proved only
+the first corner, which means the guard could have been over-tightened to
+"return on any insert" and still passed. `test_the_guard_is_right_in_all_four_corners`
+now asserts all four: a new Employee with no picture does nothing; a new
+Employee arriving with one derives; a changed picture derives; and a **cleared**
+picture derives, which is what deletes the copy.
+
+**The same trap elsewhere in this slice: nowhere.** `has_value_changed` is
+called in four other places in `alvoraa_portal` — `crm_steps.py` (×4),
+`employee_field_rights.py`, `alvoraa_field_device.py` — and **none of them is
+this slice's**. Worth one line for somebody else's attention:
+`employee_field_rights.py:148` is `any(doc.has_value_changed(df.fieldname) for
+df in doc.meta.get_high_permlevel_fields())`, which by the same rule is True for
+every high-permlevel field on every insert. Not mine, not this slice, **not
+touched** — written down rather than quietly changed.
+
+### 12.4 What I broke and put back
+
+**My own measurement polluted `test078f`, and I should say so plainly.** The
+dump ran as a subclass of `PlaceAnyway071`, and `hr_user()` inserts an Employee
+carrying `user_id` on every call, relying on its own teardown. When a test
+errors the teardown does not finish, so four `Scope194` Employees were left
+behind holding `scope194.count071@`, `.rollback071@`, `.words071@` and
+`.noflag071@`. `hr_user()` then refused with
+`DuplicateEntryError: User … is already assigned to Employee …`, and **five
+tests in `test_unseated_071` failed for that reason and no other.**
+
+I deleted the four leftover Employees and their Users — the rows the teardown
+would have removed — and re-ran. **All 12 pass.** The lesson is the standing
+one: a fixture that inserts a `user_id` link is not safe to leave behind, and a
+measurement harness that subclasses a real test case inherits that risk.
+
+### 12.5 The runs
+
+| Suite | Result |
+|---|---|
+| `test_unseated_071` | **12 tests, OK** — `14 plain, 24 with add_place` |
+| `test_my_photo_078` | **35 tests, OK** — including the new four-corner guard test |
+| `test_faces_078` | **8 tests, OK** |
+| `test_register_194` | **38 tests, OK** |
+| `python scripts/check_app_integrity.py` | **OK — 890 checks** |
+
+### 12.6 Noted in passing, not fixed
+
+A `V17FrappeDeprecationWarning` surfaces during these tests: *"The
+`limit_page_length` parameter is deprecated. Use `limit` instead."* It is a
+warning, not a failure, and it is not this slice's code. It will matter at the
+v17 upgrade and belongs in its own ticket.

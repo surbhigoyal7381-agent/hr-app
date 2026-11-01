@@ -343,6 +343,11 @@ def give_documents(employee):
 		if kind in have and have[kind].attachment:
 			out[kind] = have[kind].name
 			continue
+		# Read the Employee again each pass. The save below writes every child
+		# row from memory, and the address set on the previous row exists only
+		# in the database - saving a stale copy put None back on it, so on a
+		# fresh site the ticked row never had a file (ALV-278, dev CI).
+		emp = frappe.get_doc("Employee", employee)
 		row = emp.append("employee_documents", {"document_type": kind, "status": "Received"})
 		emp.save(ignore_permissions=True)
 		f = frappe.get_doc({
@@ -360,6 +365,9 @@ def give_documents(employee):
 		frappe.db.set_value("Employee Document", row.name, "attachment", f.file_url)
 		out[kind] = row.name
 	frappe.db.commit()
+	for kind, name in out.items():
+		has_file = frappe.db.get_value("Employee Document", name, "attachment")
+		assert has_file, f"give_documents: the {kind} row on {employee} has no file"
 	return out
 
 

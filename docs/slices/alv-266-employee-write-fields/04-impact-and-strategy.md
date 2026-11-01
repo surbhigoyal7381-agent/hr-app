@@ -32,8 +32,10 @@ with a message on anyone else's; D-4 accepted (staff ask HR for HR-owned fields)
    fields it newly locks are: `alvoraa_hide_birthday`, `documents_summary`,
    `employee_documents`, `health_insurance_no`, `health_insurance_provider`,
    `job_applicant`. None is written by staff through a form.
-3. **A manager now opens a report's Employee form read-only.** Today a manager with
-   Employee Self Service can type into it. Nothing in the portal relied on that.
+3. **A manager's Desk form for a report still opens editable, but Save is refused**
+   with the "Ask HR" message (review m1). The Desk form asks Frappe for its rights
+   without saying "write", and the check answers that "yes". Nothing is saved; the cost
+   is one wasted edit. Making the form truly read-only would need a form script.
 4. **HR cannot change their own HR-owned fields either** (the ALV-215 own-record rule
    now covers the newly locked ones, e.g. their own notice days). Another HR person
    must. Their own personal details stay editable (D-1).
@@ -56,6 +58,10 @@ with a message on anyone else's; D-4 accepted (staff ask HR for HR-owned fields)
 | Staff without Employee Self Service | No (no write at all, as today) | No | Refused (Frappe's own "no permission") |
 | Manager, for a report | as staff | as staff | Refused, unless the field is on `MANAGER_EDITABLE` (empty) |
 | HR User / HR Manager / System Manager | Yes | Refused, ALV-215 rule (job, pay, employment dates) | Yes, everything (bank and pay: HR Manager only, as before) |
+
+Also (round 3, after the security review): only HR renames or merges an Employee ID,
+and Employee Self Service can no longer share an Employee record, so a manager cannot
+open a report's record to anyone by sharing or assigning it.
 
 ## 2. The self-edit list (for Surbhi to confirm)
 
@@ -90,8 +96,8 @@ Two pieces, both in the existing ALV-215 file `alvoraa_portal/employee_field_rig
 - **Someone else's record (rules 1, 3, 4).** One `has_permission` hook on Employee.
   For a write by anyone who is not HR, on a record that is not their own, it compares
   the document with the saved copy. Changes outside `MANAGER_EDITABLE`: refused with
-  the message above. No changes (the form asking "may I edit?"): read-only, unless the
-  list grants something. Frappe asks this hook **before** it quietly resets locked
+  the message above. No changes (a plain "may this login write it?" check):
+  no, unless the list grants something. The Desk form itself still opens editable. Frappe asks this hook **before** it quietly resets locked
   fields, so a change to a report's `reports_to` is refused, not silently undone.
   It returns `True` in every allowed case (Frappe v16 reads anything else as "no").
 - **`MANAGER_EDITABLE`** is a constant, empty. Rung: a constant is cheaper than a
@@ -169,3 +175,6 @@ Incoming on rebase: 8 ALV-249 commits (5452084c .. 9b99a421) - `hooks.py`,
   details?** If yes: one line in `apply()` gives the Employee role write at level 0, and
   `register.py:464` must ask for an HR role instead, so the "Set manager" column does
   not appear for them. Recommended: decide per tenant by giving ESS, as today.
+- **D6 (round 3): passport, health, family and blood group hidden from managers.**
+  Frappe's field levels go by role, not by whose record it is, so "HR or the person"
+  cannot be said with them. Options A, B, C are in 05, round 3.

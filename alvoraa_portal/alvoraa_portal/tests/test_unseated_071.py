@@ -191,9 +191,22 @@ class PlaceAnyway071(RegisterCase):
 		with QueryCounter() as raised:
 			register.assign_person(self.full, self.newcomer, add_place=1)
 		print(f"\nassign_person statements: {plain.count} plain, {raised.count} with add_place")
-		# 40 until ALV-249 (1 Nov 2026), measured with an HR fixture that still held
-		# ERPNext's own-record Employee row. ALV-249 removes that row from every HR
-		# login, as at DTC, and an HR login with no User Permission at all costs 16
-		# more statements here (27 -> 43, measured; none of them from the ALV-249
-		# hooks, which do not run inside this call). Still flat per click.
-		self.assertLessEqual(raised.count, 45)
+		# 40, and it stays 40. Two sessions fixed this gate on 1 Nov 2026 within
+		# an hour of each other, and both fixes are above: the add_place path is
+		# now warmed, and the ceiling was briefly raised to 45.
+		#
+		# The raise was reasoned from ALV-249 - an HR login no longer carries
+		# ERPNext's own-record User Permission row, which was measured as 16 more
+		# statements here. That reasoning is kept because it may yet be right
+		# about WHERE the cost sits. What it could not see is that the cold
+		# `get_meta("Alvoraa Position")` load - 19 statements, once per PROCESS,
+		# the first time any position is SAVED - was inside the measured block,
+		# because only the add_place path saves one and only the plain path was
+		# warmed. That is why the number moved with suite order.
+		#
+		# **Measured with both fixes in, on a site carrying ALV-249: 14 plain,
+		# 24 with add_place.** So 45 would leave the gate 21 statements of slack
+		# on a 24-statement call - still there, no longer gating. 40 keeps the
+		# margin the gate was written with, and the property it exists for is
+		# intact: flat per click, not per person.
+		self.assertLessEqual(raised.count, 40)

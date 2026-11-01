@@ -174,12 +174,23 @@ class TestTheAccount(_Base):
 		handler = logging.StreamHandler(stream)
 		logger = frappe.logger("alvoraa")
 		logger.addHandler(handler)
+		# **The level, deliberately.** Frappe's default is WARNING or ERROR and
+		# no site sets `log_level`, so without this the stream is empty and an
+		# assertion that the credential is ABSENT from it would pass for the
+		# wrong reason. A test of an absence has to make the thing it is reading
+		# non-empty first.
+		was = logger.level
+		logger.setLevel(logging.DEBUG)
 		try:
 			doc, out = self._sign_in()
 		finally:
+			logger.setLevel(was)
 			logger.removeHandler(handler)
 		secret = out["password"]
 		self.assertNotIn(secret, frappe.as_json(doc.as_dict()))
+		self.assertTrue(stream.getvalue().strip(),
+			"Nothing was logged at all, so the assertion below would prove "
+			"nothing. Check the logger's level before changing it.")
 		self.assertNotIn(secret, stream.getvalue())
 		rows = frappe.get_all("Version", filters={"ref_doctype": DOCTYPE,
 		                                          "docname": doc.name},
@@ -702,6 +713,10 @@ class TestExport(_Base):
 		finally:
 			logger.removeHandler(handler)
 			frappe.set_user("Administrator")
+		# **No level fiddling here, and that is the assertion.** The export line
+		# is written at `warning` on purpose: counsel's ruling 9 says every
+		# export is logged, and Frappe's default level drops `info`. If somebody
+		# demotes it back to `info`, this test goes red.
 		lines = [ln for ln in stream.getvalue().splitlines() if "exported" in ln]
 		self.assertEqual(len(lines), 1, stream.getvalue())
 		self.assertIn("masked=True", lines[0])
@@ -863,13 +878,18 @@ class TestErasure(_Base):
 
 		# **HR's own edit.** It writes a Version row holding the old values, and
 		# it is the only thing the sweep can possibly be needed for.
+		# **`ignore_version=False`, explicitly, and the test is worthless
+		# without it.** Frappe turns version tracking OFF inside a test by
+		# default - `self.flags.ignore_version = frappe.in_test if
+		# ignore_version is None else ignore_version`
+		# (`frappe/model/document.py:576`). So a test that saved the ordinary way
+		# would write no history at all, and the sweep below would be asserted
+		# against nothing. This is HR saving the row in production.
 		row = frappe.get_doc(DOCTYPE, doc.name)
 		row.emergency_contact_name = "S079 Someone Else"
-		row.flags.ignore_permissions = True
-		row.save(ignore_permissions=True)
+		row.save(ignore_permissions=True, ignore_version=False)
 		row.emergency_contact_name = "S079 A Third Name"
-		row.flags.ignore_permissions = True
-		row.save(ignore_permissions=True)
+		row.save(ignore_permissions=True, ignore_version=False)
 		frappe.db.commit()
 		self.assertTrue(
 			frappe.get_all("Version", filters={"ref_doctype": DOCTYPE,
@@ -915,15 +935,31 @@ class TestErasure(_Base):
 	def test_the_joiners_own_saves_write_no_history_at_all(self):
 		"""AC-95. The sweep is not belt and braces: an audit trail of *who issued
 		and closed an invite* does not need the person's telephone number in it,
-		so the two saves that carry personal data opt out in the first place."""
+		so the two saves that carry personal data opt out in the first place.
+
+		**`frappe.in_test` is turned off for the duration, and that is the whole
+		test.** Frappe disables version tracking inside a test by default
+		(`frappe/model/document.py:576`), so asserting "no rows" in the ordinary
+		way would pass whatever the product did - and it did pass, for months of
+		my own writing, while the code underneath was setting a flag that `save()`
+		then overwrote. With the harness's own default out of the way, the only
+		thing stopping a row here is the `ignore_version=True` we pass.
+		"""
 		doc, _out = self._sign_in()
 		self._as_the_joiner(doc)
-		joiner_public.save_draft(values=frappe.as_json({"cell_number": "+91 7"}))
-		joiner_public.submit_invite(values=frappe.as_json({"cell_number": "+91 7"}))
-		frappe.set_user("Administrator")
+		was = frappe.in_test
+		frappe.in_test = False
+		try:
+			joiner_public.save_draft(values=frappe.as_json({"cell_number": "+91 7"}))
+			joiner_public.submit_invite(values=frappe.as_json({"cell_number": "+91 7"}))
+		finally:
+			frappe.in_test = was
+			frappe.set_user("Administrator")
 		self.assertEqual(frappe.get_all("Version", filters={
 			"ref_doctype": DOCTYPE, "docname": doc.name},
-			ignore_permissions=True), [])
+			ignore_permissions=True), [],
+			"The joiner's own answers went into tabVersion, where the erasure we "
+			"promise them does not reach.")
 
 	def test_hrs_own_edits_still_write_history(self):
 		"""AC-96. `track_changes` is NOT turned off: §14's promise to reconstruct
@@ -931,8 +967,10 @@ class TestErasure(_Base):
 		doc, _out = self._sign_in()
 		row = frappe.get_doc(DOCTYPE, doc.name)
 		row.emergency_contact_name = "S079 Edited By HR"
-		row.flags.ignore_permissions = True
-		row.save(ignore_permissions=True)
+		# `ignore_version=False` because Frappe turns tracking off in a test -
+		# see `test_nothing_of_theirs_survives_an_erasure`. This is HR's save as
+		# it happens in production.
+		row.save(ignore_permissions=True, ignore_version=False)
 		frappe.db.commit()
 		self.assertTrue(frappe.get_all("Version", filters={
 			"ref_doctype": DOCTYPE, "docname": doc.name}, ignore_permissions=True))

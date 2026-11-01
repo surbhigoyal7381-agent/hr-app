@@ -504,8 +504,21 @@ def log_an_export(submission, masked):
 	one: `test_joiner_079` runs a table test over every export endpoint in these
 	modules and asserts exactly one line per call. Never a field value, never a
 	file.
+
+	**`warning`, not `info`, and that is the whole point of this line existing.**
+	Frappe's default logger level is `WARNING` on a dev server and `ERROR`
+	anywhere else (`frappe/utils/logger.py:12`), and **no site in this product
+	sets `log_level`** - so every `logger.info` line we write is dropped before
+	it reaches a file. Counsel's ruling 9 says every export is *logged*, and a
+	line nobody can read is not logged. An audit record of somebody's personal
+	data leaving the system is not a debug trace.
+
+	The other `info` lines in these modules are a wider finding and are named in
+	`03-implementation-notes.md`: the fix for those is `log_level: "INFO"` in the
+	bench's own configuration, which is DevOps's to make, not ours to work
+	around sixteen times.
 	"""
-	frappe.logger("alvoraa").info(
+	frappe.logger("alvoraa").warning(
 		f"joiner submission exported: {submission} by {frappe.session.user} "
 		f"at {now()}, masked={bool(masked)}")
 

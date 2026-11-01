@@ -176,9 +176,15 @@ def erase(name, why, force=False):
 	# Slice 079, 079-PRIV-2. **Without this the erasure is theatre.** The doctype
 	# carries `track_changes: 1`, so a save that clears a field writes the OLD
 	# value into `tabVersion` - the mobile number, the home address and the
-	# emergency contact we have just told somebody we deleted. See `_sweep_the_history`.
-	doc.flags.ignore_version = True
-	doc.save(ignore_permissions=True)
+	# emergency contact we have just told somebody we deleted.
+	#
+	# **PASSED to `save`, not set as a flag.** `Document._save` overwrites
+	# `flags.ignore_version` from its own argument
+	# (`frappe/model/document.py:576`), defaulting to `frappe.in_test` - so the
+	# flag version of this line worked in every test and did nothing in
+	# production. `_sweep_the_history` below is what reaches the rows HR's own
+	# editing wrote, which is a different job.
+	doc.save(ignore_permissions=True, ignore_version=True)
 	_sweep_the_history(name)
 	frappe.db.commit()
 

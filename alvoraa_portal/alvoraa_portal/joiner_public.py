@@ -364,9 +364,17 @@ def _keep(doc):
 
 	`ignore_version` is 079-PRIV-2 clause 3: without it the joiner's own values
 	go into `tabVersion`, where the erasure we promise them does not reach.
+
+	**It is PASSED, not set as a flag, and that distinction is a defect I had to
+	be shown.** `Document._save` does
+	`self.flags.ignore_version = frappe.in_test if ignore_version is None else
+	ignore_version` (`frappe/model/document.py:576`), so setting the flag and
+	then calling `save()` with no argument sets it straight back to `False` in
+	production - and to `True` inside a test, which is why no test could have
+	caught it by watching for rows. The joiner's own answers would have gone into
+	`tabVersion` on every draft save.
 	"""
-	doc.flags.ignore_version = True
-	doc.save(ignore_permissions=True)
+	doc.save(ignore_permissions=True, ignore_version=True)
 	frappe.db.commit()
 
 

@@ -7,6 +7,112 @@ production untouched. No SSH.**
 
 ---
 
+## Round 4: D6 built as Surbhi chose (C and A), 1 Nov 2026
+
+### Bad news first
+
+- **People can no longer see their own passport, blood group, health details or
+  family background** in Desk or in the Frappe HR phone app (`/hrms` Profile shows
+  blood group under "Employee Details"; it now shows nothing there). They also cannot
+  change them. They ask HR. This is what option A means: Frappe's field levels go by
+  role, so the person cannot be let in without letting their manager in too.
+- **HR cannot change their own passport or health details either** - the ALV-215
+  own-record rule covers every locked field. Another HR person must. Decision below.
+- **Staff lose the Employee export** (Report view "Export"). Nobody should need it for
+  their own one record; HR keeps it.
+- **On a site where these fields were already at level 2, they are now raised to 3.**
+  `lock_fields()` never lowered a level and still does not; it now raises 2 to 3 for
+  these fields only (health insurance was at 2 from round 2 on my test sites).
+
+### What was built
+
+- **C:** `apply()` takes **Export** off Employee Self Service on Employee, next to the
+  Share right from round 3. Test: `test_alv266_d6_staff_and_managers_cannot_export_employees`
+  - `frappe.desk.reportview.export_query` is refused for a staff login and a manager with
+  ESS; HR Manager's export works.
+- **A:** new level **3**, read and write for HR User, HR Manager and System Manager
+  only (each only where it already has a level-0 row, as level 2 does). Any other
+  role's level-3 row is removed on migrate. **Why level 3 and not level 1:** level 1
+  is HR Manager only (bank, PAN, salary); HR User needs these too, and giving HR User
+  level 1 would open bank details to it. **Why not level 2:** every reader of Employee
+  reads level 2.
+- **Fields at level 3 (`LEVEL_3`):** `passport_number`, `date_of_issue`, `valid_upto`,
+  `place_of_issue`, `health_details`, `family_background`, `blood_group`, and
+  **`health_insurance_no`, `health_insurance_provider`** - I included the two health
+  insurance fields because they say who insures a person's health and under which
+  number, and slice 078 already lists them under "health" in its never-show list. They
+  exist only where Frappe HR created them.
+- These fields left `SELF_EDITABLE`. A custom field with one of these names created
+  later is locked at 3 straight away.
+
+### Who can change what (and see what), after round 4
+
+| Field group | The person, own record | Manager, a report's record | Any other staff | HR User / HR Manager / System Manager |
+|---|---|---|---|---|
+| Contact, addresses, emergency contact, marital status, bio, photo, salutation, education, past work | See and change | See; change refused | Cannot reach the record | See and change (on their own record too) |
+| **Passport, blood group, health, health insurance, family background** | **Cannot see or change - asks HR** | Cannot see or change | Cannot reach | See and change; not on their own record (another HR person) |
+| Job, approvers, dates, employment and exit details, company email | See; change quietly put back | See; change refused | Cannot reach | See and change; not on their own record |
+| Bank, PAN, PF, ESI, salary | Cannot see | Cannot see | Cannot reach | HR Manager only |
+| Share, export, rename the record | No | No | No | Yes |
+
+**What the person now asks HR for:** their passport (number, dates, place), blood
+group, health details, health insurance, family background - plus, as before, any job,
+date or employment detail.
+
+### Every screen that showed these fields to a non-HR login
+
+| Screen | Before | After |
+|---|---|---|
+| `/hrms` phone app, Profile, "Employee Details" | Showed blood group | Blood group gone (Frappe drops fields the reader cannot read) |
+| Desk Employee form (the person, a manager) | Showed passport, health, family, blood group | Gone |
+| Report view / list columns, export | Could list and export them | Columns empty; export refused for staff |
+| Portal profile (`portal.js`) | Never showed them | Unchanged |
+| 078 "My profile" (`my_profile.py`) | Never offered them (only mobile, personal email, address, emergency contact) | Unchanged - it reads and writes with `db.get_value` / `db.set_value`, which ignore field levels, and none of these fields is on its list |
+| 078 mini profile, Positions, documents | Never showed them (`people_fields.NEVER` lists blood group and health) | Unchanged |
+| Directory, birthdays, Home | Never showed them | Unchanged |
+| Print formats | No Employee print format in this repo or on `test266` | Nothing to change |
+
+### Rebase
+
+`origin/dev` moved from 9b99a421 to 1b02705f: 25 commits of slice 078 (faces, mini
+profile, documents, joiner form, my-profile endpoint), 1 ALV-175 commit and 2 ALV-249 commits. They
+touch `hooks.py` (new entries; none in the Employee `has_permission` or
+`before_rename` lines), `own_record_permission.py` and many new files. My five commits
+rebased with no conflict. `my_profile.py` (078) reads and writes the person's contact
+fields with `db.get_value` / `db.set_value`, so this branch does not affect it.
+
+### Tests (own container `hrlocal-266`, one module at a time)
+
+Both sites at this branch's code. `test266` is the copied site, migrated. `fresh266`
+was rebuilt the way CI builds `test_site`: `bench new-site`, then install erpnext, hrms,
+alvoraa_portal, alvoraa_goals in that order, `allow_tests`, `throttle_user_limit 1000`.
+
+| Module | Copied site | Fresh site |
+|---|---|---|
+| `test_employee_write_fields_alv266` | 22, OK | 22, OK |
+| `test_employee_field_rights_alv215` (075) | 20, OK | 20, OK |
+| `test_own_record_permission_alv249` | 32 + 1, OK | 32 + 1, OK |
+| `test_request_guard_alv249` | 5 + 3, OK | 5 + 3, OK |
+| `test_directory_contact_045` | 17, OK | 17, OK |
+| `test_permission_health_048` | 16, OK | 16, OK |
+| `test_personas_012` | 17, OK | 17, OK |
+| `test_portal_security_010` | 45 + 5, OK | 45 + 5, OK |
+| `test_positions_064` | 17, OK | 17, OK |
+
+New or changed tests in round 4, and whether they fail without the change: all four fail on the round-3 code (field
+levels and the ESS Export right put back as they were on `test266`):
+
+| Test | Without the change |
+|---|---|
+| `test_alv266_d6_manager_and_staff_cannot_read_passport_or_health` (manager on a report, staff on own record, manager on own record) | Failed: "'D6-P' is not false : passport_number read through the form" |
+| `test_alv266_d6_staff_and_managers_cannot_export_employees` | Failed: ESS still had Export |
+| `test_alv266_person_edits_own_mobile_and_address_but_not_passport` | Failed: the person's passport change saved |
+| `test_alv266_levels_follow_the_self_editable_list` | Failed: no `LEVEL_3` |
+| `test_alv266_d6_hr_reads_and_writes_passport_and_health` | Passes either way - pin that HR keeps both |
+
+Scripts: `check_app_integrity.py` 895 checks OK (shadowing part skipped);
+`check_scope_traps.py` OK.
+
 ## Round 3: security fixes Surbhi approved (06-security.md), 1 Nov 2026
 
 ### Bad news first
@@ -31,7 +137,7 @@ production untouched. No SSH.**
 | Blocker 2: staff could rename their own Employee ID | `refuse_rename_unless_hr` on Employee `before_rename`: only HR User, HR Manager, System Manager and Administrator. Merging goes the same way | `test_alv266_only_hr_renames_an_employee`: own rename, a manager renaming a report, and a merge are refused; HR Manager renames. Failed without the fix |
 | Major 3: ESS could share (and so assign) a report's record to anyone | `apply()` takes Share off Employee Self Service on Employee (level 0). Assigning a record to someone who cannot read it needs Share, so it is refused too | `test_alv266_staff_cannot_share_or_assign_a_report_open`: share refused, assignment refused, the other person still cannot read it. Failed without the fix |
 
-### D6: the choices (nothing built)
+### D6: the choices (round 3; Surbhi chose C and A - built in round 4)
 
 Goal: passport, health details, family background and blood group readable by HR and
 the person only, not by their manager, and not in a manager's CSV export.

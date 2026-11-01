@@ -74,8 +74,8 @@ open a report's record to anyone by sharing or assigning it.
 | `unsubscribed` | Their own mail preference |
 | `current_address`, `current_accommodation_type`, `permanent_address`, `permanent_accommodation_type` | Where they live |
 | `person_to_be_contacted`, `emergency_phone_number`, `relation` | Their emergency contact - they know it best |
-| `passport_number`, `date_of_issue`, `valid_upto`, `place_of_issue` | Their own passport; changes on renewal |
-| `marital_status`, `blood_group`, `health_details`, `family_background`, `bio` | Personal facts only they can keep current |
+| ~~passport fields~~ | **Moved to HR-only (D6, round 4)** |
+| `marital_status`, `bio` | Personal facts only they can keep current (blood group, health and family background moved to HR-only, D6) |
 | `image`, `salutation` | Photo and title |
 | `education`, `external_work_history` | Their own CV |
 
@@ -175,6 +175,7 @@ Incoming on rebase: 8 ALV-249 commits (5452084c .. 9b99a421) - `hooks.py`,
   details?** If yes: one line in `apply()` gives the Employee role write at level 0, and
   `register.py:464` must ask for an HR role instead, so the "Set manager" column does
   not appear for them. Recommended: decide per tenant by giving ESS, as today.
-- **D6 (round 3): passport, health, family and blood group hidden from managers.**
-  Frappe's field levels go by role, not by whose record it is, so "HR or the person"
-  cannot be said with them. Options A, B, C are in 05, round 3.
+- **D6, decided by Surbhi 1 Nov 2026 (C and A), built in round 4:** staff lose the
+  Employee export; passport, blood group, health, health insurance and family
+  background are HR-only to read and write - the person asks HR. Details in 05,
+  round 4.

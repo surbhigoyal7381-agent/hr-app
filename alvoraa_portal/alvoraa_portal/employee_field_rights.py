@@ -7,14 +7,16 @@ API - and, once DTC's rule set is on, raise their own leave credit. Frappe's
 field permission levels stop that; this file applies them on every site.
 
 THREE LEVELS
-  0  only SELF_EDITABLE: the person's own contact, address, emergency contact,
-     passport, health and CV details (ALV-266).
+  0  only SELF_EDITABLE: the person's own contact, address, emergency contact
+     and CV details (ALV-266).
   2  everything else that holds a value: job, pay settings, approvers, identity,
      employment and exit dates, and any field added later. HR User, HR Manager
      and System Manager write; every role that reads Employee also reads these,
      so no screen loses a field.
   1  bank, statutory IDs and salary (the 13 PPJ already locked). HR Manager only
      (Surbhi, D2 and D3, 25 Oct 2026): no other role keeps a level-1 row.
+  3  passport, health and family details (D6, ALV-266). HR User, HR Manager and
+     System Manager read and write; nobody else sees them, the person included.
 
 AND NOBODY BUT HR CHANGES SOMEONE ELSE'S RECORD (ALV-266). A manager reaches
 their reports through their own User Permission (ALV-249), and Employee Self
@@ -73,9 +75,16 @@ SELF_EDITABLE = (
 	"cell_number", "personal_email", "prefered_contact_email", "prefered_email", "unsubscribed",
 	"current_address", "current_accommodation_type", "permanent_address",
 	"permanent_accommodation_type", "person_to_be_contacted", "emergency_phone_number", "relation",
-	"passport_number", "date_of_issue", "valid_upto", "place_of_issue", "marital_status",
-	"blood_group", "health_details", "family_background", "bio", "image", "salutation",
-	"education", "external_work_history",
+	"marital_status", "bio", "image", "salutation", "education", "external_work_history",
+)
+
+# Passport, health and family details: HR roles only, to read AND write (D6,
+# Surbhi, 1 Nov 2026). Not the manager, and not the person either - Frappe's
+# field levels go by role, never by whose record it is, so "HR or the person"
+# cannot be said. The person asks HR. Level 3: level 1 is HR Manager only.
+LEVEL_3 = (
+	"passport_number", "date_of_issue", "valid_upto", "place_of_issue", "health_details",
+	"health_insurance_no", "health_insurance_provider", "family_background", "blood_group",
 )
 
 # Fields someone who is not HR may change on ANOTHER person's record they can
@@ -117,6 +126,14 @@ def apply():
 		if writes and not (have and have.write):
 			update_permission_property(EMPLOYEE, r.role, 2, "write", 1)
 			changed = True
+		# D6: level 3 for HR roles only, read as they read level 0, write as they write it.
+		have = at.get((r.role, 3))
+		if r.role in LEVEL_2_WRITERS and not have:
+			add_permission(EMPLOYEE, r.role, 3)
+			changed = True
+		if writes and not (have and have.write):
+			update_permission_property(EMPLOYEE, r.role, 3, "write", 1)
+			changed = True
 
 	if (LEVEL_1_ROLE, 0) in at:
 		have = at.get((LEVEL_1_ROLE, 1))
@@ -127,16 +144,18 @@ def apply():
 			update_permission_property(EMPLOYEE, LEVEL_1_ROLE, 1, "write", 1)
 			changed = True
 
-	# ALV-266: Employee Self Service may not share an Employee record. A manager
-	# could open a report's whole record to anyone; assigning shares it too.
-	if frappe.db.exists("Custom DocPerm", {"parent": EMPLOYEE, "role": ESS_ROLE, "permlevel": 0, "share": 1}):
-		update_permission_property(EMPLOYEE, ESS_ROLE, 0, "share", 0)
-		changed = True
+	# ALV-266: Employee Self Service may not share an Employee record (a manager
+	# could open a report's whole record to anyone; assigning shares it too), nor
+	# export one (D6: a manager's CSV of their reports' personal details).
+	for right in ("share", "export"):
+		if frappe.db.exists("Custom DocPerm", {"parent": EMPLOYEE, "role": ESS_ROLE, "permlevel": 0, right: 1}):
+			update_permission_property(EMPLOYEE, ESS_ROLE, 0, right, 0)
+			changed = True
 
 	# D2: PPJ's Payroll Users (and anyone else) lose level 1. Custom rows only -
 	# a standard DocPerm row cannot be deleted, and Employee ships none at level 1.
 	for r in rows:
-		if r.permlevel == 1 and r.role != LEVEL_1_ROLE and frappe.db.exists("Custom DocPerm", r.name):
+		if ((r.permlevel == 1 and r.role != LEVEL_1_ROLE) or (r.permlevel == 3 and r.role not in LEVEL_2_WRITERS)) 				and frappe.db.exists("Custom DocPerm", r.name):
 			frappe.delete_doc("Custom DocPerm", r.name, ignore_permissions=True, force=True)
 			changed = True
 
@@ -150,12 +169,14 @@ def lock_fields():
 	wanted = {df.fieldname: 2 for df in meta.fields
 	          if df.fieldtype not in display_fieldtypes and df.fieldname not in SELF_EDITABLE}
 	wanted.update(dict.fromkeys(LEVEL_2 + rule_set_fields(), 2))
+	wanted.update(dict.fromkeys(LEVEL_3, 3))
 	wanted.update(dict.fromkeys(LEVEL_1, 1))
 	changed = False
 	for fieldname, level in wanted.items():
 		df = meta.get_field(fieldname)
-		# Never lower a field that is already above 0 (PPJ's 13 stay at 1).
-		if df and not df.permlevel:
+		# Never lower a field that is already above 0 (PPJ's 13 stay at 1). A
+		# level-3 field may come up from 2 (D6 moved health insurance from 2 to 3).
+		if df and (not df.permlevel or (level == 3 and df.permlevel == 2)):
 			make_property_setter(EMPLOYEE, fieldname, "permlevel", level, "Int",
 			                     validate_fields_for_doctype=False)
 			changed = True
@@ -271,7 +292,8 @@ def lock_new_custom_field(doc, method=None):
 	if doc.dt != EMPLOYEE or doc.permlevel or doc.fieldtype in display_fieldtypes:
 		return
 	# ALV-266: a new field is HR's to write unless it is on SELF_EDITABLE.
-	level = 1 if doc.fieldname in LEVEL_1 else 0 if doc.fieldname in SELF_EDITABLE else 2
+	level = (1 if doc.fieldname in LEVEL_1 else 3 if doc.fieldname in LEVEL_3
+	         else 0 if doc.fieldname in SELF_EDITABLE else 2)
 	if level:
 		make_property_setter(EMPLOYEE, doc.fieldname, "permlevel", level, "Int",
 		                     validate_fields_for_doctype=False)

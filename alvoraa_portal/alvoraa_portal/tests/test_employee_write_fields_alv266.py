@@ -176,12 +176,14 @@ class EmployeeWriteRulesAlv266(IntegrationTestCase):
 		self.assertEqual(frappe.client.get("Employee", self.report).get("cell_number"), "9000000000")
 
 	# Rule 2 -----------------------------------------------------------------
-	def test_alv266_person_edits_own_mobile_and_passport(self):
+	def test_alv266_person_edits_own_mobile_and_address_but_not_passport(self):
 		frappe.set_user(self.ess)
-		self._save(self.ess_emp, {"cell_number": "9000000268", "passport_number": "ALV266-SELF"})
+		self._save(self.ess_emp, {"cell_number": "9000000268", "current_address": "268 Own Street",
+		                          "passport_number": "ALV266-SELF"})
 		frappe.set_user("Administrator")
-		self.assertEqual(frappe.db.get_value("Employee", self.ess_emp, ["cell_number", "passport_number"]),
-		                 ("9000000268", "ALV266-SELF"))
+		self.assertEqual(frappe.db.get_value("Employee", self.ess_emp,
+		                                     ["cell_number", "current_address", "passport_number"]),
+		                 ("9000000268", "268 Own Street", "OLD-P"), "D6: the passport is HR's to change")
 
 	def test_alv266_person_cannot_change_own_contract_end_or_notice(self):
 		frappe.set_user(self.ess)
@@ -223,6 +225,63 @@ class EmployeeWriteRulesAlv266(IntegrationTestCase):
 		          "create_user_permission", "reason_for_leaving", "internal_work_history"):
 			with self.subTest(field=f):
 				self.assertEqual(meta.get_field(f).permlevel, 2)
+		for f in ef.LEVEL_3:
+			with self.subTest(field=f):
+				self.assertNotIn(f, ef.SELF_EDITABLE)
+				if meta.has_field(f):  # health insurance exists only where Frappe HR made it
+					self.assertEqual(meta.get_field(f).permlevel, 3)
+
+	# D6: passport, health and family details are HR's only ---------------------
+	D6_SAMPLE = ("passport_number", "blood_group", "health_details", "family_background")
+
+	def _d6_values(self, employee):
+		frappe.db.set_value("Employee", employee, {"passport_number": "D6-P", "blood_group": "O+",
+		                                           "health_details": "D6 health", "family_background": "D6 family"})
+
+	def test_alv266_d6_manager_and_staff_cannot_read_passport_or_health(self):
+		for emp in (self.report, self.ess_emp):
+			self._d6_values(emp)
+		for user, emp in ((self.manager, self.report), (self.ess, self.ess_emp), (self.manager, self.manager_emp)):
+			with self.subTest(user=user, employee=emp):
+				frappe.set_user(user)
+				try:
+					got = frappe.client.get("Employee", emp)
+					listed = frappe.get_list("Employee", filters={"name": emp}, fields=["name", *self.D6_SAMPLE])
+				finally:
+					frappe.set_user("Administrator")
+				for f in self.D6_SAMPLE:
+					self.assertFalse(got.get(f), f"{f} read through the form")
+					self.assertFalse(listed and listed[0].get(f), f"{f} read through a list")
+
+	def test_alv266_d6_hr_reads_and_writes_passport_and_health(self):
+		self._d6_values(self.report)
+		frappe.set_user(self.hr_mgr)
+		try:
+			self.assertEqual(frappe.client.get("Employee", self.report).get("blood_group"), "O+")
+			self._save(self.report, {"passport_number": "D6-HR", "health_details": "D6 by HR"})
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Employee", self.report, ["passport_number", "health_details"]),
+		                 ("D6-HR", "D6 by HR"))
+
+	def test_alv266_d6_staff_and_managers_cannot_export_employees(self):
+		self.assertFalse(frappe.db.get_value("Custom DocPerm", {"parent": "Employee", "role": "Employee Self Service",
+		                                                        "permlevel": 0}, "export"))
+		from frappe.desk.reportview import export_query
+
+		def export(user):
+			frappe.set_user(user)
+			frappe.local.form_dict = frappe._dict(doctype="Employee", file_format_type="CSV",
+			                                      fields=json.dumps(["`tabEmployee`.`name`", "`tabEmployee`.`cell_number`"]))
+			try:
+				return export_query()
+			finally:
+				frappe.set_user("Administrator")
+
+		for user in (self.ess, self.manager):
+			with self.subTest(user=user), self.assertRaises(frappe.PermissionError):
+				export(user)
+		export(self.hr_mgr)  # HR unchanged
 
 	# Rule 3 -----------------------------------------------------------------
 	def test_alv266_hr_changes_anything_on_a_report(self):

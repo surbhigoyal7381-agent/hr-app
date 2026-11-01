@@ -148,21 +148,65 @@ class PlaceAnyway071(RegisterCase):
 		self.assertEqual(register.what_they_hold(self.newcomer)["held"], 0)
 
 	def test_statement_count_is_a_fixed_handful(self):
-		"""Recorded in the implementation notes; flat per click, not per person."""
+		"""Recorded in the implementation notes; flat per click, not per person.
+
+		**BOTH paths are warmed, and the second warm-up is why this test is
+		honest.** It always warmed the plain path. It did not warm the
+		`add_place` path, which is the one that SAVES an `Alvoraa Position` -
+		and the first save of any doctype in a process pays Frappe's cold
+		`get_meta` load: `tabDocType`, `tabDocField`, `tabDocPerm`, the three
+		`DocType Action/Link/State` reads, `tabCustom Field`,
+		`tabProperty Setter`, `tabCustom DocPerm`, their three custom
+		counterparts, and two `information_schema` reads. That is **19
+		statements of one-off framework cost**, and it was landing inside the
+		measured block.
+
+		Measured on this site, 1 November 2026, with every statement dumped and
+		read: **43 cold, 24 warm.** So the gate was failing at 43 against 40 on
+		a cold meta load it never meant to measure, and the number moved with
+		the order the suites happened to run in. Warmed, it measures what it
+		says it measures - the per-click cost - and the ceiling it was given
+		has 16 statements of headroom.
+
+		**The 24 are flat.** Nothing in them is per-person or per-seat: the
+		seat's own row, the caller's scope, the leaver and date checks, the
+		other assignments of that one person, the `FOR UPDATE` lock, one
+		`UPDATE` of the position and one `INSERT` of the assignment. None of
+		this slice's work appears at all - `assign_person` never calls
+		`position_table` and never reads a photograph.
+		"""
 		from alvoraa_portal.tests.leader_fixtures_012 import QueryCounter
 
 		roomy = self.pos("Count 071", seats=5).name
 		frappe.set_user(self.hr_user("scope194.count071@example.com"))
 		warm, plain_one = self.person("Warm071"), self.person("Plain071")
-		register.assign_person(roomy, warm)  # warm the caches
+		register.assign_person(roomy, warm)  # warm the plain path
+		# And warm the add_place path: one Alvoraa Position SAVE, so the cold
+		# get_meta load is not counted as if it were per-click work.
+		warm_full = self.pos("Count warm 071", seats=1).name
+		self.assign(self.person("Sitting warm 071"), warm_full)
+		register.assign_person(warm_full, self.person("Raise warm 071"), add_place=1)
 		with QueryCounter() as plain:
 			register.assign_person(roomy, plain_one)
 		with QueryCounter() as raised:
 			register.assign_person(self.full, self.newcomer, add_place=1)
 		print(f"\nassign_person statements: {plain.count} plain, {raised.count} with add_place")
-		# 40 until ALV-249 (1 Nov 2026), measured with an HR fixture that still held
-		# ERPNext's own-record Employee row. ALV-249 removes that row from every HR
-		# login, as at DTC, and an HR login with no User Permission at all costs 16
-		# more statements here (27 -> 43, measured; none of them from the ALV-249
-		# hooks, which do not run inside this call). Still flat per click.
-		self.assertLessEqual(raised.count, 45)
+		# 40, and it stays 40. Two sessions fixed this gate on 1 Nov 2026 within
+		# an hour of each other, and both fixes are above: the add_place path is
+		# now warmed, and the ceiling was briefly raised to 45.
+		#
+		# The raise was reasoned from ALV-249 - an HR login no longer carries
+		# ERPNext's own-record User Permission row, which was measured as 16 more
+		# statements here. That reasoning is kept because it may yet be right
+		# about WHERE the cost sits. What it could not see is that the cold
+		# `get_meta("Alvoraa Position")` load - 19 statements, once per PROCESS,
+		# the first time any position is SAVED - was inside the measured block,
+		# because only the add_place path saves one and only the plain path was
+		# warmed. That is why the number moved with suite order.
+		#
+		# **Measured with both fixes in, on a site carrying ALV-249: 14 plain,
+		# 24 with add_place.** So 45 would leave the gate 21 statements of slack
+		# on a 24-statement call - still there, no longer gating. 40 keeps the
+		# margin the gate was written with, and the property it exists for is
+		# intact: flat per click, not per person.
+		self.assertLessEqual(raised.count, 40)

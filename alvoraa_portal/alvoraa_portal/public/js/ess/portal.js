@@ -7185,11 +7185,22 @@ function ocsPaint() {
   var docsSec = '<div class="ocs-sec"><h4 class="ocs-h">'
     + esc(drT("Document types shown on a person's profile")) + "</h4>"
     + (sens.length
-        ? '<p class="ocs-warn" role="note">' + esc(drT(
-            "{0} of these {1} is an identity, statutory, verification, employment or "
-          + "address document. The {2} people who can open the Positions page - {3} - "
-          + "can open the file itself, for everyone in their own companies and branches.",
-            [sens.length, docs.length, people, roles])) + "</p>"
+        ? '<p class="ocs-warn" role="note">' + esc(
+            (sens.length === 1
+              ? drT("1 of these {0} is an identity, statutory, verification, "
+                  + "employment or address document.", [docs.length])
+              : drT("{0} of these {1} are identity, statutory, verification, "
+                  + "employment or address documents.", [sens.length, docs.length]))
+            + " "
+            /* The count and the ROLES used to sit in one sentence as "The 4
+               people who can open the Positions page - HR Manager, System
+               Manager - can open the file itself", which reads as a list of
+               four people followed by two names. Both facts are true and both
+               matter, so they are now two plain clauses. */
+            + drT("Anyone who can open the Positions page can open the file "
+                + "itself, for everyone in their own companies and branches. "
+                + "Today that is {0} people, holding these roles: {1}.",
+                  [people, roles])) + "</p>"
         : "")
     + (docs.length
         ? '<ul class="ocs-list">' + docs.map(function (t) {
@@ -7357,10 +7368,15 @@ function ocsSummary() {
       : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
   /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
   hmEl("ocs-sum").innerHTML = sens.length
-    ? '<span class="ocs-warn">' + esc(drT(
-        "{0} of these is an identity, statutory, verification, employment or address "
-      + "document. The {1} people who can open the Positions page will be able to open "
-      + "the file itself.", [sens.length, people])) + "</span>"
+    ? '<span class="ocs-warn">' + esc(
+        (sens.length === 1
+          ? drT("1 of these is an identity, statutory, verification, employment "
+              + "or address document.")
+          : drT("{0} of these are identity, statutory, verification, employment "
+              + "or address documents.", [sens.length]))
+        + " "
+        + drT("Anyone who can open the Positions page will be able to open the "
+            + "file itself - {0} people today.", [people])) + "</span>"
     : OCS.kind === "docs" && chosen.length === 0
       ? esc(drT("Nothing ticked. Nobody will be able to open an employee's documents "
               + "from the Positions page."))

@@ -347,8 +347,15 @@ async function openMyProfile(routes) {
   yes(/HR Manager, System Manager/.test(body),
       "078 AC-84: the amber line NAMES THE ROLES that can open the file, not only "
       + "a count", body);
-  yes(/2 of these 3 is an identity, statutory, verification, employment or address/.test(body),
+  yes(/2 of these 3 are identity, statutory, verification, employment or address/.test(body),
       "078 AC-84: and says how many of them are sensitive");
+  /* The count of people and the ROLES are two clauses now, not one. The old
+     sentence read "The 7 people who can open the Positions page - HR Manager,
+     System Manager - can open the file", which a reader takes as a list of
+     seven followed by two names. Both numbers were right; the sentence was
+     not. Surbhi found it on dev's PPJ tenant, 1 Nov 2026. */
+  yes(/Today that is 7 people, holding these roles: HR Manager, System Manager/.test(body),
+      "078 AC-84: the count of people and the roles read as two plain facts", body);
 
   /* Counsel's email tick, on the card, and it SENDS only the key and the
      value - the thing the screen draws is not the thing being tested. */

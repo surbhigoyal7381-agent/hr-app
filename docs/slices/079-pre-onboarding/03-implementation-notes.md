@@ -454,6 +454,38 @@ naming:
 were real product defects and two were real test defects, and all five are
 written up in §6.** The runs that found them were worth their half-hour each.
 
+### The other seven Python suites — **still running when I handed over**
+
+Each test on this bench costs 25 to 45 seconds of fixture setup, so one module
+is a half-hour and seven are most of an afternoon. They are running
+**unattended, in this order**, each writing its own log:
+
+| Module | Log |
+|---|---|
+| `test_joiner_078` (the one the second pass rewrote) | `<bench>/sites/test_joiner_078.log` |
+| `test_first_use_lock_242` | `<bench>/sites/test_first_use_lock_242.log` |
+| `test_home_page_024` | `<bench>/sites/test_home_page_024.log` |
+| `test_people_settings_078` | `<bench>/sites/test_people_settings_078.log` |
+| `test_my_photo_078` | `<bench>/sites/test_my_photo_078.log` |
+| `test_org_access_settings_012f1` | `<bench>/sites/test_org_access_settings_012f1.log` |
+| `test_portal_security_010` | `<bench>/sites/test_portal_security_010.log` |
+
+`<bench>/sites` is bind-mounted at
+`…/scratchpad/sites078/`. **Read every batch summary with
+`grep -aE "^Ran |^OK|^FAILED"` over the whole file, not a tail.**
+
+**I have not seen their results, and I am not claiming them.** The two to look
+at first:
+
+- **`test_portal_security_010`** — I moved four of its `ignore_permissions`
+  ceilings down in the same commit as the code. I computed the new counts with
+  **the identical AST method that test uses** (docstrings blanked, tree
+  unparsed, comments dropped) and got exactly 3 / 3 / 6 / 4 / 0, which is what
+  the ceilings now say. So I expect it green, but **expecting is not running.**
+- **`test_joiner_078`** — 666 lines rewritten. Its last observed run was 55
+  tests with one failure, and that failure was naming defect 2, which is now
+  fixed.
+
 **Two fixture traps worth passing on**, because both cost a full run to see:
 
 1. **Frappe parses what it stores.** `File.before_insert` hands an image to

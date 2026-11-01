@@ -420,10 +420,39 @@ OK - all consistent
 
 ### The Python suites
 
-See the table at the end of this document. **What matters more than the numbers:
-three of the failures in the first runs were real product defects and one was a
-real test defect, and all four are written up in §6.** The runs that found them
-were worth their twenty minutes each.
+`bench --site test078f run-tests --module alvoraa_portal.tests.test_joiner_079`:
+
+```
+Ran 57 tests in 1925.523s
+FAILED (failures=1)
+```
+
+**The one failure is `test_send_is_refused_until_what_hr_marked_is_answered`,
+and it is a defect in the test, fixed after that run started.** It asserted
+that the row still held what the joiner had typed after a refused send — but a
+refused `submit_invite` throws **before** the write, so it stores nothing.
+AC-38's *"every input still holds what was typed"* is a promise about the
+**browser**; the promise about the row is that a refusal does not destroy what
+was already kept. It now saves a draft first — which is also the real sequence,
+since the joiner presses Next before reaching Check and send — and asserts the
+draft survived. **Verified individually as green; not yet re-run inside the
+whole module.**
+
+Everything that carries this slice passed in that run, including the ones worth
+naming:
+
+| Test | What it settles |
+|---|---|
+| `test_it_fails_closed` | **AC-25.** The gate refuses when its own refusal breaks. Written from the requirement, not copied from `test_it_fails_open` |
+| `test_every_other_page_is_refused`, `test_every_api_door_is_a_permission_error_not_a_redirect`, `test_files_are_not_on_the_allow_list` | 22 doors, each one refused |
+| `test_the_bare_root_with_a_cmd_is_refused` | **AC-24**, the door a path check cannot see, which this product has paid for twice |
+| `test_a_member_of_staff_is_untouched` | The other half of fail-closed: the gate has no opinion about anybody else |
+| `test_nothing_of_theirs_survives_an_erasure` | **⚠ C7 / M1 settled**, by SQL against `tabVersion`, with an HR edit in the middle so the assertion cannot be vacuous |
+| `test_there_are_no_guest_endpoints_left` | Zero, across all three joiner modules |
+
+**What matters more than the numbers: three of the failures in the earlier runs
+were real product defects and two were real test defects, and all five are
+written up in §6.** The runs that found them were worth their half-hour each.
 
 **Two fixture traps worth passing on**, because both cost a full run to see:
 

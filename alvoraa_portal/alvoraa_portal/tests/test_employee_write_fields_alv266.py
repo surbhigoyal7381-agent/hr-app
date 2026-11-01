@@ -264,6 +264,18 @@ class EmployeeWriteRulesAlv266(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Employee", self.report, ["passport_number", "health_details"]),
 		                 ("D6-HR", "D6 by HR"))
 
+	def test_alv266_hr_refused_on_own_passport_with_an_accurate_message(self):
+		frappe.set_user(self.hr_mgr)
+		try:
+			with self.assertRaises(frappe.PermissionError) as caught:
+				self._save(self.hr_mgr_emp, {"passport_number": "ALV266-OWN-HR"})
+		finally:
+			frappe.set_user("Administrator")
+		text = str(caught.exception)
+		self.assertIn(frappe.get_meta("Employee").get_label("passport_number"), text)
+		self.assertNotIn("job, pay or bank", text)
+		self.assertNotIn("ALV266-OWN-HR", text, "a refusal names fields, never values")
+
 	def test_alv266_d6_staff_and_managers_cannot_export_employees(self):
 		self.assertFalse(frappe.db.get_value("Custom DocPerm", {"parent": "Employee", "role": "Employee Self Service",
 		                                                        "permlevel": 0}, "export"))

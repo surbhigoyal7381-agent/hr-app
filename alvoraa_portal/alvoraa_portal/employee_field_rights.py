@@ -212,12 +212,16 @@ def refuse_own_locked_change(doc, method=None):
 	"""
 	if doc.is_new() or not doc.get_doc_before_save():
 		return
-	if not any(doc.has_value_changed(df.fieldname) for df in doc.meta.get_high_permlevel_fields()
-	           if not df.read_only and df.fieldtype not in table_fields):
+	changed = [_(df.label) for df in doc.meta.get_high_permlevel_fields()
+	           if not df.read_only and df.fieldtype not in table_fields and doc.has_value_changed(df.fieldname)]
+	if not changed:
 		return
 	if is_own_record(doc.name):
+		# Names the fields (labels, never values): since D6 they can be a passport
+		# or health detail, not only job, pay or bank.
 		refuse(
-			own_record_message(),
+			_("You cannot change {0} on your own record. Ask another HR person to make this change.").format(
+				", ".join(changed)),
 			"SEC-17",
 			"Employee save",
 			doc.doctype,

@@ -391,7 +391,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/frappe-bench
-          key: bench-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ env.FRAPPE_TAG }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
+          key: bench-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ env.FRAPPE_TAG }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt', 'scripts/patch_frappe_binary_file_content.py') }}
 
       - name: System dependencies
         run: |
@@ -430,6 +430,19 @@ jobs:
           bench init --skip-redis-config-generation --skip-assets --frappe-branch "$FRAPPE_TAG" --python "$(which python)" frappe-bench < /dev/null
           cd frappe-bench
           bench get-app --branch "$ERPNEXT_TAG" erpnext < /dev/null
+
+      # Slice 078: the one patched line in Frappe. It must run here as well as
+      # in deploy/Dockerfile, or CI tests a Frappe that behaves differently from
+      # the one that ships - which is worse than not patching at all.
+      #
+      # OUTSIDE the cache-hit guard above, and idempotent, so a WARM bench gets
+      # it too. The patch file is in the cache key below, so changing it also
+      # rebuilds the bench; this step is belt and braces for the case where the
+      # cache was built before the patch existed.
+      - name: Patch Frappe (slice 078, see scripts/patch_frappe_binary_file_content.py)
+        run: |
+          python "$GITHUB_WORKSPACE/scripts/patch_frappe_binary_file_content.py" ~/frappe-bench
+          python "$GITHUB_WORKSPACE/scripts/patch_frappe_binary_file_content.py" --check ~/frappe-bench
 
       # All three first-party apps come from THIS repo — including the hrms fork,
       # so the PMS module is exercised in CI exactly as it ships to production.

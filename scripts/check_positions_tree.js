@@ -705,10 +705,17 @@ async function deleteChecks() {
     ctx.__els["pos-e-name"] = { id: "pos-e-name", value: "P-Cashier" };
     const toasts = [];
     const opened = new Set();
+    /* Where the page went. `posCloseEditor` now calls switchPanel instead of
+       removing a class, so this is the observable that replaced `opened`. */
+    const left = [];
     const cls = (id) => ({ add: () => opened.add(id), remove: () => opened.delete(id),
                           contains: () => opened.has(id) });
-    for (const id of ["pos-delete", "pos-editor"])
-      ctx.__els[id] = { id, style: {}, classList: cls(id) };
+    /* SLICE 078: the seat editor is a PAGE now, not the `#pos-editor`
+       backdrop, so "did it close" becomes "did it navigate away". The delete
+       flow is what this block tests and it still has to work from the page, so
+       the assertions below were RE-POINTED and none was dropped. */
+    ctx.__els["pos-delete"] = { id: "pos-delete", style: {}, classList: cls("pos-delete") };
+    ctx.switchPanel = (name) => { left.push(name); };
     for (const id of ["pos-delete-text", "pos-delete-go", "pos-delete-keep", "pos-delete-btn", "pos-delete-err"])
       ctx.__els[id] = { id, style: {}, textContent: "", disabled: false, hidden: false, focus() {} };
     ctx.__els["toast-wrap"] = { appendChild: (t) => toasts.push(t) };
@@ -717,7 +724,7 @@ async function deleteChecks() {
     ctx.POS.may_delete = mayDelete;
     ctx.posLoad = async () => {};
     ctx.gpFetch = async () => { if (answer instanceof Error) throw answer; return answer; };
-    return { ctx, toasts, opened };
+    return { ctx, toasts, opened, left };
   }
 
   {
@@ -730,10 +737,14 @@ async function deleteChecks() {
     t.ctx.posAskDelete();
     ok("the confirm opens", t.opened.has("pos-delete"));
     ok("and names the seat", t.ctx.__els["pos-delete-text"].textContent.includes("Cashier"));
-    t.opened.add("pos-editor");
     await t.ctx.posDelete();
-    ok("a deleted seat closes both dialogs",
-       !t.opened.has("pos-delete") && !t.opened.has("pos-editor"));
+    /* SAME INTENTION, different mechanism (078 AC-54, AC-56): the confirm
+       closes AND the seat page is left for the chart. This is the assertion
+       that would have quietly passed if it had simply been removed, which is
+       why it is worded as what the user sees rather than as what closes. */
+    ok("078: a deleted seat closes the confirm and LEAVES THE SEAT PAGE for the chart",
+       !t.opened.has("pos-delete") && t.left.includes("positions"),
+       JSON.stringify(t.left));
     ok("and says so", t.toasts.length === 1 && t.toasts[0].textContent.includes("was deleted"));
   }
   {
@@ -1364,10 +1375,19 @@ async function seats072() {
     const plain = draw(bare());
     ok("072 AC-54: no manager keys, no copies and no grey lines", !/class="oc-box[^"]* copy/.test(plain) && !plain.includes("oc-same"));
     const card = W.ocNodeCard({ id: "x", title: "T", subtitle: "S", open: 1, people: [{ name: "Ann Bee" }], flags: [] }, false);
-    ok("072 AC-53: the Organisation card is unchanged without the new fields",
+    /* RE-POINTED, not relaxed, by slice 078. The expected string changed in
+       exactly one way and for one reason: `ocAvatar` now always draws the same
+       circle with the person's initials INSIDE it, so that a photograph can be
+       layered over the top without the box changing size. Everything else on
+       this card - the button, its style, the heading, the tag, the subtitle,
+       the name - is still asserted character for character, which is what this
+       check is for. A person with no photograph gets no <img> at all. */
+    ok("072 AC-53 / 078 AC-26: the Organisation card is unchanged without the "
+       + "new fields, and a person with no photograph draws no image",
        card === '<div class="oc-node"><button type="button" class="oc-box" style="text-align:left;font:inherit;width:100%;cursor:pointer"'
          + ' onclick="ocFocus(\'x\')"><div class="oc-box-hd"><span class="ti">T</span><span class="oc-tag v">open</span></div>'
-         + '<div class="sub">S</div><div class="oc-who"><span class="av">AB</span><span>Ann Bee</span></div></button></div>', card);
+         + '<div class="sub">S</div><div class="oc-who"><span class="av">'
+         + '<span class="av-i" aria-hidden="true">AB</span></span><span>Ann Bee</span></div></button></div>', card);
     // PRIV-1 (b): private keys on a person in a copy change no box.
     const shape = () => boxes().map((b) => [b.id, b.copy, b.parent, b.names.join("|"), (b.el.querySelector(".oc-same") || {}).textContent || ""].join("~")).join("\n");
     draw(S70()); const s1 = shape();
@@ -1513,6 +1533,146 @@ async function seats072() {
     W.matchMedia = () => ({ matches: false, addEventListener() {}, addListener() {} });
     ofBO[0].dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
     ok("072 AC-43: nothing happens on touch", !body().querySelectorAll(".oc-box.rel").length);
+  }
+
+  /* 22i. SLICE 078 - faces on the cards and the table, and the two constants
+     that make the whole design affordable.
+
+     THE TRAP THIS BLOCK EXISTS TO AVOID. `draw()` above sets
+     `POS_NAMES_SHOWN = opts.names || 1000` for most of its painting, so a
+     face-count assertion written the ordinary way would be asserting against
+     a thousand names per box and would pass for entirely the wrong reason.
+     Every case here passes `{ names: 3 }` explicitly, and the constants are
+     read BEFORE any draw happens, from the module itself.
+
+     Why the constants are pinned literally (OPS-21): `07` measured that first
+     paint is 16 boxes and 16 faces, and that it is these two numbers - not
+     lazy loading - that make the design affordable. Raising POS_OPEN_DEPTH to
+     2 takes first paint to 55 boxes and about 70 faces, and nothing would warn
+     anybody. POS_NAMES_SHOWN is load-bearing twice over: the comment above
+     `portal.js`'s `shut` calculation records that one open level at a real
+     tenant's size is 120 boxes in a row several thousand pixels wide. */
+  {
+    /* Read from the module before anything touches them. */
+    ok("078 OPS-21: POS_OPEN_DEPTH is 1 - two levels is 55 boxes and ~70 faces",
+       W.POS_OPEN_DEPTH === 1, String(W.POS_OPEN_DEPTH));
+    ok("078 OPS-21: POS_NAMES_SHOWN is 3 - it caps the chart's width as well "
+       + "as its face count", W.POS_NAMES_SHOWN === 3, String(W.POS_NAMES_SHOWN));
+
+    /* A chart where some people have a photograph and some do not. */
+    const withFaces = S70();
+    withFaces.forEach((r) => r.people.forEach((p, i) => {
+      if (i % 2 === 0) { p.thumb = "/private/files/f-" + p.employee + "-48.jpg"; }
+    }));
+
+    draw(withFaces, "reporting", { names: 3 });
+    const html = body().innerHTML;
+
+    /* AC-31. The real number here is smaller than 16 because this fixture is
+       smaller than a tenant; what is pinned is that it is BOUNDED, and that
+       the bound is the one the design rests on. */
+    const faces = body().querySelectorAll("img.av-p");
+    ok("078 AC-31: first paint draws no more than 60 faces",
+       faces.length <= 60, String(faces.length));
+
+    /* OPS-19. Nothing is fetched until ocFaces() says so, and it is OUR rule
+       and not `loading="lazy"` - a browser-deferred image prints as a blank
+       circle on the wall chart, and its 3G threshold reaches 60-70 table rows
+       at once through 8 worker slots.
+
+       Asserted on what `ocAvatar` EMITS, because this harness has no
+       IntersectionObserver: ocFaces' documented fallback then loads every face
+       at once rather than leaving empty circles, which is correct behaviour and
+       would have made a DOM-level assertion here wrong. Both halves are
+       checked - the markup, and the fallback. */
+    const emitted = W.ocAvatar({ name: "Ann Bee", thumb: "/private/files/x-48.jpg" });
+    ok("078 OPS-19: a face is emitted with data-src and no src, so ocFaces "
+       + "decides when it is fetched",
+       /data-src="\/private\/files\/x-48\.jpg"/.test(emitted) && !/\ssrc=/.test(emitted),
+       emitted);
+    ok("078 OPS-19: and it is never loading=lazy", !/loading="lazy"/.test(emitted));
+    ok("078 OPS-19: with no IntersectionObserver every face is loaded rather "
+       + "than left as an empty circle",
+       typeof W.IntersectionObserver === "function"
+       || [...faces].every((i) => i.getAttribute("src") && !i.getAttribute("data-src")),
+       String(faces.length));
+    ok("078 AC-26: and a person with no photograph is given no image at all",
+       !/<img/.test(W.ocAvatar({ name: "Ann Bee" })));
+
+    /* AC-27, AC-28, AC-29. ONE circle, with the initials in it, and the
+       photograph layered over the top - so nothing reflows as faces land and a
+       failed face leaves the initials already visible. */
+    const circles = [...body().querySelectorAll(".oc-who:not(.oc-empty) .av")];
+    ok("078 AC-27: every circle has initials in it, photograph or not",
+       circles.length > 0 && circles.every((c) => c.querySelector(".av-i")),
+       String(circles.length));
+    ok("078 AC-27: a face carries width and height ATTRIBUTES, so nothing "
+       + "reflows when it lands",
+       [...faces].every((i) => i.getAttribute("width") && i.getAttribute("height")));
+    ok("078 AC-26: no placeholder shape, no silhouette, no camera icon and no "
+       + "prompt anywhere",
+       !/camera|silhouette|placeholder|Add a photo|no photo/i.test(html));
+
+    /* AC-30. Three names, then a count - unchanged by the faces. In the
+       reporting arrangement the six Office Executives are split: two stay in
+       the home box under the Owner and four are drawn in a copy under the CFO
+       (case 22a asserts exactly that), so the box with more than three in it is
+       the copy. */
+    const big = boxes().find((b) => b.names.length >= 3
+                                    && /more here|more in this seat/.test(b.el.innerHTML));
+    ok("078 AC-30: a seat with more than three people shows three names, three "
+       + "circles and a count",
+       big && big.names.length === 3
+       && big.el.querySelectorAll(".oc-who:not(.oc-empty) .av").length === 4,
+       big ? big.id + " " + big.names.length : "no capped box found");
+
+    /* AC-32. The chart's box stays ONE button with nothing clickable inside
+       it: a nested button already broke this page once. The table is where a
+       real control is safe, because a table cell is ordinary markup. */
+    const boxBtns = [...body().querySelectorAll(".oc-box")];
+    ok("078 AC-32: the chart's card has nothing clickable inside it",
+       boxBtns.every((b) => !b.querySelector("button, a")),
+       String(boxBtns.filter((b) => b.querySelector("button, a")).length));
+
+    /* The table: a face and a real control on every name. */
+    doc.getElementById("pos-f-view").value = "list";
+    W.POS_NAMES_SHOWN = 3;
+    W.posPaint();
+    const list = body().innerHTML;
+    ok("078 AC-32: each name in the table is a real control",
+       (list.match(/class="pos-name-link"/g) || []).length >= 3,
+       String((list.match(/class="pos-name-link"/g) || []).length));
+    ok("078 AC-32: carrying the employee it is about",
+       /data-pos-who="[^"]+"/.test(list));
+    ok("078 AC-35: the table's faces are deferred by our own rule too",
+       !/<img class="av-p" src=/.test(list));
+    doc.getElementById("pos-f-view").value = "tree";
+    W.posPaint();
+
+    /* **D-5(a), the third entry point.** The test report found that only two
+       of the three surfaces the design draws opened the mini profile: the
+       chart's table and the seat page did, and the SEAT TRAY did not. The
+       tray is the only surface that shows every person in a 25-person seat,
+       so without it there was no way at all to open the profile of anybody
+       past the first three names. Same markup as the other two, so the one
+       delegated handler picks it up - which is the thing to assert, because a
+       second handler is how the three drift apart. */
+    draw(withFaces, "reporting", { names: 3 });
+    const seatWithPeople = W.POS.rows.find((r) => (r.people || []).length);
+    W.posSeatSheet(seatWithPeople.id);
+    const tray = doc.getElementById("pos-layer");
+    const trayNames = [...tray.querySelectorAll(".pos-prow .pos-name-link")];
+    ok("078 D-5(a): every name in the SEAT TRAY is a real control",
+       trayNames.length === seatWithPeople.people.length,
+       trayNames.length + " of " + seatWithPeople.people.length);
+    ok("078 D-5(a): carrying the employee it is about",
+       trayNames.length > 0 && trayNames.every(
+         (b) => !!b.getAttribute("data-pos-who")));
+    ok("078 D-5(a): and it is the SAME markup the table uses, so the one "
+       + "delegated handler opens all three surfaces",
+       trayNames.length > 0 && trayNames.every(
+         (b) => b.tagName === "BUTTON" && b.className === "pos-name-link"));
+    W.posCloseSheet(true);
   }
 
   /* 22h. the error state (AC-63) */

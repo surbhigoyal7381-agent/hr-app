@@ -9,8 +9,9 @@
  * absence of a logged-in session. Nothing here proves a server answer.
  *
  * CELLS. 5 personas x 3 data sizes (none, few, 200 rows) x 2 widths (1280, 360).
- * Birthdays are Part C, so the "on" half of the 60 does not exist yet: this is
- * the whole Part A set, 30 cells, which is the design's own "switch off" layout.
+ * Part C adds the Birthdays card, so every cell runs with the organisation switch
+ * off (the card absent) and on (the card drawn): 5 x 3 x 3 widths x 2 = 90 cells.
+ * Part C also adds expense claims to the managers' Pending lists.
  *
  * MEASURES, per cell (02-design section 3; the prototype's own readout):
  *   - largest gap between rows of cards <= 24 px
@@ -55,11 +56,11 @@ const PERSONAS = {
 const PEND = {   // rows per part by size (the server caps a part at 50)
   employee: {none: {}, few: {policies: 1, my_requests: 1}, many: {policies: 50, my_requests: 50}},
   frontline: {none: {}, few: {my_requests: 1}, many: {policies: 50, my_requests: 50}},
-  manager: {none: {}, few: {leave_approvals: 1}, many: {leave_approvals: 50, goal_updates: 50, attendance_fixes: 50, shift_requests: 50, policies: 1}},
-  hr: {none: {}, few: {leave_approvals: 1}, many: {leave_approvals: 50, goal_updates: 50, attendance_fixes: 50, shift_requests: 50}},
-  cxo: {none: {}, few: {leave_approvals: 2}, many: {leave_approvals: 50, goal_updates: 50, attendance_fixes: 50, shift_requests: 50, policies: 1}},
+  manager: {none: {}, few: {leave_approvals: 1, expense_approvals: 1}, many: {leave_approvals: 50, expense_approvals: 50, goal_updates: 50, attendance_fixes: 50, shift_requests: 50, policies: 1}},
+  hr: {none: {}, few: {leave_approvals: 1, expense_approvals: 1}, many: {leave_approvals: 50, expense_approvals: 50, goal_updates: 50, attendance_fixes: 50, shift_requests: 50}},
+  cxo: {none: {}, few: {leave_approvals: 2, expense_approvals: 1}, many: {leave_approvals: 50, expense_approvals: 50, goal_updates: 50, attendance_fixes: 50, shift_requests: 50, policies: 1}},
 };
-const PART_KEYS = ["leave_approvals", "goal_updates", "attendance_fixes", "shift_requests", "policies", "my_requests"];
+const PART_KEYS = ["leave_approvals", "expense_approvals", "goal_updates", "attendance_fixes", "shift_requests", "policies", "my_requests"];
 const iso = (ago) => { const d = new Date(Date.now() - ago * 86400000); return d.toISOString().slice(0, 10) + " 09:00:00"; };
 
 function inboxFor(pid, size) {
@@ -69,6 +70,7 @@ function inboxFor(pid, size) {
     for (let i = 0; i < n; i++) {
       const who = NAMES[(i * 3 + key.length) % NAMES.length], w = iso(1 + ((i * 2) % 20));
       if (key === "leave_approvals") rows.push({name: "L" + i, employee_name: who, from_date: "2026-11-06", to_date: "2026-11-08", leave_type: "Casual Leave", total_days: 3, action: "leave", waiting_since: w});
+      else if (key === "expense_approvals") rows.push({name: "X" + i, employee_name: who, expense_type: "Travel", expense_date: "2026-10-20", amount: 2300, note: "Taxi to the supplier visit", action: "expense", waiting_since: w});
       else if (key === "goal_updates") rows.push({name: "G" + i, kind: "goal", employee_name: who, subject: "Sell 40 units", action: "goal_update", waiting_since: w});
       else if (key === "attendance_fixes") rows.push({name: "A" + i, employee_name: who, from_date: "2026-10-21", to_date: "2026-10-21", action: "attendance_fix", waiting_since: w});
       else if (key === "shift_requests") rows.push({name: "S" + i, employee_name: who, from_date: "2026-11-09", to_date: "2026-11-09", action: "shift_request", waiting_since: w});
@@ -98,14 +100,21 @@ function teamGoalsFor(p, size) {
     goals: [0, 1, 2].map((j) => ({name: "TG" + i + j, goal_name: "Team goal " + j, progress_pct: 30 + j * 20, trajectory: "On Track"}))};
   return {available: true, by_employee: by};
 }
-function scenario(pid, size) {
+function birthdaysFor(size, on) {
+  if (!on) return {on: 0};
+  if (size === "none") return {on: 1, hidden: 0, total: 0, rows: []};
+  const n = size === "few" ? 3 : 38, rows = [], m = new Date().getMonth() + 1;
+  for (let i = 0; i < Math.min(n, 5); i++) rows.push(i % 3 === 1 ? {name: NAMES[i], kind: "anniversary", day: 1 + i, month: m, years: 5} : {name: NAMES[i], kind: "birthday", day: 1 + i, month: m});
+  return {on: 1, hidden: 0, total: n, rows};
+}
+function scenario(pid, size, bday) {
   const p = PERSONAS[pid], none = size === "none", many = size === "many";
   const docs = none || !p.docs ? [] : Array.from({length: many ? 12 : 3}, (_, i) => ({name: "D" + i, document_type: "Address proof " + (i + 1), status: "Uploaded", category: "Identity"}));
   const pols = none || !p.policies ? [] : Array.from({length: many ? 6 : 2}, (_, i) => ({name: "PO" + i, title: "Leave and attendance " + (i + 1), version: 2, status: "Published", department: "HR", ack: "pending"}));
   const hols = none ? [] : Array.from({length: many ? 30 : 3}, (_, i) => ({holiday_date: new Date(Date.now() + (i + 1) * 86400000).toISOString().slice(0, 10), description: "Holiday " + (i + 1)}));
   return {
     name: p.name, role: p.role, mgr: p.mgr, hr: p.hr, cxo: !!p.cxo,
-    inbox: inboxFor(pid, size), notes: noticesFor(size), goals: goalsFor(p, size), teamGoals: teamGoalsFor(p, size),
+    inbox: inboxFor(pid, size), notes: noticesFor(size), bd: birthdaysFor(size, bday), goals: goalsFor(p, size), teamGoals: teamGoalsFor(p, size),
     docs: {rows: docs, summary: docs.length + " items"}, policies: {rows: pols, pending: pols.length, can_manage: false},
     dashboard: {leave_balances: none ? [] : [{leave_type: "Casual Leave", total: 12, balance: 8, taken: 4}, {leave_type: "Earned Leave", total: 15, balance: 11, taken: 4}, {leave_type: "Sick Leave", total: 6, balance: 4, taken: 2}, {leave_type: "Comp Off", total: 2, balance: 1, taken: 1}],
       holidays: hols, pending_approvals: []},
@@ -122,6 +131,7 @@ function stubServer(S) {
       case "get_employee_dashboard": return S.dashboard;
       case "get_inbox": return S.inbox;
       case "notices_feed": return S.notes;
+      case "birthdays_this_month": return S.bd;
       case "get_goals_portal_data": return S.goals;
       case "get_team_goals": return S.teamGoals;
       case "get_my_documents": return S.docs;
@@ -133,7 +143,7 @@ function stubServer(S) {
     call(o) { const n = String(o.method).split(".").pop(); setTimeout(() => { o.callback && o.callback({message: route(n)}); o.always && o.always({}); }, 0); return {status: 200}; },
     csrf_token: "x", boot: {}, ui: {}, _messages: {}, utils: {escape_html: (s) => s}, msgprint() {},
   };
-  window.fetch = (url) => Promise.resolve({ok: true, status: 200, json: () => Promise.resolve({message: route(String(url).split("?")[0].split("/").pop())})});
+  window.fetch = (url) => Promise.resolve({ok: true, status: 200, json: () => Promise.resolve({message: route(String(url).split("?")[0].split("/").pop().split(".").pop())})});
 }
 
 /* Runs in the page after it has settled. */
@@ -174,7 +184,8 @@ function measure() {
   const gridBox = grid.getBoundingClientRect();
   return {
     cards: R.map((r) => ({id: r.id, h: r.h, nat: r.nat, w: r.w})), hero: heroBox.h, pairs, maxGap, med, tall, colsEnd,
-    pendingRows: rowCount("home-pending-card"), noticeRows: rowCount("home-notices-card"),
+    pendingRows: rowCount("home-pending-card"), noticeRows: rowCount("home-notices-card"), bdayRows: rowCount("home-bday-card"),
+    bdayShown: vis(document.getElementById("home-bday-card")),
     hscroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     order: ordered.slice(0, 3), gridW: Math.round(gridBox.width), cols: new Set(R.map((r) => r.left)).size,
     colW: R.length ? R[0].w : 0, span2: [...grid.querySelectorAll(".hm-span2")].map((e) => e.id),
@@ -198,6 +209,7 @@ async function main() {
   const failures = [], readout = [], stretched = [], existing = [];
   for (const pid of Object.keys(PERSONAS)) {
     for (const size of ["none", "few", "many"]) {
+      for (const bday of [false, true]) {
       for (const width of [1280, "1280c", 360]) {
         const page = await browser.newPage();
         const errs = [];
@@ -206,13 +218,13 @@ async function main() {
         await page.setViewport({width: wide ? 1280 : 360, height: wide ? 900 : 780, deviceScaleFactor: 1});
         /* 1280: the sidebar pinned open (240 px, what the design drew). 1280c: as the
            portal starts, collapsed to 56 px. */
-        await page.evaluateOnNewDocument(stubServer, scenario(pid, size));
+        await page.evaluateOnNewDocument(stubServer, scenario(pid, size, bday));
         await page.goto("file://" + file.replace(/\\/g, "/"), {waitUntil: "load"});
         await new Promise((r) => setTimeout(r, 1800));
         /* The portal starts with the sidebar collapsed; 1280 pins it open, as drawn. */
         if (width === 1280) { await page.evaluate(() => window.toggleSbPin()); await new Promise((r) => setTimeout(r, 400)); }
         const m = await page.evaluate(measure);
-        const tag = `${PERSONAS[pid].label} · ${size === "many" ? "200 rows" : size} · ${width === 1280 ? "1280px" : width === "1280c" ? "1280px, sidebar collapsed" : "360px"}`;
+        const tag = `${PERSONAS[pid].label} · ${size === "many" ? "200 rows" : size} · birthdays ${bday ? "on" : "off"} · ${width === 1280 ? "1280px" : width === "1280c" ? "1280px, sidebar collapsed" : "360px"}`;
         const w = wide ? 1280 : 360;
         const bad = [];
         if (m.maxGap > 24) bad.push(`largest gap ${m.maxGap} px (limit 24)`);
@@ -222,10 +234,11 @@ async function main() {
            that card, not about the grid or the new cards. */
         let existingTall = false;
         if (m.tall > 2 * m.med) {
-          if (/^home-(pending|notices)-card$/.test(m.tallId)) bad.push(`tallest card (${m.tallId}) ${m.tall} px is over 2x the median ${m.med} px`);
+          if (/^home-(pending|notices|bday)-card$/.test(m.tallId)) bad.push(`tallest card (${m.tallId}) ${m.tall} px is over 2x the median ${m.med} px`);
           else existingTall = true;
         }
-        if (m.pendingRows > 5 || m.noticeRows > 5) bad.push(`a list shows more than 5 rows (${m.pendingRows}, ${m.noticeRows})`);
+        if (m.pendingRows > 5 || m.noticeRows > 5 || m.bdayRows > 5) bad.push(`a list shows more than 5 rows (${m.pendingRows}, ${m.noticeRows}, ${m.bdayRows})`);
+        if (m.bdayShown !== bday) bad.push("the Birthdays card is " + (m.bdayShown ? "shown with the switch off" : "missing with the switch on"));
         if (m.hscroll) bad.push("the page scrolls sideways");
         if (width === 360 && (m.order[1] !== "home-pending-card" || m.order[2] !== "home-notices-card")) bad.push("phone order is " + m.order.join(", "));
         if (m.pendingHidden || m.noticesHidden) bad.push("Pending or Notices is hidden");
@@ -240,6 +253,7 @@ async function main() {
         else if (existingTall) { pass++; console.log("  NOTE  " + tag + `  grid fine (gap ${m.maxGap}, cols ${m.colsEnd}); an existing card is over 2x the median: ${m.tallId} ${m.tall} vs ${m.med}`); }
         else { pass++; console.log("  PASS  " + tag + `  (gap ${m.maxGap}, cols ${m.colsEnd}, tallest ${m.tall} vs median ${m.med}, ${m.ncards} cards)`); }
         await page.close();
+      }
       }
     }
   }

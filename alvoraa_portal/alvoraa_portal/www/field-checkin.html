@@ -16,10 +16,11 @@
 <!--
   Alvoraa field check-in. Slice 008. One self-contained page.
   Engineer notes:
-  - Replace the blob manifest built in boot() with a real file once this page
-    lives in the app, e.g. /assets/alvoraa_portal/field-checkin.webmanifest.
-    Android needs a manifest for the install banner. iPhone does not: Safari
-    adds to the home screen from Share > Add to Home Screen.
+  - The manifest, the icon and the service worker are ENDPOINTS, not files under
+    /assets/. They have to carry this customer's name and colour, and a static
+    file could only ever be one customer's. Android needs the manifest for the
+    install banner. iPhone does not: Safari adds to the home screen from
+    Share > Add to Home Screen, using the apple-touch-icon in the head above.
   - Endpoints used, exactly as alvoraa_portal/field_checkin.py defines them:
       alvoraa_portal.field_checkin.register_device(employee_id, device_label, platform)
       alvoraa_portal.field_checkin.field_checkin(token, log_type, latitude,

@@ -145,6 +145,27 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench i
 
 WORKDIR /home/frappe/frappe-bench
 
+# ── One patched line in Frappe (slice 078, Surbhi 31 Oct 2026) ──────────────
+#
+# `File.save_file` DECODES the file it just read, lossily, for anything binary.
+# Two faults follow: `strip_exif_data` is handed a `str` and raises TypeError
+# on every jpeg - which is what makes HR adding an employee photograph in Desk
+# fail, permanently, per employee - and a rollback would write a corrupted
+# image back over a good one.
+#
+# Reported upstream on purpose, so this comes out again rather than being
+# carried for ever. The script asserts on the one line it changes and FAILS THE
+# BUILD if that line has moved, which is what we want: a silent `sed` that
+# matches nothing is how a fork patch quietly stops being applied. It is
+# idempotent, so re-running it is safe.
+#
+# The same step runs in .github/workflows/ci.yml, where the patch file is part
+# of the bench cache key. If you delete one, delete both.
+COPY --chown=frappe:frappe scripts/patch_frappe_binary_file_content.py /tmp/patch_frappe.py
+RUN python3 /tmp/patch_frappe.py /home/frappe/frappe-bench \
+ && python3 /tmp/patch_frappe.py --check /home/frappe/frappe-bench \
+ && rm -f /tmp/patch_frappe.py
+
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${ERPNEXT_TAG}" erpnext
 
 # Declares required_apps = ["frappe/erpnext"], so it must follow erpnext.

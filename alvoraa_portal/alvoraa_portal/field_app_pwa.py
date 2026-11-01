@@ -119,14 +119,20 @@ def manifest():
 
 	It was previously built in the browser as a blob: URL, which looks right in
 	the code and never installs: Chrome will not accept a blob manifest.
+
+	ALV-237. The second way to have a manifest no phone will read: return a dict
+	and let Frappe wrap it as `{"type": "json", "message": {...}}`. That is what
+	this did from b7ccf938 (13 Sep 2026) until 29 Oct. A browser reading a
+	manifest unwraps nothing - it saw an object with no name, no start_url and
+	no icons, and declined to offer the install, silently. So this returns the
+	JSON itself, the way `portal_manifest()` below already does. Measured over
+	HTTP, not reasoned about: the wrapper was really there.
 	"""
 	name, colour = _brand()
 	deep = "#%02x%02x%02x" % _darker(colour)
 	base = "/api/method/alvoraa_portal.field_checkin.app_icon?size="
 
-	frappe.local.response.type = "json"
-	frappe.local.response.http_status_code = 200
-	return {
+	payload = {
 		"name": name,
 		"short_name": name[:12],
 		"description": "Mark your attendance with a photo and your location.",
@@ -142,6 +148,26 @@ def manifest():
 			{"src": base + "512", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
 		],
 	}
+
+	import json
+
+	from werkzeug.wrappers import Response
+
+	# `private`, not the `public` the portal manifest uses. That one is identical
+	# for every customer; this one carries the customer's OWN name, and a shared
+	# proxy that keyed on the path alone would hand one customer's name to the
+	# next. `private` saves the same re-fetch in the phone's own browser - Chrome
+	# asks again on every in-scope navigation - with none of that.
+	#
+	# The cost: a customer who renames themselves, or changes their colour, has
+	# phones showing the old label for up to a day. Only the home-screen label
+	# and the splash colour are affected, nothing a punch depends on, and the
+	# re-fetch it saves happens on every open of every phone.
+	return Response(
+		json.dumps(payload),
+		mimetype="application/manifest+json",
+		headers={"Cache-Control": "private, max-age=86400"},
+	)
 
 
 # Deliberately tiny. Its only job today is to exist with a fetch handler, which
@@ -322,11 +348,13 @@ def portal_manifest():
 	tenant's. So the only per-tenant value here is the colour.
 
 	Returned as a werkzeug Response and not with `frappe.local.response.type =
-	"json"`, which is what the check-in manifest above does. That route wraps
-	the value Frappe's own way - `{"type": "json", "message": {...}}` - and a
-	browser reading a manifest does not unwrap anything. It would see an object
-	with no name, no start_url and no icons, and quietly decline to offer the
-	install. Measured over HTTP, not reasoned about: the wrapper is really there.
+	"json"`. That route wraps the value Frappe's own way - `{"type": "json",
+	"message": {...}}` - and a browser reading a manifest does not unwrap
+	anything. It would see an object with no name, no start_url and no icons,
+	and quietly decline to offer the install. Measured over HTTP, not reasoned
+	about: the wrapper is really there. The check-in manifest above shipped with
+	exactly that fault and was never installable until ALV-237; both return a
+	Response now, and neither may go back.
 	"""
 	import json
 

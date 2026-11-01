@@ -318,6 +318,17 @@ class TestTheCorrectionsCountEqualsItsScreen(_InboxFixture):
 			                "parenttype": "DocType", "parentfield": "permissions",
 			                "role": role, "read": 1, "submit": 1,
 			                "permlevel": 0}).insert(ignore_permissions=True)
+		# ALV-249: a real reviewer role reads Employee (DTC's Location Manager
+		# does). own_record_permission excludes every role that reads Employee;
+		# without this read the reviewer would get the own-record User
+		# Permission and their queue would shrink to their own tree. Set up
+		# BEFORE the role is given, so the User hook sees it. add_permission
+		# copies the standard rows first if Employee has no custom ones.
+		had_employee_read = frappe.db.exists("Custom DocPerm",
+		                                     {"parent": "Employee", "role": role, "permlevel": 0})
+		if not had_employee_read:
+			from frappe.permissions import add_permission
+			add_permission("Employee", role, 0)
 		user = frappe.get_doc("User", self.plain_user)
 		had = any(r.role == role for r in user.roles)
 		if not had:
@@ -342,6 +353,9 @@ class TestTheCorrectionsCountEqualsItsScreen(_InboxFixture):
 			if not existing:
 				frappe.db.delete("Custom DocPerm",
 				                 {"parent": attendance_correction.REQUEST, "role": role})
+			if not had_employee_read:
+				frappe.db.delete("Custom DocPerm", {"parent": "Employee", "role": role})
+				frappe.clear_cache(doctype="Employee")
 			frappe.clear_cache(user=self.plain_user)
 			# **The doctype cache, not only the user cache. 045.**
 			#

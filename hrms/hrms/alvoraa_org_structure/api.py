@@ -130,7 +130,10 @@ def _position_children(parent, company, as_at):
 			"name": pos.position_title,
 			"title": pos.designation or pos.department or "",
 			"kind": "position",
-			"people": people,
+			# The same three-name cap as the subtree above (OPS-20). `filled` is
+			# summed from the full list first, so the arithmetic is unaffected.
+			"people": people[:NAMES_SHOWN],
+			"more_people": max(0, len(people) - NAMES_SHOWN),
 			"seats": flt(pos.seats),
 			"filled": round(filled, 2),
 			"is_key_position": bool(pos.is_key_position),
@@ -165,16 +168,20 @@ def _people_in(position, as_at):
 		"Alvoraa Position Assignment",
 		filters={"position": position, "from_date": ("<=", as_at)},
 		fields=["employee", "employee_name", "weight", "is_primary", "to_date"])
+	live = [r for r in rows if not (r.to_date and str(r.to_date) < str(as_at))]
+	# OPS-6: one batched read for everybody in this seat, rather than one
+	# `get_value` per person. It was the clearest N+1 on the chart's path.
+	cards = _cards_for([r.employee for r in live])
 	people = []
-	for r in rows:
-		if r.to_date and str(r.to_date) < str(as_at):
-			continue
+	for r in live:
+		card = cards.get(r.employee) or {}
 		people.append({
 			"employee": r.employee,
 			"name": r.employee_name,
 			"weight": flt(r.weight),
 			"is_primary": bool(r.is_primary),
-			"image": frappe.db.get_value("Employee", r.employee, "image"),
+			"image": card.get("image"),
+			"thumb": card.get("thumb"),
 			# So the chart marks somebody who also appears elsewhere rather than
 			# reading as a duplicate. Anything not yet ended, so a person on
 			# temporary cover in another store is marked too.
@@ -210,11 +217,17 @@ def _people_children(parent, company):
 		filters.append(["company", "=", company])
 	filters.append(["reports_to", "=", parent if (parent and parent != company) else ""])
 
+	from hrms.alvoraa_org_structure import people_fields
+
+	rows = frappe.get_all("Employee", filters=filters,
+	                      fields=["name as id", "employee_name as name", "lft", "rgt",
+	                              "image", "designation as title"],
+	                      order_by="employee_name asc")
+	# One batched read of the 48 px copies for the whole level (OPS-6).
+	thumbs = people_fields.thumbnails_for([r.id for r in rows])
 	out = []
-	for emp in frappe.get_all("Employee", filters=filters,
-	                          fields=["name as id", "employee_name as name", "lft", "rgt",
-	                                  "image", "designation as title"],
-	                          order_by="employee_name asc"):
+	for emp in rows:
+		emp["thumb"] = thumbs.get(emp.id)
 		emp["kind"] = "person"
 		emp["connections"] = frappe.db.count(
 			"Employee", {"lft": (">", emp.lft), "rgt": ("<", emp.rgt), "status": "Active"})
@@ -544,15 +557,94 @@ def my_view(employee=None, as_at=None):
 	return _my_view_by_person(employee)
 
 
+# ── OPS-6: the people in a whole subtree, read once ─────────────────────────
+#
+# `_card` used to be one `get_value` per person per box per expansion. One
+# expansion of the Organisation page from the root is 94 boxes and 185 people,
+# and a person drawn in two boxes (slice 072's copies) was read twice. So the
+# chart's cost grew with headcount, and adding a photograph to the card would
+# have grown the payload with it.
+#
+# Now: ONE batched read of the cards, plus ONE batched read of the 48 px
+# copies, both filled before the tree is walked. `_card`'s signature is
+# unchanged and it still falls back to its own read on a miss, so every
+# existing caller is untouched - it simply stops costing a statement.
+#
+# The cache is per REQUEST. Caching across requests would mean a chart that
+# keeps drawing a face somebody has removed.
+CARD_FIELDS = ["name", "employee_name", "designation", "department", "branch", "image"]
+
+
+def _card_cache():
+	cache = getattr(frappe.local, "_alvoraa_org_cards", None)
+	if cache is None:
+		cache = {}
+		frappe.local._alvoraa_org_cards = cache
+	return cache
+
+
+def _cards_for(employees):
+	"""Fill the request's card cache for these employees, in two statements."""
+	from hrms.alvoraa_org_structure import people_fields
+
+	cache = _card_cache()
+	want = [e for e in dict.fromkeys(employees or []) if e and e not in cache]
+	if not want:
+		return cache
+	rows = {r.name: r for r in frappe.get_all(
+		"Employee", filters={"name": ("in", want)}, fields=CARD_FIELDS,
+		limit_page_length=0)}
+	thumbs = people_fields.thumbnails_for(want)
+	for employee in want:
+		row = rows.get(employee)
+		# A missing employee is cached as None too, so a bad link costs one
+		# statement for the whole request rather than one per box.
+		cache[employee] = None if not row else {
+			"employee": row.name, "name": row.employee_name,
+			"title": row.designation or "", "department": row.department or "",
+			"branch": row.branch or "", "image": row.image,
+			# The chart and the table draw the 48 px copy; only the drawer's
+			# enlargement uses the stored 512 px picture. A missing thumbnail is
+			# not an error - the renderer falls back to the full photograph and
+			# then to the person's initials (OPS-13).
+			"thumb": thumbs.get(employee)}
+	return cache
+
+
+def _prefetch_cards(employees):
+	"""Read every card a whole subtree will draw, before walking it.
+
+	This is what makes the query count the same for 20 people as for 400, which
+	is OPS-6's requirement and also 078-PRIV-4's gate: a per-person read is how
+	a payload quietly grows.
+	"""
+	_cards_for(employees)
+
+
 def _card(employee):
-	e = frappe.db.get_value(
-		"Employee", employee,
-		["name", "employee_name", "designation", "department", "branch", "image"],
-		as_dict=True)
-	if not e:
-		return None
-	return {"employee": e.name, "name": e.employee_name, "title": e.designation or "",
-	        "department": e.department or "", "branch": e.branch or "", "image": e.image}
+	e = _cards_for([employee]).get(employee)
+	return dict(e) if e else None
+
+
+# The chart draws three names and then says how many more. It matches
+# `POS_NAMES_SHOWN` in `portal.js`, which has been 3 since slice 064 for a
+# reason that is written down there: one PP Jewellers seat holds twenty-five
+# people, which drew twenty-five lines inside one box and made it tall enough
+# to wreck its siblings' connectors.
+NAMES_SHOWN = 3
+
+
+def _capped_cards(holders):
+	"""The first three holders as cards, in the order they were read."""
+	out = []
+	for h in holders[:NAMES_SHOWN]:
+		card = _card(h.employee)
+		if not card:
+			continue
+		card["weight"] = flt(h.weight)
+		card["cover"] = (h.assignment_type or "Permanent") != "Permanent"
+		out.append(card)
+	return out
 
 
 def _my_view_by_position(employee, as_at):
@@ -966,9 +1058,59 @@ def subtree(root=None, depth=None, as_at=None, kind=None):
 	if positions:
 		root = root or _my_position(as_at)
 		if not root:
-			return _person_subtree(_me(), depth, as_at)
+			me = _me()
+			_prefetch_people_subtree(me, depth)
+			return _person_subtree(me, depth, as_at)
+		_prefetch_position_subtree(root, depth, as_at)
 		return _position_subtree(root, depth, as_at)
-	return _person_subtree(root or _me(), depth, as_at)
+	root = root or _me()
+	_prefetch_people_subtree(root, depth)
+	return _person_subtree(root, depth, as_at)
+
+
+def _prefetch_position_subtree(root, depth, as_at):
+	"""Every person this position subtree will draw, in three statements (OPS-6).
+
+	Two reads to find them and one batched card read, instead of one read per
+	person per box per expansion. Best effort: anything unexpected leaves the
+	cache empty and `_card` falls back to its own read, so the chart still
+	draws - it just costs what it used to.
+	"""
+	try:
+		bounds = frappe.db.get_value("Alvoraa Position", root, ["lft", "rgt"],
+		                             as_dict=True)
+		if not bounds:
+			return
+		names = frappe.get_all("Alvoraa Position",
+		                       filters={"lft": (">=", bounds.lft),
+		                                "rgt": ("<=", bounds.rgt),
+		                                "status": ("!=", "Closed")},
+		                       pluck="name", limit_page_length=0)
+		if not names:
+			return
+		people = frappe.get_all("Alvoraa Position Assignment",
+		                        filters={"position": ("in", names),
+		                                 "from_date": ("<=", as_at)},
+		                        pluck="employee", limit_page_length=0)
+		_prefetch_cards(people)
+	except Exception:
+		# Never let a prefetch stop a chart loading. It is an optimisation.
+		pass
+
+
+def _prefetch_people_subtree(employee, depth):
+	"""The same, for a tenant that keeps no positions."""
+	try:
+		bounds = frappe.db.get_value("Employee", employee, ["lft", "rgt"],
+		                             as_dict=True)
+		if not bounds:
+			return
+		_prefetch_cards(frappe.get_all(
+			"Employee", filters={"lft": (">=", bounds.lft), "rgt": ("<=", bounds.rgt),
+			                     "status": "Active"},
+			pluck="name", limit_page_length=0))
+	except Exception:
+		pass
 
 
 def _refuse_outside_reach(endpoint, node):
@@ -1019,9 +1161,17 @@ def _position_subtree(position, depth, as_at):
 		# and the health dashboard cannot drift apart and disagree about which
 		# seats are in trouble.
 		"flags": _node_flags(pos, people, filled, len(kids)),
-		"people": [{**_card(p.employee), "weight": flt(p.weight),
-		            "cover": (p.assignment_type or "Permanent") != "Permanent"}
-		           for p in people],
+		# OPS-20, Surbhi's decision: the SAME three-name cap the Positions page
+		# has had since slice 064 applies here too.
+		#
+		# This is the only chart a frontline employee can open, so it is where
+		# the 2.5 s / 3G budget actually binds - and until today one expansion
+		# from the root was measured at 94 boxes and 185 people, because this
+		# card listed every single person. That was never a decision anybody
+		# made; it was what happened when nothing capped it. `filled` above is
+		# summed from the FULL list, so the vacancy arithmetic is unaffected.
+		"people": _capped_cards(people),
+		"more_people": max(0, len(people) - NAMES_SHOWN),
 		"seats": flt(pos.seats),
 		"open": max(0.0, flt(pos.seats) - filled),
 		"frozen": pos.status == "Frozen",

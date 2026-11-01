@@ -759,6 +759,21 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .nc-cancel{margin-left:-10px}
 .nc-holder{min-height:48px;display:flex;align-items:center;border-top:1px solid var(--border);padding:6px 0;font-size:var(--fs-base);color:var(--text)}
 .nc-opt input:focus-visible,.nc-back:focus-visible,.nc-cancel:focus-visible,.nc-send:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+/* Slice 076 Part C: birthday rows (not buttons), the claim amount, the
+   birthdays switch, and the decline reason on the employee's own claim. */
+.hm-static{cursor:default}
+.hm-static:hover{background:none}
+.hm-day{color:var(--text)}
+.hm-amt{font-size:var(--fs-xl);font-weight:700;color:var(--text)}
+.bs-sw{display:flex;gap:12px;align-items:flex-start;padding:8px 0}
+.bs-sw button[role=switch]{width:56px;height:44px;border-radius:var(--r-full);border:1px solid var(--border2);background:var(--surface2);cursor:pointer;position:relative;flex:none}
+.bs-sw button[role=switch]::after{content:"";position:absolute;top:9px;left:6px;width:24px;height:24px;border-radius:50%;background:var(--text3);transition:left .15s}
+.bs-sw button[aria-checked=true]{background:var(--primary-lt);border-color:var(--primary)}
+.bs-sw button[aria-checked=true]::after{left:26px;background:var(--primary)}
+.bs-sw button[role=switch]:focus-visible,.sidebar-user:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.bs-state{font-weight:700;font-size:var(--fs-base);color:var(--text)}
+.expense-why{white-space:normal;color:var(--text2)}
+@media(prefers-reduced-motion:reduce){.bs-sw button[role=switch]::after{transition:none}}
 
 /* ── Today against your own shift ─────────────────────────────────────────
    Surbhi, 17 Oct 2026: show the quarters, the half-day line and the day's
@@ -2123,9 +2138,12 @@ body.panel-fullscreen{overflow:hidden}
 .oc-box-hd .ti{font-size:var(--fs-base);font-weight:650;color:var(--text);line-height:1.3}
 .oc-box .sub{font-size:var(--fs-xs);color:var(--text3);margin-top:1px}
 .oc-who{display:flex;gap:7px;align-items:center;margin-top:8px;font-size:var(--fs-sm);color:var(--text)}
+/* --fs-sm (12px), not --fs-xs (11px): slice 078 A7/PF15 - no text under 12 px
+   anywhere, and the initials were the only thing in this product under it.
+   12 px fits inside the same 24 px circle, so nothing else moves. */
 .oc-who .av{width:24px;height:24px;border-radius:50%;flex:none;object-fit:cover;
   background:var(--bg);display:flex;align-items:center;justify-content:center;
-  font-size:var(--fs-xs);font-weight:700;color:var(--text3)}
+  font-size:var(--fs-sm);font-weight:700;color:var(--text3)}
 .oc-who.oc-empty{color:var(--text3);font-style:italic}
 
 .oc-toggle{margin-top:-1px;position:relative;z-index:1;background:var(--surface);
@@ -2700,3 +2718,259 @@ body.panel-fullscreen{overflow:hidden}
   .pos-opt{min-height:44px}
   .pos-sheet input[type=date]{min-height:44px;max-width:none}
 }
+
+/* ── My profile, slice 078: my picture, my details, my password ───────────
+   Prefix myp. Appended, nothing above reformatted. The frontline bar this is
+   built to: a cheap Android at 390 px, in Hindi, on a poor network - so 48 px
+   controls, 16 px text (never smaller: iOS zooms the page on a smaller input),
+   one primary action per card, and no text under 12 px anywhere. */
+.myp-card{margin-bottom:16px}
+.myp-pic-row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.myp-said{margin:0;flex:1;min-width:180px;font-size:var(--fs-base);color:var(--text2)}
+
+/* The circle is drawn at its FINAL SIZE with the initials in it, and the
+   photograph fades in over the top. One box, five states: no photo, photo
+   arriving, photo there, photo failed (the <img> removes itself and the
+   initials are already underneath), and printed. Nothing reflows, there is no
+   spinner, no skeleton and no placeholder shape. */
+.myp-face{position:relative;width:96px;height:96px;flex:none;border-radius:50%;
+  overflow:hidden;background:var(--bg);border:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:center}
+.myp-face .myp-ini{font-size:var(--fs-2xl);font-weight:700;color:var(--text3);line-height:1}
+.myp-face img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity .15s linear}
+
+/* 078-PRIV-1. Before the control in the DOM, and it looks like something to
+   read rather than small print: 13 px is the floor here, never 11 px. */
+.myp-notice{margin:14px 0 0;font-size:var(--fs-base);line-height:1.55;color:var(--text2);
+  background:var(--bg);border-left:3px solid var(--border2);
+  border-radius:var(--r-sm);padding:10px 12px}
+
+.myp-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.myp-b{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.myp-b:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+.myp-field{margin-top:14px}
+.myp-field .gp-label{display:block;margin-bottom:4px}
+.myp-in{width:100%;box-sizing:border-box;font:inherit;font-size:16px;min-height:44px;
+  padding:8px 10px}
+.myp-field .gp-hint{display:block;margin-top:4px}
+
+/* role="status", so a screen reader hears it without the focus moving. Colour
+   is never the only signal: the failure wording says what to do next. */
+.myp-say{margin:10px 0 0;font-size:var(--fs-sm);color:var(--text2);min-height:1px}
+.myp-say.bad{color:var(--red);font-weight:600}
+
+@media (max-width:640px){
+  .myp-in{min-height:48px}
+  .myp-b{width:100%}
+  .myp-face{width:84px;height:84px}
+  .myp-face .myp-ini{font-size:var(--fs-xl)}
+}
+
+/* ── Faces on the chart and the table, slice 078 ──────────────────────────
+   `ocAvatar` now always draws the same circle with the person's initials in
+   it and layers the photograph over the top. The sizes stay exactly where
+   they were - 24 px in a hierarchy box, 34 px on a card - so a seat where one
+   person has a photograph and two do not has three identically sized circles
+   and nothing jumps when a face lands. */
+.av{position:relative;overflow:hidden}
+.av .av-i{line-height:1}
+.av .av-p{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity .15s linear;border-radius:50%}
+
+/* The table's faces. A table cell is ordinary markup, so a real link is safe
+   here - the chart's box must stay one <button> with nothing clickable inside
+   it, which a nested link already broke once. */
+.pos-who{display:flex;align-items:center;gap:6px;min-width:0}
+.pos-who + .pos-who{margin-top:4px}
+.pos-who .av{width:24px;height:24px;border-radius:50%;flex:none;background:var(--bg);
+  display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);
+  font-weight:700;color:var(--text3)}
+.pos-name-link{background:none;border:0;padding:0;font:inherit;color:var(--text);
+  text-align:left;text-decoration:underline;text-decoration-color:var(--border2);
+  text-underline-offset:2px;cursor:pointer;min-width:0;overflow-wrap:anywhere}
+.pos-name-link:hover{text-decoration-color:currentColor}
+.pos-name-link:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* NOTHING PRIVATE PRINTS. A face on a sheet pinned to a staff-room wall walks
+   past customers all day, so Ctrl+P strips every photograph and leaves the
+   initials that are already underneath - the printed chart is the same chart
+   with letters, not a page of holes. Beside slice 069's own suppression of
+   flags, tags and the notice column, and slice 065's `.private`.
+   The wall chart's own "Include photographs" tick re-enables them by adding
+   .pos-print-faces to the printed root, and loads every face first. */
+@media print{
+  .av .av-p{display:none!important}
+  .pos-print-faces .av .av-p{display:block!important;opacity:1!important}
+}
+
+/* ── The one mini profile, slice 078 ──────────────────────────────────────
+   Prefix mpf. It lives in the existing .emp-drawer - 480 px, sliding from the
+   right, max-width:100vw so it is full screen at 360 px - which the payslip,
+   the scorecard and goals already share. Nothing new is positioned. */
+.mpf-body{padding:16px 18px 24px}
+.mpf-left{margin:0 0 14px;padding:10px 12px;border-radius:var(--r-sm);
+  background:var(--bg);border-left:3px solid var(--amber);
+  font-size:var(--fs-base);line-height:1.5;color:var(--text)}
+.mpf-dl{margin:0;display:grid;grid-template-columns:minmax(0,40%) minmax(0,60%);
+  gap:8px 14px;align-items:start}
+.mpf-dl dt{margin:0;font-size:var(--fs-sm);color:var(--text3)}
+.mpf-dl dd{margin:0;font-size:var(--fs-base);color:var(--text);overflow-wrap:anywhere}
+.mpf-promise{margin-top:16px;padding-top:12px;border-top:1px solid var(--border2);
+  line-height:1.55}
+
+/* The face in the drawer's FIXED head. A button only when there is something
+   to enlarge: no photograph means no role, no tabindex and no spoken name. */
+.mpf-face{position:relative;display:flex;width:40px;height:40px;border-radius:50%;
+  overflow:hidden;background:var(--bg);align-items:center;justify-content:center;
+  border:0;padding:0;font:inherit}
+button.mpf-face{cursor:zoom-in}
+button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.mpf-face .mpf-ini{font-size:var(--fs-base);font-weight:700;color:var(--text3);line-height:1}
+.mpf-face img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity .15s linear}
+
+/* The enlargement, inside the drawer rather than over the page: pinned to the
+   APP FRAME and not the browser viewport, which the prototype learned twice. */
+.mpf-big{position:absolute;inset:0;z-index:5;background:var(--surface);
+  display:flex;align-items:center;justify-content:center;padding:20px}
+.mpf-big-in{position:relative;width:240px;max-width:100%;text-align:center}
+.mpf-big-s,.mpf-big-f{width:240px;height:240px;max-width:100%;border-radius:var(--r);
+  object-fit:cover;display:block}
+/* The 48 px copy scaled up: blurred on purpose, so it reads as "not the real
+   one yet" rather than as a bad photograph. */
+.mpf-big-s{filter:blur(6px)}
+.mpf-big-f{position:absolute;inset:0 auto auto 0;opacity:0;transition:opacity .15s linear}
+.mpf-big-say{margin:10px 0 0;font-size:var(--fs-sm);color:var(--text3)}
+.mpf-big-nm{margin:8px 0 0;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+.mpf-big-nm .gp-hint{display:block;font-weight:400;margin-top:2px}
+/* So the enlargement can be absolute INSIDE the drawer. */
+.emp-drawer-body{position:relative}
+
+@media (max-width:640px){
+  .mpf-dl{grid-template-columns:1fr;gap:2px}
+  .mpf-dl dd{margin-bottom:8px}
+  .emp-drawer-close{min-width:44px;min-height:44px}
+}
+/* NOTHING IN THE DRAWER PRINTS - slices 065 and 069 already set that for the
+   whole layer; said again here so a future change to this drawer cannot
+   quietly put a face or a document on a printed page. */
+@media print{.emp-drawer,.emp-drawer-overlay,.mpf-big{display:none!important}}
+
+/* ── "What people can see and change about each other", slice 078 ─────────
+   Prefix ocs. The card follows the ten pf-cards already on Organisation
+   Settings; only the chips, the amber line and the picker dialog are new. */
+.ocs-sec{padding-top:16px;margin-top:16px;border-top:1px solid var(--border2)}
+.ocs-sec:first-child{padding-top:0;margin-top:0;border-top:0}
+.ocs-h{margin:0 0 8px;font-size:var(--fs-base);font-weight:650;color:var(--text)}
+.ocs-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+/* Every chip carries a WORD, never only a colour (A10). */
+.ocs-chip{display:inline-block;padding:3px 9px;border-radius:var(--r-full);
+  background:var(--bg);border:1px solid var(--border2);font-size:var(--fs-sm);
+  color:var(--text)}
+.ocs-list{margin:0 0 8px;padding:0;list-style:none}
+.ocs-list li{padding:6px 0;border-bottom:1px solid var(--border2);font-size:var(--fs-base)}
+.ocs-cat{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:var(--r-full);
+  background:var(--bg);font-size:var(--fs-sm);color:var(--text3)}
+.ocs-gone{color:var(--red)}
+/* A SENTENCE in amber, not a red row. Colour is never the only signal, so the
+   warning says what will happen in words that stand on their own. */
+.ocs-warn{display:block;margin:0 0 10px;padding:10px 12px;border-radius:var(--r-sm);
+  background:var(--bg);border-left:3px solid var(--amber);font-size:var(--fs-base);
+  line-height:1.5;color:var(--text)}
+.ocs-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.ocs-b{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.ocs-b:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* The picker. 620 px centred on a laptop, a full-screen sheet on a phone -
+   pinned to the app frame, in px, never in vw: a fixed sheet sized in vw is
+   sized to the browser and not to the frame it is drawn in (A11). */
+.ocs-back{position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;padding:16px}
+.ocs-dlg{background:var(--surface);border-radius:var(--r);width:620px;max-width:100%;
+  max-height:100%;display:flex;flex-direction:column;box-shadow:var(--sh1)}
+.ocs-dlg-hd{display:flex;align-items:center;gap:10px;padding:14px 16px;
+  border-bottom:1px solid var(--border2)}
+.ocs-dlg-hd h3{margin:0;flex:1;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+.ocs-x{min-width:44px;min-height:44px;background:none;border:0;font-size:var(--fs-xl);
+  line-height:1;color:var(--text3);cursor:pointer}
+.ocs-x:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.ocs-dlg-bd{padding:8px 16px 16px;overflow-y:auto;flex:1;min-height:0}
+.ocs-grp{margin:14px 0 4px;font-size:var(--fs-sm);font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.04em}
+/* The checkbox is 20 px; the TARGET is the whole 44 px row, and clicking
+   anywhere on it toggles (A6). */
+.ocs-opt{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:6px 0;
+  cursor:pointer}
+.ocs-opt input{width:20px;height:20px;margin:3px 0 0;flex:none;accent-color:var(--primary)}
+.ocs-opt b{font-weight:650;font-size:var(--fs-base);color:var(--text)}
+.ocs-dlg-ft{padding:12px 16px;border-top:1px solid var(--border2)}
+.ocs-sum{margin:0 0 10px;font-size:var(--fs-sm);color:var(--text2)}
+.ocs-ft-b{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+
+@media (max-width:640px){
+  .ocs-back{padding:0;align-items:stretch}
+  .ocs-dlg{width:100%;border-radius:0;max-height:none}
+  /* OK first on a phone, then Preview, then Cancel - stacked, full width. The
+     thumb reaches the bottom first, and the destructive-of-work button should
+     not be what it lands on. The laptop's row is Preview, Cancel, OK (01b line
+     604), which is the DOM order, so OK is lifted to the top here rather than
+     drawn twice. */
+  .ocs-ft-b{flex-direction:column}
+  .ocs-ft-b .ocs-b{width:100%}
+  .ocs-ft-b [data-ocs="ok"]{order:-1}
+}
+
+/* ── The seat page, slice 078 ─────────────────────────────────────────────
+   Prefix sp. This was a 560 px modal; it is now a page, so it gets a page's
+   measure rather than a dialog's - 760 px, which keeps a line of text
+   readable without the form sprawling across a laptop. */
+.sp-wrap{max-width:760px}
+/* A labelled way back, not a cross. It is an <a> with a real href, so it
+   works from a keyboard with no handler at all. */
+.sp-back{display:inline-flex;align-items:center;min-height:44px;
+  font-size:var(--fs-base);color:var(--text2);text-decoration:none}
+.sp-back:hover{color:var(--text);text-decoration:underline}
+.sp-back:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.sp-h{margin:4px 0 2px;font-size:var(--fs-xl);font-weight:700;color:var(--text)}
+.sp-h:focus{outline:none}
+.sp-sub{margin:0 0 18px;font-size:var(--fs-base);color:var(--text3)}
+.sp-card{margin-bottom:20px}
+.sp-h2{margin:0 0 12px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+/* Part 3 runs on from part 2 inside the same card, so its heading needs the
+   same break the card boundary gives the others. */
+.sp-card .sp-h2:not(:first-child){margin-top:24px;padding-top:20px;
+  border-top:1px solid var(--border2)}
+.sp-person{display:flex;gap:10px;align-items:center;padding:8px 0;
+  border-bottom:1px solid var(--border2)}
+.sp-person:last-child{border-bottom:0}
+.sp-person > span{flex:1;min-width:0;font-size:var(--fs-base);overflow-wrap:anywhere}
+.sp-person .av{width:28px;height:28px;border-radius:50%;flex:none;background:var(--bg);
+  display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);
+  font-weight:700;color:var(--text3)}
+.sp-out{flex:none}
+.sp-foot{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:20px;
+  padding-top:16px;border-top:1px solid var(--border2)}
+.sp-b{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.sp-b:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+@media (max-width:640px){
+  .sp-foot .sp-b{width:100%}
+  .sp-foot{flex-direction:column;align-items:stretch}
+  .sp-foot .btn-danger{margin-right:0!important;order:3}
+}
+
+/* ── Documents on a person's profile, slice 078 ───────────────────────────
+   The row shape `loadMyDocuments` already uses on the employee's own card -
+   type, status, View - so a reader and the employee see the same kind of row
+   for the same thing. No inline preview, no thumbnail, no download-all. */
+.mpf-docs{margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)}
+.mpf-dh{margin:0 0 6px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+.mpf-doc{display:flex;gap:10px;align-items:center;padding:8px 0;
+  border-bottom:1px solid var(--border2)}
+.mpf-doc:last-child{border-bottom:0}
+.mpf-dt{flex:1;min-width:0;font-size:var(--fs-base);overflow-wrap:anywhere}
+/* Slice 065's screen-share link: SESSION ONLY, never remembered, so the next
+   time the drawer opens the documents are there again. */
+.mpf-docs.mpf-hidden .mpf-doc{display:none}

@@ -329,6 +329,27 @@ def _subject(employee):
 		if employee not in _reports_to(me.name, deep=True):
 			frappe.throw(_("You can only open the attendance of people who report to you."),
 			             frappe.PermissionError)
+	else:
+		# **HR is scoped too (ALV-259).** The read below is `get_value`, which
+		# applies no permissions, so without this a store's HR person could put
+		# a name to any employee ID on the site - and `raise_for_report` and the
+		# team page's one-person filter both come through here.
+		#
+		# The condition, and the separate branch question, are `team_days`'.
+		from hrms.alvoraa_hr_core.access import (employee_in_scope, permitted_branches,
+		                                         permitted_companies)
+
+		outside = None
+		if permitted_companies():
+			outside = not employee_in_scope(employee)
+		else:
+			branches = permitted_branches()
+			if branches is not None:
+				outside = frappe.db.get_value("Employee", employee,
+				                              "branch") not in branches
+		if outside:
+			frappe.throw(_("That employee is outside the companies and branches "
+			               "you look after."), frappe.PermissionError)
 
 	subject = frappe.db.get_value("Employee", employee,
 	                              ["name", "employee_name", "company", "default_shift",
@@ -667,6 +688,10 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		"punches": list(marks),
 		"shift_starts": None, "shift_ends": None,
 		"late_by_mins": 0, "missing_punch": False,
+		# The span the hours were measured over, where the shift measures one
+		# span rather than pairing (ALV-251). None means the page pairs, which
+		# is what it has always done. See `_worked_span`.
+		"worked_span": None,
 		"request": claimed.get(date),
 	}
 	if not att:
@@ -738,6 +763,11 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 	if not marks and att.in_time and not att.out_time:
 		out["missing_punch"] = True
 
+	# Draw the day the way the shift counts it (ALV-251). `out["punches"]` is
+	# read, not `marks`, because the block above may have just labelled them.
+	out["worked_span"] = _worked_span(out["punches"],
+	                                  _shift_row(shift_cache, shift) if shift else None)
+
 	# Short only past the tolerance, and only when there is a shift to be short
 	# of. Without a shift there is no expectation, so inventing a shortfall
 	# would invent a problem - the same rule the analytics screen uses.
@@ -746,6 +776,37 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		if short > 0:
 			out["short_by"] = round(short, 2)
 	return out
+
+
+def _worked_span(marks, row):
+	"""First punch to last punch, where that is how the shift counts the day.
+
+	Frappe has two settings on a Shift Type, and `calculate_working_hours`
+	reads both. Set to "First Check-in and Last Check-out" it does not pair
+	anything at all: it takes ONE span and measures it. Set to "Every Valid
+	Check-in and Check-out" it adds each pair up.
+
+	The strip paired regardless, so on a first-to-last shift it drew slivers
+	beside a correct eight-hour total - DTC, 27 Oct 2026, three punches at
+	09:53, 09:53 and 18:21 against 8.47 hours worked (ALV-251). Returning the
+	span the hours were measured over is what keeps the picture and the number
+	telling one story.
+
+	None where the page should go on pairing: a shift that counts every pair,
+	a day with fewer than two punches, or a strictly-log-type shift with no In
+	or no Out. A lone punch deliberately falls back, because the page draws
+	that as an unfinished block to the end of the shift, and "we do not know
+	when you left" is the truer picture of that day than a zero-width mark.
+	"""
+	if not row or len(marks or ()) < 2:
+		return None
+	if row.get("working_hours_calculation_based_on") != "First Check-in and Last Check-out":
+		return None
+	if row.get("determine_check_in_and_check_out") == "Strictly based on Log Type in Employee Checkin":
+		ins = [m["at"] for m in marks if m.get("log_type") == "IN"]
+		outs = [m["at"] for m in marks if m.get("log_type") == "OUT"]
+		return [ins[0], outs[-1]] if ins and outs else None
+	return [marks[0]["at"], marks[-1]["at"]]
 
 
 def _grace_source(cache, shift):
@@ -1652,10 +1713,13 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 	caller may see. The team is settled first, every row is inside it, and the
 	read is explicit.
 	"""
+	from hrms.alvoraa_hr_core.access import (permitted_branches, permitted_companies,
+	                                         permitted_employee_filters)
+
 	me = _employee_for(frappe.session.user)
 	may_review = _may_review()
 	if may_review:
-		team = None                       # HR: anybody, narrowed below if asked
+		team = None              # HR: their entitlement, narrowed below if asked
 	else:
 		if not me:
 			frappe.throw(_("Your user is not linked to an employee record, so "
@@ -1673,7 +1737,41 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 		subject, _is_self = _subject(employee)
 		people_ids = [subject.name]
 	elif team is None:
-		people_ids = frappe.get_all("Employee", filters={"status": "Active"},
+		# **The HR ENTITLEMENT, not every employee on the site (ALV-259).**
+		#
+		# This read is `get_all`, which applies no permissions - deliberately,
+		# for the reason in the docstring above - so the scope has to be in the
+		# filters, and it was not. A store's HR person, entitled to one branch,
+		# was shown everybody with their arrival times, departure times and
+		# punches, while the picker beside it correctly offered only their own
+		# store. The screen looked right, which is why it went unseen.
+		#
+		# `permitted_employee_filters` is the same definition the review queue
+		# uses, so the two surfaces cannot drift. Active only, because this page
+		# is about who is in today; the helper returns every status on purpose.
+		#
+		# NARROWED WHENEVER THERE IS ANY ENTITLEMENT TO NARROW BY. A tenant's
+		# central HR login - HR Manager with no Employee record and no Company
+		# permission, which is how the admin logins are set up - has no
+		# companies, and the helper fails closed, so applying it unconditionally
+		# would show them NOBODY. Hence the condition.
+		#
+		# BUT THE BRANCH IS ASKED SEPARATELY, and that is not a tidy-up.
+		# `permitted_companies` falls back to the caller's own ACTIVE Employee
+		# record, so a store HR person whose record stops being Active has no
+		# companies - and a company-keyed guard would then hand them the whole
+		# site. The ordinary way that happens is somebody leaving: the Employee
+		# is marked Left, the login is not disabled yet, and they would GAIN
+		# site-wide attendance instead of losing it. `attendance_analytics`
+		# already asks the branch on its own for this reason (DEF-8).
+		scope = {"status": "Active"}
+		if permitted_companies():
+			scope = dict(permitted_employee_filters(), status="Active")
+		else:
+			branches = permitted_branches()
+			if branches is not None:
+				scope["branch"] = ["in", branches]
+		people_ids = frappe.get_all("Employee", filters=scope,
 		                            pluck="name", limit_page_length=0)
 	else:
 		people_ids = list(team)

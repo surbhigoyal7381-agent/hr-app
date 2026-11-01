@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>{{ tenant_name or "Alvora" }} &middot; Before your first day</title>
+<!--
+  The joiner's form (slice 078, step 6). 078-SEC-15, copied from enrol.html.
+
+  The token is in the fragment (#t=...). A browser never sends a fragment to a
+  server, so it reaches no access log, no Referer and no proxy. This page:
+
+    * takes it out of the address bar immediately (history.replaceState with
+      the path alone), so it does not reach synced browser history either;
+    * posts it in a REQUEST BODY, under the name `web_form_request_key` -
+      which is load-bearing, because Frappe's own error-snapshot redaction
+      masks any form key whose name contains "key". Rename it and the
+      redaction silently stops;
+    * loads NOTHING from another host. No script, font, image or style: all of
+      it is inline. That is OPS-44, not tidiness - the asset gate reads only
+      hrms-employee.html, so a 404 here would give a dead form with nothing in
+      any log, on the one page used by people who cannot ring our helpdesk;
+    * keeps the TYPED ANSWERS on this phone and never a document's bytes
+      (OPS-29). A joiner may be on somebody else's phone, and an image in
+      localStorage also blows the quota and fails silently.
+
+  Nothing is stored anywhere until the server has checked the token.
+-->
+<style>
+:root{
+  --ink:#1a1a1a; --soft:#5c5c5c; --line:#e3e3e3; --bg:#f7f7f8; --card:#fff;
+  --brand:{{ brand_colour or "#1f6feb" }}; --red:#b3261e; --amber:#8a5a00;
+  --r:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55
+  -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:16px 16px 56px}
+header{display:flex;align-items:center;gap:10px;padding:18px 0 10px}
+header b{font-size:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;margin-bottom:16px}
+h1{font-size:22px;margin:0 0 10px;line-height:1.3}
+h2{font-size:17px;margin:22px 0 8px}
+p{margin:0 0 12px}
+.soft{color:var(--soft);font-size:14px}
+.notice{background:var(--bg);border-left:3px solid var(--brand);
+  border-radius:8px;padding:12px 14px;margin:0 0 14px}
+.notice h2{margin-top:0}
+label{display:block;font-weight:600;font-size:14px;margin:14px 0 4px}
+.hint{display:block;font-weight:400;color:var(--soft);font-size:13px;margin-top:3px}
+input[type=text],input[type=email],input[type=tel],textarea{
+  width:100%;font:inherit;font-size:16px;min-height:48px;padding:10px 12px;
+  border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+textarea{min-height:80px}
+input:focus-visible,textarea:focus-visible,button:focus-visible{
+  outline:3px solid var(--brand);outline-offset:2px}
+.btn{font:inherit;font-size:16px;min-height:48px;padding:12px 18px;border-radius:8px;
+  border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;
+  width:100%;margin-top:10px}
+.btn.go{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.row3{display:grid;gap:8px}
+.doc{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+.doc b{display:block}
+.ok{color:#1b5e20;font-weight:600}
+.bad{color:var(--red);font-weight:600}
+.warn{color:var(--amber)}
+.hide{display:none}
+footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
+  padding-top:14px;margin-top:8px}
+@media(min-width:560px){.row3{grid-template-columns:1fr 1fr 1fr}.btn{width:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><b>{{ tenant_name or "Alvora" }}</b></header>
+
+  <div id="loading" class="card"><p>Opening your link&hellip;</p></div>
+
+  <!-- J-E1. ONE answer for a link that is missing, unknown, expired or
+       cancelled. A stranger learns nothing: not whether the link was ever
+       real, not whether anybody has been invited. -->
+  <div id="gone" class="card hide">
+    <h1>This link has run out</h1>
+    <p id="gone-why">Links are short-lived so your details cannot be opened by
+      anybody else. Nothing you sent is lost.</p>
+    <p><b>What to do:</b> ring or message the person who sent it to you and ask
+      for a new link.</p>
+    <p class="soft" id="gone-contact"></p>
+  </div>
+
+  <!-- J1. THE NOTICE COMES FIRST, before the first question - not under a tick
+       at the end. Every number in it is read from the server's settings, never
+       written here: the prototype's "90 days" was ours, not counsel's, and a
+       notice carrying a number we invented is worse than no notice. -->
+  <div id="j1" class="card hide">
+    <h1>Before your first day</h1>
+    <p id="j1-hello"></p>
+    <div class="notice">
+      <h2>What we will ask for</h2>
+      <p id="j1-asks" class="soft"></p>
+      <h2>What happens to it</h2>
+      <p id="j1-keeps" class="soft"></p>
+      <p class="soft">Only <b id="j1-who"></b> sees it. <b>You do not need an
+        account and you will not be asked for a password.</b></p>
+    </div>
+    <button class="btn go" id="start">Start</button>
+    <p class="soft">This link is for you. Please do not pass it on.</p>
+  </div>
+
+  <!-- J2. One field per row, 48px controls, 16px text, nothing wider than the
+       screen. The closed allow-list, drawn from what the SERVER says it
+       accepts - so the form cannot ask for a field the server would drop. -->
+  <div id="j2" class="card hide">
+    <h1>Your details</h1>
+    <div id="j2-fields"></div>
+    <button class="btn go" id="to-docs">Next</button>
+    <p class="soft">Your answers are kept on this phone as you go, so you can
+      stop and come back.</p>
+  </div>
+
+  <!-- J3. Three equal buttons per document, and the third is a real answer to
+       every one of them: a joiner may not own the document yet, may be on
+       somebody else's phone, or may not be able to scan anything. -->
+  <div id="j3" class="card hide">
+    <h1>Your documents</h1>
+    <p class="soft">A clear photograph of the document is fine. You do not need
+      a scanner.</p>
+    <div id="j3-docs"></div>
+    <button class="btn go" id="to-check">Next</button>
+  </div>
+
+  <!-- J4. Optional, skippable, and the screen says both out loud. The picture
+       is for the organisation chart and for nothing else; "Skip this" is a real
+       answer that stores nothing and is never asked about again (AC-108a,
+       AC-108b). -->
+  <div id="j4" class="card hide">
+    <h1>Your photo</h1>
+    <p class="soft">This is the picture colleagues will see next to your name on
+      the organisation chart once you join. It is not used for anything else —
+      nobody checks your face against it. You can skip it and add one later.</p>
+    <div class="row3">
+      <button class="btn" id="j4-cam">Take a photo</button>
+      <button class="btn" id="j4-file">Choose a file</button>
+      <button class="btn" id="j4-on">Skip this</button>
+    </div>
+    <p class="soft" id="j4-say" role="status"></p>
+    <input type="file" id="j4-f" accept="image/jpeg,image/png" style="display:none">
+    <input type="file" id="j4-c" accept="image/jpeg,image/png" capture="user" style="display:none">
+  </div>
+
+  <!-- J5. -->
+  <div id="j5" class="card hide">
+    <h1>Check and send</h1>
+    <div id="j5-summary"></div>
+    <p id="j5-words"></p>
+    <button class="btn go" id="send">Send</button>
+    <p class="bad hide" id="j5-err" role="alert"></p>
+  </div>
+
+  <!-- J6. -->
+  <div id="j6" class="card hide">
+    <h1>Thank you. There is nothing else to do.</h1>
+    <p id="j6-who"></p>
+    <p id="j6-bring" class="hide"></p>
+    <p class="soft">This link will not open again.</p>
+  </div>
+
+  <!-- Counsel, 29 October 2026: a candidate who never joined has no login, so
+       the only way they can exercise a right is to ask the employer. The
+       employer's own contact details, never ours. -->
+  <footer id="rights" class="hide">
+    <p>Want to know what is held about you, or want it deleted? Ask
+      <span id="rights-who"></span>. They can send you everything they hold or
+      delete it.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var API = "/api/method/alvoraa_portal.joiner_public.";
+
+  /* The token, out of the fragment and OUT OF THE ADDRESS BAR, before anything
+     else happens - so it never reaches synced browser history either. It is
+     held in one closure variable and posted in a body; it is never put in a
+     URL, never logged and never written to storage. */
+  var TOKEN = (function () {
+    var m = /[#&]t=([^&]+)/.exec(location.hash || "");
+    try {
+      history.replaceState(null, "", location.pathname);
+    } catch (e) { /* an old browser keeps the address; the token still works */ }
+    return m ? decodeURIComponent(m[1]) : "";
+  })();
+
+  var D = null;                        /* what open_invite returned */
+  var FILES = {};                      /* type -> file name, for the summary */
+  var BRING = {};                      /* type -> true, "bringing it" */
+  var PHOTO = "__photo__";             /* joiner_public.PHOTO_TYPE */
+  var KEEP = "alvoraa-joiner-answers"; /* TYPED ANSWERS ONLY. Never bytes. */
+
+  function $(id) { return document.getElementById(id); }
+  function show(id) {
+    ["loading", "gone", "j1", "j2", "j3", "j4", "j5", "j6"].forEach(function (s) {
+      $(s).classList.toggle("hide", s !== id);
+    });
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function post(method, args) {
+    args = args || {};
+    args.web_form_request_key = TOKEN;   /* THE NAME MATTERS - see the Python */
+    return fetch(API + method, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (res.ok && !body.exc_type) return body.message || {};
+        var said = "";
+        try { said = JSON.parse(JSON.parse(body._server_messages)[0]).message; }
+        catch (e) { said = ""; }
+        var err = new Error(said || "");
+        err.refused = res.status === 403;
+        throw err;
+      });
+    });
+  }
+
+  function words(list) {
+    var a = (list || []).slice();
+    if (a.length < 2) return a[0] || "";
+    return a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+  }
+
+  var LABELS = {
+    full_name: ["Your full name", "As it appears on your PAN card"],
+    mobile: ["Your mobile number", "The number we will ring"],
+    personal_email: ["Your email", ""],
+    current_address: ["Where you live now", "Where post reaches you today"],
+    emergency_contact_name: ["Who to ring in an emergency", "A name we can ask for"],
+    emergency_relation: ["How they are related to you", "Wife, brother, friend"],
+    emergency_phone: ["Their phone number", "A number that will be answered"]
+  };
+  var LONG = { current_address: 1 };
+
+  /* ── open it ──────────────────────────────────────────────────────────── */
+
+  function contactWords() {
+    var c = (D && D.contact) || {};
+    var bits = [];
+    if (c.phone) bits.push(c.phone);
+    if (c.email) bits.push(c.email);
+    return bits.join(" or ");
+  }
+
+  function begin() {
+    if (!TOKEN) { show("gone"); return; }
+    post("open_invite").then(function (d) {
+      D = d;
+      $("j1-hello").textContent = d.full_name
+        ? "Hello " + d.full_name + ". This takes about two minutes."
+        : "This takes about two minutes.";
+      $("j1-asks").textContent =
+        "Your contact details, somebody to ring in an emergency"
+        + ((d.documents && d.documents.length)
+            ? ", and " + d.documents.length + " document"
+              + (d.documents.length === 1 ? "" : "s") + ": "
+              + words(d.documents.map(function (t) { return t.name; })) + "."
+            : ".");
+      /* THE CONFIGURED NUMBERS. Never a literal. */
+      $("j1-keeps").textContent =
+        "This link works for " + d.link_days + " day"
+        + (d.link_days === 1 ? "" : "s") + ". "
+        + "If you join, your details become your staff record. "
+        + "If you do not join, they are deleted after " + d.not_hired_days
+        + " days, and anything nobody acts on is deleted after "
+        + d.backstop_days + " days in any case.";
+      $("j1-who").textContent = (d.brand && d.brand.name)
+        ? d.brand.name + " HR" : "the HR team";
+      $("rights-who").textContent = contactWords() || "the person who sent you this link";
+      $("rights").classList.remove("hide");
+      show("j1");
+    }, function (err) {
+      $("gone-contact").textContent = "";
+      if (err && err.message) $("gone-why").textContent = err.message;
+      show("gone");
+    });
+  }
+
+  /* ── J2 ───────────────────────────────────────────────────────────────── */
+
+  function drawFields() {
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEEP) || "{}") || {}; }
+    catch (e) { saved = {}; }
+    $("j2-fields").innerHTML = (D.fields || []).map(function (f) {
+      var w = LABELS[f] || [f, ""];
+      var v = esc(saved[f] || (f === "full_name" ? (D.full_name || "") : ""));
+      return '<label for="f-' + f + '">' + esc(w[0])
+        + (w[1] ? '<span class="hint">' + esc(w[1]) + "</span>" : "") + "</label>"
+        + (LONG[f]
+            ? '<textarea id="f-' + f + '">' + v + "</textarea>"
+            : '<input id="f-' + f + '" type="text" value="' + v + '">');
+    }).join("");
+    $("j2-fields").addEventListener("input", keep);
+    show("j2");
+  }
+
+  function values() {
+    var out = {};
+    (D.fields || []).forEach(function (f) {
+      var el = $("f-" + f);
+      if (el) out[f] = el.value;
+    });
+    return out;
+  }
+
+  function keep() {
+    /* THE TYPED ANSWERS ONLY. A document's bytes never come near this. */
+    try { localStorage.setItem(KEEP, JSON.stringify(values())); } catch (e) {}
+  }
+
+  /* AC-110a. An empty send used to be accepted, and sending BURNS THE LINK -
+     so the joiner lost their only way in and HR got a blank row. The server
+     refuses it as well (`joiner_public.submit_invite`), which is the check
+     that counts; this one is here so nobody makes the round trip to be told.
+
+     AC-110c is the whole rule: one field with a value, or one document. HR
+     ticks the field list and we add no restriction on top of it, so there is
+     no mandatory field of ours here - and a joiner who sends only their PAN
+     card has sent us something. */
+  function nothingSent() {
+    var v = values();
+    var typed = (D.fields || []).some(function (f) {
+      return String(v[f] == null ? "" : v[f]).trim();
+    });
+    return !typed && !Object.keys(FILES).length;
+  }
+
+  /* ── J3 ───────────────────────────────────────────────────────────────── */
+
+  function drawDocs() {
+    var list = D.documents || [];
+    /* No types asked for still goes through J4 - the picture is theirs, not
+       something HR ticked. */
+    if (!list.length) { show("j4"); return; }
+    $("j3-docs").innerHTML = list.map(function (t, i) {
+      return '<div class="doc"><b>' + esc(t.name) + "</b>"
+        + (t.description ? '<span class="hint">' + esc(t.description) + "</span>" : "")
+        + '<div class="row3">'
+        + '<button class="btn" data-pick="' + i + '" data-cam="1">Take a photo</button>'
+        + '<button class="btn" data-pick="' + i + '">Choose a file</button>'
+        + '<button class="btn" data-bring="' + i + '">I will bring it on my first day</button>'
+        + "</div>"
+        + '<p class="soft" id="d-say-' + i + '" role="status"></p>'
+        + '<input type="file" id="d-f-' + i + '" accept="image/jpeg,image/png,application/pdf" style="display:none">'
+        + '<input type="file" id="d-c-' + i + '" accept="image/jpeg,image/png" capture="environment" style="display:none">'
+        + "</div>";
+    }).join("");
+    show("j3");
+  }
+
+  /* ── J4 ───────────────────────────────────────────────────────────────── */
+
+  function sendPhoto(file) {
+    var say = $("j4-say");
+    if (!file) return;
+    say.textContent = "Sending…";
+    say.className = "soft";
+    var r = new FileReader();
+    r.onerror = function () {
+      say.textContent = "That picture could not be read from this phone.";
+      say.className = "bad";
+    };
+    r.onload = function () {
+      post("upload_invite_file", {
+        document_type: PHOTO, filename: file.name,
+        data: String(r.result || ""),
+      }).then(function (out) {
+        FILES[PHOTO] = out.file_name || file.name;
+        say.textContent = "Sent.";
+        say.className = "ok";
+        /* The way forward is the same button either way. */
+        $("j4-on").textContent = "Next";
+      }, function (err) {
+        /* The server's own words. It is optional, so there is always a way on. */
+        say.textContent = (err && err.message)
+          || "That did not reach us. You can skip this and add a picture later.";
+        say.className = "bad";
+      });
+    };
+    r.readAsDataURL(file);
+  }
+
+  function sendFile(i, file) {
+    var t = D.documents[i];
+    var say = $("d-say-" + i);
+    if (!file) return;
+    say.textContent = "Sending…";
+    say.className = "soft";
+    var r = new FileReader();
+    r.onerror = function () {
+      say.textContent = "That file could not be read from this phone.";
+      say.className = "bad";
+    };
+    r.onload = function () {
+      post("upload_invite_file", {
+        document_type: t.name, filename: file.name,
+        data: String(r.result || ""),
+      }).then(function (out) {
+        FILES[t.name] = out.file_name || file.name;
+        delete BRING[t.name];
+        say.textContent = "Sent.";
+        say.className = "ok";
+      }, function (err) {
+        /* J-E2: it never discards what was typed, and it always offers a way
+           forward that is not "try again". */
+        say.textContent = (err && err.message)
+          || "That did not reach us. Your other answers are safe on this phone. Try again, or choose “I will bring it on my first day”.";
+        say.className = "bad";
+      });
+    };
+    r.readAsDataURL(file);
+  }
+
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var pick = t.getAttribute("data-pick");
+    if (pick !== null) {
+      $((t.getAttribute("data-cam") ? "d-c-" : "d-f-") + pick).click();
+      return;
+    }
+    var bring = t.getAttribute("data-bring");
+    if (bring !== null) {
+      var name = D.documents[bring].name;
+      BRING[name] = true;
+      delete FILES[name];
+      var say = $("d-say-" + bring);
+      say.textContent = "You will bring this on your first day.";
+      say.className = "soft";
+    }
+  });
+  document.addEventListener("change", function (e) {
+    var id = e.target && e.target.id ? e.target.id : "";
+    if (id === "j4-f" || id === "j4-c") {
+      var pic = e.target.files && e.target.files[0];
+      e.target.value = "";
+      sendPhoto(pic);
+      return;
+    }
+    var m = /^d-[fc]-(\d+)$/.exec(id);
+    if (!m) return;
+    var f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    sendFile(m[1], f);
+  });
+
+  /* ── J5, J6 ───────────────────────────────────────────────────────────── */
+
+  function toCheck() {
+    var v = values();
+    $("j5-summary").innerHTML = (D.fields || []).map(function (f) {
+      var w = LABELS[f] || [f, ""];
+      return "<p><b>" + esc(w[0]) + ":</b> "
+        + (v[f] ? esc(v[f]) : '<span class="soft">not given</span>') + "</p>";
+    }).join("")
+      + (D.documents || []).map(function (t) {
+          return "<p><b>" + esc(t.name) + ":</b> "
+            + (FILES[t.name] ? '<span class="ok">sent</span>'
+               : BRING[t.name] ? '<span class="soft">bringing it on the first day</span>'
+               : '<span class="warn">nothing yet</span>') + "</p>";
+        }).join("")
+      + (FILES[PHOTO] ? '<p><b>Your photo:</b> <span class="ok">sent</span></p>' : "");
+    var who = (D.brand && D.brand.name) ? D.brand.name + " HR" : "the HR team";
+    $("j5-words").textContent = "When you send this, " + who
+      + " reads it and makes your staff record. You will not be able to change "
+      + "it here afterwards — ring them if something is wrong.";
+    $("send").textContent = "Send to " + who;
+    show("j5");
+  }
+
+  $("start").addEventListener("click", drawFields);
+  $("to-docs").addEventListener("click", function () { keep(); drawDocs(); });
+  $("to-check").addEventListener("click", function () { show("j4"); });
+  $("j4-cam").addEventListener("click", function () { $("j4-c").click(); });
+  $("j4-file").addEventListener("click", function () { $("j4-f").click(); });
+  /* Skipping stores nothing and says nothing further about it (AC-108b). */
+  $("j4-on").addEventListener("click", toCheck);
+  $("send").addEventListener("click", function () {
+    if (nothingSent()) {
+      /* On J5, not back on J2: everything they typed stays where it is, and
+         the sentence is the server's own (AC-110a). */
+      $("j5-err").textContent = "We have not received anything yet. Fill in at"
+        + " least one of the questions above, or send one document, and then"
+        + " press Send.";
+      $("j5-err").classList.remove("hide");
+      return;
+    }
+    var btn = $("send");
+    btn.disabled = true;
+    $("j5-err").classList.add("hide");
+    post("submit_invite", {
+      values: JSON.stringify(values()),
+      bringing: JSON.stringify(Object.keys(BRING)),
+    }).then(function (out) {
+      try { localStorage.removeItem(KEEP); } catch (e) {}
+      var who = (D.brand && D.brand.name) ? D.brand.name + " HR" : "the HR team";
+      $("j6-who").textContent = "You will hear from " + who + "."
+        + (contactWords() ? " You can reach them on " + contactWords() + "." : "");
+      if (out && out.bringing) {
+        $("j6-bring").textContent = "Bring on your first day: " + out.bringing + ".";
+        $("j6-bring").classList.remove("hide");
+      }
+      show("j6");
+    }, function (err) {
+      btn.disabled = false;
+      $("j5-err").textContent = (err && err.message)
+        || "That did not reach us. Nothing is lost — try again in a moment.";
+      $("j5-err").classList.remove("hide");
+    });
+  });
+
+  begin();
+})();
+</script>
+</body>
+</html>

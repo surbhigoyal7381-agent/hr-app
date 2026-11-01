@@ -73,6 +73,8 @@ from frappe.utils import get_build_version
 # so the route is the Inbox's own "my requests" tab.
 PARTS = (
 	("leave_approvals", "#team"),
+	# Slice 076 Part C: decided from Home's sheet; the route is this page's own.
+	("expense_approvals", "#pay"),
 	("goal_updates", "#growth"),
 	("attendance_fixes", "#time/fix"),
 	("shift_requests", "#time/shift"),
@@ -83,7 +85,8 @@ PARTS = (
 # Which parts add up to "approvals waiting". The total is
 # approvals + policies + my own open requests (Wave 1 AC-20, Wave 2 section 6.2),
 # so the three groups are named rather than left as an arithmetic accident.
-APPROVAL_PARTS = ("leave_approvals", "goal_updates", "attendance_fixes", "shift_requests")
+APPROVAL_PARTS = ("leave_approvals", "expense_approvals", "goal_updates", "attendance_fixes",
+                  "shift_requests")
 
 # The attendance corrections screen reads at most this many rows
 # (`attendance_correction.to_review`'s default). The COUNT is not capped, so the
@@ -119,6 +122,11 @@ ROW_KEYS = (
 	                     # name at the top of the chain that will be told.
 	                     "half_day", "lwp_in_play", "lwp_limit", "special_day",
 	                     "chain_top")),
+	# Slice 076 Part C (SEC-16): the named approver sees what they are deciding -
+	# whose claim, the type, the day, the amount and the note. No bank, no
+	# account, no advance.
+	("expense_approvals", ("name", "employee_name", "expense_type", "expense_date",
+	                       "amount", "note", "waiting_since", "action")),
 	# No colleague name for a goal or KPI update? There is one, and there has to
 	# be: an approver cannot approve "somebody's" progress. What is absent is the
 	# number's provenance and any note about the person.
@@ -200,6 +208,40 @@ def _has_doctype(name):
 		seen = 1 if frappe.db.exists("DocType", name) else 0
 		frappe.cache().set_value(key, seen, expires_in_sec=24 * 60 * 60)
 	return bool(seen)
+
+
+def _may_read(*doctypes):
+	"""Is this part available to THIS caller: installed, and readable by them?
+
+	`_has_doctype` answers for the site. This answers for the person, and both
+	have to be true before a part runs a query. The difference cost DTC a dead
+	Inbox on 29 Oct (ALV-250): Policy Document was installed, so the policies
+	part ran, and `frappe.get_list` raised PermissionError because that
+	tenant's own role rows had dropped Employee's read. One part throwing took
+	the whole panel down with it, and the badge counts too, because `parts()`
+	builds every part before anything is returned.
+
+	This belongs in `available` and nowhere else: `Part.available` already
+	means "this caller does not have this part at all", and already covers no
+	Employee record, no review permission, and a doctype that is not installed.
+	"May not read it" is the same kind of answer, so an unavailable part goes
+	on counting 0 and listing nothing without running a query.
+
+	Deliberately not cached, unlike `_has_doctype`. That one may be cached per
+	site because its answer changes only at a migration. This one changes per
+	user, and the moment somebody edits a role row - which is exactly the case
+	being fixed, so a cache here would re-create the bug with a delay on it.
+
+	**Name a parent doctype here, never a child table.** Frappe answers a
+	permission question about a child table from its PARENT, and refuses
+	outright when it is not told which parent, so `has_permission` on one
+	returns False for everybody but the Administrator. ALV-250 passed
+	"Expense Claim Detail" and took expense approvals off the Inbox for every
+	user (ALV-256). A child table is read through its parent anyway, so the
+	parent's own permission is the whole answer.
+	"""
+	return all(_has_doctype(d) and frappe.has_permission(d, "read")
+	           for d in doctypes)
 
 
 def _my_employee(user):
@@ -514,9 +556,71 @@ def _part_leave_approvals(who):
 		filters=filters,
 		count_fn=_count_rows("Leave Application"),
 		rows_fn=rows_fn,
-		available=bool(who.employee),
+		available=bool(who.employee) and _may_read("Leave Application"),
 		label_one=_("{n} leave request to approve"),
 		label_many=_("{n} leave requests to approve"),
+	)
+
+
+def _part_expense_approvals(who):
+	"""Expense claims waiting on this person as the named expense approver
+	(slice 076 Part C, SEC-16). Draft and undecided only, never their own.
+
+	`get_list`: the approver reads the claim through Frappe HR's own share or
+	the Expense Approver role, and nobody else's claim comes back.
+	"""
+	filters = no_rows()
+	if who.employee:
+		filters = {
+			"expense_approver": who.user,
+			"docstatus": 0,
+			"approval_status": "Draft",
+			"employee": ["!=", who.employee],
+		}
+
+	def rows_fn(filters, limit):
+		rows = frappe.get_list(
+			"Expense Claim", filters=filters,
+			fields=["name", "employee_name", "total_claimed_amount", "creation"],
+			order_by="creation asc", limit_page_length=limit or 0)
+		# One read of the lines of every claim on the page, not one per row. A
+		# portal claim has one line; a desk claim shows its first.
+		first = {}
+		if rows:
+			for d in frappe.get_all(
+				"Expense Claim Detail",
+				filters={"parent": ["in", [r.name for r in rows]], "parenttype": "Expense Claim"},
+				fields=["parent", "expense_type", "expense_date", "description"],
+				order_by="idx asc"):
+				first.setdefault(d.parent, d)
+		out = []
+		for r in rows:
+			d = first.get(r.name) or {}
+			out.append({
+				"name": r.name,
+				"employee_name": r.employee_name,
+				"expense_type": d.get("expense_type"),
+				"expense_date": str(d["expense_date"]) if d.get("expense_date") else None,
+				"amount": r.total_claimed_amount,
+				"note": d.get("description") or None,
+				"waiting_since": str(r.creation) if r.creation else None,
+				"action": "expense",
+			})
+		return out
+
+	return Part(
+		"expense_approvals", "#pay",
+		scope="expense claims where this caller is the named expense_approver, Draft "
+		      "and undecided, minus their own",
+		filters=filters,
+		count_fn=_count_rows("Expense Claim"),
+		rows_fn=rows_fn,
+		# The parent only. The claim lines are read with `frappe.get_all`,
+		# which checks no permissions and so can never raise - and asking
+		# about a child table on its own always answers False (ALV-256).
+		available=bool(who.employee) and _may_read("Expense Claim"),
+		label_one=_("{n} expense claim to approve"),
+		label_many=_("{n} expense claims to approve"),
 	)
 
 
@@ -533,7 +637,7 @@ def _part_goal_updates(who):
 	took 16.4 seconds for an HR caller (042 AC-16).
 	"""
 	scope = None
-	available = bool(who.employee) and _has_doctype("KPI")
+	available = bool(who.employee) and _may_read("KPI", "Employee")
 	if available:
 		# `_is_hr` is imported rather than re-derived: it is the definition
 		# `get_pending_approvals_count` uses, and the scope helper is built for
@@ -698,7 +802,7 @@ def _part_attendance_fixes(who):
 		REQUEST, _may_review, _with_decide_flag, review_queue_filters,
 	)
 
-	available = bool(who.employee) and bool(_may_review())
+	available = bool(who.employee) and bool(_may_review()) and _may_read(REQUEST)
 	filters, is_hr_scope = (review_queue_filters(who.user) if available
 	                        else (no_rows(), False))
 
@@ -763,7 +867,7 @@ def _part_shift_requests(who):
 	their own shift changes is counted once, under "my requests" (042 AC-9's
 	rule, applied to part 4 as section 6.2 asks).
 	"""
-	available = bool(who.employee) and _has_doctype("Shift Request")
+	available = bool(who.employee) and _may_read("Shift Request")
 	filters = no_rows()
 	if available:
 		filters = {
@@ -812,7 +916,8 @@ def _part_policies(who):
 	The filter expression is the list of (policy, version) pairs still needed.
 	Both uses read that one list, so the count and the screen cannot drift.
 	"""
-	available = bool(who.employee) and _has_doctype("Policy Document")
+	available = bool(who.employee) and _may_read("Policy Document",
+	                                             "Policy Acknowledgement")
 	needed = []
 	if available:
 		# `get_list`, so this is what the caller may READ - the same set
@@ -870,9 +975,9 @@ def _part_my_requests(who):
 	"""
 	from alvoraa_portal.attendance_correction import DONE_STATES, REQUEST
 
-	available = bool(who.employee)
+	available = bool(who.employee) and _may_read("Leave Application", REQUEST)
 	filters = {"employee": who.employee} if available else no_rows()
-	has_shift = _has_doctype("Shift Request")
+	has_shift = _may_read("Shift Request")
 
 	def _collect(filters, limit):
 		"""All three kinds, newest first. One query each, never one per row."""
@@ -956,6 +1061,7 @@ def parts(user=None):
 	fixes, corrections_hr_scope = _part_attendance_fixes(who)
 	built = (
 		_part_leave_approvals(who),
+		_part_expense_approvals(who),
 		_part_goal_updates(who),
 		fixes,
 		_part_shift_requests(who),

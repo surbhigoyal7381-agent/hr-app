@@ -71,6 +71,17 @@
             </div>
           </div>
 
+          <!-- Birthdays and anniversaries this month (slice 076, Part C). Absent
+               while the organisation switch is off: the server answers "off"
+               before it reads anybody, and the grid reflows. -->
+          <section class="card hm-card" id="home-bday-card" aria-labelledby="home-bday-h" style="display:none">
+            <div class="hm-head">
+              <h2 class="hm-title" id="home-bday-h">Birthdays and anniversaries this month</h2>
+            </div>
+            <div class="hm-body" id="home-bday-body"></div>
+            <div class="hm-foot" id="home-bday-foot" style="display:none"></div>
+          </section>
+
           <!-- Upcoming Holidays -->
           <div class="card" id="home-holidays-card">
             <div class="card-header">
@@ -115,18 +126,6 @@
             <div id="home-team-goals-list"></div>
           </div>
 
-          <!-- My Documents (build B4: employee document checklist) -->
-          <div class="card" id="my-docs-card" style="display:none">
-            <div class="card-header">
-              <span><i class=ic-folder></i></span>
-              <span class="card-title" style="margin-left:6px">My Documents</span>
-              <span id="my-docs-summary" style="margin-left:auto;font-size:var(--fs-sm);color:var(--text3)"></span>
-            </div>
-            <div class="card-body" style="padding:12px 20px">
-              <div id="my-docs-list" class="hm-scroll" tabindex="0" role="region" aria-label="My Documents"></div>
-            </div>
-          </div>
-
           <!-- Policies widget (build B5: policy library) -->
           <div class="card" id="home-policies-card" style="display:none">
             <div class="card-header">
@@ -154,5 +153,48 @@
           <div id="nc-form"><div class="hm-skel" aria-hidden="true"></div></div>
           <h3 class="nc-h3">Notices I sent</h3>
           <div id="nc-sent"><div class="hm-skel" aria-hidden="true"></div></div>
+        </div>
+      </div>
+
+      <!-- My profile (slice 076, Part C, decision 2a): only the birthday tick.
+           Opened from the account menu. The tick changes the person's own
+           record only; the server takes no employee from the page. -->
+      <!-- Slice 078 (US-1 to US-5) adds four cards ABOVE the birthday tick, in
+           the order 01b 6.1 draws them: the picture, the details, the
+           documents, the password. The picture is first because it is what this
+           screen exists for - every employee can add one, nothing is ticked for
+           it, and until photographs exist every face in this product is a pair
+           of initials.
+
+           The sharing tick that 076 Part C put here stays exactly where it was,
+           in #mp-body, drawn by mpLoad(). The picture, details and password
+           cards are drawn by mypLoad(), which mpLoad calls.
+
+           My Documents is the EXISTING card, unchanged, moved here out of Home
+           (01b S1-G, AC-20) - which is also what makes AC-20 checkable: it asks
+           for the card to be absent when the plan is off, on this page. It is
+           still filled by loadMyDocuments() on boot, which finds it by id
+           wherever it sits, and myDocsShown() still appends its "chosen N of
+           these to show" line to it. -->
+      <div id="panel-my-profile" class="panel">
+        <div class="nc-wrap">
+          <h2 class="nc-h" id="mp-h" tabindex="-1">My profile</h2>
+          <div id="myp-pic"><div class="hm-skel" aria-hidden="true"></div></div>
+          <div id="myp-det"></div>
+
+          <!-- My Documents (build B4: employee document checklist) -->
+          <div class="card" id="my-docs-card" style="display:none">
+            <div class="card-header">
+              <span><i class=ic-folder></i></span>
+              <span class="card-title" style="margin-left:6px">My Documents</span>
+              <span id="my-docs-summary" style="margin-left:auto;font-size:var(--fs-sm);color:var(--text3)"></span>
+            </div>
+            <div class="card-body" style="padding:12px 20px">
+              <div id="my-docs-list" class="hm-scroll" tabindex="0" role="region" aria-label="My Documents"></div>
+            </div>
+          </div>
+
+          <div id="myp-pw"></div>
+          <div id="mp-body"><div class="hm-skel" aria-hidden="true"></div></div>
         </div>
       </div>

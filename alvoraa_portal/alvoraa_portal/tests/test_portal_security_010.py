@@ -848,6 +848,92 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "announcements.py"): 1,
 		("alvoraa_portal", "alvoraa_portal/doctype/announcement/announcement.py"): 0,
 		("alvoraa_portal", "patches/v1_0/notice_sender_role.py"): 0,
+		# Slice 076 Part C (new files): none. The birthdays read in home_people
+		# is the one deliberate bypass - a query-builder query no word counter
+		# sees - and it returns a fixed key list only (name, kind, day, month,
+		# years). The backfill runs as Administrator in a migrate.
+		("alvoraa_portal", "home_people.py"): 0,
+		("alvoraa_portal", "patches/v1_0/expense_claim_approver_backfill.py"): 0,
+		# ALV-249 (new file): add and remove one own-record User Permission.
+		# Only System Manager may write User Permission, and these run when HR
+		# saves an Employee or a User. Nothing else in the file bypasses.
+		# 3 from 1 Nov 2026: removing the old approver's DocShare when HR changes
+		# an approver (an HR Manager may not delete a DocShare).
+		("alvoraa_portal", "own_record_permission.py"): 3,
+		# ALV-249 doors 1 and 2 (new file): drops the words from requests; the
+		# word appears only as a string to drop, never as a bypass.
+		("alvoraa_portal", "request_guard.py"): 1,
+		# Slice 078 (078-SEC-16). Four new files, each argued rather than
+		# rounded up.
+		#
+		# employee_photo.py: THREE, all about `File`, on which an employee holds
+		# no permission at all. The insert of their own picture; the read of
+		# their File rows so the old one can be found; the delete of the old one,
+		# bytes included. Each runs only after the endpoint has established the
+		# record is the caller's own, and there is no employee argument to post.
+		("alvoraa_portal", "employee_photo.py"): 3,
+		# my_profile.py: ONE - the Version row. Nobody holds create on Version;
+		# Frappe writes its own the same way. `db.set_value` writes no history,
+		# and "who changed my emergency contact" has to have an answer.
+		("alvoraa_portal", "my_profile.py"): 1,
+		# positions_profile.py: NONE. Every read runs as the caller, after
+		# may_view() and employee_in_scope(), and there is no new scope helper.
+		("alvoraa_portal", "positions_profile.py"): 0,
+		# employee_documents_read.py: ONE - the access-record insert. Nobody
+		# holds create on that doctype (read is System Manager and HR Manager
+		# only), and the row is written after the five ordered checks have
+		# passed. It is the only way an employee who cannot open the Positions
+		# page can ask "who looked at my Aadhaar" and get an answer.
+		("alvoraa_portal", "employee_documents_read.py"): 1,
+		# people_settings.py: NONE. The card reads as the System Manager asking;
+		# saving hands over to the access-granting path in hrms, which already
+		# holds the one Version bypass in its own ceiling above.
+		("alvoraa_portal", "people_settings.py"): 0,
+		# Slice 078 step 6, pre-onboarding. The FIRST public write path in this
+		# product, so every one of these is named rather than counted.
+		#
+		# joiner_invite.py: FOUR. The Web Form anchor record and the Web Form
+		# Request row (Frappe ships that doctype Website-Manager-only, and HR is
+		# not one); deleting the request row, which is the purge that makes the
+		# clear-text key short-lived; and the File listing behind Export, which
+		# reads names and dates and no bytes. Each runs after _require_hr().
+		("alvoraa_portal", "joiner_invite.py"): 4,
+		# joiner_public.py: FIVE, all on a GUEST path that has no session at
+		# all - which is the whole point of the feature. Each runs only after
+		# `_open()` has validated the token through Frappe's own validator, and
+		# there is no submission argument anywhere in that module, so there is
+		# nothing a caller can post that reaches a row other than their own: the
+		# submission save, the uploaded File insert, and the two reads that find
+		# what the token is bound to.
+		#
+		# The fifth arrived with D-3 (ALV-260): `_has_a_document` reads the
+		# File rows attached to the token's own submission, to answer "did this
+		# joiner send us anything at all" before the form is accepted. A guest
+		# holds no File permission whatsoever, and the read is filtered to the
+		# submission `_open()` already bound the token to, so it can see
+		# nothing else. Named here rather than counted, because an unargued
+		# bypass slipping in is exactly what this ceiling exists to catch - and
+		# it caught this one.
+		("alvoraa_portal", "joiner_public.py"): 5,
+		# joiner_housekeeping.py: SIX. The daily job runs with no session: the
+		# reads that find what is due, the status save that expires a dead link,
+		# and the Notification Log row that warns HR. It deletes nothing a user
+		# asked about.
+		("alvoraa_portal", "joiner_housekeeping.py"): 6,
+		# The controller: FOUR. The erase - the File deletes and the save that
+		# clears the fields - which is a retention duty rather than a request,
+		# and runs from the scheduler as well as from HR.
+		("alvoraa_portal",
+		 "alvoraa_portal/doctype/alvoraa_joiner_submission/alvoraa_joiner_submission.py"): 4,
+		# The public page itself: NONE. It reads no invite at all.
+		("alvoraa_portal", "www/joiner.py"): 0,
+		# people_fields.py (hrms): ONE - the batched thumbnail read. Frappe's
+		# own File query condition narrows a Website User to `owner = me`, so a
+		# scoped read here would hide every colleague's thumbnail and the one
+		# chart a frontline employee can open would lose its faces. The row
+		# returns a URL and nothing else, and fetching the BYTES behind it still
+		# asks the parent Employee's read permission - so this grants nothing.
+		("hrms", "alvoraa_org_structure/people_fields.py"): 1,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

@@ -192,7 +192,21 @@ def check_upstream_shape(root):
 			      f"bench - cannot verify")
 			bad += 1
 			continue
-		actual_hash = hashlib.sha256(open(upstream_path, "rb").read()).hexdigest()
+		# A hash of the CONTENT, not of the platform. A Windows checkout turns
+		# every committed LF into CRLF, so the same file hashes one way on a
+		# developer's laptop and another way in CI - and a hash declared from
+		# the laptop then fails the moment CI reads it, naming an upstream
+		# change that never happened. That cost a red build on 2026-10-31.
+		#
+		# Either form is accepted, which weakens nothing: any real edit to the
+		# upstream file changes both hashes together. The only thing it now
+		# tolerates is a file whose line endings were rewritten, which is not
+		# a change of shape.
+		raw = open(upstream_path, "rb").read()
+		actual_hash = hashlib.sha256(raw).hexdigest()
+		lf_hash = hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+		if declared_hash == lf_hash:
+			actual_hash = lf_hash
 		if actual_hash != declared_hash:
 			print(f"{rel_override}: upstream {upstream_rel} has changed shape since "
 			      f"it was copied from {version} (declared {declared_hash}, "

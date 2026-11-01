@@ -19,8 +19,13 @@ from alvoraa_portal.tests.test_positions_064 import Positions064Case, _second_co
 
 # Every key a seated person may carry, written out here rather than read from
 # the code, so a further key fails this test (SEC-2). `manager` is the one 072 adds.
+# Slice 078 added two: `image` is the 512 px photograph and `thumb` the 48 px
+# copy the chart draws. Both are deliberate, both are urls to PRIVATE files, and
+# fetching the bytes still asks permission on the parent Employee. They are
+# named here rather than the check loosened, because the point of this set is
+# that a new key on a person payload has to be argued for, not noticed later.
 PERSON_KEYS = {"assignment", "employee", "name", "weight", "type", "covering",
-               "hired_on", "leaving", "manager"}
+               "hired_on", "leaving", "manager", "image", "thumb"}
 
 
 class ReportsTo072Case(Positions064Case):

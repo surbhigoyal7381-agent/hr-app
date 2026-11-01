@@ -358,6 +358,86 @@ class LinkedByDatabaseWrite(OwnRecordCase):
 		self.assertIn("alvoraa_portal.own_record_permission.on_login", frappe.get_hooks("on_login"))
 
 
+class CheapOnOtherSaves(OwnRecordCase):
+	"""CI, 31 Oct 2026: slice 071's seat placement has a statement budget, and it
+	saves an Employee. A save that does not touch user_id, roles or enabled must
+	cost these hooks nothing."""
+
+	def test_an_employee_save_that_keeps_the_login_sends_no_query(self):
+		from alvoraa_portal.tests.leader_fixtures_012 import QueryCounter
+		me, _ = self.person("Cheap")
+		doc = frappe.get_doc("Employee", me)
+		doc._doc_before_save = frappe.get_doc("Employee", me)
+		doc.cell_number = "9811111111"
+		with QueryCounter() as q:
+			orp.on_employee_update(doc)
+		self.assertEqual(q.count, 0)
+
+	def test_a_user_save_that_keeps_roles_and_enabled_sends_no_query(self):
+		from alvoraa_portal.tests.leader_fixtures_012 import QueryCounter
+		_, me_user = self.person("CheapUser")
+		doc = frappe.get_doc("User", me_user)
+		doc._doc_before_save = frappe.get_doc("User", me_user)
+		doc.bio = "changed"
+		with QueryCounter() as q:
+			orp.on_user_update(doc)
+		self.assertEqual(q.count, 0)
+
+	def test_a_role_change_still_syncs(self):
+		me, me_user = self.person("CheapRole")
+		frappe.get_doc("User", me_user).add_roles("HR User")
+		self.assertFalse(self.own_rows(me_user, me))
+
+
+class HrChangesAnApprover(OwnRecordCase):
+	"""CI, 31 Oct 2026: with the row, Frappe HR shares a claim with an approver
+	outside the claimant's tree; when HR changes the approver, Frappe HR's own
+	removal of that share needs DocShare delete, which HR Manager does not hold."""
+
+	def test_the_old_approvers_share_is_removed_before_frappe_hr_tries(self):
+		claimant, _ = self.person("Claimant")
+		_, old_user = self.person("OldApprover")
+		_, new_user = self.person("NewApprover")
+		_, hr_user = self.person("HrChanger", roles=("Employee", "HR Manager"))
+		claim = self.claim(claimant)
+		frappe.db.set_value("Expense Claim", claim, "expense_approver", old_user)
+		frappe.share.add_docshare("Expense Claim", claim, old_user, read=1, submit=1,
+		                          flags={"ignore_share_permission": True})
+		doc = frappe.get_doc("Expense Claim", claim)
+		doc._doc_before_save = frappe.get_doc("Expense Claim", claim)
+		doc.expense_approver = new_user
+		frappe.set_user(hr_user)
+		try:
+			orp.drop_old_approver_share(doc)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("DocShare", {"share_name": claim, "user": old_user}))
+		# and Frappe HR's own removal now finds nothing, so it cannot raise
+		frappe.set_user(hr_user)
+		try:
+			frappe.share.remove("Expense Claim", claim, old_user)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_an_unchanged_approver_keeps_the_share(self):
+		claimant, _ = self.person("Claimant2")
+		_, old_user = self.person("Keeper")
+		claim = self.claim(claimant)
+		frappe.db.set_value("Expense Claim", claim, "expense_approver", old_user)
+		frappe.share.add_docshare("Expense Claim", claim, old_user, read=1, submit=1,
+		                          flags={"ignore_share_permission": True})
+		doc = frappe.get_doc("Expense Claim", claim)
+		doc._doc_before_save = frappe.get_doc("Expense Claim", claim)
+		orp.drop_old_approver_share(doc)
+		self.assertTrue(frappe.db.exists("DocShare", {"share_name": claim, "user": old_user}))
+
+	def test_the_hooks_are_wired(self):
+		hooks = frappe.get_hooks("doc_events")
+		for dt in ("Expense Claim", "Leave Application", "Shift Request"):
+			self.assertIn("alvoraa_portal.own_record_permission.drop_old_approver_share",
+			              hooks[dt]["before_save"], dt)
+
+
 class Wiring(FrappeTestCase):
 	def test_hooks_are_wired(self):
 		hooks = frappe.get_hooks("doc_events")

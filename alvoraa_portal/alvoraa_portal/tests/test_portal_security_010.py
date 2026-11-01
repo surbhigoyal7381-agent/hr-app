@@ -857,7 +857,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# ALV-249 (new file): add and remove one own-record User Permission.
 		# Only System Manager may write User Permission, and these run when HR
 		# saves an Employee or a User. Nothing else in the file bypasses.
-		("alvoraa_portal", "own_record_permission.py"): 2,
+		# 3 from 1 Nov 2026: removing the old approver's DocShare when HR changes
+		# an approver (an HR Manager may not delete a DocShare).
+		("alvoraa_portal", "own_record_permission.py"): 3,
 		# ALV-249 doors 1 and 2 (new file): drops the words from requests; the
 		# word appears only as a string to drop, never as a bypass.
 		("alvoraa_portal", "request_guard.py"): 1,

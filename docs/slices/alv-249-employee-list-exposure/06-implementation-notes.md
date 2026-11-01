@@ -129,6 +129,119 @@ save hooks stayed after a rollback (08 P2-A). Replaced in round 3.
 
 ---
 
+## Round 4, after CI on dev 9b99a421 failed two tests, 1 Nov 2026
+
+### Bad news first
+
+- **Both CI failures were caused by ALV-249.** CI on 81be44a4 was green.
+- **The first was a real product break, not only a test:** with the row, an HR Manager
+  could no longer change the approver on a claim, leave or shift request once Frappe HR
+  had shared it with an approver outside the claimant's tree. That would have happened at
+  DTC.
+- **The second is fixed by raising another slice's budget (071), from 40 to 45,** not by
+  making our code cheaper. Our hooks do not run inside the counted call. Reason below.
+- On the copied site `test249`, one other 076 test failed once on fixture data (a department from one test company, an employee from another). It passed on the fresh site and in the earlier run. It is not caused by this change.
+
+### 1. `test_expense_birthdays_076 ..._but_hr_can`: HR could not change an approver
+
+**Cause, step by step:**
+1. The approver in the test (`c076.m`, Employee and Expense Approver) now gets the
+   own-record row.
+2. The claimant is not in the approver's tree, so the approver no longer has submit
+   permission through the role.
+3. Frappe HR's `share_doc_with_approver` therefore shares the claim with them.
+4. When HR changes the approver, Frappe HR removes the old share as the person saving
+   (`hrms/hr/utils.py:825`, `frappe/share.py:97`).
+5. An HR Manager has no delete right on DocShare, so the save fails.
+
+Before ALV-249, on CI's fresh site, the approver had submit through the role, no share
+was made, and there was nothing to remove.
+
+**Why it also failed locally before ALV-249:** `test249` is a copy of a site whose earlier
+runs had left committed own-record rows. That is my inference: ERPNext makes the same row
+when "Create User Permission" is ticked, and the 076 fixtures commit.
+
+**Fix (rung 4, about 15 lines):** `drop_old_approver_share`, a `before_save` hook on
+Expense Claim, Leave Application and Shift Request.
+- When the approver changes, it removes the old approver's share first. That runs after
+  Frappe has already allowed the save. Frappe HR then finds nothing to remove.
+- Removing a share only narrows access.
+- It is one more `ignore_permissions`, because only System Manager may delete a DocShare.
+  The ceiling goes from 2 to 3, with the reason written next to it.
+- Tests: the share is removed and Frappe HR's own removal no longer raises; an unchanged
+  approver keeps the share; the hooks are wired. The 076 test passes again.
+
+### 2. `test_unseated_071 ...fixed_handful`: 43 statements against a budget of 40
+
+**Cause, measured:**
+
+| Setup | Statements |
+|---|---|
+| Both hooks off | 27 |
+| Only the User hook off | 27 |
+| Both hooks on | 43 |
+
+I added debug prints: neither hook runs inside the counted call.
+
+The HR fixture user is linked with "Create User Permission" ticked. So ERPNext gives them
+an own-record Employee row, and our User hook removes it when HR User is added. That is
+the ALV-226 rule: no HR login carries this row. An HR login with no User Permission at
+all then costs 16 more statements in a seat placement. The visible ones are a cold load of
+Company's metadata and the `permitted_companies` fallback lookup of the person's own
+company.
+
+**Why raising the budget is right here:**
+- DTC's HR logins have no such row today (31 Oct count). Production already runs the
+  43-statement path.
+- The old 40 was measured on a fixture shape production does not have.
+- It is still flat per click.
+- Making our sync cheaper cannot change a number our code does not contribute to.
+
+**Changed:** `test_unseated_071` line 163 is now 45, with the reason in a comment.
+
+**Also done, as asked:** the two save hooks now return at once, with no query, when
+nothing they care about changed:
+- the Employee hook, when `user_id` is the same;
+- the User hook, when the roles and "enabled" are the same.
+
+Tests prove 0 statements in both cases, and that a role change still syncs. ERPNext saves
+the User on many Employee saves, so this matters beyond slice 071.
+
+### 3. What came in
+
+`9b99a421`, the review and security reports: four docs only, identical to the copies I
+had locally. The branch was already at 9b99a421 when I fetched. One slip: I deleted my
+local copies before checking that, which removed the committed files from the working
+tree. I restored them with `git restore` on those four paths only. Nothing was committed
+in between.
+
+### 4. Round 4 test runs
+
+**On `test249` (own container `hrlocal-249`), one module at a time:**
+
+| Module | Result |
+|---|---|
+| `test_expense_birthdays_076` | 35: 1 error, `test_the_department_approver_is_used_when_the_employee_has_none`, a fixture company mismatch on this copied site. All 35 passed here in the run before, and on the fresh site |
+| `test_unseated_071` | 12, OK (43 statements against 45) |
+| `test_own_record_permission_alv249` | 32 + 1, OK |
+| `test_request_guard_alv249` | 5 + 3, OK |
+| `test_portal_security_010` | 45 + 5, OK (ceiling 3) |
+| `test_access_control` | 34, OK |
+| `test_inbox_counts_034` | 17 + 2, OK |
+| `test_manager_scope` | 12, OK |
+
+**On a freshly made site `test249f`, mimicking CI** (new-site, then install erpnext,
+hrms, alvoraa_portal and alvoraa_goals in CI's order, `allow_tests`, throttle 1000):
+
+| Module | Result |
+|---|---|
+| `test_expense_birthdays_076` | 35, OK |
+| `test_unseated_071` | 12, OK (43 statements) |
+
+`check_app_integrity.py`: OK. `check_scope_traps.py`: OK. The full suite has not been run
+locally.
+
+
 ## Round 3, after the re-review and re-security review (08), 31 Oct 2026
 
 ### Bad news first

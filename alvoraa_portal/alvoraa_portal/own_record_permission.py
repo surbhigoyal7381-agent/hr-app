@@ -101,9 +101,14 @@ def sync(user, employee, excluded=None):
 
 
 def on_employee_update(doc, method=None):
-	"""Employee on_update: a login linked, unlinked or swapped."""
+	"""Employee on_update: a login linked, unlinked or swapped.
+
+	Nothing else on the Employee decides the row, so any other save returns at
+	once, with no query (a seat placement has a statement budget, slice 071)."""
 	before = doc.get_doc_before_save()
-	if before and before.user_id and before.user_id != doc.user_id:
+	if before and before.user_id == doc.user_id:
+		return
+	if before and before.user_id:
 		_remove(before.user_id, doc.name)
 	if doc.user_id:
 		sync(doc.user_id, doc.name)
@@ -118,8 +123,40 @@ def sync_user(user):
 
 
 def on_user_update(doc, method=None):
-	"""User on_update: roles changed (a promotion to HR), or the login disabled."""
+	"""User on_update: roles changed (a promotion to HR), or the login disabled.
+
+	ERPNext saves the User on many Employee saves; when neither the roles nor
+	"enabled" changed, return at once with no query."""
+	before = doc.get_doc_before_save()
+	if (before and before.enabled == doc.enabled
+			and {r.role for r in before.roles} == {r.role for r in doc.roles}):
+		return
 	sync_user(doc.name)
+
+
+APPROVER_FIELD = {"Expense Claim": "expense_approver", "Leave Application": "leave_approver",
+                  "Shift Request": "approver"}
+
+
+def drop_old_approver_share(doc, method=None):
+	"""before_save on Expense Claim, Leave Application, Shift Request.
+
+	With the row, an approver outside the claimant's tree reads the document only
+	through the share Frappe HR gives them. When the approver is changed, Frappe HR
+	removes the old share as the person saving, and an HR Manager may not delete a
+	DocShare, so HR could no longer change an approver (CI, 31 Oct 2026). This
+	removes that one share first, after Frappe has already checked the save; Frappe
+	HR then finds nothing to remove. Removing a share only narrows access."""
+	before = doc.get_doc_before_save()
+	field = APPROVER_FIELD.get(doc.doctype)
+	old = before.get(field) if before and field else None
+	if not old or old == doc.get(field):
+		return
+	name = frappe.db.get_value("DocShare", {"user": old, "share_doctype": doc.doctype,
+	                                        "share_name": doc.name})
+	if name:
+		frappe.delete_doc("DocShare", name, ignore_permissions=True,
+		                  flags={"ignore_share_permission": True})
 
 
 def on_login(login_manager):

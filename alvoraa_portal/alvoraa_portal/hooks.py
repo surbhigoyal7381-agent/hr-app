@@ -346,6 +346,8 @@ doc_events = {
         # every door (SEC-6, SEC-13). Then the managers up the chain are told.
         "validate":      "alvoraa_portal.leave_rules.validate_leave_application",
         "on_submit":     "alvoraa_portal.leave_rules.notify_chain_on_approval",
+        # ALV-249: HR may change the approver; see own_record_permission.
+        "before_save":   "alvoraa_portal.own_record_permission.drop_old_approver_share",
     },
     # ── The field app's switches on HR Settings (slice 013 step 2) ────────
     # Turning the app off or removing a designation needs a reason in the same
@@ -429,6 +431,11 @@ doc_events = {
         "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
         # Review C: the claimant cannot pick their own approver (HR may).
         "validate": "alvoraa_portal.hr_api.keep_claim_approver",
+        # ALV-249: HR may change the approver; see own_record_permission.
+        "before_save": "alvoraa_portal.own_record_permission.drop_old_approver_share",
+    },
+    "Shift Request": {
+        "before_save": "alvoraa_portal.own_record_permission.drop_old_approver_share",
     },
 }
 

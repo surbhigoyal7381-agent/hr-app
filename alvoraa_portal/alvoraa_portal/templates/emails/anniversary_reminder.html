@@ -1,0 +1,60 @@
+{#
+Slice 078 (counsel, 29 October 2026): overrides
+hrms/hrms/templates/emails/anniversary_reminder.html.
+A Jinja comment, not an HTML one - Jinja strips this before rendering, so none
+of it ever reaches a real email; only the file needs it.
+
+Identical to the upstream file except ONE condition, marked below: the
+photograph is included only when the organisation has ticked
+`alvoraa_photo_in_emails` on. Counsel asked for exactly this - the employer must
+be able to stop photographs going out in company-wide mail WITHOUT turning off
+the photograph feature and without turning off the reminders. It is OFF by
+default, because email is the one surface the person in the photograph cannot
+see, cannot check and cannot recall.
+
+With it off, the initials block that upstream already draws for somebody who has
+no photograph is used for everybody - so the email still looks like itself.
+
+Frappe's own template resolves this: Frappe's Jinja loader searches installed
+apps in REVERSED install order (frappe/utils/jinja.py:_get_jloader), and
+`alvoraa_portal` is installed after `hrms` on every site, so this copy is always
+found before hrms' own. Read from the loader's source, not assumed.
+
+UPSTREAM SHAPE GUARD - do not edit this comment casually
+---------------------------------------------------------
+sha256 of the unmodified hrms/hrms/templates/emails/anniversary_reminder.html this file was
+copied from (vendored in this repository): 85b2c0300de77b5754f292673d51735df95eef18cf4058fe402061a55f8f982b
+
+check_email_template_overrides.py --check-upstream-shape compares that hash
+against the ACTUAL installed hrms/hrms/templates/emails/anniversary_reminder.html and fails if
+hrms' own file has changed shape since this override was last hand-verified
+against it. A hash failure means: read the new upstream file, decide whether the
+photograph block still looks like this, and update both this file and the hash
+comment above together.
+#}
+<div class="gray-container text-center">
+    <div>
+		{% for person in anniversary_persons %}
+			{# THE ONE CHANGE: `and photo_in_emails()`. Off by default. #}
+			{% if person.image and photo_in_emails() %}
+			<img
+				class="avatar-frame standard-image"
+				src="{{ person.image }}"
+				style="{{ css_style or '' }}"
+				title="{{ person.name }}">
+			</span>
+			{% else %}
+			<span
+				class="avatar-frame standard-image"
+				style="{{ css_style or '' }}"
+				title="{{ person.name }}">
+				{{ frappe.utils.get_abbr(person.name) }}
+			</span>
+			{% endif %}
+		{% endfor %}
+	</div>
+    <div style="margin-top: 15px">
+		<span>{{ reminder_text }}</span>
+		<p class="text-muted">{{ message }}</p>
+	</div>
+</div>

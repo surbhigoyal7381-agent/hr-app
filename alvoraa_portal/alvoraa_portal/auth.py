@@ -238,6 +238,34 @@ _FIRST_USE_MAY_REACH = (
     "/api/method/login",
 )
 
+# The same permissions again, by `cmd` name - because a website page does not
+# call /api/method/<dotted> at all. `frappe.call` on a website page is
+# `frappe/website/js/website.js`, not `request.js`: it posts to "/" with the
+# method in a `cmd` field. /update-password IS a website page, so that is how
+# its Confirm button and its strength meter actually reach the server.
+#
+# Leaving this out is what put a live tenant on a dead password screen on
+# 29 Oct. The path was "/", nothing in the list above matched, and the POST was
+# answered with our own 302. jQuery followed the redirect, got the HTML of the
+# password screen where it was expecting JSON, and gave up without a sound: no
+# error, no redirect, password unchanged. The screen simply sat there, and
+# because the password never changed the way out stayed shut for ever.
+#
+# Every unit test passed, because every unit test asked with a path and the
+# page never sends one.
+#
+# `frappe.local.form_dict` is built by `make_form_dict(request)` in
+# `app.py:init_request`, two lines before the before_request hooks run, so it
+# is always there by the time we read it.
+_FIRST_USE_MAY_CALL = frozenset({
+    "frappe.core.doctype.user.user.update_password",
+    "frappe.core.doctype.user.user.test_password_strength",
+    "frappe.core.doctype.user.user.reset_password",
+    "alvoraa_portal.auth.update_password",
+    "login",
+    "logout",
+})
+
 # Once somebody has chosen their own password they can never go back to not
 # having chosen one, so a "yes" is true for ever and is safe to remember. This
 # is what keeps the lock off the database on the ordinary request: everybody
@@ -316,6 +344,16 @@ def lock_until_password_chosen():
         path = request.path or "/"
         if path.startswith(_FIRST_USE_MAY_REACH):
             return
+
+        # How the password screen itself calls - see _FIRST_USE_MAY_CALL.
+        # Only ever on "/", and deliberately so: honouring `cmd` on any other
+        # path would hand anyone the key. Add `&cmd=login` to a POST to
+        # /api/method/<anything> and we would wave it through, while Frappe
+        # went on routing by the URL and ran the method we meant to block.
+        if path == "/":
+            form = getattr(frappe.local, "form_dict", None)
+            if (form or {}).get("cmd") in _FIRST_USE_MAY_CALL:
+                return
 
         user = frappe.session.user
         if not user or user in ("Guest", "Administrator"):

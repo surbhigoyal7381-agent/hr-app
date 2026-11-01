@@ -310,7 +310,9 @@ class CheckinAppUntouchedCase(FrappeTestCase):
     """
 
     def test_the_checkin_manifest_still_points_at_checkin(self):
-        m = pwa.manifest()
+        # Read from the body, not from a returned dict: ALV-237 changed the
+        # check-in manifest to answer the way this one always has.
+        m = json.loads(pwa.manifest().get_data(as_text=True))
         self.assertEqual(m["start_url"], "/checkin")
         self.assertEqual(m["scope"], "/checkin")
         self.assertTrue(

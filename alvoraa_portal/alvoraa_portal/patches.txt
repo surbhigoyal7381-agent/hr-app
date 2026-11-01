@@ -16,3 +16,4 @@ alvoraa_portal.patches.v1_0.employee_payable_account
 alvoraa_portal.patches.v1_0.dtc_pay_fields_level_2
 alvoraa_portal.patches.v1_0.notice_sender_role
 alvoraa_portal.patches.v1_0.expense_claim_approver_backfill
+alvoraa_portal.patches.v1_0.joiner_sign_in_replaces_the_link

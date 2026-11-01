@@ -368,6 +368,33 @@ html, body {
 @media (max-width: 380px) {
   .kx-card-title { font-size: 1.35rem; }
 }
+/* ── Slice 079: the joiner state ──────────────────────────────────────────
+   Three measurements, and each is load-bearing rather than taste.
+
+   16px on the inputs: below that iOS zooms the page on focus and pushes the
+   sign-in button off the screen - which is a silent failure on the one screen
+   in this product used by somebody who cannot ring our helpdesk.
+
+   44px on the reveal: mistyping a dashed password is the likeliest real failure
+   in this journey, and the eye icon it replaces is the smallest target on the
+   page. It is full width and it has WORDS on it, because nothing on this screen
+   may depend on an icon.
+
+   No marketing panel, so there is nothing to scroll past. */
+.kx-input { font-size: 16px; }
+.kx-reveal {
+  width: 100%; min-height: 44px; margin: 10px 0 4px;
+  font: inherit; font-size: 15px; font-weight: 600;
+  border: 1px solid var(--kx-border, #e3e3e3); border-radius: 8px;
+  background: #fff; color: inherit; cursor: pointer;
+}
+.kx-joiner-hint { display: block; font-size: 13px; opacity: .75; margin: 2px 0 6px; }
+.kx-cannot { font-size: 14px; }
+.kx-cannot summary { min-height: 44px; display: flex; align-items: center;
+  cursor: pointer; font-weight: 600; }
+.kx-cannot ul { margin: 6px 0 10px 18px; }
+.kx-code { font-family: monospace; font-size: 12px; opacity: .7; }
+.kx-processor { font-size: 13px; opacity: .7; margin-top: 12px; }
 </style>
 {% endblock %}
 
@@ -375,6 +402,11 @@ html, body {
 <div id="kx-wrap">
 
   <!-- ── Left: brand panel ──────────────────────────────────── -->
+  {#- Slice 079, US-3: NOT DRAWN AT ALL in the joiner state. A person who
+      does not work here is not being sold OKRs on the way to a form their
+      employer asked them to fill in. This is 064's finding P2, fixed for
+      this one state. -#}
+  {%- if not joiner %}
   <aside id="kx-brand">
     <div class="kx-logo">
       {#- The mark is rendered SERVER side from get_branding(): the tenant's own
@@ -434,12 +466,18 @@ html, body {
       &copy; <span id="kx-year"></span> <span id="kx-footer-name">Alvora</span>. All rights reserved.
     </div>
   </aside>
+  {%- endif %}
 
   <!-- ── Right: login form ──────────────────────────────────── -->
   <main id="kx-form-panel">
     <div class="kx-card">
+      {%- if joiner %}
+      <h2 class="kx-card-title">{{ _("Fill in your details before your first day") }}</h2>
+      <p class="kx-card-sub">{{ _("Your employer sent you a message with two things in it. Type them here.") }}</p>
+      {%- else %}
       <h2 class="kx-card-title">Welcome back</h2>
       <p class="kx-card-sub">Sign in to your workspace</p>
+      {%- endif %}
 
       <!-- Error banner -->
       <div id="kx-error" role="alert">
@@ -452,19 +490,28 @@ html, body {
 
       <form id="kx-login-form" novalidate>
         <div class="kx-field">
-          <label class="kx-label" for="kx-email">Email / Username</label>
+          {#- Name the thing the person is HOLDING, not the thing our database
+              calls it. And no placeholder: `you@company.com` is an instruction
+              to somebody who has been given a telephone number. -#}
+          <label class="kx-label" for="kx-email">{%- if joiner %}{{
+            _("The phone number or email HR sent the message to") if mobile_login
+            else _("The email HR sent the message to") }}{% else %}Email / Username{% endif %}</label>
           <input
             id="kx-email"
             class="kx-input"
             type="text"
             autocomplete="username"
-            placeholder="you@company.com"
+            {% if not joiner %}placeholder="you@company.com"{% endif %}
             required
           >
         </div>
 
         <div class="kx-field">
-          <label class="kx-label" for="kx-password">Password</label>
+          <label class="kx-label" for="kx-password">{%- if joiner %}{{
+            _("Your password") }}{% else %}Password{% endif %}</label>
+          {%- if joiner %}
+          <span class="kx-joiner-hint">{{ _("Three words and two numbers, like tiger-lamp-maple-74. Type it exactly as it is written, dashes and all.") }}</span>
+          {%- endif %}
           <div class="kx-pw-wrap">
             <input
               id="kx-password"
@@ -486,20 +533,55 @@ html, body {
           </div>
         </div>
 
+        {%- if joiner %}
+        <button type="button" class="kx-reveal" id="kx-reveal">{{ _("Show the password") }}</button>
+        {%- else %}
         <div class="kx-forgot">
           <a href="/update-password">Forgot password?</a>
         </div>
+        {%- endif %}
 
         <button type="submit" class="kx-btn" id="kx-submit">
           <div class="kx-spinner"></div>
-          <span class="kx-btn-text">Sign In</span>
+          <span class="kx-btn-text">{%- if joiner %}{{ _("Sign in and open my form") }}{% else %}Sign In{% endif %}</span>
         </button>
       </form>
 
+      {%- if joiner %}
+      {#- Both of today's escape routes are DEAD ENDS for this person:
+          "Forgot password?" mails a link to a mailbox that does not exist,
+          because the login id is deliberately non-routable, and "Need help?"
+          is a `mailto:` to us. This block ends at the employer's own phone
+          number instead. -#}
+      <hr class="kx-divider">
+      <details class="kx-cannot">
+        <summary id="kx-cannot">{{ _("I cannot sign in") }}</summary>
+        <p>{{ _("The message you were sent has both things you need:") }}</p>
+        <ul>
+          <li>{{ _("the phone number or email it was sent to") if mobile_login else _("the email it was sent to") }}</li>
+          <li>{{ _("a password of three words and two numbers") }}</li>
+        </ul>
+        <p>{{ _("It may be a text message, a WhatsApp message, or a slip of paper.") }}</p>
+        <p><b>{{ _("Still stuck?") }}</b>
+          {%- if hr_phone %}
+          {{ _("Ring {0} on {1} and ask for a new message. The new password replaces the old one.").format(tenant_name or "", hr_phone) }}
+          {%- elif hr_email %}
+          {{ _("Write to {0} and ask for a new message. The new password replaces the old one.").format(hr_email) }}
+          {%- else %}
+          {{ _("Ring the person who sent you the message and ask for a new one. The new password replaces the old one.") }}
+          {%- endif %}
+        </p>
+        <p class="kx-code">{{ _("Code for HR") }}: JOIN-NOSIGNIN</p>
+      </details>
+      {#- Counsel's ruling 1 in plain words, at the moment a stranger is
+          deciding whether to trust the page. -#}
+      <p class="kx-processor">{{ _("{0} asked for these details. Alvora only runs the software they use.").format(tenant_name or "") }}</p>
+      {%- else %}
       <hr class="kx-divider">
       <p class="kx-support">
         Need help? <a id="kx-support-link" href="mailto:support@kinexus.in">support@kinexus.in</a>
       </p>
+      {%- endif %}
     </div>
   </main>
 
@@ -513,6 +595,15 @@ html, body {
   const emailEl    = $('kx-email');
   const passwordEl = $('kx-password');
   const submitBtn  = $('kx-submit');
+  /* Server-rendered, because the lockout numbers are Frappe's own settings and
+     the design guessed them wrong: they are {{ lock_tries or 0 }} tries and
+     {{ lock_seconds or 0 }} seconds here, not "30 minutes". A joiner told the
+     wrong number rings to say the system is broken. */
+  const JOINER = {{ "true" if joiner else "false" }};
+  const BADPASS_WORDS = {{ _("That did not work. Check the password against the message — a dash or a letter is easy to miss. Press “Show the password” to see what you have typed. Code for HR: JOIN-BADPASS") | tojson }};
+  const LOCKED_WORDS = {{ _("Locked for {0} seconds. The password was wrong too many times, so this sign-in is closed for a moment. That is there to protect your details. Nothing you have already filled in is lost — it is saved with your employer. Code for HR: JOIN-LOCKED").format(lock_seconds or 0) | tojson }};
+  const ENDED_WORDS = {{ _("This sign-in has finished its job. Either you have already sent your form, or your employer has closed it. Nothing is wrong, and nothing you sent is lost. If you still need to send something, ring the person who sent you the message. Code for HR: JOIN-ENDED") | tojson }};
+
   const errorBox   = $('kx-error');
   const errorMsg   = $('kx-error-msg');
   const form       = $('kx-login-form');
@@ -625,7 +716,7 @@ html, body {
 
       if (!loginRes.ok || loginData.exc_type === 'AuthenticationError'
           || loginData.message === 'Logged Out') {
-        showError('Incorrect email or password. Please try again.');
+        showError(refusalWords(loginData && loginData.message));
         return;
       }
 
@@ -652,6 +743,46 @@ html, body {
     }
   });
 
+  /* ── What a refused sign-in says (slice 079, US-3 and US-4) ────────────
+     Frappe already tells these three apart, and I read its own code rather
+     than assuming (frappe/auth.py:282-289, v16.33.1):
+
+       a wrong password            -> "Invalid login credentials"
+       a CORRECT password on a
+         disabled account          -> "User disabled or missing"
+       too many tries              -> "Your account has been locked and will
+                                       resume after N seconds"
+
+     **That answers design ⚠ D4, which was marked "P1 if the answer is no".**
+     The answer is yes, with no server change at all.
+
+     Why it matters more than it looks: a joiner typing the password that
+     worked yesterday and being told it is WRONG will try again, lock
+     themselves out, and ring to say the system is broken. So an account whose
+     access has ended gets its own words - "this sign-in has finished its job"
+     - and never "Invalid credentials".
+
+     **The trade is recorded in decision 4a and is not rediscovered here:** this
+     does tell somebody holding the credential that an account existed and has
+     ended. That is a small disclosure about a person HR already chose to
+     contact, by a credential HR handed over by hand.
+
+     A wrong password NEVER says which of the two was wrong - that would tell a
+     stranger whether a phone number belongs to a joiner at this employer
+     (US-4) - and the tries and the lock length are read from System Settings
+     on the server, not guessed. */
+  function refusalWords(said) {
+    said = String(said || '');
+    if (!JOINER) return 'Incorrect email or password. Please try again.';
+    if (/locked/i.test(said)) {
+      return LOCKED_WORDS;
+    }
+    if (/disabled or missing/i.test(said)) {
+      return ENDED_WORDS;
+    }
+    return BADPASS_WORDS;
+  }
+
   // ── CSRF helper ─────────────────────────────────────────────
   function getCsrf() {
     return (window.frappe && frappe.csrf_token) ||
@@ -665,6 +796,19 @@ html, body {
   [emailEl, passwordEl].forEach(el => {
     el.addEventListener('input', clearError);
   });
+
+  // The reveal, with words on it. It toggles the type and says what it will do
+  // next, so it is never a state somebody has to infer from an icon.
+  const revealEl = $('kx-reveal');
+  if (revealEl) {
+    revealEl.addEventListener('click', function () {
+      const showing = passwordEl.type === 'text';
+      passwordEl.type = showing ? 'password' : 'text';
+      revealEl.textContent = showing
+        ? {{ _("Show the password") | tojson }}
+        : {{ _("Hide the password") | tojson }};
+    });
+  }
 
   // Auto-focus email field
   emailEl.focus();

@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="{{ frappe.local.lang or "en" }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>{{ tenant_name or "Alvora" }} &middot; {{ _("Before your first day") }}</title>
+<!--
+  The joiner's form, slice 079. It replaces the bearer-link page of slice 078.
+
+  WHAT WENT: the token, the `#t=` fragment, the `history.replaceState` that kept
+  it out of synced browser history, and `localStorage`. There is no secret in
+  this page's address and nothing of the joiner's in this browser.
+
+  WHAT THAT BOUGHT, and it is the whole of decision 4a and §5.2:
+
+    * "nothing was lost" is TRUE ON A DIFFERENT PHONE, because what they typed
+      is on the employer's own row rather than in this browser;
+    * signing out on a borrowed handset leaves NOTHING behind, which a browser
+      draft could never promise at the same time as the line above;
+    * the silent `localStorage` quota failure - an uploaded image blows it - is
+      a state that no longer exists.
+
+  WHAT STAYED: every asset inline (OPS-44, because the asset gate reads only
+  hrms-employee.html and a 404 here would be a dead form with nothing in any
+  log, on the one page used by people who cannot ring our helpdesk); no-store,
+  noindex and no-referrer; and no document bytes anywhere but a request body.
+
+  EVERY STRING goes through the server's own translator below, so a reviewed
+  Hindi file drops straight in. **No Hindi is shipped** - see ALV-267 and the
+  implementation notes: an unreviewed machine translation of a privacy notice
+  is worse than an honest gap.
+-->
+<style>
+:root{
+  --ink:#1a1a1a; --soft:#5c5c5c; --line:#e3e3e3; --bg:#f7f7f8; --card:#fff;
+  --brand:{{ brand_colour or "#1f6feb" }}; --red:#b3261e; --amber:#8a5a00;
+  --amber-bg:#fff8e6; --r:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55
+  -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:16px 16px 56px}
+header{display:flex;align-items:center;gap:10px;padding:18px 0 10px;flex-wrap:wrap}
+header b{font-size:18px}
+.who{margin-left:auto;font-size:13px;color:var(--soft)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;margin-bottom:16px}
+h1{font-size:22px;margin:0 0 10px;line-height:1.3}
+h2{font-size:17px;margin:22px 0 8px}
+p{margin:0 0 12px}
+.soft{color:var(--soft);font-size:14px}
+.notice{background:var(--bg);border-left:3px solid var(--brand);
+  border-radius:8px;padding:12px 14px;margin:0 0 14px;white-space:pre-wrap}
+.notice h2{margin-top:0}
+label{display:block;font-weight:600;font-size:14px;margin:14px 0 4px}
+.hint{display:block;font-weight:400;color:var(--soft);font-size:13px;margin-top:3px}
+input[type=text],textarea{
+  /* 16px, and it is load-bearing: under that iOS zooms on focus and pushes the
+     button off the screen. */
+  width:100%;max-width:420px;font:inherit;font-size:16px;min-height:48px;
+  padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+  background:#fff;color:var(--ink)}
+textarea{min-height:80px}
+input:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{
+  outline:3px solid var(--brand);outline-offset:2px}
+.btn{font:inherit;font-size:16px;min-height:48px;padding:12px 18px;border-radius:8px;
+  border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;
+  width:100%;margin-top:10px;display:inline-flex;align-items:center;
+  justify-content:center;text-decoration:none}
+.btn.go{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.row3{display:grid;gap:8px}
+.doc{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+.doc b{display:block}
+.chip{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;
+  border-radius:999px;background:var(--amber-bg);color:var(--amber);
+  border:1px solid #e8d6a8;margin-left:6px;vertical-align:middle}
+.ok{color:#1b5e20;font-weight:600}
+.bad{color:var(--red);font-weight:600}
+.warn{color:var(--amber)}
+.alert{background:#fdecea;border-left:3px solid var(--red);border-radius:8px;
+  padding:12px 14px;margin:0 0 12px}
+.back{background:var(--amber-bg);border-left:3px solid var(--amber);
+  border-radius:8px;padding:12px 14px;margin:0 0 14px}
+.steps{list-style:none;margin:0 0 14px;padding:0;font-size:14px}
+.steps li{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.steps li span:last-child{margin-left:auto;color:var(--soft)}
+.hide{display:none}
+footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
+  padding-top:14px;margin-top:8px}
+footer .code{font-family:monospace}
+@media(min-width:560px){.row3{grid-template-columns:1fr 1fr 1fr}.btn{width:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <b>{{ tenant_name or "Alvora" }}</b>
+    <span class="who" id="who"></span>
+  </header>
+
+  {%- if one_page %}
+  <!-- The gate sent them here. One button, and it works. No page name, no
+       menu, no count - nothing that hints at what is behind the refusal.
+       "not yet" is the honest word: they are about to work here. -->
+  <div class="card" role="alert">
+    <h1>{{ _("This sign-in only opens your joining form") }}</h1>
+    <p>{{ _("You are signed in as a new joiner, so there is nothing else here for you yet. Once you start work, the same sign-in opens your own staff pages.") }}</p>
+    <a class="btn go" href="/joining">{{ _("Back to my form") }}</a>
+    <p class="soft">{{ _("Code for HR") }}: <span style="font-family:monospace">JOIN-ONEPAGE</span></p>
+  </div>
+  {%- endif %}
+
+  <div id="loading" class="card"><p>{{ _("Opening your form…") }}</p></div>
+
+  <!-- ONE answer for every ending - sent and expired, cancelled, hired, turned
+       down. A different answer for "turned down" would tell a candidate the
+       outcome of their application through a web page instead of from their
+       employer. -->
+  <div id="gone" class="card hide" role="alert">
+    <h1>{{ _("This sign-in has finished its job") }}</h1>
+    <p id="gone-why">{{ _("Either you have already sent your form, or your employer has closed it. Nothing is wrong, and nothing you sent is lost.") }}</p>
+    <p><b>{{ _("What to do") }}:</b> {{ _("if you still need to send something, ring the person who sent you the message.") }}</p>
+    <p class="soft">{{ _("Code for HR") }}: <span style="font-family:monospace">JOIN-ENDED</span></p>
+  </div>
+
+  <!-- THE NOTICE COMES FIRST, before the first input in the DOM - not under a
+       tick at the end. The employer's own words (counsel's ruling 6), both
+       configured periods and never a literal, and the three sentences we write
+       because the employer should not have to. -->
+  <div id="j0" class="card hide">
+    <h1>{{ _("Before your first day") }}</h1>
+    <p id="j0-hello"></p>
+    <div class="notice" id="j0-notice"></div>
+    <div class="notice">
+      <h2>{{ _("What we will ask for") }}</h2>
+      <p id="j0-asks" class="soft"></p>
+      <h2>{{ _("What happens to what you send") }}</h2>
+      <p id="j0-keeps" class="soft"></p>
+      <p class="soft" id="j0-ours"></p>
+    </div>
+    <button class="btn go" id="start">{{ _("Start") }}</button>
+  </div>
+
+  <!-- One field per row, 48px controls, 16px text, nothing wider than 420px.
+       The list is drawn from what the SERVER says it accepts, so the form
+       cannot ask for a field the server would drop. -->
+  <div id="j1" class="card hide">
+    <h1>{{ _("Your details") }}</h1>
+    <div id="j1-back"></div>
+    <ul class="steps" id="j1-steps"></ul>
+    <p class="soft" id="j1-needed"></p>
+    <div id="j1-fields"></div>
+    <p class="bad hide" id="j1-err" role="alert"></p>
+    <button class="btn go" id="to-docs">{{ _("Next") }}</button>
+  </div>
+
+  <!-- Three equal buttons per document, and the third is a real answer to every
+       one of them: a joiner may not own the document yet, may be on somebody
+       else's phone, or may not be able to scan anything. -->
+  <div id="j2" class="card hide">
+    <h1>{{ _("Your documents") }}</h1>
+    <p class="soft">{{ _("A clear photograph of the document is fine. You do not need a scanner.") }}</p>
+    <div id="j2-docs"></div>
+    <button class="btn go" id="to-photo">{{ _("Next") }}</button>
+  </div>
+
+  <div id="j3" class="card hide">
+    <h1>{{ _("Your photo") }}</h1>
+    <p class="soft">{{ _("This is the picture colleagues will see next to your name on the organisation chart once you join. It is not used for anything else — nobody checks your face against it. You can skip it and add one later.") }}</p>
+    <div class="row3">
+      <button class="btn" id="j3-cam">{{ _("Take a photo") }}</button>
+      <button class="btn" id="j3-file">{{ _("Choose a file") }}</button>
+      <button class="btn" id="j3-on">{{ _("Skip this") }}</button>
+    </div>
+    <p class="soft" id="j3-say" role="status"></p>
+    <input type="file" id="j3-f" accept="image/jpeg,image/png" style="display:none">
+    <input type="file" id="j3-c" accept="image/jpeg,image/png" capture="user" style="display:none">
+  </div>
+
+  <div id="j4" class="card hide">
+    <h1>{{ _("Check and send") }}</h1>
+    <div id="j4-summary"></div>
+    <p id="j4-words"></p>
+    <div class="alert hide" id="j4-err" role="alert"></div>
+    <button class="btn go" id="send">{{ _("Send") }}</button>
+  </div>
+
+  <!-- It must NOT say "this will not open again". That sentence belonged to the
+       link and is false under decision 4a. -->
+  <div id="j5" class="card hide">
+    <h1>{{ _("Thank you. There is nothing else to do.") }}</h1>
+    <p id="j5-who"></p>
+    <p id="j5-bring" class="hide"></p>
+    <p class="soft" id="j5-still"></p>
+    <div id="j5-docs"></div>
+  </div>
+
+  <footer id="rights" class="hide">
+    <p id="rights-ask"></p>
+    <p><button class="btn" id="signout">{{ _("Sign out") }}</button></p>
+    <p id="signout-say">{{ _("Everything you have filled in is saved with your employer. You will need the phone number and the password from the message to come back.") }}</p>
+    <p id="rights-processor"></p>
+  </footer>
+</div>
+
+<script>
+/* Every user-facing string on this page, translated by the SERVER through
+   Frappe's own `_()`, so a reviewed Hindi file applies with no code change.
+   `| tojson` escapes it for JavaScript. */
+var S = {
+  hello: {{ _("Hello {0}. This takes about five minutes.") | tojson }},
+  hello_plain: {{ _("This takes about five minutes.") | tojson }},
+  asks_contact: {{ _("Your contact details and somebody to ring in an emergency") | tojson }},
+  asks_docs: {{ _("{0} document(s): {1}") | tojson }},
+  keeps: {{ _("If you join, your details become your staff record. If you do not join, your employer keeps them for {0} days and then deletes them. A photograph of an identity card is deleted sooner — after {1} days.") | tojson }},
+  ours_one: {{ _("This sign-in opens this one page and nothing else.") | tojson }},
+  ours_two: {{ _("What you send is sent — you will not be able to change it here afterwards.") | tojson }},
+  ours_three: {{ _("Afterwards, the way to see what is held about you or to have it deleted is to ask your employer. They can send you everything they hold, or delete it.") | tojson }},
+  ours_source: {{ _("The periods and the contact above come from your employer's own settings.") | tojson }},
+  needed_line: {{ _("Anything marked Needed has to be filled in before you can send the form. You can leave the rest blank.") | tojson }},
+  needed: {{ _("Needed") | tojson }},
+  back: {{ _("You are back, and nothing was lost.") | tojson }},
+  back_counts: {{ _("{0} of {1} answers done and {2} of {3} documents sent.") | tojson }},
+  back_finish: {{ _("You have until {0} to finish.") | tojson }},
+  step_details: {{ _("Your details") | tojson }},
+  step_docs: {{ _("Your documents") | tojson }},
+  step_done: {{ _("Done") | tojson }},
+  step_here: {{ _("you are here") | tojson }},
+  step_some: {{ _("{0} of {1} sent") | tojson }},
+  step_none: {{ _("nothing yet") | tojson }},
+  take: {{ _("Take a photo") | tojson }},
+  choose: {{ _("Choose a file") | tojson }},
+  bring: {{ _("I will bring it on my first day") | tojson }},
+  bringing: {{ _("You will bring this on your first day.") | tojson }},
+  sending: {{ _("Sending…") | tojson }},
+  sent_one: {{ _("Sent.") | tojson }},
+  unread: {{ _("That file could not be read from this phone.") | tojson }},
+  not_given: {{ _("not given") | tojson }},
+  summary_sent: {{ _("sent") | tojson }},
+  summary_bring: {{ _("bringing it on the first day") | tojson }},
+  summary_none: {{ _("nothing yet") | tojson }},
+  check_words: {{ _("When you send this, {0} reads it and makes your staff record. You will not be able to change it here afterwards — ring them if something is wrong.") | tojson }},
+  send_to: {{ _("Send to {0}") | tojson }},
+  hear_from: {{ _("You will hear from {0}.") | tojson }},
+  reach: {{ _("You can reach them on {0}.") | tojson }},
+  bring_list: {{ _("Bring on your first day: {0}.") | tojson }},
+  still_works: {{ _("Your sign-in still works until {0}, so you can come back and send a document you promised.") | tojson }},
+  ask_them: {{ _("Want to know what is held about you, or want it deleted? Ask {0}. They can send you everything they hold, or delete it.") | tojson }},
+  ask_them_plain: {{ _("Want to know what is held about you, or want it deleted? Ask the person who sent you the message.") | tojson }},
+  processor: {{ _("{0} asked for these details. Alvora only runs the software they use.") | tojson }},
+  hr_team: {{ _("the HR team") | tojson }},
+  lost: {{ _("That did not reach us. Nothing is lost — try again in a moment.") | tojson }},
+  photo_lost: {{ _("That did not reach us. You can skip this and add a picture later.") | tojson }},
+  next: {{ _("Next") | tojson }},
+  your_photo: {{ _("Your photo") | tojson }},
+  signed_in_as: {{ _("Signed in as {0}") | tojson }}
+};
+var LABELS = {
+  full_name: [{{ _("Your full name") | tojson }}, {{ _("As your employer should write it on your record") | tojson }}],
+  cell_number: [{{ _("Your mobile number") | tojson }}, {{ _("The number we will ring") | tojson }}],
+  personal_email: [{{ _("Your email") | tojson }}, ""],
+  current_address: [{{ _("Where you live now") | tojson }}, {{ _("Where post reaches you today") | tojson }}],
+  person_to_be_contacted: [{{ _("Who to ring in an emergency") | tojson }}, {{ _("A name we can ask for") | tojson }}],
+  relation: [{{ _("How they are related to you") | tojson }}, {{ _("Wife, brother, friend") | tojson }}],
+  emergency_phone_number: [{{ _("Their phone number") | tojson }}, {{ _("A number that will be answered") | tojson }}]
+};
+</script>
+<script>
+(function () {
+  "use strict";
+  var API = "/api/method/alvoraa_portal.joiner_public.";
+  var D = null;                  /* what open_invite returned */
+  var FILES = {};                /* type -> stored file name */
+  var BRING = {};                /* type -> true, "bringing it" */
+  var PHOTO = "__photo__";       /* joiner_public.PHOTO_TYPE */
+  var STEP = "details";
+
+  function $(id) { return document.getElementById(id); }
+  function show(id) {
+    ["loading", "gone", "j0", "j1", "j2", "j3", "j4", "j5"].forEach(function (s) {
+      $(s).classList.toggle("hide", s !== id);
+    });
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+  function fill(text, args) {
+    (args || []).forEach(function (a, i) {
+      text = String(text).split("{" + i + "}").join(a);
+    });
+    return text;
+  }
+  function words(list) {
+    var a = (list || []).slice();
+    if (a.length < 2) return a[0] || "";
+    return a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+  }
+  function csrf() {
+    return (window.frappe && window.frappe.csrf_token) ||
+      (document.cookie.split(";").map(function (c) { return c.trim(); })
+        .filter(function (c) { return c.indexOf("csrf_token=") === 0; })[0] || "")
+        .split("=")[1] || "fetch";
+  }
+
+  /* No token, no key, no secret of any kind in this call - the SESSION is the
+     credential, and the cookie carries it. */
+  function post(method, args) {
+    return fetch(API + method, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Frappe-CSRF-Token": csrf() },
+      body: JSON.stringify(args || {}),
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (res.ok && !body.exc_type) return body.message || {};
+        var said = "";
+        try { said = JSON.parse(JSON.parse(body._server_messages)[0]).message; }
+        catch (e) { said = ""; }
+        var err = new Error(said || "");
+        err.refused = res.status === 403;
+        throw err;
+      });
+    });
+  }
+
+  function whoHR() {
+    return (D && D.brand && D.brand.name) ? D.brand.name : S.hr_team;
+  }
+  function contactWords() {
+    var c = (D && D.contact) || {};
+    return [c.phone, c.email].filter(Boolean).join(" or ");
+  }
+  function day(stamp) {
+    if (!stamp) return "";
+    var dt = new Date(String(stamp).slice(0, 19).replace(" ", "T"));
+    try {
+      return dt.toLocaleDateString(undefined,
+        { weekday: "long", day: "numeric", month: "long" });
+    } catch (e) { return String(stamp).slice(0, 10); }
+  }
+
+  /* ── opening it ────────────────────────────────────────────────────────── */
+
+  function begin() {
+    post("open_invite").then(function (d) {
+      D = d;
+      $("who").textContent = fill(S.signed_in_as, [field("full_name") || ""]);
+      $("rights-ask").textContent = contactWords()
+        ? fill(S.ask_them, [contactWords()]) : S.ask_them_plain;
+      $("rights-processor").textContent = fill(S.processor, [whoHR()]);
+      $("rights").classList.remove("hide");
+      if (d.submitted) { drawSent(); return; }
+      drawWelcome();
+    }, function (err) {
+      if (err && err.message) $("gone-why").textContent = err.message;
+      $("rights").classList.add("hide");
+      show("gone");
+    });
+  }
+
+  function field(name) {
+    var row = (D.fields || []).filter(function (f) { return f.name === name; })[0];
+    return row ? row.value : "";
+  }
+
+  function drawWelcome() {
+    var name = field("full_name");
+    $("j0-hello").textContent = name ? fill(S.hello, [name]) : S.hello_plain;
+    /* The employer's OWN WORDS, as text - never markup. Whatever HR typed is
+       data, not instruction. */
+    $("j0-notice").textContent = D.notice || "";
+    var docs = D.documents || [];
+    $("j0-asks").textContent = S.asks_contact
+      + (docs.length
+          ? ". " + fill(S.asks_docs,
+              [docs.length, words(docs.map(function (t) { return t.name; }))])
+          : ".");
+    /* THE CONFIGURED NUMBERS, both of them, separately. One sentence covering
+       both clocks would be wrong about one of them. */
+    $("j0-keeps").textContent =
+      fill(S.keeps, [D.not_hired_days, D.document_days]);
+    $("j0-ours").textContent =
+      [S.ours_one, S.ours_two, S.ours_three, S.ours_source].join(" ");
+    show("j0");
+  }
+
+  /* ── the details ───────────────────────────────────────────────────────── */
+
+  function backStrip() {
+    var done = D.answers_done, total = D.answers_total;
+    if (!done && !D.documents_done) return "";
+    return '<div class="back" role="status"><b>' + esc(S.back) + "</b> "
+      + esc(fill(S.back_counts, [done, total, D.documents_done, D.documents_total]))
+      + (D.expires_on ? " " + esc(fill(S.back_finish, [day(D.expires_on)])) : "")
+      + "</div>";
+  }
+
+  function stepList() {
+    var docs = D.documents || [];
+    var sentCount = docs.filter(function (t) {
+      return FILES[t.name] || BRING[t.name];
+    }).length;
+    var rows = [
+      [S.step_details, STEP === "details" ? S.step_here
+        : (D.answers_done >= D.answers_total ? S.step_done
+           : fill(S.step_some, [D.answers_done, D.answers_total]))],
+      [S.step_docs, STEP === "docs" ? S.step_here
+        : (docs.length === 0 ? S.step_done
+           : sentCount ? fill(S.step_some, [sentCount, docs.length])
+           : S.step_none)],
+    ];
+    /* A WORD per row, never a tint: colour is never the only signal. */
+    return rows.map(function (r) {
+      return "<li><span>" + esc(r[0]) + "</span><span>" + esc(r[1]) + "</span></li>";
+    }).join("");
+  }
+
+  function drawFields() {
+    STEP = "details";
+    $("j1-back").innerHTML = backStrip();
+    $("j1-steps").innerHTML = stepList();
+    var anyNeeded = (D.fields || []).some(function (f) { return f.required; });
+    $("j1-needed").textContent = anyNeeded ? S.needed_line : "";
+    $("j1-fields").innerHTML = (D.fields || []).map(function (f, i) {
+      var w = LABELS[f.name] || [f.name, ""];
+      var id = "f-" + f.name;
+      var long = f.name === "current_address";
+      return '<label for="' + id + '">' + esc(w[0])
+        + (f.required ? '<span class="chip">' + esc(S.needed) + "</span>" : "")
+        + (w[1] ? '<span class="hint">' + esc(w[1]) + "</span>" : "") + "</label>"
+        + (long
+            ? '<textarea id="' + id + '"' + (f.required ? ' aria-required="true"' : "")
+              + ">" + esc(f.value) + "</textarea>"
+            : '<input id="' + id + '" type="text" value="' + esc(f.value) + '"'
+              + (f.required ? ' aria-required="true"' : "") + ">");
+    }).join("");
+    show("j1");
+  }
+
+  function typed() {
+    var out = {};
+    (D.fields || []).forEach(function (f) {
+      var el = $("f-" + f.name);
+      if (el) out[f.name] = el.value;
+    });
+    return out;
+  }
+
+  /* The draft goes to the EMPLOYER'S ROW, not to this browser. That is what
+     makes "nothing was lost" true on a different phone, and what leaves a
+     borrowed handset with nothing on it. */
+  function keep() {
+    var values = typed();
+    (D.fields || []).forEach(function (f) {
+      if (f.name in values) f.value = values[f.name];
+    });
+    D.answers_done = (D.fields || []).filter(function (f) {
+      return String(f.value || "").trim();
+    }).length;
+    return post("save_draft", { values: JSON.stringify(values) }).catch(function (e) {
+      $("j1-err").textContent = (e && e.message) || S.lost;
+      $("j1-err").classList.remove("hide");
+      throw e;
+    });
+  }
+
+  /* ── the documents ─────────────────────────────────────────────────────── */
+
+  function drawDocs() {
+    STEP = "docs";
+    var list = D.documents || [];
+    if (!list.length) { show("j3"); return; }
+    $("j2-docs").innerHTML = list.map(function (t, i) {
+      var have = FILES[t.name], promised = BRING[t.name];
+      return '<div class="doc"><b>' + esc(t.name)
+        + (t.required ? '<span class="chip">' + esc(S.needed) + "</span>" : "") + "</b>"
+        + (t.description ? '<span class="hint">' + esc(t.description) + "</span>" : "")
+        + '<div class="row3">'
+        + '<button class="btn" data-pick="' + i + '" data-cam="1">' + esc(S.take) + "</button>"
+        + '<button class="btn" data-pick="' + i + '">' + esc(S.choose) + "</button>"
+        /* The third button is a valid answer to EVERY required document, and it
+           disappears once given. */
+        + (promised ? "" : '<button class="btn" data-bring="' + i + '">'
+            + esc(S.bring) + "</button>")
+        + "</div>"
+        + '<p class="soft" id="d-say-' + i + '" role="status">'
+        + (have ? esc(S.sent_one) : promised ? esc(S.bringing) : "") + "</p>"
+        + '<input type="file" id="d-f-' + i + '" accept="image/jpeg,image/png,application/pdf" style="display:none">'
+        + '<input type="file" id="d-c-' + i + '" accept="image/jpeg,image/png" capture="environment" style="display:none">'
+        + "</div>";
+    }).join("");
+    show("j2");
+  }
+
+  function sendFile(i, file, forPhoto) {
+    var say = forPhoto ? $("j3-say") : $("d-say-" + i);
+    var type = forPhoto ? PHOTO : D.documents[i].name;
+    if (!file) return;
+    say.textContent = S.sending;
+    say.className = "soft";
+    var r = new FileReader();
+    r.onerror = function () { say.textContent = S.unread; say.className = "bad"; };
+    r.onload = function () {
+      post("upload_invite_file", {
+        document_type: type, filename: file.name, data: String(r.result || ""),
+      }).then(function (out) {
+        FILES[type] = out.file_name || file.name;
+        delete BRING[type];
+        say.textContent = S.sent_one;
+        say.className = "ok";
+        if (forPhoto) $("j3-on").textContent = S.next;
+        else drawDocs();
+      }, function (err) {
+        /* It never discards what was typed and never ends the session, and it
+           always offers a way forward that is not "try again". */
+        say.textContent = (err && err.message)
+          || (forPhoto ? S.photo_lost : S.lost);
+        say.className = "bad";
+      });
+    };
+    r.readAsDataURL(file);
+  }
+
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var pick = t.getAttribute("data-pick");
+    if (pick !== null) {
+      $((t.getAttribute("data-cam") ? "d-c-" : "d-f-") + pick).click();
+      return;
+    }
+    var bring = t.getAttribute("data-bring");
+    if (bring !== null) {
+      BRING[D.documents[bring].name] = true;
+      delete FILES[D.documents[bring].name];
+      drawDocs();
+    }
+  });
+  document.addEventListener("change", function (e) {
+    var id = (e.target && e.target.id) || "";
+    var f = e.target.files && e.target.files[0];
+    if (id === "j3-f" || id === "j3-c") { e.target.value = ""; sendFile(0, f, true); return; }
+    var m = /^d-[fc]-(\d+)$/.exec(id);
+    if (!m) return;
+    e.target.value = "";
+    sendFile(m[1], f, false);
+  });
+
+  /* ── check, send, sent ─────────────────────────────────────────────────── */
+
+  function toCheck() {
+    $("j4-summary").innerHTML = (D.fields || []).map(function (f) {
+      var w = LABELS[f.name] || [f.name, ""];
+      return "<p><b>" + esc(w[0]) + ":</b> "
+        + (f.value ? esc(f.value) : '<span class="soft">' + esc(S.not_given) + "</span>")
+        + "</p>";
+    }).join("")
+      + (D.documents || []).map(function (t) {
+          return "<p><b>" + esc(t.name) + ":</b> "
+            + (FILES[t.name] ? '<span class="ok">' + esc(S.summary_sent) + "</span>"
+               : BRING[t.name] ? '<span class="soft">' + esc(S.summary_bring) + "</span>"
+               : '<span class="warn">' + esc(S.summary_none) + "</span>") + "</p>";
+        }).join("")
+      + (FILES[PHOTO] ? "<p><b>" + esc(S.your_photo) + ":</b> <span class=\"ok\">"
+          + esc(S.summary_sent) + "</span></p>" : "");
+    $("j4-words").textContent = fill(S.check_words, [whoHR()]);
+    $("send").textContent = fill(S.send_to, [whoHR()]);
+    show("j4");
+  }
+
+  function drawSent() {
+    $("j5-who").textContent = fill(S.hear_from, [whoHR()])
+      + (contactWords() ? " " + fill(S.reach, [contactWords()]) : "");
+    var promised = (D.promised || []).join(", ");
+    if (promised) {
+      $("j5-bring").textContent = fill(S.bring_list, [promised]);
+      $("j5-bring").classList.remove("hide");
+    }
+    /* It says the sign-in works until the date, and it does NOT say "this will
+       not open again" - that sentence belonged to the link and is now false. */
+    $("j5-still").textContent = D.expires_on
+      ? fill(S.still_works, [day(D.expires_on)]) : "";
+    show("j5");
+  }
+
+  $("start").addEventListener("click", drawFields);
+  $("to-docs").addEventListener("click", function () {
+    $("j1-err").classList.add("hide");
+    keep().then(drawDocs, function () {});
+  });
+  $("to-photo").addEventListener("click", function () { show("j3"); });
+  $("j3-cam").addEventListener("click", function () { $("j3-c").click(); });
+  $("j3-file").addEventListener("click", function () { $("j3-f").click(); });
+  $("j3-on").addEventListener("click", toCheck);
+
+  $("send").addEventListener("click", function () {
+    var btn = $("send");
+    btn.disabled = true;
+    $("j4-err").classList.add("hide");
+    /* THE SERVER DECIDES WHAT IS MISSING. The browser never does: a required
+       list worked out here could disagree with the one that refuses. */
+    post("submit_invite", {
+      values: JSON.stringify(typed()),
+      bringing: JSON.stringify(Object.keys(BRING)),
+    }).then(function (out) {
+      btn.disabled = false;
+      D.submitted = true;
+      D.promised = (out.bringing || "").split(",").map(function (s) { return s.trim(); })
+        .filter(Boolean);
+      D.expires_on = out.expires_on || D.expires_on;
+      drawSent();
+    }, function (err) {
+      /* A refusal costs them nothing: nothing is sent, nothing is burned, every
+         input still holds what was typed, and they are still signed in. */
+      btn.disabled = false;
+      $("j4-err").textContent = (err && err.message) || S.lost;
+      $("j4-err").classList.remove("hide");
+    });
+  });
+
+  $("signout").addEventListener("click", function () {
+    window.location.href = "/logout";
+  });
+
+  begin();
+})();
+</script>
+</body>
+</html>

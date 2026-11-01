@@ -163,8 +163,9 @@
    "fieldname": "cancel_reason",
    "fieldtype": "Select",
    "label": "Cancelled because",
-   "options": "\nBy HR\nThe joiner is not coming\nSent to the wrong person\nA newer link was made",
-   "read_only": 1
+   "options": "\nBy HR\nThe joiner is not coming\nSent to the wrong person\nA newer sign-in was made\nThey were turned down",
+   "read_only": 1,
+   "description": "Why the invite was closed. **Every reason gives the joiner the same answer on the page** (079-SEC-5): a different one for \"turned down\" would tell a candidate the outcome of their application through a web page instead of from their employer."
   },
   {
    "fieldname": "closed_on",

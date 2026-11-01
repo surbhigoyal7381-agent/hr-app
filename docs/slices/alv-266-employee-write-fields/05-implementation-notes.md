@@ -7,6 +7,92 @@ production untouched. No SSH.**
 
 ---
 
+## Round 5: rebase, wording fix, and what the re-checks found that is not ours (1 Nov 2026)
+
+### Bad news first
+
+- **The re-checks (07-re-review.md, 07-re-security.md) proved four leaks that this slice
+  did not cause and does not fix.** They are tracked separately. Surbhi said not to build
+  ALV-281 or ALV-282 yet. Until they are fixed, **"nobody but HR sees passport and health"
+  is not fully true**:
+
+  | # | What leaks | Ticket | Cause |
+  |---|---|---|---|
+  | 1 | **Change history on the Desk form** shows old and new values of locked fields (bank, PAN, salary, passport, health) to anyone who can open the record - a manager on a report included. P0 in the security re-check | **ALV-281** | Frappe's `getdoc` sends the last 10 Version rows with their values; field levels are not applied to them (`frappe/desk/form/load.py`) |
+  | 2 | **Travel Request copies the passport number** from the Employee, and the manager who made it can read the copy | **ALV-282** | The Travel Request field fetches from `employee.passport_number`; its own field is level 0, and ESS can create Travel Requests |
+  | 3 | **Employee Promotion copies the salary (CTC)** where a manager who can read the promotion sees it | not yet ticketed | `current_ctc` fetches from `employee.ctc`; Promotion's fields are all level 0 |
+  | 4 | **A save replies with every field**, including ones the saver may not read (an HR User sees bank and PAN in the reply; a person sees their own passport and health) | not yet ticketed | Standard Frappe on `/api/resource` PUT, `frappe.client.save`/`set_value` and the Desk save; the v2 API does not do it |
+
+  Before D6 a manager read these fields outright, so D6 is still a large step forward.
+
+### What changed
+
+- **Rebased** onto `origin/dev` 94b1862c. Five commits came in: ALV-278 (`fixtures_078.py`
+  `give_documents` reads the Employee fresh each pass), 071 (`test_unseated_071` warms
+  `get_meta` before counting; the budget stays at 40), 078 (`test_my_photo_078` adds the
+  four-corner photo-guard test; `portal.js` warning wording), and 079 documents. None
+  touches `hooks.py`, `employee_field_rights.py`, `own_record_permission.py` or
+  `test_portal_security_010.py`. No conflict.
+- **Wording (07-re-review m1):** when HR changes a locked field on their own record, the
+  refusal now names the fields - for example "You cannot change Passport Number on your
+  own record. Ask another HR person to make this change." It used to say "job, pay or
+  bank details" even for a passport. Labels only, never values. Test:
+  `test_alv266_hr_refused_on_own_passport_with_an_accurate_message` (fails on the old
+  wording).
+
+### Tests, round 5 - on a fresh site built like CI
+
+`fresh266` was dropped and rebuilt at this branch's code the way CI builds
+`test_site`: `bench new-site`, then install erpnext, hrms, alvoraa_portal,
+alvoraa_goals, then `allow_tests` and `throttle_user_limit 1000`. One module at a time:
+
+| Module | Result |
+|---|---|
+| `test_employee_write_fields_alv266` | 23, OK |
+| `test_employee_field_rights_alv215` (075) | 20, OK |
+| `test_own_record_permission_alv249` | 32 + 1, OK |
+| `test_request_guard_alv249` | 5 + 3, OK |
+| `test_unseated_071` | 12, OK (the 43-against-40 failure is gone with 071's own fix) |
+| `test_expense_birthdays_076` | 35, OK (the `..._but_hr_can` failure is gone with the ALV-249 fix) |
+| `test_expense_and_scoping` | 8, OK |
+| `test_inbox_counts_034` | 17 + 2, OK |
+| `test_manager_scope` | 12, OK |
+| `test_personas_012` | 17, OK |
+| `test_permission_health_048` | 16, OK |
+| `test_portal_security_010` | 45 + 5, OK |
+| `test_directory_contact_045` | 17, OK |
+| `test_company_scope_078` | 9, OK |
+| `test_employee_documents_078` | 20, OK |
+| `test_faces_078` | 8, OK |
+| `test_joiner_078` | 55, OK |
+| `test_mini_profile_078` | 12, OK |
+| `test_my_photo_078` | 35, OK |
+| `test_people_settings_078` | 22, OK |
+| `test_positions_064` | 17, OK |
+
+Whole suites in CI order (`run-tests --app alvoraa_goals`, then `--app alvoraa_portal`)
+on the same fresh site:
+
+| Suite | Result |
+|---|---|
+| `alvoraa_goals` | 18, OK (2 skipped) |
+| `alvoraa_portal`, batch 1 (integration) | 59, OK |
+| `alvoraa_portal`, batch 2 (old-style test classes) | 1,098 ran, **1 error**, 20 skipped - see below |
+| `alvoraa_portal`, batch 3 (2,795 tests) | FULL3_PLACEHOLDER |
+
+**The one error in batch 2 is not from this slice, as far as I can tell.**
+`test_expense_birthdays_076.test_the_department_approver_is_used_when_the_employee_has_none`
+fails only in the whole run, not alone (35 of 35 passed when that module ran by itself
+on the same fresh site). The message is "Department C076 Dept - S43A does not belong to
+company: Second Co 064": the test makes its department in whichever company
+`ensure_company()` returns first, and its employee ends up in another company made by
+an earlier module (064's "Second Co", and an "S43A" company). Neither company is one
+this slice's tests make. I did not run the whole suite on `origin/dev` code to prove it
+fails there too.
+
+Scripts: `check_app_integrity.py` 895 checks OK (shadowing part skipped);
+`check_scope_traps.py` OK.
+
 ## Round 4: D6 built as Surbhi chose (C and A), 1 Nov 2026
 
 ### Bad news first

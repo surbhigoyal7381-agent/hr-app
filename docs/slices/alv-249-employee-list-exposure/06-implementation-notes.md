@@ -242,6 +242,41 @@ hrms, alvoraa_portal and alvoraa_goals in CI's order, `allow_tests`, throttle 10
 locally.
 
 
+### 5. After the rebase onto 15608d1e (26 commits came in: slice 078 and ALV-175)
+
+**What came in.** Slice 078 (photos, mini profile, employee documents, joiner
+pre-onboarding, people settings) and ALV-175 (email template hashes). Two of my files were
+touched by them:
+- `hooks.py`: 078 added its own Employee `on_update` handler after ours, plus jinja,
+  `doctype_js` and scheduler lines;
+- `test_portal_security_010.py`: 078 added ceiling rows after ours.
+
+The rebase was clean, and both sides' lines are present. I checked by grep: our five hook
+lines, 078's `employee_photo.on_employee_update`, and both sets of ceiling rows.
+
+**Runs on the fresh site `test249f`, after migrating it to the rebased code:**
+
+| Module | Result |
+|---|---|
+| `test_faces_078` | 8, OK |
+| `test_mini_profile_078` | 12, OK |
+| `test_my_photo_078` | 34, OK |
+| `test_company_scope_078` | 9: 1 error in the first run after the migrate. Passed alone, and the whole module passed (9, OK) when run again, with the ALV-249 hooks on. A first-run warm-up on a just-migrated site, not this change |
+| `test_employee_documents_078` | 20, OK |
+| `test_joiner_078` | 55, OK |
+| `test_people_settings_078` | 22, OK |
+| `test_unseated_071` | 12, OK (43 statements) |
+| `test_portal_security_010` | 45 + 5, OK |
+| `test_own_record_permission_alv249` | 32 + 1, OK |
+| `test_expense_birthdays_076` | 35: 1 error, the department fixture again ("department does not belong to company"), now that 078's fixtures have added companies. **It fails the same way with the ALV-249 hooks switched off**, so it is test data, not this change. The fixture picks "any company" |
+
+**A risk to check on dev, not tested:** 078's org chart thumbnails. 078's notes say that
+fetching a thumbnail's bytes still asks for read on the parent Employee. With the
+own-record row, a staff login cannot read a colleague's Employee. So colleagues' faces may
+fall back to initials for staff, though not for managers within their tree or for HR.
+That fails closed. `test_faces_078` passed, but it may not exercise a staff login
+fetching the bytes.
+
 ## Round 3, after the re-review and re-security review (08), 31 Oct 2026
 
 ### Bad news first

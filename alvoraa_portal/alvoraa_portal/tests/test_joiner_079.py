@@ -1160,3 +1160,120 @@ class TestTheNoticeAndTheCount(_Base):
 		frappe.set_user("Administrator")
 		self.assertIn("invariant_holds", out)
 		self.assertTrue(out["invariant_holds"])
+
+
+# ── The page itself ────────────────────────────────────────────────────────
+
+class TestTheJoiningPage(_Base):
+	"""**Does it render at all?** Nothing else asks.
+
+	The page is a standalone document full of Jinja - `{{ _("…") | tojson }}`
+	inside a `<script>`, a conditional refusal block, the tenant's colour in a
+	CSS variable - and a single mistake in any of it is a dead form on the one
+	screen in this product used by somebody who cannot ring our helpdesk. There
+	is no browser test for this page yet (named as a gap in
+	`03-implementation-notes.md` §7), so this is the floor: it compiles, it
+	renders, and the four properties that must hold in the markup do.
+	"""
+
+	@staticmethod
+	def _render(one_page=False, keep_comments=False):
+		"""The page as the browser receives it, **with the comments taken out.**
+
+		That is not tidying. This page's own comments explain what 079 removed -
+		the token, the `#t=` fragment, `localStorage`, `replaceState` - and they
+		name `hrms-employee.html` while explaining why the assets are inline. An
+		HTML comment is served to the browser, so a test that searched the raw
+		output for those words would find them in the paragraph saying they are
+		gone and go red for the opposite of the right reason.
+
+		What the browser RUNS is what is being asserted, so that is what the
+		assertions read.
+		"""
+		import os
+		import re
+
+		from frappe.utils.jinja import get_jenv
+
+		body = open(os.path.join(frappe.get_app_path("alvoraa_portal"), "www",
+		                         "joining.html"), encoding="utf-8").read()
+		out = get_jenv().from_string(body).render(
+			tenant_name="S079 Employer", brand_colour="#1f6feb", lang="en",
+			one_page=one_page)
+		if keep_comments:
+			return out
+		out = re.sub(r"<!--.*?-->", "", out, flags=re.S)
+		return re.sub(r"/\*.*?\*/", "", out, flags=re.S)
+
+	def test_it_renders(self):
+		out = self._render()
+		self.assertIn("Before your first day", out)
+		self.assertIn("joiner_public.", out)
+		self.assertNotIn("{{", out, "Jinja was left unrendered on the page.")
+		self.assertNotIn("{%", out)
+
+	def test_the_notice_comes_before_the_first_input_in_the_dom(self):
+		"""AC-112, the same property the 078 browser test asserts for My
+		Profile's notice with `compareDocumentPosition`. Here it is asserted on
+		the markup, because the page has no browser test yet - **before the first
+		question, not under a tick at the end.**"""
+		out = self._render()
+		notice = out.find('id="j0-notice"')
+		inputs = [i for i in (out.find("<input"), out.find("<textarea")) if i > 0]
+		self.assertGreater(notice, 0, "The notice block is not on the page.")
+		self.assertLess(notice, min(inputs),
+			"The notice comes after the first input. It has to be the first "
+			"thing a stranger reads.")
+
+	def test_the_three_sentences_we_write_are_there(self):
+		"""AC-113. The employer should not have to write these, and a person
+		given a login reasonably expects to sign back in and look - so if we do
+		not say otherwise we have misled them."""
+		out = self._render()
+		for sentence in ("opens this one page and nothing else",
+		                 "What you send is sent",
+		                 "ask your employer"):
+			with self.subTest(sentence=sentence):
+				self.assertIn(sentence, out)
+
+	def test_it_says_nothing_about_aadhaar(self):
+		"""AC-113's closing clause: *"and nothing more than US-11/US-12
+		deliver"*. The masker is held, so it delivers nothing - and a notice
+		promising that we black out the first 8 digits would be a promise we do
+		not keep."""
+		out = self._render()
+		self.assertNotIn("Aadhaar", out)
+		self.assertNotIn("black out", out)
+
+	def test_nothing_of_the_token_or_the_browser_draft_is_left(self):
+		"""The subtraction, asserted rather than claimed. `localStorage` and
+		`web_form_request_key` were both on this page in 078; the login replaced
+		the first and removed the second."""
+		out = self._render()
+		for gone in ("localStorage", "sessionStorage", "web_form_request_key",
+		             "#t=", "replaceState"):
+			with self.subTest(gone=gone):
+				self.assertNotIn(gone, out)
+
+	def test_the_one_page_refusal_is_drawn_only_when_the_gate_sent_them(self):
+		"""AC-21. One button, and it works. No page name, no menu, no count."""
+		plain = self._render(one_page=False)
+		refused = self._render(one_page=True)
+		self.assertNotIn("JOIN-ONEPAGE", plain)
+		self.assertIn("JOIN-ONEPAGE", refused)
+		self.assertIn("This sign-in only opens your joining form", refused)
+		self.assertIn('href="/joining"', refused)
+		for leak in ("hrms-employee", "goals-portal", "/app"):
+			with self.subTest(leak=leak):
+				self.assertNotIn(leak, refused)
+
+	def test_the_old_page_is_gone(self):
+		"""P1, the rename. It was free exactly once - the feature ships off at
+		every tenant, so nothing points at the old address - and it will never be
+		free again."""
+		import os
+
+		root = os.path.join(frappe.get_app_path("alvoraa_portal"), "www")
+		for gone in ("joiner.html", "joiner.py"):
+			with self.subTest(gone=gone):
+				self.assertFalse(os.path.exists(os.path.join(root, gone)))

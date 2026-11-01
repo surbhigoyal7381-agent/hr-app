@@ -36,11 +36,6 @@ SELF_KEY = "self_user_key"
 # hashed. (The per-account limit on the first step is keyed on the login Frappe
 # finds, not on an argument, so it lives in field_app_join - SEC-29.)
 OTP_KEY = "signin_otp_key"
-# Slice 078: the joiner's invite token. The NAME must keep containing "key",
-# because that is what makes Frappe's own error-snapshot redaction mask the
-# value (utils/logger.py sanitized_dict) - and what reaches Redis is the hash
-# either way.
-JOINER_KEY = "joiner_token_key"
 
 WINDOW_SECONDS = 60 * 60
 

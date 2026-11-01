@@ -106,30 +106,10 @@
         <div id="pos-layer"></div>
       </div>
 
-      <!-- ── The seat page (slice 078, US-20) ───────────────────────────
-           THIS WAS A MODAL, `#pos-editor`, and it is now a PAGE with its own
-           address. The id is retired rather than left beside the page: a
-           half-removed id that three CI scripts still name is worse than
-           either state, so those three were re-pointed in the same commit.
-
-           Why a page at all. HR's answer to "who is in this seat" is a piece
-           of work, not a glance: they read who is in it, take somebody out,
-           change what the seat is, and often want to send it to a colleague.
-           A modal can do none of the last part, and working inside one with a
-           chart greyed out behind it is the thing the design called out.
-
-           Three parts, in this order, because it is the order of the question:
-             1. THE SEAT - what it is, where it sits, who it answers to, how
-                full it is. Drawn by spAbout().
-             2. WHO IS IN IT - every person, with their face, any leaving
-                flag, and Take out. The names open the same mini profile the
-                rest of the product opens.
-             3. THE SEAT ITSELF - the form that was in the dialog, unchanged.
-
-           What is kept from the dialog, deliberately:
+      <!-- One dialog, one seat.
            Surbhi, 15 Oct 2026: "One dialog should only talk about one
            position." Several of the same job are several seats, made with
-           "Save and add another" - not one form that creates a batch.
+           "Save and add another" - not one dialog that creates a batch.
 
            How many people the seat is for IS editable here (16 Oct 2026:
            "allow to edit number of seats for each position from the UI").
@@ -138,33 +118,25 @@
            Nothing here explains a control that is not usable. A control
            appears when its conditions are met and is absent otherwise, which
            says more than a sentence under a disabled button ever did. -->
-      <div id="panel-seat" class="panel">
-        <div class="sp-wrap">
-          <!-- A labelled way back, at the top left, NOT a close cross: this is
-               a page, and a cross on a page is a dialog's habit. A real href,
-               so it works from a keyboard with no handler at all. -->
-          <a class="sp-back" href="/hrms-employee" id="sp-back"
-             onclick="posCloseEditor();return false">&larr; Positions</a>
-          <h1 class="sp-h" id="sp-title" tabindex="-1">Add a seat</h1>
-          <p class="sp-sub" id="sp-sub"></p>
+      <div class="gp-backdrop" id="pos-editor">
+        <div class="gp-modal" style="max-width:560px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title" id="pos-editor-title">Add a seat</div>
+            <button class="gp-modal-close" onclick="posCloseEditor()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body">
+            <div class="gp-error" id="pos-editor-err" style="display:none;margin-bottom:12px"></div>
+            <input type="hidden" id="pos-e-name">
 
-          <div class="gp-error" id="sp-err" style="display:none;margin-bottom:12px"></div>
-          <input type="hidden" id="pos-e-name">
-
-          <!-- 1. the seat. Facts, read from the row the chart already has. -->
-          <div class="pf-card sp-card" id="sp-about" style="display:none"></div>
-
-          <div class="pf-card sp-card">
-            <!-- 2. who is in it. Absent entirely on a seat that does not
-                 exist yet - there is nobody in a seat nobody has made. -->
+            <!-- Who is in it comes first: it is what the seat was opened to
+                 find out. Absent entirely on a seat that does not exist yet. -->
             <div class="gp-field" id="pos-people-wrap">
-              <h2 class="sp-h2">Who is in it</h2>
-              <div id="pos-people"></div>
+              <div class="gp-label">Who is in it</div>
+              <div id="pos-people" style="max-height:260px;overflow-y:auto"></div>
               <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"
                    id="pos-people-actions"></div>
             </div>
 
-            <h2 class="sp-h2">The seat itself</h2>
             <div class="gp-field">
               <div class="gp-label">What the seat is called</div>
               <input class="gp-input" id="pos-e-title" placeholder="Cashier">
@@ -248,15 +220,16 @@
               </div>
             </div>
           </div>
-          <div class="sp-foot">
+          <div class="gp-modal-footer">
             <!-- Shown only for a saved seat, and only when the server says this
                  person has Frappe's Delete right on positions (may_delete). -->
-            <button class="btn btn-danger sp-b" id="pos-delete-btn" style="display:none;margin-right:auto"
+            <button class="btn btn-danger" id="pos-delete-btn" style="display:none;margin-right:auto"
                     onclick="posAskDelete()">Delete seat</button>
-            <button class="btn btn-outline sp-b" id="pos-save-another"
+            <button class="btn btn-outline" onclick="posCloseEditor()">Close</button>
+            <button class="btn btn-outline" id="pos-save-another"
                     onclick="posSave('another')">Save and add another</button>
-            <button class="btn btn-primary sp-b" id="pos-save-btn"
-                    onclick="posSave('close')">Save</button>
+            <button class="btn btn-primary" id="pos-save-btn"
+                    onclick="posSave('close')">Save and close</button>
           </div>
         </div>
       </div>

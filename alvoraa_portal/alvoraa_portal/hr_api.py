@@ -2194,16 +2194,11 @@ def get_expense_claims():
         "Expense Claim",
         filters={"employee": emp.name},
         fields=["name", "posting_date", "total_claimed_amount",
-                "total_sanctioned_amount", "status", "approval_status", "remark",
-                "alvoraa_decline_reason"],
+                "total_sanctioned_amount", "status", "approval_status", "remark"],
         order_by="posting_date desc",
         limit=15,
         ignore_permissions=True,
     )
-    # Slice 076 (US-17): the reason the approver gave, on the caller's own
-    # claims only. Stored escaped for the desk; the page escapes it again.
-    for c in claims:
-        c["decline_reason"] = html.unescape(c.pop("alvoraa_decline_reason") or "") or None
     return {"claims": claims, "employee": emp}
 
 
@@ -2401,15 +2396,6 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
     if amount <= 0:
         frappe.throw("Amount must be greater than zero.")
 
-    # Slice 076 (SEC-12, Surbhi's decision 4): a claim carries its approver, or
-    # it is not filed. Without one it would sit where nobody can see it.
-    # The claimant as their own approver is "no approver" too: nobody could
-    # ever decide the claim (review C, Major 1; Surbhi, 29 Oct 2026).
-    approver = expense_approver_for(emp.name)
-    if not approver or approver == frappe.session.user:
-        frappe.throw(_("Your expense claim could not be filed because nobody is set to approve it. "
-                       "Ask HR to set your approver."), title=_("No approver"))
-
     # The child table is `expenses`. It was `expense_claim_details` in older
     # ERPNext; under v16 that key is ignored, so the claim was built with no rows
     # and every submission died on
@@ -2431,8 +2417,6 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
         # the company defaults in JavaScript; the portal has to do it here.
         "payable_account": accounts["payable_account"],
         "cost_center": accounts["cost_center"],
-        # Frappe HR shares the claim with this user on save (submit right).
-        "expense_approver": approver,
         "expenses": [{
             "doctype": "Expense Claim Detail",
             "expense_date": expense_date,
@@ -2446,82 +2430,6 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
     return {"name": doc.name}
-
-
-def expense_approver_for(employee):
-    """The Employee's expense approver, else the first expense approver of their
-    Department - the same lookup Frappe HR's own form uses
-    (hrms.api.get_expense_approval_details). None when neither is set, and None
-    when the approver could never decide it: a disabled login or no Active
-    Employee record (Surbhi, 30 Oct 2026). Filing and the backfill both ask here."""
-    approver, department = frappe.db.get_value("Employee", employee, ["expense_approver", "department"])
-    if not approver and department:
-        approver = frappe.db.get_value(
-            "Department Approver",
-            {"parent": department, "parentfield": "expense_approvers", "idx": 1}, "approver")
-    if not approver or not frappe.db.get_value("User", approver, "enabled") \
-            or not frappe.db.exists("Employee", {"user_id": approver, "status": "Active"}):
-        return None
-    return approver
-
-
-def keep_claim_approver(doc, method=None):
-    """Expense Claim validate: the claimant cannot choose who approves their own
-    claim (security C, Major 1). Their approver is the one HR set; HR Manager
-    and System Manager may still change it in Desk."""
-    from hrms.alvoraa_hr_core.access import is_own_record
-
-    if not is_own_record(doc.employee) or {"HR Manager", "System Manager"} & set(frappe.get_roles()):
-        return
-    if (doc.is_new() or doc.has_value_changed("expense_approver")) \
-            and doc.expense_approver != expense_approver_for(doc.employee):
-        frappe.throw(_("You cannot choose your own approver. Ask HR to change your approver."),
-                     frappe.PermissionError)
-
-
-@frappe.whitelist(methods=["POST"])
-def decide_expense(name, action, reason=None):
-    """Slice 076 (US-15): the named approver approves or declines a claim from Home.
-
-    Only the user named as the claim's `expense_approver`, with an Active
-    Employee record, never on their own claim (SEC-12, SEC-13). The claim is read
-    with a row lock first, so two taps or two people make one decision (SEC-14).
-    Approve submits it, and Frappe HR posts it to the ledger. Decline stores the
-    reason and submits it as Rejected, which zeroes the sanctioned amount, so
-    nothing is posted. No ignore_permissions: the approver's right to submit is
-    Frappe HR's own (the Expense Approver role, or the share made on save)."""
-    from hrms.alvoraa_hr_core.access import refuse, refuse_own_decision
-
-    user = frappe.session.user
-    if user == "Guest":
-        frappe.throw(_("Please sign in."), frappe.PermissionError)
-    if action not in ("approve", "decline"):
-        frappe.throw(_("Choose Approve or Decline."))
-    not_yours = _("Only the approver named on this claim can decide it.")
-    try:
-        doc = frappe.get_doc("Expense Claim", name, for_update=True)
-    except frappe.DoesNotExistError:
-        refuse(not_yours, "076-SEC-12", "decide_expense", "Expense Claim", None)
-    if doc.expense_approver != user or not _get_employee(user):
-        refuse(not_yours, "076-SEC-12", "decide_expense", "Expense Claim", doc.name)
-    refuse_own_decision(doc.employee, "Expense Claim", doc.name, "decide_expense")
-    if doc.docstatus != 0 or doc.approval_status != "Draft":
-        frappe.throw(_("This claim has already been decided."), title=_("Already decided"))
-    if not doc.has_permlevel_access_to("approval_status", permission_type="write"):
-        frappe.throw(_("Your login cannot approve expense claims yet. Ask HR to give you the "
-                       "Expense Approver access."), frappe.PermissionError)
-
-    if action == "decline":
-        reason = (reason or "").strip()
-        if not reason:
-            frappe.throw(_("Write a short reason first."))
-        if len(reason) > 140:
-            frappe.throw(_("Keep the reason to 140 characters or fewer."))
-        # Escaped before it is stored, so the desk shows it as text (SEC-15).
-        doc.alvoraa_decline_reason = html.escape(reason)
-    doc.approval_status = "Approved" if action == "approve" else "Rejected"
-    doc.submit()
-    return {"name": doc.name, "approval_status": doc.approval_status}
 
 
 @frappe.whitelist()

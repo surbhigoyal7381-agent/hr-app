@@ -17,8 +17,6 @@ being written down.
 import frappe
 from frappe.utils import cint, flt
 
-from hrms.alvoraa_org_structure import people_fields
-
 # key, default, what it means
 DEFAULTS = {
 	# Time-box it, always. Cover that never ends is not cover - it is a second
@@ -78,102 +76,6 @@ DEFAULTS = {
 	# reason is the default, because a flat refusal gets worked around by
 	# recording the cover as permanent, which is worse than the thing it stops.
 	"alvoraa_cover_allow_over_cap": 1,
-
-	# ── slice 078: what people may see and change about each other ───────────
-	#
-	# All four ship EMPTY or UNSET, which is the safest value at every existing
-	# tenant: nothing a tenant sees changes until a System Manager ticks
-	# something. They are `DefaultValue` keys because a doctype per chosen field
-	# buys a permission surface, a migration and a list view and does nothing a
-	# key with a Version row does not.
-	#
-	# Which of the ten allow-listed work facts a Positions reader is shown.
-	# Empty is safe: the mini profile still opens, with a name and a job role.
-	"alvoraa_positions_profile_fields": "",
-
-	# Which `Employee Document Type` names appear on a person's profile. Empty
-	# means "nobody can open an employee's documents from the Positions page",
-	# which is a statement of fact and not a gap to fill.
-	#
-	# NOT a Check on `Employee Document Type`: that doctype grants HR Manager
-	# `write: 1`, so the tick would be editable in Desk by exactly the role this
-	# setting excludes - and at DTC that role IS the Positions audience. The
-	# reason is a permission row, not taste.
-	"alvoraa_positions_document_types": "",
-
-	# Which of the six permlevel-0 details an employee may correct about
-	# themselves. The photograph is NOT in this list: it is always on, and the
-	# employee is told who sees it before they add it.
-	"alvoraa_my_profile_fields": "",
-
-	# ── How long a joiner's submission is kept (counsel, 29 Oct 2026) ───────
-	#
-	# Counsel's framing, which decides the shape of all of this: **our customers
-	# are the Data Controllers and we are a Data Processor.** Our job is to give
-	# the employer the settings, not to pick the periods. So every one of these
-	# is configurable, and the numbers below are the defaults Surbhi approved on
-	# 31 October 2026 - not a rule we invented.
-	#
-	# The single `alvoraa_joiner_retention_days` key that used to be here is
-	# GONE. It existed to be a number nobody had chosen, which is why 078-PRIV-7
-	# gated switching the form on until somebody set it deliberately. Counsel's
-	# answer replaced that with two periods that mean different things, so one
-	# key could not carry both and a key nothing reads is dead configuration.
-	#
-	# WHEN THEY DID NOT JOIN. Not erased the moment HR gives up on them -
-	# counsel reversed that - because the employer has its own candidate
-	# record-keeping duties. Counsel's range is 180 to 365 days; 180 is the
-	# conservative end and is the default.
-	"alvoraa_joiner_not_hired_days": 180,
-
-	# WHEN NOBODY EVER ACTIONED IT. A submission that just sits there would
-	# otherwise be held for ever, which the 18 September 2026 policy prohibits
-	# in so many words. 90 days from when it arrived, whatever state it is in.
-	"alvoraa_joiner_backstop_days": 90,
-
-	# And HR is WARNED before that happens, so the backstop is a safety net
-	# rather than a surprise. Day 75 of the 90.
-	"alvoraa_joiner_warn_days": 75,
-
-	# How many days an invite link works. **7 is the shipped default, and
-	# unlike retention there is every reason to have one**: this is not a legal
-	# question, and getting it wrong is an inconvenience rather than an
-	# exposure. HR's real case for changing it is a joiner who starts next
-	# month and needs longer than a week.
-	#
-	# It is written into Frappe's own `Web Form Request.expires_on` when a link
-	# is issued. There is NO second expiry mechanism anywhere - the framework
-	# already owns the expiry, the single-use burn and the row lock.
-	#
-	# Easy to confuse with the key above, which is why both labels say what
-	# they mean in plain words rather than "retention" and "expiry".
-	"alvoraa_joiner_link_days": 7,
-
-	# Whether an employee's photograph is included in the company-wide birthday
-	# and work anniversary emails. Counsel asked for this by name on 29 Oct
-	# 2026: the employer must be able to stop photographs going out in mail
-	# WITHOUT turning off the photograph feature, and without turning off the
-	# reminders either.
-	#
-	# **OFF by default, and that is a deliberate change from what the product
-	# does today.** `hrms` puts the photograph's URL straight into the mail body
-	# (`controllers/employee_reminders.py`, rendered by
-	# `templates/emails/{birthday,anniversary}_reminder.html`), and
-	# `send_work_anniversary_reminders` is switched ON on dev. Mail is the one
-	# surface the person in the photograph cannot see, cannot check and cannot
-	# recall, so it is the one place the safe default is worth a changed
-	# behaviour. Nothing visible changes on the day this ships, because no
-	# employee at any tenant has a photograph yet - which is the whole premise
-	# of slice 078.
-	#
-	# A tenant that wants faces in its birthday mail ticks it on.
-	"alvoraa_photo_in_emails": 0,
-
-	# The pre-onboarding form. OFF, because a tenant turns a feature on
-	# deliberately. 078-PRIV-7's special precondition - that a retention period
-	# had to be set on purpose first - is GONE: counsel answered the question it
-	# existed for, so the periods above are no longer numbers we invented.
-	"alvoraa_joiner_form_on": 0,
 }
 
 # Slice 012 F1 (SEC-18): the keys that hand out privilege on the org chart.
@@ -189,42 +91,7 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_org_managers_see_all",
 	"alvoraa_org_reach_up",
 	"alvoraa_org_reach_down",
-	# Slice 078 (078-SEC-5): the four lists decide what one person may see and
-	# change about another, which is the same kind of decision as the reach
-	# levels above - so it gets the same treatment, for free: System Manager
-	# only, anybody else refused and logged, and a Version row in the same
-	# transaction naming the key, the old value and the new one.
-	"alvoraa_positions_profile_fields",
-	"alvoraa_positions_document_types",
-	"alvoraa_my_profile_fields",
-	"alvoraa_joiner_not_hired_days",
-	"alvoraa_joiner_backstop_days",
-	"alvoraa_joiner_warn_days",
-	"alvoraa_joiner_link_days",
-	# Off by default. A tenant turns a feature on deliberately - which is the
-	# ordinary reason, now that counsel's answer has removed the special one.
-	"alvoraa_joiner_form_on",
-	# It decides whether a face goes out to every colleague by email, which is
-	# exactly the kind of decision this set exists for.
-	"alvoraa_photo_in_emails",
 })
-
-# Which rule id a refusal and a change are logged under. Slice 012's four keys
-# are SEC-18; slice 078's four are 078-SEC-5. One grep must not conflate them -
-# plain `SEC-17` and `SEC-18` already mean field rights and org-chart access in
-# this codebase, so the new ids are slice-qualified.
-RULE_FOR_KEY = {
-	"alvoraa_positions_profile_fields": "078-SEC-5",
-	"alvoraa_positions_document_types": "078-SEC-5",
-	"alvoraa_my_profile_fields": "078-SEC-5",
-	"alvoraa_joiner_not_hired_days": "078-PRIV-6",
-	"alvoraa_joiner_backstop_days": "078-PRIV-6",
-	"alvoraa_joiner_warn_days": "078-PRIV-6",
-	"alvoraa_joiner_form_on": "078-SEC-5",
-	"alvoraa_joiner_link_days": "078-SEC-5",
-	"alvoraa_photo_in_emails": "078-PRIV-1",
-}
-DEFAULT_RULE = "SEC-18"
 
 # Kept apart from the numbers so the Org Setup page can render a label and an
 # explanation without either being duplicated in the front end.
@@ -255,31 +122,6 @@ LABELS = {
 		"Past about nine, one-to-ones stop happening. Usually a missing layer."),
 	"alvoraa_org_span_narrow": ("Flag a manager with this many reports",
 		"One person managing one person. Set to 0 to stop flagging it."),
-	# Slice 078. The card draws its own words from the design; these are the
-	# fallback label and explanation, used wherever a key is rendered generically.
-	"alvoraa_positions_profile_fields": ("Details a Positions reader may see",
-		"Work facts only. Pay, bank details, identity numbers, date of birth and personal contact details can never be chosen."),
-	"alvoraa_positions_document_types": ("Document types shown on a person's profile",
-		"Whoever can open the Positions page can open the file itself, for everyone in their own companies and branches."),
-	"alvoraa_my_profile_fields": ("Details an employee may correct about themselves",
-		"A photo is always on. These are the other details they may change."),
-	# PLAIN WORDS, not "retention" and "expiry". The two are easy to read as
-	# the same thing - and were read that way once already - so each label says
-	# what it actually decides.
-	# PLAIN WORDS throughout. "Retention" and "expiry" were read as the same
-	# thing once already, so each label says what it actually decides.
-	"alvoraa_joiner_not_hired_days": ("How long we keep the details of someone who did not join",
-		"In days, from when their invite was closed. Your own candidate record-keeping rules decide this. Between 180 and 365."),
-	"alvoraa_joiner_backstop_days": ("How long an unactioned submission is kept at all",
-		"In days, from when it arrived. Nothing is ever kept indefinitely, so this is the last word whatever state a submission is in."),
-	"alvoraa_joiner_warn_days": ("Warn HR this many days after a submission arrives",
-		"So the line above is a safety net rather than a surprise. Must be less than it."),
-	"alvoraa_joiner_form_on": ("Ask new joiners for their details before day one",
-		"Off by default. It opens the only page in this product a person without a login can write to."),
-	"alvoraa_photo_in_emails": ("Include photographs in birthday and anniversary emails",
-		"Off by default. Email is the one place a person cannot see, check or recall who received their picture."),
-	"alvoraa_joiner_link_days": ("How long an invite link works",
-		"In days, counted from when HR sends it. Seven by default. Longer suits a joiner who starts next month."),
 }
 
 
@@ -342,108 +184,15 @@ def _set_access_setting(key, value):
 	from hrms.alvoraa_hr_core.access import refuse
 
 	endpoint = "alvoraa_org_structure.settings.set_cover_setting"
-	rule = RULE_FOR_KEY.get(key, DEFAULT_RULE)
 	if "System Manager" not in frappe.get_roles():
 		refuse(
 			_("Only a System Manager can change who may see the org chart. "
 			  "Ask your System Manager to make this change."),
-			rule,
+			"SEC-18",
 			endpoint,
 			"DefaultValue",
 			key,
 		)
-
-	# Slice 078 (078-SEC-1, 078-SEC-7): a list key may only ever name fields
-	# from its own closed allow-list. REFUSED, not quietly dropped - "a setting
-	# that silently does nothing is how a tenant comes to believe a field is
-	# editable". The reader intersects again regardless, so a value written
-	# straight into `DefaultValue` by some other route still produces nothing.
-	if key in people_fields.LIST_KEYS:
-		stray = people_fields.off_list(key, value)
-		if stray:
-			refuse(
-				_("These details cannot be chosen: {0}. Pay, bank details, "
-				  "identity numbers, date of birth and personal contact "
-				  "details are never shown or opened here.").format(", ".join(stray)),
-				rule,
-				endpoint,
-				"DefaultValue",
-				key,
-			)
-
-	# The three retention numbers. Each is range-checked, and **there is no
-	# "keep for ever" value to save** anywhere (078-PRIV-6, AC-131d): a blank is
-	# refused rather than read as "never delete", which is the semantic the
-	# check-in photo setting uses and the one thing counsel's September policy
-	# rules out.
-	_DAYS = {
-		# counsel's own range
-		"alvoraa_joiner_not_hired_days": (180, 365),
-		"alvoraa_joiner_backstop_days": (1, 365),
-		"alvoraa_joiner_warn_days": (1, 364),
-	}
-	if key in _DAYS:
-		low, high = _DAYS[key]
-		raw = cstr(value).strip()
-		if not raw.isdigit() or not (low <= int(raw) <= high):
-			refuse(
-				_("Give a number of days between {0} and {1}.").format(low, high),
-				rule,
-				endpoint,
-				"DefaultValue",
-				key,
-			)
-		# The warning has to come BEFORE the deletion it warns about, or it is
-		# not a warning. Checked against what is stored, not against a default,
-		# so changing either one in either order cannot leave them crossed.
-		warn = int(raw) if key == "alvoraa_joiner_warn_days" else cint(get("alvoraa_joiner_warn_days"))
-		stop = int(raw) if key == "alvoraa_joiner_backstop_days" else cint(get("alvoraa_joiner_backstop_days"))
-		if warn >= stop:
-			refuse(
-				_("The warning must come before the deletion: {0} days is not "
-				  "less than {1}.").format(warn, stop),
-				rule,
-				endpoint,
-				"DefaultValue",
-				key,
-			)
-
-	# The switch itself. 0 or 1, nothing else - a typo must not read as "on"
-	# for the only page in this product a person without a login can write to.
-	if key == "alvoraa_joiner_form_on" and cstr(value).strip() not in ("0", "1"):
-		refuse(
-			_("Give 0 or 1 for whether the joiner form is switched on."),
-			rule,
-			endpoint,
-			"DefaultValue",
-			key,
-		)
-
-	# A switch, so 0 or 1 and nothing else. A typo must not read as "on".
-	if key == "alvoraa_photo_in_emails" and cstr(value).strip() not in ("0", "1"):
-		refuse(
-			_("Give 0 or 1 for whether photographs go into birthday and "
-			  "anniversary emails."),
-			rule,
-			endpoint,
-			"DefaultValue",
-			key,
-		)
-
-	# How long an invite link works. A blank is refused rather than treated as
-	# "for ever": a link with no expiry is the thing the whole token design is
-	# there to avoid. 90 days is the ceiling - past that it is not an invite.
-	if key == "alvoraa_joiner_link_days":
-		raw = cstr(value).strip()
-		if not raw.isdigit() or not (1 <= int(raw) <= 90):
-			refuse(
-				_("Give the number of days an invite link works, between 1 "
-				  "and 90."),
-				rule,
-				endpoint,
-				"DefaultValue",
-				key,
-			)
 
 	old = cstr(frappe.db.get_default(key))
 	new = cstr(value)
@@ -455,12 +204,12 @@ def _set_access_setting(key, value):
 			"data": frappe.as_json({"changed": [[key, old, new]]}, indent=None, separators=(",", ":")),
 		}).insert(ignore_permissions=True)  # Version has no create permission for anyone; Frappe writes its own the same way
 		frappe.db.set_default(key, new)
-		_log_access_change(endpoint, key, rule)
+		_log_access_change(endpoint, key)
 	frappe.db.commit()
 	return {"ok": True, "key": key, "value": get(key)}
 
 
-def _log_access_change(endpoint, key, rule=DEFAULT_RULE):
+def _log_access_change(endpoint, key):
 	"""The same JSON line shape as a refusal, so one grep finds both. The key
 	only - the old and new values are in the Version record."""
 	import json
@@ -473,7 +222,7 @@ def _log_access_change(endpoint, key, rule=DEFAULT_RULE):
 			"endpoint": endpoint,
 			"doctype": "DefaultValue",
 			"name": key,
-			"rule": rule,
+			"rule": "SEC-18",
 		}))
 	except Exception:
 		pass

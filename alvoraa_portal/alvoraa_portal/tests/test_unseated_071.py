@@ -160,9 +160,4 @@ class PlaceAnyway071(RegisterCase):
 		with QueryCounter() as raised:
 			register.assign_person(self.full, self.newcomer, add_place=1)
 		print(f"\nassign_person statements: {plain.count} plain, {raised.count} with add_place")
-		# 40 until ALV-249 (1 Nov 2026), measured with an HR fixture that still held
-		# ERPNext's own-record Employee row. ALV-249 removes that row from every HR
-		# login, as at DTC, and an HR login with no User Permission at all costs 16
-		# more statements here (27 -> 43, measured; none of them from the ALV-249
-		# hooks, which do not run inside this call). Still flat per click.
-		self.assertLessEqual(raised.count, 45)
+		self.assertLessEqual(raised.count, 40)

@@ -15,10 +15,7 @@ required_apps = ["frappe/erpnext"]
 app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
 
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
-on_login = ["alvoraa_portal.auth.on_login",
-            # ALV-249 D-3: a login linked by a direct database write, or whose
-            # role lost Employee read, gets its own-record row before it is in.
-            "alvoraa_portal.own_record_permission.on_login"]
+on_login = "alvoraa_portal.auth.on_login"
 
 # ── Nothing but the password screen, until they choose one (ALV-242) ──────
 # ALV-232 only chose where a first-use session LANDS. The back button walked
@@ -27,9 +24,6 @@ on_login = ["alvoraa_portal.auth.on_login",
 # on every request, so it covers the portal, /me, /checkin and the desk at once.
 # It fails open by design - see alvoraa_portal.auth.lock_until_password_chosen.
 before_request = [
-    # ALV-249: no request may ask Frappe to skip User Permissions or
-    # permissions. Every path, "/" with cmd included. See request_guard.py.
-    "alvoraa_portal.request_guard.drop_permission_skips",
     "alvoraa_portal.auth.lock_until_password_chosen",
     # The bare "/" again. The get_website_user_home_page hook below is
     # asked fourth and can be overruled by a default workspace, so it is
@@ -89,11 +83,6 @@ jinja = {"methods": [
     # ALV-175: our own templates/emails/standard.html calls this to close the
     # gap where no outgoing Email Account has our lockup set at all.
     "alvoraa_portal.email_brand.resolve_header_logo",
-    # Slice 078, counsel 29 Oct 2026: our own copies of hrms'
-    # templates/emails/{birthday,anniversary}_reminder.html ask this before
-    # putting a person's photograph into a company-wide email. Off unless a
-    # System Manager has ticked it on; fails closed.
-    "alvoraa_portal.people_settings.photo_in_emails",
 ]}
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
@@ -117,14 +106,6 @@ doctype_js = {
     # the dates are already chosen. The first click only previews - it writes
     # nothing until the numbers have been seen and agreed.
     "Payroll Entry": "public/js/payroll_entry_reprocess.js",
-    # Slice 078: Invite, Export and Purge on the joiner submission form. HR
-    # reviews a submission in Desk - that IS HR's own screen, and HR Manager
-    # already has Desk - so three buttons there need no new portal page.
-    #
-    # ONE dict, like override_whitelisted_methods below: a second
-    # `doctype_js = {...}` later in this file would REPLACE this one and
-    # silently drop every entry above.
-    "Alvoraa Joiner Submission": "public/js/alvoraa_joiner_submission.js",
 }
 
 # The phone list (slice 013 step 5, US-18): default "joined in the last 7
@@ -205,23 +186,11 @@ doc_events = {
             # somebody's reporting line moves the permission with it, in the
             # same save, so the two can never disagree. See manager_scope.py.
             "alvoraa_portal.manager_scope.on_employee_update",
-            # ALV-249: a staff login sees its own record and nobody else's.
-            "alvoraa_portal.own_record_permission.on_employee_update",
-            # Slice 078 (OPS-12, OPS-13): derive the 48 px copy of a changed
-            # photograph. LAST in the chain and guarded on
-            # has_value_changed("image"), so the four handlers above are
-            # untouched on an ordinary save. It catches everything and can
-            # never fail an Employee save - this fires on every save of every
-            # employee, payroll work included.
-            "alvoraa_portal.employee_photo.on_employee_update",
         ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
         # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank
         # field on their own record, HR included. See employee_field_rights.py.
-        "validate": ["alvoraa_portal.employee_field_rights.refuse_own_locked_change",
-                     # Slice 076 Part C (AC-105): only the person sets their
-                     # birthday opt-out; any other save puts it back.
-                     "alvoraa_portal.home_people.keep_hide_birthday"],
+        "validate": "alvoraa_portal.employee_field_rights.refuse_own_locked_change",
     },
     # ALV-215: an Employee import with a column the importer may not change is
     # refused with a message, instead of Frappe dropping the values silently.
@@ -262,10 +231,7 @@ doc_events = {
                          # ALV-128: a disabled login stops the app phones it signed
                          # in. (A changed password signs them out on their next
                          # call instead - field_checkin, 26 Sep 2026.)
-                         "alvoraa_portal.field_app_device.block_phones_for_disabled_login",
-                         # ALV-249: promoted to HR loses the own-record row,
-                         # a disabled login loses it, back to staff gets it.
-                         "alvoraa_portal.own_record_permission.on_user_update"],
+                         "alvoraa_portal.field_app_device.block_phones_for_disabled_login"],
     },
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes
@@ -346,8 +312,6 @@ doc_events = {
         # every door (SEC-6, SEC-13). Then the managers up the chain are told.
         "validate":      "alvoraa_portal.leave_rules.validate_leave_application",
         "on_submit":     "alvoraa_portal.leave_rules.notify_chain_on_approval",
-        # ALV-249: HR may change the approver; see own_record_permission.
-        "before_save":   "alvoraa_portal.own_record_permission.drop_old_approver_share",
     },
     # ── The field app's switches on HR Settings (slice 013 step 2) ────────
     # Turning the app off or removing a designation needs a reason in the same
@@ -425,18 +389,6 @@ doc_events = {
     "Tag Link": {
         "validate": "alvoraa_portal.grooming.refuse_side_record",
     },
-    # Slice 076 Part C (SEC-13): nobody approves their own expense claim, on
-    # any door, whatever HR Settings says about self-approval.
-    "Expense Claim": {
-        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
-        # Review C: the claimant cannot pick their own approver (HR may).
-        "validate": "alvoraa_portal.hr_api.keep_claim_approver",
-        # ALV-249: HR may change the approver; see own_record_permission.
-        "before_save": "alvoraa_portal.own_record_permission.drop_old_approver_share",
-    },
-    "Shift Request": {
-        "before_save": "alvoraa_portal.own_record_permission.drop_old_approver_share",
-    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -482,13 +434,6 @@ scheduler_events = {
         # The punch, the time and the place stay - they are the record of work
         # done. Only the photo goes.
         "alvoraa_portal.field_app_photos.purge_old_checkin_photos",
-        # Slice 078 (078-PRIV-6, counsel 29 Oct 2026): expires dead invite
-        # links - which also deletes the row holding their clear-text key - then
-        # erases what a joiner sent, on three clocks the employer sets: the
-        # not-hired window, the untouched backstop, and the warning before it.
-        # Nothing here is ever kept indefinitely, and legal hold wins.
-        # **The only scheduled job this slice adds.**
-        "alvoraa_portal.joiner_housekeeping.daily",
         "alvoraa_portal.scheduled_jobs.send_arrival_notifications",
         "alvoraa_portal.scheduled_jobs.check_compliance_alerts",
         # Pulls each tenant's error counts and scheduler state up to the control
@@ -596,9 +541,6 @@ after_migrate = [
     # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
     # reset in Role Permission Manager is put right. See employee_field_rights.py.
     "alvoraa_portal.employee_field_rights.apply",
-    # Slice 076 Part C: the birthdays switch (ships off), the opt-out tick and
-    # the expense decline reason. See home_people.py.
-    "alvoraa_portal.home_people.after_migrate",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
@@ -656,8 +598,6 @@ after_install = [
     # WITH desk access while syncing the Announcement permissions; this runs
     # after that. Live sites get the same from the notice_sender_role patch.
     "alvoraa_portal.announcements.make_role",
-    # Slice 076 Part C: same three fields as after_migrate.
-    "alvoraa_portal.home_people.after_migrate",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

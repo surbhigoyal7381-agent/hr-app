@@ -176,35 +176,17 @@ const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
   if (mayEdit) {
     await page.click(".pos-sheet button:has-text('Change this seat')");
     await page.waitForTimeout(500);
-    /* SLICE 078: "Change this seat" opens a PAGE, not a dialog, so every
-       assertion below was re-pointed and none dropped. Three of them are the
-       same question asked of a page: is it open and visible, did the tray go,
-       and does a filled seat list its people. The fourth is new and is the
-       whole point of the change - it has an ADDRESS that can be sent to
-       somebody.
-
-       The tray assertion is the valuable one. A modal-to-page change is
-       exactly the sort that leaves a tray open underneath, and that is the
-       regression nobody would notice until a screenshot. */
     const dlg = await page.evaluate(() => {
-      const el = document.getElementById("panel-seat");
-      const r = el ? el.getBoundingClientRect() : { width: 0, height: 0 };
-      return { open: !!el && el.classList.contains("active"),
-               visible: r.width > 100 && r.height > 100,
-               gone: !document.getElementById("pos-editor"),
-               back: (document.getElementById("sp-back") || {}).textContent || "",
-               url: location.search,
+      const el = document.getElementById("pos-editor");
+      const r = el.querySelector(".gp-modal").getBoundingClientRect();
+      return { open: el.classList.contains("open"), visible: r.width > 100 && r.height > 100,
                tray: !!document.querySelector(".pos-sheet"),
                people: (document.getElementById("pos-people") || {}).innerHTML || "" };
     });
-    ok(dlg.open && dlg.visible, "078: Change this seat opens the seat PAGE");
-    ok(dlg.gone, "078 AC-56: the #pos-editor backdrop is retired, not left beside it");
-    ok(/seat=/.test(dlg.url), "078 AC-54: the page has its own address, which can be sent on",
-       dlg.url);
-    ok(/Positions/.test(dlg.back), "078 AC-54: and a labelled way back, not a cross", dlg.back);
+    ok(dlg.open && dlg.visible, "Change this seat opens the seat dialog");
     ok(!dlg.tray, "and the tray closes behind it");
     ok(!/Nobody is in this seat/.test(dlg.people), "a filled seat lists its people");
-    await shot("04-seat-page");
+    await shot("04-seat-dialog");
     await page.evaluate(() => posPickPerson());
     await page.waitForTimeout(1500);
     const pick = await page.evaluate(() => ({ open: document.getElementById("pos-person").classList.contains("open"),

@@ -273,102 +273,11 @@ function ocInitials(name) {
     .map(function (w) { return w[0]; }).join("").toUpperCase();
 }
 
-/* ONE circle, five states, three callers (slice 078).
-
-   It used to return EITHER an <img> OR a <span> of initials. Now it always
-   returns the same span with the initials in it, and layers the photograph over
-   the top. That single change gives, for nothing:
-
-     no photograph    the initials, exactly today's chart
-     still arriving   the initials, with the photograph fading in over them
-     arrived          the photograph
-     failed           the <img> removes itself; the initials are already there,
-                      so there is no broken-image icon, no message and no retry
-     printed          the photograph is hidden by a print rule and the initials
-                      are underneath, so a printed chart is the same chart with
-                      letters rather than a page of holes
-
-   Nothing reflows as photographs land, because the box is drawn at its final
-   size from the start - which is why `width` and `height` are ATTRIBUTES here
-   and not only CSS.
-
-   The src is on `data-src`, not `src`: `ocFaces()` decides when it is fetched.
-   That is OPS-19, and it is deliberately not `loading="lazy"` - the browser's
-   own threshold is about 2,500 px on 3G, which on the 120-row table reaches
-   60-70 rows and roughly 125 simultaneous requests through 8 worker slots, and
-   a browser-deferred image PRINTS AS A BLANK CIRCLE on the wall chart.
-
-   `thumb` is the 48 px copy and is what the chart and the table draw. `image`
-   is the stored 512 px picture, used when there is no thumbnail yet and by the
-   drawer's enlargement (OPS-13's fallback: thumbnail, photo, initials). */
 function ocAvatar(p) {
-  var src = p && (p.thumb || p.image);
-  return '<span class="av' + (src ? " av-has" : "") + '">'
-    + '<span class="av-i" aria-hidden="true">' + ocEsc(ocInitials(p && p.name)) + "</span>"
-    + (src ? '<img class="av-p" data-src="' + ocEsc(src) + '" width="48" height="48"'
-             + ' alt="" onload="this.style.opacity=1" onerror="this.remove()">' : "")
-    + "</span>";
+  return p && p.image
+    ? '<img class="av" src="' + ocEsc(p.image) + '" alt="">'
+    : '<span class="av">' + ocEsc(ocInitials(p && p.name)) + "</span>";
 }
-
-/* Which faces are fetched, and when. Called after every paint.
-
-   An IntersectionObserver with a 200 px margin, so what is on screen arrives
-   at once and the rest arrives on scroll. On the 16-box chart everything is in
-   view, so nothing is deferred and the first paint is unchanged; on the table
-   and on a filtered chart - where `posAnyFilter()` opens everything and the
-   count goes to about 215 - it is what keeps the request count bounded.
-
-   The same fifteen lines are used on both surfaces. Not two mechanisms. */
-var OC_FACES = null;
-function ocFaceOn(img) {
-  var src = img.getAttribute("data-src");
-  if (!src) return;
-  img.removeAttribute("data-src");
-  img.src = src;
-}
-function ocFaces(root) {
-  /* Called after EVERY paint, so it must never be the thing that takes a paint
-     down: a chart with unfetched faces is a chart, and a chart that threw is a
-     blank screen. */
-  var where = root || document;
-  if (!where || typeof where.querySelectorAll !== "function") return;
-  var imgs = where.querySelectorAll("img.av-p[data-src]");
-  if (!imgs || !imgs.length) return;
-  if (typeof IntersectionObserver !== "function") {
-    /* No observer: fetch them all rather than show empty circles. */
-    Array.prototype.forEach.call(imgs, ocFaceOn);
-    return;
-  }
-  if (!OC_FACES) {
-    OC_FACES = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (!en.isIntersecting) return;
-        OC_FACES.unobserve(en.target);
-        ocFaceOn(en.target);
-      });
-    }, { rootMargin: "200px" });
-  }
-  Array.prototype.forEach.call(imgs, function (img) { OC_FACES.observe(img); });
-}
-/* Before a wall chart prints: every face, now, and wait for them. A deferred
-   image prints as a blank circle, which is worse than initials. */
-function ocFacesAllNow(root) {
-  var where = root || document;
-  if (!where || typeof where.querySelectorAll !== "function") return Promise.resolve(0);
-  Array.prototype.forEach.call(where.querySelectorAll("img.av-p[data-src]"), ocFaceOn);
-  var pending = Array.prototype.filter.call(
-    where.querySelectorAll("img.av-p"),
-    function (i) { return !i.complete; });
-  if (!pending.length) return Promise.resolve(0);
-  return Promise.all(pending.map(function (i) {
-    return new Promise(function (done) {
-      i.addEventListener("load", done, { once: true });
-      i.addEventListener("error", done, { once: true });
-    });
-  })).then(function () { return pending.length; });
-}
-window.ocFaces = ocFaces;
-window.ocFacesAllNow = ocFacesAllNow;
 
 /* The worst thing wrong with a box decides its colour. Tinting a box for the
    mildest of three problems hides the serious one. */
@@ -419,18 +328,6 @@ function ocNodeCard(n, isRoot, opts) {
     : (n.people === null ? ""
        : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
          + "<span>" + (n.empty ? ocEsc(n.empty) : "Nobody in this seat") + "</span></div>");
-  /* Slice 078 (OPS-20): the Organisation page's cards used to list EVERY person
-     in a seat - one expansion from the root was measured at 94 boxes and 185
-     people, which nobody chose; it was what happened when nothing capped it.
-     The server now sends three and says how many more. This is the only chart
-     a frontline employee can open, so it is where the 3G budget actually binds.
-
-     Positions never sets `more_people`: it caps in `posFew()` and adds its own
-     "+22 more in this seat" line, so the two paths do not interfere. */
-  if (n.more_people) {
-    who += '<div class="oc-who oc-empty"><span class="av">&plus;</span><span>'
-      + ocEsc(n.more_people + " more in this seat") + "</span></div>";
-  }
   // Slice 072, Positions only: one grey line inside the box saying where the
   // rest of a shared seat is ("Same seat as under Owner · 6 in all"). Inside
   // the button, so it is part of the box's spoken name. The Organisation page
@@ -865,11 +762,6 @@ window.posPaint = function () {
     else if (POS._focusNext) { POS._focusNext = false; posFocusFirst(); }
     else if (recentre) posCentreTop();
   } else { posPaintList(); }
-  /* Slice 078 (OPS-19): decide which faces are fetched, after the paint.
-     Both views, one call - the structure view when a filter has opened
-     everything (`posAnyFilter` takes it to about 215 faces) and the 120-row
-     table, which is the surface the measurement was taken on. */
-  ocFaces(document.getElementById("pos-body"));
 };
 
 function posPaintList() {
@@ -914,10 +806,6 @@ var POS_NAMES_SHOWN = 3;
 function posOne(p) {
   var mk = posPlanMark(p);
   return { name: p.name, weight: p.weight, cover: p.covering,
-           // Slice 078: the face. `thumb` is the 48 px copy the card draws;
-           // `image` is the stored picture, kept so the drawer can enlarge it
-           // and as the fallback when no thumbnail has been derived yet.
-           employee: p.employee, thumb: p.thumb, image: p.image,
            note: p.leaving ? "leaving " + posDay(p.leaving) : null,
            pre: mk.pre, post: mk.post };
 }
@@ -941,23 +829,15 @@ function posCells(r, lead, tail) {
   var who = r.people.length
     ? shown.map(function (p) {
         var mk = posPlanMark(p);
-        /* Slice 078: a face, and the name as a real control that opens the
-           mini profile. A table cell is ordinary markup, so a <button> is
-           safe here - the chart's own box must stay ONE <button> with nothing
-           clickable inside it, which a nested button already broke once. */
-        return '<span class="pos-who">' + ocAvatar(p)
-          + '<span>' + mk.pre
-          + '<button type="button" class="pos-name-link" data-pos-who="'
-          + posEsc(p.employee || "") + '">' + posEsc(p.name) + "</button>" + mk.post
+        return mk.pre + posEsc(p.name) + mk.post
           // pos-flag: never printed (slice 069, SEC-3 - every Positions view)
           + (p.weight < 100 ? ' <span class="pf-card-meta pos-flag">' + posNum(p.weight) + "%</span>" : "")
           + (p.covering ? ' <span class="pf-card-meta pos-flag">covering</span>' : "")
           // "Who is leaving" was invisible in the view this screen opens on,
           // so one of the three questions it exists for had no answer here.
           + (p.leaving ? ' <span class="pf-card-meta pos-flag">leaving '
-             + posEsc(posDay(p.leaving)) + "</span>" : "")
-          + "</span></span>";
-      }).join("")
+             + posEsc(posDay(p.leaving)) + "</span>" : "");
+      }).join("<br>")
       + (rest > 0
           ? '<br><button class="btn btn-outline btn-sm" style="margin-top:4px"'
             + ' onclick="posOpenEditor(\'' + posEsc(r.id) + '\')">and '
@@ -1990,19 +1870,13 @@ function posPaintPeople() {
 
   box.innerHTML = r.people.length
     ? r.people.map(function (p) {
-        return '<div class="sp-person">'
-          // Slice 078: the face, and the name opens the SAME mini profile the
-          // Positions table and the seat tray open - one behaviour for one job
-          // (AC-57). The field list and every state come from one place, so
-          // the two surfaces cannot drift into different answers (AC-58).
-          + ocAvatar(p)
-          // Surbhi, 28 Oct 2026: whoever opens this must be in the same
+        return '<div style="display:flex;gap:8px;align-items:center;'
+          + 'justify-content:space-between;padding:4px 0">'
+          // Surbhi, 28 Oct 2026: whoever opens this dialog must be in the same
           // context as the chart behind it. posPlanMark gives nothing to a
           // non-reader (the server sends them no plan) and nothing while marks
-          // are hidden, so this is identical in both cases.
-          + "<span>" + posPlanMark(p).pre
-          + '<button type="button" class="pos-name-link" data-pos-who="'
-          + posEsc(p.employee || "") + '">' + posEsc(p.name) + "</button>"
+          // are hidden, so the dialog is identical in both cases.
+          + "<span>" + posPlanMark(p).pre + posEsc(p.name)
           + (posPlanOf(p)
               ? ' <span class="pf-card-meta pos-planmeta private">'
                 + drT("replacement planned") + "</span>" : "")
@@ -2016,14 +1890,12 @@ function posPaintPeople() {
                 + "</span>" : "")
           + "</span>"
           + (POS.may_edit
-              ? '<button class="btn btn-outline btn-sm sp-out" onclick="posTakeOut('
+              ? '<button class="btn btn-outline btn-sm" onclick="posTakeOut('
                 + "'" + posEsc(p.assignment) + "'" + ')">Take out</button>'
               : "")
           + "</div>";
       }).join("")
     : '<div class="pf-card-meta">Nobody is in this seat.</div>';
-  /* The faces are fetched by the same rule as everywhere else (OPS-19). */
-  ocFaces(box);
 }
 
 /* What a seat offers, and only what it can actually do.
@@ -2550,7 +2422,7 @@ window.posSetupGo = async function () {
 window.posOpenEditor = function (id) {
   if (!POS.may_edit) return;
   var r = POS.rows.filter(function (x) { return x.id === id; })[0] || null;
-  document.getElementById("sp-title").textContent =
+  document.getElementById("pos-editor-title").textContent =
     r ? "Change this seat" : "Add a seat";
   document.getElementById("pos-e-name").value = r ? r.id : "";
   document.getElementById("pos-e-title").value = r ? r.title : "";
@@ -2607,88 +2479,8 @@ window.posOpenEditor = function (id) {
 
   posPaintPeople();
   posErr("");
-  /* SLICE 078: a page, not a dialog. Everything above is unchanged - the same
-     fields filled the same way - and only the last three lines differ.
-
-     Its own address, so HR can send it to a colleague and reopen it. A query
-     parameter rather than a hash, because `?grooming=` and `?who=` already do
-     exactly this in this file and a second routing mechanism for one screen is
-     not worth owning. `replaceState`, not `pushState`: Back should leave
-     Positions, not walk through every seat somebody looked at. */
-  spAddress(r ? r.id : null);
-  spAbout(r);
-  switchPanel("seat", null);
-  var h = document.getElementById("sp-title");
-  if (h) h.focus();
+  document.getElementById("pos-editor").classList.add("open");
 };
-
-/* The address, and the one place it is read back.
-
-   `?seat=` is the whole of "its own address". It is not a router: there is one
-   screen behind one parameter, and the server still decides whether this
-   person may read that seat at all. */
-function spAddress(id) {
-  try {
-    var url = new URL(window.location.href);
-    if (id) url.searchParams.set("seat", id);
-    else url.searchParams.delete("seat");
-    window.history.replaceState(null, "", url.pathname + url.search);
-  } catch (e) { /* an old browser keeps the page, loses the address */ }
-}
-
-/* Part 1 of the page: what the seat IS. Facts only, from the row the chart
-   already has - no extra call, because a page that needs its own fetch to say
-   "Cashier, Noida, 3 of 3 filled" is a page that can fail at saying it. */
-function spAbout(r) {
-  var box = document.getElementById("sp-about");
-  var sub = document.getElementById("sp-sub");
-  if (!box) return;
-  if (!r) {
-    box.style.display = "none";
-    if (sub) sub.textContent = drT("A new seat. Fill it in below and save.");
-    return;
-  }
-  if (sub) {
-    sub.textContent = [r.branch, r.department].filter(Boolean).join(" · ");
-  }
-  var filled = posNum(r.filled), seats = posNum(r.seats);
-  box.innerHTML = '<h2 class="sp-h2">' + esc(drT("The seat")) + "</h2>"
-    + '<dl class="mpf-dl">'
-    + spRow(drT("What it is called"), r.title)
-    + spRow(drT("Job role"), r.designation)
-    + spRow(drT("Branch"), r.branch)
-    + spRow(drT("Department"), r.department)
-    + spRow(drT("Reports to"), r.reports_to_title)
-    + spRow(drT("How full"), drT("{0} of {1} filled", [filled, seats]))
-    + "</dl>";
-  box.style.display = "";
-}
-function spRow(label, value) {
-  return "<dt>" + esc(label) + "</dt><dd>"
-    + (value ? esc(value) : '<span class="gp-hint">' + esc(drT("Not set")) + "</span>")
-    + "</dd>";
-}
-
-/* Opening the page straight from an address. The server still decides whether
-   this person may read the chart, so a seat somebody is not allowed to see
-   never gets this far: `posLoad` refuses first and this finds no row. */
-window.addEventListener("load", function () {
-  var want = /[?&]seat=([^&]+)/.exec(location.search);
-  if (!want || typeof switchPanel !== "function") return;
-  var id = decodeURIComponent(want[1]);
-  switchPanel("positions", null);
-  /* posLoad is already running from switchPanel; wait for the rows before
-     asking for one of them. */
-  var tries = 0;
-  var timer = setInterval(function () {
-    if (POS && POS.rows && POS.rows.length) {
-      clearInterval(timer);
-      posOpenEditor(id);
-    } else if (++tries > 40) {
-      clearInterval(timer);
-    }
-  }, 150);
-});
 
 function flt_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
@@ -2748,18 +2540,14 @@ window.posSeatsNote = function () {
 };
 
 function posErr(msg) {
-  var el = document.getElementById("sp-err");
+  var el = document.getElementById("pos-editor-err");
   if (!el) return;
   el.textContent = msg || "";
   el.style.display = msg ? "" : "none";
 }
 
-/* Leaving the seat page. The name is kept because three call sites and a
-   browser check already use it, and because "close the editor" is still what it
-   means - it simply goes back to the chart now instead of hiding a layer. */
 window.posCloseEditor = function () {
-  spAddress(null);
-  switchPanel("positions", null);
+  document.getElementById("pos-editor").classList.remove("open");
 };
 
 /* `then` is "close" or "another".
@@ -2859,10 +2647,6 @@ window.posDelete = async function () {
     return;
   }
   document.getElementById("pos-delete").classList.remove("open");
-  /* Slice 078: a deleted seat LEAVES THE SEAT PAGE and returns to the chart.
-     It used to close two dialogs; the intention is the same and the mechanism
-     is different, which is why the check that asserted it was re-pointed
-     rather than dropped. */
   posCloseEditor();
   toast("“" + r.title + "” was deleted.");
   posLoad();
@@ -4109,15 +3893,8 @@ window.posSeatSheet = function (id, flash, err) {
     if (p.leaving) c += ' <span class="pos-chip amber">' + drT("Leaving {0}", [posDay(p.leaving)]) + "</span>";
     // Slice 072: whom they report to, on its own grey line, in Reporting lines only.
     var line = pl ? '<div class="su">' + posEsc(posReportsLine(p, r, pl)) + "</div>" : "";
-    /* Slice 078: the name is a real control here too. The tray is the only
-       surface that holds a 25-person seat, so it is where the people beyond
-       the first three live - without this, there was no way to open the mini
-       profile of any of them. Same markup as the table and the seat page, so
-       the one delegated handler picks it up. */
-    return '<div class="pos-prow">' + posPlanMark(p).pre
-      + '<button type="button" class="pos-name-link" data-pos-who="'
-      + posEsc(p.employee || "") + '">' + posEsc(p.name) + "</button>"
-      + c + line + posPlanRow(r, p) + "</div>";
+    return '<div class="pos-prow">' + posPlanMark(p).pre + posEsc(p.name) + c + line
+      + posPlanRow(r, p) + "</div>";
   }).join("") + "</div>";
   b += '<p class="pos-sheet-err" id="pos-sheet-err" role="alert" hidden></p>';
   var f = "";
@@ -4475,9 +4252,8 @@ window.ocTop = function () {
 window.ocMe = function () { ocLoad(null); };
 
 function ocPaint() {
-  var body = document.getElementById("oc-body");
-  body.innerHTML = '<div class="oc-tree">' + ocRender(OC.root, true) + "</div>";
-  ocFaces(body);   /* slice 078 (OPS-19): which faces are fetched, and when */
+  document.getElementById("oc-body").innerHTML =
+    '<div class="oc-tree">' + ocRender(OC.root, true) + "</div>";
 }
 
 window.ocLoad = async function (id) {
@@ -4678,7 +4454,6 @@ function switchPanel(name, triggerEl) {
   if (name === "org-chart") { ocLoad(); }
   if (name === "positions")          { posLoad(); }
   if (name === "data-review")        { drLoad(); }
-  if (name === "my-profile")         { mpLoad(); }
 
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   if (triggerEl) triggerEl.classList.add("active");
@@ -4713,7 +4488,7 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); bsLoad(); ocsLoad(); }
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); }
     if (name === "policies")    polLoad();
   }
 
@@ -4975,12 +4750,6 @@ function loadMyDocuments() {
     if (!rows.length) { card.style.display = "none"; return; }
     card.style.display = "";
     document.getElementById("my-docs-summary").textContent = d.summary || "";
-    /* Slice 078, Surbhi's DECISION O. The person whose documents these are
-       CANNOT OPEN THE POSITIONS PAGE, so without this line they have no way at
-       all to find out which of them a reader can open. It is the difference
-       between a policy and a secret, and it narrows nothing: it states what the
-       organisation already chose. */
-    myDocsShown();
     document.getElementById("my-docs-list").innerHTML = rows.map(function(r) {
       var meta = [r.category, r.mandatory ? "mandatory" : "", r.expiry_date ? "expires " + r.expiry_date : "", r.remarks].filter(Boolean).join(" · ");
       var action = "";
@@ -4999,30 +4768,6 @@ function loadMyDocuments() {
         "<div style=\"display:flex;align-items:center;gap:6px\">" + action + "</div></div>";
     }).join("");
   }, function() { card.style.display = "none"; });
-}
-
-/* What of mine is on show. Types only - never a reader, never a person. */
-function myDocsShown() {
-  var card = document.getElementById("my-docs-card");
-  if (!card) return;
-  gpFetch("alvoraa_portal.employee_documents_read.what_is_shown_about_me", {})
-    .then(function (d) {
-      var types = (d && d.types) || [];
-      var line = document.getElementById("my-docs-shown")
-        || (function () {
-             var el = document.createElement("p");
-             el.id = "my-docs-shown";
-             el.className = "gp-hint";
-             el.style.marginTop = "10px";
-             card.appendChild(el);
-             return el;
-           })();
-      line.textContent = types.length
-        ? drT("Your organisation has chosen {0} of these to show on the organisation "
-            + "chart: {1}. The people who can open that page can open the file.",
-            [types.length, types.join(", ")])
-        : drT("None of these is shown on the organisation chart.");
-    }, function () { /* a line that cannot load is better absent than wrong */ });
 }
 
 window.uploadMyDocument = async function(input, row) {
@@ -5899,15 +5644,6 @@ function acPairs(x, from) {
     return (overnight && m < from) ? m + 24 * 60 : m;
   }
 
-  /* Some shifts do not pair at all. Set to "First Check-in and Last
-     Check-out", Frappe measures ONE span and ignores the In/Out order, and
-     the server sends that span as `worked_span` (ALV-251). Pairing it here
-     anyway is what drew two slivers against a correct 8.47-hour day. */
-  if (x.worked_span && x.worked_span.length === 2) {
-    var spanFrom = at(x.worked_span[0]), spanTo = at(x.worked_span[1]);
-    if (spanFrom !== null && spanTo !== null) return [[spanFrom, spanTo, false]];
-  }
-
   var out = [], openAt = null;
   (x.punches || []).forEach(function (p) {
     var when = at(p.at);
@@ -6290,7 +6026,6 @@ var HM_SCREEN = {
 /* A CXO's row is one kind with a count. Name, then the row action it opens. */
 var HM_KIND = {
   leave_approvals: ["Leave approvals", "leave"],
-  expense_approvals: ["Expense claims", "expense"],
   goal_updates: ["Goal and KPI updates", "goal_update"],
   attendance_fixes: ["Attendance fixes", "attendance_fix"],
   policies: ["Policies to read", "policy"]
@@ -6441,7 +6176,7 @@ function hmPendingRows(d) {
       if (!k || !p.count) return;
       /* Goal and KPI updates have no Team-page list, so that row opens the
          oldest one in the caller's scope, and says so. */
-      var oldest = (k[1] === "goal_update" || k[1] === "expense") && p.rows && p.rows[0] ? p.rows[0] : null;
+      var oldest = k[1] === "goal_update" && p.rows && p.rows[0] ? p.rows[0] : null;
       out.push({count: p.count, action: k[1], av: String(p.count), title: drT(k[0]), row: oldest,
         sub: drT(oldest ? "{0} waiting · opens the oldest" : "{0} waiting · your queue", [p.count]), go: "Open"});
     });
@@ -6466,11 +6201,6 @@ function hmRowView(key, r) {
   if (key === "leave_approvals") {
     v.title = r.employee_name || "";
     v.sub = drT("Leave request") + " · " + hmRange(r.from_date, r.to_date) + " · " + hmDays(r.total_days)
-      + (w ? " · " + w : "");
-    v.go = "Review";
-  } else if (key === "expense_approvals") {
-    v.title = r.employee_name || "";
-    v.sub = drT("Expense claim") + " · " + fmtMoney(r.amount) + (r.expense_type ? " · " + r.expense_type : "")
       + (w ? " · " + w : "");
     v.go = "Review";
   } else if (key === "goal_updates") {
@@ -6528,7 +6258,6 @@ function hmPendOpen(i) {
   var v = HM.rows[i];
   if (!v) return;
   if (v.action === "leave" && !hmIsCxo()) { hmLeaveSheet(v); return; }
-  if (v.action === "expense" && v.row) { hmExpenseSheet(v.row); return; }
   var screen = HM_SCREEN[v.action];
   hmCloseSheet(true);
   /* A goal or KPI update opens its own drawer, where Approve and Reject are
@@ -6559,29 +6288,6 @@ function hmLeaveSheet(v) {
   var ov = hmOpenSheet(drT("Leave request"), body, foot);
   ov._row = r;
 }
-/* ── the expense sheet (slice 076, Part C): money first, then the act ───
-   The same Approve / Decline-with-a-reason flow as leave, so the same
-   buttons and hmDecide; ov._kind tells hmDecide which endpoint to call. */
-function hmExpenseSheet(r) {
-  var w = hmWaiting(r.waiting_since);
-  var body = '<div class="hm-sh-p"><div class="hm-l1" style="font-size:var(--fs-lg);white-space:normal">' + esc(r.employee_name || "") + '</div>'
-    + '<div class="hm-note" style="margin:2px 0 12px">' + esc(drT("Expense claim")) + '</div>'
-    + '<div class="hm-fact"><div class="hm-amt">' + esc(fmtMoney(r.amount)) + '</div><div class="hm-sub">'
-    + esc([r.expense_type, hmDay(r.expense_date)].filter(Boolean).join(" · ")) + '</div>'
-    + (r.note ? '<div class="hm-sub" style="color:var(--text)">' + esc(r.note) + '</div>' : '') + '</div>'
-    + '<div class="hm-note" style="margin-top:8px">' + esc((w ? w.charAt(0).toUpperCase() + w.slice(1) + ". " : "")
-    + drT("Approving passes it to accounts for payment. You cannot take it back here.")) + '</div>'
-    + '</div>'
-    + '<div class="hm-sh-p hm-reason" id="hm-reason" style="display:none;padding-top:0">'
-    + '<label for="hm-why">' + esc(drT("Why are you declining? {0} will read this.", [(r.employee_name || "").split(" ")[0]])) + '</label>'
-    + '<textarea id="hm-why" maxlength="140" aria-describedby="hm-why-e"></textarea>'
-    + '<div class="hm-err" id="hm-why-e" role="alert" style="display:none">' + esc(drT("Write a short reason first.")) + '</div></div>';
-  var foot = '<button type="button" class="btn btn-primary" data-hm="leave-approve" id="hm-approve">' + esc(drT("Approve")) + '</button>'
-    + '<button type="button" class="btn btn-outline" data-hm="leave-decline" id="hm-decline">' + esc(drT("Decline")) + '</button>';
-  var ov = hmOpenSheet(drT("Expense claim"), body, foot);
-  ov._row = r;
-  ov._kind = "expense";
-}
 function hmDecide(action) {
   var ov = hmEl("hm-ov"), r = ov && ov._row;
   if (!r || ov._busy) return;
@@ -6602,33 +6308,25 @@ function hmDecide(action) {
   ov._busy = true;
   var btns = ov.querySelectorAll(".hm-sh-f button");
   [].forEach.call(btns, function (b) { b.disabled = true; });
-  var exp = ov._kind === "expense";
-  var args = exp ? {name: r.name, action: action === "approve" ? "approve" : "decline"}
-                 : {leave_id: r.name, action: action};
+  var args = {leave_id: r.name, action: action};
   if (reason) args.reason = reason;
-  function done() {
+  api("action_leave", args, function () {
     var first = (r.employee_name || "").split(" ")[0];
     hmCloseSheet(true);
-    hmDropPending(exp ? "expense_approvals" : "leave_approvals", r.name);
-    toast(action !== "approve" ? drT("Declined. {0} will see your reason.", [first])
-      : exp ? drT("Approved. {0}'s claim of {1} goes to accounts.", [r.employee_name || "", fmtMoney(r.amount)])
-      : drT("Approved. {0}'s leave is approved.", [r.employee_name || ""]), action === "approve" ? "ok" : "");
-    var badge = !exp && hmEl("sb-team-badge");
+    hmDropPending("leave_approvals", r.name);
+    toast(action === "approve" ? drT("Approved. {0}'s leave is approved.", [r.employee_name || ""])
+                               : drT("Declined. {0} will see your reason.", [first]), action === "approve" ? "ok" : "");
+    var badge = hmEl("sb-team-badge");
     if (badge) {
       var bn = Math.max(0, (parseInt(badge.textContent) || 0) - 1);
       badge.textContent = bn; badge.style.display = bn ? "flex" : "none";
     }
-  }
-  function failed(e) {
+  }, function (e) {
     ov._busy = false;
     if (mayHaveGone(e)) { sayMayHaveGone(e, btns[btns.length - 1]); return; }
     [].forEach.call(btns, function (b) { b.disabled = false; });
     toast((e && e.message) || drT("Could not save that. Try again."), "err");
-  }
-  /* The expense decision goes through gpFetch, so a refusal ("This claim has
-     already been decided.") comes back as the server's own words. */
-  if (exp) gpFetch("alvoraa_portal.hr_api.decide_expense", args).then(done, failed);
-  else api("action_leave", args, done, failed);
+  });
 }
 /* The decided row leaves the card at once; the count follows it. */
 function hmDropPending(key, name) {
@@ -6742,790 +6440,6 @@ function ntOpenOne(n) {
   }, function () { /* left unread; it will be there next time */ });
 }
 
-/* ── Birthdays and anniversaries, My profile, the switch (slice 076, Part C)
-   Prefixes bd / mp / bs. The server decides who is listed: own branch, Active,
-   not hidden, and nothing at all while the organisation switch is off. Rows
-   carry a name, a kind, a day and a month, and years for an anniversary -
-   never a date, a year or an age. */
-var HM_BD = "alvoraa_portal.home_people.";
-var BD_CAKE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 21h16M5 21v-7h14v7M12 14V9M12 4c1 1 1 2 0 3-1-1-1-2 0-3"/></svg>';  /* as drawn */
-
-function bdToday() { var t = isoParts(localToday()); return t ? t[2] : 0; }
-function bdRowHtml(x) {
-  var today = bdToday();
-  var sub = x.kind === "birthday" ? drT("Birthday")
-    : (x.years === 1 ? drT("Work anniversary · 1 year") : drT("Work anniversary · {0} years", [x.years]));
-  if (x.day < today) sub += " · " + drT("earlier this month");
-  return '<div class="hm-row hm-static"><span class="hm-av" aria-hidden="true">' + esc(initials(x.name)) + '</span>'
-    + '<span class="hm-rt"><span class="hm-l1">' + esc(x.name) + '</span><span class="hm-l2">' + esc(sub) + '</span></span>'
-    + '<span class="hm-go hm-day">' + esc(x.day === today ? drT("Today") : x.day + " " + drT(MON3[x.month - 1])) + '</span></div>';
-}
-function homeBirthdays() {
-  var card = hmEl("home-bday-card"), body = hmEl("home-bday-body"), foot = hmEl("home-bday-foot");
-  if (!card) return;
-  gpFetch(HM_BD + "birthdays_this_month", {see_all: 0}).then(function (d) {
-    if (!d || !d.on) { card.style.display = "none"; return; }
-    var rows = d.rows || [];
-    body.innerHTML = rows.length ? rows.map(bdRowHtml).join("")
-      : '<div class="hm-empty"><span class="hm-tick">' + BD_CAKE + '</span><b>' + esc(drT("No birthdays or anniversaries this month."))
-        + '</b><span class="hm-es">' + esc(drT("People in your branch who share these dates appear here.")) + '</span></div>';
-    if (d.total > rows.length) {
-      foot.innerHTML = '<span class="hm-note">' + esc(drT("Showing {0} of {1}", [rows.length, d.total])) + '</span><span class="hm-sp"></span>'
-        + '<button type="button" class="hm-tbtn" data-hm="bday-all">' + esc(drT("See all {0}", [d.total])) + '</button>';
-      foot.style.display = "";
-    } else { foot.innerHTML = ""; foot.style.display = "none"; }
-    card.style.display = "";
-  }, function (e) {
-    card.style.display = "";
-    foot.style.display = "none";
-    failBox(body, e, homeBirthdays);
-  });
-}
-function bdAll() {
-  var opener = document.activeElement;
-  gpFetch(HM_BD + "birthdays_this_month", {see_all: 1}).then(function (d) {
-    var rows = (d && d.rows) || [];
-    var month = rows.length ? new Date(2000, rows[0].month - 1, 1).toLocaleString("en-GB", {month: "long"}) : "";
-    hmOpenSheet(drT("Birthdays and anniversaries, {0}", [month]), rows.map(bdRowHtml).join("")
-      + '<div class="hm-sh-p hm-note">' + esc(drT("Only people in your own branch who share their dates.")) + '</div>');
-    HM.opener = opener;
-  }, function (e) { toast(e.message || drT("Could not load that. Try again."), "err"); });
-}
-
-/* My profile: the one tick, or "nothing to set" while the switch is off. */
-function mpLoad() {
-  var body = hmEl("mp-body");
-  if (!body) return;
-  if (hmEl("mp-h")) hmEl("mp-h").focus();
-  mypLoad();   /* slice 078: the picture, the details and the password cards */
-  gpFetch(HM_BD + "birthdays_this_month", {see_all: 0}).then(function (d) {
-    var org = hmEl("nav-org-settings");
-    body.innerHTML = (d && d.on
-      ? '<div class="nc-box"><h3 class="nc-h3" style="margin-top:0">' + esc(drT("Sharing with colleagues")) + '</h3>'
-        + '<label class="nc-opt" for="mp-share"><input type="checkbox" id="mp-share"' + (d.hidden ? '' : ' checked') + '><span>'
-        + esc(drT("Show my birthday and work anniversary on Home to colleagues in my branch"))
-        + '<span class="gp-hint" style="display:block">' + esc(drT("They see your name, the day and month, and your years of service. Never your age or birth year. You can change this at any time."))
-        + '</span></span></label></div>'
-      : '<div class="nc-box gp-hint">' + esc(drT("There is nothing to set here right now.")) + '</div>')
-      + (org && org.style.display !== "none" ? '<button type="button" class="btn btn-outline" style="margin-top:16px" onclick="switchPanel(\'org-settings\',null)">'
-        + esc(drT("Organisation settings")) + '</button>' : '');
-  }, function (e) { failBox(body, e, mpLoad); });
-}
-document.addEventListener("change", function (e) {
-  var t = e.target;
-  if (!t || t.id !== "mp-share") return;
-  var show = t.checked;
-  t.disabled = true;
-  gpFetch(HM_BD + "set_birthday_hide", {value: show ? 0 : 1}).then(function () {
-    t.disabled = false;
-    toast(show ? drT("Colleagues in your branch can see your birthday and anniversary.")
-               : drT("You are hidden from the birthdays and anniversaries card."), "ok");
-  }, function (err) {
-    t.disabled = false;
-    t.checked = !show;
-    toast(err.message || drT("Could not save that. Try again."), "err");
-  });
-});
-
-/* ── My profile, slice 078: my picture, my details, my password ───────────
-   Prefix myp. Three cards ABOVE the sharing tick 076 Part C put here, drawn
-   by mypLoad(), which mpLoad() calls. The picture comes first: it is what this
-   screen exists for, it needs nothing ticked, and until photographs exist
-   every face in this product is a pair of initials.
-
-   The server sends field NAMES and VALUES. Every label, hint and sentence is
-   here, through drT(), so there is one place to read them and one place to
-   change them. */
-var MYP = { data: null, sending: false };
-var MYP_API = "alvoraa_portal.my_profile.";
-var MYP_PHOTO = "alvoraa_portal.employee_photo.";
-
-/* The six an organisation may open, each with the words it needs. A field the
-   organisation has not ticked is ABSENT from the card - never disabled, never
-   greyed: a control that does nothing is worse than no control. */
-var MYP_FIELDS = {
-  cell_number:            ["Mobile number", "The number HR and your manager will ring."],
-  personal_email:         ["Personal email", "Used if you ever lose your work login."],
-  current_address:        ["Where you live now", "Where post reaches you today. Not your permanent address."],
-  person_to_be_contacted: ["Who to ring in an emergency", "A name we can ask for."],
-  relation:               ["How they are related to you", "Wife, brother, friend. Whatever is true."],
-  emergency_phone_number: ["Their phone number", "A number that will be answered."]
-};
-var MYP_LONG = { current_address: 1 };   /* a textarea rather than one line */
-
-/* 078-PRIV-1, and it is the whole privacy position of this slice.
-
-   It must be TRUE, because the employee relies on it and because the person
-   whose face this is cannot open most of the screens it appears on. So it
-   names the widest reader (the staff directory, which is company-wide),
-   APPRAISALS (Appraisal.employee_image copies the photograph onto a
-   submittable record, so Employee permissions stop applying), and EMAILS -
-   the birthday and work anniversary reminder puts the photograph's URL in a
-   mail body sent to colleagues, and that reminder is switched ON today.
-
-   A notice that understates the audience is worse than no notice at all. If a
-   later slice puts the photograph anywhere else, THIS SENTENCE BECOMES WRONG
-   and has to be changed in the same slice. */
-function mypNotice(inEmails) {
-  /* The email sentence is now CONDITIONAL, because the organisation can switch
-     it off - and off is the default. Before that setting existed this sentence
-     said the photograph IS put into those emails, which was true. Saying it
-     unconditionally AFTER the setting exists would be the notice overstating
-     the audience, which is the one thing a notice must never do. */
-  return drT("Your picture appears next to your name wherever colleagues can already see you: "
-    + "the staff directory, the organisation chart, team pages, Home, your goals and your appraisals. "
-    + "Nothing else changes. Nobody uses it to check who you are or when you arrived. "
-    + "You can replace it or remove it at any time.")
-    + " " + (inEmails
-      ? drT("Your organisation has also chosen to put it into the birthday and work "
-          + "anniversary emails it sends to colleagues.")
-      : drT("It is not put into the birthday or work anniversary emails your organisation sends."));
-}
-
-function mypLoad() {
-  var pic = hmEl("myp-pic");
-  if (!pic) return;
-  gpFetch(MYP_API + "get_my_profile", {}).then(function (d) {
-    MYP.data = d || {};
-    mypPaint();
-  }, function (e) { failBox(pic, e, mypLoad); });
-}
-
-function mypPaint() {
-  var d = MYP.data || {};
-  /* S1-E. An administrator who is not a member of staff opens what is about to
-     be every employee's main screen. Before this slice it was a 500. */
-  if (d.no_employee) {
-    hmEl("myp-pic").innerHTML = '<div class="nc-box"><b>'
-      + esc(drT("This account is not linked to an employee record.")) + '</b><span class="gp-hint" style="display:block;margin-top:6px">'
-      + esc(drT("There is nothing here to change. Ask HR to link it to this account."))
-      + '</span></div>';
-    hmEl("myp-det").innerHTML = "";
-    hmEl("myp-pw").innerHTML = "";
-    return;
-  }
-  mypPaintPicture();
-  mypPaintDetails();
-  mypPaintPassword();
-}
-
-/* ── the picture ─────────────────────────────────────────────────────────── */
-
-function mypPaintPicture() {
-  var d = MYP.data || {};
-  var has = !!d.image;
-  var circle = '<span class="myp-face' + (has ? " has" : "") + '">'
-    + '<span class="myp-ini" aria-hidden="true">' + esc(initials(d.employee_name || "?")) + '</span>'
-    + (has ? '<img src="' + esc(d.image) + '" width="96" height="96" alt=""'
-             + ' onload="this.style.opacity=1" onerror="this.remove()">' : "")
-    + '</span>';
-  var buttons = has
-    ? '<button type="button" class="btn btn-outline myp-b" data-myp="pick">' + esc(drT("Replace")) + '</button>'
-      + '<button type="button" class="btn btn-outline myp-b" data-myp="remove">' + esc(drT("Remove")) + '</button>'
-    : '<button type="button" class="btn btn-primary myp-b" data-myp="camera">' + esc(drT("Take a photo")) + '</button>'
-      + '<button type="button" class="btn btn-outline myp-b" data-myp="pick">' + esc(drT("Choose a file")) + '</button>';
-
-  hmEl("myp-pic").innerHTML = '<div class="nc-box myp-card">'
-    + '<h3 class="nc-h3" style="margin-top:0">' + esc(drT(has ? "Your picture" : "Add your picture")) + '</h3>'
-    + '<div class="myp-pic-row">' + circle
-    + '<p class="myp-said">' + esc(has
-        ? drT("That is you. Colleagues who can see you on the organisation chart will see this picture.")
-        : drT("Colleagues will recognise you, and you do not have to ask HR."))
-    + '</p></div>'
-    /* THE NOTICE IS BEFORE THE CONTROL IN THE DOM (AC-2). Not under it, not
-       behind a link, not after the camera has opened. */
-    + '<p class="myp-notice">' + esc(mypNotice(d.photo_in_emails)) + '</p>'
-    + '<div class="myp-acts">' + buttons + '</div>'
-    + '<p class="gp-hint" style="margin-top:8px">'
-    + esc(drT("We make it smaller before we keep it, so it uses almost none of your data.")) + '</p>'
-    + '<p class="myp-say" id="myp-say" role="status"></p>'
-    /* capture="user" opens the front camera where the phone has one, and is
-       ignored on a laptop, which then shows the ordinary file chooser. */
-    + '<input type="file" id="myp-file" accept="image/jpeg,image/png,image/webp" style="display:none">'
-    + '<input type="file" id="myp-cam" accept="image/jpeg,image/png,image/webp" capture="user" style="display:none">'
-    + '</div>';
-}
-
-function mypSay(words, bad) {
-  var el = hmEl("myp-say");
-  if (!el) return;
-  el.textContent = words || "";
-  el.className = "myp-say" + (bad ? " bad" : "");
-}
-
-/* The file to a base64 string. The SERVER does every check that matters - the
-   length before any decode, the magic bytes, the size, the re-encode - so this
-   side only has to send it and say what is happening. */
-function mypSend(file) {
-  if (!file || MYP.sending) return;
-  MYP.sending = true;
-  mypSay(drT("Sending your picture… You can keep using the page."));
-  var reader = new FileReader();
-  reader.onerror = function () {
-    MYP.sending = false;
-    mypSay(drT("That picture could not be read from your phone. Try taking a new one."), 1);
-  };
-  reader.onload = function () {
-    gpFetch(MYP_PHOTO + "upload_my_photo", {photo: String(reader.result || "")},
-            {lostAnswerHandled: true}).then(function (r) {
-      MYP.sending = false;
-      MYP.data.image = r && r.image;
-      mypPaintPicture();
-      toast(drT("That is you."), "ok");
-    }, function (e) {
-      MYP.sending = false;
-      /* A write whose answer was lost MAY have been saved. Never "check your
-         connection" when the office may have succeeded. */
-      mypSay(mayHaveGone(e)
-        ? drT("We could not reach the office. Your picture may have gone through. "
-            + "Open this page again in a minute and look before you send it a second time.")
-        : (e && e.message) || drT("That picture did not reach us. Try again."), 1);
-    });
-  };
-  reader.readAsDataURL(file);
-}
-
-function mypRemove() {
-  if (MYP.sending) return;
-  MYP.sending = true;
-  mypSay(drT("Removing your picture…"));
-  gpFetch(MYP_PHOTO + "remove_my_photo", {}, {lostAnswerHandled: true}).then(function () {
-    MYP.sending = false;
-    MYP.data.image = null;
-    mypPaintPicture();
-    toast(drT("Your picture has been removed."), "ok");
-  }, function (e) {
-    MYP.sending = false;
-    mypSay(mayHaveGone(e)
-      ? drT("We could not reach the office. It may have gone through. Open this page again in a minute.")
-      : (e && e.message) || drT("Could not remove it. Try again."), 1);
-  });
-}
-
-/* ── the details ─────────────────────────────────────────────────────────── */
-
-function mypPaintDetails() {
-  var rows = (MYP.data && MYP.data.fields) || [];
-  if (!rows.length) {
-    /* The card STAYS and says so. The picture card is unaffected: the photo is
-       always on and is not one of the ticked details. */
-    hmEl("myp-det").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
-      + esc(drT("Your details")) + '</h3><p class="gp-hint">'
-      + esc(drT("Your organisation has not chosen any detail for you to change here yet. "
-              + "To correct something on your record, tell HR.")) + '</p></div>';
-    return;
-  }
-  hmEl("myp-det").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
-    + esc(drT("Your details")) + '</h3>'
-    + '<p class="gp-hint">' + esc(drT("Only you can change these. HR sees the change.")) + '</p>'
-    + rows.map(function (r) {
-        var w = MYP_FIELDS[r.fieldname] || [r.fieldname, ""];
-        var id = "myp-f-" + r.fieldname;
-        var input = MYP_LONG[r.fieldname]
-          ? '<textarea class="gp-input myp-in" id="' + id + '" rows="2" placeholder="'
-              + esc(drT("Not given yet")) + '">' + esc(r.value || "") + '</textarea>'
-          : '<input class="gp-input myp-in" id="' + id + '" type="text" value="'
-              + esc(r.value || "") + '" placeholder="' + esc(drT("Not given yet")) + '">';
-        return '<div class="myp-field"><label class="gp-label" for="' + id + '">'
-          + esc(drT(w[0])) + '</label>' + input
-          + (w[1] ? '<span class="gp-hint">' + esc(drT(w[1])) + '</span>' : "") + '</div>';
-      }).join("")
-    + '<div class="myp-acts"><button type="button" class="btn btn-primary myp-b" data-myp="save">'
-    + esc(drT("Save my details")) + '</button></div>'
-    + '<p class="myp-say" id="myp-dsay" role="status"></p></div>';
-}
-
-function mypSaveDetails() {
-  var rows = (MYP.data && MYP.data.fields) || [];
-  var out = {}, note = hmEl("myp-dsay");
-  rows.forEach(function (r) {
-    var el = hmEl("myp-f-" + r.fieldname);
-    if (el) out[r.fieldname] = el.value;
-  });
-  if (note) { note.textContent = drT("Saving…"); note.className = "myp-say"; }
-  gpFetch(MYP_API + "save_my_profile", {values: JSON.stringify(out)},
-          {lostAnswerHandled: true}).then(function (r) {
-    rows.forEach(function (x) { if (x.fieldname in out) x.value = out[x.fieldname]; });
-    if (note) note.textContent = "";
-    toast(r && r.saved ? drT("Saved. HR can see the change.") : drT("Nothing had changed."), "ok");
-  }, function (e) {
-    /* WHAT WAS TYPED IS NOT CLEARED. The inputs are left exactly as they are,
-       so a lost answer never costs somebody their typing (AC-19). */
-    if (note) {
-      note.className = "myp-say bad";
-      note.textContent = mayHaveGone(e)
-        ? drT("We could not reach the office. Your change may have gone through. "
-            + "Open this page again in a minute and look before you save it a second time.")
-        : (e && e.message) || drT("Could not save that. Try again.");
-    }
-  });
-}
-
-/* ── the password ────────────────────────────────────────────────────────── */
-
-function mypPaintPassword() {
-  var when = MYP.data && MYP.data.password_last_set;
-  hmEl("myp-pw").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
-    + esc(drT("Your password")) + '</h3>'
-    + '<p class="gp-hint">' + esc(when ? drT("You last set it on {0}.", [fmtDate(when)])
-                                       : drT("HR set the password you are using.")) + '</p>'
-    + '<div class="myp-acts"><a class="btn btn-outline myp-b" href="/update-password">'
-    + esc(drT("Change my password")) + ' →</a></div>'
-    + '<p class="gp-hint" style="margin-top:8px">'
-    + esc(drT("Opens the password page. When you have changed it you come straight back here."))
-    + '</p></div>';
-}
-
-/* One handler for everything on the three cards. */
-document.addEventListener("click", function (e) {
-  var t = e.target && e.target.closest ? e.target.closest("[data-myp]") : null;
-  if (!t) return;
-  var what = t.getAttribute("data-myp");
-  if (what === "camera") { hmEl("myp-cam").click(); }
-  else if (what === "pick") { hmEl("myp-file").click(); }
-  else if (what === "remove") { mypRemove(); }
-  else if (what === "save") { mypSaveDetails(); }
-});
-document.addEventListener("change", function (e) {
-  var t = e.target;
-  if (!t || (t.id !== "myp-file" && t.id !== "myp-cam")) return;
-  var f = t.files && t.files[0];
-  t.value = "";            /* so choosing the same file twice still fires */
-  mypSend(f);
-});
-
-/* ── "What people can see and change about each other", slice 078 ─────────
-   Prefix ocs. One card, two pickers, one dialog pattern.
-
-   Three rules this card is built to, each paid for by somebody else's product:
-
-   NAMES, NOT COUNTS. "8 details" and "and 3 more" are how a wrong tick made six
-   months ago survives every person who scrolls past it. Everything chosen is
-   listed by name, nothing is truncated and nothing is paginated - a long list
-   of exposed identity documents should look like a lot.
-
-   ONE BUTTON, ONE DIALOG, OK SAVES, CANCEL WRITES NOTHING. There is no page
-   Save button and no unsaved state anywhere, so nothing can be left half done
-   and nothing can be saved by accident.
-
-   THE CONSEQUENCE IS ON THE BUTTON. "OK - 3 document types, seen by 7 people",
-   not "OK". */
-var OCS = { data: null, dlg: null, pick: {}, opener: null, kind: null, types: null };
-var OCS_API = "alvoraa_portal.people_settings.";
-var OCS_PROFILE_KEY = "alvoraa_positions_profile_fields";
-var OCS_DOCS_KEY = "alvoraa_positions_document_types";
-var OCS_MY_KEY = "alvoraa_my_profile_fields";
-
-/* The words for each ticked detail. The same list the drawer uses for the
-   Positions fields - MPF_FIELDS - because one of them being renamed and not
-   the other is how a settings page comes to describe a screen that says
-   something else. */
-var OCS_MY_WORDS = {
-  cell_number: "Mobile number",
-  personal_email: "Personal email",
-  current_address: "Where they live now",
-  person_to_be_contacted: "Emergency contact name",
-  relation: "How they are related",
-  emergency_phone_number: "Emergency contact number"
-};
-function ocsWord(key, field) {
-  if (key === OCS_MY_KEY) return drT(OCS_MY_WORDS[field] || field);
-  for (var i = 0; i < MPF_FIELDS.length; i++) {
-    if (MPF_FIELDS[i][0] === field) return drT(MPF_FIELDS[i][1]);
-  }
-  return field;
-}
-
-function ocsLoad() {
-  var card = hmEl("org-people-card");
-  if (!card) return;
-  gpFetch(OCS_API + "get_people_settings", {}).then(function (d) {
-    OCS.data = d;
-    ocsPaint();
-    card.style.display = "";
-  }, function () {
-    /* Not a System Manager: not theirs to see, so the card is not there. */
-    card.style.display = "none";
-  });
-}
-
-function ocsChips(words) {
-  if (!words.length) return "";
-  return '<div class="ocs-chips">' + words.map(function (w) {
-    return '<span class="ocs-chip">' + esc(w) + "</span>";
-  }).join("") + "</div>";
-}
-
-function ocsPaint() {
-  var d = OCS.data || {};
-  var people = d.audience_count || 0;
-  var roles = (d.audience_roles || []).join(", ");
-
-  /* The Positions details. */
-  var profile = '<div class="ocs-sec"><h4 class="ocs-h">'
-    + esc(drT("Details a Positions reader may see about a colleague")) + "</h4>"
-    + (d.profile_fields && d.profile_fields.length
-        ? ocsChips(d.profile_fields.map(function (f) { return ocsWord(OCS_PROFILE_KEY, f); }))
-          + '<p class="gp-hint">' + esc(drT(
-              "These {0} details are visible to the {1} people who can open the Positions "
-            + "page, for everyone in their own companies and branches.",
-            [d.profile_fields.length, people])) + " "
-          + '</p><button type="button" class="btn btn-outline btn-sm" data-ocs="who">'
-          + esc(drT("See who")) + "</button>"
-        : '<p class="gp-hint">' + esc(drT(
-            "No extra details are shown. A reader sees a name and a job role, and nothing else."))
-          + "</p>")
-    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-profile">'
-    + esc(drT("Add or remove details")) + "</button></div></div>";
-
-  /* The document types - and the amber line, standing, without opening
-     anything. AC-84: it names the actual ROLES, not only a count. */
-  var docs = d.document_types || [];
-  var sens = d.sensitive || [];
-  var docsSec = '<div class="ocs-sec"><h4 class="ocs-h">'
-    + esc(drT("Document types shown on a person's profile")) + "</h4>"
-    + (sens.length
-        ? '<p class="ocs-warn" role="note">' + esc(drT(
-            "{0} of these {1} is an identity, statutory, verification, employment or "
-          + "address document. The {2} people who can open the Positions page - {3} - "
-          + "can open the file itself, for everyone in their own companies and branches.",
-            [sens.length, docs.length, people, roles])) + "</p>"
-        : "")
-    + (docs.length
-        ? '<ul class="ocs-list">' + docs.map(function (t) {
-            return "<li><b>" + esc(t.name) + "</b>"
-              + (t.category ? '<span class="ocs-cat">' + esc(t.category) + "</span>" : "")
-              + (t.known ? "" : '<span class="ocs-cat ocs-gone">'
-                  + esc(drT("no longer exists")) + "</span>")
-              + "</li>";
-          }).join("") + "</ul>"
-        /* Read as a statement of fact. No prompt, no "add your first", no
-           empty-state picture: nothing ticked is a perfectly good answer. */
-        : '<p class="gp-hint">' + esc(drT(
-            "No document types are shown on the Positions page. Nobody can open an "
-          + "employee's documents from there.")) + "</p>")
-    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-docs">'
-    + esc(drT("Add or remove document types")) + "</button></div></div>";
-
-  /* What an employee may change about themselves. */
-  var mine = '<div class="ocs-sec"><h4 class="ocs-h">'
-    + esc(drT("Details an employee may correct about themselves")) + "</h4>"
-    + (d.my_profile_fields && d.my_profile_fields.length
-        ? ocsChips(d.my_profile_fields.map(function (f) { return ocsWord(OCS_MY_KEY, f); }))
-        : '<p class="gp-hint">' + esc(drT(
-            "Nothing. My profile tells them to ask HR instead.")) + "</p>")
-    + '<p class="gp-hint">' + esc(drT(
-        "A photo is always on. Every employee may add or replace their own picture, and "
-      + "they are told who sees it before they do.")) + "</p>"
-    /* Counsel, 29 Oct 2026. The widest reach a photograph has, and the one
-       surface the person in it cannot see, check or recall - so it is a tick of
-       its own rather than part of the photograph feature, and it is OFF until
-       somebody turns it on. The employee's own notice follows this setting. */
-    + '<label class="ocs-opt" for="ocs-mail"><input type="checkbox" id="ocs-mail"'
-    + (d.photo_in_emails ? " checked" : "") + ' data-ocs-mail="1"><span><b>'
-    + esc(drT("Include photographs in birthday and anniversary emails")) + "</b>"
-    + '<span class="gp-hint" style="display:block">' + esc(drT(
-        "Off by default. Email is the one place a person cannot see, check or recall "
-      + "who received their picture. Turning it on does not change who can open the "
-      + "chart; turning it off does not stop the reminders."))
-    + "</span></span></label>"
-    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-my">'
-    + esc(drT("Add or remove details")) + "</button></div></div>";
-
-  /* Pre-onboarding states FACTS and links to the form's own builder. It is not
-     a fourth picker: the Web Form owns the joiner's field list, and two
-     pickers for one form will disagree in front of the joiner. */
-  var joiner = '<div class="ocs-sec"><h4 class="ocs-h">'
-    + esc(drT("What a new joiner is asked for before day one")) + "</h4>"
-    + '<p class="gp-hint">' + esc(d.retention_days
-        ? drT("Kept for {0} days if the person never joins, then deleted.", [d.retention_days])
-        : drT("Switched off. It cannot be switched on until somebody sets how long a "
-            + "joiner's details are kept.")) + "</p></div>";
-
-  hmEl("ocs-body").innerHTML = profile + docsSec + mine + joiner;
-  hmEl("ocs-changed").textContent = d.last_changed && d.last_changed.by
-    ? drT("Last changed by {0}, {1}", [d.last_changed.by, fmtDate(d.last_changed.on)])
-    : "";
-}
-
-/* ── the picker dialog ───────────────────────────────────────────────────── */
-
-function ocsPick(kind) {
-  var d = OCS.data || {};
-  OCS.kind = kind;
-  OCS.opener = document.activeElement;
-  if (kind === "docs" && !OCS.types) {
-    gpFetch(OCS_API + "get_document_type_choices", {}).then(function (t) {
-      OCS.types = t; ocsPick("docs");
-    }, function (e) { toast((e && e.message) || drT("Could not load that. Try again."), "err"); });
-    return;
-  }
-  OCS.pick = {};
-  (kind === "docs" ? (d.document_types || []).map(function (t) { return t.name; })
-   : kind === "my" ? (d.my_profile_fields || [])
-   : (d.profile_fields || [])).forEach(function (v) { OCS.pick[v] = 1; });
-  ocsDialog();
-}
-
-function ocsRows() {
-  var d = OCS.data || {};
-  if (OCS.kind === "docs") {
-    var types = (OCS.types && OCS.types.types) || [];
-    var byCat = {}, order = [];
-    types.forEach(function (t) {
-      var c = t.category || drT("Other");
-      if (!byCat[c]) { byCat[c] = []; order.push(c); }
-      byCat[c].push(t);
-    });
-    /* GROUPED BY CATEGORY, with the group name above each block and the real
-       category as a chip on every row - so a sensitive type cannot be read as
-       an ordinary one because it happens to be next to one. */
-    return order.map(function (c) {
-      return '<h5 class="ocs-grp">' + esc(c) + "</h5>" + byCat[c].map(function (t) {
-        return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(t.name) + '"'
-          + (OCS.pick[t.name] ? " checked" : "") + '><span><b>' + esc(t.name) + "</b>"
-          + '<span class="ocs-cat">' + esc(t.category || drT("Other")) + "</span>"
-          + '<span class="gp-hint" style="display:block">'
-          + esc([t.collect_from ? drT("collected by {0}", [t.collect_from]) : "",
-                 t.given ? drT("{0} given so far", [t.given]) : drT("nobody has given one"),
-                 t.mandatory ? drT("needed to join") : ""].filter(Boolean).join(" · "))
-          + "</span></span></label>";
-      }).join("");
-    }).join("");
-  }
-  var choices = OCS.kind === "my" ? (d.my_profile_choices || []) : (d.profile_choices || []);
-  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
-  /* THE SAFE LIST ONLY. Bank account, PAN, salary and date of birth are not
-     offered, and would be refused at the setter and again at every reader if
-     they were. A picker that offers a field it will then refuse is how a tenant
-     comes to believe a field is visible. */
-  return choices.map(function (f) {
-    return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(f) + '"'
-      + (OCS.pick[f] ? " checked" : "") + '><span><b>' + esc(ocsWord(key, f))
-      + "</b></span></label>";
-  }).join("");
-}
-
-function ocsDialog() {
-  var d = OCS.data || {};
-  var title = OCS.kind === "docs" ? drT("Document types shown on a person's profile")
-            : OCS.kind === "my" ? drT("Details an employee may correct about themselves")
-            : drT("Details a Positions reader may see");
-  var box = document.createElement("div");
-  box.className = "ocs-back";
-  box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true"'
-    + ' aria-labelledby="ocs-dlg-h" tabindex="-1">'
-    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">' + esc(title) + "</h3>"
-    + '<button type="button" class="ocs-x" data-ocs="cancel" aria-label="'
-    + esc(drT("Cancel")) + '">&times;</button></div>'
-    + '<div class="ocs-dlg-bd" id="ocs-dlg-bd">' + ocsRows() + "</div>"
-    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="ocs-sum" role="status"></p>'
-    /* 01b line 604. Laptop: Preview, then Cancel, then OK - so the primary,
-       saving action is on the right where it is expected, and Cancel is not
-       where OK was drawn. The phone stacks these full width with OK FIRST,
-       which `.ocs-ft-b` does with one `order` rule rather than a second copy
-       of the markup. */
-    + '<div class="ocs-ft-b">'
-    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="preview">'
-    + esc(drT("Preview what a reader sees")) + "</button>"
-    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="cancel">'
-    + esc(drT("Cancel")) + "</button>"
-    + '<button type="button" class="btn btn-primary ocs-b" data-ocs="ok" id="ocs-ok"></button>'
-    + "</div></div></div>";
-  document.body.appendChild(box);
-  OCS.dlg = box;
-  ocsSummary();
-  box.querySelector("#ocs-dlg-h").focus();
-}
-
-function ocsSummary() {
-  if (!OCS.dlg) return;
-  var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
-  var people = (OCS.data || {}).audience_count || 0;
-  var sensCats = (OCS.types && OCS.types.sensitive_categories) || [];
-  var sens = OCS.kind === "docs"
-    ? chosen.filter(function (n) {
-        var t = ((OCS.types && OCS.types.types) || []).filter(function (x) { return x.name === n; })[0];
-        return t && sensCats.indexOf(t.category) >= 0;
-      })
-    : [];
-  /* The CONSEQUENCE on the button, not the word "OK". */
-  hmEl("ocs-ok").textContent = OCS.kind === "docs"
-    ? drT("OK - {0} document types, seen by {1} people", [chosen.length, people])
-    : OCS.kind === "my"
-      ? drT("OK - {0} details an employee may change", [chosen.length])
-      : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
-  /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
-  hmEl("ocs-sum").innerHTML = sens.length
-    ? '<span class="ocs-warn">' + esc(drT(
-        "{0} of these is an identity, statutory, verification, employment or address "
-      + "document. The {1} people who can open the Positions page will be able to open "
-      + "the file itself.", [sens.length, people])) + "</span>"
-    : OCS.kind === "docs" && chosen.length === 0
-      ? esc(drT("Nothing ticked. Nobody will be able to open an employee's documents "
-              + "from the Positions page."))
-      : "";
-}
-
-function ocsClose() {
-  /* CANCEL WRITES NOTHING, even if every box was changed. */
-  if (OCS.dlg && OCS.dlg.parentNode) OCS.dlg.parentNode.removeChild(OCS.dlg);
-  OCS.dlg = null;
-  OCS.pick = {};
-  var back = OCS.opener;
-  OCS.opener = null;
-  if (back && back.focus && document.body.contains(back)) back.focus();
-}
-
-function ocsSave() {
-  var key = OCS.kind === "docs" ? OCS_DOCS_KEY
-          : OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
-  var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
-  var btn = hmEl("ocs-ok");
-  btn.disabled = true;
-  gpFetch(OCS_API + "set_people_setting", { key: key, value: chosen.join(",") },
-          { lostAnswerHandled: true }).then(function () {
-    var n = chosen.length;
-    ocsClose();
-    ocsLoad();
-    toast(key === OCS_DOCS_KEY
-      ? drT("Saved. {0} document types are now shown on the Positions page.", [n])
-      : drT("Saved."), "ok");
-  }, function (e) {
-    btn.disabled = false;
-    toast(mayHaveGone(e)
-      ? drT("No answer from the office. It may have gone through. Close this and look "
-          + "before you save it again.")
-      : (e && e.message) || drT("Could not save that. Try again."), "err");
-  });
-}
-
-function ocsPreview() {
-  /* What a reader sees for what is ticked RIGHT NOW - inside the dialog, so
-     nobody has to save to find out, which is the mistake this exists to stop. */
-  var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
-  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
-  var body = OCS.kind === "docs"
-    ? (chosen.length
-        ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
-          + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
-        : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>")
-    : (chosen.length
-        ? '<dl class="mpf-dl">' + chosen.map(function (f) {
-            return "<dt>" + esc(ocsWord(key, f)) + "</dt><dd>"
-              + esc(drT("the person's value")) + "</dd>";
-          }).join("") + "</dl>"
-        : "<p>" + esc(drT("A reader would see a name and a job role, and nothing else."))
-          + "</p>");
-  hmOpenSheet(drT("What a reader sees"), '<div class="hm-sh-p">' + body + "</div>");
-}
-
-document.addEventListener("click", function (e) {
-  var t = e.target && e.target.closest ? e.target.closest("[data-ocs]") : null;
-  if (!t) return;
-  var what = t.getAttribute("data-ocs");
-  if (what === "pick-profile") ocsPick("profile");
-  else if (what === "pick-docs") ocsPick("docs");
-  else if (what === "pick-my") ocsPick("my");
-  else if (what === "cancel") ocsClose();
-  else if (what === "ok") ocsSave();
-  else if (what === "preview") ocsPreview();
-  else if (what === "who") {
-    gpFetch(OCS_API + "who_can_open_positions", {}).then(function (d) {
-      hmOpenSheet(drT("Who can open the Positions page"),
-        '<div class="hm-sh-p"><p>' + esc(drT("Roles: {0}", [(d.roles || []).join(", ")]))
-        + "</p><ul>" + (d.people || []).map(function (p) {
-            return "<li>" + esc(p.full_name) + "</li>";
-          }).join("") + "</ul></div>");
-    }, function (err) { toast((err && err.message) || drT("Could not load that."), "err"); });
-  }
-});
-
-document.addEventListener("change", function (e) {
-  var t = e.target;
-  if (!t || !t.getAttribute) return;
-  if (t.getAttribute("data-ocs-v")) {
-    OCS.pick[t.getAttribute("data-ocs-v")] = t.checked ? 1 : 0;
-    ocsSummary();
-    return;
-  }
-  if (!t.getAttribute("data-ocs-mail")) return;
-  /* Saved on the tick, like the birthdays switch beside it: there is nothing to
-     confirm, and nothing to undo that a second tick does not undo. */
-  var on = t.checked;
-  t.disabled = true;
-  gpFetch(OCS_API + "set_people_setting",
-          { key: "alvoraa_photo_in_emails", value: on ? "1" : "0" },
-          { lostAnswerHandled: true }).then(function () {
-    t.disabled = false;
-    if (OCS.data) OCS.data.photo_in_emails = on;
-    toast(on ? drT("Photographs will be included in those emails.")
-             : drT("Photographs will not be included in those emails."), "ok");
-  }, function (err) {
-    t.disabled = false;
-    t.checked = !on;
-    toast((err && err.message) || drT("Could not save that. Try again."), "err");
-  });
-});
-
-/* Escape CANCELS the picker, and writes nothing. */
-document.addEventListener("keydown", function (e) {
-  if ((e.key !== "Escape" && e.key !== "Esc") || !OCS.dlg) return;
-  e.preventDefault();
-  ocsClose();
-});
-
-/* Focus stays inside the picker while it is open. */
-document.addEventListener("keydown", function (e) {
-  if (e.key !== "Tab" || !OCS.dlg) return;
-  var able = OCS.dlg.querySelectorAll(
-    'button:not([disabled]), input:not([disabled]), [tabindex="0"]');
-  if (!able.length) return;
-  var first = able[0], last = able[able.length - 1];
-  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-});
-
-/* Organisation settings: the switch. Off asks first; on is one tap. */
-var BS = null;
-function bsLoad() {
-  var card = hmEl("org-bday-card");
-  if (!card) return;
-  gpFetch(HM_BD + "birthdays_switch_state", {}).then(function (s) { BS = s; bsPaint(); card.style.display = ""; },
-    function () { card.style.display = "none"; /* not a System Manager: not theirs to see */ });
-}
-function bsPaint() {
-  var btn = hmEl("bs-btn");
-  btn.setAttribute("aria-checked", BS.on ? "true" : "false");
-  btn.disabled = false;
-  hmEl("bs-state").textContent = drT(BS.on ? "On" : "Off");
-  hmEl("bs-hint").textContent = BS.on
-    ? drT("Staff see people in their own branch who have a birthday or work anniversary this month: name, day, and years of service. Never age. Each person can hide themselves in My profile.")
-    : drT("Home does not show a birthdays and anniversaries card.");
-  hmEl("bs-changed").textContent = BS.changed_by ? drT("Last changed by {0}, {1}", [BS.changed_by, fmtDate(BS.changed_on)]) : "";
-}
-function bsSave(on) {
-  var btn = hmEl("bs-btn");
-  btn.disabled = true;
-  hmCloseSheet(true);
-  gpFetch(HM_BD + "set_birthdays_switch", {value: on ? 1 : 0}).then(function (s) {
-    BS = s; bsPaint(); btn.focus();
-    if (!on) toast(drT("Switched off for everyone."), "ok");
-  }, function (e) { btn.disabled = false; toast(e.message || drT("Could not save that. Try again."), "err"); });
-}
-document.addEventListener("click", function (e) {
-  var t = e.target && e.target.closest ? e.target.closest("[data-bs]") : null;
-  if (!t || !BS) return;
-  var what = t.getAttribute("data-bs");
-  if (what === "toggle" && !BS.on) bsSave(1);
-  else if (what === "toggle") {
-    hmOpenSheet(drT("Switch off birthdays and anniversaries?"),
-      '<div class="hm-sh-p">' + esc(drT("Home will stop showing this card for everyone in the organisation ({0} people). You can switch it back on at any time.", [BS.people])) + '</div>',
-      '<button type="button" class="btn btn-outline" data-hm="close">' + esc(drT("Keep it on")) + '</button>'
-      + '<button type="button" class="btn btn-primary" data-bs="off">' + esc(drT("Switch off")) + '</button>');
-  } else if (what === "off") bsSave(0);
-});
-
 /* ── one click handler for everything on Home that is drawn above ─────── */
 document.addEventListener("click", function (e) {
   var t = e.target && e.target.closest ? e.target.closest("[data-hm]") : null;
@@ -7541,7 +6455,6 @@ document.addEventListener("click", function (e) {
   else if (what === "leave-approve") hmDecide("approve");
   else if (what === "leave-decline") hmDecide("reject");
   else if (what === "note-all") ntOpenAll();
-  else if (what === "bday-all") bdAll();
   else if (what === "team-all") switchPanel("team", null);
   else if (what === "compose") ncOpen();
   else if (what === "note") {
@@ -7956,7 +6869,6 @@ function loadHome() {
 
   homePending();
   homeNotices();
-  homeBirthdays();
   homeDashboard();
   hmWatchGrid();
 }
@@ -9645,10 +8557,7 @@ function loadExpenses() {
       return;
     }
     el.innerHTML = '<div style="display:flex;flex-direction:column;gap:10px">' + claims.map(function(c) {
-      return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div>'
-        /* Slice 076 (US-17): the approver's reason, so a decline is not a dead end. */
-        + (c.approval_status === "Rejected" && c.decline_reason ? '<div class="expense-date expense-why">' + esc(drT("Declined: {0}", [c.decline_reason])) + '</div>' : '')
-        + '</div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
+      return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div></div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
   }, function(e) { failBox("expense-list", e, loadExpenses); });
 }
@@ -10437,474 +9346,7 @@ function closeEmpDrawer() {
   document.getElementById("emp-drawer-overlay").classList.remove("open");
   document.getElementById("emp-drawer").classList.remove("open");
   document.body.style.overflow = "";
-  /* Slice 078 (AC-60): focus goes back to whatever opened it. Without this a
-     keyboard user lands at the top of the page and has to tab back through the
-     whole chart to the name they were reading. */
-  var back = MPF.opener;
-  MPF.opener = null;
-  MPF.emp = null;
-  MPF.big = false;
-  MPF.pinned = false;
-  if (back && back.focus && document.body.contains(back)) back.focus();
 }
-
-/* ── The ONE mini profile, slice 078 ──────────────────────────────────────
-   Prefix mpf. Used from the Positions table, the seat tray, and the seat page,
-   and there is exactly ONE place in this file that decides which details a
-   reader is shown and how each one is worded. The spec has an acceptance
-   criterion (AC-58) that FAILS if that list exists twice, because two copies
-   will drift and then the same question gets two answers.
-
-   It is deliberately short. What it answers is "who is this, what do they do,
-   since when" - the three things somebody reading a structure chart actually
-   wants - and it saves an HR hop into the Desk. It is not a personnel file. */
-var MPF = { emp: null, opener: null, big: false, pinned: false, data: null, pics: {} };
-var MPF_API = "alvoraa_portal.positions_profile.";
-
-/* THE one field list. The order is the allow-list's order, so the drawer reads
-   the same whatever order somebody ticked things in.
-
-   The wording is not the fieldname and not Frappe's label. "In the company
-   since" rather than "Date of joining", because that is the fact a reader
-   wants and it does not read like a payroll field. "Work email", because
-   `company_email` means nothing to anybody. */
-var MPF_FIELDS = [
-  ["designation",     "Job role"],
-  ["department",      "Department"],
-  ["branch",          "Branch"],
-  ["company",         "Company"],
-  ["reports_to",      "Reports to"],
-  ["grade",           "Grade"],
-  ["employment_type", "Kind of employment"],
-  ["date_of_joining", "In the company since"],
-  ["default_shift",   "Usual shift"],
-  ["company_email",   "Work email"]
-];
-var MPF_DATE = { date_of_joining: 1 };
-
-/* The sentence under the list. It is a promise, so it has to be true - and it
-   is true because `POSITIONS_PROFILE_FIELDS` is a closed server constant that
-   the reader intersects with as well as the setter. */
-function mpfPromise() {
-  return drT("These are the details your organisation chose to show. Pay, bank details, "
-    + "identity numbers, date of birth and personal contact details are never shown here.");
-}
-
-window.mpfOpen = function (employee, opener) {
-  if (!employee) return;
-  var overlay = document.getElementById("emp-drawer-overlay");
-  var drawer = document.getElementById("emp-drawer");
-  MPF.emp = employee;
-  MPF.opener = opener || (window.event && window.event.target) || null;
-  MPF.big = false;
-  MPF.pinned = false;
-  MPF.data = null;
-  overlay.classList.add("open");
-  drawer.classList.add("open");
-  document.body.style.overflow = "hidden";
-
-  document.getElementById("ed-av").innerHTML = "";
-  document.getElementById("ed-name").textContent = drT("Getting the details…");
-  document.getElementById("ed-role").textContent = "";
-  /* Three grey bars, not a spinner: the shape of what is coming. */
-  document.getElementById("ed-body").innerHTML =
-    '<div class="mpf-body"><div class="hm-skel" aria-hidden="true"></div>'
-    + '<div class="hm-skel" aria-hidden="true"></div>'
-    + '<div class="hm-skel" aria-hidden="true"></div></div>';
-  document.getElementById("ed-name").focus();
-
-  gpFetch(MPF_API + "get_positions_profile", { employee: employee }).then(function (d) {
-    if (MPF.emp !== employee) return;      /* a second name was clicked meanwhile */
-    MPF.data = d;
-    mpfPaint();
-    /* Its own call, after the profile: a document list that fails or is
-       refused must not take the profile down with it. */
-    mpfDocsLoad(employee);
-  }, function (e) {
-    if (MPF.emp !== employee) return;
-    mpfFail(e);
-  });
-};
-
-function mpfFail(e) {
-  document.getElementById("ed-name").textContent = drT("That person");
-  /* A refusal is NOT a failure, and must not be dressed as one: a reader
-     scoped out of a branch is told they cannot see that person, and learns
-     nothing about whether such a person or such a branch exists. */
-  var refused = e && (e.kind === "refused" || e.http_status_code === 403);
-  document.getElementById("ed-body").innerHTML = '<div class="mpf-body">'
-    + '<div class="fail" role="alert"><h3>'
-    + esc(refused ? drT("You cannot see that person's details.")
-                  : drT("We could not reach the office."))
-    + "</h3><p>" + esc(refused
-        ? drT("Ask HR if you need them.")
-        : drT("Nothing has changed about this person. Check your connection and try "
-            + "again. If it keeps happening, tell your administrator: code POS-PROFILE."))
-    + "</p>"
-    + (refused ? "" : '<button type="button" class="btn btn-outline" data-mpf="retry">'
-        + esc(drT("Try again")) + "</button>")
-    + "</div></div>";
-}
-
-function mpfPaint() {
-  var d = MPF.data || {};
-  var name = d.employee_name || "";
-  var pic = d.thumb || d.image;
-
-  /* The photograph lives in the drawer's FIXED HEADER, not in the scrolling
-     body, so a scroll can never open the enlargement by accident (AC-62).
-
-     AC-50: with no photograph the circle is NOT a button - no role, no
-     tabindex, no accessible name, and Enter does nothing. A control that does
-     nothing is worse than no control. */
-  document.getElementById("ed-av").innerHTML = pic
-    ? '<button type="button" class="mpf-face" data-mpf="big" aria-label="'
-      + esc(drT("Show a bigger picture of {0}", [name])) + '">'
-      + '<span class="mpf-ini" aria-hidden="true">' + esc(initials(name)) + "</span>"
-      + '<img src="' + esc(pic) + '" width="40" height="40" alt=""'
-      + ' onload="this.style.opacity=1" onerror="this.remove()"></button>'
-    : '<span class="mpf-face"><span class="mpf-ini" aria-hidden="true">'
-      + esc(initials(name)) + "</span></span>";
-  document.getElementById("ed-name").textContent = name;
-  document.getElementById("ed-role").textContent =
-    [d.designation, mpfValue(d, "branch")].filter(Boolean).join(" · ");
-
-  document.getElementById("ed-body").innerHTML = '<div class="mpf-body">'
-    + mpfLeftLine(d) + mpfList(d) + mpfDocs(d) + "</div>";
-  document.getElementById("ed-body").scrollTop = 0;
-}
-
-/* AC-46. The leaving DATE may appear in this one sentence. It is never a
-   profile row, and the REASON for leaving is never anywhere near this screen. */
-function mpfLeftLine(d) {
-  if (!d.left_on) return "";
-  return '<p class="mpf-left" role="note">' + esc(d.still_here
-    ? drT("{0} leaves on {1}.", [d.employee_name || "", fmtDate(d.left_on)])
-    : drT("{0} left on {1}. You are looking at how the seat was, not how it is.",
-          [d.employee_name || "", fmtDate(d.left_on)])) + "</p>";
-}
-
-function mpfValue(d, field) {
-  var row = (d.rows || []).filter(function (r) { return r.fieldname === field; })[0];
-  return row ? row.value : "";
-}
-
-function mpfList(d) {
-  var rows = d.rows || [];
-  if (!rows.length) {
-    /* AC-44. And only a System Manager is told where the setting is: telling
-       everybody else about a setting they cannot change is just noise. */
-    return '<p class="gp-hint">'
-      + esc(drT("Your organisation has not chosen any other detail to show here."))
-      + "</p>"
-      + (d.can_change_setting
-          ? '<p><button type="button" class="btn btn-outline btn-sm" data-mpf="settings">'
-            + esc(drT("Choose what is shown")) + "</button></p>"
-          : "");
-  }
-  var have = {};
-  rows.forEach(function (r) { have[r.fieldname] = r.value; });
-  var out = MPF_FIELDS.filter(function (f) { return f[0] in have; }).map(function (f) {
-    var value = have[f[0]];
-    /* E1: somebody with no manager gets NO "Reports to" row - not the word
-       "None", which reads like a fact about them. Every other field with no
-       value reads "Not recorded", which is honest and keeps the list steady. */
-    if (f[0] === "reports_to" && !value) return "";
-    if (MPF_DATE[f[0]] && value) value = fmtDate(value);
-    return "<dt>" + esc(drT(f[1])) + "</dt><dd>"
-      + (value ? esc(value) : '<span class="gp-hint">' + esc(drT("Not recorded")) + "</span>")
-      + "</dd>";
-  }).join("");
-  return '<dl class="mpf-dl">' + out + "</dl>"
-    + '<p class="gp-hint mpf-promise">' + esc(mpfPromise()) + "</p>";
-}
-
-/* The documents section. Until a document type is ticked AND the plan is on,
-   there is NO SECTION AT ALL - not an empty heading, not a greyed tab, not a
-   count of zero (AC-45). It is fetched separately, after the profile, so a
-   document read that fails or is refused cannot take the profile with it.
-
-   Three things the wording must get right:
-
-   * It says "the N types your organisation chose to show here. Opening one is
-     recorded." It does NOT say or imply that the other types are hidden,
-     protected or secure, because a reader who already holds a private-file url
-     can still fetch it - see employee_documents_read.py. A string test asserts
-     those three words do not appear about the un-ticked ones.
-   * A ticked type with no file says WHO COLLECTS IT, so a dead row becomes an
-     action rather than a shrug.
-   * No inline preview, no thumbnail, no download-all. */
-function mpfDocsLoad(employee) {
-  gpFetch(MPF_API.replace("positions_profile.", "employee_documents_read.")
-          + "get_employee_documents", { employee: employee }).then(function (d) {
-    if (MPF.emp !== employee) return;
-    var rows = (d && d.documents) || [];
-    if (!rows.length) return;               /* no section at all */
-    var box = document.createElement("div");
-    box.className = "mpf-docs";
-    box.innerHTML = '<h3 class="mpf-dh">' + esc(drT("Documents")) + "</h3>"
-      + '<p class="gp-hint">' + esc(drT(
-          "The {0} types your organisation chose to show here. Opening one is recorded.",
-          [rows.length])) + "</p>"
-      /* Slice 065's session-only link, which covers this section too and is
-         never remembered. */
-      + '<button type="button" class="btn btn-outline btn-sm" data-mpf="hide">'
-      + esc(drT("Hide before I share my screen")) + "</button>"
-      + rows.map(function (r) {
-          return '<div class="mpf-doc"><span class="mpf-dt"><b>'
-            + esc(r.document_type) + "</b>"
-            + (r.category ? '<span class="ocs-cat">' + esc(r.category) + "</span>" : "")
-            + "</span>"
-            + (r.row
-                ? '<span class="badge b-completed">' + esc(r.status || drT("Given"))
-                  + "</span><button type=\"button\" class=\"btn btn-outline btn-sm\""
-                  + ' data-mpf="doc" data-row="' + esc(r.row) + '">'
-                  + esc(drT("View")) + "</button>"
-                : '<span class="gp-hint">' + esc(drT("Not given")
-                    + (r.collect_from ? " · " + drT("collected by {0}", [r.collect_from]) : ""))
-                  + "</span>")
-            + "</div>";
-        }).join("");
-    var body = document.querySelector("#ed-body .mpf-body");
-    if (body) body.appendChild(box);
-  }, function () { /* no section rather than a broken one */ });
-}
-
-function mpfDocs(d) {
-  /* Drawn by mpfDocsLoad, after its own call. Nothing here, so a profile that
-     renders is never waiting on a document list. */
-  return "";
-}
-
-/* The View link calls OUR endpoint, which checks the page's permission, the
-   reader's scope, the row's parent, the ticked type and the plan - in that
-   order - and then streams the file as an attachment.
-
-   It is a POST, not a link, for three reasons and the third is the one that
-   decided it:
-     * the browser is never handed a `/private/files/` address for a document,
-       and a blob url is not one;
-     * a POST carries the CSRF token, so the endpoint is not a bare GET
-       surface somebody else's page can point at;
-     * **the rate limit is per USER, and `field_app_limits` only applies to
-       POST** - it sets a hashed-user form field and runs Frappe's limiter on
-       it. A GET download would silently have no limit at all. */
-function mpfOpenDoc(row, btn) {
-  if (!row) return;
-  if (btn) { btn.disabled = true; }
-  fetch("/api/method/alvoraa_portal.employee_documents_read.open_employee_document", {
-    method: "POST",
-    headers: { "Content-Type": "application/json",
-               "X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || "" },
-    body: JSON.stringify({ row: row }),
-  }).then(function (res) {
-    if (!res.ok) throw new Error("refused");
-    var name = "document";
-    var cd = res.headers.get("Content-Disposition") || "";
-    var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
-    if (m) name = decodeURIComponent(m[1]);
-    return res.blob().then(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = name;      /* saved, never rendered inline */
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
-    });
-  }).then(function () {
-    if (btn) btn.disabled = false;
-  }, function () {
-    if (btn) btn.disabled = false;
-    toast(drT("That document could not be opened. Ask HR if you need it."), "err");
-  });
-}
-
-/* ── the enlargement ─────────────────────────────────────────────────────── */
-
-function mpfBig() {
-  var d = MPF.data || {};
-  if (!d.image && !d.thumb) return;
-  MPF.big = true;
-  var small = d.thumb || d.image;
-  var body = document.getElementById("ed-body");
-  var box = document.createElement("div");
-  box.className = "mpf-big";
-  box.setAttribute("role", "dialog");
-  box.setAttribute("tabindex", "-1");
-  box.setAttribute("aria-label", drT("Picture of {0}", [d.employee_name || ""]));
-  /* The 48 px copy, scaled up and blurred, is shown FIRST and the full picture
-     is laid over it. No spinner: the smaller thing is already underneath, and a
-     spinner over a picture that is visibly there reads as broken (AC-48).
-
-     There is no download, no "open in new tab" and no save action. */
-  box.innerHTML = '<div class="mpf-big-in">'
-    + '<img class="mpf-big-s" src="' + esc(small) + '" alt="">'
-    + '<img class="mpf-big-f" alt="">'
-    + '<p class="mpf-big-say" role="status">' + esc(drT("Getting the full picture…")) + "</p>"
-    + '<p class="mpf-big-nm">' + esc(d.employee_name || "")
-    + (d.designation ? '<span class="gp-hint">' + esc(d.designation) + "</span>" : "")
-    + "</p></div>";
-  body.appendChild(box);
-
-  var full = box.querySelector(".mpf-big-f");
-  var say = box.querySelector(".mpf-big-say");
-  /* AC-47: the JavaScript keeps the loaded element for the life of the page, so
-     a second enlargement of the same person makes NO second request. No HTTP
-     caching is claimed anywhere - private files go out `Cache-Control:
-     no-cache`, so the browser would revalidate every time. */
-  var held = MPF.pics[MPF.emp];
-  if (held === "failed") { mpfBigFailed(box, say); }
-  else if (held) {
-    /* THE HELD ELEMENT ITSELF is put back, not its address.
-       Copying `held.src` onto a fresh <img> is a NEW REQUEST - and private
-       files go out `Cache-Control: no-cache`, so the browser revalidates every
-       time and the second enlargement costs exactly what the first did. That
-       is what AC-47 forbids, and a test caught it doing precisely that. */
-    held.style.opacity = 1;
-    full.parentNode.replaceChild(held, full);
-    say.remove();
-  } else {
-    full.addEventListener("load", function () {
-      full.style.opacity = 1;
-      if (say.parentNode) say.remove();
-      MPF.pics[MPF.emp] = full;
-    }, { once: true });
-    full.addEventListener("error", function () {
-      MPF.pics[MPF.emp] = "failed";
-      mpfBigFailed(box, say);
-    }, { once: true });
-    full.src = d.image || small;
-  }
-  box.focus();
-}
-
-function mpfBigFailed(box, say) {
-  /* The blurred copy STAYS, and there is no retry: a retry is another request
-     through 8 worker slots for something nobody is waiting on (AC-49). */
-  var f = box.querySelector(".mpf-big-f");
-  if (f) f.remove();
-  if (say) say.textContent = drT("This is the small copy. The full picture did not load.");
-}
-
-/* The grace period, and WHY there has to be one. The photo sits in the drawer's
-   head, which has `padding:22px 22px 18px`, and the enlargement starts at the
-   top of the scrolling body - so a pointer moving from the photo ONTO the
-   picture crosses 18 px that belong to neither. Closing on the first mouseout
-   would make the picture vanish exactly when somebody reaches for it. A quarter
-   of a second, cancelled the moment the pointer is back on either of them. */
-var MPF_LEAVE = null;
-
-function mpfStay() {
-  if (MPF_LEAVE) { clearTimeout(MPF_LEAVE); MPF_LEAVE = null; }
-}
-
-function mpfCloseBig(byPointer) {
-  mpfStay();
-  var box = document.querySelector(".mpf-big");
-  if (box) box.remove();
-  MPF.big = false;
-  MPF.pinned = false;
-  /* Focus goes back to the photograph when a PERSON closed it - Escape, a tap,
-     a click (AC-60). Not when the pointer simply moved away: a focus ring
-     appearing because somebody brushed past is not a choice they made. */
-  if (byPointer) return;
-  var face = document.querySelector("#ed-av .mpf-face[data-mpf]");
-  if (face && face.focus) face.focus();
-}
-
-document.addEventListener("click", function (e) {
-  var t = e.target && e.target.closest ? e.target.closest("[data-mpf]") : null;
-  if (!t) return;
-  var what = t.getAttribute("data-mpf");
-  if (what === "big") {
-    /* 01b 6.3.1: "A click PINS it." So a click on a picture the pointer
-       already opened makes it stay; only a click on a pinned one closes it -
-       which keeps touch exactly as it was, because a tap opens it pinned and a
-       second tap closes it. */
-    if (MPF.big && MPF.pinned) { mpfCloseBig(); }
-    else {
-      if (!MPF.big) mpfBig();
-      /* mpfBig() does nothing for a person with no picture, so this follows
-         what actually opened rather than what was asked for. */
-      MPF.pinned = MPF.big;
-    }
-  }
-  else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
-  else if (what === "settings") { closeEmpDrawer(); switchPanel("org-settings", null); }
-  else if (what === "doc") { mpfOpenDoc(t.getAttribute("data-row"), t); }
-  else if (what === "hide") {
-    /* Slice 065's own behaviour: session only, never remembered. */
-    var sec = t.closest(".mpf-docs");
-    if (sec) sec.classList.toggle("mpf-hidden");
-    t.textContent = sec && sec.classList.contains("mpf-hidden")
-      ? drT("Show them again") : drT("Hide before I share my screen");
-  }
-});
-
-/* Hovering enlarges it too (brief decision 8). Tap and Enter are the handler
-   above; a pointer gets it without a click. */
-document.addEventListener("mouseover", function (e) {
-  var t = e.target && e.target.closest ? e.target.closest('#ed-av [data-mpf="big"]') : null;
-  if (t && !MPF.big) mpfBig();
-  /* Back on the photo or on the picture itself: it stays. */
-  if (t || (e.target && e.target.closest && e.target.closest(".mpf-big"))) mpfStay();
-});
-
-/* And the pointer leaving BOTH the photo and the enlargement closes it again
-   (01b 6.3.1). Without this, brushing past a photograph left a colleague's
-   face filling the drawer until somebody pressed Escape - on the one screen
-   that also carries "Hide before I share my screen". A pinned picture stays:
-   that is what the click is for. */
-document.addEventListener("mouseout", function (e) {
-  if (!MPF.big || MPF.pinned) return;
-  var from = e.target;
-  if (!from || !from.closest) return;
-  if (!from.closest('#ed-av [data-mpf="big"]') && !from.closest(".mpf-big")) return;
-  var to = e.relatedTarget;
-  if (to && to.closest
-      && (to.closest('#ed-av [data-mpf="big"]') || to.closest(".mpf-big"))) return;
-  mpfStay();
-  MPF_LEAVE = setTimeout(function () {
-    MPF_LEAVE = null;
-    mpfCloseBig(true);
-  }, 260);
-});
-
-/* ONE Escape handler for the whole drawer (AC-60, AC-62).
-   The first Escape closes the ENLARGEMENT ONLY and puts focus back on the
-   photograph. A second closes the drawer. Getting that order wrong means a
-   reader who presses Escape to put a picture away loses the whole profile. */
-document.addEventListener("keydown", function (e) {
-  if (e.key !== "Escape" && e.key !== "Esc") return;
-  var drawer = document.getElementById("emp-drawer");
-  if (!drawer || !drawer.classList.contains("open")) return;
-  e.preventDefault();
-  if (MPF.big) { mpfCloseBig(); return; }
-  closeEmpDrawer();
-});
-
-/* Focus stays inside while it is open. */
-document.addEventListener("keydown", function (e) {
-  if (e.key !== "Tab") return;
-  var drawer = document.getElementById("emp-drawer");
-  if (!drawer || !drawer.classList.contains("open")) return;
-  var able = drawer.querySelectorAll(
-    'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex="0"]');
-  if (!able.length) return;
-  var first = able[0], last = able[able.length - 1];
-  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-});
-
-/* The Positions table and the seat tray: a name opens the one mini profile. */
-document.addEventListener("click", function (e) {
-  var t = e.target && e.target.closest ? e.target.closest("[data-pos-who]") : null;
-  if (!t) return;
-  var who = t.getAttribute("data-pos-who");
-  if (who) mpfOpen(who, t);
-});
 
 /* ── Employee Scorecard ──────────────────────────── */
 var _scBackPanel = "team";

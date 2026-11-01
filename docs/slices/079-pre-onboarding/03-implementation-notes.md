@@ -462,6 +462,22 @@ Read back once asking only *what can I delete and still meet the requirement?*
   fragment handling, `localStorage`, and the `Web Form` anchor record** — the
   slice's largest subtraction, and the login made it free.
 
+**On the second pass, after the tests ran:**
+
+- **`submitted_at`, `files`, `max_file_mb` and `max_files`** off the
+  `open_invite` payload. The page draws none of them — 078's page did, and I
+  carried them across without checking.
+- **A dead `footer .code` CSS rule** on the joining page.
+- **`_mine(for_update=...)`** and two `flags.ignore_permissions` lines that said
+  the same thing as the `save` on the next line.
+- **A hand-rolled `cache().hdel("user_roles", …)`** in `end_the_sign_in`.
+  `frappe.clear_cache(user=…)` on the next line already does it, and guessing
+  at the name of somebody else's cache key is how a line comes to do nothing
+  quietly.
+- **`frappe.get_all` out of the document-type read**, replaced by
+  `frappe.db.get_value` by primary key — which removed a bypass I would
+  otherwise have needed and fixed a silent failure at the same time.
+
 **Kept against my own instinct, and said out loud:** the `one-page=1` query
 parameter. A cleaner design would carry the refusal in a flash message rather
 than in the address, and I could not find one that survives a `before_request`

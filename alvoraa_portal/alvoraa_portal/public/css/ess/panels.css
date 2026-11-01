@@ -2789,6 +2789,58 @@ body.panel-fullscreen{overflow:hidden}
   .myp-face .myp-ini{font-size:var(--fs-xl)}
 }
 
+/* ── Slice 079: two columns, and the amber "Needed" marks ─────────────────
+   Surbhi, 1 Nov 2026: "isn't it too wide in desktop, can we put two tiles side
+   by side. Your details and Your documents. in case someone zooms the screen
+   the tile should drop the next row." She is right: measured on a 1400 px
+   window, the mobile-number box on this page was **1280 px wide for a
+   ten-digit answer**. It is 430 px now.
+
+   **There is no media query and no breakpoint here, and that is the design.**
+   `auto-fit` + `minmax` IS the breakpoint: the grid takes as many columns as
+   fit at 26em each, so it falls to one column for a narrow window, a zoomed-in
+   page and a split screen from ONE rule.
+
+   `min(26em, 100%)` and not a bare `26em`: a bare minimum track cannot shrink
+   below itself, so at 195 px - the 200%-text case - the grid was 338 px wide
+   inside a 195 px app box and pushed the page sideways. Measured, not guessed.
+
+   The 36em cap on each child is what stops a LONE tile sprawling across the
+   row, which is the thing she said must not happen: `auto-fit` collapses an
+   empty track, so the survivor would otherwise stretch the whole width.
+
+   `align-items:start` means NOTHING STRETCHES. The columns are unequal on
+   purpose - the balance changes with every person's record - and the space
+   under the shorter one reads as page rather than as a card that failed to
+   fill. The failure mode would be a card stretched to match its neighbour.
+
+   There is deliberately no `order:` override: the reflow order is SOURCE order
+   (details, documents, password), and a CSS order that disagrees with the DOM
+   is an accessibility fault waiting to happen. */
+.myp-two-up{display:grid;gap:16px;align-items:start;
+  grid-template-columns:repeat(auto-fit,minmax(min(26em,100%),1fr))}
+.myp-two-up>*{max-width:36em;width:100%;min-width:0}
+/* The right cell holds TWO cards. A flex stack inside the same grid cell, so
+   there is no second layout mechanism: the grid still decides how many columns
+   there are and the stack only decides what is in one of them. Each card keeps
+   its own border and its bottom margin is dropped for the stack's gap, so it
+   never reads as one card with two headings. */
+.myp-stack{display:flex;flex-direction:column;gap:16px}
+.myp-stack>*{margin-bottom:0}
+
+/* The word is "Needed", here and on the joiner's form - never "mandatory" on
+   one screen and "required" on the other. The same person meets both inside a
+   week, so the difference between the two rules has to read as a rule.
+   Colour is never the only signal: the chip has the word on it. */
+.myp-need{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;
+  font-size:var(--fs-xs);font-weight:700;line-height:1.6;
+  background:var(--amber-bg,#fff8e6);color:var(--amber-ink,#8a5a00);
+  border:1px solid var(--amber-line,#e8d6a8)}
+.myp-needed-block{margin:12px 0 0;padding:10px 12px;border-radius:var(--r-sm);
+  font-size:var(--fs-base);line-height:1.55;
+  background:var(--amber-bg,#fff8e6);color:var(--amber-ink,#8a5a00);
+  border-left:3px solid var(--amber-ink,#8a5a00)}
+
 /* ── Faces on the chart and the table, slice 078 ──────────────────────────
    `ocAvatar` now always draws the same circle with the person's initials in
    it and layers the photograph over the top. The sizes stay exactly where

@@ -46,6 +46,9 @@ EMPLOYEE = "Employee"
 MY_PROFILE_KEY = "alvoraa_my_profile_fields"
 
 
+REQUIRED_KEY = "alvoraa_my_profile_required_fields"
+
+
 def _ticked():
 	"""The fields this organisation opened to its employees.
 
@@ -55,6 +58,26 @@ def _ticked():
 	"""
 	return people_fields.allowed(MY_PROFILE_KEY,
 	                             frappe.db.get_default(MY_PROFILE_KEY))
+
+
+def _ticked_and_needed():
+	"""Slice 079: which of the opened fields this organisation keeps asking for.
+
+	**A required mark here never refuses a save** (decision 3), and the reason
+	is the whole point: blocking would mean somebody with no permanent address
+	could never change anything on this page again - not even their own phone
+	number - and their only way out is a telephone call to HR. A rule that locks
+	a person out of correcting their own record is worse than an incomplete
+	record.
+
+	So `save_my_profile` below is unchanged, deliberately: it already had no
+	required concept and it still has none. This function feeds the MARKS, not
+	a rule.
+
+	Required is intersected with asked at both ends, so a required mark can
+	never widen what may be written (AC-105, 078-SEC-18).
+	"""
+	return people_fields.asked_and_required(MY_PROFILE_KEY, REQUIRED_KEY)
 
 
 @frappe.whitelist()
@@ -74,7 +97,7 @@ def get_my_profile():
 	if not me:
 		return {"no_employee": True}
 
-	fields = _ticked()
+	fields, needed = _ticked_and_needed()
 	values = frappe.db.get_value(EMPLOYEE, me.name, list(fields), as_dict=True) if fields else {}
 	thumb = people_fields.thumbnails_for([me.name]).get(me.name)
 	last_set = frappe.db.get_value("User", frappe.session.user, "last_password_reset_date")
@@ -87,7 +110,13 @@ def get_my_profile():
 		# Field names and values only. Every label, hint and sentence on this
 		# screen is translated copy and lives in the front end, so there is one
 		# place it can be read and one place it can be changed.
-		"fields": [{"fieldname": f, "value": cstr((values or {}).get(f) or "")}
+		# `needed` is a MARK, never a rule: the save below refuses nothing
+		# (decision 3). The front end draws the amber chip and the standing
+		# block from it, and the same word - "Needed" - is used on the joiner's
+		# form, so the two screens read as one rule rather than as an
+		# inconsistency.
+		"fields": [{"fieldname": f, "value": cstr((values or {}).get(f) or ""),
+		            "needed": f in needed}
 		           for f in fields],
 		"password_last_set": str(last_set) if last_set else None,
 		# 078-PRIV-1. The notice has to say what this organisation has actually

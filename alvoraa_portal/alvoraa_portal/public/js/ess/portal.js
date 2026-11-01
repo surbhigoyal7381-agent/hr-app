@@ -7004,6 +7004,52 @@ function mypRemove() {
 
 /* ── the details ─────────────────────────────────────────────────────────── */
 
+/* Slice 079, US-18. `01b` §8 and decision 3, and the reason is the whole point:
+   **My Profile never refuses a save.** Blocking would mean somebody with no
+   permanent address could never change anything on this page again - not even
+   their own phone number - and their only way out is a telephone call to HR. A
+   rule that locks a person out of correcting their own record is worse than an
+   incomplete record.
+
+   So what is missing is MARKED, every visit, and `save_my_profile` is unchanged:
+   it never had a required concept and it still has none.
+
+   **The joiner's form still refuses an incomplete send**, and the same person
+   meets both screens inside a week - so the difference has to read as a rule
+   rather than as an inconsistency. Two things make it one: the SAME WORD on
+   both screens ("Needed", the same amber chip, never "mandatory" on one and
+   "required" on the other), and one sentence of reason on each, stated
+   positively. Neither screen compares itself to the other: "unlike the joining
+   form, this page…" asks most readers to remember a form they filled in weeks
+   ago, or never saw at all. */
+function mypNeeded() {
+  return ((MYP.data && MYP.data.fields) || []).filter(function (r) {
+    return r.needed && !String(r.value || "").trim();
+  }).map(function (r) {
+    return drT((MYP_FIELDS[r.fieldname] || [r.fieldname])[0]);
+  });
+}
+
+function mypNeededBlock() {
+  var missing = mypNeeded();
+  if (!missing.length) return "";
+  return '<div class="myp-needed-block" role="status"><b>'
+    + esc(missing.length === 1
+        ? drT("Your organisation still needs one thing from you:")
+        : drT("Your organisation still needs {0} things from you:", [missing.length]))
+    + "</b> " + esc(andWords(missing)) + ". "
+    + esc(drT("They are marked Needed below. This is your own record, so you can "
+            + "change anything here and save as you go. We will keep asking for "
+            + "these until they are filled in.")) + "</div>";
+}
+
+function andWords(list) {
+  var a = (list || []).slice();
+  if (a.length < 2) return a[0] || "";
+  return a.slice(0, -1).join(", ") + " "
+    + drT("and") + " " + a[a.length - 1];
+}
+
 function mypPaintDetails() {
   var rows = (MYP.data && MYP.data.fields) || [];
   if (!rows.length) {
@@ -7018,16 +7064,26 @@ function mypPaintDetails() {
   hmEl("myp-det").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
     + esc(drT("Your details")) + '</h3>'
     + '<p class="gp-hint">' + esc(drT("Only you can change these. HR sees the change.")) + '</p>'
+    /* The standing amber block, on EVERY visit - not only after a save. */
+    + mypNeededBlock()
     + rows.map(function (r) {
         var w = MYP_FIELDS[r.fieldname] || [r.fieldname, ""];
         var id = "myp-f-" + r.fieldname;
+        /* `aria-required`, and NOT `required`: the browser must not refuse the
+           form either. There is no `aria-invalid` and no red border, because
+           nothing here is invalid - it is simply not filled in yet. */
+        var need = r.needed ? ' aria-required="true"' : "";
         var input = MYP_LONG[r.fieldname]
-          ? '<textarea class="gp-input myp-in" id="' + id + '" rows="2" placeholder="'
-              + esc(drT("Not given yet")) + '">' + esc(r.value || "") + '</textarea>'
-          : '<input class="gp-input myp-in" id="' + id + '" type="text" value="'
-              + esc(r.value || "") + '" placeholder="' + esc(drT("Not given yet")) + '">';
+          ? '<textarea class="gp-input myp-in" id="' + id + '" rows="2"' + need
+              + ' placeholder="' + esc(drT("Not given yet")) + '">'
+              + esc(r.value || "") + '</textarea>'
+          : '<input class="gp-input myp-in" id="' + id + '" type="text"' + need
+              + ' value="' + esc(r.value || "") + '" placeholder="'
+              + esc(drT("Not given yet")) + '">';
         return '<div class="myp-field"><label class="gp-label" for="' + id + '">'
-          + esc(drT(w[0])) + '</label>' + input
+          + esc(drT(w[0]))
+          + (r.needed ? '<span class="myp-need">' + esc(drT("Needed")) + '</span>' : "")
+          + '</label>' + input
           + (w[1] ? '<span class="gp-hint">' + esc(drT(w[1])) + '</span>' : "") + '</div>';
       }).join("")
     + '<div class="myp-acts"><button type="button" class="btn btn-primary myp-b" data-myp="save">'
@@ -7048,6 +7104,9 @@ function mypSaveDetails() {
     rows.forEach(function (x) { if (x.fieldname in out) x.value = out[x.fieldname]; });
     if (note) note.textContent = "";
     toast(r && r.saved ? drT("Saved. HR can see the change.") : drT("Nothing had changed."), "ok");
+    /* The save WENT THROUGH even with something still missing, and the block
+       has to say what is left now rather than what was left before. */
+    mypPaintDetails();
   }, function (e) {
     /* WHAT WAS TYPED IS NOT CLEARED. The inputs are left exactly as they are,
        so a lost answer never costs somebody their typing (AC-19). */
@@ -7110,11 +7169,18 @@ document.addEventListener("change", function (e) {
 
    THE CONSEQUENCE IS ON THE BUTTON. "OK - 3 document types, seen by 7 people",
    not "OK". */
-var OCS = { data: null, dlg: null, pick: {}, opener: null, kind: null, types: null };
+var OCS = { data: null, dlg: null, pick: {}, need: {}, opener: null, kind: null, types: null };
 var OCS_API = "alvoraa_portal.people_settings.";
 var OCS_PROFILE_KEY = "alvoraa_positions_profile_fields";
 var OCS_DOCS_KEY = "alvoraa_positions_document_types";
 var OCS_MY_KEY = "alvoraa_my_profile_fields";
+/* Slice 079. Four keys, and `required` is a separate key per surface because it
+   means two different things: on the joiner's form it blocks the send, on My
+   Profile it only asks again. One shared key would make a detail compulsory on
+   a screen HR never meant. */
+var OCS_JOINER_KEY = "alvoraa_joiner_fields";
+var OCS_JOINER_NEED_KEY = "alvoraa_joiner_required_fields";
+var OCS_MY_NEED_KEY = "alvoraa_my_profile_required_fields";
 
 /* The words for each ticked detail. The same list the drawer uses for the
    Positions fields - MPF_FIELDS - because one of them being renamed and not
@@ -7243,15 +7309,57 @@ function ocsPaint() {
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-my">'
     + esc(drT("Add or remove details")) + "</button></div></div>";
 
-  /* Pre-onboarding states FACTS and links to the form's own builder. It is not
-     a fourth picker: the Web Form owns the joiner's field list, and two
-     pickers for one form will disagree in front of the joiner. */
+  /* Slice 079. **The fourth picker, built.** 078 DECISION B made this section
+     facts only, because the Web Form owned the joiner's field list and two
+     pickers for one form would disagree in front of the joiner. Decision 5
+     reverses that: the tick is ours now.
+
+     It ships EMPTY, and the day-one state says so as a statement of fact - no
+     prompt, no "add your first", no empty-state picture. Nothing ticked is a
+     perfectly good answer, and it is the shipped default. */
+  var asked = d.joiner_fields || [];
+  var reqd = d.joiner_required_fields || [];
+  var notReady = d.joiner_not_ready || [];
   var joiner = '<div class="ocs-sec"><h4 class="ocs-h">'
     + esc(drT("What a new joiner is asked for before day one")) + "</h4>"
-    + '<p class="gp-hint">' + esc(d.retention_days
-        ? drT("Kept for {0} days if the person never joins, then deleted.", [d.retention_days])
-        : drT("Switched off. It cannot be switched on until somebody sets how long a "
-            + "joiner's details are kept.")) + "</p></div>";
+    /* The block lands on the person who can fix it. The alternative was a
+       joiner-facing "we do not know how long they keep this" screen, shown to
+       the only person who cannot do anything about it. */
+    + (notReady.length
+        ? '<p class="ocs-warn" role="note"><b>'
+          + esc(drT("You cannot invite anybody yet.")) + "</b> "
+          + esc(drT("A joiner has to be told these things before they hand "
+                  + "anything over, and they come from your settings, not from "
+                  + "us:")) + " " + esc(notReady.join("; ")) + ".</p>"
+        : "")
+    + (asked.length
+        ? ocsChips(asked.map(function (f) {
+            return ocsWord(OCS_MY_KEY, f)
+              + (reqd.indexOf(f) >= 0 ? " \u00b7 " + drT("Needed") : "");
+          }))
+        : '<p class="gp-hint">' + esc(drT(
+            "Nothing. A joiner is asked for no details at all until you tick "
+            + "something here.")) + "</p>")
+    + '<p class="gp-hint">' + esc(
+        (d.joiner_required_documents || []).length
+          ? drT("{0} document type(s) must be answered for: {1}. A photograph or "
+              + "\u201cI will bring it on my first day\u201d both count.",
+              [(d.joiner_required_documents || []).length,
+               (d.joiner_required_documents || []).join(", ")])
+          : drT("No document has to be answered for.")) + "</p>"
+    /* Both of counsel's periods, separately. One sentence covering both would
+       be wrong about one of them. */
+    + '<p class="gp-hint">' + esc(drT(
+        "Details of somebody who does not join are kept for {0} days. A "
+        + "photograph of an identity card is deleted sooner \u2014 after {1} days.",
+        [d.not_hired_days, d.document_days])) + "</p>"
+    + '<p class="gp-hint">' + esc(d.notice_text
+        ? drT("Your own words are set, and a joiner reads them before the first "
+            + "question.")
+        : drT("Your own words are not set yet, so no joiner can be asked "
+            + "anything.")) + "</p>"
+    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joiner">'
+    + esc(drT("Add or remove details")) + "</button></div></div>";
 
   hmEl("ocs-body").innerHTML = profile + docsSec + mine + joiner;
   hmEl("ocs-changed").textContent = d.last_changed && d.last_changed.by
@@ -7272,9 +7380,19 @@ function ocsPick(kind) {
     return;
   }
   OCS.pick = {};
+  OCS.need = {};
   (kind === "docs" ? (d.document_types || []).map(function (t) { return t.name; })
    : kind === "my" ? (d.my_profile_fields || [])
+   : kind === "joiner" ? (d.joiner_fields || [])
    : (d.profile_fields || [])).forEach(function (v) { OCS.pick[v] = 1; });
+  /* The SECOND tick, which only exists on a ticked row (078 §17.2, and the
+     prototype draws it inside the picker rather than as a second dialog).
+     `required` means two different things on the two screens - it blocks the
+     joiner's send and only asks again on My Profile - which is why they are two
+     settings and not one. */
+  (kind === "joiner" ? (d.joiner_required_fields || [])
+   : kind === "my" ? (d.my_profile_required_fields || [])
+   : []).forEach(function (v) { OCS.need[v] = 1; });
   ocsDialog();
 }
 
@@ -7304,8 +7422,12 @@ function ocsRows() {
       }).join("");
     }).join("");
   }
-  var choices = OCS.kind === "my" ? (d.my_profile_choices || []) : (d.profile_choices || []);
-  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+  var choices = OCS.kind === "my" ? (d.my_profile_choices || [])
+    : OCS.kind === "joiner" ? (d.joiner_choices || [])
+    : (d.profile_choices || []);
+  var key = OCS.kind === "my" ? OCS_MY_KEY
+    : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
+  var canNeed = OCS.kind === "my" || OCS.kind === "joiner";
   /* THE SAFE LIST ONLY. Bank account, PAN, salary and date of birth are not
      offered, and would be refused at the setter and again at every reader if
      they were. A picker that offers a field it will then refuse is how a tenant
@@ -7313,7 +7435,19 @@ function ocsRows() {
   return choices.map(function (f) {
     return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(f) + '"'
       + (OCS.pick[f] ? " checked" : "") + '><span><b>' + esc(ocsWord(key, f))
-      + "</b></span></label>";
+      + "</b>"
+      /* The "must fill in" tick exists ONLY on a ticked row, and it is not
+         offered at all on the Positions list, where nobody fills anything in. */
+      + (canNeed && OCS.pick[f]
+          ? '<span class="gp-hint" style="display:block">'
+            + '<label><input type="checkbox" data-ocs-need="' + esc(f) + '"'
+            + (OCS.need[f] ? " checked" : "") + "> "
+            + esc(OCS.kind === "joiner"
+                ? drT("Must fill in before they can send the form")
+                : drT("Keep asking for it"))
+            + "</label></span>"
+          : "")
+      + "</span></label>";
   }).join("");
 }
 
@@ -7321,6 +7455,7 @@ function ocsDialog() {
   var d = OCS.data || {};
   var title = OCS.kind === "docs" ? drT("Document types shown on a person's profile")
             : OCS.kind === "my" ? drT("Details an employee may correct about themselves")
+            : OCS.kind === "joiner" ? drT("Details a new joiner is asked for")
             : drT("Details a Positions reader may see");
   var box = document.createElement("div");
   box.className = "ocs-back";
@@ -7361,11 +7496,18 @@ function ocsSummary() {
       })
     : [];
   /* The CONSEQUENCE on the button, not the word "OK". */
+  var needCount = Object.keys(OCS.need || {}).filter(function (k) {
+    return OCS.need[k] && OCS.pick[k];
+  }).length;
   hmEl("ocs-ok").textContent = OCS.kind === "docs"
     ? drT("OK - {0} document types, seen by {1} people", [chosen.length, people])
     : OCS.kind === "my"
-      ? drT("OK - {0} details an employee may change", [chosen.length])
-      : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
+      ? drT("OK - {0} details an employee may change, {1} we keep asking for",
+            [chosen.length, needCount])
+      : OCS.kind === "joiner"
+        ? drT("OK - a joiner is asked for {0} details, {1} of them compulsory",
+              [chosen.length, needCount])
+        : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
   /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
   hmEl("ocs-sum").innerHTML = sens.length
     ? '<span class="ocs-warn">' + esc(
@@ -7388,6 +7530,7 @@ function ocsClose() {
   if (OCS.dlg && OCS.dlg.parentNode) OCS.dlg.parentNode.removeChild(OCS.dlg);
   OCS.dlg = null;
   OCS.pick = {};
+  OCS.need = {};
   var back = OCS.opener;
   OCS.opener = null;
   if (back && back.focus && document.body.contains(back)) back.focus();
@@ -7395,12 +7538,28 @@ function ocsClose() {
 
 function ocsSave() {
   var key = OCS.kind === "docs" ? OCS_DOCS_KEY
-          : OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+          : OCS.kind === "my" ? OCS_MY_KEY
+          : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
+  var needKey = OCS.kind === "joiner" ? OCS_JOINER_NEED_KEY
+              : OCS.kind === "my" ? OCS_MY_NEED_KEY : null;
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
+  /* Only a ticked row can be compulsory, so the required list is pruned here as
+     well as refused at the setter and intersected again at every reader. */
+  var needed = Object.keys(OCS.need || {}).filter(function (k) {
+    return OCS.need[k] && chosen.indexOf(k) >= 0;
+  });
   var btn = hmEl("ocs-ok");
   btn.disabled = true;
   gpFetch(OCS_API + "set_people_setting", { key: key, value: chosen.join(",") },
           { lostAnswerHandled: true }).then(function () {
+    /* ASKED first, then REQUIRED, and the order matters: the setter refuses a
+       name that is compulsory but not being asked for, so sending them the
+       other way round would refuse a legitimate save. */
+    if (!needKey) return null;
+    return gpFetch(OCS_API + "set_people_setting",
+                   { key: needKey, value: needed.join(",") },
+                   { lostAnswerHandled: true });
+  }).then(function () {
     var n = chosen.length;
     ocsClose();
     ocsLoad();
@@ -7443,6 +7602,7 @@ document.addEventListener("click", function (e) {
   if (what === "pick-profile") ocsPick("profile");
   else if (what === "pick-docs") ocsPick("docs");
   else if (what === "pick-my") ocsPick("my");
+  else if (what === "pick-joiner") ocsPick("joiner");
   else if (what === "cancel") ocsClose();
   else if (what === "ok") ocsSave();
   else if (what === "preview") ocsPreview();
@@ -7461,7 +7621,22 @@ document.addEventListener("change", function (e) {
   var t = e.target;
   if (!t || !t.getAttribute) return;
   if (t.getAttribute("data-ocs-v")) {
-    OCS.pick[t.getAttribute("data-ocs-v")] = t.checked ? 1 : 0;
+    var which = t.getAttribute("data-ocs-v");
+    OCS.pick[which] = t.checked ? 1 : 0;
+    /* Unticking a detail takes its "must fill in" tick with it. A compulsory
+       detail nobody is being asked for is a setting that cannot mean anything,
+       and leaving it set would be refused at the setter on the next save. */
+    if (!t.checked && OCS.need) OCS.need[which] = 0;
+    /* The second tick only exists on a ticked row, so the rows are redrawn
+       rather than toggled in place - one source of truth for the markup. */
+    var body = hmEl("ocs-dlg-bd");
+    if (body) body.innerHTML = ocsRows();
+    ocsSummary();
+    return;
+  }
+  if (t.getAttribute("data-ocs-need")) {
+    if (!OCS.need) OCS.need = {};
+    OCS.need[t.getAttribute("data-ocs-need")] = t.checked ? 1 : 0;
     ocsSummary();
     return;
   }

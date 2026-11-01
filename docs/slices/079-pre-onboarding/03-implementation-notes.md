@@ -29,6 +29,7 @@ That is closed, it fails **closed**, and it has fourteen door tests on it.
 | **2** | **The lockout copy says 10 tries and 60 seconds, not 30 minutes.** I read Frappe's own settings instead of guessing: `allow_consecutive_login_attempts = 10`, `allow_login_after_fail = 60` | `01b` §4.2 wrote "Locked for 30 minutes". The design's number was wrong. **If you want 30 minutes, it is a System Settings change** and the copy follows it automatically |
 | **3** | **No Hindi is shipped.** Every new string is translatable and a reviewed `hi.csv` drops straight in, but I did not machine-draft one | There is no Hindi file anywhere in this product (ALV-267), and the biggest new string is a **privacy notice**. An unreviewed machine translation of a notice is worse than an honest gap. **US-23 / AC-116 is NOT satisfied** |
 | **4** | **A tenant's HR telephone number is now on a page a visitor can open** — `/alvoraa-login?for=joining`, inside "I cannot sign in" | The design asks for it, and the journey does not work without it: both of today's escape routes are dead ends for somebody with no email address. It is a small new disclosure and **the security reviewer should look at it** |
+| **5** | **Every `logger.info` line this product writes is thrown away.** Frappe's default level is WARNING on a dev server and ERROR elsewhere, and **no site here sets `log_level`** — so 16 lines, including 078's own invite and retention counts, reach no file at any tenant | Not mine, and not something to work around 16 times. **I moved the export line to `warning`**, because counsel's ruling 9 makes it an audit record. The rest is one line of bench configuration and it is **DevOps's call** — see §6 defect 4 |
 
 ---
 
@@ -213,10 +214,12 @@ masker.
 
 ---
 
-## 6 · Two defects I introduced, and found
+## 6 · Four defects found during the build — three mine, one Frappe's
 
-Both were found by re-keying the 078 suite onto the new design — which is the
-argument for re-keying it rather than deleting it.
+The first two were found by re-keying the 078 suite onto the new design, which
+is the argument for re-keying it rather than deleting it. The third was found by
+reading my own tests back and asking why two of them were red. The fourth is a
+product-wide finding that is **not** mine and needs DevOps.
 
 **1 · The compulsory-mobile-number collision.** `make_sign_in` read HR's login id
 from `doc.mobile`, and `COLUMN_FOR_TICK` maps the ticked `cell_number` to that
@@ -234,6 +237,51 @@ with"*. The joiner's `mobile` column is now only ever the joiner's own answer.
 078's AC-110c only fired at a tenant that asked for nothing at all: a tenant that
 ticked three fields and marked none of them compulsory could be sent a blank
 form. One word, `required`, and a comment saying why.
+
+**3 · `save()` overwrites `ignore_version`, so the flag was doing nothing.**
+`frappe/model/document.py:576`:
+
+```python
+self.flags.ignore_version = frappe.in_test if ignore_version is None else ignore_version
+```
+
+So `doc.flags.ignore_version = True` followed by `doc.save(ignore_permissions=True)`
+sets it straight back to **`False` in production** — and to **`True` inside a
+test**, which is why no test could have caught it by watching for rows. **The
+joiner's own typed answers would have gone into `tabVersion` on every draft save
+and every send**, which is exactly the hole 079-PRIV-2 clause 3 exists to close.
+Both sites now **pass** it rather than set a flag the next line overwrites.
+
+The same reading made two of my own tests honest, and it is worth saying out
+loud because it is a trap anybody writing a `Version` test here will fall into:
+**Frappe disables version tracking inside a test by default.** A test that
+simulates HR editing a row has to pass `ignore_version=False`, or there is no
+history for the sweep to be asserted against; and a test that asserts an
+**absence** of `Version` rows passes whatever the product does. Mine did, for
+the whole time I was writing it. It now turns `frappe.in_test` off for the
+duration of the call under test, so the `ignore_version=True` we pass is the only
+thing stopping a row.
+
+**4 · Not mine: every `logger.info` line this product writes is dropped.**
+Frappe's default logger level is `WARNING` on a dev server and `ERROR` anywhere
+else (`frappe/utils/logger.py:12`), and **no site in this product sets
+`log_level`** — not the local bench, not `deploy/`, nowhere. There are **16**
+`frappe.logger("alvoraa").info(...)` calls across `alvoraa_portal` and `hrms`,
+including 078's invite line and the retention counts, and **none of them reaches
+a file.**
+
+That matters here because counsel's ruling 9 says every export is *logged*, and
+a line nobody can read is not logged. So **the export line moved to `warning`** —
+one line, with the reason written beside it, because an audit record of somebody's
+personal data leaving the system is not a debug trace, and the test now proves it
+without touching the level.
+
+**The other fifteen are a DevOps item and I did not touch them.** The fix is
+`log_level: "INFO"` in the bench's own configuration, not fifteen edits of mine,
+and the decision about log volume and retention is DevOps's. **Until it is made,
+"are these actually being deleted" and "who invited this person" have no answer
+in any log at any tenant** — which is `joiner_housekeeping`'s own docstring
+promising something that does not happen.
 
 ---
 
@@ -334,6 +382,8 @@ output file, not from a tail.
 | G8 | `web_form_request`'s **column** still exists in the database. Frappe does not drop a column when a field is removed | **acceptable simplification.** No code reads it; the patch deletes every row that ever pointed at it |
 | G9 | The word-style credential's entropy (≈ 88 million against a 10-try lockout and a 7-day life) | **intentional trade-off**, and it is `01b` ⚠ D3 — **the security engineer's to confirm** |
 | G10 | `_delete_the_documents_sooner` runs two reads rather than one `coalesce(closed_on, creation)` | **acceptable simplification.** Two ORM filters are readable; one SQL expression is not, and the volume is tens of rows a year |
+| G11 | **15 `logger.info` lines across the product still reach no file**, including "are these actually being deleted" and "who invited this person" | **dangerous debt — escalate**, and it is **not mine**. `joiner_housekeeping`'s own docstring promises a count in the log, and that promise is not kept at any tenant. One line of bench configuration, DevOps's to decide (§6 defect 4) |
+| G12 | AC-113's three sentences about the login are in the notice block, but **`compareDocumentPosition` is not asserted for the joining page** the way it is for My Profile's notice | **temporary debt.** It needs the jsdom test G3 covers. The notice is before the first input by construction, and a reader can see that in the markup — but "by construction" is what AC-112 asks a test to prove |
 
 **What I would fix with more time, honestly:** G2 first, by a long way — a real
 HTTP door test as three logins on a freshly created site. Then G3. Then I would

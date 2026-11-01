@@ -331,7 +331,16 @@ async function openMyProfile(routes) {
                      { name: "Degree certificate", category: "Education", known: true }],
     sensitive: ["Aadhaar card", "Offer letter"],
     audience_count: 7, audience_roles: ["HR Manager", "System Manager"],
-    retention_days: "", last_changed: { by: "Surbhi", on: "2026-10-31 09:00:00" },
+    /* Slice 079 replaced this card's joiner block - which was facts only,
+       because the Web Form owned the joiner's field list - with the fourth
+       picker. `retention_days` is gone and these are what it reads now. The
+       079 DOM test drives that block; this fixture only has to stop the card
+       rendering "undefined days" in the middle of a test about something
+       else. */
+    joiner_fields: [], joiner_required_fields: [], joiner_choices: [],
+    joiner_required_documents: [], joiner_not_ready: [],
+    not_hired_days: 180, document_days: 30, notice_text: "Their own words.",
+    last_changed: { by: "Surbhi", on: "2026-10-31 09:00:00" },
   } };
   window.ocsLoad();
   await settle(120);

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ frappe.local.lang or "en" }}">
+<html lang="{{ lang or "en" }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -347,6 +347,12 @@ var LABELS = {
   function begin() {
     post("open_invite").then(function (d) {
       D = d;
+      /* **Seed what has already happened.** Without this a joiner coming back
+         on a second visit saw every document as "nothing yet", because the
+         screen started from an empty list - and the strip said "2 of 4 sent"
+         beside it, which is worse than either answer on its own. */
+      (d.sent || []).forEach(function (t) { FILES[t] = true; });
+      (d.promised || []).forEach(function (t) { BRING[t] = true; });
       $("who").textContent = fill(S.signed_in_as, [field("full_name") || ""]);
       $("rights-ask").textContent = contactWords()
         ? fill(S.ask_them, [contactWords()]) : S.ask_them_plain;

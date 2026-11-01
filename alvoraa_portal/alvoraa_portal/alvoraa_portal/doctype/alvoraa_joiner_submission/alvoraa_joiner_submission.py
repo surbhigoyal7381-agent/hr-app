@@ -131,6 +131,10 @@ def strip_personal_fields(doc):
 	for field in JOINER_FIELDS:
 		doc.set(field, None)
 	doc.set("bring_on_day_one", None)
+	# HR's own entry, and still this person's telephone number or email - so it
+	# goes with everything else. It is not in `JOINER_FIELDS` because the joiner
+	# is never asked for it and it is never one of HR's ticks.
+	doc.set("login_id", None)
 
 
 def erase(name, why, force=False):
@@ -166,7 +170,8 @@ def erase(name, why, force=False):
 	strip_personal_fields(doc)
 	doc.erased_on = now()
 	doc.erased_why = why
-	doc.flags.ignore_permissions = True
+	# `ignore_permissions` is passed to `save` below; setting the flag as well
+	# was a second copy of the same decision.
 	doc.flags.ignore_validate_update_after_submit = True
 	# Slice 079, 079-PRIV-2. **Without this the erasure is theatre.** The doctype
 	# carries `track_changes: 1`, so a save that clears a field writes the OLD

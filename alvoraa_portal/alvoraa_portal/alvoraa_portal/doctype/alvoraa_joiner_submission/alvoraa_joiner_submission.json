@@ -10,6 +10,7 @@
   "full_name",
   "column_break_who",
   "invited_by",
+  "login_id",
   "user",
   "expires_on",
   "submitted_at",
@@ -64,6 +65,12 @@
    "options": "User",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "login_id",
+   "label": "Signs in with",
+   "fieldtype": "Data",
+   "description": "The mobile number or email you already reached this person on. It is what they TYPE to sign in, and Frappe resolves a number through User.mobile_no. **HR's own entry, kept apart from the joiner's own answers on purpose**: putting it in the `mobile` column made HR's typing answer the question \"has this joiner sent us anything yet?\", so an empty form could be sent and marking the mobile number compulsory did nothing. Cleared when the details are erased."
   },
   {
    "fieldname": "user",
@@ -197,7 +204,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-01 16:00:00.000000",
+ "modified": "2026-11-01 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Joiner Submission",

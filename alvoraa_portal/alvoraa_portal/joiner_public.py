@@ -15,9 +15,13 @@ nothing a caller can post that reaches a row other than their own. A static test
 asserts it (079-SEC-4).
 
 What that bought: the token, the URL fragment, the `Web Form` anchor, the
-clear-text key in `Web Form Request`, and three of the five `ignore_permissions`
-bypasses this file used to need - four of which existed only because the caller
-was Guest and held no permission on anything (079-SEC-7).
+clear-text key in `Web Form Request`, and **two of the five
+`ignore_permissions` bypasses this file used to need** - 079-SEC-7 asked for the
+number to go down rather than sideways, because a ceiling that moves sideways
+means the rewrite kept a Guest-shaped design behind a login. The three that
+remain are one write of the caller's own row (`_keep`), one read of the files on
+it, and one insert of a new one; each carries its own sentence saying why a
+permission cannot do that job here.
 
 ## One answer for every ending
 
@@ -66,6 +70,11 @@ DOCTYPE = "Alvoraa Joiner Submission"
 ASKED_KEY = "alvoraa_joiner_fields"
 REQUIRED_KEY = "alvoraa_joiner_required_fields"
 REQUIRED_DOCS_KEY = "alvoraa_joiner_required_documents"
+# The ONE list of document types this organisation collects at all. The
+# joiner's form offers what the organisation already chose, so a type
+# nobody chose is never asked for - and the compulsory list is intersected
+# with it, so marking a type compulsory can never ADD one to the form.
+TICKED_DOCS_KEY = "alvoraa_positions_document_types"
 
 # JPEG, PNG and PDF. Nothing else, and checked on MAGIC BYTES - not the
 # extension, not the browser's content type. An `.exe` renamed `.pdf` is
@@ -110,7 +119,7 @@ def _gone():
 		frappe.PermissionError)
 
 
-def _mine(for_update=False):
+def _mine():
 	"""The signed-in joiner's one row, or a refusal that tells you nothing.
 
 	**Every endpoint starts here, and there is no other way in.** No argument
@@ -139,8 +148,6 @@ def _mine(for_update=False):
 		# The daily job closes the account on its date; this covers the hours in
 		# between, and a session captured before it ran.
 		_gone()
-	if for_update:
-		doc.flags.ignore_permissions = True
 	return doc
 
 
@@ -188,19 +195,29 @@ def _document_types():
 	type nobody chose is never asked for. The required list is intersected with
 	it, so marking a type compulsory can never add a type to the form.
 	"""
-	from alvoraa_portal.employee_documents_read import ticked_types
-
-	wanted = {v.strip() for v in
-	          cstr(frappe.db.get_default(REQUIRED_DOCS_KEY) or "").split(",")
-	          if v.strip()}
+	must = {v.strip() for v in
+	        cstr(frappe.db.get_default(REQUIRED_DOCS_KEY) or "").split(",")
+	        if v.strip()}
+	ticked = [v.strip() for v in
+	          cstr(frappe.db.get_default(TICKED_DOCS_KEY) or "").split(",")
+	          if v.strip()]
 	out = []
-	for name in ticked_types():
+	for name in ticked:
+		# `frappe.db.get_value` by NAME, deliberately, and not
+		# `employee_documents_read.ticked_types()` - which is the same setting
+		# read through `frappe.get_all`. **A joiner holds read on
+		# `Employee Document Type` nowhere**, by design: their role appears in no
+		# permission row at all. So a `get_all` here would return an empty list
+		# to the one caller that needs it, and the form would silently never ask
+		# for a document. A `get_value` by primary key asks no permission and
+		# needs no bypass, and a name whose type has since been deleted comes
+		# back as `None` - which is the intersection, for free.
 		row = frappe.db.get_value("Employee Document Type", name,
 		                          ["name", "category", "description"], as_dict=True)
 		if row:
 			out.append({"name": row.name, "category": row.category or "",
 			            "description": row.description or "",
-			            "required": row.name in wanted})
+			            "required": row.name in must})
 	return out
 
 
@@ -216,13 +233,20 @@ def _my_files(submission):
 		ignore_permissions=True)
 
 
-def _sent_types(files):
-	"""Which document types have a file, worked out from the stored file names.
+def _sent_types(files, documents):
+	"""Which document types already have a file on this row.
 
-	The names are ours - `joiner-<row>-<type>.<ext>` - so this needs no second
-	field and no second query.
+	Worked out from the stored file names, which are ours -
+	`joiner-<row>-<type>.<ext>` - so this needs no second field, no second query
+	and no second trip to the server.
+
+	**It is worked out here and not in the browser.** The page needs it to draw
+	"Sent" against a document on a second visit rather than "nothing yet", and
+	the server is the only side that knows how the file was named.
 	"""
-	return {f.file_name for f in files}
+	names = [f.file_name or "" for f in files]
+	return sorted(d["name"] for d in documents
+	              if any(d["name"] in name for name in names))
 
 
 # ── what the joiner is told before the first question (US-21) ──────────────
@@ -253,15 +277,14 @@ def open_invite():
 	documents = _document_types()
 	promised = {v.strip() for v in cstr(doc.bring_on_day_one or "").split(",")
 	            if v.strip()}
+	sent = _sent_types(files, documents)
 	fields = _fields_for_the_page(doc)
 	return {
 		"fields": fields,
 		"documents": documents,
 		"promised": sorted(promised),
-		"sent": sorted(_sent_types(files)),
-		"files": len(files),
+		"sent": sent,
 		"submitted": bool(doc.submitted_at),
-		"submitted_at": str(doc.submitted_at) if doc.submitted_at else None,
 		"expires_on": str(doc.expires_on) if doc.expires_on else None,
 		"contact": contact,
 		"brand": _brand(),
@@ -271,15 +294,12 @@ def open_invite():
 		"notice": notice,
 		"not_hired_days": cint(org_settings.get("alvoraa_joiner_not_hired_days")),
 		"document_days": cint(org_settings.get("alvoraa_joiner_document_days")),
-		"max_file_mb": MAX_FILE_BYTES // (1024 * 1024),
-		"max_files": MAX_FILES_PER_JOINER,
 		# The counts for "You are back, and nothing was lost" - computed, never
 		# stored. "4 of 7" is a fact; "nothing was lost" is a claim.
 		"answers_done": sum(1 for f in fields if cstr(f["value"]).strip()),
 		"answers_total": len(fields),
-		"documents_done": len([d for d in documents
-		                       if d["name"] in promised
-		                       or any(d["name"] in n for n in _sent_types(files))]),
+		"documents_done": len({d["name"] for d in documents
+		                       if d["name"] in promised or d["name"] in sent}),
 		"documents_total": len(documents),
 	}
 
@@ -314,7 +334,7 @@ def save_draft(values=None):
 	on it, so this adds no new object for either clock to learn about. It writes
 	only the closed allow-list and leaves `status` at `Invited`.
 	"""
-	doc = _mine(for_update=True)
+	doc = _mine()
 	if doc.submitted_at:
 		# After Send the typed answers are read-only to them (AC-74). Documents
 		# are not - that is the whole point of decision 4a.
@@ -323,14 +343,31 @@ def save_draft(values=None):
 			  "here. Ring the person who sent you the message if something is "
 			  "wrong."), frappe.ValidationError)
 	written = _write_the_allow_list(doc, values)
-	doc.flags.ignore_version = True
-	doc.save(ignore_permissions=True)
-	frappe.db.commit()
+	_keep(doc)
 	# The row and a count. Never a value: a mobile number and a home address are
 	# exactly what must not reach a log line.
 	frappe.logger("alvoraa").info(
 		f"joiner draft kept: {doc.name}, {written} answer(s), at {now()}")
 	return {"kept": written}
+
+
+def _keep(doc):
+	"""Write the caller's own row. **The one bypass both writes share.**
+
+	Why the permission system cannot do this job here: a joiner holds no write
+	right on `Alvoraa Joiner Submission` at any level, and deliberately so - the
+	role appears in no doctype's permission rows anywhere, which is what makes
+	"a joiner can list nothing" a property of the account rather than a property
+	of our queries. So the authority for this write is established above, by
+	`_mine()`, which resolves the row from `frappe.session.user` and takes no
+	argument at all.
+
+	`ignore_version` is 079-PRIV-2 clause 3: without it the joiner's own values
+	go into `tabVersion`, where the erasure we promise them does not reach.
+	"""
+	doc.flags.ignore_version = True
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
 
 
 def _write_the_allow_list(doc, values):
@@ -378,7 +415,7 @@ def submit_invite(values=None, bringing=None):
 	with nothing marked required, one ticked field with a value or one document
 	is enough.
 	"""
-	doc = _mine(for_update=True)
+	doc = _mine()
 	if doc.submitted_at:
 		frappe.throw(
 			_("You have already sent your details. There is nothing else to do."),
@@ -410,11 +447,7 @@ def submit_invite(values=None, bringing=None):
 
 	doc.status = "Submitted"
 	doc.submitted_at = now()
-	# 079-PRIV-2 clause 3. Without this the joiner's own values go into
-	# `tabVersion`, where the erasure we promise them does not reach.
-	doc.flags.ignore_version = True
-	doc.save(ignore_permissions=True)
-	frappe.db.commit()
+	_keep(doc)
 
 	# The row and the time. Never a field, never a name.
 	frappe.logger("alvoraa").info(
@@ -441,22 +474,28 @@ def what_is_still_needed(doc):
 		if tick in required and not cstr(doc.get(COLUMN_FOR_TICK[tick]) or "").strip():
 			short.append(_label_for(tick))
 
-	documents = [d for d in _document_types() if d["required"]]
+	offered = _document_types()
+	documents = [d for d in offered if d["required"]]
 	if documents:
-		files = _sent_types(_my_files(doc.name))
+		sent = set(_sent_types(_my_files(doc.name), offered))
 		promised = {v.strip() for v in cstr(doc.bring_on_day_one or "").split(",")
 		            if v.strip()}
 		for d in documents:
-			if d["name"] in promised:
-				continue
-			if any(d["name"] in name for name in files):
+			# **Answered, never had**: a photograph OR "I will bring it on my
+			# first day". Both send the form.
+			if d["name"] in promised or d["name"] in sent:
 				continue
 			short.append(d["name"])
 
-	if not asked and not documents:
-		# 078's AC-110c, unchanged: with nothing marked compulsory, an empty
+	if not required and not documents:
+		# 078's AC-110c, unchanged: **with nothing marked compulsory**, an empty
 		# send is still refused. Tapping Next, Next, Send without typing used to
 		# be accepted, and HR got a blank row.
+		#
+		# It reads `required`, not `asked`. Reading `asked` was a defect: it
+		# meant the rule only ever fired at a tenant that asked for nothing at
+		# all, so a tenant that ticked three fields and marked none of them
+		# compulsory could be sent an entirely blank form.
 		if not any(cstr(doc.get(c) or "").strip() for c in COLUMN_FOR_TICK.values()) \
 				and not _my_files(doc.name):
 			short.append(_("at least one answer, or one document"))

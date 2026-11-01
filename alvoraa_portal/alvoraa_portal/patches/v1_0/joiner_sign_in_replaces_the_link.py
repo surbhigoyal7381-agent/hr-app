@@ -41,9 +41,22 @@ def execute():
 
 
 def _make_the_role():
-	from alvoraa_portal.joiner_invite import _role
+	"""The only place this role is created.
 
-	_role()
+	`joiner_invite._role()` reads it and refuses when it is missing, rather than
+	making one on a request path: that bypass was one of the two 079-SEC-7 asked
+	us to remove, and a role is a schema-shaped object that belongs here.
+	"""
+	from alvoraa_portal.joiner_invite import JOINER_ROLE
+
+	if frappe.db.exists("Role", JOINER_ROLE):
+		return
+	frappe.get_doc({
+		"doctype": "Role",
+		"role_name": JOINER_ROLE,
+		"desk_access": 0,
+		"is_custom": 1,
+	}).insert(ignore_permissions=True)
 
 
 def _narrow_the_rows():

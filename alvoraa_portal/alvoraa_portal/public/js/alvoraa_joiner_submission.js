@@ -18,7 +18,17 @@ frappe.ui.form.on("Alvoraa Joiner Submission", {
 		   only copy. If HR loses it, they cancel and make another. */
 		if (frm.is_new()) return;
 
-		if (frm.doc.status === "Invited" && !frm.doc.user) {
+		/* Said on the form rather than left to a refusal: the button is
+		   absent until HR has typed what the person will sign in with. An
+		   absent control is an answer; a control that refuses is a guess. */
+		if (frm.doc.status === "Invited" && !frm.doc.user && !frm.doc.login_id) {
+			frm.dashboard.add_comment(
+				__("Type the mobile number or email you reached this person on, in "
+				 + "“Signs in with”, and save. Then you can make their sign-in."),
+				"orange", true);
+		}
+
+		if (frm.doc.status === "Invited" && !frm.doc.user && frm.doc.login_id) {
 			frm.add_custom_button(__("Make the sign-in"), () => makeSignIn(frm));
 		}
 

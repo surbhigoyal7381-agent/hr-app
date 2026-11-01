@@ -187,23 +187,42 @@ def _tell_hr_the_documents_went(name, deleted, days):
 	invited_by = frappe.db.get_value(DOCTYPE, name, "invited_by")
 	if not invited_by:
 		return
+	_tell(invited_by, name,
+	      _("Identity documents on a joiner invite were deleted"),
+	      _("The {0} identity document(s) on invite {1} were deleted after {2} "
+	        "days, which is how long your organisation keeps a photograph of an "
+	        "identity card. Ask again if you still need them. The rest of the "
+	        "invite is untouched.").format(cint(deleted), name, days),
+	      f"Could not say the documents on {name} had gone")
+
+
+def _tell(user, reference, subject, body, if_it_fails):
+	"""One `Notification Log` row, and **the one bypass this module needs for
+	both of its messages.**
+
+	Nobody holds `create` on `Notification Log` - Frappe writes its own the same
+	way - and this runs from the scheduler, with no session at all. Funnelled
+	into one function rather than two so that the bypass is counted once and
+	argued once (079-SEC-7).
+
+	It names the REFERENCE, never the person. Whoever opens the row can see the
+	name; a notification does not need to carry it. And it is a notification
+	rather than an email, because an email is a copy we cannot erase.
+	"""
 	try:
 		frappe.get_doc({
 			"doctype": "Notification Log",
-			"for_user": invited_by,
+			"for_user": user,
 			"type": "Alert",
 			"document_type": DOCTYPE,
-			"document_name": name,
-			"subject": _("Identity documents on a joiner invite were deleted"),
-			"email_content": _(
-				"The {0} identity document(s) on invite {1} were deleted after {2} "
-				"days, which is how long your organisation keeps a photograph of an "
-				"identity card. Ask again if you still need them. The rest of the "
-				"invite is untouched.").format(cint(deleted), name, days),
+			"document_name": reference,
+			"subject": subject,
+			"email_content": body,
 		}).insert(ignore_permissions=True)
+		return True
 	except Exception:
-		frappe.log_error(f"Could not say the documents on {name} had gone",
-		                 "Joiner retention")
+		frappe.log_error(if_it_fails, "Joiner retention")
+		return False
 
 
 def _warn_hr_before_the_backstop():
@@ -233,27 +252,18 @@ def _warn_hr_before_the_backstop():
 		ignore_permissions=True)
 	sent = 0
 	for row in rows:
-		try:
-			frappe.get_doc({
-				"doctype": "Notification Log",
-				"for_user": row.invited_by,
-				"type": "Alert",
-				"document_type": DOCTYPE,
-				"document_name": row.name,
-				"subject": _("A joiner's details will be deleted in {0} days")
-				.format(stop - warn),
-				"email_content": _(
-					"Nobody has turned invite {0} into a staff record. It is "
-					"deleted {1} days after it arrived, which is how we keep "
-					"nothing indefinitely. Open it to act on it, or tick legal "
-					"hold if it must be kept.").format(row.name, stop),
-			}).insert(ignore_permissions=True)
-			frappe.db.set_value(DOCTYPE, row.name, "warned_on", now(),
-			                    update_modified=False)
-			sent += 1
-		except Exception:
-			frappe.log_error(f"Could not warn about {row.name}",
-			                 "Joiner retention")
+		if not _tell(row.invited_by, row.name,
+		             _("A joiner's details will be deleted in {0} days")
+		             .format(stop - warn),
+		             _("Nobody has turned invite {0} into a staff record. It is "
+		               "deleted {1} days after it arrived, which is how we keep "
+		               "nothing indefinitely. Open it to act on it, or tick legal "
+		               "hold if it must be kept.").format(row.name, stop),
+		             f"Could not warn about {row.name}"):
+			continue
+		frappe.db.set_value(DOCTYPE, row.name, "warned_on", now(),
+		                    update_modified=False)
+		sent += 1
 	if sent:
 		frappe.db.commit()
 	return sent

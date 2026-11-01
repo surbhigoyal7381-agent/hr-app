@@ -456,7 +456,15 @@ _JOINER_MAY_REACH = (
     # request shows this; every unit test passes without it.
     "/api/method/login",
     "/api/method/logout",
-    # The joining page's own four calls, by their dotted names, because the page
+    # **The second half of signing in, and leaving it out is a real fault.** The
+    # sign-in page asks this where the browser should go next, and for a joiner
+    # it answers "/joining" - it is `home_page_for` behind a whitelist and it
+    # names nothing about anybody else. Refuse it and the page falls back to
+    # /hrms-employee, which this gate then turns into the one-page refusal: so
+    # the first thing a joiner would see, after typing the right password, is
+    # the screen that tells them they cannot be here.
+    "/api/method/alvoraa_portal.auth.get_portal_redirect",
+    # The joining page's own calls, by their dotted names, because the page
     # posts to /api/method/<dotted> with `fetch` rather than through Frappe's
     # website `frappe.call`.
     "/api/method/alvoraa_portal.joiner_public.",
@@ -476,6 +484,10 @@ _JOINER_MAY_CALL = frozenset()
 # answer is stable for the life of the account and is safe to remember - which
 # is what keeps this gate off the database for everybody.
 _JOINER_CACHE = "alvoraa_is_a_joiner"
+
+# One sentence, used by both halves of the refusal. It names nothing: not the
+# page they asked for, not a menu, not a count.
+_ONE_PAGE = "This sign-in only opens your joining form."
 
 
 def _is_a_joiner(user):
@@ -566,13 +578,7 @@ def lock_to_the_joining_page():
         return
 
     try:
-        if path.startswith("/api/"):
-            # Not a redirect: an XHR cannot follow one usefully, and a caller at
-            # this level is asking for data, not a page. The refusal names
-            # nothing - no doctype, no page, no count.
-            raise frappe.PermissionError(
-                _("This sign-in only opens your joining form."))
-        raise _GoToTheJoiningPage
+        _refuse(path)
     except (_GoToTheJoiningPage, frappe.PermissionError):
         raise
     except Exception:
@@ -580,8 +586,23 @@ def lock_to_the_joining_page():
         # asking for something that is not theirs. The inverse of
         # `test_it_fails_open`, and it must never be copied from it.
         _quietly("Joiner gate failed, and refused")
-        raise frappe.PermissionError(
-            _("This sign-in only opens your joining form."))
+        raise frappe.PermissionError(_(_ONE_PAGE))
+
+
+def _refuse(path):
+    """Turn away a joiner asking for something that is not theirs.
+
+    Its own function for one reason: it is the only thing left that can
+    genuinely be buggy once the gate knows who is asking, so it is the thing a
+    fail-closed test forces an exception inside. A test that broke the role
+    lookup instead would be testing the block that is *meant* to fail open.
+    """
+    if path.startswith("/api/"):
+        # Not a redirect: an XHR cannot follow one usefully, and a caller at
+        # this level is asking for data, not a page. The refusal names nothing -
+        # no doctype, no page, no count.
+        raise frappe.PermissionError(_(_ONE_PAGE))
+    raise _GoToTheJoiningPage
 
 
 def _quietly(title):

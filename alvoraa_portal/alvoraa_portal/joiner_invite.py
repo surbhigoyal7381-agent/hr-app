@@ -197,21 +197,24 @@ def hr_contact():
 # ── the role, made once ─────────────────────────────────────────────────────
 
 def _role():
-	"""The one role, with the desk shut.
+	"""The one role, with the desk shut. **Read here, created by the patch.**
 
 	`announcements.make_role` does the same thing for notice holders and carries
 	the warning this obeys in its own comment: **Frappe creates a role with desk
 	access the first time it meets the name in a doctype's permission rows.** So
 	this name must never appear in a permission JSON - a static test asserts it.
+
+	It is not created here, and that is 079-SEC-7: making it needed a bypass on
+	a request path, and a role is a schema-shaped object that belongs in a patch
+	(`patches/v1_0/joiner_sign_in_replaces_the_link.py`) rather than in HR's
+	button. A missing role is a site that has not been migrated, and it says so
+	in words rather than quietly making one.
 	"""
 	if not frappe.db.exists("Role", JOINER_ROLE):
-		frappe.get_doc({
-			"doctype": "Role",
-			"role_name": JOINER_ROLE,
-			"desk_access": 0,
-			"is_custom": 1,
-		}).insert(ignore_permissions=True)
-		frappe.db.commit()
+		frappe.throw(
+			_("This site has not finished setting up pre-onboarding. Ask your "
+			  "system administrator to run the update, and try again."),
+			frappe.ValidationError)
 	return JOINER_ROLE
 
 
@@ -257,6 +260,10 @@ def _already_a_login(typed):
 	typed = cstr(typed).strip()
 	if not typed:
 		return False
+	# `ignore_permissions` because the guard has to see rows the caller may not:
+	# Frappe ships `User` read to System Manager, so an HR Manager's own query
+	# would be narrowed to their own row and the duplicate check would pass
+	# silently every time. It returns a boolean and never a name.
 	return bool(frappe.get_all("User", or_filters=[
 		{"name": typed}, {"email": typed}, {"mobile_no": typed},
 	], pluck="name", limit_page_length=1, ignore_permissions=True))
@@ -300,11 +307,18 @@ def make_sign_in(submission=None):
 	if not cstr(doc.full_name or "").strip():
 		frappe.throw(_("Give the joiner's name."), frappe.ValidationError)
 
-	typed = cstr(doc.mobile or "").strip() or cstr(doc.personal_email or "").strip()
+	# **HR's own entry, in its own field, and NOT in the joiner's `mobile`
+	# column.** Reading `doc.mobile` here was a real defect, found by the 078
+	# suite being re-keyed: `cell_number` maps to `mobile`, so HR typing the
+	# number before pressing this button answered *"has this joiner sent us
+	# anything yet?"* on every row - which let an empty form be sent, and made
+	# marking the mobile number compulsory do nothing at all.
+	typed = cstr(doc.login_id or "").strip()
 	if not typed:
 		frappe.throw(
-			_("Give the mobile number or the email you reached this person on. "
-			  "It is what they type to sign in."), frappe.ValidationError)
+			_("Give the mobile number or the email you reached this person on, "
+			  "in “Signs in with”. It is what they type to sign in."),
+			frappe.ValidationError)
 
 	if _already_a_login(typed):
 		frappe.throw(
@@ -344,7 +358,11 @@ def make_sign_in(submission=None):
 		"new_password": password,
 		"roles": [{"role": _role()}],
 	})
-	user.flags.ignore_permissions = True
+	# The one bypass here, and the permission system genuinely cannot do it: an
+	# HR Manager holds no `create` on `User` - Frappe ships that to System
+	# Manager - and the whole point of decision 1 is that HR, not an
+	# administrator, invites a joiner. It runs after `_require_hr()`, after the
+	# employer's own values are checked, and after the duplicate guard.
 	user.insert(ignore_permissions=True)
 
 	doc.db_set("user", user.name, update_modified=False)

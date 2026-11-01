@@ -478,11 +478,21 @@ _JOINER_MAY_REACH = (
 # check cannot see. This product has paid for the missing-`cmd` half twice.
 _JOINER_MAY_CALL = frozenset()
 
-# "Has this account got the joiner role?" A joiner account is created with the
-# role and never gains or loses one until it is closed, at which point the
-# cache entry is dropped by hand (`joiner_invite.end_the_sign_in`). So the
-# answer is stable for the life of the account and is safe to remember - which
-# is what keeps this gate off the database for everybody.
+# "Has this account got the joiner role?" Remembered, and **never invalidated**,
+# because the answer never needs to change:
+#
+#   * a joiner account is created with the role and never gains or loses one;
+#   * when it is closed, the role IS stripped - but a cached "yes" is then the
+#     answer we want anyway. The account cannot sign in (it is disabled), and a
+#     session that somehow survives should still be refused;
+#   * a member of staff is cached as "no" and nothing in this product ever gives
+#     them the joiner role. On the day somebody does, by hand in Desk, they get
+#     the portal until the cache is cleared - and that is the right way round:
+#     the wrong answer there costs nothing, and the other wrong answer would
+#     cost every request a database read.
+#
+# Keeping it off the database is the whole of NFR-3: this gate must add no
+# database read for a member of staff.
 _JOINER_CACHE = "alvoraa_is_a_joiner"
 
 # One sentence, used by both halves of the refusal. It names nothing: not the

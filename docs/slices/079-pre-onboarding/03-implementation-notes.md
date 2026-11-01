@@ -21,7 +21,8 @@ account with no `Employee` record and no desk role fell through
 user, so the login would have been **wider** than the bearer link it replaced.
 That is closed, it fails **closed**, and it has fourteen door tests on it.
 
-**Four things need you, and the first three are small.**
+**Five things need you. Three are one-line answers; two are blockers for
+switching the form on at a tenant with real joiners.**
 
 | # | What | Why it is yours |
 |---|---|---|
@@ -370,7 +371,45 @@ output file, not from a tail.
 
 ## 10 · Test results
 
-*(filled in from the runs — see the summary table at the end of this file)*
+**Every number below was read with `grep -aE "^Ran |^OK|^FAILED"` across the
+whole log file, never from a tail** — `bench run-tests` prints more than one
+batch summary and tailing hides one.
+
+### The browser suites — green
+
+```
+DOM tests: 21 run, 0 not run, 0 failed
+### 079 joiner and profile DOM test: 38 passed, 0 failed
+### 078 faces and profile DOM test: 135 passed, 0 failed
+```
+
+All 20 pre-existing DOM tests pass, and the 21st is new. `EXPECTED_BROWSER_TESTS`
+went 20 → 21 in the same commit, as OPS-45 requires.
+
+### `scripts/check_app_integrity.py`
+
+```
+app integrity: 895 checks
+OK - all consistent
+```
+
+### The Python suites
+
+See the table at the end of this document. **What matters more than the numbers:
+three of the failures in the first runs were real product defects and one was a
+real test defect, and all four are written up in §6.** The runs that found them
+were worth their twenty minutes each.
+
+**Two fixture traps worth passing on**, because both cost a full run to see:
+
+1. **Frappe parses what it stores.** `File.before_insert` hands an image to
+   Pillow and a PDF to pypdf, so `b"\xff\xd8\xffinvented"` raises
+   `UnidentifiedImageError` and a hand-written stub PDF raises
+   `PdfReadError: startxref not found`. Both blow the **fixture** up rather than
+   failing the test. `fixtures_079.A_FILE` is a genuine 1×1 PNG.
+2. **Frappe turns version tracking off inside a test** (§6 defect 3). Any
+   `Version` assertion needs `ignore_version=False` on the save, or
+   `frappe.in_test` turned off around the call.
 
 ---
 
@@ -390,6 +429,7 @@ output file, not from a tail.
 | G10 | `_delete_the_documents_sooner` runs two reads rather than one `coalesce(closed_on, creation)` | **acceptable simplification.** Two ORM filters are readable; one SQL expression is not, and the volume is tens of rows a year |
 | G11 | **15 `logger.info` lines across the product still reach no file**, including "are these actually being deleted" and "who invited this person" | **dangerous debt — escalate**, and it is **not mine**. `joiner_housekeeping`'s own docstring promises a count in the log, and that promise is not kept at any tenant. One line of bench configuration, DevOps's to decide (§6 defect 4) |
 | G12 | AC-113's three sentences about the login are in the notice block, but **`compareDocumentPosition` is not asserted for the joining page** the way it is for My Profile's notice | **temporary debt.** It needs the jsdom test G3 covers. The notice is before the first input by construction, and a reader can see that in the markup — but "by construction" is what AC-112 asks a test to prove |
+| G13 | **One `Deleted Document` row survives an erasure**, named after the joiner's login id. `User.on_trash` deletes the account's `Notification Settings`, and that delete is Frappe's own and not permanent | **acceptable simplification.** The login id is **opaque and non-routable by construction** (079-SEC-1 clause 4), so the row holds nothing about the person — which is the whole reason the id is opaque. The test asserts the `User` row is gone and that no `Deleted Document` holds the person's **name**, which is what 079-PRIV-2 clause 4 asks |
 
 **What I would fix with more time, honestly:** G2 first, by a long way — a real
 HTTP door test as three logins on a freshly created site. Then G3. Then I would

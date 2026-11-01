@@ -442,7 +442,11 @@ def end_the_sign_in(doc, why):
 		frappe.db.delete("Has Role", {"parent": name, "parenttype": "User"})
 		clear_sessions(user=name, force=True)
 		delete_all_passwords_for("User", name)
-		frappe.cache().hdel("user_roles", name)
+		# Frappe's own per-user cache, which holds the roles we have just taken
+		# away. The gate's own answer is deliberately NOT cleared - see
+		# `auth._JOINER_CACHE`: a cached "yes" for a closed account is the answer
+		# we want, because a session that somehow survives should still be
+		# refused.
 		frappe.clear_cache(user=name)
 		frappe.db.commit()
 	except Exception:

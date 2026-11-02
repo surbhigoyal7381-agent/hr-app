@@ -892,6 +892,33 @@ async function openMyProfile(routes) {
       "ALV-286 / AC-60: and focus is on the SAME NAME in the redrawn list, not "
       + "at the top of the page",
       doc.activeElement && doc.activeElement.tagName);
+
+  /* ── 20b. The way back is VISIBLE, and the documents say they are coming ──
+     Her words, 3 Nov: "add the loading indicator and a link to go back to the
+     previous tray." ALV-286 already put the tray back when the drawer closed,
+     but nothing on screen said so, so the only way back was to guess that
+     closing would do it. The link is a second, named door onto that same
+     close path - it must not grow a restore path of its own. */
+  const reopen = doc.querySelector('#pos-layer [data-pos-who="HR-EMP-10"]');
+  doc.querySelector("#pos-layer .sh-b").scrollTop = 90;
+  click(reopen);
+  await settle(150);
+  const backEl = $("ed-back");
+  yes(backEl && !backEl.hidden, "the way back is shown when the profile was "
+      + "opened from a seat tray");
+  yes(backEl && /Cashier/.test(backEl.textContent),
+      "and it NAMES the seat it goes to, rather than saying just 'Back'",
+      backEl && backEl.textContent.trim());
+
+  click(backEl.querySelector('[data-mpf="back"]'));
+  await settle(80);
+  yes(!!doc.querySelector("#pos-layer .pos-sheet"),
+      "clicking it brings the tray back");
+  eq(doc.querySelector("#pos-layer .sh-b").scrollTop, 90,
+     "and it uses the SAME close path, so the scroll is still restored - no "
+     + "second way back to keep in step");
+  yes($("ed-back").hidden,
+      "the way back goes with the drawer; it is not left behind for the next one");
   window.posCloseSheet(true);
   await settle(20);
 
@@ -902,6 +929,27 @@ async function openMyProfile(routes) {
   yes($("emp-drawer").classList.contains("open") && !window.POS.sheet,
       "ALV-286: a name clicked where there is NO tray still just opens the "
       + "profile - the same handler serves the table and the seat page");
+  yes($("ed-back").hidden,
+      "and there is NO way back offered when there was no tray to go back to");
+  /* The hazard the placeholder creates: this person's document list came back
+     EMPTY (ROUTES above), which draws no section at all - so the grey bar has
+     to be taken away on that path too, or a person with no documents is left
+     with a bar that never resolves. */
+  yes(!doc.querySelector(".mpf-docs-wait"),
+      "the documents placeholder is gone once the answer is in, even when the "
+      + "answer is 'none' and no section is drawn");
+  /* And that it was ever there. The document list is a SECOND call made after
+     the profile has painted, so without this the reader sees nothing at all
+     and then a whole section drops in. Checked synchronously, before the
+     stubbed answer can land. */
+  window.mpfDocsLoad(window.MPF.emp);
+  const waiting = doc.querySelector(".mpf-docs-wait");
+  yes(!!waiting, "while the documents are coming, the section says so");
+  yes(waiting && !!waiting.querySelector(".hm-skel"),
+      "with the same grey bar the profile itself waits with, not a new kind "
+      + "of spinner");
+  await settle(120);
+  yes(!doc.querySelector(".mpf-docs-wait"), "and it clears itself afterwards");
   key("Escape");
   await settle(20);
 

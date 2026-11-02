@@ -3041,6 +3041,21 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
    the document - picture or PDF - in `.mpf-dv` below (ALV-287). */
 .mpf-docs{margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)}
 .mpf-dh{margin:0 0 6px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+/* While the document list is still coming. The shared `.hm-skel` bar is sized
+   for a whole panel, so inside this section it is cut down to one row's worth
+   and loses the page margin it carries for the body. */
+.mpf-docs-wait .hm-skel{min-height:38px;margin:0}
+
+/* ALV-286's way back, at the top of the drawer. Reads as a link, not another
+   button competing with Close: the drawer already has one button up there. */
+.mpf-back{padding:10px 16px 0}
+.mpf-back-b{display:inline-flex;gap:6px;align-items:center;max-width:100%;
+  padding:4px 0;border:0;background:none;cursor:pointer;
+  font-size:var(--fs-sm);font-weight:600;color:var(--primary);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mpf-back-b:hover{text-decoration:underline}
+.mpf-back-b:focus-visible{outline:2px solid var(--primary);outline-offset:2px;
+  border-radius:var(--r-sm)}
 .mpf-doc{display:flex;gap:10px;align-items:center;padding:8px 0;
   border-bottom:1px solid var(--border2)}
 .mpf-doc:last-child{border-bottom:0}

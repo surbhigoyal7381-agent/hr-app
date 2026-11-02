@@ -10727,6 +10727,10 @@ function openEmpDrawer(empId, color) {
   overlay.classList.add("open");
   drawer.classList.add("open");
   document.body.style.overflow = "hidden";
+  /* The manager drawer shares this element with the mini profile and is never
+     reached from a seat tray, so it must not inherit a way back. */
+  MPF.tray = null;
+  mpfBackPaint();
   document.getElementById("ed-body").innerHTML = '<div style="padding:40px;text-align:center;color:var(--text3)"><div class="spinner" style="margin:0 auto 12px;border-color:var(--border);border-top-color:var(--primary)"></div>Loading...</div>';
 
   api("get_employee_detail_for_manager", {employee_id: empId}, function(d) {
@@ -10754,6 +10758,7 @@ function closeEmpDrawer() {
   var was = MPF.emp;
   MPF.opener = null;
   MPF.tray = null;
+  mpfBackPaint();          /* the way back goes with the drawer it belonged to */
   MPF.emp = null;
   MPF.big = false;
   MPF.pinned = false;
@@ -10828,6 +10833,29 @@ function mpfPromise() {
     + "identity numbers, date of birth and personal contact details are never shown here.");
 }
 
+/* The way back to the seat tray, at the top of the drawer. Drawn from
+   `MPF.tray`, which is set only when mpfOpen closed a tray to get here, so the
+   Positions table and the seat page - same drawer, no tray - show nothing.
+
+   It calls `closeEmpDrawer`, the path that ALREADY reopens the tray at the
+   same seat and scroll and puts focus on the same name. A second restore path
+   would be a second thing to keep in step with that one. This is a label on
+   the door that was always there, which is the whole change.
+
+   Also the one place that CLEARS the element, because `openEmpDrawer` - the
+   older manager drawer - shares it and must never inherit a stale way back. */
+function mpfBackPaint() {
+  var el = document.getElementById("ed-back");
+  if (!el) return;
+  var t = MPF.tray;
+  if (!t) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = '<button type="button" class="mpf-back-b" data-mpf="back">'
+    + '<span aria-hidden="true">←</span> '
+    + esc(t.title ? drT("Back to {0}", [t.title]) : drT("Back to the seat"))
+    + "</button>";
+}
+
 window.mpfOpen = function (employee, opener) {
   if (!employee) return;
   var overlay = document.getElementById("emp-drawer-overlay");
@@ -10852,7 +10880,12 @@ window.mpfOpen = function (employee, opener) {
   if (POS.sheet && POS.sheet.kind === "seat"
       && MPF.opener && MPF.opener.closest && MPF.opener.closest("#pos-layer")) {
     var trayBody = document.querySelector("#pos-layer .sh-b");
-    MPF.tray = { id: POS.sheet.id, scroll: trayBody ? trayBody.scrollTop : 0 };
+    /* The seat's own heading, read off the tray before it is taken down, so
+       the way back can name where it goes rather than say "Back". It is the
+       text the reader was looking at a moment ago. */
+    var trayHead = document.getElementById("pos-sh-t");
+    MPF.tray = { id: POS.sheet.id, scroll: trayBody ? trayBody.scrollTop : 0,
+                 title: trayHead ? trayHead.textContent.trim() : "" };
     /* `true` = do not move focus: focus is about to go into this drawer, and
        the button it would go back to is the one being taken off the page. */
     posCloseSheet(true);
@@ -10861,6 +10894,7 @@ window.mpfOpen = function (employee, opener) {
   drawer.classList.add("open");
   document.body.style.overflow = "hidden";
 
+  mpfBackPaint();
   document.getElementById("ed-av").innerHTML = "";
   document.getElementById("ed-name").textContent = drT("Getting the details…");
   document.getElementById("ed-role").textContent = "";
@@ -11005,8 +11039,30 @@ function mpfList(d) {
      about the PDF and the sandbox is written down with the measurements
      behind it. */
 function mpfDocsLoad(employee) {
+  /* The profile paints first and this list follows in its own call, so without
+     a placeholder there is nothing on screen at all until it lands and then a
+     whole section drops in. A grey bar under the heading says "more is
+     coming", using the same `hm-skel` shape the profile itself waits with.
+
+     **It must be taken away on EVERY path**, or a person with no documents at
+     all is left with a bar that never resolves - which is a worse lie than
+     showing nothing. The three ways out are below: the list arrived, there
+     were none, and the call failed. */
+  var wait = null;
+  var body = document.querySelector("#ed-body .mpf-body");
+  if (body) {
+    wait = document.createElement("div");
+    wait.className = "mpf-docs mpf-docs-wait";
+    wait.innerHTML = '<h3 class="mpf-dh">' + esc(drT("Documents")) + "</h3>"
+      + '<div class="hm-skel" aria-hidden="true"></div>'
+      + '<p class="gp-hint" role="status">' + esc(drT("Getting the documents…")) + "</p>";
+    body.appendChild(wait);
+  }
+  var drop = function () { if (wait && wait.parentNode) wait.parentNode.removeChild(wait); };
+
   gpFetch(MPF_API.replace("positions_profile.", "employee_documents_read.")
           + "get_employee_documents", { employee: employee }).then(function (d) {
+    drop();
     if (MPF.emp !== employee) return;
     var rows = (d && d.documents) || [];
     if (!rows.length) return;               /* no section at all */
@@ -11035,9 +11091,8 @@ function mpfDocsLoad(employee) {
                   + "</span>")
             + "</div>";
         }).join("");
-    var body = document.querySelector("#ed-body .mpf-body");
     if (body) body.appendChild(box);
-  }, function () { /* no section rather than a broken one */ });
+  }, function () { drop(); /* no section rather than a broken one */ });
 }
 
 function mpfDocs(d) {
@@ -11348,6 +11403,9 @@ document.addEventListener("click", function (e) {
     }
   }
   else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
+  /* Nothing of its own: closeEmpDrawer is what reopens the tray at the same
+     seat, scrolled where it was left, with focus on the same name. */
+  else if (what === "back") { closeEmpDrawer(); }
   else if (what === "settings") {
     /* This one LEAVES the Positions page, so ALV-286's "come back to the tray"
        is dropped on purpose: a seat tray reopening over the settings panel is

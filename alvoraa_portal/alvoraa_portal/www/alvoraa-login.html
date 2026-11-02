@@ -8,9 +8,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex">
 {% include "templates/includes/design_system.html" %}
-{% include "templates/includes/design_system.html" %}
-{% include "templates/includes/design_system.html" %}
-{% include "templates/includes/design_system.html" %}
 <style>
 /* ── Reset ───────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -385,8 +382,8 @@ html, body {
 .kx-reveal {
   width: 100%; min-height: 44px; margin: 10px 0 4px;
   font: inherit; font-size: 15px; font-weight: 600;
-  border: 1px solid var(--kx-border, #e3e3e3); border-radius: 8px;
-  background: #fff; color: inherit; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: inherit; cursor: pointer;
 }
 .kx-joiner-hint { display: block; font-size: 13px; opacity: .75; margin: 2px 0 6px; }
 .kx-cannot { font-size: 14px; }

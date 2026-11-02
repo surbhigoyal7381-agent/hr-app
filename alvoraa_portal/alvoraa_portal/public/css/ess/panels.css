@@ -2834,12 +2834,12 @@ body.panel-fullscreen{overflow:hidden}
    Colour is never the only signal: the chip has the word on it. */
 .myp-need{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;
   font-size:var(--fs-xs);font-weight:700;line-height:1.6;
-  background:var(--amber-bg,#fff8e6);color:var(--amber-ink,#8a5a00);
-  border:1px solid var(--amber-line,#e8d6a8)}
+  background:var(--amber-lt);color:var(--amber);
+  border:1px solid var(--amber)}
 .myp-needed-block{margin:12px 0 0;padding:10px 12px;border-radius:var(--r-sm);
   font-size:var(--fs-base);line-height:1.55;
-  background:var(--amber-bg,#fff8e6);color:var(--amber-ink,#8a5a00);
-  border-left:3px solid var(--amber-ink,#8a5a00)}
+  background:var(--amber-lt);color:var(--amber);
+  border-left:3px solid var(--amber)}
 
 /* ── Faces on the chart and the table, slice 078 ──────────────────────────
    `ocAvatar` now always draws the same circle with the person's initials in

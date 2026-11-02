@@ -283,6 +283,12 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		_punch(blk, d2, "23:00")
 		blk_absent = _absent(blk, d2, auto=True, shift=WRONG).name
 		_set_default(blk, RIGHT)
+		# F1: the same, but the day has NO attendance. Frappe's Absent marking
+		# ignores punches, so without the fix the script would write an Absent here.
+		blk2 = _employee("Blk2", COMPANY, WRONG)
+		_punch(blk2, d3, "09:00")
+		_punch(blk2, d3, "23:00")
+		_set_default(blk2, RIGHT)
 		# m-a: default RIGHT, but assigned to OFF for the period.
 		asg = _employee("Asg", COMPANY, RIGHT)
 		frappe.get_doc({"doctype": "Shift Assignment", "employee": asg, "shift_type": OFF, "company": COMPANY,
@@ -297,12 +303,15 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(before, (frappe.db.count("Attendance"),
 		                          frappe.db.count("Employee Checkin", {"shift": WRONG})))
 		scope = fix._state()["scope"]
-		people = {abh, hand, fixadm, grpa, same, blk, asg} | set(kept_absent)
+		people = {abh, hand, fixadm, grpa, same, blk, blk2, asg} | set(kept_absent)
 		self.assertEqual(set(scope["employees"]), people)
 		self.assertEqual(out["retag_punches"], 4)        # ABH days 1-2
 		self.assertEqual(out["cancel"], 3)               # ABH d1, d2 + GRPA's automatic Absent
 		self.assertEqual(out["skipped"], 8)              # ... and BLK's day, left for a person
-		self.assertEqual(out["blocked_days"], 1)
+		self.assertEqual(out["blocked_days"], 2)
+		# F1: RIGHT was on, so once its old start is back the hourly job would mark
+		# BLK2's day Absent. Preview counts it.
+		self.assertEqual(out["absent_left_for_a_person"], 1)
 		self.assertEqual(out["same_timing_people"], 1)
 		self.assertNotIn(outsider, scope["employees"])
 		# N1: the person outside the list on the formerly-off shift is named and counted.
@@ -419,6 +428,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		# N4: the day left for a person is untouched; its punches are not linked.
 		self.assertEqual([r.name for r in _live(blk, d2)], [blk_absent])
 		self.assertEqual(set(frappe.get_all("Employee Checkin", filters={"employee": blk}, pluck="attendance")), {None})
+		self.assertEqual(_live(blk2, d3), [])   # F1: no Absent on a day the person badged in
 		# N2: the formerly-off shift is on from the day after the period; the shifts
 		# that were on get their old start back; the old-punch shift is put back.
 		shift_now = lambda s: frappe.db.get_value(  # noqa: E731
@@ -444,13 +454,21 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(v["days_punched_no_attendance"], 0)
 		self.assertEqual(v["wrong_tag_unlinked"], 0)
 		self.assertEqual(v["wrong_tag_on_kept_days"], 6)   # ABH leave, HAND, FIXADM
-		self.assertEqual(v["left_for_a_person"], 1)                    # N4: shown, not hidden
+		self.assertEqual(v["left_for_a_person"], 2)                    # N4: shown, not hidden
 		self.assertEqual(v["absent_on_days_with_a_punch"], 5)          # the four kept Absents and BLK
 		self.assertEqual(v["skip_flagged_punches_on_absent_days"], 8)  # Frappe flags their punches
 		self.assertEqual(v[f"reds_before_free_{abh}"], 0)
 
 		# ── 7. undo ──
+		with self.assertRaises(frappe.ValidationError):   # F2: before undo, a changed list is refused
+			fix.preview(COMPANY, frm, to, employees=narrow, start=start)
+		frappe.db.set_value("Shift Type", SAME, "auto_update_last_sync", 0)   # the operator changed the box
+		frappe.db.commit()
 		u = fix.undo()
+		self.assertEqual(frappe.db.get_value("Shift Type", SAME, "auto_update_last_sync"), 1)   # put back
+		self.assertEqual((fix._state()["shifts"], fix._state()["scope"]), ({}, None))
+		self.assertTrue(fix._state()["punches"])                      # the tag record is kept
+		fix.preview(COMPANY, frm, to, employees=narrow, start=start)  # F2: after undo, a new list is accepted
 		self.assertEqual(u["linked"], 4)
 		self.assertEqual(frappe.db.get_value("Shift Type", OFF, "enable_auto_attendance"), 0)
 		self.assertEqual(getdate(frappe.db.get_value("Shift Type", OFF, "process_attendance_after")), d3)

@@ -106,7 +106,34 @@ Full output lives in the bench's `sites/` folder as `r_<module>.log`, read with
 `grep -aE "^Ran |^OK|^FAILED"` rather than tailed, because `bench run-tests`
 prints more than one batch summary.
 
-See the report for the verbatim figures.
+| Suite | Result |
+|---|---|
+| `alvoraa_portal.tests.test_alternative_number_080` (new) | `Ran 13 / OK` (12 after the subtract pass) |
+| `test_my_photo_078` | `Ran 35 / OK` |
+| `test_mini_profile_078` | `Ran 12 / OK` |
+| `test_people_settings_078` | `Ran 22 / OK` |
+| `test_faces_078` | `Ran 8 / OK` |
+| `test_employee_field_rights_alv215` | `Ran 20 / OK` |
+| `test_staff_list_034` | `Ran 11 / OK` then `Ran 22 / OK` (two batches) |
+| `test_directory_contact_045` | `Ran 17 / OK` |
+| `test_portal_security_010` | `Ran 45 / OK` then `Ran 5 / OK` (two batches) |
+| All 21 jsdom suites | `DOM tests: 21 run, 0 not run, 0 failed` |
+| `test_joiner_079` | **Could not be run to a conclusion on this bench — and not because of this slice.** Stopped at 25 of 57 tests. Every failure is on the `_sign_in()` path and the error is `AttributeError: 'AlvoraaJoinerSubmission' object has no attribute 'user'`, raised inside slice 079's own `make_sign_in`. The `user` field IS in that DocType's JSON on this branch; the **site's schema had not been synced to it**. `git diff origin/dev` for every joiner file and for the whole doctype folder is empty, and `test_the_joiner_candidate_list_is_the_same_six_by_identity` — the one joiner test that reads `people_fields` and makes no sign-in — **passed**. The regression this slice could actually cause is pinned in the new suite (`assertIs` on all three joiner keys) and in `test_my_photo_078`, both green |
+
+**The guards were broken on purpose.** With the one `LEVEL_2` line removed,
+five of the new tests fail, including
+`test_alt080_an_employee_cannot_write_their_own_alternative_number` — so the
+permission is being proved, not described. The line was put back and the suite
+is green again.
+
+Static checks: `check_app_integrity.py` OK (898 checks), `check_scope_traps.py`
+OK, `check_api_paths.py` OK, `check_tracked_keys.py` OK,
+`check_undefined_js.js` OK, `check_portal_handlers.js` OK,
+`check_tag_balance.py` OK, `check_version_pins.py` OK.
+
+`check_design_system.py` and `check_brand_spelling.py` **fail — and they fail
+identically on a clean `origin/dev` checkout at `b202a37d`**, which I made and
+ran to be sure. Neither touches a file this slice changed. See the report.
 
 ## Known gaps and shortcuts
 
@@ -127,4 +154,20 @@ See the report for the verbatim figures.
 * **DTC may ship this empty** — not debt, just a fact. Their workforce is
   largely shop-floor and may have no such numbers. The field is off on Positions
   until ticked, so an empty field shows nowhere.
-* **Nothing removed on the subtract pass except one test.** See the report.
+* **`bench migrate` was not completed on the test site** — *intentional trade-off,
+  and the one thing someone should repeat*. Two attempts both sat on
+  `Command: Sleep`, waiting on a database lock. `test078`'s database is shared
+  with the slice 079 bench, so forcing a migrate there is not mine to do. The
+  field and its permlevel 2 were verified on both sites by running the two hook
+  functions directly, which is what `migrate` and `install` call. **A clean
+  `bench migrate` on a site nobody else is using would also unblock
+  `test_joiner_079`.**
+
+* **Subtract pass.** One thing removed:
+  `test_alt080_creating_it_twice_writes_nothing_the_second_time` — it was
+  testing Frappe's `create_custom_fields`, not this slice. Also considered and
+  rejected as over-engineering: a second words map so the Positions tick dialog
+  could carry her help text; a guard in `positions_profile` for a tenant that
+  has `hrms` but not `alvoraa_portal` (no such configuration can reach the
+  Positions page); a new CSS class for the `tel:` link (the mail link's class
+  has no mail-specific styling, so it is reused).

@@ -89,6 +89,9 @@ NAMED = (
 	 "doctype name used as a code constant"),
 	("hrms/alvoraa_policy_library/access.py", "Alvoraa CXO",
 	 "role name compared in code, never displayed by this line"),
+	("alvoraa_portal/auth.py", "Alvoraa Joiner",
+	 "Role record name, slice 079; en.csv shows it as Alvora Joiner, as the doctype is"),
+	("alvoraa_portal/joiner_invite.py", "Alvoraa Joiner", "Role record name, as above"),
 )
 
 

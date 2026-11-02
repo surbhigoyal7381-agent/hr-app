@@ -392,11 +392,17 @@ class TestWhatTheStaffListShows(_StaffListBase):
 		contact is in, because the companies have NDAs.
 
 		So **one** key was added - `work_email`, from `Employee.company_email`.
-		**No phone number.** There is no work-phone or extension field in the
-		data model at all: `cell_number` is labelled "Mobile" and is personal,
-		and shipping it would have been the dangerous reading of "contact
-		details are in". Her instruction had a stop condition for exactly that,
-		and this is it, kept as a test.
+		**No phone number**, because there was no work-phone or extension field
+		in the data model at all, and `cell_number` is labelled "Mobile" and is
+		personal: shipping it would have been the dangerous reading of "contact
+		details are in". Her instruction had a stop condition for exactly that.
+
+		**The pin changed a second time, on 2 November 2026.** She decided the
+		work number itself: `alvoraa_alternative_number`, labelled "Alternative
+		number", filled in by HR, reaching this payload as `alt_number`. So
+		there IS a phone number here now - a number the company hands out. The
+		personal mobile is still refused, and that is the part below that has
+		not moved.
 
 		Still absent, and each would need its own decision: personal email,
 		mobile, employee number, branch, manager, date of birth.
@@ -409,7 +415,8 @@ class TestWhatTheStaffListShows(_StaffListBase):
 			self.assertEqual(set(row), set(staff_api.ROW_KEYS))
 		self.assertEqual(
 			set(staff_api.ROW_KEYS),
-			{"employee", "name", "title", "department", "image", "work_email"}
+			{"employee", "name", "title", "department", "image", "work_email",
+			 "alt_number"}
 		)
 		for never in ("cell_number", "personal_email", "employee_number",
 		              "branch", "reports_to", "date_of_birth"):

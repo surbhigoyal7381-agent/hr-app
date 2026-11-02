@@ -37,8 +37,11 @@ ever return an empty filter dict, which in Frappe would mean everybody, and a
 caller neither of them can place is still refused outright rather than handed an
 empty list.
 
-**The payload is PRIV-2's five keys and Active people only.** No phone, no
-email, no employee number, no branch, no manager. A leaver does not appear.
+**The payload is work facts and Active people only.** PRIV-2 fixed it at five
+keys; two have been added since, each by its own decision of Surbhi's - the
+work email (24 September 2026) and the alternative number (2 November 2026).
+No personal mobile, no personal email, no employee number, no branch, no
+manager. A leaver does not appear.
 
 There is no `ignore_permissions` in this file, and no module-level state that
 changes at run time (SEC-6, SEC-15). Every constant below is a tuple or a
@@ -66,12 +69,18 @@ ROW_FIELDS = (
 	# employees too, and **work contact is in**. Her reason: *"the companies
 	# have NDAs"*.
 	#
-	# **`company_email` and nothing else.** It is the one genuinely
-	# work-shaped contact field ERPNext's Employee has. There is **no work
-	# phone or extension field at all** - `cell_number` is labelled "Mobile"
-	# and is personal, `personal_email` says what it is, and
-	# `emergency_phone_number` is somebody else's number entirely. Adding a
-	# work-phone field is a decision for Surbhi, not a thing to slip in here.
+	# **Work email and, since slice 080, one work number.** ERPNext's Employee
+	# ships only one genuinely work-shaped contact field, `company_email`;
+	# there was **no work phone or extension field at all**, and this comment
+	# used to say that adding one was a decision for Surbhi. **She made it on
+	# 2 November 2026:** `alvoraa_alternative_number`, labelled "Alternative
+	# number", created by `alternative_number.py` and held at permlevel 2 so HR
+	# fills it in and the employee cannot.
+	#
+	# `cell_number` is still not here and is still not a substitute: it is
+	# labelled "Mobile" and it is the person's own number, not one the company
+	# hands out. `personal_email` says what it is, and
+	# `emergency_phone_number` is somebody else's number entirely.
 	#
 	# **And the NDA point, because it is the part that is easy to get
 	# backwards:** an NDA binds the employee who LOOKS. It is not the same as
@@ -80,11 +89,13 @@ ROW_FIELDS = (
 	# showing it proportionate. Keeping this to work contact is what makes the
 	# wider audience safe.
 	"company_email as work_email",
+	"alvoraa_alternative_number as alt_number",
 )
 
 # The keys each row actually leaves with, after the aliases above. Kept beside
 # them so the test can assert the payload rather than the query.
-ROW_KEYS = ("employee", "name", "title", "department", "image", "work_email")
+ROW_KEYS = ("employee", "name", "title", "department", "image", "work_email",
+            "alt_number")
 
 # The same caps as people search (PRIV-3): the screen asks for 12, the server
 # never returns more than 50 however large a number is sent.

@@ -597,6 +597,9 @@ after_migrate = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.crm_steps.ensure_task_label_field",
+    # Slice 080: the "Alternative number" field. Before the line below, so the
+    # field exists by the time field rights are applied. See alternative_number.py.
+    "alvoraa_portal.alternative_number.after_migrate",
     # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
     # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
     # reset in Role Permission Manager is put right. See employee_field_rights.py.
@@ -655,6 +658,9 @@ after_install = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.email_brand.after_install",
+    # Slice 080: same as after_migrate, and this is the half that matters - a
+    # patch would never run here, so a new tenant would not have the field.
+    "alvoraa_portal.alternative_number.after_migrate",
     # ALV-215: same as after_migrate - a new tenant must not start open.
     "alvoraa_portal.employee_field_rights.apply",
     # Slice 076: the Notice Sender role without desk access. Frappe makes it

@@ -43,16 +43,22 @@ class _Base(Wave4Base):
 
 
 class TestTheListsAreClosed(_Base):
-	def test_the_ten_positions_fields_are_exactly_these(self):
-		"""Pinned literally. A later slice adding an eleventh has to come here
-		first, which is the point: this tuple is the whole of 078-SEC-1."""
+	def test_the_eleven_positions_fields_are_exactly_these(self):
+		"""Pinned literally. A later slice adding a twelfth has to come here
+		first, which is the point: this tuple is the whole of 078-SEC-1.
+
+		**It went from ten to eleven on 2 November 2026**, by Surbhi's decision:
+		`alvoraa_alternative_number`. The pin changed; it was not weakened into
+		a "contains" check, and the name changes with the count so a reader of
+		the history sees the list grow rather than a test quietly loosen.
+		"""
 		self.assertEqual(people_fields.POSITIONS_PROFILE_FIELDS, (
 			"designation", "department", "branch", "company", "reports_to",
 			"grade", "employment_type", "date_of_joining", "default_shift",
-			"company_email"))
-		# Ten, not eleven. "Work phone" has no field on Employee.
-		self.assertEqual(len(people_fields.POSITIONS_PROFILE_FIELDS), 10)
-		self.assertNotIn("work_phone", people_fields.POSITIONS_PROFILE_FIELDS)
+			"company_email", "alvoraa_alternative_number"))
+		self.assertEqual(len(people_fields.POSITIONS_PROFILE_FIELDS), 11)
+		# Still not the personal mobile, whatever the eleventh is called.
+		self.assertNotIn("cell_number", people_fields.POSITIONS_PROFILE_FIELDS)
 
 	def test_the_six_my_profile_fields_are_exactly_these(self):
 		self.assertEqual(people_fields.MY_PROFILE_WRITE_FIELDS, (

@@ -214,16 +214,23 @@ async function openMyProfile(routes) {
   /* AC-58. ONE place in the code builds the field list. The spec says two
      copies is a test failure, not a style note, so this asserts the list is a
      single array and that the drawer renders from it. */
-  yes(Array.isArray(window.MPF_FIELDS) && window.MPF_FIELDS.length === 10,
-      "078 AC-58: there is ONE mini-profile field list, with ten details",
+  /* Eleven since slice 080, by Surbhi's decision of 2 November 2026. The pin
+     moved with the list rather than being loosened to "at least ten". */
+  yes(Array.isArray(window.MPF_FIELDS) && window.MPF_FIELDS.length === 11,
+      "078 AC-58 / 080: there is ONE mini-profile field list, with eleven details",
       String(window.MPF_FIELDS && window.MPF_FIELDS.length));
   const words = window.MPF_FIELDS.reduce((o, f) => (o[f[0]] = f[1], o), {});
   yes(words.date_of_joining === "In the company since",
       '078 AC-42: the joining date is worded "In the company since", not "Date of joining"');
   yes(words.company_email === "Work email",
       '078 AC-42: company_email is worded "Work email"');
+  /* HER label, word for word - she rejected "Work phone" - which is why this
+     one is not reworded the way the two above are. */
+  yes(words.alvoraa_alternative_number === "Alternative number",
+      '080: the new field is labelled "Alternative number", her words');
   yes(!("work_phone" in words) && !("cell_number" in words) && !("date_of_birth" in words),
-      "078 AC-51: no work phone (it does not exist), no personal mobile, no date of birth");
+      "078 AC-51 / 080: the number is the company's one, never the personal mobile, "
+      + "and no date of birth");
 
   const WHO = {
     employee: "HR-EMP-9", employee_name: "Kiran Sandhu", designation: "Cashier",
@@ -395,8 +402,10 @@ async function openMyProfile(routes) {
   /* Surbhi's third answer at the gate: the picker offers the SAFE allow-list
      only. Bank account, PAN, salary and date of birth cannot be ticked. */
   const offered = [...dlg.querySelectorAll("[data-ocs-v]")].map(i => i.getAttribute("data-ocs-v"));
-  yes(offered.length === 10, "078 SEC-1: the picker offers exactly the ten allow-listed "
-      + "details", String(offered.length));
+  yes(offered.length === 11, "078 SEC-1 / 080: the picker offers exactly the eleven "
+      + "allow-listed details", String(offered.length));
+  yes(offered.includes("alvoraa_alternative_number"),
+      "080: the alternative number is one of them - tickable, and off until it is ticked");
   for (const never of ["bank_ac_no", "pan_number", "ctc", "date_of_birth", "cell_number"]) {
     yes(!offered.includes(never),
         "078 SEC-1: " + never + " cannot be ticked");

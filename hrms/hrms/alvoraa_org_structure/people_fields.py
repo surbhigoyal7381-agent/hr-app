@@ -3,8 +3,8 @@
 Slice 078. Two closed lists and one deny rule, in ONE place, because the whole
 privacy position of that slice rests on them being closed:
 
-  * `POSITIONS_PROFILE_FIELDS` - the ten work facts a Positions reader may be
-    shown about a colleague, if the organisation ticks them.
+  * `POSITIONS_PROFILE_FIELDS` - the eleven work facts a Positions reader may
+    be shown about a colleague, if the organisation ticks them.
   * `MY_PROFILE_WRITE_FIELDS` - the six details an employee may correct on
     their own record, if the organisation ticks them.
   * `NEVER` plus `is_denied()` - what no tick may ever reach, whatever a
@@ -36,10 +36,15 @@ import frappe
 # the staff directory, or in a team page - this list says which of them may
 # appear on ONE more screen, not that anything new becomes visible.
 #
-# "Work phone" is deliberately absent: Employee has no such field (checked in
-# erpnext's employee.json, and `staff_api.py:69-71` says so in its own comment
-# from the last time somebody asked). `cell_number` is labelled "Mobile" and is
-# personal, so it is not a substitute. Ten, not eleven.
+# **Eleven since slice 080, and the eleventh has a decision behind it.** The
+# comment that used to be here said Employee has no work-phone field and that
+# adding one was a decision for Surbhi. **She made it on 2 November 2026:**
+# `alvoraa_alternative_number`, labelled "Alternative number" - her words, she
+# rejected "Work phone" - created by `alvoraa_portal/alternative_number.py` and
+# held at permlevel 2, so HR fills it in and the employee cannot.
+#
+# `cell_number` is still not a substitute and is still not here: it is labelled
+# "Mobile" and it is the person's own number, not one the company hands out.
 POSITIONS_PROFILE_FIELDS = (
 	"designation",
 	"department",
@@ -51,6 +56,7 @@ POSITIONS_PROFILE_FIELDS = (
 	"date_of_joining",
 	"default_shift",
 	"company_email",
+	"alvoraa_alternative_number",
 )
 
 # ── the six details an employee may correct about themselves ─────────────────

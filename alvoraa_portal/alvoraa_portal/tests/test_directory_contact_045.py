@@ -3,16 +3,22 @@
 Surbhi's decision of 24 September 2026: the directory is for employees too,
 and contact details are IN. Her reason: *"the companies have NDAs"*.
 
-**What shipped: work email, and no phone number at all.**
+**What shipped in 045: work email, and no phone number at all.**
 
-`Employee.company_email` exists and is genuinely a work field, so it is in.
-**There is no work phone or extension field in the data model.** `cell_number`
+`Employee.company_email` exists and is genuinely a work field, so it went in.
+There was **no work phone or extension field in the data model**: `cell_number`
 is labelled "Mobile", `personal_email` says what it is, and
 `emergency_phone_number` is somebody else's number entirely. Her instruction
 had a stop condition for exactly this - *"If the data model has only a
 personal mobile field, say so and stop rather than shipping a personal
-number"* - so no phone number ships, and adding a work-phone field needs her
-word.
+number"* - so no phone number shipped, and adding a work-phone field needed
+her word.
+
+**Slice 080 has it: she gave that word on 2 November 2026.**
+`alvoraa_alternative_number`, labelled "Alternative number", filled in by HR
+and held at permlevel 2 so the employee cannot write their own. It reaches this
+payload as `alt_number`. The personal mobile is still refused, and the tests
+below that hold it are unchanged.
 
 **The NDA point, because it is the half that is easy to get backwards:** an
 NDA binds the employee who LOOKS. It is not the same as the employer's own
@@ -323,15 +329,20 @@ class TestTheDirectoryCarriesWorkContactOnly(Wave4Base):
 		self.assertEqual([], find_key(out, "cell_number"))
 		self.assertEqual([], find_key(out, "personal_email"))
 
-	def test_no_phone_number_ships_because_the_field_does_not_exist(self):
+	def test_the_only_number_that_ships_is_the_one_the_company_hands_out(self):
 		"""The stop condition, asserted rather than described.
 
-		If somebody later adds a work-phone custom field, this test does not
-		fail - it is not a ban on work phones. What it bans is the PERSONAL
-		one being used as a substitute, which is what would have happened if
-		"contact details are in" had been read as "whatever contact fields
-		exist".
+		**This test replaces `test_no_phone_number_ships_because_the_field_does
+		_not_exist`,** whose own docstring said it was not a ban on work phones
+		and would not fail if one were added. Slice 080 added one, by Surbhi's
+		decision of 2 November 2026, so the name changes to say what is really
+		being held: a work number is in, the PERSONAL one is still out.
+
+		That was always the half that mattered. Using `cell_number` as a
+		substitute is what would have happened if "contact details are in" had
+		been read as "whatever contact fields exist".
 		"""
 		joined = " ".join(staff_api.ROW_FIELDS)
 		self.assertNotIn("cell_number", joined)
 		self.assertIn("company_email", joined)
+		self.assertIn("alvoraa_alternative_number", joined)

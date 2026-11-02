@@ -42,6 +42,11 @@ LEVEL_2 = (
 	"holiday_list", "default_shift", "attendance_device_id", "date_of_joining",
 	"relieving_date", "status", "user_id", "first_name", "middle_name", "last_name",
 	"gender", "date_of_birth",
+	# Slice 080. A number the COMPANY hands out, so HR writes it and the person
+	# does not - which is level 2 and not level 0. Level 1 would be wrong the
+	# other way: it hides the field from colleagues, and the whole point is that
+	# everyone in the company can see it. See alternative_number.py.
+	"alvoraa_alternative_number",
 )
 
 # Bank, statutory IDs and salary - the 13 PPJ already holds at level 1.

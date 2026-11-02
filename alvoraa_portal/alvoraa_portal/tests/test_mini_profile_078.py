@@ -17,7 +17,9 @@ from alvoraa_portal import positions_profile
 from alvoraa_portal.tests import fixtures_078 as fx
 from alvoraa_portal.tests.fixtures_045 import Wave4Base
 
-TEN = list(people_fields.POSITIONS_PROFILE_FIELDS)
+# Every field on the allow-list, derived rather than copied - it went from ten
+# to eleven in slice 080, and a test that names a count goes stale.
+ALL_FIELDS = list(people_fields.POSITIONS_PROFILE_FIELDS)
 
 
 class _Base(Wave4Base):
@@ -29,7 +31,7 @@ class _Base(Wave4Base):
 
 	def setUp(self):
 		super().setUp()
-		fx.set_lists(profile_fields=TEN)
+		fx.set_lists(profile_fields=ALL_FIELDS)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -42,7 +44,7 @@ class TestWhatTheReaderGets(_Base):
 		frappe.set_user(self.p["hr_wide_user"])
 		out = positions_profile.get_positions_profile(employee=self.p["with_photo"])
 		got = [r["fieldname"] for r in out["rows"]]
-		self.assertTrue(set(got) <= set(TEN), got)
+		self.assertTrue(set(got) <= set(ALL_FIELDS), got)
 		# Name and job role arrive whatever is ticked - they are what the reader
 		# clicked on.
 		self.assertTrue(out["employee_name"])
@@ -167,7 +169,7 @@ class TestWhatItRefuses(_Base):
 		different key."""
 		sentinel = "+91 98765 00999"
 		frappe.db.set_value("Employee", self.p["with_photo"], "cell_number", sentinel)
-		frappe.db.set_default(positions_profile.PROFILE_KEY, ",".join(TEN + ["cell_number"]))
+		frappe.db.set_default(positions_profile.PROFILE_KEY, ",".join(ALL_FIELDS + ["cell_number"]))
 		frappe.db.commit()
 		frappe.set_user(self.p["hr_wide_user"])
 		out = positions_profile.get_positions_profile(employee=self.p["with_photo"])

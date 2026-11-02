@@ -10691,7 +10691,10 @@ var MPF_FIELDS = [
   ["employment_type", "Kind of employment"],
   ["date_of_joining", "In the company since"],
   ["default_shift",   "Usual shift"],
-  ["company_email",   "Work email"]
+  ["company_email",   "Work email"],
+  /* Slice 080. Her label, word for word - she rejected "Work phone" - so this
+     one is NOT reworded the way the rows above are. */
+  ["alvoraa_alternative_number", "Alternative number"]
 ];
 var MPF_DATE = { date_of_joining: 1 };
 

@@ -775,11 +775,8 @@
       + (row.image ? '<img src="' + esc(row.image) + '" alt="" onerror="this.remove()">' : "")
       + "</span>";
     var sub = [row.title, row.department].filter(Boolean).join(" · ");
-    /* Slice 045: work contact. `work_email` and nothing else - there is no
-       work phone or extension field in the data model, so no phone number
-       ships. A real mail link, because the point of a directory is getting
-       hold of somebody; the address is escaped as text AND percent-encoded in
-       the href, which are two different escapes and both are needed. */
+    /* Slice 045: work contact. A real mail link, because the point of a
+       directory is getting hold of somebody. */
     /* `esc` in the href as well as in the text. It escapes the quote, so a
        hostile address cannot break out of the attribute, and it leaves the `@`
        alone - percent-encoding it gives a mailto some clients mishandle. */
@@ -787,10 +784,20 @@
       ? '<br><a class="nf-person-mail" href="mailto:' + esc(row.work_email)
         + '">' + esc(row.work_email) + "</a>"
       : "";
+    /* Slice 080, Surbhi's decision of 2 November 2026. The data model had no
+       work number at all until now; `alvoraa_alternative_number` is one the
+       COMPANY hands out, which is why it is here and the personal mobile is
+       not. A `tel:` link, because most of the people reading this are on a
+       phone - and the same double escape as the address above. */
+    var phone = row.alt_number
+      ? '<br><a class="nf-person-mail" href="tel:' + esc(row.alt_number)
+        + '">' + esc(row.alt_number) + "</a>"
+      : "";
     return '<li class="nf-person">' + mark
       + "<span><span class=\"nf-person-name\">" + esc(row.name) + "</span>"
       + (sub ? '<br><span class="nf-person-sub">' + esc(sub) + "</span>" : "")
       + mail
+      + phone
       + "</span></li>";
   }
 

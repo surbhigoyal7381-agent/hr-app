@@ -889,44 +889,67 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# saving hands over to the access-granting path in hrms, which already
 		# holds the one Version bypass in its own ceiling above.
 		("alvoraa_portal", "people_settings.py"): 0,
-		# Slice 078 step 6, pre-onboarding. The FIRST public write path in this
-		# product, so every one of these is named rather than counted.
+		# Slice 078 step 6, pre-onboarding, re-baselined by slice 079.
 		#
-		# joiner_invite.py: FOUR. The Web Form anchor record and the Web Form
-		# Request row (Frappe ships that doctype Website-Manager-only, and HR is
-		# not one); deleting the request row, which is the purge that makes the
-		# clear-text key short-lived; and the File listing behind Export, which
-		# reads names and dates and no bytes. Each runs after _require_hr().
-		("alvoraa_portal", "joiner_invite.py"): 4,
-		# joiner_public.py: FIVE, all on a GUEST path that has no session at
-		# all - which is the whole point of the feature. Each runs only after
-		# `_open()` has validated the token through Frappe's own validator, and
-		# there is no submission argument anywhere in that module, so there is
-		# nothing a caller can post that reaches a row other than their own: the
-		# submission save, the uploaded File insert, and the two reads that find
-		# what the token is bound to.
+		# **079-SEC-7 asked for these numbers to go DOWN rather than sideways**,
+		# because a ceiling that merely moves sideways means the rewrite kept a
+		# Guest-shaped design behind a login. For the two modules the
+		# requirement names they do: **9 to 6.** The other two are unchanged.
 		#
-		# The fifth arrived with D-3 (ALV-260): `_has_a_document` reads the
-		# File rows attached to the token's own submission, to answer "did this
-		# joiner send us anything at all" before the form is accepted. A guest
-		# holds no File permission whatsoever, and the read is filtered to the
-		# submission `_open()` already bound the token to, so it can see
-		# nothing else. Named here rather than counted, because an unargued
-		# bypass slipping in is exactly what this ceiling exists to catch - and
-		# it caught this one.
-		("alvoraa_portal", "joiner_public.py"): 5,
-		# joiner_housekeeping.py: SIX. The daily job runs with no session: the
-		# reads that find what is due, the status save that expires a dead link,
-		# and the Notification Log row that warns HR. It deletes nothing a user
-		# asked about.
+		# joiner_invite.py: FOUR to THREE. The Web Form anchor and the Web Form
+		# Request row went with the token. The ROLE moved to the patch, because
+		# making it needed a bypass on HR's own button and a role is a
+		# schema-shaped object. What is left: the `User` insert (an HR Manager
+		# holds no create on User, and the whole point of decision 1 is that HR
+		# invites a joiner rather than an administrator); the duplicate-guard
+		# read, which has to see rows the caller may not, or an HR Manager's own
+		# query is narrowed to their own row and the guard passes silently every
+		# time; and the File listing behind Export, which reads names and dates
+		# and no bytes. Each runs after _require_hr().
+		("alvoraa_portal", "joiner_invite.py"): 3,
+		# joiner_public.py: FIVE to THREE, and this is the file 079-SEC-7 was
+		# written about. Four of the five existed only because the caller was
+		# **Guest** and held no permission on anything; with a session and a
+		# bound row most could be argued away rather than re-ceilinged.
+		#
+		# The three that remain, each after `_mine()` has resolved the row from
+		# `frappe.session.user` - and there is still no submission, row, name or
+		# id argument anywhere in the module, so there is nothing a caller can
+		# post that reaches a row other than their own:
+		#
+		#   `_keep`  - ONE write for both the draft and the send, funnelled so
+		#              the bypass is counted once. A joiner holds no write right
+		#              on the doctype at any level, deliberately: the role
+		#              appears in no permission row anywhere, which is what makes
+		#              "a joiner can list nothing" a property of the account
+		#              rather than of our queries.
+		#   `_my_files` - the read of the files on their own row, for the count,
+		#              the byte total and the "2 of 4 sent" strip. A Website User
+		#              holds no File permission whatsoever.
+		#   the File insert - same reason, the other direction.
+		("alvoraa_portal", "joiner_public.py"): 3,
+		# joiner_housekeeping.py: SIX, unchanged, although the module gained a
+		# whole second retention pass. The daily job runs with no session: the
+		# reads that find what is due, the status save that expires a dead
+		# sign-in, and the `Notification Log` row that tells HR. 079 added a
+		# second message - the one that says the documents have gone - and both
+		# messages now go through ONE `_tell()` helper, so the count stayed where
+		# it was instead of drifting up. It deletes nothing a user asked about.
 		("alvoraa_portal", "joiner_housekeeping.py"): 6,
-		# The controller: FOUR. The erase - the File deletes and the save that
-		# clears the fields - which is a retention duty rather than a request,
-		# and runs from the scheduler as well as from HR.
+		# The controller: FOUR, unchanged. The erase - the File deletes and the
+		# save that clears the fields - which is a retention duty rather than a
+		# request, and runs from the scheduler as well as from HR. 079 added the
+		# `User` delete (079-PRIV-2 clause 4: Frappe's `Deleted Document` must
+		# not keep a JSON copy of the person's name) and took away a redundant
+		# `flags.ignore_permissions` that said the same thing as the `save` on the
+		# next line, so the number held.
 		("alvoraa_portal",
 		 "alvoraa_portal/doctype/alvoraa_joiner_submission/alvoraa_joiner_submission.py"): 4,
-		# The public page itself: NONE. It reads no invite at all.
-		("alvoraa_portal", "www/joiner.py"): 0,
+		# The page itself: NONE, still. It reads no submission at all - every
+		# fact on the screen comes from the endpoint, which is where the session
+		# check provably runs. It is `www/joining.py` since 079; `/joiner` and
+		# its bearer link are gone.
+		("alvoraa_portal", "www/joining.py"): 0,
 		# people_fields.py (hrms): ONE - the batched thumbnail read. Frappe's
 		# own File query condition narrows a Website User to `owner = me`, so a
 		# scoped read here would hide every colleague's thumbnail and the one

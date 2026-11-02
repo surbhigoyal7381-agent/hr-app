@@ -541,10 +541,12 @@ async function run() {
 
   const nasty = { employee: "HR-EMP-9", name: "Meera Rao",
                   title: "<img src=x onerror=alert(1)>", department: "Sales", image: null,
-                  /* Slice 045: work contact. The work email is the ONLY contact
-                     field the directory carries - there is no work phone in the
-                     data model, so none ships. */
-                  work_email: "meera.rao@example.com" };
+                  /* Slice 045: work contact. Slice 080 adds the second one -
+                     `alt_number`, from `Employee.alvoraa_alternative_number`,
+                     a number the COMPANY hands out. The personal mobile is
+                     still not in the payload at all. */
+                  work_email: "meera.rao@example.com",
+                  alt_number: "+91 11 4000 0080" };
   dom = await load(
     makeFrame(Object.assign({}, hrBase, { features: { goals: 1, plan_staff_list: true } })),
     makeCounts(),
@@ -561,10 +563,19 @@ async function run() {
      of a directory is getting hold of somebody. */
   is(out.querySelector('a[href="mailto:meera.rao@example.com"]') !== null, true,
      "the work email is a mail link on the row");
+  /* Slice 080: the alternative number is drawn, as a real `tel:` link, because
+     most of the people reading this are on a phone. */
+  is(out.querySelector('a[href="tel:+91 11 4000 0080"]') !== null, true,
+     "the alternative number is a tel link on the row");
   /* And nothing personal came with it. Asserted on the RENDERED row, not on
-     the payload, because this is the place a field would be added by hand. */
-  is(/\+91|cell|mobile|personal/i.test(out.textContent), false,
-     "and no phone number or personal address reached the directory row");
+     the payload, because this is the place a field would be added by hand.
+     **The old version of this assertion banned "+91" outright**, which only
+     worked while no number of any kind shipped. The ban that was always meant
+     is on the PERSONAL fields, so that is what it says now. */
+  is(/cell|mobile|personal|address|birth/i.test(out.textContent), false,
+     "and no personal mobile, personal email or address reached the directory row");
+  is(out.querySelectorAll("a[href^='tel:']").length, 1,
+     "exactly one number on the row - the company's, not a second personal one");
 
   /* Key off: the address shows the no-permission sentence, never a blank list
      and never an error (AC-76). */

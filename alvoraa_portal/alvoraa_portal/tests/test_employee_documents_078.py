@@ -93,9 +93,18 @@ class TestTheFiveChecks(_Base):
 
 	def test_a_reader_in_scope_gets_the_file_as_a_download(self):
 		"""AC-66, AC-116. `type = "download"`, which Frappe serves with
-		`Content-Disposition: attachment` - so a PDF is never rendered inline,
-		which is the narrower treatment it gets because it is the one accepted
-		type we do not re-encode and therefore cannot strip."""
+		`Content-Disposition: attachment`.
+
+		**That has not changed, and what this asserts is unchanged - but what
+		the browser then does with the bytes has.** Since ALV-287 (2 Nov 2026)
+		the portal fetches this response with `fetch`, keeps the blob, and
+		RENDERS it in a viewer of its own instead of saving it; the header
+		never reaches a navigation, so it never decides anything. A PDF is
+		shown in an iframe with no sandbox, which is Surbhi's decision and her
+		reasons are written at `mpfShowDoc` in portal.js. This docstring used to
+		end "so a PDF is never rendered inline". That is no longer true, the
+		assertion below never tested it, and a sentence like that is how a
+		reader comes to believe the server enforces something it does not."""
 		frappe.set_user(self.p["hr_wide_user"])
 		res = self._open(self.inside[self.ticked])
 		self.assertEqual(res.type, "download")

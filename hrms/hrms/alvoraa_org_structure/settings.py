@@ -174,6 +174,62 @@ DEFAULTS = {
 	# had to be set on purpose first - is GONE: counsel answered the question it
 	# existed for, so the periods above are no longer numbers we invented.
 	"alvoraa_joiner_form_on": 0,
+
+	# ── slice 079: what a joiner is asked, and what is compulsory ────────────
+	#
+	# FOUR tick keys, all shipping EMPTY, so nothing is asked of anybody until a
+	# tenant deliberately ticks it (decision 5). They are four and not one
+	# because the two surfaces mean different things: on the joiner form
+	# `required` BLOCKS THE SEND; on My Profile it only ASKS AGAIN (decision 3).
+	# One shared key would make a field compulsory on a screen HR never meant.
+	#
+	# The candidate list for all three field keys is the SAME SIX as My Profile
+	# (`people_fields.MY_PROFILE_WRITE_FIELDS`), by identity rather than by
+	# copy, so a third list cannot appear and drift.
+	"alvoraa_joiner_fields": "",
+	"alvoraa_joiner_required_fields": "",
+	"alvoraa_my_profile_required_fields": "",
+
+	# Document TYPES the joiner must answer for. A subset of the types already
+	# ticked for the Positions page, intersected at the reader as well.
+	"alvoraa_joiner_required_documents": "",
+
+	# ── counsel's SECOND clock (ruling 4) ───────────────────────────────────
+	#
+	# A non-joiner's IDENTITY DOCUMENT goes much sooner than their record:
+	# counsel's range is 30 to 60 days against 180 to 365 for the record. One
+	# setting cannot say both, which is why this key exists at all.
+	#
+	# It deletes the `File` rows only, bytes included. The row survives minus
+	# its attachments, so the shell that answers "who invited somebody on 3
+	# November" is untouched.
+	#
+	# 30 is the cautious end and is the default. There is no value that means
+	# "for ever" and the setter refuses a blank, a 0 and anything outside the
+	# range.
+	"alvoraa_joiner_document_days": 30,
+
+	# ── the employer's own notice (counsel 6, ruling 1) ─────────────────────
+	#
+	# The employer is the Data Fiduciary; we are the Processor. So the words a
+	# joiner reads before the first question are the employer's, not ours, and
+	# they ship EMPTY. **The joiner page refuses to render without them and HR
+	# cannot make a sign-in without them** - which makes the notice a
+	# precondition without inventing a new precondition mechanism.
+	"alvoraa_joiner_notice_text": "",
+
+	# ── the employer's own HR contact ───────────────────────────────────────
+	#
+	# These two have been READ by the joiner page since slice 078
+	# (`joiner_public._hr_contact`) and written by NOTHING but tests - so at
+	# every real tenant the page would have refused to render for ever. They
+	# join the settings screen here.
+	#
+	# NOT access-granting: a phone number is HR's own detail, not a decision
+	# about who sees whom, so HR Manager may set it like any other cover
+	# setting.
+	"alvoraa_hr_contact_phone": "",
+	"alvoraa_hr_contact_email": "",
 }
 
 # Slice 012 F1 (SEC-18): the keys that hand out privilege on the org chart.
@@ -207,6 +263,23 @@ ACCESS_GRANTING = frozenset({
 	# It decides whether a face goes out to every colleague by email, which is
 	# exactly the kind of decision this set exists for.
 	"alvoraa_photo_in_emails",
+	# Slice 079 (079-SEC-1, 079-PRIV-1, 079-PRIV-3). The four tick lists decide
+	# what a stranger is asked for and what they cannot send the form without;
+	# the document clock decides when an identity document is destroyed; the
+	# notice text is what the joiner reads before the first question and is
+	# legally the employer's own words. Every one of them is the same kind of
+	# decision as the lists above, so each gets the same treatment for free:
+	# System Manager only, anybody else refused and logged, and a Version row
+	# in the same transaction.
+	#
+	# `alvoraa_hr_contact_phone` and `_email` are deliberately NOT here: a
+	# phone number is HR's own detail, not a decision about who sees whom.
+	"alvoraa_joiner_fields",
+	"alvoraa_joiner_required_fields",
+	"alvoraa_my_profile_required_fields",
+	"alvoraa_joiner_required_documents",
+	"alvoraa_joiner_document_days",
+	"alvoraa_joiner_notice_text",
 })
 
 # Which rule id a refusal and a change are logged under. Slice 012's four keys
@@ -223,6 +296,12 @@ RULE_FOR_KEY = {
 	"alvoraa_joiner_form_on": "078-SEC-5",
 	"alvoraa_joiner_link_days": "078-SEC-5",
 	"alvoraa_photo_in_emails": "078-PRIV-1",
+	"alvoraa_joiner_fields": "079-SEC-1",
+	"alvoraa_joiner_required_fields": "079-SEC-1",
+	"alvoraa_my_profile_required_fields": "079-SEC-1",
+	"alvoraa_joiner_required_documents": "079-SEC-1",
+	"alvoraa_joiner_document_days": "079-PRIV-1",
+	"alvoraa_joiner_notice_text": "079-PRIV-3",
 }
 DEFAULT_RULE = "SEC-18"
 
@@ -278,8 +357,26 @@ LABELS = {
 		"Off by default. It opens the only page in this product a person without a login can write to."),
 	"alvoraa_photo_in_emails": ("Include photographs in birthday and anniversary emails",
 		"Off by default. Email is the one place a person cannot see, check or recall who received their picture."),
-	"alvoraa_joiner_link_days": ("How long an invite link works",
-		"In days, counted from when HR sends it. Seven by default. Longer suits a joiner who starts next month."),
+	"alvoraa_joiner_link_days": ("How long a joiner's sign-in works",
+		"In days, counted from when HR makes it. Seven by default. Longer suits a joiner who starts next month."),
+	# Slice 079. PLAIN WORDS again, and each says which surface it decides,
+	# because "required" means two different things on the two screens.
+	"alvoraa_joiner_fields": ("Details a new joiner is asked for",
+		"Ships empty, so nothing is asked of anybody until you tick it. The same six details an employee may correct about themselves."),
+	"alvoraa_joiner_required_fields": ("Details a joiner must fill in before they can send",
+		"A subset of the line above. On the joiner's form, required stops the form being sent."),
+	"alvoraa_my_profile_required_fields": ("Details you keep asking an employee for",
+		"Marked Needed on their own page every visit. It never stops them saving - blocking would lock somebody out of correcting their own phone number."),
+	"alvoraa_joiner_required_documents": ("Documents a joiner must answer for",
+		"They can send a photograph, or say they will bring it on their first day. Both are answers."),
+	"alvoraa_joiner_document_days": ("How long we keep a photograph of an identity card",
+		"In days. Much shorter than the line above, because an identity document is not a candidate record. Between 30 and 60."),
+	"alvoraa_joiner_notice_text": ("What you tell a joiner before the first question",
+		"Your own words: why you are asking, what you do with it, who to contact. A joiner cannot be asked anything until this is set."),
+	"alvoraa_hr_contact_phone": ("A phone number a joiner can reach you on",
+		"Yours, not ours. It is printed on every screen a joiner sees, and they cannot be asked anything until it is set."),
+	"alvoraa_hr_contact_email": ("An email address a joiner can reach you on",
+		"Yours, not ours. Either this or the phone number above is enough."),
 }
 
 
@@ -376,11 +473,40 @@ def _set_access_setting(key, value):
 	# refused rather than read as "never delete", which is the semantic the
 	# check-in photo setting uses and the one thing counsel's September policy
 	# rules out.
+	# Slice 079 (079-SEC-1, AC-40). A "must fill in" list may only ever name a
+	# detail that is actually ASKED FOR. Refused here, and intersected again at
+	# every reader - the second half is the only one that survives a future UI,
+	# and it is what makes AC-40's "that name is ignored" true however the value
+	# reached `DefaultValue`.
+	_REQUIRED_WITHIN = {
+		"alvoraa_joiner_required_fields": "alvoraa_joiner_fields",
+		"alvoraa_my_profile_required_fields": "alvoraa_my_profile_fields",
+	}
+	if key in _REQUIRED_WITHIN:
+		asked = set(people_fields.allowed(
+			_REQUIRED_WITHIN[key], frappe.db.get_default(_REQUIRED_WITHIN[key])))
+		outside = tuple(sorted({v.strip() for v in cstr(value).split(",") if v.strip()}
+		                       - asked))
+		if outside:
+			refuse(
+				_("These cannot be compulsory, because they are not being asked "
+				  "for at all: {0}. Add them to the list of details first.")
+				.format(", ".join(outside)),
+				rule,
+				endpoint,
+				"DefaultValue",
+				key,
+			)
+
 	_DAYS = {
 		# counsel's own range
 		"alvoraa_joiner_not_hired_days": (180, 365),
 		"alvoraa_joiner_backstop_days": (1, 365),
 		"alvoraa_joiner_warn_days": (1, 364),
+		# Counsel's SECOND clock (ruling 4): an identity document goes much
+		# sooner than the record. 30 to 60 days against 180 to 365, which is why
+		# this is a second key and not a second reading of the first one.
+		"alvoraa_joiner_document_days": (30, 60),
 	}
 	if key in _DAYS:
 		low, high = _DAYS[key]
@@ -396,17 +522,23 @@ def _set_access_setting(key, value):
 		# The warning has to come BEFORE the deletion it warns about, or it is
 		# not a warning. Checked against what is stored, not against a default,
 		# so changing either one in either order cannot leave them crossed.
-		warn = int(raw) if key == "alvoraa_joiner_warn_days" else cint(get("alvoraa_joiner_warn_days"))
-		stop = int(raw) if key == "alvoraa_joiner_backstop_days" else cint(get("alvoraa_joiner_backstop_days"))
-		if warn >= stop:
-			refuse(
-				_("The warning must come before the deletion: {0} days is not "
-				  "less than {1}.").format(warn, stop),
-				rule,
-				endpoint,
-				"DefaultValue",
-				key,
-			)
+		#
+		# Only those two keys are in that relationship. The DOCUMENT clock has
+		# no warning of its own: OQ-6 settled that HR is told AT the deletion,
+		# because a pre-warning needs a second setting and a second stamp field
+		# and HR already has legal hold and a visible row.
+		if key in ("alvoraa_joiner_warn_days", "alvoraa_joiner_backstop_days"):
+			warn = int(raw) if key == "alvoraa_joiner_warn_days" else cint(get("alvoraa_joiner_warn_days"))
+			stop = int(raw) if key == "alvoraa_joiner_backstop_days" else cint(get("alvoraa_joiner_backstop_days"))
+			if warn >= stop:
+				refuse(
+					_("The warning must come before the deletion: {0} days is not "
+					  "less than {1}.").format(warn, stop),
+					rule,
+					endpoint,
+					"DefaultValue",
+					key,
+				)
 
 	# The switch itself. 0 or 1, nothing else - a typo must not read as "on"
 	# for the only page in this product a person without a login can write to.

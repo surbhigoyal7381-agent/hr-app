@@ -31,6 +31,11 @@ before_request = [
     # permissions. Every path, "/" with cmd included. See request_guard.py.
     "alvoraa_portal.request_guard.drop_permission_skips",
     "alvoraa_portal.auth.lock_until_password_chosen",
+    # Slice 079 (079-SEC-3): a new joiner's sign-in opens their joining
+    # form and nothing else. The same shape as the line above and the
+    # OPPOSITE failure mode - it fails CLOSED. See
+    # alvoraa_portal.auth.lock_to_the_joining_page.
+    "alvoraa_portal.auth.lock_to_the_joining_page",
     # The bare "/" again. The get_website_user_home_page hook below is
     # asked fourth and can be overruled by a default workspace, so it is
     # not enough on its own. See auth.route_the_bare_root.
@@ -592,6 +597,9 @@ after_migrate = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.crm_steps.ensure_task_label_field",
+    # Slice 080: the "Alternative number" field. Before the line below, so the
+    # field exists by the time field rights are applied. See alternative_number.py.
+    "alvoraa_portal.alternative_number.after_migrate",
     # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
     # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
     # reset in Role Permission Manager is put right. See employee_field_rights.py.
@@ -650,6 +658,9 @@ after_install = [
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
     "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.email_brand.after_install",
+    # Slice 080: same as after_migrate, and this is the half that matters - a
+    # patch would never run here, so a new tenant would not have the field.
+    "alvoraa_portal.alternative_number.after_migrate",
     # ALV-215: same as after_migrate - a new tenant must not start open.
     "alvoraa_portal.employee_field_rights.apply",
     # Slice 076: the Notice Sender role without desk access. Frappe makes it

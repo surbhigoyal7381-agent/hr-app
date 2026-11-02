@@ -28,6 +28,8 @@ import hrms.alvoraa_org_structure.settings as org_settings
 from frappe import _
 from frappe.utils import cint
 
+from alvoraa_portal.joiner_invite import what_the_employer_has_not_set
+
 POSITION = "Alvoraa Position"
 DOC_TYPE = "Employee Document Type"
 
@@ -40,6 +42,22 @@ WARN_KEY = "alvoraa_joiner_warn_days"
 FORM_ON_KEY = "alvoraa_joiner_form_on"
 LINK_KEY = "alvoraa_joiner_link_days"
 EMAIL_PHOTO_KEY = "alvoraa_photo_in_emails"
+# Slice 079. The joiner section stops being facts only: 078 DECISION B made it
+# a read-only panel because the Web Form owned the joiner's field list, and
+# decision 5 reverses that - the tick is ours now, so the fourth picker is
+# built, with its own "must fill in" tick inside it.
+JOINER_FIELDS_KEY = "alvoraa_joiner_fields"
+JOINER_REQUIRED_KEY = "alvoraa_joiner_required_fields"
+MY_REQUIRED_KEY = "alvoraa_my_profile_required_fields"
+JOINER_DOCS_KEY = "alvoraa_joiner_required_documents"
+DOCUMENT_DAYS_KEY = "alvoraa_joiner_document_days"
+NOTICE_KEY = "alvoraa_joiner_notice_text"
+# The employer's own contact. Read by every joiner screen since 078 and written
+# by nothing but a test, so at every real tenant that page would have refused to
+# render for ever. NOT access-granting: a phone number is HR's own detail, not a
+# decision about who sees whom.
+HR_PHONE_KEY = "alvoraa_hr_contact_phone"
+HR_EMAIL_KEY = "alvoraa_hr_contact_email"
 
 # A document of one of these categories is an identity, statutory or
 # background-check paper. Ticking one puts the FILE itself one click from a
@@ -67,6 +85,9 @@ def get_people_settings():
 
 	chosen_docs = _chosen_docs()
 	audience = position_readers()
+	joiner_asked, joiner_required = people_fields.asked_and_required(
+		JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY)
+	_my_asked, my_required = people_fields.asked_and_required(MY_KEY, MY_REQUIRED_KEY)
 	return {
 		"profile_fields": list(people_fields.allowed(
 			PROFILE_KEY, frappe.db.get_default(PROFILE_KEY))),
@@ -93,8 +114,49 @@ def get_people_settings():
 		"warn_days": org_settings.get(WARN_KEY),
 		"joiner_form_on": bool(cint(org_settings.get(FORM_ON_KEY))),
 		"photo_in_emails": photo_in_emails(),
+		# ── slice 079 ──────────────────────────────────────────────────────
+		# Both ticked lists for each surface, and `required` is always a SUBSET
+		# of `asked`, computed by the one helper both readers use. A name on a
+		# required list that is not being asked for is dropped here as well as
+		# refused at the setter - which is the half that survives a future UI.
+		"joiner_fields": list(joiner_asked),
+		"joiner_required_fields": list(joiner_required),
+		"my_profile_required_fields": list(my_required),
+		# The candidate list is `MY_PROFILE_WRITE_FIELDS` BY IDENTITY, for all
+		# three ticks, so a third list cannot appear and drift from the six the
+		# code actually allows. The prototype drew sixteen rows - including bank
+		# account and IFSC - and the drawing was wrong, not the code: offering
+		# those would give an employee self-service write on their own bank
+		# details (decision 6b).
+		"joiner_choices": list(people_fields.MY_PROFILE_WRITE_FIELDS),
+		"joiner_required_documents": _joiner_required_documents(),
+		"document_days": org_settings.get(DOCUMENT_DAYS_KEY),
+		"notice_text": frappe.db.get_default(NOTICE_KEY) or "",
+		"hr_contact_phone": frappe.db.get_default(HR_PHONE_KEY) or "",
+		"hr_contact_email": frappe.db.get_default(HR_EMAIL_KEY) or "",
+		# What HR cannot invite anybody until somebody sets. The same list the
+		# refusal names, from the same function, so the card and the refusal
+		# can never disagree.
+		"joiner_not_ready": [m["what"] for m in what_the_employer_has_not_set()],
 		"last_changed": _last_changed(),
 	}
+
+
+def _joiner_required_documents():
+	"""The compulsory document types, intersected with the ones actually ticked.
+
+	Marking a type compulsory can never ADD a type to the joiner's form.
+	"""
+	from alvoraa_portal.employee_documents_read import ticked_types
+
+	wanted = {v.strip() for v in
+	          str(frappe.db.get_default(JOINER_DOCS_KEY) or "").split(",")
+	          if v.strip()}
+	try:
+		offered = set(ticked_types())
+	except Exception:
+		offered = set()
+	return sorted(wanted & offered)
 
 
 @frappe.whitelist()
@@ -222,7 +284,10 @@ def set_people_setting(key=None, value=None):
 	twice.
 	"""
 	if key not in (PROFILE_KEY, DOCS_KEY, MY_KEY, LINK_KEY, EMAIL_PHOTO_KEY,
-	               NOT_HIRED_KEY, BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY):
+	               NOT_HIRED_KEY, BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY,
+	               JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY, MY_REQUIRED_KEY,
+	               JOINER_DOCS_KEY, DOCUMENT_DAYS_KEY, NOTICE_KEY,
+	               HR_PHONE_KEY, HR_EMAIL_KEY):
 		from hrms.alvoraa_hr_core.access import refuse
 
 		refuse(_("That setting cannot be changed here."), "078-SEC-5",
@@ -240,7 +305,10 @@ def _last_changed():
 		filters={"ref_doctype": "DefaultValue",
 		         "docname": ("in", [PROFILE_KEY, DOCS_KEY, MY_KEY, LINK_KEY,
 		                            EMAIL_PHOTO_KEY, NOT_HIRED_KEY,
-		                            BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY])},
+		                            BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY,
+		                            JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY,
+		                            MY_REQUIRED_KEY, JOINER_DOCS_KEY,
+		                            DOCUMENT_DAYS_KEY, NOTICE_KEY])},
 		fields=["owner", "creation"], order_by="creation desc", limit=1)
 	if not rows:
 		return {"by": "", "on": ""}

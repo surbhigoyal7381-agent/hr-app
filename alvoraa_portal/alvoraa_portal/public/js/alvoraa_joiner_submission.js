@@ -1,4 +1,4 @@
-/* Three buttons on the joiner submission form (slice 078, step 6).
+/* Three buttons on the joiner submission form (slice 078 step 6, 079).
  *
  * Desk, not a new portal screen: HR reviews a submission here, HR Manager
  * already has Desk, and a second screen for three actions would be a surface
@@ -13,14 +13,23 @@
  */
 frappe.ui.form.on("Alvoraa Joiner Submission", {
 	refresh(frm) {
-		/* The link is shown ONCE, by the call that makes it, and is stored
-		   nowhere we can read back - our submit path deletes the row holding
-		   Frappe's key the moment it is used. If HR loses it, they cancel and
-		   issue another. */
+		/* The password is shown ONCE, by the call that makes it, and is
+		   stored nowhere we can read back: Frappe's own password store is the
+		   only copy. If HR loses it, they cancel and make another. */
 		if (frm.is_new()) return;
 
-		if (frm.doc.status === "Invited" && !frm.doc.web_form_request) {
-			frm.add_custom_button(__("Make the link"), () => invite(frm));
+		/* Said on the form rather than left to a refusal: the button is
+		   absent until HR has typed what the person will sign in with. An
+		   absent control is an answer; a control that refuses is a guess. */
+		if (frm.doc.status === "Invited" && !frm.doc.user && !frm.doc.login_id) {
+			frm.dashboard.add_comment(
+				__("Type the mobile number or email you reached this person on, in "
+				 + "“Signs in with”, and save. Then you can make their sign-in."),
+				"orange", true);
+		}
+
+		if (frm.doc.status === "Invited" && !frm.doc.user && frm.doc.login_id) {
+			frm.add_custom_button(__("Make the sign-in"), () => makeSignIn(frm));
 		}
 
 		if (["Invited", "Submitted"].includes(frm.doc.status)) {
@@ -31,7 +40,7 @@ frappe.ui.form.on("Alvoraa Joiner Submission", {
 						label: __("Why"),
 						options: ["By HR", "The joiner is not coming",
 						          "Sent to the wrong person",
-						          "A newer link was made"].join("\n"),
+						          "A newer sign-in was made"].join("\n"),
 					}],
 					(v) => frappe.call({
 						method: "alvoraa_portal.joiner_invite.cancel_invite",
@@ -77,24 +86,63 @@ frappe.ui.form.on("Alvoraa Joiner Submission", {
 	},
 });
 
-function invite(frm) {
+/* The six-line message HR sends, shown ONCE (01b §3, M1 and M2).
+ *
+ * It is designed rather than left to whoever writes the SMS template, because a
+ * joiner's whole experience of us begins as six lines of text on a lock screen.
+ * Each line earns its place: a short typeable address, the thing they already
+ * carry as a username, a password they can read off paper or down a telephone,
+ * a weekday and a date rather than "7 days", and a named person with a phone
+ * number.
+ *
+ * The password is in no log line, no Version row and no field, and there is no
+ * endpoint that reads it back. If HR loses it they cancel and make another,
+ * which leaves a cleaner trail than a reissue.
+ */
+function makeSignIn(frm) {
 	frappe.call({
-		method: "alvoraa_portal.joiner_invite.invite_joiner",
-		args: { full_name: frm.doc.full_name },
+		method: "alvoraa_portal.joiner_invite.make_sign_in",
+		args: { submission: frm.doc.name },
 		freeze: true,
 	}).then((r) => {
 		const d = (r && r.message) || {};
-		/* Shown once, and selectable so HR can copy it. Email is the only
-		   channel this product has, and a copyable link covers the rest. */
+		const esc = frappe.utils.escape_html;
+		const who = frappe.session.user_fullname || "";
+		const contact = [(d.contact || {}).phone, (d.contact || {}).email]
+			.filter(Boolean).join(" or ");
+		const finishBy = d.expires_on
+			? frappe.datetime.str_to_user(d.expires_on) : "";
+		const message = [
+			`${frappe.boot.sysdefaults.company || ""} — ${__("before your first day")}`,
+			"",
+			__("Please fill in a few details before you start. About 5 minutes on your phone."),
+			"",
+			`${__("Open")}:          ${d.address || ""}`,
+			`${__("Sign in with")}:  ${d.username || ""}`,
+			`${__("Password")}:      ${d.password || ""}`,
+			"",
+			`${__("Finish by")} ${finishBy}.`,
+			__("Keep this message — you need it if you stop and come back."),
+			"",
+			`${__("Questions")}: ${who}${contact ? ", " + contact : ""}`,
+		].join("\n");
+
 		frappe.msgprint({
-			title: __("Send this link to the joiner"),
+			title: __("{0} can now sign in", [frm.doc.full_name || ""]),
 			indicator: "green",
-			message: `<p>${__("It works for {0} days and only once.", [d.link_days])}</p>
-				<p><textarea readonly rows="3"
+			message: `
+				<p><b>${__("You will not see this password again.")}</b> ${__(
+					"Send these lines however you already reach this person — a text "
+					+ "message, WhatsApp, or printed on a slip. If it is lost there is "
+					+ "nothing to look up: cancel this invite and make another.")}</p>
+				<p><textarea readonly rows="13"
 				   style="width:100%;font-family:monospace;font-size:12px"
-				   onclick="this.select()">${frappe.utils.escape_html(d.link || "")}</textarea></p>
-				<p class="text-muted">${__("This is the only time it is shown. "
-				 + "If it is lost, cancel this invite and make another.")}</p>`,
+				   onclick="this.select()">${esc(message)}</textarea></p>
+				<p>${__("Copy it with Ctrl+C after clicking in the box.")}</p>
+				<p class="text-muted"><b>${__("She cannot see anything else.")}</b> ${__(
+					"This sign-in opens their own form and nothing else here. They are "
+					+ "not an employee, not in your headcount, not on the organisation "
+					+ "chart, and not a paid seat until they start.")}</p>`,
 		});
 		frm.reload_doc();
 	});

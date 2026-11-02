@@ -801,6 +801,27 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 /* The widget. On the page surface, so ordinary tokens apply. */
 .dw{background:var(--surface);border:1px solid var(--border);
   border-radius:var(--r);overflow:hidden}
+/* **The two columns under the head.** Equal halves, because the point was
+   that one full-width stack read too wide. `1fr 1fr` rather than `auto` so
+   the divider sits in the middle whatever the lists happen to hold today.
+   `min-width:0` lets a long line wrap instead of pushing the column open.
+
+   The breakpoint is 1023px, the one `.home-grid` already collapses at, so the
+   whole Home page goes to one column at the same width rather than this card
+   alone deciding when the page is narrow. */
+.dw-cols{display:grid;grid-template-columns:1fr 1fr;align-items:stretch}
+.dw-col{min-width:0}
+.dw-col-ref{border-left:1px solid var(--border)}
+/* The blocks carry their own bottom rule, which on the last one of a column
+   would be a line stopping halfway across the card. */
+.dw-col>:last-child{border-bottom:0}
+@media(max-width:1023px){
+  .dw-cols{grid-template-columns:1fr}
+  /* Stacked, the divider has to turn with them, and the block that is now
+     above the fold gets its rule back. */
+  .dw-col-ref{border-left:0;border-top:1px solid var(--border)}
+  .dw-col:first-child>:last-child{border-bottom:1px solid var(--border)}
+}
 .dw-head{padding:13px 18px;border-bottom:1px solid var(--border);
   background:var(--surface2)}
 .dw-title{font-size:var(--fs-md);font-weight:700;color:var(--text)}
@@ -2768,6 +2789,58 @@ body.panel-fullscreen{overflow:hidden}
   .myp-face .myp-ini{font-size:var(--fs-xl)}
 }
 
+/* ── Slice 079: two columns, and the amber "Needed" marks ─────────────────
+   Surbhi, 1 Nov 2026: "isn't it too wide in desktop, can we put two tiles side
+   by side. Your details and Your documents. in case someone zooms the screen
+   the tile should drop the next row." She is right: measured on a 1400 px
+   window, the mobile-number box on this page was **1280 px wide for a
+   ten-digit answer**. It is 430 px now.
+
+   **There is no media query and no breakpoint here, and that is the design.**
+   `auto-fit` + `minmax` IS the breakpoint: the grid takes as many columns as
+   fit at 26em each, so it falls to one column for a narrow window, a zoomed-in
+   page and a split screen from ONE rule.
+
+   `min(26em, 100%)` and not a bare `26em`: a bare minimum track cannot shrink
+   below itself, so at 195 px - the 200%-text case - the grid was 338 px wide
+   inside a 195 px app box and pushed the page sideways. Measured, not guessed.
+
+   The 36em cap on each child is what stops a LONE tile sprawling across the
+   row, which is the thing she said must not happen: `auto-fit` collapses an
+   empty track, so the survivor would otherwise stretch the whole width.
+
+   `align-items:start` means NOTHING STRETCHES. The columns are unequal on
+   purpose - the balance changes with every person's record - and the space
+   under the shorter one reads as page rather than as a card that failed to
+   fill. The failure mode would be a card stretched to match its neighbour.
+
+   There is deliberately no `order:` override: the reflow order is SOURCE order
+   (details, documents, password), and a CSS order that disagrees with the DOM
+   is an accessibility fault waiting to happen. */
+.myp-two-up{display:grid;gap:16px;align-items:start;
+  grid-template-columns:repeat(auto-fit,minmax(min(26em,100%),1fr))}
+.myp-two-up>*{max-width:36em;width:100%;min-width:0}
+/* The right cell holds TWO cards. A flex stack inside the same grid cell, so
+   there is no second layout mechanism: the grid still decides how many columns
+   there are and the stack only decides what is in one of them. Each card keeps
+   its own border and its bottom margin is dropped for the stack's gap, so it
+   never reads as one card with two headings. */
+.myp-stack{display:flex;flex-direction:column;gap:16px}
+.myp-stack>*{margin-bottom:0}
+
+/* The word is "Needed", here and on the joiner's form - never "mandatory" on
+   one screen and "required" on the other. The same person meets both inside a
+   week, so the difference between the two rules has to read as a rule.
+   Colour is never the only signal: the chip has the word on it. */
+.myp-need{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;
+  font-size:var(--fs-xs);font-weight:700;line-height:1.6;
+  background:var(--amber-lt);color:var(--amber);
+  border:1px solid var(--amber)}
+.myp-needed-block{margin:12px 0 0;padding:10px 12px;border-radius:var(--r-sm);
+  font-size:var(--fs-base);line-height:1.55;
+  background:var(--amber-lt);color:var(--amber);
+  border-left:3px solid var(--amber)}
+
 /* ── Faces on the chart and the table, slice 078 ──────────────────────────
    `ocAvatar` now always draws the same circle with the person's initials in
    it and layers the photograph over the top. The sizes stay exactly where
@@ -2856,7 +2929,7 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 /* NOTHING IN THE DRAWER PRINTS - slices 065 and 069 already set that for the
    whole layer; said again here so a future change to this drawer cannot
    quietly put a face or a document on a printed page. */
-@media print{.emp-drawer,.emp-drawer-overlay,.mpf-big{display:none!important}}
+@media print{.emp-drawer,.emp-drawer-overlay,.mpf-big,.mpf-dv{display:none!important}}
 
 /* ── "What people can see and change about each other", slice 078 ─────────
    Prefix ocs. The card follows the ten pf-cards already on Organisation
@@ -2964,7 +3037,8 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 /* ── Documents on a person's profile, slice 078 ───────────────────────────
    The row shape `loadMyDocuments` already uses on the employee's own card -
    type, status, View - so a reader and the employee see the same kind of row
-   for the same thing. No inline preview, no thumbnail, no download-all. */
+   for the same thing. No thumbnail in the row and no download-all; View shows
+   the document - picture or PDF - in `.mpf-dv` below (ALV-287). */
 .mpf-docs{margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)}
 .mpf-dh{margin:0 0 6px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
 .mpf-doc{display:flex;gap:10px;align-items:center;padding:8px 0;
@@ -2974,3 +3048,41 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 /* Slice 065's screen-share link: SESSION ONLY, never remembered, so the next
    time the drawer opens the documents are there again. */
 .mpf-docs.mpf-hidden .mpf-doc{display:none}
+
+/* ── The document on screen, ALV-287 ─────────────────────────────────────────
+   Its OWN fixed overlay, unlike `.mpf-big`, which is absolute INSIDE the
+   drawer at z-index 5. That was a decision, not an oversight: a 240 px
+   photograph fits a 480 px drawer and a scanned A4 page does not, and she
+   asked for a generous size. So it is pinned to the window at 1250 - above the
+   drawer (1101), above the seat tray (1150) and above .gp-backdrop (1200) -
+   and it is listed in scripts/check_portal_trays.js like every other overlay.
+   The scrim value is .emp-drawer-overlay's, not a new one.
+
+   A PDF goes in `.mpf-dv-f`, an iframe with NO sandbox. portal.js's
+   `mpfShowDoc` has the measurements behind that and her reasons for it; it is
+   a decided question, not an oversight. */
+.mpf-dv{position:fixed;inset:0;z-index:1250;background:rgba(0,0,0,.52);
+  display:flex;align-items:center;justify-content:center;padding:24px}
+.mpf-dv-in{display:flex;flex-direction:column;width:min(1040px,100%);
+  height:min(880px,100%);background:var(--surface);border-radius:var(--r);
+  box-shadow:var(--sh3);overflow:hidden}
+.mpf-dv-h{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 16px;border-bottom:1px solid var(--border)}
+.mpf-dv-t{margin:0;font-size:var(--fs-md);font-weight:650;color:var(--text);
+  overflow-wrap:anywhere}
+/* The document gets everything left over. A picture scrolls here if it is
+   taller than the box; a PDF fills the frame and Chrome's own viewer scrolls
+   inside it. */
+.mpf-dv-b{flex:1;min-height:0;overflow:auto;background:var(--bg);display:flex;
+  align-items:center;justify-content:center}
+.mpf-dv-f{width:100%;height:100%;border:0;background:var(--bg)}
+.mpf-dv-i{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.mpf-dv-say{margin:0;padding:10px 16px;border-top:1px solid var(--border);
+  line-height:1.5}
+@media (max-width:640px){
+  /* Full screen on a phone: a margin round an A4 page on a 390 px screen buys
+     nothing and costs the page. */
+  .mpf-dv{padding:0}
+  .mpf-dv-in{border-radius:0}
+  .mpf-dv-h .btn{min-height:44px}
+}

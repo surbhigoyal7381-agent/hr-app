@@ -3,8 +3,8 @@
 Slice 078. Two closed lists and one deny rule, in ONE place, because the whole
 privacy position of that slice rests on them being closed:
 
-  * `POSITIONS_PROFILE_FIELDS` - the ten work facts a Positions reader may be
-    shown about a colleague, if the organisation ticks them.
+  * `POSITIONS_PROFILE_FIELDS` - the eleven work facts a Positions reader may
+    be shown about a colleague, if the organisation ticks them.
   * `MY_PROFILE_WRITE_FIELDS` - the six details an employee may correct on
     their own record, if the organisation ticks them.
   * `NEVER` plus `is_denied()` - what no tick may ever reach, whatever a
@@ -36,10 +36,15 @@ import frappe
 # the staff directory, or in a team page - this list says which of them may
 # appear on ONE more screen, not that anything new becomes visible.
 #
-# "Work phone" is deliberately absent: Employee has no such field (checked in
-# erpnext's employee.json, and `staff_api.py:69-71` says so in its own comment
-# from the last time somebody asked). `cell_number` is labelled "Mobile" and is
-# personal, so it is not a substitute. Ten, not eleven.
+# **Eleven since slice 080, and the eleventh has a decision behind it.** The
+# comment that used to be here said Employee has no work-phone field and that
+# adding one was a decision for Surbhi. **She made it on 2 November 2026:**
+# `alvoraa_alternative_number`, labelled "Alternative number" - her words, she
+# rejected "Work phone" - created by `alvoraa_portal/alternative_number.py` and
+# held at permlevel 2, so HR fills it in and the employee cannot.
+#
+# `cell_number` is still not a substitute and is still not here: it is labelled
+# "Mobile" and it is the person's own number, not one the company hands out.
 POSITIONS_PROFILE_FIELDS = (
 	"designation",
 	"department",
@@ -51,6 +56,7 @@ POSITIONS_PROFILE_FIELDS = (
 	"date_of_joining",
 	"default_shift",
 	"company_email",
+	"alvoraa_alternative_number",
 )
 
 # ── the six details an employee may correct about themselves ─────────────────
@@ -133,6 +139,21 @@ def is_denied(fieldname):
 LIST_KEYS = {
 	"alvoraa_positions_profile_fields": POSITIONS_PROFILE_FIELDS,
 	"alvoraa_my_profile_fields": MY_PROFILE_WRITE_FIELDS,
+	# Slice 079. All three are the SAME SIX as My Profile, by identity rather
+	# than by copy (079 AC-104), so a third candidate list cannot appear and
+	# drift away from the one the code actually allows.
+	#
+	# **HR-only fields are excluded, and the reason is `01c` §6's, not the old
+	# one.** A joiner holds no write right on `Employee` at any level, so the
+	# intersection `candidate ∩ has_permlevel_access_to(write)` is the empty set
+	# for them, and admitting one would be a hard-coded exception for the
+	# least-trusted principal in the system. The sentence this used to be
+	# justified by - "there is no permission level on a path opened without a
+	# login" - is FALSE now that the joiner has a login, and must not be quoted
+	# again.
+	"alvoraa_joiner_fields": MY_PROFILE_WRITE_FIELDS,
+	"alvoraa_joiner_required_fields": MY_PROFILE_WRITE_FIELDS,
+	"alvoraa_my_profile_required_fields": MY_PROFILE_WRITE_FIELDS,
 }
 
 
@@ -156,6 +177,23 @@ def off_list(key, raw):
 	whitelist = set(LIST_KEYS[key])
 	return tuple(sorted({v.strip() for v in str(raw or "").split(",") if v.strip()}
 	                    - whitelist))
+
+
+def asked_and_required(asked_key, required_key):
+	"""Slice 079: what is asked, and which of it is compulsory.
+
+	Two intersections, in order, and the second one is the point: a name on the
+	required list that is **not** being asked for is dropped, so a required mark
+	can never widen what may be asked or written (078-SEC-18, 079 AC-40). The
+	setter refuses it too, but a value written straight into `DefaultValue` by
+	any other route has to produce nothing - that is the half that survives a
+	future UI.
+
+	Returns (asked, required), both in allow-list order.
+	"""
+	asked = allowed(asked_key, frappe.db.get_default(asked_key))
+	wanted = set(allowed(required_key, frappe.db.get_default(required_key)))
+	return asked, tuple(f for f in asked if f in wanted)
 
 
 # ── the 48 px copy ───────────────────────────────────────────────────────────

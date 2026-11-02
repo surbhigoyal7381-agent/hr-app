@@ -294,6 +294,47 @@ def _may_review():
 	return bool(frappe.has_permission(REQUEST, "submit"))
 
 
+def _refuse_outside_scope(employee, endpoint, name=None):
+	"""Refuse, and log it, when this employee is outside what the caller looks after.
+
+	**ONE DEFINITION FOR THE TWO SURFACES THAT ASK IT.** `_subject` asks before
+	it will name an employee, and `decide` asks before it will judge their
+	request. They were drifting apart the moment there were two of them, which
+	is the whole lesson of ALV-259: the picker was fenced and the endpoint
+	beside it was not.
+
+	**Why this is asked AS WELL AS Frappe's own permission check.** Frappe can
+	only narrow by User Permissions, and on every tenant we run the HR logins
+	hold none - so Frappe answers "yes, anybody". Our own entitlement is
+	stricter: `permitted_companies` falls back to the company on the caller's
+	own Employee record, which is what the HR queue is already narrowed by. Ask
+	Frappe alone and the screen shows one company while the endpoint accepts
+	any request name typed at it.
+
+	**Narrowed only where there is an entitlement to narrow by**, and the branch
+	is asked separately. Both conditions are `team_days`', for the reasons given
+	there: a tenant's central HR login has no companies and the helper fails
+	closed, and `permitted_companies` falling back to an ACTIVE Employee record
+	means a leaver would otherwise GAIN the whole site.
+
+	Logged as SEC-17, the code `attendance_analytics` already uses for "you can
+	only see your own branches" - the same question, one module over.
+	"""
+	from hrms.alvoraa_hr_core.access import (employee_in_scope, permitted_branches,
+	                                         permitted_companies, refuse)
+
+	outside = None
+	if permitted_companies():
+		outside = not employee_in_scope(employee)
+	else:
+		branches = permitted_branches()
+		if branches is not None:
+			outside = frappe.db.get_value("Employee", employee, "branch") not in branches
+	if outside:
+		refuse(_("That employee is outside the companies and branches you look "
+		         "after."), "SEC-17", endpoint, REQUEST, name)
+
+
 def _subject(employee):
 	"""Whose month is being asked for, and a refusal when it is not theirs to see.
 
@@ -334,22 +375,7 @@ def _subject(employee):
 		# applies no permissions, so without this a store's HR person could put
 		# a name to any employee ID on the site - and `raise_for_report` and the
 		# team page's one-person filter both come through here.
-		#
-		# The condition, and the separate branch question, are `team_days`'.
-		from hrms.alvoraa_hr_core.access import (employee_in_scope, permitted_branches,
-		                                         permitted_companies)
-
-		outside = None
-		if permitted_companies():
-			outside = not employee_in_scope(employee)
-		else:
-			branches = permitted_branches()
-			if branches is not None:
-				outside = frappe.db.get_value("Employee", employee,
-				                              "branch") not in branches
-		if outside:
-			frappe.throw(_("That employee is outside the companies and branches "
-			               "you look after."), frappe.PermissionError)
+		_refuse_outside_scope(employee, "attendance_correction._subject")
 
 	subject = frappe.db.get_value("Employee", employee,
 	                              ["name", "employee_name", "company", "default_shift",
@@ -1004,6 +1030,25 @@ def withdraw(name):
 		frappe.throw(_("That request is not yours."), frappe.PermissionError)
 	if doc.docstatus != 0:
 		frappe.throw(_("HR has already decided this one, so it cannot be withdrawn."))
+	# **A DECLINE IS A DECISION, AND IT STAYS A DRAFT (ALV-275).** Frappe will
+	# not move a draft to cancelled, so `decide` leaves a declined request at
+	# docstatus 0 with HR's reason on it - which the check above cannot see.
+	# Without this the employee who raised it could withdraw their own refusal:
+	# the `db_set` below would overwrite "Declined" with "Withdrawn" and put
+	# their own name in `alvoraa_reviewed_by` over HR's, leaving HR's note on a
+	# record that says the employee took it back. The decision would vanish and
+	# the row would contradict itself.
+	#
+	# Asked through `DONE_STATES`, the module's one definition of "stopped
+	# waiting" - the HR queue below already asks it, and it is read at call
+	# time, so being defined further down the file is fine.
+	if doc.get("alvoraa_review_status") in DONE_STATES:
+		if doc.get("alvoraa_review_status") == "Declined":
+			# Says what happened, and what to do next - the day may still be
+			# wrong, and a fresh request is how they say so.
+			frappe.throw(_("HR has already declined this one, so it cannot be "
+			               "withdrawn. Raise it again if the day is still wrong."))
+		frappe.throw(_("You have already withdrawn this one."))
 	doc.db_set({"alvoraa_review_status": "Withdrawn",
 	            "alvoraa_reviewed_by": frappe.session.user,
 	            "alvoraa_reviewed_on": frappe.utils.now()}, update_modified=False)
@@ -1555,6 +1600,40 @@ def decide(name, approve, note=None):
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
 
 	doc = frappe.get_doc(REQUEST, name)
+	# **TWO QUESTIONS, BECAUSE ONE OF THEM IS NOT ENOUGH (ALV-269).**
+	#
+	# `get_doc` above makes no read check, and `db_set` on the decline path
+	# makes none either, so anybody holding the submit permission could decline
+	# any employee's draft by naming it - the names are sequential - and read
+	# the explanation back out of the return value. Approving was never exposed,
+	# because `submit()` asks the first question below itself. The asymmetry was
+	# the original fault.
+	#
+	# FIRST: may they submit THIS document? `_may_review` only asked whether
+	# they may submit AN Attendance Request. This applies the tenant's own User
+	# Permissions, which is exactly what `submit()` does, so decline can never
+	# be more permissive than approve.
+	#
+	# Asked as `has_permission` and refused by hand, not as `check_permission`.
+	# Frappe raises `PermissionError` with NO message, and nothing on the client
+	# reads the field it puts the sentence in - the reviewer would have been
+	# told "Something went wrong at the office", and nothing would have been
+	# logged. `refuse` gives them a sentence and writes the SEC-17 line, so a
+	# probe leaves a trace.
+	#
+	# SECOND: are they entitled to this employee at all? Frappe can only narrow
+	# by User Permissions, and our HR logins hold none, so the first question
+	# answers "yes, anybody" on every tenant we run. The HR queue beside this is
+	# narrowed by `permitted_companies`, so without the second question the
+	# screen shows one company and the endpoint accepts any name - ALV-259's
+	# fault again, one surface over.
+	from hrms.alvoraa_hr_core.access import refuse
+
+	if not doc.has_permission("submit"):
+		refuse(_("You cannot decide that request. Ask HR if it should be yours "
+		         "to decide."), "SEC-17", "attendance_correction.decide",
+		       REQUEST, name)
+	_refuse_outside_scope(doc.employee, "attendance_correction.decide", name)
 	# Approve and decline alike: deciding your own correction is not a review.
 	# The before_submit hook repeats this for the desk and the REST API.
 	from hrms.alvoraa_hr_core.access import refuse_own_decision

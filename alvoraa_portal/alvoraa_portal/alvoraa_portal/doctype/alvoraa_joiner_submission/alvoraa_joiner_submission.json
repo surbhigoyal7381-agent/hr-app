@@ -10,6 +10,8 @@
   "full_name",
   "column_break_who",
   "invited_by",
+  "login_id",
+  "user",
   "expires_on",
   "submitted_at",
   "details_section",
@@ -29,8 +31,7 @@
   "closed_on",
   "warned_on",
   "erased_on",
-  "erased_why",
-  "web_form_request"
+  "erased_why"
  ],
  "fields": [
   {
@@ -66,11 +67,26 @@
    "reqd": 1
   },
   {
+   "fieldname": "login_id",
+   "label": "Signs in with",
+   "fieldtype": "Data",
+   "description": "The mobile number or email you already reached this person on. It is what they TYPE to sign in, and Frappe resolves a number through User.mobile_no. **HR's own entry, kept apart from the joiner's own answers on purpose**: putting it in the `mobile` column made HR's typing answer the question \"has this joiner sent us anything yet?\", so an empty form could be sent and marking the mobile number compulsory did nothing. Cleared when the details are erased."
+  },
+  {
+   "fieldname": "user",
+   "description": "The joiner's own sign-in. Set by \"Make the sign-in\" and never typed. The joining page resolves this row FROM the session through this field, so there is nothing a caller can post that reaches another person's row (079-SEC-4). Unique: one account is one submission. Deleted with the row when the details are erased.",
+   "fieldtype": "Link",
+   "label": "Sign-in",
+   "options": "User",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
    "fieldname": "expires_on",
-   "description": "A mirror of the Web Form Request's own expires_on, so the list and the daily job can read it without opening that row. The FRAMEWORK enforces the expiry, not this field.",
+   "description": "When the joiner's access ends. Pressing Send does NOT end it (decision 4a) - somebody who finds their PAN card the next evening should not have to ring HR. The daily job closes the account on this date.",
    "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "Link works until",
+   "label": "Sign-in works until",
    "read_only": 1
   },
   {
@@ -87,7 +103,8 @@
   {
    "fieldname": "mobile",
    "fieldtype": "Data",
-   "label": "Mobile number"
+   "label": "Mobile number",
+   "description": "The number HR already reached this person on. It is also what they TYPE to sign in, resolved by Frappe through User.mobile_no. Inside the closed allow-list, so erasure clears it."
   },
   {
    "fieldname": "personal_email",
@@ -153,8 +170,9 @@
    "fieldname": "cancel_reason",
    "fieldtype": "Select",
    "label": "Cancelled because",
-   "options": "\nBy HR\nThe joiner is not coming\nSent to the wrong person\nA newer link was made",
-   "read_only": 1
+   "options": "\nBy HR\nThe joiner is not coming\nSent to the wrong person\nA newer sign-in was made\nThey were turned down",
+   "read_only": 1,
+   "description": "Why the invite was closed. **Every reason gives the joiner the same answer on the page** (079-SEC-5): a different one for \"turned down\" would tell a candidate the outcome of their application through a web page instead of from their employer."
   },
   {
    "fieldname": "closed_on",
@@ -182,20 +200,11 @@
    "fieldtype": "Data",
    "label": "Erased because",
    "read_only": 1
-  },
-  {
-   "fieldname": "web_form_request",
-   "description": "Frappe's own request row holds the key, its expiry and its single-use burn. OUR submit path DELETES that row the moment it is used, so the clear-text key exists only while the link still works (Surbhi, 31 Oct 2026).",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Token",
-   "options": "Web Form Request",
-   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-31 14:00:00.000000",
+ "modified": "2026-11-01 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Joiner Submission",
@@ -215,14 +224,11 @@
    "role": "HR Manager",
    "read": 1,
    "write": 1,
-   "create": 1,
-   "report": 1,
-   "export": 1
+   "create": 1
   },
   {
    "role": "HR User",
-   "read": 1,
-   "report": 1
+   "read": 1
   }
  ],
  "row_format": "Dynamic",

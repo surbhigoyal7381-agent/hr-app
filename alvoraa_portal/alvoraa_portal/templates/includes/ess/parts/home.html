@@ -180,21 +180,41 @@
         <div class="nc-wrap">
           <h2 class="nc-h" id="mp-h" tabindex="-1">My profile</h2>
           <div id="myp-pic"><div class="hm-skel" aria-hidden="true"></div></div>
-          <div id="myp-det"></div>
 
-          <!-- My Documents (build B4: employee document checklist) -->
-          <div class="card" id="my-docs-card" style="display:none">
-            <div class="card-header">
-              <span><i class=ic-folder></i></span>
-              <span class="card-title" style="margin-left:6px">My Documents</span>
-              <span id="my-docs-summary" style="margin-left:auto;font-size:var(--fs-sm);color:var(--text3)"></span>
-            </div>
-            <div class="card-body" style="padding:12px 20px">
-              <div id="my-docs-list" class="hm-scroll" tabindex="0" role="region" aria-label="My Documents"></div>
+          <!-- Slice 079 (US-20, prototype v8): TWO COLUMNS on a wide window.
+               Your details on the left; Your documents and Your password
+               stacked in the right cell. The picture card above stays full
+               width - it is a banner, not a column of fields.
+
+               **The DOM order IS the reflow order**: details, then documents,
+               then password. When the three drop into one column at a narrow
+               window or at 200% zoom they come in exactly this order, and
+               password is last because documents can carry work ("2 are needed
+               before your first pay run") while a password set three weeks ago
+               cannot. There is no `order:` override, deliberately.
+
+               This changes a page that shipped in 078. It is Surbhi's own fix
+               to a measured fault - a 1280 px box for a ten-digit mobile
+               number - and shipping it here is one change and one test pass
+               rather than two (decision 6b). -->
+          <div class="myp-two-up">
+            <div id="myp-det"></div>
+            <div class="myp-stack">
+              <!-- My Documents (build B4: employee document checklist) -->
+              <div class="card" id="my-docs-card" style="display:none">
+                <div class="card-header">
+                  <span><i class=ic-folder></i></span>
+                  <span class="card-title" style="margin-left:6px">My Documents</span>
+                  <span id="my-docs-summary" style="margin-left:auto;font-size:var(--fs-sm);color:var(--text3)"></span>
+                </div>
+                <div class="card-body" style="padding:12px 20px">
+                  <div id="my-docs-list" class="hm-scroll" tabindex="0" role="region" aria-label="My Documents"></div>
+                </div>
+              </div>
+
+              <div id="myp-pw"></div>
             </div>
           </div>
-
-          <div id="myp-pw"></div>
           <div id="mp-body"><div class="hm-skel" aria-hidden="true"></div></div>
         </div>
       </div>

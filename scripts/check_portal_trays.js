@@ -92,6 +92,11 @@ const INVENTORY = {
   // script when the button is pressed and appended to <body>, like 076's
   // sheets, so no panel can be its frame. Escape cancels and writes nothing.
   ".ocs-back":            { page: "portal", kind: "dialog", open: "script" },
+  // ALV-287: the document viewer on the mini profile. Built by script when a
+  // document is opened and appended to <body>, so no panel can be its frame.
+  // It sits ABOVE the drawer and above the seat tray on purpose - a scanned A4
+  // page does not fit a 480 px drawer.
+  ".mpf-dv":              { page: "portal", kind: "dialog", open: "script" },
   "#cal-signoff-modal":   { page: "portal", kind: "dialog", open: "style" },
   // The -next page (a separate document; left rail and bottom sheet only)
   ".nf-rail":             { page: "next", kind: "shell" },

@@ -7,6 +7,7 @@ Surbhi's four defaults of 31 October.
 
 | Case | Rule | Setting, default |
 |---|---|---|
+| **Their identity documents** | **A second clock, and counsel's ruling 4 is why it exists.** A photograph of an identity card goes much sooner than a candidate record: 30 to 60 days against 180 to 365. It deletes the `File` rows only, bytes included, and leaves every typed field alone - **including on a row nobody ever actioned**, counted from when it arrived, or an ignored submission would keep an identity document until the 90-day backstop took the whole row | `alvoraa_joiner_document_days`, **30**, range 30-60 |
 | They became an employee | the details are already their personnel record, so the copy is redundant. Erased on the next run | — |
 | They did not join (Cancelled or Expired) | **not erased the moment HR gives up on them** - counsel reversed that, because the employer has its own candidate record-keeping duties. A window from when the invite closed | `alvoraa_joiner_not_hired_days`, **180**, range 180-365 |
 | Nobody ever actioned it | erased anyway, from when it arrived, **whatever state it is in** - because the 18 September 2026 policy prohibits indefinite retention in so many words | `alvoraa_joiner_backstop_days`, **90** |
@@ -39,6 +40,9 @@ from frappe import _
 from frappe.utils import add_to_date, cint, now
 
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_joiner_submission.alvoraa_joiner_submission import (
+	LIVE,
+	TERMINAL,
+	delete_the_documents,
 	erase,
 )
 
@@ -65,6 +69,12 @@ def run_daily():
 
 	out = {
 		"hired": _erase_the_redundant_copies(),
+		# Counsel's SECOND clock (ruling 4), and it runs FIRST among the
+		# erasures so that a row crossing both clocks on the same night loses
+		# its documents under the rule that names them. It keeps its OWN
+		# count, because without one "did the documents actually go" has no
+		# answer (AC-89).
+		"documents": _delete_the_documents_sooner(),
 		"not_hired": _erase_the_ones_who_did_not_join(),
 		"backstop": _erase_the_untouched(),
 		"warned": _warn_hr_before_the_backstop(),
@@ -126,6 +136,95 @@ def _erase_the_untouched():
 	return done
 
 
+def _delete_the_documents_sooner():
+	"""Counsel's ruling 4: a photograph of an identity card goes much sooner than
+	the record it was sent with.
+
+	**It deletes the `File` rows only, bytes included. The typed fields are not
+	touched.** 30 to 60 days against 180 to 365 - one setting could not say both,
+	which is why `alvoraa_joiner_document_days` exists at all.
+
+	Two reads, not one, because the clock starts in two different places and both
+	are deliberate:
+
+	  * a **closed** row counts from `closed_on`, never from `modified`, for the
+	    reason already learned and written on the field itself - ticking legal
+	    hold and unticking it again would restart the clock;
+	  * a row **nobody ever actioned** counts from `creation`, whatever state it
+	    is in. Without that half, an ignored submission would keep an identity
+	    document until the 90-day backstop took the whole row - against counsel's
+	    30 to 60 (AC-87).
+
+	Legal hold wins, as it does for the record clock. HR is told AT the deletion
+	rather than before it (OQ-6): a pre-warning needs a second setting and a
+	second stamp field, and HR already has legal hold and a visible row.
+
+	No stamp field is needed to stop it running twice. The second run finds no
+	files, deletes nothing, and says nothing.
+	"""
+	days = _days("alvoraa_joiner_document_days", 30)
+	cutoff = add_to_date(now(), days=-days)
+	done = 0
+	for filters in ({"status": ("in", TERMINAL), "closed_on": ("<", cutoff)},
+	                {"status": ("in", LIVE), "creation": ("<", cutoff)}):
+		for name in _todo(filters):
+			deleted = delete_the_documents(name)
+			if not deleted:
+				continue
+			done += deleted
+			_tell_hr_the_documents_went(name, deleted, days)
+	if done:
+		frappe.db.commit()
+	return done
+
+
+def _tell_hr_the_documents_went(name, deleted, days):
+	"""M16, through the `Notification Log` the job already uses.
+
+	It names the REFERENCE and the count, never the person, never the type and
+	never the file. An email would be a copy we cannot erase.
+	"""
+	invited_by = frappe.db.get_value(DOCTYPE, name, "invited_by")
+	if not invited_by:
+		return
+	_tell(invited_by, name,
+	      _("Identity documents on a joiner invite were deleted"),
+	      _("The {0} identity document(s) on invite {1} were deleted after {2} "
+	        "days, which is how long your organisation keeps a photograph of an "
+	        "identity card. Ask again if you still need them. The rest of the "
+	        "invite is untouched.").format(cint(deleted), name, days),
+	      f"Could not say the documents on {name} had gone")
+
+
+def _tell(user, reference, subject, body, if_it_fails):
+	"""One `Notification Log` row, and **the one bypass this module needs for
+	both of its messages.**
+
+	Nobody holds `create` on `Notification Log` - Frappe writes its own the same
+	way - and this runs from the scheduler, with no session at all. Funnelled
+	into one function rather than two so that the bypass is counted once and
+	argued once (079-SEC-7).
+
+	It names the REFERENCE, never the person. Whoever opens the row can see the
+	name; a notification does not need to carry it. And it is a notification
+	rather than an email, because an email is a copy we cannot erase.
+	"""
+	try:
+		frappe.get_doc({
+			"doctype": "Notification Log",
+			"for_user": user,
+			"type": "Alert",
+			"document_type": DOCTYPE,
+			"document_name": reference,
+			"subject": subject,
+			"email_content": body,
+		}).insert(ignore_permissions=True)
+		return True
+	except Exception:
+		frappe.log_error(if_it_fails, "Joiner retention")
+		return False
+
+
 def _warn_hr_before_the_backstop():
 	"""Tell whoever issued the link, once, before the backstop takes it.
 
@@ -153,44 +252,39 @@ def _warn_hr_before_the_backstop():
 		ignore_permissions=True)
 	sent = 0
 	for row in rows:
-		try:
-			frappe.get_doc({
-				"doctype": "Notification Log",
-				"for_user": row.invited_by,
-				"type": "Alert",
-				"document_type": DOCTYPE,
-				"document_name": row.name,
-				"subject": _("A joiner's details will be deleted in {0} days")
-				.format(stop - warn),
-				"email_content": _(
-					"Nobody has turned invite {0} into a staff record. It is "
-					"deleted {1} days after it arrived, which is how we keep "
-					"nothing indefinitely. Open it to act on it, or tick legal "
-					"hold if it must be kept.").format(row.name, stop),
-			}).insert(ignore_permissions=True)
-			frappe.db.set_value(DOCTYPE, row.name, "warned_on", now(),
-			                    update_modified=False)
-			sent += 1
-		except Exception:
-			frappe.log_error(f"Could not warn about {row.name}",
-			                 "Joiner retention")
+		if not _tell(row.invited_by, row.name,
+		             _("A joiner's details will be deleted in {0} days")
+		             .format(stop - warn),
+		             _("Nobody has turned invite {0} into a staff record. It is "
+		               "deleted {1} days after it arrived, which is how we keep "
+		               "nothing indefinitely. Open it to act on it, or tick legal "
+		               "hold if it must be kept.").format(row.name, stop),
+		             f"Could not warn about {row.name}"):
+			continue
+		frappe.db.set_value(DOCTYPE, row.name, "warned_on", now(),
+		                    update_modified=False)
+		sent += 1
 	if sent:
 		frappe.db.commit()
 	return sent
 
 
-def expire_the_dead_links():
-	"""Move a link past its date to `Expired`, and destroy the key's row.
+def expire_the_dead_sign_ins():
+	"""Move a sign-in past its date to `Expired`, which closes the account.
 
-	The framework already refuses an expired key, so this changes nothing about
-	safety - it changes what HR SEES, so a list of "Invited" is a list of links
-	that still work. And it is what gets the clear-text key deleted rather than
-	left in `Web Form Request` until somebody notices.
+	The status change is what does the work: the controller's `on_update`
+	disables the account, strips its role, clears its sessions and destroys its
+	credential, in the same transaction (079-SEC-5). **So this is no longer
+	cosmetic.** Under the bearer link it only changed what HR SAW, because the
+	framework already refused an expired key.
+
+	**Both live states, not only `Invited`.** Decision 4a means a joiner who has
+	already sent their form still has a working sign-in, so a `Submitted` row
+	reaching its date has an account to close too. Under 078 this read `Invited`
+	only, because sending burned the link.
 	"""
-	from alvoraa_portal import joiner_invite
-
 	rows = frappe.get_all(DOCTYPE,
-	                      filters={"status": "Invited",
+	                      filters={"status": ("in", LIVE),
 	                               "expires_on": ("<", now())},
 	                      pluck="name", limit_page_length=BATCH,
 	                      ignore_permissions=True)
@@ -201,30 +295,29 @@ def expire_the_dead_links():
 			doc.status = "Expired"
 			doc.flags.ignore_permissions = True
 			doc.save(ignore_permissions=True)
-			joiner_invite._drop_request(doc)
 			done += 1
 		except Exception:
 			frappe.log_error(f"Could not expire {name}", "Joiner retention")
 	if done:
 		frappe.db.commit()
-		frappe.logger("alvoraa").info(f"joiner links expired: {done}")
+		frappe.logger("alvoraa").info(f"joiner sign-ins expired: {done}")
 	return done
 
 
 def daily():
-	"""What `hooks.py` names. Expire first, then erase, so a link that died
+	"""What `hooks.py` names. Expire first, then erase, so a sign-in that died
 	today is in the right state before the clocks are read."""
-	return {"expired": expire_the_dead_links(), **run_daily()}
+	return {"expired": expire_the_dead_sign_ins(), **run_daily()}
 
 
 # ── OPS-28: the one invariant worth watching ────────────────────────────────
 
 @frappe.whitelist()
 def joiner_counts(days=7):
-	"""Links issued, submissions received, and refusals - for HR to glance at.
+	"""Sign-ins made, submissions received, and the one invariant HR glances at.
 
 	**The alert is the invariant: submissions must never exceed links issued.**
-	More submissions than links means one forwarded link is being used by
+	More submissions than sign-ins means one credential is being used by
 	several people, which is visible here before HR notices records for people
 	they never invited. No new tool: two numbers we already have.
 	"""

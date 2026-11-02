@@ -66,6 +66,32 @@ What they typed is kept. They can close the page and return to finish. The
 access stays valid until they send or it expires. Cheap now, expensive to
 retrofit.
 
+## 4a · Send ends the form, not the sign-in — **and the refusal says which**
+
+Two answers from Surbhi, 1 Nov, both reversing or settling an earlier reading.
+
+**Send ends the form only.** The joiner stays signed in afterwards. This
+reverses §4's "the account dies at Send", and the reason is the case the
+designer named: somebody who finds their PAN card the next evening should not
+have to ring HR. What they already sent is sent; they can still add a document
+or correct something until the access expires.
+
+So **the access ends on its own expiry date, or when HR ends it** — not on
+Send. If the person is hired, the pre-onboarding account must be **closed, not
+promoted**: their real staff login is a separate thing, and promoting this one
+would lock the new employee out of their own record.
+
+**The sign-in page may say "your access has ended" rather than "wrong
+password".** Design decision D4, and the right call: a joiner typing the
+*correct* password a day late, told they got it wrong, tries again, gets locked
+out, and we lose them.
+
+The trade, stated once so nobody rediscovers it as a finding: this tells
+somebody holding the credential that an account existed and has ended. That is
+a small disclosure about a person HR already chose to contact, by a credential
+HR handed over by hand. It is worth it. The refusal still names no person, no
+employer detail and no reason beyond the state.
+
 ## 5 · The joiner's field list — **its own tick, shipping empty**
 
 One candidate list of fields, ticked twice: once for My Profile, once for the
@@ -114,6 +140,83 @@ the most work by a distance.
 Alternative IDs (PAN, passport, driving licence, voter ID) are still offered
 and are still the easier path for everybody. Counsel's ruling that Aadhaar is
 **voluntary with alternatives accepted** holds regardless.
+
+## 6b · Four more, settled 1 November after the spec
+
+**The Aadhaar masker is HELD, not cancelled.** US-11 and US-12 — 13 of the
+slice's 83 points, and its largest single piece of work — wait for counsel's
+two written answers: may an employer ask for an Aadhaar card at all before
+employment, and does the card's QR code carry the full number anyway. Nothing
+else waits on them, because the Aadhaar document type is only a tick. If the
+answer is no, we will not have built the biggest thing in the slice for
+nothing. **Build the other 23 stories now.**
+
+**Sign-in by mobile number is ON.** The joiner's username is the mobile the
+employer already reached them on. This needs Frappe's tenant-wide
+`allow_login_using_mobile_number`, so **every employee at that tenant can then
+also sign in with their mobile number** — a change made for the joiners' sake
+that reaches everybody. Surbhi chose it with that named. The login id itself
+stays opaque and non-routable (079-SEC-1); the number lives on
+`User.mobile_no` and Frappe resolves it.
+
+**My Profile offers the six fields the code allows, not the sixteen the
+prototype drew.** The drawing was wrong, not the code: the extra ten include
+**bank account and IFSC**, and offering those would give an employee
+self-service write on their own bank details, which is how payroll fraud
+happens. Correct the prototype, not the allow-list. Widen later case by case if
+HR asks, each considered on its own.
+
+**The two-column My Profile ships in this slice**, even though it changes a
+page already live in production. It is Surbhi's own fix to a real fault — a
+1280 px box for a ten-digit phone number — and shipping it here means one
+change and one test pass rather than two.
+
+## 6c · Three more, settled 2 November
+
+**The Aadhaar masker is dropped. Guidance replaces it.** Surbhi, 2 Nov: *"as per
+the counsel we can show some guidance on the form about the correct way of
+sharing masked Adhaar card."* So the form tells the joiner how to mask the card
+themselves before uploading, and US-11 and US-12 are not built at all.
+
+**This reverses her own decision of 1 November**, recorded in §6a, which
+declined exactly this option — "asking the joiner to mask it themselves" was
+put to her and declined, and the masker was chosen *against* the security
+engineer's recommendation with the cost named. One day later the cost is no
+longer worth paying. That is a legitimate change of mind and it saves the
+slice's largest piece of work, 13 of 83 points. It is written down so nobody
+re-reads §6a as current.
+
+**What it does NOT do, stated plainly because §6a's rule was "mask or
+refuse".** Guidance is an instruction, not a control. A joiner who ignores it
+uploads an unmasked Aadhaar and we store it — the precise failure §6a said
+every design choice must break away from. Guidance plus the alternative IDs is
+the mitigation; there is no refusal behind it.
+
+**So one question goes to counsel, and it is new:** does guidance on the form
+satisfy ruling 5, which says the first 8 digits are *masked on the uploaded
+image*? Our reading is that an instruction is weaker than a control, and we
+would rather be told so now than after a card lands. Added to the 1 Nov letter.
+**ALV-215 still gates switch-on.**
+
+**Export logging is deferred, not solved.** Surbhi, 2 Nov: *"ok we can pick it
+up later."* The consequence, once: **counsel's ruling 9 is not met.** `log_level`
+is unset, Frappe defaults to ERROR outside a dev server, and all 16
+`logger("alvoraa")` calls — the export line included — are discarded. Until it
+is set, **nobody may tell a customer or a security questionnaire that exports
+are logged**, because they are not.
+
+**Hindi: the privacy notice needs no translation from us, and this was the
+cheap discovery.** Surbhi asked for Hindi "for the privacy notice for now". The
+notice is **already the employer's own typed text** — `alvoraa_joiner_notice_text`,
+a per-tenant default, and `joiner_public.py:266-274` **refuses to render the
+screen without it**. So a tenant may type it in Hindi today, with no build at
+all. That is counsel's ruling 6 working as intended: the notice belongs to the
+employer, so the language does too. What is owed is a test that Devanagari
+survives save and render, and telling HR they may.
+
+The rest of the journey — about **151 strings**, 41 server-side and 110 on the
+page — is already wrapped for translation, with **nothing hardcoded**. The
+plumbing exists; only a reviewed `hi.csv` is missing. That stays ALV-267.
 
 ## 7 · Counsel's rulings, 31 October — all binding
 

@@ -139,9 +139,20 @@ def open_employee_document(row=None):
 
 	The payslip pattern (`hr_api.get_payslip_pdf`): the bytes go into
 	`frappe.local.response` with `type = "download"`, which Frappe serves with
-	`Content-Disposition: attachment`. So a PDF is never rendered inline in a
-	browser, which is the narrower treatment it gets precisely because it is the
-	one accepted type we do not re-encode and therefore cannot strip.
+	`Content-Disposition: attachment`, and `as_raw` sets the content type from
+	the file name.
+
+	**The header is unchanged; what the browser does with the bytes is not.**
+	Since ALV-287 (2 Nov 2026) the portal fetches this with `fetch`, holds the
+	blob and SHOWS it - a picture in an `<img>`, a PDF in an iframe with no
+	sandbox - instead of saving it. The disposition never reaches a navigation,
+	so it decides nothing. A PDF is still the one accepted type we do not
+	re-encode and therefore cannot strip; Surbhi weighed that against the
+	download it replaced - a copy in the reader's Downloads folder, opened in
+	Acrobat, outside the access log, outside retention and outside any erasure -
+	and chose to show it. Her reasons and the browser measurements behind them
+	are at `mpfShowDoc` in portal.js. Nothing here changed to make that
+	possible, and nothing here should change to undo it.
 
 	**One file per request.** An "all documents" call would be a single click
 	that puts a person's whole identity file through eight worker slots, and

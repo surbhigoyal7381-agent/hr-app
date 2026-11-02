@@ -2632,7 +2632,9 @@ function spAddress(id) {
     var url = new URL(window.location.href);
     if (id) url.searchParams.set("seat", id);
     else url.searchParams.delete("seat");
-    window.history.replaceState(null, "", url.pathname + url.search);
+    /* ALV-288: and the fragment, which says which screen this is. Without it,
+       this line erased the panel from the address every time a seat opened. */
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
   } catch (e) { /* an old browser keeps the page, loses the address */ }
 }
 
@@ -4662,6 +4664,85 @@ document.addEventListener("click", function (e) {
   }
 });
 
+/* ── Which screen you are on, in the address (ALV-288) ──────────────────────
+   Surbhi, 2 November 2026: "If I refresh the page from browser refresh button,
+   it takes us to home page insted of where we were before refresh."
+
+   The panel names were already the hard half of a router - stable words like
+   "att-record", carried on every nav item as data-panel - so they are the
+   addresses. public/js/ess/next-frame.js holds the same router for the frame
+   that was dropped; this is deliberately a second small copy rather than an
+   export bolted onto that file, and it keeps that file's two decisions: the
+   panel is drawn where the hash is written rather than waiting for the
+   hashchange event, and an address nobody recognises opens Home and says
+   nothing.
+
+   What is NOT here, on purpose: which person's mini profile was open, which
+   month, which filter. One screen's name is the whole of it. */
+
+var _panelNow = "home";   /* what is on screen; Home is active in the markup */
+
+/* The hash, if it could be a panel name at all. Anything else counts as no
+   address - which is also what keeps a hash out of the selector below. */
+function panelFromAddress() {
+  var raw = String(window.location.hash || "").replace(/^#/, "");
+  return /^[a-z0-9-]{1,40}$/.test(raw) ? raw : "";
+}
+
+/* May this person open this panel by typing or reloading its address?
+
+   All 23 panels are in the page for everybody - ess_parts.py pastes every one
+   in with no gating - and what puts one out of reach today is only that its
+   nav item is not shown. So the sidebar IS the answer, and it is the server's:
+   an item is revealed once get_portal_context and get_available_features have
+   said so (applyPlanNav). Asking the nav, rather than re-reading those ten
+   flags here, is what stops this drifting from applyPlanNav the next time one
+   of them changes.
+
+   The panels with no nav item need a record to mean anything - a seat, a
+   scorecard, a review - and holding that is out of this change, so they are
+   not restorable. Home and My profile are the exceptions: Home is everybody's,
+   and My profile is everybody's own, reached from the name in the sidebar and
+   from the account menu, neither of which is gated. */
+function mayOpenPanel(name) {
+  if (name === "home" || name === "my-profile") return true;
+  var item = document.querySelector('.nav-item[data-panel="' + name + '"]');
+  return !!item && item.style.display !== "none";
+}
+
+/* Read the address and show what it asks for. Runs on hashchange, which is what
+   makes Back and Forward move between screens, and once at startup. */
+function routeFromAddress() {
+  var want = panelFromAddress();
+  /* The address already matches the screen, which is what our own write looks
+     like a moment later. Nothing to do - and this is also what keeps a detail
+     screen on screen: a seat or a scorecard gets an address so Back can leave
+     it, and is only refused when it is asked for COLD, by a reload or a typed
+     address, because its record is not in the address. */
+  if (want && want === _panelNow) return;
+  if (!want || !mayOpenPanel(want)) {
+    /* A typo, or a panel this person is not offered. Home, and nothing said
+       about it: naming what was refused is a map of what to go after. `replace`
+       so Back does not land straight back on the refused address. */
+    if (window.location.hash) window.location.replace("#home");
+    if (_panelNow !== "home") switchPanel("home", null);
+    return;
+  }
+  switchPanel(want, null);
+}
+
+/* The startup read, and why it waits. get_portal_context and
+   get_available_features race (see applyPlanNav), and every gated nav item is
+   display:none until they land. Reading the address before both are in would
+   refuse a page this person is allowed AND rewrite the address while doing it,
+   so the one chance to restore the screen would be spent. If a call fails,
+   nothing restores and the person starts on Home - which is what happens
+   today, and the safe way round. */
+var _routeAnswers = 0;
+function routeWhenReady() {
+  if (++_routeAnswers === 2) routeFromAddress();
+}
+
 function switchPanel(name, triggerEl) {
   // If the employee drawer is open, close it before switching panels so body overflow is restored
   var _ed = document.getElementById("emp-drawer");
@@ -4671,6 +4752,19 @@ function switchPanel(name, triggerEl) {
   if (window.tvClosePop) { window.tvClosePop(); window.tvCloseNew(); }
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-" + name).classList.add("active");
+
+  /* ALV-288. This is the one door every screen change goes through, so it is
+     the one place the address is written. A detail screen gets an address too,
+     so Back leaves it for the screen that opened it - a reload of one still
+     lands on Home, because its record is not in the address. */
+  _panelNow = name;
+  /* Leaving the seat page takes its ?seat= with it. Slice 078 wrote that
+     parameter and cleared it when the page closed itself; now that Back can
+     leave the page, it would otherwise stay in the address and reopen the seat
+     on the next reload. */
+  if (name !== "seat" && /[?&]seat=/.test(window.location.search)) spAddress(null);
+  if (panelFromAddress() !== name) window.location.hash = "#" + name;
+
   if (name === "home") hmRefreshIfStale();
 
   if (name === "attendance-insights") { aiOpen(); }
@@ -7004,6 +7098,52 @@ function mypRemove() {
 
 /* ── the details ─────────────────────────────────────────────────────────── */
 
+/* Slice 079, US-18. `01b` §8 and decision 3, and the reason is the whole point:
+   **My Profile never refuses a save.** Blocking would mean somebody with no
+   permanent address could never change anything on this page again - not even
+   their own phone number - and their only way out is a telephone call to HR. A
+   rule that locks a person out of correcting their own record is worse than an
+   incomplete record.
+
+   So what is missing is MARKED, every visit, and `save_my_profile` is unchanged:
+   it never had a required concept and it still has none.
+
+   **The joiner's form still refuses an incomplete send**, and the same person
+   meets both screens inside a week - so the difference has to read as a rule
+   rather than as an inconsistency. Two things make it one: the SAME WORD on
+   both screens ("Needed", the same amber chip, never "mandatory" on one and
+   "required" on the other), and one sentence of reason on each, stated
+   positively. Neither screen compares itself to the other: "unlike the joining
+   form, this page…" asks most readers to remember a form they filled in weeks
+   ago, or never saw at all. */
+function mypNeeded() {
+  return ((MYP.data && MYP.data.fields) || []).filter(function (r) {
+    return r.needed && !String(r.value || "").trim();
+  }).map(function (r) {
+    return drT((MYP_FIELDS[r.fieldname] || [r.fieldname])[0]);
+  });
+}
+
+function mypNeededBlock() {
+  var missing = mypNeeded();
+  if (!missing.length) return "";
+  return '<div class="myp-needed-block" role="status"><b>'
+    + esc(missing.length === 1
+        ? drT("Your organisation still needs one thing from you:")
+        : drT("Your organisation still needs {0} things from you:", [missing.length]))
+    + "</b> " + esc(andWords(missing)) + ". "
+    + esc(drT("They are marked Needed below. This is your own record, so you can "
+            + "change anything here and save as you go. We will keep asking for "
+            + "these until they are filled in.")) + "</div>";
+}
+
+function andWords(list) {
+  var a = (list || []).slice();
+  if (a.length < 2) return a[0] || "";
+  return a.slice(0, -1).join(", ") + " "
+    + drT("and") + " " + a[a.length - 1];
+}
+
 function mypPaintDetails() {
   var rows = (MYP.data && MYP.data.fields) || [];
   if (!rows.length) {
@@ -7018,16 +7158,26 @@ function mypPaintDetails() {
   hmEl("myp-det").innerHTML = '<div class="nc-box myp-card"><h3 class="nc-h3" style="margin-top:0">'
     + esc(drT("Your details")) + '</h3>'
     + '<p class="gp-hint">' + esc(drT("Only you can change these. HR sees the change.")) + '</p>'
+    /* The standing amber block, on EVERY visit - not only after a save. */
+    + mypNeededBlock()
     + rows.map(function (r) {
         var w = MYP_FIELDS[r.fieldname] || [r.fieldname, ""];
         var id = "myp-f-" + r.fieldname;
+        /* `aria-required`, and NOT `required`: the browser must not refuse the
+           form either. There is no `aria-invalid` and no red border, because
+           nothing here is invalid - it is simply not filled in yet. */
+        var need = r.needed ? ' aria-required="true"' : "";
         var input = MYP_LONG[r.fieldname]
-          ? '<textarea class="gp-input myp-in" id="' + id + '" rows="2" placeholder="'
-              + esc(drT("Not given yet")) + '">' + esc(r.value || "") + '</textarea>'
-          : '<input class="gp-input myp-in" id="' + id + '" type="text" value="'
-              + esc(r.value || "") + '" placeholder="' + esc(drT("Not given yet")) + '">';
+          ? '<textarea class="gp-input myp-in" id="' + id + '" rows="2"' + need
+              + ' placeholder="' + esc(drT("Not given yet")) + '">'
+              + esc(r.value || "") + '</textarea>'
+          : '<input class="gp-input myp-in" id="' + id + '" type="text"' + need
+              + ' value="' + esc(r.value || "") + '" placeholder="'
+              + esc(drT("Not given yet")) + '">';
         return '<div class="myp-field"><label class="gp-label" for="' + id + '">'
-          + esc(drT(w[0])) + '</label>' + input
+          + esc(drT(w[0]))
+          + (r.needed ? '<span class="myp-need">' + esc(drT("Needed")) + '</span>' : "")
+          + '</label>' + input
           + (w[1] ? '<span class="gp-hint">' + esc(drT(w[1])) + '</span>' : "") + '</div>';
       }).join("")
     + '<div class="myp-acts"><button type="button" class="btn btn-primary myp-b" data-myp="save">'
@@ -7048,6 +7198,9 @@ function mypSaveDetails() {
     rows.forEach(function (x) { if (x.fieldname in out) x.value = out[x.fieldname]; });
     if (note) note.textContent = "";
     toast(r && r.saved ? drT("Saved. HR can see the change.") : drT("Nothing had changed."), "ok");
+    /* The save WENT THROUGH even with something still missing, and the block
+       has to say what is left now rather than what was left before. */
+    mypPaintDetails();
   }, function (e) {
     /* WHAT WAS TYPED IS NOT CLEARED. The inputs are left exactly as they are,
        so a lost answer never costs somebody their typing (AC-19). */
@@ -7110,11 +7263,18 @@ document.addEventListener("change", function (e) {
 
    THE CONSEQUENCE IS ON THE BUTTON. "OK - 3 document types, seen by 7 people",
    not "OK". */
-var OCS = { data: null, dlg: null, pick: {}, opener: null, kind: null, types: null };
+var OCS = { data: null, dlg: null, pick: {}, need: {}, opener: null, kind: null, types: null };
 var OCS_API = "alvoraa_portal.people_settings.";
 var OCS_PROFILE_KEY = "alvoraa_positions_profile_fields";
 var OCS_DOCS_KEY = "alvoraa_positions_document_types";
 var OCS_MY_KEY = "alvoraa_my_profile_fields";
+/* Slice 079. Four keys, and `required` is a separate key per surface because it
+   means two different things: on the joiner's form it blocks the send, on My
+   Profile it only asks again. One shared key would make a detail compulsory on
+   a screen HR never meant. */
+var OCS_JOINER_KEY = "alvoraa_joiner_fields";
+var OCS_JOINER_NEED_KEY = "alvoraa_joiner_required_fields";
+var OCS_MY_NEED_KEY = "alvoraa_my_profile_required_fields";
 
 /* The words for each ticked detail. The same list the drawer uses for the
    Positions fields - MPF_FIELDS - because one of them being renamed and not
@@ -7243,15 +7403,57 @@ function ocsPaint() {
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-my">'
     + esc(drT("Add or remove details")) + "</button></div></div>";
 
-  /* Pre-onboarding states FACTS and links to the form's own builder. It is not
-     a fourth picker: the Web Form owns the joiner's field list, and two
-     pickers for one form will disagree in front of the joiner. */
+  /* Slice 079. **The fourth picker, built.** 078 DECISION B made this section
+     facts only, because the Web Form owned the joiner's field list and two
+     pickers for one form would disagree in front of the joiner. Decision 5
+     reverses that: the tick is ours now.
+
+     It ships EMPTY, and the day-one state says so as a statement of fact - no
+     prompt, no "add your first", no empty-state picture. Nothing ticked is a
+     perfectly good answer, and it is the shipped default. */
+  var asked = d.joiner_fields || [];
+  var reqd = d.joiner_required_fields || [];
+  var notReady = d.joiner_not_ready || [];
   var joiner = '<div class="ocs-sec"><h4 class="ocs-h">'
     + esc(drT("What a new joiner is asked for before day one")) + "</h4>"
-    + '<p class="gp-hint">' + esc(d.retention_days
-        ? drT("Kept for {0} days if the person never joins, then deleted.", [d.retention_days])
-        : drT("Switched off. It cannot be switched on until somebody sets how long a "
-            + "joiner's details are kept.")) + "</p></div>";
+    /* The block lands on the person who can fix it. The alternative was a
+       joiner-facing "we do not know how long they keep this" screen, shown to
+       the only person who cannot do anything about it. */
+    + (notReady.length
+        ? '<p class="ocs-warn" role="note"><b>'
+          + esc(drT("You cannot invite anybody yet.")) + "</b> "
+          + esc(drT("A joiner has to be told these things before they hand "
+                  + "anything over, and they come from your settings, not from "
+                  + "us:")) + " " + esc(notReady.join("; ")) + ".</p>"
+        : "")
+    + (asked.length
+        ? ocsChips(asked.map(function (f) {
+            return ocsWord(OCS_MY_KEY, f)
+              + (reqd.indexOf(f) >= 0 ? " \u00b7 " + drT("Needed") : "");
+          }))
+        : '<p class="gp-hint">' + esc(drT(
+            "Nothing. A joiner is asked for no details at all until you tick "
+            + "something here.")) + "</p>")
+    + '<p class="gp-hint">' + esc(
+        (d.joiner_required_documents || []).length
+          ? drT("{0} document type(s) must be answered for: {1}. A photograph or "
+              + "\u201cI will bring it on my first day\u201d both count.",
+              [(d.joiner_required_documents || []).length,
+               (d.joiner_required_documents || []).join(", ")])
+          : drT("No document has to be answered for.")) + "</p>"
+    /* Both of counsel's periods, separately. One sentence covering both would
+       be wrong about one of them. */
+    + '<p class="gp-hint">' + esc(drT(
+        "Details of somebody who does not join are kept for {0} days. A "
+        + "photograph of an identity card is deleted sooner \u2014 after {1} days.",
+        [d.not_hired_days, d.document_days])) + "</p>"
+    + '<p class="gp-hint">' + esc(d.notice_text
+        ? drT("Your own words are set, and a joiner reads them before the first "
+            + "question.")
+        : drT("Your own words are not set yet, so no joiner can be asked "
+            + "anything.")) + "</p>"
+    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joiner">'
+    + esc(drT("Add or remove details")) + "</button></div></div>";
 
   hmEl("ocs-body").innerHTML = profile + docsSec + mine + joiner;
   hmEl("ocs-changed").textContent = d.last_changed && d.last_changed.by
@@ -7272,9 +7474,19 @@ function ocsPick(kind) {
     return;
   }
   OCS.pick = {};
+  OCS.need = {};
   (kind === "docs" ? (d.document_types || []).map(function (t) { return t.name; })
    : kind === "my" ? (d.my_profile_fields || [])
+   : kind === "joiner" ? (d.joiner_fields || [])
    : (d.profile_fields || [])).forEach(function (v) { OCS.pick[v] = 1; });
+  /* The SECOND tick, which only exists on a ticked row (078 §17.2, and the
+     prototype draws it inside the picker rather than as a second dialog).
+     `required` means two different things on the two screens - it blocks the
+     joiner's send and only asks again on My Profile - which is why they are two
+     settings and not one. */
+  (kind === "joiner" ? (d.joiner_required_fields || [])
+   : kind === "my" ? (d.my_profile_required_fields || [])
+   : []).forEach(function (v) { OCS.need[v] = 1; });
   ocsDialog();
 }
 
@@ -7304,8 +7516,12 @@ function ocsRows() {
       }).join("");
     }).join("");
   }
-  var choices = OCS.kind === "my" ? (d.my_profile_choices || []) : (d.profile_choices || []);
-  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+  var choices = OCS.kind === "my" ? (d.my_profile_choices || [])
+    : OCS.kind === "joiner" ? (d.joiner_choices || [])
+    : (d.profile_choices || []);
+  var key = OCS.kind === "my" ? OCS_MY_KEY
+    : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
+  var canNeed = OCS.kind === "my" || OCS.kind === "joiner";
   /* THE SAFE LIST ONLY. Bank account, PAN, salary and date of birth are not
      offered, and would be refused at the setter and again at every reader if
      they were. A picker that offers a field it will then refuse is how a tenant
@@ -7313,7 +7529,19 @@ function ocsRows() {
   return choices.map(function (f) {
     return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(f) + '"'
       + (OCS.pick[f] ? " checked" : "") + '><span><b>' + esc(ocsWord(key, f))
-      + "</b></span></label>";
+      + "</b>"
+      /* The "must fill in" tick exists ONLY on a ticked row, and it is not
+         offered at all on the Positions list, where nobody fills anything in. */
+      + (canNeed && OCS.pick[f]
+          ? '<span class="gp-hint" style="display:block">'
+            + '<label><input type="checkbox" data-ocs-need="' + esc(f) + '"'
+            + (OCS.need[f] ? " checked" : "") + "> "
+            + esc(OCS.kind === "joiner"
+                ? drT("Must fill in before they can send the form")
+                : drT("Keep asking for it"))
+            + "</label></span>"
+          : "")
+      + "</span></label>";
   }).join("");
 }
 
@@ -7321,6 +7549,7 @@ function ocsDialog() {
   var d = OCS.data || {};
   var title = OCS.kind === "docs" ? drT("Document types shown on a person's profile")
             : OCS.kind === "my" ? drT("Details an employee may correct about themselves")
+            : OCS.kind === "joiner" ? drT("Details a new joiner is asked for")
             : drT("Details a Positions reader may see");
   var box = document.createElement("div");
   box.className = "ocs-back";
@@ -7361,11 +7590,18 @@ function ocsSummary() {
       })
     : [];
   /* The CONSEQUENCE on the button, not the word "OK". */
+  var needCount = Object.keys(OCS.need || {}).filter(function (k) {
+    return OCS.need[k] && OCS.pick[k];
+  }).length;
   hmEl("ocs-ok").textContent = OCS.kind === "docs"
     ? drT("OK - {0} document types, seen by {1} people", [chosen.length, people])
     : OCS.kind === "my"
-      ? drT("OK - {0} details an employee may change", [chosen.length])
-      : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
+      ? drT("OK - {0} details an employee may change, {1} we keep asking for",
+            [chosen.length, needCount])
+      : OCS.kind === "joiner"
+        ? drT("OK - a joiner is asked for {0} details, {1} of them compulsory",
+              [chosen.length, needCount])
+        : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
   /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
   hmEl("ocs-sum").innerHTML = sens.length
     ? '<span class="ocs-warn">' + esc(
@@ -7388,6 +7624,7 @@ function ocsClose() {
   if (OCS.dlg && OCS.dlg.parentNode) OCS.dlg.parentNode.removeChild(OCS.dlg);
   OCS.dlg = null;
   OCS.pick = {};
+  OCS.need = {};
   var back = OCS.opener;
   OCS.opener = null;
   if (back && back.focus && document.body.contains(back)) back.focus();
@@ -7395,12 +7632,28 @@ function ocsClose() {
 
 function ocsSave() {
   var key = OCS.kind === "docs" ? OCS_DOCS_KEY
-          : OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+          : OCS.kind === "my" ? OCS_MY_KEY
+          : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
+  var needKey = OCS.kind === "joiner" ? OCS_JOINER_NEED_KEY
+              : OCS.kind === "my" ? OCS_MY_NEED_KEY : null;
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
+  /* Only a ticked row can be compulsory, so the required list is pruned here as
+     well as refused at the setter and intersected again at every reader. */
+  var needed = Object.keys(OCS.need || {}).filter(function (k) {
+    return OCS.need[k] && chosen.indexOf(k) >= 0;
+  });
   var btn = hmEl("ocs-ok");
   btn.disabled = true;
   gpFetch(OCS_API + "set_people_setting", { key: key, value: chosen.join(",") },
           { lostAnswerHandled: true }).then(function () {
+    /* ASKED first, then REQUIRED, and the order matters: the setter refuses a
+       name that is compulsory but not being asked for, so sending them the
+       other way round would refuse a legitimate save. */
+    if (!needKey) return null;
+    return gpFetch(OCS_API + "set_people_setting",
+                   { key: needKey, value: needed.join(",") },
+                   { lostAnswerHandled: true });
+  }).then(function () {
     var n = chosen.length;
     ocsClose();
     ocsLoad();
@@ -7443,6 +7696,7 @@ document.addEventListener("click", function (e) {
   if (what === "pick-profile") ocsPick("profile");
   else if (what === "pick-docs") ocsPick("docs");
   else if (what === "pick-my") ocsPick("my");
+  else if (what === "pick-joiner") ocsPick("joiner");
   else if (what === "cancel") ocsClose();
   else if (what === "ok") ocsSave();
   else if (what === "preview") ocsPreview();
@@ -7461,7 +7715,22 @@ document.addEventListener("change", function (e) {
   var t = e.target;
   if (!t || !t.getAttribute) return;
   if (t.getAttribute("data-ocs-v")) {
-    OCS.pick[t.getAttribute("data-ocs-v")] = t.checked ? 1 : 0;
+    var which = t.getAttribute("data-ocs-v");
+    OCS.pick[which] = t.checked ? 1 : 0;
+    /* Unticking a detail takes its "must fill in" tick with it. A compulsory
+       detail nobody is being asked for is a setting that cannot mean anything,
+       and leaving it set would be refused at the setter on the next save. */
+    if (!t.checked && OCS.need) OCS.need[which] = 0;
+    /* The second tick only exists on a ticked row, so the rows are redrawn
+       rather than toggled in place - one source of truth for the markup. */
+    var body = hmEl("ocs-dlg-bd");
+    if (body) body.innerHTML = ocsRows();
+    ocsSummary();
+    return;
+  }
+  if (t.getAttribute("data-ocs-need")) {
+    if (!OCS.need) OCS.need = {};
+    OCS.need[t.getAttribute("data-ocs-need")] = t.checked ? 1 : 0;
     ocsSummary();
     return;
   }
@@ -8201,7 +8470,29 @@ function dmWidget(m) {
       + esc(dmCost(w.next.quarters + w.extra).toLowerCase()) + ".</span></div>";
   }
 
-  return head + facts + verdict + nextUp + dmLadder(m, w) + dmMarks(m);
+  // **TWO COLUMNS ON A WIDE SCREEN.** Surbhi, 1 Nov 2026: the card was one
+  // tall full-width stack and read as too wide.
+  //
+  // The split is by what the block is FOR, not by length. The left column is
+  // the whole "where am I right now" story, read top to bottom: the three
+  // numbers, the sentence about them, and the next time that changes it. The
+  // right column is the two lists you SCAN rather than read.
+  //
+  // The head stays full width. It names the day and the shift for both
+  // columns, and its tinted bar would otherwise stop halfway across the card.
+  //
+  // ONE COLUMN WHEN THERE IS NOTHING TO PUT IN THE SECOND. Before any ladder
+  // or mark exists - a day with no rungs, or nothing earned or missed yet -
+  // both helpers return "". Wrapping that in a grid would draw an empty
+  // half-card with a divider down the middle of nothing.
+  var reference = dmLadder(m, w) + dmMarks(m);
+  var now = facts + verdict + nextUp;
+  if (!reference) return head + now;
+  return head
+    + '<div class="dw-cols">'
+    + '<div class="dw-col">' + now + "</div>"
+    + '<div class="dw-col dw-col-ref">' + reference + "</div>"
+    + "</div>";
 }
 
 function dmFact(label, value, note) {
@@ -10139,6 +10430,7 @@ function loadPortalContext() {
     if (navAdminLink && ctx.is_system_manager && ctx.is_control_plane) {
       navAdminLink.style.display = "block";
     }
+    routeWhenReady();   /* ALV-288: one of the two answers the address waits for */
   });
 }
 
@@ -10218,6 +10510,7 @@ function loadAvailableFeatures() {
     if (f.goals) loadHomeGoals();
     // Re-check scroll arrows now that nav items may have appeared
     sbUpdateScrollBtns();
+    routeWhenReady();   /* ALV-288: the other answer; the later one restores */
   });
 }
 
@@ -10457,10 +10750,30 @@ function closeEmpDrawer() {
      keyboard user lands at the top of the page and has to tab back through the
      whole chart to the name they were reading. */
   var back = MPF.opener;
+  var tray = MPF.tray;
+  var was = MPF.emp;
   MPF.opener = null;
+  MPF.tray = null;
   MPF.emp = null;
   MPF.big = false;
   MPF.pinned = false;
+  /* ALV-287: a document on screen goes with the profile, and its blob url is
+     given back - the url lives exactly as long as the thing that shows it. */
+  mpfCloseDoc();
+  /* ALV-286: the seat tray this profile was opened from comes back, at the
+     same seat and scrolled where it was left. Focus goes to the SAME NAME in
+     the redrawn list rather than to the detached button it came from, which is
+     AC-60's rule applied to a list that has been drawn again. */
+  if (tray && typeof posSeatSheet === "function") {
+    posSeatSheet(tray.id);
+    var trayBody = document.querySelector("#pos-layer .sh-b");
+    if (trayBody) trayBody.scrollTop = tray.scroll;
+    var names = document.querySelectorAll("#pos-layer [data-pos-who]");
+    for (var i = 0; i < names.length; i++) {
+      if (names[i].getAttribute("data-pos-who") === was) { names[i].focus(); return; }
+    }
+    return;
+  }
   if (back && back.focus && document.body.contains(back)) back.focus();
 }
 
@@ -10474,7 +10787,13 @@ function closeEmpDrawer() {
    It is deliberately short. What it answers is "who is this, what do they do,
    since when" - the three things somebody reading a structure chart actually
    wants - and it saves an HR hop into the Desk. It is not a personnel file. */
-var MPF = { emp: null, opener: null, big: false, pinned: false, data: null, pics: {} };
+/* `tray` is ALV-286's one piece of state: the seat tray that was closed to let
+   this profile be seen, and where its list was scrolled, so closing the profile
+   puts both back. It sits beside `opener` because it answers the same question
+   - where was the reader before this drawer - for the case where the thing they
+   came from no longer exists to focus. */
+var MPF = { emp: null, opener: null, big: false, pinned: false, data: null, pics: {},
+            tray: null };
 var MPF_API = "alvoraa_portal.positions_profile.";
 
 /* THE one field list. The order is the allow-list's order, so the drawer reads
@@ -10494,7 +10813,10 @@ var MPF_FIELDS = [
   ["employment_type", "Kind of employment"],
   ["date_of_joining", "In the company since"],
   ["default_shift",   "Usual shift"],
-  ["company_email",   "Work email"]
+  ["company_email",   "Work email"],
+  /* Slice 080. Her label, word for word - she rejected "Work phone" - so this
+     one is NOT reworded the way the rows above are. */
+  ["alvoraa_alternative_number", "Alternative number"]
 ];
 var MPF_DATE = { date_of_joining: 1 };
 
@@ -10515,6 +10837,26 @@ window.mpfOpen = function (employee, opener) {
   MPF.big = false;
   MPF.pinned = false;
   MPF.data = null;
+  /* ALV-286. The seat tray is `position:fixed` at z-index 1150; this drawer is
+     1101. So a name clicked inside the tray opened the profile UNDERNEATH it,
+     and the tray stayed down the right-hand side of a dimmed page - which
+     reads as broken rather than as two things open at once.
+
+     Her decision: close the tray, and come back to the list where she left it
+     when the profile closes. So the seat and the scroll are remembered here
+     and put back by closeEmpDrawer, and nothing else about the tray is kept.
+
+     Only a SEAT tray, and only when the name was clicked inside the layer: the
+     Positions table and the seat page use this same handler and have no tray,
+     and the other sheets hold no names to click. */
+  if (POS.sheet && POS.sheet.kind === "seat"
+      && MPF.opener && MPF.opener.closest && MPF.opener.closest("#pos-layer")) {
+    var trayBody = document.querySelector("#pos-layer .sh-b");
+    MPF.tray = { id: POS.sheet.id, scroll: trayBody ? trayBody.scrollTop : 0 };
+    /* `true` = do not move focus: focus is about to go into this drawer, and
+       the button it would go back to is the one being taken off the page. */
+    posCloseSheet(true);
+  }
   overlay.classList.add("open");
   drawer.classList.add("open");
   document.body.style.overflow = "hidden";
@@ -10649,7 +10991,19 @@ function mpfList(d) {
      those three words do not appear about the un-ticked ones.
    * A ticked type with no file says WHO COLLECTS IT, so a dead row becomes an
      action rather than a shrug.
-   * No inline preview, no thumbnail, no download-all. */
+   * No thumbnail in the list, and NO DOWNLOAD-ALL - still true and still
+     deliberate: one click must never put a person's whole identity file
+     through eight worker slots.
+   * View SHOWS the document instead of saving it (ALV-287, 2 Nov 2026), in
+     her words "both image and PDF together in a generous size popup". It
+     replaces "no inline preview", which was written when the download was the
+     only option: a reader checking a card was the right one had to keep a
+     copy of a colleague's identity document to look at it, in a Downloads
+     folder that sits outside the access log, outside retention and outside
+     any erasure. The list itself still shows nothing - the document opens in
+     `mpfShowDoc`, which is where the wording lives, and where her decision
+     about the PDF and the sandbox is written down with the measurements
+     behind it. */
 function mpfDocsLoad(employee) {
   gpFetch(MPF_API.replace("positions_profile.", "employee_documents_read.")
           + "get_employee_documents", { employee: employee }).then(function (d) {
@@ -10720,14 +11074,18 @@ function mpfOpenDoc(row, btn) {
     var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
     if (m) name = decodeURIComponent(m[1]);
     return res.blob().then(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = name;      /* saved, never rendered inline */
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+      /* ALV-287. The bytes are already in the browser, so showing them costs
+         nothing more than saving them did. The TYPE comes from the blob, which
+         Frappe's `as_raw` sets from the file name (`mimetypes.guess_type`), so
+         no server change was needed to tell a PDF or a picture from anything
+         else. A file it cannot name arrives as `application/unknown` and falls
+         through to the save, which is the behaviour this button always had. */
+      var kind = String(blob.type || "").toLowerCase();
+      if (kind === "application/pdf" || kind.indexOf("image/") === 0) {
+        mpfShowDoc(blob, kind === "application/pdf", name, btn);
+      } else {
+        mpfSaveDoc(blob, name);
+      }
     });
   }).then(function () {
     if (btn) btn.disabled = false;
@@ -10735,6 +11093,148 @@ function mpfOpenDoc(row, btn) {
     if (btn) btn.disabled = false;
     toast(drT("That document could not be opened. Ask HR if you need it."), "err");
   });
+}
+
+/* Anything that is neither a PDF nor a picture: saved, exactly as this button
+   has always done. Ten seconds is plenty for a click the browser has already
+   taken, and nothing is on screen waiting on this url - unlike the viewer's,
+   which is why that one has no timer at all. */
+function mpfSaveDoc(blob, name) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+}
+
+/* ── the document on screen (ALV-287) ────────────────────────────────────────
+   Her decision, after being shown the trade-offs: "do both image and PDF
+   together in a generous size popup." A reader checking that an Aadhaar card
+   is the right one had to SAVE a colleague's identity document to their own
+   machine to look at it - which is a copy nobody asked for, on a laptop nobody
+   tracks.
+
+   Its OWN fixed overlay, not an absolute box inside the drawer like `.mpf-big`.
+   That was a real choice: a 240 px photograph fits a 480 px drawer and a
+   scanned A4 page does not, and she asked for a generous size. So this is
+   pinned to the window at z-index 1250 - above the drawer (1101) and above the
+   seat tray (1150) - and `.mpf-dv` is listed in `scripts/check_portal_trays.js`
+   so it gets the same geometry checks every other overlay gets.
+
+   THE PDF HAS NO SANDBOX, AND THAT IS A DECIDED QUESTION. Do not re-litigate
+   it; read this first.
+
+   The first build of this put the PDF in an `<iframe sandbox="">` and shipped
+   pictures only, because a sandbox cannot be had at the same time as a PDF.
+   Measured against the same blob on the same page, Chrome 157.0.0.0 on
+   Windows, 2 Nov 2026:
+
+       sandbox=""                                 broken-file icon
+       sandbox="allow-scripts"                    broken-file icon
+       sandbox="allow-scripts allow-same-origin"  broken-file icon
+       no sandbox attribute                       renders
+       <embed type="application/pdf">             renders
+
+   A plain http PDF url behaved identically - fine unsandboxed, broken
+   sandboxed - so it is the sandbox that stops it and not the blob. Chrome
+   simply does not run its PDF viewer in a sandboxed frame at any value.
+
+   Surbhi's answer, 2 Nov 2026, and her reasons:
+
+     * The sandbox was never her instruction. Her words were "do both image and
+       PDF together in a generous size popup"; the sandbox was added on top of
+       that. When the two cannot both be had, the thing that was added is the
+       thing that gives way.
+     * Chrome already runs its PDF engine in its own locked-down OS process, so
+       "unsandboxed iframe" overstates what is being given up here.
+     * **The download was the worse of the two.** It puts the file in the
+       reader's Downloads folder and opens it in Acrobat - a far more exposed
+       renderer - in a copy that outlives the session and sits outside the
+       access log, outside retention and outside any erasure we ever perform.
+       The list she was looking at had an Aadhaar card on it, and the masking
+       is guidance only (079 section 6c). Showing it on screen keeps it inside
+       all three.
+
+   An `<iframe>` and not an `<embed>`, though both render: an iframe takes a
+   `title`, so the frame has an accessible name, and `<embed>` has no reliable
+   way to give one. `referrerpolicy="no-referrer"` stays for the same reason it
+   was there before.
+
+   WHAT THE WORDING MAY PROMISE. Friction, not protection. A reader can
+   screenshot this, right-click a picture, or use the browser's own PDF
+   toolbar, and nothing on screen may suggest otherwise. So the line under it
+   says what is true, for a PDF exactly as for a picture: it saves them keeping
+   a copy, opening it is recorded, and anybody who can see the screen can read
+   it.
+
+   THE URL'S LIFETIME is the viewer's. It is revoked when the viewer closes and
+   when the profile closes, and never on a timer - a timer would blank a
+   document somebody was still reading, which is exactly what 10 seconds would
+   have done here. */
+var MPF_DOC = null;
+
+function mpfShowDoc(blob, isPdf, name, btn) {
+  mpfCloseDoc();                       /* one document at a time */
+  var url = URL.createObjectURL(blob);
+  MPF_DOC = { url: url, btn: btn || null };
+  var box = document.createElement("div");
+  box.className = "mpf-dv";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("tabindex", "-1");
+  box.setAttribute("aria-label", drT("Document: {0}", [name]));
+  box.innerHTML = '<div class="mpf-dv-in">'
+    + '<div class="mpf-dv-h"><h2 class="mpf-dv-t">' + esc(name) + "</h2>"
+    + '<button type="button" class="btn btn-outline btn-sm" data-mpf="doc-close">'
+    + esc(drT("Close")) + "</button></div>"
+    + '<div class="mpf-dv-b">'
+    + (isPdf
+        ? '<iframe class="mpf-dv-f" referrerpolicy="no-referrer" title="'
+          + esc(drT("Document: {0}", [name])) + '"></iframe>'
+        : '<img class="mpf-dv-i" alt="' + esc(drT("Document: {0}", [name])) + '">')
+    + "</div>"
+    + '<p class="mpf-dv-say gp-hint">' + esc(drT(
+        "Shown here so you do not have to save a copy. Opening it is recorded. "
+        + "Anyone who can see your screen can read it.")) + "</p></div>";
+  document.body.appendChild(box);
+  var holder = box.querySelector(isPdf ? ".mpf-dv-f" : ".mpf-dv-i");
+  /* A picture the browser will not draw - a TIFF, say - must not leave a
+     broken square and a reader with nothing. It takes the save it would have
+     had, rather than a type list here that would drift from the browser's.
+     An iframe fires no `error` for a PDF it cannot render, so this is the
+     picture's safety net only; a browser with no PDF engine shows its own
+     message inside the frame, which is still better than a silent nothing. */
+  if (!isPdf) {
+    holder.addEventListener("error", function () {
+      mpfCloseDoc();
+      mpfSaveDoc(blob, name);
+    }, { once: true });
+  }
+  holder.src = url;
+  /* A click on the dark part closes it, like every other overlay on the page. */
+  box.addEventListener("click", function (e) {
+    if (e.target === box) mpfCloseDoc();
+  });
+  box.focus();
+}
+
+function mpfCloseDoc() {
+  var box = document.querySelector(".mpf-dv");
+  var was = MPF_DOC;
+  if (box) box.remove();
+  if (was) { URL.revokeObjectURL(was.url); MPF_DOC = null; }
+  /* Back to the View button that opened THIS document - but only while the
+     profile is still open, because the profile may have closed underneath the
+     viewer, and focus must never land on a button inside a hidden drawer
+     (AC-60's rule). closeEmpDrawer sends it somewhere real in that case. */
+  if (box && was && was.btn && was.btn.focus
+      && document.querySelector("#emp-drawer.open")
+      && document.body.contains(was.btn)) {
+    was.btn.focus();
+  }
 }
 
 /* ── the enlargement ─────────────────────────────────────────────────────── */
@@ -10848,8 +11348,16 @@ document.addEventListener("click", function (e) {
     }
   }
   else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
-  else if (what === "settings") { closeEmpDrawer(); switchPanel("org-settings", null); }
+  else if (what === "settings") {
+    /* This one LEAVES the Positions page, so ALV-286's "come back to the tray"
+       is dropped on purpose: a seat tray reopening over the settings panel is
+       the bug again, one screen along. */
+    MPF.tray = null;
+    closeEmpDrawer();
+    switchPanel("org-settings", null);
+  }
   else if (what === "doc") { mpfOpenDoc(t.getAttribute("data-row"), t); }
+  else if (what === "doc-close") { mpfCloseDoc(); }
   else if (what === "hide") {
     /* Slice 065's own behaviour: session only, never remembered. */
     var sec = t.closest(".mpf-docs");
@@ -10891,23 +11399,38 @@ document.addEventListener("mouseout", function (e) {
 /* ONE Escape handler for the whole drawer (AC-60, AC-62).
    The first Escape closes the ENLARGEMENT ONLY and puts focus back on the
    photograph. A second closes the drawer. Getting that order wrong means a
-   reader who presses Escape to put a picture away loses the whole profile. */
+   reader who presses Escape to put a picture away loses the whole profile.
+   ALV-287 adds the document viewer at the top of the same order, for the same
+   reason: it is the thing in front of them. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" && e.key !== "Esc") return;
   var drawer = document.getElementById("emp-drawer");
   if (!drawer || !drawer.classList.contains("open")) return;
   e.preventDefault();
+  if (MPF_DOC) { mpfCloseDoc(); return; }
   if (MPF.big) { mpfCloseBig(); return; }
   closeEmpDrawer();
 });
 
-/* Focus stays inside while it is open. */
+/* Focus stays inside while it is open. ALV-287: while a document is on screen
+   the viewer is what focus stays inside, because it is in FRONT of the drawer
+   and tabbing into the profile behind it would be tabbing into something the
+   reader cannot see.
+
+   `iframe` is in the list, and the frame is the one place this trap stands
+   aside. A PDF viewer has a toolbar and a scrollable page of its own, and the
+   browser owns that tab order; trapping on the frame ELEMENT would leave a
+   keyboard user able to see page one of a contract and reach nothing else in
+   it. With only a Close button in the list that is exactly what happened. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Tab") return;
   var drawer = document.getElementById("emp-drawer");
   if (!drawer || !drawer.classList.contains("open")) return;
+  var viewer = document.querySelector(".mpf-dv");
+  if (viewer && document.activeElement === viewer.querySelector("iframe")) return;
+  drawer = viewer || drawer;
   var able = drawer.querySelectorAll(
-    'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex="0"]');
+    'a[href], button:not([disabled]), input:not([disabled]), select, textarea, iframe, [tabindex="0"]');
   if (!able.length) return;
   var first = able[0], last = able[able.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -22526,4 +23049,7 @@ document.addEventListener("DOMContentLoaded", function() {
   loadPortalContext();
   loadHome();
   loadAvailableFeatures();
+  /* ALV-288: Back and Forward. The startup read is not here - it waits for the
+     two calls above to answer, in routeWhenReady. */
+  window.addEventListener("hashchange", routeFromAddress);
 });

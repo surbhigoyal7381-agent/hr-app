@@ -39,12 +39,56 @@ JOINER_FIELDS = (
 	"emergency_phone",
 )
 
+# Slice 079. The six details HR ticks are named after `Employee`'s own columns -
+# `people_fields.MY_PROFILE_WRITE_FIELDS`, the same six an employee may correct
+# about themselves, by identity so a third list cannot appear and drift. This
+# doctype's columns were named differently in 078, so the map is fixed here, in
+# one place, and tested.
+#
+# `full_name` is deliberately NOT in it: it is HR's own entry at invite,
+# pre-filled on the form, correctable by the joiner, and never made compulsory
+# by a tick (AC-104).
+COLUMN_FOR_TICK = {
+	"cell_number": "mobile",
+	"personal_email": "personal_email",
+	"current_address": "current_address",
+	"person_to_be_contacted": "emergency_contact_name",
+	"relation": "emergency_relation",
+	"emergency_phone_number": "emergency_phone",
+}
+
 
 class AlvoraaJoinerSubmission(Document):
 	def validate(self):
 		self._refuse_a_revival()
 		self._follow_the_employee()
 		self._stamp_the_closing()
+
+	def on_update(self):
+		self._close_the_sign_in()
+
+	def _close_the_sign_in(self):
+		"""Slice 079, 079-SEC-5. **The one place all the endings meet.**
+
+		Four of the five ways a joiner's access ends are a move into a terminal
+		state - cancelled, expired, hired, and turned down (which HR records as
+		a cancellation with that reason). Putting the closing here rather than
+		at four call sites means no caller can forget it, and it happens in the
+		same transaction as the status change.
+
+		**The fifth ending is not here, and that is decision 4a:** pressing Send
+		ends the FORM, not the sign-in. Somebody who finds their PAN card the
+		next evening should not have to ring HR, so the account lives until its
+		expiry date or until HR ends it.
+		"""
+		if self.status not in TERMINAL or not self.get("user"):
+			return
+		before = self.get_doc_before_save()
+		if before and before.status == self.status:
+			return
+		from alvoraa_portal.joiner_invite import end_the_sign_in
+
+		end_the_sign_in(self, why=self.status)
 
 	def _stamp_the_closing(self):
 		"""When it stopped being live, recorded ONCE.
@@ -87,6 +131,10 @@ def strip_personal_fields(doc):
 	for field in JOINER_FIELDS:
 		doc.set(field, None)
 	doc.set("bring_on_day_one", None)
+	# HR's own entry, and still this person's telephone number or email - so it
+	# goes with everything else. It is not in `JOINER_FIELDS` because the joiner
+	# is never asked for it and it is never one of HR's ticks.
+	doc.set("login_id", None)
 
 
 def erase(name, why, force=False):
@@ -116,6 +164,45 @@ def erase(name, why, force=False):
 	if doc.erased_on:
 		return False
 
+	deleted = delete_the_documents(name)
+	account = _delete_the_sign_in(doc)
+
+	strip_personal_fields(doc)
+	doc.erased_on = now()
+	doc.erased_why = why
+	# `ignore_permissions` is passed to `save` below; setting the flag as well
+	# was a second copy of the same decision.
+	doc.flags.ignore_validate_update_after_submit = True
+	# Slice 079, 079-PRIV-2. **Without this the erasure is theatre.** The doctype
+	# carries `track_changes: 1`, so a save that clears a field writes the OLD
+	# value into `tabVersion` - the mobile number, the home address and the
+	# emergency contact we have just told somebody we deleted.
+	#
+	# **PASSED to `save`, not set as a flag.** `Document._save` overwrites
+	# `flags.ignore_version` from its own argument
+	# (`frappe/model/document.py:576`), defaulting to `frappe.in_test` - so the
+	# flag version of this line worked in every test and did nothing in
+	# production. `_sweep_the_history` below is what reaches the rows HR's own
+	# editing wrote, which is a different job.
+	doc.save(ignore_permissions=True, ignore_version=True)
+	_sweep_the_history(name)
+	frappe.db.commit()
+
+	# A count and a reason. Never a name, never a number, never a file.
+	frappe.logger("alvoraa").info(
+		f"joiner submission erased: {name}, {deleted} file(s), "
+		f"sign-in gone: {account}, reason {why}")
+	return True
+
+
+def delete_the_documents(name):
+	"""Every uploaded file on one row, bytes included. Returns the count.
+
+	Shared by `erase` and by the **document clock**, which deletes the files and
+	nothing else (counsel's ruling 4 - an identity document goes much sooner
+	than a candidate record). One function, so the two cannot drift apart and
+	one of them quietly stop deleting the bytes.
+	"""
 	deleted = 0
 	for file_name in frappe.get_all("File", filters={
 		"attached_to_doctype": "Alvoraa Joiner Submission",
@@ -129,16 +216,63 @@ def erase(name, why, force=False):
 			# Say which row, never what was in it.
 			frappe.log_error(f"Could not delete a joiner file on {name}",
 			                 "Joiner retention")
+	return deleted
 
-	strip_personal_fields(doc)
-	doc.erased_on = now()
-	doc.erased_why = why
-	doc.flags.ignore_permissions = True
-	doc.flags.ignore_validate_update_after_submit = True
-	doc.save(ignore_permissions=True)
-	frappe.db.commit()
 
-	# A count and a reason. Never a name, never a number, never a file.
-	frappe.logger("alvoraa").info(
-		f"joiner submission erased: {name}, {deleted} file(s), reason {why}")
-	return True
+def _sweep_the_history(name):
+	"""Delete every `Version` row for this submission (079-PRIV-2 clause 3).
+
+	**This is the clause that made both retention clocks real.** The joiner's own
+	submit and this erase both pass `ignore_version`, so no new history row
+	carries their values - but HR's own edits DO write history, deliberately
+	(AC-96: §14 of the spec promises that "who changed this row, and to what" is
+	answerable a year later), and an HR edit to the mobile number puts the
+	mobile number in `tabVersion`.
+
+	So the sweep is not belt and braces on the `ignore_version` flags. It is the
+	only thing that reaches what HR's editing wrote. An audit trail of *who
+	issued and closed an invite* survives in the row's own shell - `status`,
+	`invited_by`, the dates, `erased_on`, `erased_why` - and holds nothing about
+	the person.
+	"""
+	try:
+		frappe.db.delete("Version", {
+			"ref_doctype": "Alvoraa Joiner Submission", "docname": name,
+		})
+	except Exception:
+		frappe.log_error(f"Could not clear the history on {name}",
+		                 "Joiner retention")
+
+
+def _delete_the_sign_in(doc):
+	"""The joiner's `User` row, gone (079-PRIV-2 clause 4).
+
+	`delete_permanently=True` so Frappe's own `Deleted Document` does not keep a
+	JSON copy of their name - which would make the erasure a move rather than a
+	deletion.
+
+	**If a linked row makes the delete impossible, the fallback is explicit**:
+	strip the name, strip the roles, disable, and record on the row that the
+	account could not go. Never leave a named user row behind silently.
+	"""
+	name = doc.get("user")
+	if not name or not frappe.db.exists("User", name):
+		return "none"
+	try:
+		frappe.delete_doc("User", name, force=True, ignore_permissions=True,
+		                  delete_permanently=True)
+		doc.set("user", None)
+		return "deleted"
+	except Exception:
+		try:
+			frappe.db.set_value("User", name, {
+				"enabled": 0, "first_name": "Erased", "full_name": "Erased",
+				"mobile_no": None, "phone": None,
+			}, update_modified=False)
+			frappe.db.delete("Has Role", {"parent": name, "parenttype": "User"})
+		except Exception:
+			pass
+		frappe.log_error(
+			f"The sign-in on {doc.name} could not be deleted, so it was stripped "
+			f"and disabled instead", "Joiner retention")
+		return "stripped"

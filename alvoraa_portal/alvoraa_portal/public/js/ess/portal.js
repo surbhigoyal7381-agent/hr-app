@@ -10994,15 +10994,16 @@ function mpfList(d) {
    * No thumbnail in the list, and NO DOWNLOAD-ALL - still true and still
      deliberate: one click must never put a person's whole identity file
      through eight worker slots.
-   * View SHOWS a picture instead of saving it (ALV-287, 2 Nov 2026). It
+   * View SHOWS the document instead of saving it (ALV-287, 2 Nov 2026), in
+     her words "both image and PDF together in a generous size popup". It
      replaces "no inline preview", which was written when the download was the
      only option: a reader checking a card was the right one had to keep a
-     copy of a colleague's identity document to look at it. Her decision was
-     "do both image and PDF together in a generous size popup"; only the
-     image half ships, because Chrome will not render a PDF in a sandboxed
-     frame and she made the sandbox a condition of showing one - the
-     measurements and the open question are in `mpfShowDoc`. The list itself
-     still shows nothing. */
+     copy of a colleague's identity document to look at it, in a Downloads
+     folder that sits outside the access log, outside retention and outside
+     any erasure. The list itself still shows nothing - the document opens in
+     `mpfShowDoc`, which is where the wording lives, and where her decision
+     about the PDF and the sandbox is written down with the measurements
+     behind it. */
 function mpfDocsLoad(employee) {
   gpFetch(MPF_API.replace("positions_profile.", "employee_documents_read.")
           + "get_employee_documents", { employee: employee }).then(function (d) {
@@ -11076,12 +11077,12 @@ function mpfOpenDoc(row, btn) {
       /* ALV-287. The bytes are already in the browser, so showing them costs
          nothing more than saving them did. The TYPE comes from the blob, which
          Frappe's `as_raw` sets from the file name (`mimetypes.guess_type`), so
-         no server change was needed to tell a picture from anything else. A
-         file it cannot name arrives as `application/unknown` and falls through
-         to the save, which is the behaviour this button always had. */
+         no server change was needed to tell a PDF or a picture from anything
+         else. A file it cannot name arrives as `application/unknown` and falls
+         through to the save, which is the behaviour this button always had. */
       var kind = String(blob.type || "").toLowerCase();
-      if (kind.indexOf("image/") === 0) {
-        mpfShowDoc(blob, name, btn);
+      if (kind === "application/pdf" || kind.indexOf("image/") === 0) {
+        mpfShowDoc(blob, kind === "application/pdf", name, btn);
       } else {
         mpfSaveDoc(blob, name);
       }
@@ -11094,10 +11095,10 @@ function mpfOpenDoc(row, btn) {
   });
 }
 
-/* Anything that is not a picture: saved, exactly as this button has always
-   done. Ten seconds is plenty for a click the browser has already taken, and
-   nothing is on screen waiting on this url - unlike the viewer's, which is why
-   that one has no timer at all. */
+/* Anything that is neither a PDF nor a picture: saved, exactly as this button
+   has always done. Ten seconds is plenty for a click the browser has already
+   taken, and nothing is on screen waiting on this url - unlike the viewer's,
+   which is why that one has no timer at all. */
 function mpfSaveDoc(blob, name) {
   var url = URL.createObjectURL(blob);
   var a = document.createElement("a");
@@ -11123,33 +11124,51 @@ function mpfSaveDoc(blob, name) {
    seat tray (1150) - and `.mpf-dv` is listed in `scripts/check_portal_trays.js`
    so it gets the same geometry checks every other overlay gets.
 
-   ⚠ PICTURES ONLY, AND A PDF STILL DOWNLOADS. That is NOT what she asked for,
-   and it waits on her. She said "do both image and PDF together", and she also
-   said the restrictive sandbox was not optional, because
-   `employee_documents_read.py` records that a PDF is the one accepted type we
-   do not re-encode and therefore cannot strip. Those two cannot both be had:
-   **Chrome does not run its PDF viewer in a sandboxed iframe at all.** Measured
-   on Chrome 157.0.0.0 on Windows, same blob, same page, 2 Nov 2026:
+   THE PDF HAS NO SANDBOX, AND THAT IS A DECIDED QUESTION. Do not re-litigate
+   it; read this first.
 
-       sandbox=""                              broken-file icon
-       sandbox="allow-scripts"                 broken-file icon
+   The first build of this put the PDF in an `<iframe sandbox="">` and shipped
+   pictures only, because a sandbox cannot be had at the same time as a PDF.
+   Measured against the same blob on the same page, Chrome 157.0.0.0 on
+   Windows, 2 Nov 2026:
+
+       sandbox=""                                 broken-file icon
+       sandbox="allow-scripts"                    broken-file icon
        sandbox="allow-scripts allow-same-origin"  broken-file icon
-       no sandbox attribute                    renders
-       <embed type="application/pdf">          renders
+       no sandbox attribute                       renders
+       <embed type="application/pdf">             renders
 
-   The same http url renders unsandboxed and fails sandboxed, so it is the
-   sandbox and not the blob. Showing a PDF therefore means dropping the one
-   mitigation she attached to accepting the risk, which is a security decision
-   and hers, not this file's. A picture needs no sandbox: an `<img>` cannot
-   execute anything, and images are the half that is safe to ship today. So
-   pictures are shown, a PDF keeps the download it has always had, and nothing
-   on screen claims otherwise.
+   A plain http PDF url behaved identically - fine unsandboxed, broken
+   sandboxed - so it is the sandbox that stops it and not the blob. Chrome
+   simply does not run its PDF viewer in a sandboxed frame at any value.
+
+   Surbhi's answer, 2 Nov 2026, and her reasons:
+
+     * The sandbox was never her instruction. Her words were "do both image and
+       PDF together in a generous size popup"; the sandbox was added on top of
+       that. When the two cannot both be had, the thing that was added is the
+       thing that gives way.
+     * Chrome already runs its PDF engine in its own locked-down OS process, so
+       "unsandboxed iframe" overstates what is being given up here.
+     * **The download was the worse of the two.** It puts the file in the
+       reader's Downloads folder and opens it in Acrobat - a far more exposed
+       renderer - in a copy that outlives the session and sits outside the
+       access log, outside retention and outside any erasure we ever perform.
+       The list she was looking at had an Aadhaar card on it, and the masking
+       is guidance only (079 section 6c). Showing it on screen keeps it inside
+       all three.
+
+   An `<iframe>` and not an `<embed>`, though both render: an iframe takes a
+   `title`, so the frame has an accessible name, and `<embed>` has no reliable
+   way to give one. `referrerpolicy="no-referrer"` stays for the same reason it
+   was there before.
 
    WHAT THE WORDING MAY PROMISE. Friction, not protection. A reader can
-   screenshot this or right-click the picture, and nothing on screen may
-   suggest otherwise. So the line under it says what is true: it saves them
-   keeping a copy, opening it is recorded, and anybody who can see the screen
-   can read it.
+   screenshot this, right-click a picture, or use the browser's own PDF
+   toolbar, and nothing on screen may suggest otherwise. So the line under it
+   says what is true, for a PDF exactly as for a picture: it saves them keeping
+   a copy, opening it is recorded, and anybody who can see the screen can read
+   it.
 
    THE URL'S LIFETIME is the viewer's. It is revoked when the viewer closes and
    when the profile closes, and never on a timer - a timer would blank a
@@ -11157,7 +11176,7 @@ function mpfSaveDoc(blob, name) {
    have done here. */
 var MPF_DOC = null;
 
-function mpfShowDoc(blob, name, btn) {
+function mpfShowDoc(blob, isPdf, name, btn) {
   mpfCloseDoc();                       /* one document at a time */
   var url = URL.createObjectURL(blob);
   MPF_DOC = { url: url, btn: btn || null };
@@ -11172,20 +11191,28 @@ function mpfShowDoc(blob, name, btn) {
     + '<button type="button" class="btn btn-outline btn-sm" data-mpf="doc-close">'
     + esc(drT("Close")) + "</button></div>"
     + '<div class="mpf-dv-b">'
-    + '<img class="mpf-dv-i" alt="' + esc(drT("Document: {0}", [name])) + '">'
+    + (isPdf
+        ? '<iframe class="mpf-dv-f" referrerpolicy="no-referrer" title="'
+          + esc(drT("Document: {0}", [name])) + '"></iframe>'
+        : '<img class="mpf-dv-i" alt="' + esc(drT("Document: {0}", [name])) + '">')
     + "</div>"
     + '<p class="mpf-dv-say gp-hint">' + esc(drT(
         "Shown here so you do not have to save a copy. Opening it is recorded. "
         + "Anyone who can see your screen can read it.")) + "</p></div>";
   document.body.appendChild(box);
-  var holder = box.querySelector(".mpf-dv-i");
-  /* An image type the browser will not draw - a TIFF, say - must not leave a
+  var holder = box.querySelector(isPdf ? ".mpf-dv-f" : ".mpf-dv-i");
+  /* A picture the browser will not draw - a TIFF, say - must not leave a
      broken square and a reader with nothing. It takes the save it would have
-     had, rather than a type list here that would drift from the browser's. */
-  holder.addEventListener("error", function () {
-    mpfCloseDoc();
-    mpfSaveDoc(blob, name);
-  }, { once: true });
+     had, rather than a type list here that would drift from the browser's.
+     An iframe fires no `error` for a PDF it cannot render, so this is the
+     picture's safety net only; a browser with no PDF engine shows its own
+     message inside the frame, which is still better than a silent nothing. */
+  if (!isPdf) {
+    holder.addEventListener("error", function () {
+      mpfCloseDoc();
+      mpfSaveDoc(blob, name);
+    }, { once: true });
+  }
   holder.src = url;
   /* A click on the dark part closes it, like every other overlay on the page. */
   box.addEventListener("click", function (e) {
@@ -11388,14 +11415,22 @@ document.addEventListener("keydown", function (e) {
 /* Focus stays inside while it is open. ALV-287: while a document is on screen
    the viewer is what focus stays inside, because it is in FRONT of the drawer
    and tabbing into the profile behind it would be tabbing into something the
-   reader cannot see. */
+   reader cannot see.
+
+   `iframe` is in the list, and the frame is the one place this trap stands
+   aside. A PDF viewer has a toolbar and a scrollable page of its own, and the
+   browser owns that tab order; trapping on the frame ELEMENT would leave a
+   keyboard user able to see page one of a contract and reach nothing else in
+   it. With only a Close button in the list that is exactly what happened. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Tab") return;
   var drawer = document.getElementById("emp-drawer");
   if (!drawer || !drawer.classList.contains("open")) return;
-  drawer = document.querySelector(".mpf-dv") || drawer;
+  var viewer = document.querySelector(".mpf-dv");
+  if (viewer && document.activeElement === viewer.querySelector("iframe")) return;
+  drawer = viewer || drawer;
   var able = drawer.querySelectorAll(
-    'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex="0"]');
+    'a[href], button:not([disabled]), input:not([disabled]), select, textarea, iframe, [tabindex="0"]');
   if (!able.length) return;
   var first = able[0], last = able[able.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }

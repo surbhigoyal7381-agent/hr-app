@@ -911,12 +911,19 @@ async function openMyProfile(routes) {
      after the trade-offs: "agree, do both image and PDF together in a generous
      size popup."
 
-     ⚠ THE PDF HALF IS NOT HERE, and that is pinned below on purpose rather
-     than left as a silence. Chrome will not run its PDF viewer in a sandboxed
-     iframe at all (measured on Chrome 157, every sandbox value), and she made
-     the restrictive sandbox a condition of showing a PDF inline. The two
-     cannot both be had, so the picture half ships and the PDF keeps its
-     download until she decides. */
+     THE PDF FRAME HAS NO SANDBOX, AND THAT IS PINNED BELOW ON PURPOSE. A
+     first build sandboxed it and shipped pictures only, because Chrome will
+     not run its PDF viewer in a sandboxed iframe at ANY value - measured on
+     Chrome 157 with `sandbox=""`, `allow-scripts` and
+     `allow-scripts allow-same-origin`, all broken, unsandboxed fine, and a
+     plain http url behaving identically so it is the sandbox and not the
+     blob. Surbhi decided to show it anyway: the sandbox was added on top of
+     her decision rather than part of it, Chrome's PDF engine already runs in
+     its own locked-down OS process, and the download it replaces leaves an
+     Aadhaar card in a Downloads folder, opened in Acrobat, outside the access
+     log, outside retention and outside any erasure. The assertion below is
+     what stops somebody "tidying up" a missing sandbox attribute and quietly
+     turning every PDF back into a download. */
   const downloads = [];
   const realClick = window.HTMLAnchorElement.prototype.click;
   window.HTMLAnchorElement.prototype.click = function () {
@@ -955,8 +962,8 @@ async function openMyProfile(routes) {
   yes(!!shot && !!shot.getAttribute("alt"),
       "ALV-287: with alt text, because an unlabelled image is nothing to a "
       + "screen reader");
-  yes(!dv.querySelector("iframe") && !dv.querySelector("embed"),
-      "ALV-287: no frame and no embed today - the PDF half waits on her");
+  yes(!dv.querySelector("iframe"),
+      "ALV-287: a picture is an <img>, not a frame");
   yes(!/\/private\/files/.test(dv.innerHTML),
       "078 AC-66 still holds: no /private/files address reaches the browser");
   const dvText = text(dv);
@@ -992,20 +999,59 @@ async function openMyProfile(routes) {
       && window.URLS.live.size === 0,
       "ALV-287: nothing is left on screen and no object url is left behind");
 
-  /* The PDF, and the types nobody listed: still saved, exactly as before. */
+  /* The PDF: the SAME viewer, in a frame with no sandbox. */
   ROUTES.open_employee_document = { file: { name: "contract.pdf", type: "application/pdf" } };
   window.mpfOpen("HR-EMP-9", opener);
   await settle(200);
   downloads.length = 0;
   click($("emp-drawer").querySelector('[data-mpf="doc"]'));
   await settle(200);
-  yes(!doc.querySelector(".mpf-dv"),
-      "ALV-287: a PDF does NOT open in the viewer - Chrome will not render one "
-      + "in a sandboxed frame, and the sandbox is the condition she set");
-  eq(downloads.map(d => d.download), ["contract.pdf"],
-     "ALV-287: it is saved instead, exactly as this button always did");
+  const pdv = doc.querySelector(".mpf-dv");
+  yes(!!pdv, "ALV-287: a PDF opens in the viewer too - one viewer for both");
+  yes(!downloads.length,
+      "ALV-287: and a PDF is no longer saved to the reader's Downloads folder, "
+      + "which was the copy outside the access log, outside retention and "
+      + "outside any erasure", JSON.stringify(downloads));
+  const frame = pdv && pdv.querySelector("iframe");
+  yes(!!frame && /^blob:/.test(frame.getAttribute("src") || ""),
+      "ALV-287: in an iframe holding the blob the POST already fetched",
+      frame && frame.getAttribute("src"));
+  yes(!!frame && !frame.hasAttribute("sandbox"),
+      "ALV-287: with NO sandbox attribute - her decision, because Chrome runs "
+      + "no PDF viewer in a sandboxed frame at any value and the download it "
+      + "replaces was the worse exposure. Read mpfShowDoc before changing "
+      + "this; it is decided, not forgotten",
+      frame && frame.getAttribute("sandbox"));
+  yes(!!frame && !!frame.getAttribute("title"),
+      "ALV-287: an iframe and not an embed, so the frame has an accessible "
+      + "name");
+  yes(!!frame && frame.getAttribute("referrerpolicy") === "no-referrer",
+      "ALV-287: and it still sends no referrer");
+  yes(!/\/private\/files/.test(pdv.innerHTML),
+      "078 AC-66 still holds for a PDF: no /private/files address reaches the "
+      + "browser");
+  const pdvText = text(pdv);
+  yes(!/hidden|protected|secure|read.?only/i.test(pdvText),
+      "ALV-287: and the PDF gets the SAME wording - friction, never a promise "
+      + "of protection", pdvText);
+  yes(/Opening it is recorded/.test(pdvText) && /can see your screen/.test(pdvText),
+      "ALV-287: the true half is said for a PDF as well", pdvText);
+  eq(window.URLS.live.size, 1, "ALV-287: one object url for the PDF too");
+  /* The frame has to be REACHABLE from a keyboard. With only the Close button
+     in the focus trap's list, a keyboard user could see page one of a contract
+     and reach nothing else in it. */
+  const able = [...pdv.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select, textarea,'
+    + ' iframe, [tabindex="0"]')];
+  yes(able.indexOf(frame) >= 0,
+      "ALV-287: the PDF frame is in the viewer's tab order, so the document "
+      + "itself can be reached and scrolled from a keyboard",
+      String(able.length));
+  key("Escape"); await settle(30);
+  eq(window.URLS.live.size, 0, "ALV-287: given back when the PDF viewer closes");
   key("Escape"); await settle(30);
 
+  /* And the types nobody listed: still saved, exactly as before. */
   ROUTES.open_employee_document = { file: { name: "scan.tiff", type: "application/octet-stream" } };
   window.mpfOpen("HR-EMP-9", opener);
   await settle(200);

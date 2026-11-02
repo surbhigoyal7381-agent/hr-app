@@ -303,7 +303,7 @@ class DeclineScopeCase(FrappeTestCase):
 		tag = DeclineScopeCase._slot
 		hr = self._hr_with_a_company(tag)
 		name = self._request(self._other_company_employee(tag))
-		frappe.message_log = []
+		frappe.clear_messages()
 		frappe.set_user(hr)
 		try:
 			with self.assertRaises(frappe.PermissionError):

@@ -135,7 +135,7 @@ class WithdrawAfterDeclineCase(FrappeTestCase):
 		"""The file's own rule: say what happened, why, and what to do next -
 		never just "not allowed". The day may still be wrong."""
 		name = self._declined()
-		frappe.message_log = []
+		frappe.clear_messages()
 		with self.assertRaises(frappe.ValidationError):
 			self._withdraw(name)
 		said = " ".join(m.get("message", "") for m in frappe.message_log)
@@ -147,7 +147,7 @@ class WithdrawAfterDeclineCase(FrappeTestCase):
 		the same line - and told plainly rather than silently re-stamped."""
 		name = self._request()
 		self._withdraw(name)
-		frappe.message_log = []
+		frappe.clear_messages()
 		with self.assertRaises(frappe.ValidationError):
 			self._withdraw(name)
 		said = " ".join(m.get("message", "") for m in frappe.message_log)

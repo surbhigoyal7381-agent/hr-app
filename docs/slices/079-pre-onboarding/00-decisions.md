@@ -171,6 +171,53 @@ page already live in production. It is Surbhi's own fix to a real fault — a
 1280 px box for a ten-digit phone number — and shipping it here means one
 change and one test pass rather than two.
 
+## 6c · Three more, settled 2 November
+
+**The Aadhaar masker is dropped. Guidance replaces it.** Surbhi, 2 Nov: *"as per
+the counsel we can show some guidance on the form about the correct way of
+sharing masked Adhaar card."* So the form tells the joiner how to mask the card
+themselves before uploading, and US-11 and US-12 are not built at all.
+
+**This reverses her own decision of 1 November**, recorded in §6a, which
+declined exactly this option — "asking the joiner to mask it themselves" was
+put to her and declined, and the masker was chosen *against* the security
+engineer's recommendation with the cost named. One day later the cost is no
+longer worth paying. That is a legitimate change of mind and it saves the
+slice's largest piece of work, 13 of 83 points. It is written down so nobody
+re-reads §6a as current.
+
+**What it does NOT do, stated plainly because §6a's rule was "mask or
+refuse".** Guidance is an instruction, not a control. A joiner who ignores it
+uploads an unmasked Aadhaar and we store it — the precise failure §6a said
+every design choice must break away from. Guidance plus the alternative IDs is
+the mitigation; there is no refusal behind it.
+
+**So one question goes to counsel, and it is new:** does guidance on the form
+satisfy ruling 5, which says the first 8 digits are *masked on the uploaded
+image*? Our reading is that an instruction is weaker than a control, and we
+would rather be told so now than after a card lands. Added to the 1 Nov letter.
+**ALV-215 still gates switch-on.**
+
+**Export logging is deferred, not solved.** Surbhi, 2 Nov: *"ok we can pick it
+up later."* The consequence, once: **counsel's ruling 9 is not met.** `log_level`
+is unset, Frappe defaults to ERROR outside a dev server, and all 16
+`logger("alvoraa")` calls — the export line included — are discarded. Until it
+is set, **nobody may tell a customer or a security questionnaire that exports
+are logged**, because they are not.
+
+**Hindi: the privacy notice needs no translation from us, and this was the
+cheap discovery.** Surbhi asked for Hindi "for the privacy notice for now". The
+notice is **already the employer's own typed text** — `alvoraa_joiner_notice_text`,
+a per-tenant default, and `joiner_public.py:266-274` **refuses to render the
+screen without it**. So a tenant may type it in Hindi today, with no build at
+all. That is counsel's ruling 6 working as intended: the notice belongs to the
+employer, so the language does too. What is owed is a test that Devanagari
+survives save and render, and telling HR they may.
+
+The rest of the journey — about **151 strings**, 41 server-side and 110 on the
+page — is already wrapped for translation, with **nothing hardcoded**. The
+plumbing exists; only a reviewed `hi.csv` is missing. That stays ALV-267.
+
 ## 7 · Counsel's rulings, 31 October — all binding
 
 | # | Ruling |

@@ -72,6 +72,36 @@ between three quite different pieces of work:
 when a machine-readable code may still carry the number — and if not, which of the three
 rows above we should build to.
 
+### Question 3 — is guidance on the form enough, or must the masking be a control?
+
+**Added 2 November 2026, and it now matters more than the other two.** Our
+founder's reading of your advice is that we may **show the joiner guidance on
+the form** explaining how to mask the card themselves before uploading it,
+rather than our software masking it. On that basis we have **not built** the
+masking.
+
+We would rather put the weakness to you now than discover it after a card has
+landed. Guidance is an **instruction, not a control**: a joiner who does not
+read it, or cannot follow it on a phone, uploads an unmasked Aadhaar and we
+store it. Nothing refuses it.
+
+Our reading is that ruling 5 — "the first 8 digits masked **on the uploaded
+image**" — describes the state of the stored file, not the quality of our
+advice, and that guidance alone therefore does not satisfy it.
+
+*What we need:* whether guidance on the form discharges ruling 5. If it does
+not, which of these is required:
+
+| Option | What it means for the joiner |
+|---|---|
+| Guidance only | What we have built. An unmasked card can still reach us. |
+| Guidance plus a declaration | They tick "I have masked the first 8 digits" before the upload is accepted. Still not a control, but it is a record and a prompt. |
+| We mask it ourselves | The engineering we have **not** built. Answers the risk properly. |
+| Refuse Aadhaar images | Rely on PAN, passport, licence and voter ID, which we already accept. Cheapest and safest. |
+
+We are not asking you to choose our product design. We are asking which of
+these the obligation permits.
+
 ## 4 · One thing we are not asking you to decide
 
 Whether to accept Aadhaar at all is the founder's commercial decision, and she has taken

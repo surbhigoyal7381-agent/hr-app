@@ -64,7 +64,22 @@ the employer should be told.
 has **not yet started work**, and if so on what basis. If the answer is no, we will tell
 our customer that the switch must not be set that way, and the tick stays optional.
 
-### Question 2 — if the joiner uploads UIDAI's own MASKED Aadhaar, does its QR code still carry the full number?
+### Question 2 — the masked card's QR carries only the last four digits. Please confirm, and tell us about OLD cards
+
+**We have since checked this ourselves**, so this is a confirmation rather than an open
+question. UIDAI's **Aadhaar (Authentication and Offline Verification) Regulations 2021**
+define the Aadhaar Secure QR Code as digitally signed data holding the **last four
+digits**, plus demographics and photograph. On that reading the masked download is
+genuinely masked, QR included.
+
+**The part we would value your view on: older Aadhaar prints.** Older QR formats could
+hold the full number in plain text. So a joiner who photographs an old physical card can
+pass us the twelve digits through the QR even with the printed digits covered. Our
+guidance therefore tells people to **download the masked Aadhaar from UIDAI** rather than
+cover the digits on a card they already hold. Is that sufficient, or must an old card be
+refused?
+
+**The original question, kept for the record:**
 
 This is the question that may change the shape of the control rather than its size. Modern
 Aadhaar cards and e-Aadhaar PDFs carry a machine-readable code. **If that code contains the

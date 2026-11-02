@@ -260,10 +260,27 @@ instruction, not a lock. A joiner who ignores it, or who photographs the plastic
 uploads an unmasked number and we store it. Nothing refuses such a file. §6a's rule was
 "mask or refuse"; there is now neither.
 
-**One question still genuinely open, and it decides whether any of this works.** If the
-masked Aadhaar's **QR code still carries the full twelve digits**, then the masked card
-is not masked and answer 2 collapses. We do not know. It is Question 2 of the letter and
-nobody should assert either way until counsel or UIDAI's own documentation answers it.
+**4. The QR question is answered, and it holds — with one trap.** Surbhi, 2 Nov: the
+masked card's QR carries *"just last 4 digits"*. Checked against UIDAI's own
+**Aadhaar (Authentication and Offline Verification) Regulations 2021**, which define the
+Aadhaar Secure QR Code as digitally signed data holding the **last four digits**, plus
+demographics and photograph. So the masked download really is masked, QR included, and
+answer 2 stands.
+
+**The trap: OLDER Aadhaar prints used QR formats that could hold the full number in
+plain text.** So a joiner who photographs an old physical card can hand us the twelve
+digits through the QR even though the printed digits are covered. Masking the print is
+not the whole of masking on an old card.
+
+**What that means for the guidance, and it is the difference between working and not:**
+the words must say **download the masked Aadhaar from UIDAI**, not "cover the digits on
+your card". A photograph of a covered old card can still carry the number. The guidance
+has one job and this is it.
+
+Sources: UIDAI's regulations (the definition of Aadhaar Secure QR Code) and secondary
+guides on the current format. No direct UIDAI page stating the current QR contents was
+found; the regulation definition is the strongest evidence. Counsel's Question 2 is
+answered for our purposes but is worth their confirmation.
 
 ## 7 · Counsel's rulings, 31 October — all binding
 

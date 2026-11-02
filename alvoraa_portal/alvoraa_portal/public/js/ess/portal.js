@@ -2632,7 +2632,9 @@ function spAddress(id) {
     var url = new URL(window.location.href);
     if (id) url.searchParams.set("seat", id);
     else url.searchParams.delete("seat");
-    window.history.replaceState(null, "", url.pathname + url.search);
+    /* ALV-288: and the fragment, which says which screen this is. Without it,
+       this line erased the panel from the address every time a seat opened. */
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
   } catch (e) { /* an old browser keeps the page, loses the address */ }
 }
 
@@ -4662,6 +4664,85 @@ document.addEventListener("click", function (e) {
   }
 });
 
+/* ── Which screen you are on, in the address (ALV-288) ──────────────────────
+   Surbhi, 2 November 2026: "If I refresh the page from browser refresh button,
+   it takes us to home page insted of where we were before refresh."
+
+   The panel names were already the hard half of a router - stable words like
+   "att-record", carried on every nav item as data-panel - so they are the
+   addresses. public/js/ess/next-frame.js holds the same router for the frame
+   that was dropped; this is deliberately a second small copy rather than an
+   export bolted onto that file, and it keeps that file's two decisions: the
+   panel is drawn where the hash is written rather than waiting for the
+   hashchange event, and an address nobody recognises opens Home and says
+   nothing.
+
+   What is NOT here, on purpose: which person's mini profile was open, which
+   month, which filter. One screen's name is the whole of it. */
+
+var _panelNow = "home";   /* what is on screen; Home is active in the markup */
+
+/* The hash, if it could be a panel name at all. Anything else counts as no
+   address - which is also what keeps a hash out of the selector below. */
+function panelFromAddress() {
+  var raw = String(window.location.hash || "").replace(/^#/, "");
+  return /^[a-z0-9-]{1,40}$/.test(raw) ? raw : "";
+}
+
+/* May this person open this panel by typing or reloading its address?
+
+   All 23 panels are in the page for everybody - ess_parts.py pastes every one
+   in with no gating - and what puts one out of reach today is only that its
+   nav item is not shown. So the sidebar IS the answer, and it is the server's:
+   an item is revealed once get_portal_context and get_available_features have
+   said so (applyPlanNav). Asking the nav, rather than re-reading those ten
+   flags here, is what stops this drifting from applyPlanNav the next time one
+   of them changes.
+
+   The panels with no nav item need a record to mean anything - a seat, a
+   scorecard, a review - and holding that is out of this change, so they are
+   not restorable. Home and My profile are the exceptions: Home is everybody's,
+   and My profile is everybody's own, reached from the name in the sidebar and
+   from the account menu, neither of which is gated. */
+function mayOpenPanel(name) {
+  if (name === "home" || name === "my-profile") return true;
+  var item = document.querySelector('.nav-item[data-panel="' + name + '"]');
+  return !!item && item.style.display !== "none";
+}
+
+/* Read the address and show what it asks for. Runs on hashchange, which is what
+   makes Back and Forward move between screens, and once at startup. */
+function routeFromAddress() {
+  var want = panelFromAddress();
+  /* The address already matches the screen, which is what our own write looks
+     like a moment later. Nothing to do - and this is also what keeps a detail
+     screen on screen: a seat or a scorecard gets an address so Back can leave
+     it, and is only refused when it is asked for COLD, by a reload or a typed
+     address, because its record is not in the address. */
+  if (want && want === _panelNow) return;
+  if (!want || !mayOpenPanel(want)) {
+    /* A typo, or a panel this person is not offered. Home, and nothing said
+       about it: naming what was refused is a map of what to go after. `replace`
+       so Back does not land straight back on the refused address. */
+    if (window.location.hash) window.location.replace("#home");
+    if (_panelNow !== "home") switchPanel("home", null);
+    return;
+  }
+  switchPanel(want, null);
+}
+
+/* The startup read, and why it waits. get_portal_context and
+   get_available_features race (see applyPlanNav), and every gated nav item is
+   display:none until they land. Reading the address before both are in would
+   refuse a page this person is allowed AND rewrite the address while doing it,
+   so the one chance to restore the screen would be spent. If a call fails,
+   nothing restores and the person starts on Home - which is what happens
+   today, and the safe way round. */
+var _routeAnswers = 0;
+function routeWhenReady() {
+  if (++_routeAnswers === 2) routeFromAddress();
+}
+
 function switchPanel(name, triggerEl) {
   // If the employee drawer is open, close it before switching panels so body overflow is restored
   var _ed = document.getElementById("emp-drawer");
@@ -4671,6 +4752,19 @@ function switchPanel(name, triggerEl) {
   if (window.tvClosePop) { window.tvClosePop(); window.tvCloseNew(); }
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-" + name).classList.add("active");
+
+  /* ALV-288. This is the one door every screen change goes through, so it is
+     the one place the address is written. A detail screen gets an address too,
+     so Back leaves it for the screen that opened it - a reload of one still
+     lands on Home, because its record is not in the address. */
+  _panelNow = name;
+  /* Leaving the seat page takes its ?seat= with it. Slice 078 wrote that
+     parameter and cleared it when the page closed itself; now that Back can
+     leave the page, it would otherwise stay in the address and reopen the seat
+     on the next reload. */
+  if (name !== "seat" && /[?&]seat=/.test(window.location.search)) spAddress(null);
+  if (panelFromAddress() !== name) window.location.hash = "#" + name;
+
   if (name === "home") hmRefreshIfStale();
 
   if (name === "attendance-insights") { aiOpen(); }
@@ -10336,6 +10430,7 @@ function loadPortalContext() {
     if (navAdminLink && ctx.is_system_manager && ctx.is_control_plane) {
       navAdminLink.style.display = "block";
     }
+    routeWhenReady();   /* ALV-288: one of the two answers the address waits for */
   });
 }
 
@@ -10415,6 +10510,7 @@ function loadAvailableFeatures() {
     if (f.goals) loadHomeGoals();
     // Re-check scroll arrows now that nav items may have appeared
     sbUpdateScrollBtns();
+    routeWhenReady();   /* ALV-288: the other answer; the later one restores */
   });
 }
 
@@ -22726,4 +22822,7 @@ document.addEventListener("DOMContentLoaded", function() {
   loadPortalContext();
   loadHome();
   loadAvailableFeatures();
+  /* ALV-288: Back and Forward. The startup read is not here - it waits for the
+     two calls above to answer, in routeWhenReady. */
+  window.addEventListener("hashchange", routeFromAddress);
 });

@@ -34,10 +34,10 @@ shows employee id and name only, never punch times.
 import json
 import os
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import frappe
-from frappe.utils import add_days, get_datetime, getdate, now_datetime, time_diff_in_seconds
+from frappe.utils import add_days, get_datetime, get_time, getdate, now_datetime, time_diff_in_seconds
 
 STATE_FILE = "alv291_before.json"
 START = "2026-10-01"
@@ -200,6 +200,55 @@ def _ceiling(doc):
 	return last
 
 
+def _was_off(state, doc):
+	"""Off before pause (from the saved values), or off now if pause has not run."""
+	return not int(state["shifts"].get(doc.name, {}).get("enable_auto_attendance", doc.enable_auto_attendance))
+
+
+def _absent_dates(doc, emp, punch_days, marked):
+	"""The days Frappe's mark_absent_for_dates_with_no_attendance would mark,
+	with its own per-day check that this shift is the person's shift that day."""
+	from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
+
+	out = []
+	for d in doc.get_dates_for_attendance(emp):
+		# A day with a punch, or with attendance on another shift (Frappe's
+		# overlap check refuses it), gets no Absent.
+		if getdate(d) in punch_days or (emp, str(getdate(d))) in marked:
+			continue
+		shift = get_employee_shift(emp, datetime.combine(getdate(d), get_time(doc.start_time)), True)
+		if shift and shift.shift_type.name == doc.name:
+			out.append(d)
+	return out
+
+
+def _outside(people, shifts, after):
+	"""What Frappe's hourly job does, once these formerly-off shifts are on, to
+	everyone on them who is NOT in the list: Absent days from `after`, and the
+	half-day rows it may set to Absent (any month)."""
+	absent, outsiders = {}, set()
+	for s in shifts:
+		doc = frappe.get_doc("Shift Type", s)
+		doc.process_attendance_after = after
+		doc.last_sync_of_checkin = _ceiling(doc)
+		emps = set(doc.get_assigned_employees(getdate(after), True)) - set(people)
+		outsiders |= emps
+		if not emps or not doc.last_sync_of_checkin:
+			continue
+		punch_days = {}
+		for x in frappe.get_all("Employee Checkin", filters={"employee": ("in", list(emps)), "time": (">=", after)},
+		                        fields=["employee", "time"], limit_page_length=0):
+			punch_days.setdefault(x.employee, set()).add(getdate(x.time))
+		marked = {(a.employee, str(a.attendance_date)) for a in frappe.get_all(
+			"Attendance", filters={"employee": ("in", list(emps)), "docstatus": 1, "attendance_date": (">=", after)},
+			fields=["employee", "attendance_date"], limit_page_length=0)}
+		for emp in emps:
+			n = len(_absent_dates(doc, emp, punch_days.get(emp, ()), marked))
+			if n:
+				absent[emp] = absent.get(emp, 0) + n
+	return absent, outsiders, _half_day_rows(outsiders)
+
+
 def _half_day_rows(people):
 	"""Half Day rows Frappe's mark_absent_for_half_day_dates may set to Absent for
 	the other half. It reads them with no start date and no docstatus filter."""
@@ -340,7 +389,9 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		absent_badged = a.status == "Absent" and day in unlinked_days
 		if day not in retag_days and not absent_badged:
 			continue
-		if a.employee in paid:
+		if day in wrong["blocked_days"]:
+			why = "left for a person (a punch is outside the new shift's window)"
+		elif a.employee in paid:
 			why = "submitted salary slip"
 		elif a.amended_from:
 			why = "corrected by hand (amended)"
@@ -386,6 +437,13 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 	_admin()
 	from_date, to_date = str(from_date), str(to_date)
 	people = _derive_people(company, from_date, to_date, employees)
+	state = _state()
+	old = state.get("scope") or {}
+	if state["shifts"] and old.get("from_date") == from_date and old.get("employees") != people:
+		# pause has run: the list the later steps rely on may not move under them.
+		frappe.throw(f"Refused: pause has run, and the people differ from the frozen list. Added:"
+		             f" {sorted(set(people) - set(old['employees']))}; removed:"
+		             f" {sorted(set(old['employees']) - set(people))}. Pass employees= the frozen list, or undo first.")
 	p = _plan(company, from_date, to_date, people, include_same_timings)
 	emps = _employees(company)
 	label = lambda emp: f"{emp} {emps[emp].employee_name if emp in emps else ''}".strip()  # noqa: E731
@@ -394,6 +452,16 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 	print(f"\nPEOPLE ({len(people)}): punches with no attendance, or punches on another shift."
 	      " Every later step acts on these people only.")
 	print("   " + ", ".join(people))
+	dropped = []
+	if employees:
+		dropped = sorted(set(_derive_people(company, from_date, to_date)) - set(people))
+		print(f"\nDROPPED, found by preview but not in your list ({len(dropped)}). The job will NOT mark their"
+		      " October; fix those days by Attendance Request:")
+		for e in dropped:
+			print("  ", label(e))
+		missing = sorted(set(_list(employees)) - set(people))
+		if missing:
+			print(f"   In your list but nothing to fix ({len(missing)}): {', '.join(missing)}")
 	if p["paid"] & set(people):
 		print(f"\nREFUSED, submitted salary slip in the period ({len(p['paid'] & set(people))}):")
 		for e in sorted(p["paid"] & set(people)):
@@ -462,6 +530,8 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 			if not x.shift_actual_end or get_datetime(x.shift_actual_end) >= ceiling:
 				continue
 			day = (x.employee, str(getdate(x.time)))
+			if day in p["blocked_days"]:
+				continue  # left for a person: enable_and_mark leaves these punches alone
 			if day in kept:
 				flagged += 1  # Frappe flags these skip: the day already has attendance
 			else:
@@ -471,11 +541,9 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 		doc.process_attendance_after = start
 		doc.last_sync_of_checkin = ceiling
 		for emp in set(doc.get_assigned_employees(getdate(start), True)) & set(people):
-			for d in doc.get_dates_for_attendance(emp):
-				# A day with attendance on another shift is refused by Frappe's
-				# overlap check, so it gets no Absent either.
-				if getdate(d) not in punch_days.get(emp, ()) and (emp, str(getdate(d))) not in kept:
-					absent_per[emp] = absent_per.get(emp, 0) + 1
+			n = len(_absent_dates(doc, emp, punch_days.get(emp, ()), kept))
+			if n:
+				absent_per[emp] = absent_per.get(emp, 0) + n
 
 	print(f"\nNEW DAYS from punches: {len(new_days)}. Punches Frappe will flag skip (day already has attendance): {flagged}")
 	print(f"\n!! LOUD WARNING: ABSENT will be marked on {sum(absent_per.values())} working days with no attendance and"
@@ -485,16 +553,28 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 		e = emps.get(emp, frappe._dict())
 		print(f"   {label(emp)}: {n} Absent days  [{e.get('employment_type') or '-'} / {e.get('designation') or '-'}]")
 
-	half = _half_day_rows(people)
-	print(f"\nHALF-DAY ROWS Frappe may set to Absent for the other half (any month, any status): {len(half)}")
+	# The formerly-off shifts act on EVERYONE on them from the next hourly run.
+	after = str(getdate(add_days(to_date, 1)))
+	turning_on = [s for s in targets if _was_off(state, frappe.get_doc("Shift Type", s))]
+	out_absent, outsiders, out_half = _outside(people, turning_on, after)
+	print(f"\n!! OUTSIDE THE LIST: {len(turning_on)} shifts that were off get switched on: {', '.join(turning_on)}."
+	      f" From the next hourly run Frappe acts on EVERYONE on them. {len(outsiders)} people outside the list"
+	      f" are on them; {sum(out_absent.values())} Absent days from {after} for {len(out_absent)} of them:")
+	for emp in sorted(outsiders):
+		e = emps.get(emp, frappe._dict())
+		print(f"   {label(emp)}: {out_absent.get(emp, 0)} Absent days"
+		      f"  [{e.get('employment_type') or '-'} / {e.get('designation') or '-'}]")
+
+	half = _half_day_rows(people) + out_half
+	print(f"\nHALF-DAY ROWS Frappe may set to Absent for the other half (any month, list and outside): {len(half)}")
 	for h in half:
 		print(f"   {h.name} {label(h.employee)} {h.attendance_date}")
-	print(f"   enable_and_mark needs half_day_rows={len(half)} to go ahead.")
+	print(f"   enable_and_mark needs half_day_rows={len(half)} and"
+	      f" absent_outside_list={sum(out_absent.values())} to go ahead.")
 
-	state = _state()
 	state["scope"] = {"company": company, "from_date": from_date, "to_date": to_date,
 	                  "employees": people, "include_same_timings": int(include_same_timings or 0),
-	                  "start": str(start), "cancel": len(p["cancel"]), "half_day_rows": len(half)}
+	                  "start": str(start), "cancel": len(p["cancel"])}
 	_save_state(state)
 	result = {
 		"people": len(people),
@@ -510,6 +590,9 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 		"absent": sum(absent_per.values()),
 		"absent_people": len(absent_per),
 		"half_day_rows": len(half),
+		"absent_outside_list": sum(out_absent.values()),
+		"outside_people": sorted(outsiders),
+		"dropped": dropped,
 	}
 	print(f"\nTOTALS {result}\nThe list of people is frozen in {_state_path()}.")
 	return result
@@ -638,13 +721,15 @@ def retag(company, from_date, to_date):
 # ── step 5: mark, then switch on ───────────────────────────────────────────
 
 
-def enable_and_mark(company, from_date, to_date, half_day_rows=None):
+def enable_and_mark(company, from_date, to_date, half_day_rows=None, absent_outside_list=None):
 	"""Mark the frozen people with Frappe's own job, then switch the shifts on.
 
 	The job runs while the shifts are still off, on the shift documents in
-	memory, with the ceiling Frappe's hourly step would give. Then the start
-	date moves past the period, so the hourly job never reaches anybody else's
-	October once the shifts are on.
+	memory, with the ceiling Frappe's hourly step would give. Then:
+	- a shift that was OFF before pause is switched on from the day after the
+	  period, so the hourly job does not redo October for everyone on it;
+	- a shift that was ON gets its old start date back, as it was;
+	- a shift only on old punches gets its old switch and start date back.
 	"""
 	from hrms.hr.doctype.shift_type.shift_type import ShiftType
 
@@ -654,51 +739,65 @@ def enable_and_mark(company, from_date, to_date, half_day_rows=None):
 	paid = _paid(company, from_date, to_date) & people
 	if paid:
 		frappe.throw(f"Refused: {len(paid)} of the people have a submitted salary slip in the period.")
-	left = [r for r in _wrong_punches(company, from_date, to_date, people, scope["include_same_timings"])["retag"]
-	        if not r.attendance]
+	wrong = _wrong_punches(company, from_date, to_date, people, scope["include_same_timings"])
+	left = [r for r in wrong["retag"] if not r.attendance]
 	if left:
 		frappe.throw(f"Refused: {len(left)} punches are still on the wrong shift. Run cancel_wrong and retag first.")
-	half = _half_day_rows(people)
-	if half_day_rows is None or int(half_day_rows) != len(half):
-		frappe.throw(f"Refused: Frappe may set the other half of {len(half)} half-day rows to Absent."
-		             f" Read them in preview, then pass half_day_rows={len(half)}.")
 	shifts = _in_use_shifts(company, from_date, to_date)
 	_refuse_while_enabled(shifts, "enable_and_mark")
 	targets = sorted(_target_shifts(company, from_date))
+	state = _state()
+	docs = {s: frappe.get_doc("Shift Type", s) for s in shifts}
+	# Every check before anything is marked: a shift skipped half way could not
+	# be redone once the shifts are on.
+	for s, doc in docs.items():
+		if str(doc.process_attendance_after or "") != scope["start"]:
+			frappe.throw(f"Refused: {s} starts on {doc.process_attendance_after}, not {scope['start']}. Run set_start.")
+		doc.last_sync_of_checkin = _ceiling(doc)
+		if not doc.last_sync_of_checkin:
+			frappe.throw(f"Refused: {s} has an empty last sync that will not move, so nothing would be marked."
+			             " See the runbook, 'If step 8 refuses'.")
+	after = str(getdate(add_days(to_date, 1)))
+	turning_on = [s for s in targets if _was_off(state, docs[s])]
+	out_absent, _outsiders, out_half = _outside(people, turning_on, after)
+	half = len(_half_day_rows(people)) + len(out_half)
+	if half_day_rows is None or int(half_day_rows) != half or absent_outside_list is None \
+			or int(absent_outside_list) != sum(out_absent.values()):
+		frappe.throw(f"Refused: pass half_day_rows={half} and absent_outside_list={sum(out_absent.values())},"
+		             " after reading both lists in preview.")
 
+	blocked = wrong["blocked_days"]
 	# Pass 1 marks every shift's punches; pass 2 the Absent days. The other way
 	# round, an Absent on the default shift blocks a punch on a same-hours shift
 	# and Frappe flags that punch skip for good.
 	for absent_pass in (False, True):
 		for s in (targets if absent_pass else shifts):
-			doc = frappe.get_doc("Shift Type", s)
-			doc.last_sync_of_checkin = _ceiling(doc)
-			if not doc.process_attendance_after or not doc.last_sync_of_checkin:
-				print(f"   {s}: SKIPPED, no start date or empty last_sync")
-				continue
+			doc = docs[s]
 			doc.get_assigned_employees = (lambda d, on: lambda *a, **k: [
 				e for e in ShiftType.get_assigned_employees(d, *a, **k) if on and e in people])(doc, absent_pass)
-			logs = [] if absent_pass else [x for x in doc.get_employee_checkins() if x.employee in people]
+			logs = [] if absent_pass else [x for x in doc.get_employee_checkins() if x.employee in people
+			                               and (x.employee, str(getdate(x.time))) not in blocked]
 			started = time.monotonic()
 			doc._process(logs)
 			frappe.db.commit()
 			print(f"   {s}: {'absent pass' if absent_pass else f'{len(logs)} punches'} [{time.monotonic() - started:.1f}s]")
 
-	state = _state()
-	after = str(getdate(add_days(to_date, 1)))
 	for s in shifts:
 		doc = frappe.get_doc("Shift Type", s)
 		old = state["shifts"].get(s, {})
-		if s in targets:
+		if s in turning_on:
 			doc.enable_auto_attendance = 1
 			doc.process_attendance_after = max(after, old.get("process_attendance_after") or after)
 		else:
-			doc.enable_auto_attendance = old.get("enable_auto_attendance", doc.enable_auto_attendance)
+			doc.enable_auto_attendance = 1 if s in targets else old.get("enable_auto_attendance", 0)
+			doc.process_attendance_after = old.get("process_attendance_after")
 		doc.save()
 	frappe.db.commit()
-	print(f"enable_and_mark: {len(targets)} shifts switched on from {after}; {len(shifts) - len(targets)}"
-	      " shifts only on old punches left as they were. Run verify.")
-	return {"shifts_on": len(targets), "left_as_were": len(shifts) - len(targets)}
+	print(f"enable_and_mark: {len(turning_on)} formerly-off shifts on from {after};"
+	      f" {len(targets) - len(turning_on)} shifts back on with their old start date;"
+	      f" {len(shifts) - len(targets)} shifts only on old punches put back as they were. Run verify.")
+	return {"turned_on": len(turning_on), "back_on": len(targets) - len(turning_on),
+	        "put_back": len(shifts) - len(targets)}
 
 
 # ── step 6: check the result ───────────────────────────────────────────────
@@ -751,7 +850,10 @@ def verify(company, from_date, to_date, reds_for=None):
 	skip_on_absent = sum(1 for e, d in skip_on if d in att_days.get(e, {}) and att_days[e][d].status == "Absent")
 
 	wrong = _wrong_punches(company, from_date, to_date, people)
+	for emp, day in sorted(wrong["blocked_days"]):
+		print(f"   LEFT FOR A PERSON: {emp} {emps[emp].employee_name} {day}")
 	result = {
+		"left_for_a_person": len(wrong["blocked_days"]),
 		"people": len(emps),
 		"days_punched_no_attendance": missing_total,
 		"absent_on_days_with_a_punch": absent_punched,

@@ -10,21 +10,25 @@ ignore_permissions: Administrator has the rights already.
 
 THE ORDER, and why, from Frappe HR's own code (hrms/hr/doctype):
 
-  preview -> pause -> set_start -> cancel_wrong -> retag -> enable_and_mark -> verify
-  undo puts back shift settings and punch tags. It cannot un-cancel attendance.
+  preview -> pause -> set_start -> preview again -> cancel_wrong -> retag
+  -> enable_and_mark -> verify. undo puts back shift settings and punch tags.
 
+- preview works out the people (punches with no attendance, or punches on a
+  shift that is not theirs), prints them and FREEZES the list in the state
+  file. Every later step acts on that list only, and refuses without it.
 - pause first. The hourly scheduler marks attendance on every switched-on
   shift, and would re-mark a day the moment it is freed.
 - cancel BEFORE retag. EmployeeCheckin.fetch_shift only re-tags a punch whose
-  `attendance` is empty. A punch still linked to its old attendance keeps its
-  old shift however often it is saved. Cancelling unlinks it (Attendance.on_cancel).
-- Frappe never redoes a day that has attendance. Cancelling frees the day.
-- last_sync_of_checkin is the CEILING (shift_actual_end < last_sync), never the
-  start. It is never set by hand here; see set_start.
+  `attendance` is empty. Cancelling unlinks it (Attendance.on_cancel).
+- enable_and_mark runs Frappe's own ShiftType._process, limited to the list,
+  in two passes: every shift's punches first, then the Absent days. Absent
+  first would block a punch on a same-hours shift and flag it skip.
+- last_sync_of_checkin is the CEILING (shift_actual_end < last_sync). It is
+  never written here; the run uses the value Frappe's hourly step would give.
 
 Every step is safe to run twice, prints its counts, commits in batches, and
 saves what it changed to sites/<site>/alv291_before.json for undo. The console
-shows employee id and name only, never punch times or reasons.
+shows employee id and name only, never punch times.
 """
 
 import json
@@ -33,15 +37,20 @@ import time
 from datetime import timedelta
 
 import frappe
-from frappe.utils import add_days, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, get_datetime, getdate, now_datetime, time_diff_in_seconds
 
 STATE_FILE = "alv291_before.json"
+START = "2026-10-01"
 BATCH = 100
 PAUSE_SECONDS = 2
-# Who the scheduler and bench run as. A row owned or last changed by anybody
-# else was made or touched by a person, and is kept.
 SYSTEM_USERS = {"Administrator"}
-PUNCH_FIELDS = ["shift", "shift_start", "shift_end", "shift_actual_start", "shift_actual_end"]
+# Frappe's own words on an Absent it made because a day had no punch.
+AUTO_ABSENT_COMMENT = "Employee was marked Absent due to missing Employee Checkins."
+# A row the job makes is saved and submitted in one go. One changed later was
+# changed by somebody, even when they were logged in as Administrator.
+CHANGED_AFTER_SECONDS = 300
+PUNCH_FIELDS = ["shift", "shift_start", "shift_end", "shift_actual_start", "shift_actual_end",
+                "offshift", "overtime_type"]
 
 
 # ── small shared pieces ────────────────────────────────────────────────────
@@ -79,10 +88,23 @@ def _save_state(state):
 	os.replace(path + ".tmp", path)
 
 
+def _scope(company, from_date, to_date):
+	"""The frozen list from the last preview. No list, or another period: refuse."""
+	scope = _state().get("scope")
+	if not scope or [scope["company"], scope["from_date"], scope["to_date"]] != [
+		company, str(from_date), str(to_date)]:
+		frappe.throw("Refused: no frozen list of people for this company and period. Run preview first.")
+	return scope
+
+
 def _pause_between_batches(done):
 	if done % BATCH == 0:
 		frappe.db.commit()
 		time.sleep(PAUSE_SECONDS)
+
+
+def _period(from_date, to_date):
+	return ("between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"])
 
 
 def _employees(company, employees=None):
@@ -94,7 +116,7 @@ def _employees(company, employees=None):
 		for e in frappe.get_all(
 			"Employee",
 			filters=filters,
-			fields=["name", "employee_name", "default_shift", "status"],
+			fields=["name", "employee_name", "default_shift", "status", "employment_type", "designation"],
 			limit_page_length=0,
 		)
 	}
@@ -116,23 +138,28 @@ def _paid(company, from_date, to_date):
 	)
 
 
-def _in_use_shifts(company, from_date, to_date):
-	"""Default shift of an active employee, or the tag of a punch in the period."""
+def _target_shifts(company, from_date):
+	"""Shifts a person is on: an active employee's default, or an active assignment."""
 	emps = _employees(company)
 	names = {e.default_shift for e in emps.values() if e.default_shift and e.status == "Active"}
 	if emps:
-		names |= set(
-			frappe.get_all(
-				"Employee Checkin",
-				filters={
-					"employee": ("in", list(emps)),
-					"time": ("between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]),
-					"shift": ("is", "set"),
-				},
-				pluck="shift",
-				distinct=True,
-			)
-		)
+		names |= set(frappe.get_all(
+			"Shift Assignment",
+			filters={"employee": ("in", list(emps)), "docstatus": 1, "status": "Active"},
+			or_filters=[["end_date", ">=", from_date], ["end_date", "is", "not set"]],
+			pluck="shift_type", distinct=True))
+	return names
+
+
+def _in_use_shifts(company, from_date, to_date):
+	"""Target shifts, plus any shift still on a punch in the period."""
+	names = _target_shifts(company, from_date)
+	emps = list(_employees(company))
+	if emps:
+		names |= set(frappe.get_all(
+			"Employee Checkin",
+			filters={"employee": ("in", emps), "time": _period(from_date, to_date), "shift": ("is", "set")},
+			pluck="shift", distinct=True))
 	return sorted(names)
 
 
@@ -160,11 +187,8 @@ def _remember_shift(state, doc):
 
 
 def _ceiling(doc):
-	"""The last_sync_of_checkin the shift will have when the job runs.
-
-	Frappe's own scheduler step (update_last_sync_of_checkin) moves it forward
-	only for a switched-on shift with auto_update_last_sync ticked.
-	"""
+	"""The last_sync_of_checkin Frappe's hourly step (update_last_sync_of_checkin)
+	would give this shift now. Only shifts with auto_update_last_sync ticked move."""
 	from hrms.hr.doctype.shift_type.shift_type import get_actual_shift_end
 
 	last = get_datetime(doc.last_sync_of_checkin) if doc.last_sync_of_checkin else None
@@ -174,6 +198,19 @@ def _ceiling(doc):
 		if end < now and (not last or last < end):
 			last = end + timedelta(minutes=1)
 	return last
+
+
+def _half_day_rows(people):
+	"""Half Day rows Frappe's mark_absent_for_half_day_dates may set to Absent for
+	the other half. It reads them with no start date and no docstatus filter."""
+	if not people:
+		return []
+	return frappe.get_all(
+		"Attendance",
+		filters={"employee": ("in", list(people)), "status": "Half Day", "modify_half_day_status": 1},
+		fields=["name", "employee", "attendance_date"],
+		limit_page_length=0,
+	)
 
 
 # ── the plan: what is wrong, and what is safe to change ────────────────────
@@ -201,7 +238,7 @@ def _wrong_punches(company, from_date, to_date, employees=None, include_same_tim
 		"Employee Checkin",
 		filters={
 			"employee": ("in", list(emps)),
-			"time": ("between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]),
+			"time": _period(from_date, to_date),
 			"offshift": 0,
 			"skip_auto_attendance": 0,
 			"shift": ("is", "set"),
@@ -245,57 +282,68 @@ def _attendance(company, from_date, to_date, employees=None):
 		"Attendance",
 		filters=filters,
 		fields=[
-			"name",
-			"employee",
-			"employee_name",
-			"attendance_date",
-			"status",
-			"shift",
-			"leave_application",
-			"leave_type",
-			"attendance_request",
-			"owner",
-			"modified_by",
-			"alvoraa_held_confirmed",
+			"name", "employee", "employee_name", "attendance_date", "status", "shift",
+			"leave_application", "leave_type", "attendance_request", "amended_from",
+			"owner", "modified_by", "creation", "modified", "alvoraa_held_confirmed",
 		],
 		limit_page_length=0,
 	)
 
 
-def _plan(company, from_date, to_date, employees=None, include_same_timings=0):
-	"""What cancel_wrong and retag would do. Writes nothing."""
-	paid = _paid(company, from_date, to_date)
-	wrong = _wrong_punches(company, from_date, to_date, employees, include_same_timings)
-	retag_days = {r.day for r in wrong["retag"]}
-	linked = {r.attendance for r in wrong["retag"] if r.attendance}
-
-	# Absent although badged in: a day with an Absent row and a punch that
-	# no attendance uses. Usually the job ran before the punches were right.
-	emps = list(_employees(company, employees))
-	unlinked_days = set()
-	if emps:
+def _unlinked_days(employees, from_date, to_date):
+	if not employees:
+		return set()
+	return {
+		(p.employee, str(getdate(p.time)))
 		for p in frappe.get_all(
 			"Employee Checkin",
-			filters={
-				"employee": ("in", emps),
-				"time": ("between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]),
-				"attendance": ("is", "not set"),
-				"skip_auto_attendance": 0,
-				"offshift": 0,
-			},
+			filters={"employee": ("in", list(employees)), "time": _period(from_date, to_date),
+			         "attendance": ("is", "not set"), "skip_auto_attendance": 0, "offshift": 0},
 			fields=["employee", "time"],
 			limit_page_length=0,
-		):
-			unlinked_days.add((p.employee, str(getdate(p.time))))
+		)
+	}
+
+
+def _derive_people(company, from_date, to_date, employees=None):
+	"""The people this fix is for: a punch with no attendance that day, or a
+	punch on a shift that is not theirs (any timings)."""
+	emps = list(_employees(company, employees))
+	wrong = _wrong_punches(company, from_date, to_date, emps, include_same_timings=1)
+	people = {r.employee for r in wrong["retag"]} | {e for e, _d in wrong["blocked_days"]}
+	marked = {(a.employee, str(a.attendance_date)) for a in _attendance(company, from_date, to_date, emps)}
+	people |= {e for e, d in _unlinked_days(emps, from_date, to_date) if (e, d) not in marked}
+	return sorted(people)
+
+
+def _plan(company, from_date, to_date, people, include_same_timings=0):
+	"""What cancel_wrong and retag would do for these people. Writes nothing."""
+	paid = _paid(company, from_date, to_date)
+	if not people:
+		return {"paid": paid, "retag": [], "retag_kept_days": 0, "same_timings": [],
+		        "blocked_days": set(), "cancel": [], "skipped": []}
+	wrong = _wrong_punches(company, from_date, to_date, people, include_same_timings)
+	retag_days = {r.day for r in wrong["retag"]}
+	linked = {r.attendance for r in wrong["retag"] if r.attendance}
+	unlinked_days = _unlinked_days(people, from_date, to_date)
+
+	rows = _attendance(company, from_date, to_date, people)
+	auto_absent = set(frappe.get_all(
+		"Comment",
+		filters={"reference_doctype": "Attendance", "content": ("like", f"%{AUTO_ABSENT_COMMENT}%"),
+		         "reference_name": ("in", [a.name for a in rows if a.status == "Absent"] or [""])},
+		pluck="reference_name"))
 
 	cancel, skipped = [], []
-	for a in _attendance(company, from_date, to_date, employees):
+	for a in rows:
 		day = (a.employee, str(a.attendance_date))
 		absent_badged = a.status == "Absent" and day in unlinked_days
 		if day not in retag_days and not absent_badged:
 			continue
 		if a.employee in paid:
 			why = "submitted salary slip"
+		elif a.amended_from:
+			why = "corrected by hand (amended)"
 		elif a.leave_application or a.leave_type or a.status == "On Leave":
 			why = "leave"
 		elif a.attendance_request:
@@ -304,11 +352,15 @@ def _plan(company, from_date, to_date, employees=None, include_same_timings=0):
 			why = "confirmed by a manager"
 		elif a.owner not in SYSTEM_USERS or a.modified_by not in SYSTEM_USERS:
 			why = "made or changed by a person"
-		elif a.name not in linked and not absent_badged:
-			why = "no linked punches"
-		else:
+		elif time_diff_in_seconds(a.modified, a.creation) > CHANGED_AFTER_SECONDS:
+			why = "changed after it was made"
+		elif a.name in linked or (absent_badged and a.name in auto_absent):
+			# Proof the job made it: it holds the job's punches, or it carries
+			# Frappe's own "missing Employee Checkins" comment.
 			cancel.append(a)
 			continue
+		else:
+			why = "not proven to be automatic"
 		a.why = why
 		skipped.append(a)
 
@@ -328,17 +380,23 @@ def _plan(company, from_date, to_date, employees=None, include_same_timings=0):
 # ── step 0 ─────────────────────────────────────────────────────────────────
 
 
-def preview(company, from_date, to_date, employees=None, start="2026-09-30", include_same_timings=0):
-	"""Writes NOTHING. Prints every change the later steps would make."""
+def preview(company, from_date, to_date, employees=None, start=START, include_same_timings=0):
+	"""Writes nothing to the database. Prints every change, and freezes the list
+	of people in the state file for the later steps."""
 	_admin()
-	p = _plan(company, from_date, to_date, employees, include_same_timings)
-	names = {e.name: e.employee_name for e in _employees(company).values()}
-	label = lambda emp: f"{emp} {names.get(emp, '')}".strip()  # noqa: E731
+	from_date, to_date = str(from_date), str(to_date)
+	people = _derive_people(company, from_date, to_date, employees)
+	p = _plan(company, from_date, to_date, people, include_same_timings)
+	emps = _employees(company)
+	label = lambda emp: f"{emp} {emps[emp].employee_name if emp in emps else ''}".strip()  # noqa: E731
 
-	print(f"\n== ALV-291 PREVIEW · {company} · {from_date} to {to_date} · nothing written ==")
-	if p["paid"]:
-		print(f"\nREFUSED, submitted salary slip in the period ({len(p['paid'])}):")
-		for e in sorted(p["paid"]):
+	print(f"\n== ALV-291 PREVIEW · {company} · {from_date} to {to_date} · nothing written to the database ==")
+	print(f"\nPEOPLE ({len(people)}): punches with no attendance, or punches on another shift."
+	      " Every later step acts on these people only.")
+	print("   " + ", ".join(people))
+	if p["paid"] & set(people):
+		print(f"\nREFUSED, submitted salary slip in the period ({len(p['paid'] & set(people))}):")
+		for e in sorted(p["paid"] & set(people)):
 			print("  ", label(e))
 
 	print(f"\nRETAG (step retag): {len(p['retag'])} punches, old tag -> shift Frappe gives today")
@@ -349,13 +407,12 @@ def preview(company, from_date, to_date, employees=None, start="2026-09-30", inc
 	for (emp, old, new, differs), n in sorted(per.items()):
 		print(f"   {label(emp)}: {n} punches  {old} -> {new}  {'TIMINGS DIFFER' if differs else 'same timings'}")
 	same_people = sorted({r.employee for r in p["same_timings"]})
-	print(f"   Not retagged, same timings ({len(p['same_timings'])} punches, {len(same_people)} people;"
-	      " include_same_timings=1 to add them): " + ", ".join(same_people))
+	print(f"   Not retagged, same timings ({len(p['same_timings'])} punches, {len(same_people)} people): "
+	      + ", ".join(same_people))
 	if p["retag_kept_days"]:
 		print(f"   Not retagged, day kept or person refused: {p['retag_kept_days']} punches")
 	if p["blocked_days"]:
-		print(f"   LEFT FOR A PERSON, a punch would fall outside the new shift's window: "
-		      f"{len(p['blocked_days'])} days")
+		print(f"   LEFT FOR A PERSON, a punch would fall outside the new shift's window: {len(p['blocked_days'])} days")
 		for emp, day in sorted(p["blocked_days"]):
 			print(f"      {label(emp)} {day}")
 
@@ -369,80 +426,92 @@ def preview(company, from_date, to_date, employees=None, start="2026-09-30", inc
 	for a in sorted(p["skipped"], key=lambda a: (a.employee, a.attendance_date)):
 		print(f"      {a.name} {label(a.employee)} {a.attendance_date}: {a.why}")
 
-	# The shift steps act on whole shifts: everybody on them, not only `employees`.
-	shifts = _in_use_shifts(company, from_date, to_date)
+	# What enable_and_mark would do, for these people only.
+	targets = _target_shifts(company, from_date)
 	retag_to = {r.name: r.target for r in p["retag"]}
 	cancelled = {a.name for a in p["cancel"]}
 	kept = {(a.employee, str(a.attendance_date)) for a in frappe.get_all(
-		"Attendance", filters={"docstatus": 1, "attendance_date": (">=", start)},
-		fields=["name", "employee", "attendance_date"], limit_page_length=0)
-		if a.name not in cancelled}
+		"Attendance", filters={"docstatus": 1, "attendance_date": (">=", start), "employee": ("in", people or [""])},
+		fields=["name", "employee", "attendance_date"], limit_page_length=0) if a.name not in cancelled}
 	punches = frappe.get_all(
 		"Employee Checkin",
-		filters={"time": (">=", start), "skip_auto_attendance": 0, "offshift": 0},
+		filters={"time": (">=", start), "skip_auto_attendance": 0, "offshift": 0, "employee": ("in", people or [""])},
 		fields=["name", "employee", "time", "shift", "attendance", "shift_actual_end"],
 		limit_page_length=0)
 	punch_days = {}
 	for x in punches:
 		punch_days.setdefault(x.employee, set()).add(getdate(x.time))
 
-	print(f"\nSHIFTS (steps pause, set_start, enable_and_mark) - {len(shifts)} in use."
-	      " These steps act on EVERYONE on the shift, not only the people above.")
-	print(f"   start = process_attendance_after will become {start}")
-	totals = {"new_days": 0, "absent": 0, "absent_on_start_day": 0, "flagged_skip": 0}
-	for s in shifts:
+	print(f"\nSHIFTS: {len(_in_use_shifts(company, from_date, to_date))} in use, paused by pause."
+	      f" enable_and_mark switches ON these {len(targets)} (someone's shift) and leaves the rest as they were:")
+	absent_per, new_days, flagged = {}, set(), 0
+	for s in _in_use_shifts(company, from_date, to_date):
 		doc = frappe.get_doc("Shift Type", s)
 		ceiling = _ceiling(doc)
-		new_days, flagged = set(), 0
+		print(f"   {s}{'' if s in targets else ' (only on old punches: punches marked, NOT switched on)'}:"
+		      f" auto={doc.enable_auto_attendance} after={doc.process_attendance_after}"
+		      f" last_sync={doc.last_sync_of_checkin or 'EMPTY'} auto_update_last_sync={doc.auto_update_last_sync}"
+		      + ("" if ceiling else "  WARNING: last_sync is empty and will not move - marks NOTHING")
+		      + ("" if not ceiling or ceiling >= get_datetime(f"{add_days(to_date, 1)} 00:00:00")
+		         else f"  WARNING: ceiling {ceiling} is before the end of the period"))
+		if not ceiling:
+			continue
 		for x in punches:
-			if retag_to.get(x.name, x.shift) != s:
+			if retag_to.get(x.name, x.shift) != s or (x.attendance and x.attendance not in cancelled):
 				continue
-			if x.attendance and x.attendance not in cancelled:
-				continue
-			if not ceiling or not x.shift_actual_end or get_datetime(x.shift_actual_end) >= ceiling:
+			if not x.shift_actual_end or get_datetime(x.shift_actual_end) >= ceiling:
 				continue
 			day = (x.employee, str(getdate(x.time)))
 			if day in kept:
-				flagged += 1  # Frappe flags these skip_auto_attendance=1, day already has attendance
+				flagged += 1  # Frappe flags these skip: the day already has attendance
 			else:
 				new_days.add(day)
-		absent = on_start = 0
-		if ceiling:
-			doc.process_attendance_after = start
-			doc.last_sync_of_checkin = ceiling
-			for emp in doc.get_assigned_employees(getdate(start), True):
-				for d in doc.get_dates_for_attendance(emp):
-					if getdate(d) not in punch_days.get(emp, ()):
-						absent += 1
-						on_start += getdate(d) == getdate(start)
-		totals["new_days"] += len(new_days)
-		totals["absent"] += absent
-		totals["absent_on_start_day"] += on_start
-		totals["flagged_skip"] += flagged
-		print(f"   {s}\n      now: auto={doc.enable_auto_attendance} after={frappe.db.get_value('Shift Type', s, 'process_attendance_after')}"
-		      f" last_sync={doc.last_sync_of_checkin or 'EMPTY'} auto_update_last_sync={doc.auto_update_last_sync}"
-		      f"\n      job would mark {len(new_days)} days from punches, ABSENT on {absent} days"
-		      f" (of which {on_start} on {start}), flag {flagged} punches skip"
-		      + ("" if ceiling else "\n      WARNING: last_sync is empty and will not move - this shift marks NOTHING")
-		      + ("" if not ceiling or ceiling >= get_datetime(f"{add_days(to_date, 1)} 00:00:00")
-		         else f"\n      WARNING: ceiling {ceiling} is before the end of the period - days after it are not marked"))
+		if s not in targets:
+			continue
+		doc.process_attendance_after = start
+		doc.last_sync_of_checkin = ceiling
+		for emp in set(doc.get_assigned_employees(getdate(start), True)) & set(people):
+			for d in doc.get_dates_for_attendance(emp):
+				# A day with attendance on another shift is refused by Frappe's
+				# overlap check, so it gets no Absent either.
+				if getdate(d) not in punch_days.get(emp, ()) and (emp, str(getdate(d))) not in kept:
+					absent_per[emp] = absent_per.get(emp, 0) + 1
 
-	print(f"\n!! LOUD WARNING: once switched on, the job marks ABSENT every working day with no attendance"
-	      f" and no punch, from {start} to the ceiling, for everyone on these shifts:"
-	      f" {totals['absent']} Absent records (upper bound; {totals['absent_on_start_day']} of them on {start})."
-	      " Check this number before running enable_and_mark.")
+	print(f"\nNEW DAYS from punches: {len(new_days)}. Punches Frappe will flag skip (day already has attendance): {flagged}")
+	print(f"\n!! LOUD WARNING: ABSENT will be marked on {sum(absent_per.values())} working days with no attendance and"
+	      f" no punch, from {start}, for {len(absent_per)} people. Agency (Contract) staff and drivers are the"
+	      " likely wrong ones. Check every line:")
+	for emp, n in sorted(absent_per.items(), key=lambda kv: -kv[1]):
+		e = emps.get(emp, frappe._dict())
+		print(f"   {label(emp)}: {n} Absent days  [{e.get('employment_type') or '-'} / {e.get('designation') or '-'}]")
+
+	half = _half_day_rows(people)
+	print(f"\nHALF-DAY ROWS Frappe may set to Absent for the other half (any month, any status): {len(half)}")
+	for h in half:
+		print(f"   {h.name} {label(h.employee)} {h.attendance_date}")
+	print(f"   enable_and_mark needs half_day_rows={len(half)} to go ahead.")
+
+	state = _state()
+	state["scope"] = {"company": company, "from_date": from_date, "to_date": to_date,
+	                  "employees": people, "include_same_timings": int(include_same_timings or 0),
+	                  "start": str(start), "cancel": len(p["cancel"]), "half_day_rows": len(half)}
+	_save_state(state)
 	result = {
-		"refused": len(p["paid"]),
+		"people": len(people),
+		"refused": len(p["paid"] & set(people)),
 		"retag_punches": len(p["retag"]),
 		"retag_people": len({r.employee for r in p["retag"]}),
 		"same_timing_people": len(same_people),
 		"blocked_days": len(p["blocked_days"]),
 		"cancel": len(p["cancel"]),
 		"skipped": len(p["skipped"]),
-		"shifts": len(shifts),
-		**totals,
+		"new_days": len(new_days),
+		"flagged_skip": flagged,
+		"absent": sum(absent_per.values()),
+		"absent_people": len(absent_per),
+		"half_day_rows": len(half),
 	}
-	print("\nTOTALS", result)
+	print(f"\nTOTALS {result}\nThe list of people is frozen in {_state_path()}.")
 	return result
 
 
@@ -468,13 +537,12 @@ def pause(company, from_date, to_date):
 	return {"shifts": len(shifts), "paused": paused}
 
 
-def set_start(company, from_date, to_date, date="2026-09-30"):
+def set_start(company, from_date, to_date, date=START):
 	"""process_attendance_after = date on the in-use shifts.
 
 	process_attendance_after is the START (the job takes time >= it).
 	last_sync_of_checkin is the CEILING (shift_actual_end < it) and is left
-	alone: setting it before the period would make the job mark nothing there,
-	and Frappe's hourly step moves it forward by itself.
+	alone: setting it before the period would make the job mark nothing there.
 	"""
 	_admin()
 	shifts = _in_use_shifts(company, from_date, to_date)
@@ -497,11 +565,15 @@ def set_start(company, from_date, to_date, date="2026-09-30"):
 # ── step 3: cancel the attendance that is wrong ────────────────────────────
 
 
-def cancel_wrong(company, from_date, to_date, employees=None, include_same_timings=0):
-	"""Cancel the safe rows only. Frappe unlinks their punches on cancel."""
+def cancel_wrong(company, from_date, to_date):
+	"""Cancel the safe rows only, for the frozen people. Frappe unlinks their punches."""
 	_admin()
+	scope = _scope(company, from_date, to_date)
 	_refuse_while_enabled(_in_use_shifts(company, from_date, to_date), "cancel_wrong")
-	p = _plan(company, from_date, to_date, employees, include_same_timings)
+	p = _plan(company, from_date, to_date, scope["employees"], scope["include_same_timings"])
+	if p["cancel"] and len(p["cancel"]) != scope["cancel"]:
+		frappe.throw(f"Refused: {len(p['cancel'])} rows to cancel now, but the last preview showed {scope['cancel']}."
+		             " Something changed. Run preview again and read it.")
 	state = _state()
 	done, failed = 0, []
 	for a in p["cancel"]:
@@ -512,7 +584,8 @@ def cancel_wrong(company, from_date, to_date, employees=None, include_same_timin
 			frappe.db.rollback(save_point="alv291")
 			failed.append(a.name)
 			continue
-		state["cancelled"].append(a.name)
+		if a.name not in state["cancelled"]:
+			state["cancelled"].append(a.name)
 		done += 1
 		if done % BATCH == 0:
 			_save_state(state)
@@ -520,25 +593,27 @@ def cancel_wrong(company, from_date, to_date, employees=None, include_same_timin
 	_save_state(state)
 	frappe.db.commit()
 	print(f"cancel_wrong: cancelled {done}, skipped {len(p['skipped'])} (see preview for why),"
-	      f" refused {len(p['paid'])} people with a submitted slip, failed {len(failed)}.")
+	      f" refused {len(p['paid'] & set(scope['employees']))} people with a submitted slip, failed {len(failed)}.")
 	for name in failed:
 		print("   failed:", name)
-	return {"cancelled": done, "skipped": len(p["skipped"]), "refused": len(p["paid"]), "failed": len(failed)}
+	return {"cancelled": done, "skipped": len(p["skipped"]),
+	        "refused": len(p["paid"] & set(scope["employees"])), "failed": len(failed)}
 
 
 # ── step 4: retag the punches ──────────────────────────────────────────────
 
 
-def retag(company, from_date, to_date, employees=None, include_same_timings=0):
+def retag(company, from_date, to_date):
 	"""Re-derive each wrong punch's shift the way Frappe HR's bulk_fetch_shift does."""
 	_admin()
+	scope = _scope(company, from_date, to_date)
 	_refuse_while_enabled(_in_use_shifts(company, from_date, to_date), "retag")
-	p = _plan(company, from_date, to_date, employees, include_same_timings)
+	p = _plan(company, from_date, to_date, scope["employees"], scope["include_same_timings"])
 	state = _state()
 	todo = [r for r in p["retag"] if not r.attendance]
 	still_linked = len(p["retag"]) - len(todo)
 	for r in todo:
-		state["punches"].setdefault(r.name, {f: str(r[f]) if r[f] else None for f in PUNCH_FIELDS})
+		state["punches"].setdefault(r.name, {f: str(r[f]) if r[f] is not None else None for f in PUNCH_FIELDS})
 	_save_state(state)  # before any write, so undo always knows the old tag
 
 	done, wrong_after = 0, []
@@ -560,95 +635,127 @@ def retag(company, from_date, to_date, employees=None, include_same_timings=0):
 	return {"retagged": done, "still_linked": still_linked, "unexpected": len(wrong_after)}
 
 
-# ── step 5: switch on and mark ─────────────────────────────────────────────
+# ── step 5: mark, then switch on ───────────────────────────────────────────
 
 
-def enable_and_mark(company, from_date, to_date):
-	"""Switch auto attendance on (and leave it on) and run Frappe's own job per shift."""
-	from hrms.hr.doctype.shift_type.shift_type import update_last_sync_of_checkin
+def enable_and_mark(company, from_date, to_date, half_day_rows=None):
+	"""Mark the frozen people with Frappe's own job, then switch the shifts on.
+
+	The job runs while the shifts are still off, on the shift documents in
+	memory, with the ceiling Frappe's hourly step would give. Then the start
+	date moves past the period, so the hourly job never reaches anybody else's
+	October once the shifts are on.
+	"""
+	from hrms.hr.doctype.shift_type.shift_type import ShiftType
 
 	_admin()
-	paid = _paid(company, from_date, to_date)
+	scope = _scope(company, from_date, to_date)
+	people = set(scope["employees"])
+	paid = _paid(company, from_date, to_date) & people
 	if paid:
-		frappe.throw(
-			f"Refused: {len(paid)} people have a submitted salary slip in the period. Switching shifts on"
-			" marks attendance for everyone on them. Cancel or exclude those slips first."
-		)
+		frappe.throw(f"Refused: {len(paid)} of the people have a submitted salary slip in the period.")
+	left = [r for r in _wrong_punches(company, from_date, to_date, people, scope["include_same_timings"])["retag"]
+	        if not r.attendance]
+	if left:
+		frappe.throw(f"Refused: {len(left)} punches are still on the wrong shift. Run cancel_wrong and retag first.")
+	half = _half_day_rows(people)
+	if half_day_rows is None or int(half_day_rows) != len(half):
+		frappe.throw(f"Refused: Frappe may set the other half of {len(half)} half-day rows to Absent."
+		             f" Read them in preview, then pass half_day_rows={len(half)}.")
 	shifts = _in_use_shifts(company, from_date, to_date)
-	for s in shifts:
-		doc = frappe.get_doc("Shift Type", s)
-		if not doc.enable_auto_attendance:
-			doc.enable_auto_attendance = 1
-			doc.save()
-	frappe.db.commit()
-	# The scheduler's own hourly step, run now: moves the ceiling forward on
-	# shifts with auto_update_last_sync ticked. Shifts that sat switched off
-	# have a stale ceiling, and would otherwise mark nothing past it.
-	update_last_sync_of_checkin()
-	frappe.db.commit()
+	_refuse_while_enabled(shifts, "enable_and_mark")
+	targets = sorted(_target_shifts(company, from_date))
 
-	end = get_datetime(f"{add_days(to_date, 1)} 00:00:00")
+	# Pass 1 marks every shift's punches; pass 2 the Absent days. The other way
+	# round, an Absent on the default shift blocks a punch on a same-hours shift
+	# and Frappe flags that punch skip for good.
+	for absent_pass in (False, True):
+		for s in (targets if absent_pass else shifts):
+			doc = frappe.get_doc("Shift Type", s)
+			doc.last_sync_of_checkin = _ceiling(doc)
+			if not doc.process_attendance_after or not doc.last_sync_of_checkin:
+				print(f"   {s}: SKIPPED, no start date or empty last_sync")
+				continue
+			doc.get_assigned_employees = (lambda d, on: lambda *a, **k: [
+				e for e in ShiftType.get_assigned_employees(d, *a, **k) if on and e in people])(doc, absent_pass)
+			logs = [] if absent_pass else [x for x in doc.get_employee_checkins() if x.employee in people]
+			started = time.monotonic()
+			doc._process(logs)
+			frappe.db.commit()
+			print(f"   {s}: {'absent pass' if absent_pass else f'{len(logs)} punches'} [{time.monotonic() - started:.1f}s]")
+
+	state = _state()
+	after = str(getdate(add_days(to_date, 1)))
 	for s in shifts:
 		doc = frappe.get_doc("Shift Type", s)
-		started = time.monotonic()
-		message = doc.process_auto_attendance(is_manually_triggered=1)
-		frappe.db.commit()
-		last = get_datetime(doc.last_sync_of_checkin) if doc.last_sync_of_checkin else None
-		print(f"   {s}: {message or 'nothing to do (check last_sync)'} [{time.monotonic() - started:.1f}s]")
-		if not last or last < end:
-			print(f"      WARNING: last_sync is {last or 'EMPTY'}, before the end of the period. Days after it are"
-			      " NOT marked. Set it by hand only after reading the runbook.")
-	print(f"enable_and_mark: {len(shifts)} shifts switched on and processed. Queued jobs need a worker; run verify after.")
-	return {"shifts": len(shifts)}
+		old = state["shifts"].get(s, {})
+		if s in targets:
+			doc.enable_auto_attendance = 1
+			doc.process_attendance_after = max(after, old.get("process_attendance_after") or after)
+		else:
+			doc.enable_auto_attendance = old.get("enable_auto_attendance", doc.enable_auto_attendance)
+		doc.save()
+	frappe.db.commit()
+	print(f"enable_and_mark: {len(targets)} shifts switched on from {after}; {len(shifts) - len(targets)}"
+	      " shifts only on old punches left as they were. Run verify.")
+	return {"shifts_on": len(targets), "left_as_were": len(shifts) - len(targets)}
 
 
 # ── step 6: check the result ───────────────────────────────────────────────
 
 
-def verify(company, from_date, to_date, employees=None, reds_for=None):
-	"""Punches against attendance, per person. Writes nothing."""
+def verify(company, from_date, to_date, reds_for=None):
+	"""Punches against attendance, for the frozen people. Writes nothing."""
 	from alvoraa_portal.payroll_rules_apply import judge, prepare, rule_set_for
 
 	_admin()
-	emps = _employees(company, employees)
-	punch_days, unlinked = {}, 0
-	if emps:
-		for x in frappe.get_all(
-			"Employee Checkin",
-			filters={
-				"employee": ("in", list(emps)),
-				"time": ("between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]),
-				"skip_auto_attendance": 0,
-				"offshift": 0,
-			},
-			fields=["employee", "time", "attendance"],
-			limit_page_length=0,
-		):
-			punch_days.setdefault(x.employee, set()).add(str(getdate(x.time)))
+	people = _scope(company, from_date, to_date)["employees"]
+	emps = _employees(company, people)
+	punch_days, all_punch_days, unlinked, skip_on = {}, {}, 0, []
+	for x in frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": ("in", people or [""]), "time": _period(from_date, to_date), "offshift": 0},
+		fields=["name", "employee", "time", "attendance", "skip_auto_attendance"],
+		limit_page_length=0,
+	):
+		day = str(getdate(x.time))
+		all_punch_days.setdefault(x.employee, set()).add(day)
+		if x.skip_auto_attendance:
+			skip_on.append((x.employee, day))
+		else:
+			punch_days.setdefault(x.employee, set()).add(day)
 			unlinked += not x.attendance
-	att = _attendance(company, from_date, to_date, list(emps) if employees else None)
 	att_days, dups = {}, []
-	for a in att:
+	for a in _attendance(company, from_date, to_date, people):
 		days = att_days.setdefault(a.employee, {})
 		day = str(a.attendance_date)
 		if day in days:
 			dups.append((a.employee, day))
 		days[day] = a
 
-	missing_total = 0
+	missing_total = absent_punched = 0
 	for emp in sorted(emps):
-		missing = sorted(punch_days.get(emp, set()) - set(att_days.get(emp, {})))
+		days = att_days.get(emp, {})
+		missing = sorted(punch_days.get(emp, set()) - set(days))
 		missing_total += len(missing)
 		if missing:
 			print(f"   {emp} {emps[emp].employee_name}: {len(missing)} days with punches but no attendance: {', '.join(missing)}")
+		# A badge-in on a day marked Absent, skip flag or not: kept hand-made
+		# Absents show here too, and so would the M1 collision.
+		absent = sorted(d for d in all_punch_days.get(emp, ()) if d in days and days[d].status == "Absent")
+		absent_punched += len(absent)
+		if absent:
+			print(f"   {emp} {emps[emp].employee_name}: Absent on {len(absent)} days with a punch: {', '.join(absent)}")
 	for emp, day in dups:
 		print(f"   DUPLICATE: {emp} {emps[emp].employee_name} {day}")
+	skip_on_absent = sum(1 for e, d in skip_on if d in att_days.get(e, {}) and att_days[e][d].status == "Absent")
 
-	wrong = _wrong_punches(company, from_date, to_date, employees)
+	wrong = _wrong_punches(company, from_date, to_date, people)
 	result = {
 		"people": len(emps),
-		"attendance": len(att),
 		"days_punched_no_attendance": missing_total,
+		"absent_on_days_with_a_punch": absent_punched,
+		"skip_flagged_punches_on_absent_days": skip_on_absent,
 		"duplicates": len(dups),
 		"unlinked_punches": unlinked,
 		# Punches on a kept day (leave, a person's edit) stay linked to it and keep
@@ -663,10 +770,11 @@ def verify(company, from_date, to_date, employees=None, reds_for=None):
 			print(f"   reds for {emp}: not counted, {company} has no pay rule set switched on")
 			break
 		ctx = prepare(rule_set, from_date, to_date)
-		rows = [a for a in _attendance(company, from_date, to_date, [emp])]
+		rows = _attendance(company, from_date, to_date, [emp])
 		reds = sum(judge(a, ctx).reds for a in rows)
-		result[f"reds_{emp}"] = reds
-		print(f"   reds for {emp} {emps.get(emp, frappe._dict()).get('employee_name', '')}: {reds} over {len(rows)} days")
+		result[f"reds_before_free_{emp}"] = reds
+		print(f"   reds for {emp}: {reds} over {len(rows)} days, BEFORE the {rule_set.free_reds_per_month or 0}"
+		      " free reds a month are taken off")
 	print("VERIFY", result)
 	return result
 
@@ -677,8 +785,8 @@ def verify(company, from_date, to_date, employees=None, reds_for=None):
 def undo():
 	"""Put back punch tags and shift settings from the saved file.
 
-	Cancelled attendance CANNOT be un-cancelled. The database backup taken
-	before the run is the only way back for those.
+	It does not touch attendance. To bring back a cancelled day: cancel the
+	rebuilt row, then amend the cancelled one (runbook).
 	"""
 	_admin()
 	state = _state()
@@ -706,7 +814,7 @@ def undo():
 	if linked:
 		print(f"   NOT restored: {len(linked)} punches are linked to rebuilt attendance. Cancel that attendance,"
 		      " then run undo again.")
-	print(f"   CANNOT be undone: {len(state['cancelled'])} cancelled attendance records. Restore the backup if"
-	      " they are needed.")
+	print(f"   {len(state['cancelled'])} attendance records were cancelled. To bring one back: cancel the rebuilt"
+	      " row for that day, then Amend the cancelled one (runbook).")
 	return {"punches": restored, "linked": len(linked), "shifts": len(state["shifts"]),
-	        "cancelled_not_undone": len(state["cancelled"])}
+	        "cancelled": len(state["cancelled"])}

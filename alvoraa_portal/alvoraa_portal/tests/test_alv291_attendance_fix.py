@@ -5,14 +5,16 @@ shifts and commits: separate tests would fight over the same shifts. Smaller
 tests cover the refusals and the last-sync ceiling trap.
 
 The fixtures copy DTC's shape:
-  ABH  - Abhishek-like. Default 10:00-19:00, punches 09:35 and 19:16 tagged to
-         10:30-20:30, attendance already marked on that wrong shift.
-         Day 3 is a leave day and must be KEPT.
-  HAND - same wrong tag, but a person edited the attendance. KEPT.
-  GRPA - on a shift with auto attendance OFF and a start date after the
-         period; no attendance for days 1-2, and an Absent on day 3 although
-         badged in.
-  SAME - tagged to a shift with identical timings. Left alone by default.
+  ABH    - Abhishek-like. Default 10:00-19:00, punches 09:35 and 19:16 tagged to
+           10:30-20:30, attendance marked on that wrong shift. Day 3 is leave: KEPT.
+  HAND   - same wrong tag; a person (not Administrator) edited the row: KEPT.
+  FIXADM - same wrong tag; the row was corrected later AS ADMINISTRATOR: KEPT.
+  GRPA   - shift with auto attendance OFF; no attendance on days 1-2, and an
+           automatic Absent (Frappe's comment) on day 3 although badged in: CANCELLED.
+  AMEND, HANDABS, REQ, CONF - Group A people whose day-1 Absent is amended,
+           made by hand as Administrator, from an Attendance Request, or
+           confirmed by a manager: all KEPT.
+  SAME   - tagged to a shift with identical timings, no attendance (the M1 case).
 """
 
 import os
@@ -20,7 +22,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, getdate, now_datetime, nowdate
+from frappe.utils import add_days, add_to_date, getdate, now_datetime, nowdate
 
 from alvoraa_portal import alv291_attendance_fix as fix
 
@@ -31,6 +33,7 @@ WRONG = "A291 10:30-20:30"
 OFF = "A291 Off 09:00-18:00"
 SAME = "A291 Same 10:00-19:00"
 TRAP = "A291 Trap 10:00-19:00"
+STEPS = ("preview", "pause", "set_start", "cancel_wrong", "retag", "enable_and_mark", "verify", "undo")
 
 
 def _company(name, abbr):
@@ -76,6 +79,15 @@ def _set_default(emp, shift):
 	frappe.db.value_cache.clear()
 
 
+def _absent(emp, day, auto=False):
+	doc = frappe.get_doc({"doctype": "Attendance", "employee": emp, "company": COMPANY,
+	                      "attendance_date": day, "status": "Absent", "shift": OFF}).insert()
+	doc.submit()
+	if auto:
+		doc.add_comment("Comment", fix.AUTO_ABSENT_COMMENT)
+	return doc
+
+
 def _rule_set():
 	if frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY}):
 		return
@@ -99,6 +111,16 @@ def _live(emp, day):
 	                      fields=["name", "status", "shift", "alvoraa_attendance_percent"])
 
 
+def _slip(emp, frm, to):
+	"""A submitted slip row, written straight to the table: building a real
+	salary structure is not what this test is about, the query is."""
+	doc = frappe.new_doc("Salary Slip")
+	doc.update({"name": f"A291-SLIP-{emp}", "employee": emp, "company": COMPANY, "start_date": frm,
+	            "end_date": to, "posting_date": to, "docstatus": 1})
+	doc.db_insert()
+	return doc.name
+
+
 def _cleanup(company):
 	emps = frappe.get_all("Employee", filters={"company": company}, pluck="name")
 	if emps:
@@ -107,6 +129,7 @@ def _cleanup(company):
 			frappe.db.delete("Comment", {"reference_doctype": "Attendance", "reference_name": ("in", atts)})
 		frappe.db.delete("Attendance", {"employee": ("in", emps)})
 		frappe.db.delete("Employee Checkin", {"employee": ("in", emps)})
+		frappe.db.delete("Salary Slip", {"employee": ("in", emps)})
 		frappe.db.delete("Employee", {"name": ("in", emps)})
 	frappe.db.commit()
 
@@ -125,6 +148,8 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		_cleanup(COMPANY)
 		_cleanup(TRAP_COMPANY)
 		_rule_set()
+		if os.path.exists(fix._state_path()):
+			os.remove(fix._state_path())
 
 	@classmethod
 	def tearDownClass(cls):
@@ -140,19 +165,22 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		cls.sleep_patch.stop()
 		super().tearDownClass()
 
-	def test_not_web_callable_and_admin_only(self):
-		for name in ("preview", "pause", "set_start", "cancel_wrong", "retag",
-		             "enable_and_mark", "verify", "undo"):
-			fn = getattr(fix, name)
-			self.assertNotIn(fn, frappe.whitelisted, name)
+	def test_not_web_callable_and_every_step_admin_only(self):
+		args = {"preview": (COMPANY, nowdate(), nowdate()), "undo": ()}
+		for name in STEPS:
+			self.assertNotIn(getattr(fix, name), frappe.whitelisted, name)
 		frappe.set_user("Guest")
 		try:
-			with self.assertRaises(frappe.ValidationError):
-				fix.preview(COMPANY, nowdate(), nowdate())
-			with self.assertRaises(frappe.ValidationError):
-				fix.undo()
+			for name in STEPS:
+				with self.assertRaises(frappe.ValidationError, msg=name):
+					getattr(fix, name)(*args.get(name, (COMPANY, nowdate(), nowdate())))
 		finally:
 			frappe.set_user("Administrator")
+
+	def test_steps_refuse_without_a_frozen_list(self):
+		for name in ("cancel_wrong", "retag", "enable_and_mark", "verify"):
+			with self.assertRaises(frappe.ValidationError, msg=name):
+				getattr(fix, name)("No Such Co", "2026-10-01", "2026-10-31")
 
 	def test_last_sync_set_before_the_period_marks_nothing(self):
 		"""The trap from 16 Oct: last_sync is a CEILING. Set it before the
@@ -166,7 +194,6 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		_punch(emp, day, "19:05")
 		frappe.get_doc("Shift Type", TRAP).process_auto_attendance(is_manually_triggered=1)
 		self.assertEqual(_live(emp, day), [])
-		# The same shift with the ceiling after the period does mark it.
 		frappe.db.set_value("Shift Type", TRAP, "last_sync_of_checkin", now_datetime())
 		frappe.get_doc("Shift Type", TRAP).process_auto_attendance(is_manually_triggered=1)
 		self.assertEqual(len(_live(emp, day)), 1)
@@ -175,143 +202,192 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 
 	def test_the_runbook_end_to_end(self):
 		d1, d2, d3 = (getdate(add_days(nowdate(), -12 + i)) for i in range(3))
-		start = add_days(d1, -1)
+		start = d1          # "1 Oct": the first day of the period
 		frm, to = str(d1), str(d3)
 
 		_shift(RIGHT, "10:00:00", "19:00:00", enable_auto_attendance=1, auto_update_last_sync=1,
 		       process_attendance_after=start, last_sync_of_checkin=now_datetime())
 		_shift(WRONG, "10:30:00", "20:30:00", enable_auto_attendance=1, auto_update_last_sync=1,
 		       process_attendance_after=start, last_sync_of_checkin=now_datetime())
-		# Group A: switched off, start date after the period (the "28 Oct" case),
-		# and a stale ceiling that only Frappe's own hourly step moves.
 		_shift(OFF, "09:00:00", "18:00:00", enable_auto_attendance=0, auto_update_last_sync=1,
 		       process_attendance_after=d3, last_sync_of_checkin=f"{d1} 08:00:00")
 		_shift(SAME, "10:00:00", "19:00:00", enable_auto_attendance=0, auto_update_last_sync=1,
 		       process_attendance_after=start, last_sync_of_checkin=now_datetime())
 
-		# ABH and HAND punch while their default is the wrong shift, so the punches
-		# carry the wrong tag, and the wrong shift marks their attendance.
+		# Wrong tags: they punch while their default is WRONG, and WRONG marks them.
 		abh = _employee("Abh", COMPANY, WRONG)
 		hand = _employee("Hand", COMPANY, WRONG)
-		grpa = _employee("GrpA", COMPANY, OFF)
-		same = _employee("Same", COMPANY, SAME)
+		fixadm = _employee("FixAdm", COMPANY, WRONG)
 		for d in (d1, d2, d3):
 			_punch(abh, d, "09:35")
 			_punch(abh, d, "19:16")
-		_punch(hand, d1, "09:40")
-		_punch(hand, d1, "19:10")
+		for e in (hand, fixadm):
+			_punch(e, d1, "09:40")
+			_punch(e, d1, "19:10")
 		frappe.get_doc("Shift Type", WRONG).process_auto_attendance(is_manually_triggered=1)
-		for d in (d1, d2, d3):
-			self.assertEqual(_live(abh, d)[0].shift, WRONG)
 		self.assertLess(_live(abh, d1)[0].alvoraa_attendance_percent, 100)
-		# Day 3 became a leave day; HAND's day was changed by a person.
 		frappe.db.set_value("Attendance", _live(abh, d3)[0].name,
 		                    {"leave_application": "HR-LAP-A291", "status": "On Leave"})
 		frappe.db.set_value("Attendance", _live(hand, d1)[0].name, "modified_by", "hr291@example.com",
 		                    update_modified=False)
-		_set_default(abh, RIGHT)
-		_set_default(hand, RIGHT)
+		# B1: corrected as Administrator an hour after the job made it.
+		fix_row = _live(fixadm, d1)[0].name
+		frappe.db.set_value("Attendance", fix_row, "creation", add_to_date(now_datetime(), hours=-1),
+		                    update_modified=False)
+		frappe.db.set_value("Attendance", fix_row, "status", "Half Day")
+		for e in (abh, hand, fixadm):
+			_set_default(e, RIGHT)
 
+		grpa = _employee("GrpA", COMPANY, OFF)
 		for d in (d1, d2, d3):
 			_punch(grpa, d, "09:05")
 			_punch(grpa, d, "18:10")
-		absent = frappe.get_doc({"doctype": "Attendance", "employee": grpa, "company": COMPANY,
-		                         "attendance_date": d3, "status": "Absent", "shift": OFF}).insert()
-		absent.submit()
+		_absent(grpa, d3, auto=True)
+		kept_absent = {}
+		for name in ("Amend", "HandAbs", "Req", "Conf"):
+			e = _employee(name, COMPANY, OFF)
+			for d in (d1, d2):
+				_punch(e, d, "09:05")
+				_punch(e, d, "18:10")
+			row = _absent(e, d1, auto=name != "HandAbs")
+			if name == "Amend":
+				row.cancel()
+				new = frappe.copy_doc(row)
+				new.amended_from = row.name
+				new.docstatus = 0
+				new.insert()
+				new.submit()
+				row = new
+			elif name == "Req":
+				frappe.db.set_value("Attendance", row.name, "attendance_request", "HR-ARQ-A291")
+			elif name == "Conf":
+				frappe.db.set_value("Attendance", row.name, "alvoraa_held_confirmed", 1)
+			kept_absent[e] = row.name
+		same = _employee("Same", COMPANY, SAME)
 		_punch(same, d1, "10:01")
 		_punch(same, d1, "19:02")
 		_set_default(same, RIGHT)  # tag SAME, default RIGHT: identical timings
+		# M3: on a shift that is switched on, but no punches: not one of "the 73".
+		outsider = _employee("Outsider", COMPANY, RIGHT)
 		frappe.db.commit()
 
-		# ── 0. preview writes nothing ──
+		# ── 0. preview: nothing written to the database; the list is frozen ──
 		before = (frappe.db.count("Attendance"), frappe.db.count("Employee Checkin", {"shift": WRONG}))
 		out = fix.preview(COMPANY, frm, to, start=start)
 		self.assertEqual(before, (frappe.db.count("Attendance"),
 		                          frappe.db.count("Employee Checkin", {"shift": WRONG})))
-		self.assertFalse(os.path.exists(fix._state_path()))
-		self.assertEqual(out["retag_punches"], 4)        # ABH days 1-2; day 3 kept
-		self.assertEqual(out["retag_people"], 1)
+		scope = fix._state()["scope"]
+		people = {abh, hand, fixadm, grpa, same} | set(kept_absent)
+		self.assertEqual(set(scope["employees"]), people)
+		self.assertEqual(out["retag_punches"], 4)        # ABH days 1-2
+		self.assertEqual(out["cancel"], 3)               # ABH d1, d2 + GRPA's automatic Absent
+		self.assertEqual(out["skipped"], 7)
 		self.assertEqual(out["same_timing_people"], 1)
-		self.assertEqual(out["cancel"], 3)               # ABH d1, d2 + GRPA's Absent
-		self.assertEqual(out["skipped"], 2)              # leave + hand-edited
-		self.assertGreater(out["absent"], 0)             # the loud warning has a number
+		self.assertNotIn(outsider, scope["employees"])
 
 		# ── 1. pause ──
 		fix.pause(COMPANY, frm, to)
 		self.assertEqual(fix._enabled([RIGHT, WRONG, OFF, SAME]), [])
-		self.assertEqual(fix._state()["shifts"][RIGHT]["enable_auto_attendance"], 1)
-		self.assertEqual(fix.pause(COMPANY, frm, to)["paused"], 0)   # twice is fine
+		self.assertEqual(fix.pause(COMPANY, frm, to)["paused"], 0)
 
-		# A person with a submitted slip is refused by every step that names people.
-		with patch.object(fix, "_paid", return_value={abh, hand, grpa, same}):
-			self.assertEqual(fix.cancel_wrong(COMPANY, frm, to)["cancelled"], 0)
-			self.assertEqual(fix.retag(COMPANY, frm, to)["retagged"], 0)
-			with self.assertRaises(frappe.ValidationError):
-				fix.enable_and_mark(COMPANY, frm, to)
-		self.assertEqual(fix._enabled([RIGHT, WRONG, OFF, SAME]), [])
+		# A real submitted slip refuses that person.
+		slip = _slip(abh, frm, to)
+		self.assertEqual(fix._paid(COMPANY, frm, to), {abh})
+		self.assertEqual(fix.preview(COMPANY, frm, to, start=start)["refused"], 1)
+		self.assertEqual(fix._state()["scope"]["cancel"], 1)   # only GRPA's
+		with self.assertRaises(frappe.ValidationError):
+			fix.enable_and_mark(COMPANY, frm, to, half_day_rows=0)
+		frappe.db.delete("Salary Slip", {"name": slip})
+		frappe.db.commit()
 
-		# ── 2. set_start ──
+		# ── 2. set_start, then preview again ──
 		fix.set_start(COMPANY, frm, to, date=start)
-		self.assertEqual(getdate(frappe.db.get_value("Shift Type", OFF, "process_attendance_after")), getdate(start))
+		self.assertEqual(getdate(frappe.db.get_value("Shift Type", OFF, "process_attendance_after")), start)
 		self.assertEqual(str(fix._state()["shifts"][OFF]["process_attendance_after"]), str(d3))
 		self.assertEqual(fix.set_start(COMPANY, frm, to, date=start)["changed"], 0)
+		again = fix.preview(COMPANY, frm, to, start=start)
+		self.assertEqual(again["cancel"], 3)
+		self.assertGreater(again["absent_people"], 0)
 
-		# Retag before cancel (the plan's order) cannot move linked punches.
+		# Retag before cancel (the plan's first order) cannot move linked punches.
 		self.assertEqual(fix.retag(COMPANY, frm, to)["still_linked"], 4)
 
-		# ── 3. cancel_wrong ──
+		# ── 3. cancel_wrong: refuses if the count moved since preview ──
+		state = fix._state()
+		state["scope"]["cancel"] = 99
+		fix._save_state(state)
+		with self.assertRaises(frappe.ValidationError):
+			fix.cancel_wrong(COMPANY, frm, to)
+		state["scope"]["cancel"] = 3
+		fix._save_state(state)
 		self.assertEqual(fix.cancel_wrong(COMPANY, frm, to)["cancelled"], 3)
 		self.assertEqual(_live(abh, d1), [])
-		self.assertEqual(len(_live(abh, d3)), 1)          # leave day kept
-		self.assertEqual(len(_live(hand, d1)), 1)         # hand-edited kept
+		self.assertEqual(len(_live(abh, d3)), 1)          # leave
+		self.assertEqual(len(_live(hand, d1)), 1)         # edited by a person
+		self.assertEqual(_live(fixadm, d1)[0].name, fix_row)   # B1: corrected as Administrator
+		for e, name in kept_absent.items():               # B1: amended, by hand, request, confirmed
+			self.assertEqual(_live(e, d1)[0].name, name)
+		self.assertEqual(_live(grpa, d3), [])
 		self.assertEqual(fix.cancel_wrong(COMPANY, frm, to)["cancelled"], 0)
 
 		# ── 4. retag ──
 		abh_d1 = frappe.get_all("Employee Checkin", filters={"employee": abh, "time": ("like", f"{d1}%")},
 		                        fields=["name", "shift", "shift_start", "shift_end"])
+		with self.assertRaises(frappe.ValidationError):   # not before retag
+			fix.enable_and_mark(COMPANY, frm, to, half_day_rows=0)
 		self.assertEqual(fix.retag(COMPANY, frm, to)["retagged"], 4)
 		for p in abh_d1:
 			now = frappe.db.get_value("Employee Checkin", p.name, ["shift", "shift_start", "shift_end"], as_dict=True)
-			self.assertEqual(now.shift, RIGHT)
-			self.assertEqual(str(now.shift_start), f"{d1} 10:00:00")
-			self.assertEqual(str(now.shift_end), f"{d1} 19:00:00")
-		self.assertEqual(frappe.db.get_value("Employee Checkin", {"employee": same}, "shift"), SAME)
+			self.assertEqual((now.shift, str(now.shift_start), str(now.shift_end)),
+			                 (RIGHT, f"{d1} 10:00:00", f"{d1} 19:00:00"))
 		self.assertEqual(fix.retag(COMPANY, frm, to)["retagged"], 0)
 
 		# ── 5. enable_and_mark ──
+		with self.assertRaises(frappe.ValidationError):   # half-day rows not acknowledged
+			fix.enable_and_mark(COMPANY, frm, to)
 		kept_leave = _live(abh, d3)[0].name
-		fix.enable_and_mark(COMPANY, frm, to)
-		self.assertEqual(sorted(fix._enabled([RIGHT, WRONG, OFF, SAME])), sorted([RIGHT, WRONG, OFF, SAME]))
+		absent_before = frappe.db.count("Attendance", {"docstatus": 1, "status": "Absent", "company": COMPANY})
+		fix.enable_and_mark(COMPANY, frm, to, half_day_rows=fix._state()["scope"]["half_day_rows"])
+		# M2: the preview named exactly the Absent days the job then made.
+		self.assertEqual(frappe.db.count("Attendance", {"docstatus": 1, "status": "Absent", "company": COMPANY})
+		                 - absent_before, again["absent"])
+		# M3: nobody outside the frozen list was touched.
+		self.assertEqual(frappe.db.count("Attendance", {"employee": outsider}), 0)
 		for d in (d1, d2):
 			row = _live(abh, d)
-			self.assertEqual(len(row), 1)
-			self.assertEqual((row[0].shift, row[0].status), (RIGHT, "Present"))
-			self.assertEqual(row[0].alvoraa_attendance_percent, 100)
+			self.assertEqual([(r.shift, r.status, r.alvoraa_attendance_percent) for r in row],
+			                 [(RIGHT, "Present", 100)])
 		self.assertEqual(_live(abh, d3)[0].name, kept_leave)
-		# The kept day's punches stay linked to the kept record: only unlinked punches are processed.
 		self.assertEqual(set(frappe.get_all("Employee Checkin", filters={"employee": abh, "time": ("like", f"{d3}%")},
 		                                    pluck="attendance")), {kept_leave})
 		for d in (d1, d2, d3):
 			self.assertEqual([(r.shift, r.status) for r in _live(grpa, d)], [(OFF, "Present")])
-		self.assertEqual(frappe.get_doc("Shift Type", OFF).enable_auto_attendance, 1)   # stays on
-		fix.enable_and_mark(COMPANY, frm, to)   # twice: no duplicates
+		# M1: the same-timing day is Present, not Absent with its punches flagged skip.
+		self.assertEqual([r.status for r in _live(same, d1)], ["Present"])
+		self.assertEqual(frappe.get_all("Employee Checkin", filters={"employee": same}, pluck="skip_auto_attendance"),
+		                 [0, 0])
+		self.assertEqual(frappe.db.get_value("Shift Type", OFF, "enable_auto_attendance"), 1)   # stays on
+		self.assertEqual(frappe.db.get_value("Shift Type", SAME, "enable_auto_attendance"), 0)  # only old punches
+		self.assertEqual(getdate(frappe.db.get_value("Shift Type", RIGHT, "process_attendance_after")),
+		                 add_days(d3, 1))
+		with self.assertRaises(frappe.ValidationError):   # a second run refuses: shifts are on
+			fix.enable_and_mark(COMPANY, frm, to, half_day_rows=fix._state()["scope"]["half_day_rows"])
 
 		# ── 6. verify ──
 		v = fix.verify(COMPANY, frm, to, reds_for=[abh])
 		self.assertEqual(v["duplicates"], 0)
 		self.assertEqual(v["days_punched_no_attendance"], 0)
 		self.assertEqual(v["wrong_tag_unlinked"], 0)
-		self.assertEqual(v["wrong_tag_on_kept_days"], 4)   # ABH's leave day + HAND's edited day
-		self.assertEqual(v[f"reds_{abh}"], 0)
+		self.assertEqual(v["wrong_tag_on_kept_days"], 6)   # ABH leave, HAND, FIXADM
+		self.assertEqual(v["absent_on_days_with_a_punch"], 4)          # the four kept Absents
+		self.assertEqual(v["skip_flagged_punches_on_absent_days"], 8)  # Frappe flags their punches
+		self.assertEqual(v[f"reds_before_free_{abh}"], 0)
 
 		# ── 7. undo ──
 		u = fix.undo()
-		self.assertEqual(u["linked"], 4)          # rebuilt days hold them
-		self.assertEqual(u["cancelled_not_undone"], 3)
+		self.assertEqual(u["linked"], 4)
 		self.assertEqual(frappe.db.get_value("Shift Type", OFF, "enable_auto_attendance"), 0)
 		self.assertEqual(getdate(frappe.db.get_value("Shift Type", OFF, "process_attendance_after")), d3)
-		self.assertEqual(frappe.db.get_value("Shift Type", RIGHT, "enable_auto_attendance"), 1)
-		# Once the rebuilt day is cancelled, undo puts the old tag and times back.
 		frappe.get_doc("Attendance", _live(abh, d1)[0].name).cancel()
 		frappe.db.commit()
 		fix.undo()

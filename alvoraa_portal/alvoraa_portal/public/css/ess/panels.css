@@ -2929,7 +2929,7 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 /* NOTHING IN THE DRAWER PRINTS - slices 065 and 069 already set that for the
    whole layer; said again here so a future change to this drawer cannot
    quietly put a face or a document on a printed page. */
-@media print{.emp-drawer,.emp-drawer-overlay,.mpf-big{display:none!important}}
+@media print{.emp-drawer,.emp-drawer-overlay,.mpf-big,.mpf-dv{display:none!important}}
 
 /* ── "What people can see and change about each other", slice 078 ─────────
    Prefix ocs. The card follows the ten pf-cards already on Organisation
@@ -3037,7 +3037,8 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 /* ── Documents on a person's profile, slice 078 ───────────────────────────
    The row shape `loadMyDocuments` already uses on the employee's own card -
    type, status, View - so a reader and the employee see the same kind of row
-   for the same thing. No inline preview, no thumbnail, no download-all. */
+   for the same thing. No thumbnail in the row and no download-all; View opens
+   the document in `.mpf-dv` below (ALV-287). */
 .mpf-docs{margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)}
 .mpf-dh{margin:0 0 6px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
 .mpf-doc{display:flex;gap:10px;align-items:center;padding:8px 0;
@@ -3047,3 +3048,38 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 /* Slice 065's screen-share link: SESSION ONLY, never remembered, so the next
    time the drawer opens the documents are there again. */
 .mpf-docs.mpf-hidden .mpf-doc{display:none}
+
+/* ── The document on screen, ALV-287 ─────────────────────────────────────────
+   Its OWN fixed overlay, unlike `.mpf-big`, which is absolute INSIDE the
+   drawer at z-index 5. That was a decision, not an oversight: a 240 px
+   photograph fits a 480 px drawer and a scanned A4 page does not, and she
+   asked for a generous size. So it is pinned to the window at 1250 - above the
+   drawer (1101), above the seat tray (1150) and above .gp-backdrop (1200) -
+   and it is listed in scripts/check_portal_trays.js like every other overlay.
+   The scrim value is .emp-drawer-overlay's, not a new one.
+
+   PICTURES ONLY today. portal.js's `mpfShowDoc` has the measurements showing
+   why a PDF cannot be shown AND sandboxed, and that it waits on her. */
+.mpf-dv{position:fixed;inset:0;z-index:1250;background:rgba(0,0,0,.52);
+  display:flex;align-items:center;justify-content:center;padding:24px}
+.mpf-dv-in{display:flex;flex-direction:column;width:min(1040px,100%);
+  height:min(880px,100%);background:var(--surface);border-radius:var(--r);
+  box-shadow:var(--sh3);overflow:hidden}
+.mpf-dv-h{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 16px;border-bottom:1px solid var(--border)}
+.mpf-dv-t{margin:0;font-size:var(--fs-md);font-weight:650;color:var(--text);
+  overflow-wrap:anywhere}
+/* The picture gets everything left over, and scrolls if it is taller than the
+   box. */
+.mpf-dv-b{flex:1;min-height:0;overflow:auto;background:var(--bg);display:flex;
+  align-items:center;justify-content:center}
+.mpf-dv-i{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.mpf-dv-say{margin:0;padding:10px 16px;border-top:1px solid var(--border);
+  line-height:1.5}
+@media (max-width:640px){
+  /* Full screen on a phone: a margin round an A4 page on a 390 px screen buys
+     nothing and costs the page. */
+  .mpf-dv{padding:0}
+  .mpf-dv-in{border-radius:0}
+  .mpf-dv-h .btn{min-height:44px}
+}

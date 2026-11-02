@@ -59,9 +59,32 @@ const dom = new JSDOM(html, {
            saved it, which is the whole point of the wording being tested. */
         return new Promise(() => {});
       }
+      /* ALV-287: a route that answers with a FILE rather than JSON, the way
+         `open_employee_document` does - a Content-Disposition name and a blob
+         whose type Frappe's `as_raw` has already guessed from the file name. */
+      if (h.file) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          headers: { get: () => 'attachment; filename="' + h.file.name + '"' },
+          blob: () => Promise.resolve(new w.Blob([h.file.body || "bytes"],
+                                                 { type: h.file.type })),
+        });
+      }
       const v = typeof h.ok === "function" ? h.ok(CALLS[CALLS.length - 1].args) : h.ok;
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ message: v }) });
     };
+    /* jsdom has no object urls at all. A COUNTING stub is the right thing here
+       rather than a faithful one: ALV-287's rule is that every url handed out
+       is handed back when the thing showing it goes away, and this is what
+       makes that observable instead of a promise in a comment. */
+    w.URLS = { made: [], live: new Set() };
+    w.URL.createObjectURL = (b) => {
+      const u = "blob:test/" + (w.URLS.made.length + 1);
+      w.URLS.made.push({ url: u, type: (b && b.type) || "" });
+      w.URLS.live.add(u);
+      return u;
+    };
+    w.URL.revokeObjectURL = (u) => { w.URLS.live.delete(u); };
     const call = (o) => {
       const name = method(o.method);
       CALLS.push({ name, args: o.args || {} });
@@ -576,7 +599,8 @@ async function openMyProfile(routes) {
   yes(!!view && view.tagName === "BUTTON" && view.getAttribute("data-row") === "ED-1",
       "078 AC-66: View is a button carrying the ROW, which only our endpoint takes");
   yes(!docs.querySelector("img") && !/download all/i.test(dtext),
-      "078 AC-63: no inline preview, no thumbnail, no download-all");
+      "078 AC-63 / ALV-287: the LIST itself still has no thumbnail and no "
+      + "download-all - the picture opens in .mpf-dv when View is pressed");
 
   /* Session only, never remembered (slice 065's own rule). */
   click(docs.querySelector('[data-mpf="hide"]'));
@@ -813,6 +837,186 @@ async function openMyProfile(routes) {
     key("Escape"); await settle(20);
     key("Escape"); await settle(20);
   }
+
+  // ── 20. ALV-286: the seat tray gets out of the way, and comes back ───────
+  /* Her words, testing 080 on dev: "if I click on employee name, the dialog of
+     employee profile opens below this dialog. I would expect it to be closed."
+     The tray is fixed at z-index 1150 and the drawer is 1101, so the profile
+     really did open underneath it. Her decision was not "close and forget" but
+     "come back to the list where I left it", which is what the scroll half of
+     this case is for. */
+  ROUTES.get_positions_profile = { ok: WHO };
+  ROUTES.get_employee_documents = { ok: { documents: [] } };
+  /* The chart was repainted since section 13, which reloads POS from the
+     server stub and empties it, so the seat is put back before the tray is
+     asked for one. */
+  window.POS.rows = [{ id: "P-CASH", title: "Cashier", branch: "Noida Sector 18",
+    department: "Retail", designation: "Cashier", grade: "", company: "DTC",
+    status: "Active", key: false, seats: 3, filled: 2, open: 1, opening: null,
+    reports_to: "", reports_to_title: "Retail Head", leaving_on: null,
+    people: [{ assignment: "A1", employee: "HR-EMP-9", name: "Kiran Sandhu",
+               weight: 100, type: "Permanent", covering: false, leaving: null },
+             { assignment: "A2", employee: "HR-EMP-10", name: "Ravi Kumar",
+               weight: 100, type: "Permanent", covering: false, leaving: null }] }];
+  window.posSeatSheet("P-CASH");
+  await settle(40);
+  const tray = doc.querySelector("#pos-layer .pos-sheet");
+  yes(!!tray, "ALV-286: the seat tray opens");
+  if (!tray) { console.log("\n### 078: the tray never opened"); process.exit(1); }
+  const trayBody = doc.querySelector("#pos-layer .sh-b");
+  trayBody.scrollTop = 140;                 /* the reader has scrolled down it */
+  const inTray = doc.querySelector('#pos-layer [data-pos-who="HR-EMP-10"]');
+  yes(!!inTray, "ALV-286: and the second person in the seat is a name to click",
+      String(doc.querySelectorAll("#pos-layer [data-pos-who]").length));
+
+  click(inTray);
+  await settle(150);
+  yes(!doc.querySelector("#pos-layer .pos-sheet"),
+      "ALV-286: clicking a name in the tray CLOSES the tray - the profile is "
+      + "not left underneath it");
+  yes($("emp-drawer").classList.contains("open"),
+      "ALV-286: and the profile is open");
+
+  key("Escape");
+  await settle(60);
+  const backTray = doc.querySelector("#pos-layer .pos-sheet");
+  yes(!!backTray, "ALV-286: closing the profile brings the tray BACK - not "
+      + "close and forget");
+  yes(window.POS.sheet && window.POS.sheet.id === "P-CASH",
+      "ALV-286: the same seat", JSON.stringify(window.POS.sheet));
+  eq(doc.querySelector("#pos-layer .sh-b").scrollTop, 140,
+     "ALV-286: scrolled where she left it");
+  yes(doc.activeElement
+      && doc.activeElement.getAttribute
+      && doc.activeElement.getAttribute("data-pos-who") === "HR-EMP-10",
+      "ALV-286 / AC-60: and focus is on the SAME NAME in the redrawn list, not "
+      + "at the top of the page",
+      doc.activeElement && doc.activeElement.tagName);
+  window.posCloseSheet(true);
+  await settle(20);
+
+  /* The other half of the same hook: the Positions table and the seat page
+     have no tray, and must be untouched by any of this. */
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(150);
+  yes($("emp-drawer").classList.contains("open") && !window.POS.sheet,
+      "ALV-286: a name clicked where there is NO tray still just opens the "
+      + "profile - the same handler serves the table and the seat page");
+  key("Escape");
+  await settle(20);
+
+  // ── 21. ALV-287: a document is shown, not saved ─────────────────────────
+  /* Her words: "on clicking the documents view button it downloads at present.
+     Instead check the feasibility of showing documents in readonly." Then,
+     after the trade-offs: "agree, do both image and PDF together in a generous
+     size popup."
+
+     ⚠ THE PDF HALF IS NOT HERE, and that is pinned below on purpose rather
+     than left as a silence. Chrome will not run its PDF viewer in a sandboxed
+     iframe at all (measured on Chrome 157, every sandbox value), and she made
+     the restrictive sandbox a condition of showing a PDF inline. The two
+     cannot both be had, so the picture half ships and the PDF keeps its
+     download until she decides. */
+  const downloads = [];
+  const realClick = window.HTMLAnchorElement.prototype.click;
+  window.HTMLAnchorElement.prototype.click = function () {
+    downloads.push({ href: this.href, download: this.getAttribute("download") });
+  };
+
+  ROUTES.get_employee_documents = { ok: { documents: [
+    { document_type: "Aadhaar card", category: "Identity", status: "Verified",
+      expiry_date: "", collect_from: "HR", row: "ED-1" },
+  ] } };
+  ROUTES.open_employee_document = { file: { name: "aadhaar.jpg", type: "image/jpeg" } };
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(200);
+  const viewBtn = $("emp-drawer").querySelector('[data-mpf="doc"]');
+  yes(!!viewBtn, "ALV-287: the View button is there");
+  click(viewBtn);
+  await settle(200);
+
+  const dv = doc.querySelector(".mpf-dv");
+  yes(!!dv, "ALV-287: a picture document opens a viewer instead of downloading");
+  yes(!downloads.length,
+      "ALV-287: and NOTHING was saved to the reader's machine",
+      JSON.stringify(downloads));
+  yes(dv && dv.parentNode === doc.body,
+      "ALV-287: the viewer is appended to <body>, not inside the 480 px drawer "
+      + "- a scanned page does not fit a drawer, which is why it is not built "
+      + "like .mpf-big");
+  yes(dv && dv.getAttribute("role") === "dialog"
+      && dv.getAttribute("aria-modal") === "true"
+      && !!dv.getAttribute("aria-label"),
+      "ALV-287: and it is a named modal dialog");
+  const shot = dv && dv.querySelector("img");
+  yes(!!shot && /^blob:/.test(shot.getAttribute("src") || ""),
+      "ALV-287: showing the blob the POST already fetched",
+      shot && shot.getAttribute("src"));
+  yes(!!shot && !!shot.getAttribute("alt"),
+      "ALV-287: with alt text, because an unlabelled image is nothing to a "
+      + "screen reader");
+  yes(!dv.querySelector("iframe") && !dv.querySelector("embed"),
+      "ALV-287: no frame and no embed today - the PDF half waits on her");
+  yes(!/\/private\/files/.test(dv.innerHTML),
+      "078 AC-66 still holds: no /private/files address reaches the browser");
+  const dvText = text(dv);
+  /* The wording may promise FRICTION, never protection. A reader can
+     screenshot this or right-click the picture, so nothing here may read as a
+     guarantee - the same discipline as AC-65's sentence about un-ticked types,
+     and the same three words. */
+  yes(!/hidden|protected|secure|read.?only/i.test(dvText),
+      "ALV-287: the viewer does not say or imply the document is hidden, "
+      + "protected, secure or read-only", dvText);
+  yes(/Opening it is recorded/.test(dvText) && /can see your screen/.test(dvText),
+      "ALV-287: it says what IS true - the opening is recorded, and anyone "
+      + "looking at the screen can read it", dvText);
+  eq(window.URLS.live.size, 1, "ALV-287: exactly one object url is alive");
+
+  key("Escape");
+  await settle(30);
+  yes(!doc.querySelector(".mpf-dv"),
+      "ALV-287: the FIRST Escape closes the viewer only");
+  yes($("emp-drawer").classList.contains("open"),
+      "ALV-287: and the profile is still open underneath it");
+  eq(window.URLS.live.size, 0,
+     "ALV-287: the object url is given back when the viewer closes - no timer, "
+     + "because a timer would blank a document somebody was still reading");
+
+  /* And a viewer left open when the profile closes goes with it. */
+  click($("emp-drawer").querySelector('[data-mpf="doc"]'));
+  await settle(200);
+  yes(!!doc.querySelector(".mpf-dv"), "ALV-287: open it again");
+  key("Escape"); await settle(30);     /* viewer */
+  key("Escape"); await settle(30);     /* drawer */
+  yes(!doc.querySelector(".mpf-dv") && !$("emp-drawer").classList.contains("open")
+      && window.URLS.live.size === 0,
+      "ALV-287: nothing is left on screen and no object url is left behind");
+
+  /* The PDF, and the types nobody listed: still saved, exactly as before. */
+  ROUTES.open_employee_document = { file: { name: "contract.pdf", type: "application/pdf" } };
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(200);
+  downloads.length = 0;
+  click($("emp-drawer").querySelector('[data-mpf="doc"]'));
+  await settle(200);
+  yes(!doc.querySelector(".mpf-dv"),
+      "ALV-287: a PDF does NOT open in the viewer - Chrome will not render one "
+      + "in a sandboxed frame, and the sandbox is the condition she set");
+  eq(downloads.map(d => d.download), ["contract.pdf"],
+     "ALV-287: it is saved instead, exactly as this button always did");
+  key("Escape"); await settle(30);
+
+  ROUTES.open_employee_document = { file: { name: "scan.tiff", type: "application/octet-stream" } };
+  window.mpfOpen("HR-EMP-9", opener);
+  await settle(200);
+  downloads.length = 0;
+  click($("emp-drawer").querySelector('[data-mpf="doc"]'));
+  await settle(200);
+  eq(downloads.map(d => d.download), ["scan.tiff"],
+     "ALV-287: and a type the browser cannot draw falls through to the save it "
+     + "always had, rather than a broken square");
+  key("Escape"); await settle(30);
+  window.HTMLAnchorElement.prototype.click = realClick;
 
   console.log(`\n### 078 faces and profile DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

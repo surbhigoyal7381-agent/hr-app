@@ -10750,10 +10750,30 @@ function closeEmpDrawer() {
      keyboard user lands at the top of the page and has to tab back through the
      whole chart to the name they were reading. */
   var back = MPF.opener;
+  var tray = MPF.tray;
+  var was = MPF.emp;
   MPF.opener = null;
+  MPF.tray = null;
   MPF.emp = null;
   MPF.big = false;
   MPF.pinned = false;
+  /* ALV-287: a document on screen goes with the profile, and its blob url is
+     given back - the url lives exactly as long as the thing that shows it. */
+  mpfCloseDoc();
+  /* ALV-286: the seat tray this profile was opened from comes back, at the
+     same seat and scrolled where it was left. Focus goes to the SAME NAME in
+     the redrawn list rather than to the detached button it came from, which is
+     AC-60's rule applied to a list that has been drawn again. */
+  if (tray && typeof posSeatSheet === "function") {
+    posSeatSheet(tray.id);
+    var trayBody = document.querySelector("#pos-layer .sh-b");
+    if (trayBody) trayBody.scrollTop = tray.scroll;
+    var names = document.querySelectorAll("#pos-layer [data-pos-who]");
+    for (var i = 0; i < names.length; i++) {
+      if (names[i].getAttribute("data-pos-who") === was) { names[i].focus(); return; }
+    }
+    return;
+  }
   if (back && back.focus && document.body.contains(back)) back.focus();
 }
 
@@ -10767,7 +10787,13 @@ function closeEmpDrawer() {
    It is deliberately short. What it answers is "who is this, what do they do,
    since when" - the three things somebody reading a structure chart actually
    wants - and it saves an HR hop into the Desk. It is not a personnel file. */
-var MPF = { emp: null, opener: null, big: false, pinned: false, data: null, pics: {} };
+/* `tray` is ALV-286's one piece of state: the seat tray that was closed to let
+   this profile be seen, and where its list was scrolled, so closing the profile
+   puts both back. It sits beside `opener` because it answers the same question
+   - where was the reader before this drawer - for the case where the thing they
+   came from no longer exists to focus. */
+var MPF = { emp: null, opener: null, big: false, pinned: false, data: null, pics: {},
+            tray: null };
 var MPF_API = "alvoraa_portal.positions_profile.";
 
 /* THE one field list. The order is the allow-list's order, so the drawer reads
@@ -10811,6 +10837,26 @@ window.mpfOpen = function (employee, opener) {
   MPF.big = false;
   MPF.pinned = false;
   MPF.data = null;
+  /* ALV-286. The seat tray is `position:fixed` at z-index 1150; this drawer is
+     1101. So a name clicked inside the tray opened the profile UNDERNEATH it,
+     and the tray stayed down the right-hand side of a dimmed page - which
+     reads as broken rather than as two things open at once.
+
+     Her decision: close the tray, and come back to the list where she left it
+     when the profile closes. So the seat and the scroll are remembered here
+     and put back by closeEmpDrawer, and nothing else about the tray is kept.
+
+     Only a SEAT tray, and only when the name was clicked inside the layer: the
+     Positions table and the seat page use this same handler and have no tray,
+     and the other sheets hold no names to click. */
+  if (POS.sheet && POS.sheet.kind === "seat"
+      && MPF.opener && MPF.opener.closest && MPF.opener.closest("#pos-layer")) {
+    var trayBody = document.querySelector("#pos-layer .sh-b");
+    MPF.tray = { id: POS.sheet.id, scroll: trayBody ? trayBody.scrollTop : 0 };
+    /* `true` = do not move focus: focus is about to go into this drawer, and
+       the button it would go back to is the one being taken off the page. */
+    posCloseSheet(true);
+  }
   overlay.classList.add("open");
   drawer.classList.add("open");
   document.body.style.overflow = "hidden";
@@ -10945,7 +10991,18 @@ function mpfList(d) {
      those three words do not appear about the un-ticked ones.
    * A ticked type with no file says WHO COLLECTS IT, so a dead row becomes an
      action rather than a shrug.
-   * No inline preview, no thumbnail, no download-all. */
+   * No thumbnail in the list, and NO DOWNLOAD-ALL - still true and still
+     deliberate: one click must never put a person's whole identity file
+     through eight worker slots.
+   * View SHOWS a picture instead of saving it (ALV-287, 2 Nov 2026). It
+     replaces "no inline preview", which was written when the download was the
+     only option: a reader checking a card was the right one had to keep a
+     copy of a colleague's identity document to look at it. Her decision was
+     "do both image and PDF together in a generous size popup"; only the
+     image half ships, because Chrome will not render a PDF in a sandboxed
+     frame and she made the sandbox a condition of showing one - the
+     measurements and the open question are in `mpfShowDoc`. The list itself
+     still shows nothing. */
 function mpfDocsLoad(employee) {
   gpFetch(MPF_API.replace("positions_profile.", "employee_documents_read.")
           + "get_employee_documents", { employee: employee }).then(function (d) {
@@ -11016,14 +11073,18 @@ function mpfOpenDoc(row, btn) {
     var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
     if (m) name = decodeURIComponent(m[1]);
     return res.blob().then(function (blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = name;      /* saved, never rendered inline */
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+      /* ALV-287. The bytes are already in the browser, so showing them costs
+         nothing more than saving them did. The TYPE comes from the blob, which
+         Frappe's `as_raw` sets from the file name (`mimetypes.guess_type`), so
+         no server change was needed to tell a picture from anything else. A
+         file it cannot name arrives as `application/unknown` and falls through
+         to the save, which is the behaviour this button always had. */
+      var kind = String(blob.type || "").toLowerCase();
+      if (kind.indexOf("image/") === 0) {
+        mpfShowDoc(blob, name, btn);
+      } else {
+        mpfSaveDoc(blob, name);
+      }
     });
   }).then(function () {
     if (btn) btn.disabled = false;
@@ -11031,6 +11092,122 @@ function mpfOpenDoc(row, btn) {
     if (btn) btn.disabled = false;
     toast(drT("That document could not be opened. Ask HR if you need it."), "err");
   });
+}
+
+/* Anything that is not a picture: saved, exactly as this button has always
+   done. Ten seconds is plenty for a click the browser has already taken, and
+   nothing is on screen waiting on this url - unlike the viewer's, which is why
+   that one has no timer at all. */
+function mpfSaveDoc(blob, name) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+}
+
+/* ── the document on screen (ALV-287) ────────────────────────────────────────
+   Her decision, after being shown the trade-offs: "do both image and PDF
+   together in a generous size popup." A reader checking that an Aadhaar card
+   is the right one had to SAVE a colleague's identity document to their own
+   machine to look at it - which is a copy nobody asked for, on a laptop nobody
+   tracks.
+
+   Its OWN fixed overlay, not an absolute box inside the drawer like `.mpf-big`.
+   That was a real choice: a 240 px photograph fits a 480 px drawer and a
+   scanned A4 page does not, and she asked for a generous size. So this is
+   pinned to the window at z-index 1250 - above the drawer (1101) and above the
+   seat tray (1150) - and `.mpf-dv` is listed in `scripts/check_portal_trays.js`
+   so it gets the same geometry checks every other overlay gets.
+
+   ⚠ PICTURES ONLY, AND A PDF STILL DOWNLOADS. That is NOT what she asked for,
+   and it waits on her. She said "do both image and PDF together", and she also
+   said the restrictive sandbox was not optional, because
+   `employee_documents_read.py` records that a PDF is the one accepted type we
+   do not re-encode and therefore cannot strip. Those two cannot both be had:
+   **Chrome does not run its PDF viewer in a sandboxed iframe at all.** Measured
+   on Chrome 157.0.0.0 on Windows, same blob, same page, 2 Nov 2026:
+
+       sandbox=""                              broken-file icon
+       sandbox="allow-scripts"                 broken-file icon
+       sandbox="allow-scripts allow-same-origin"  broken-file icon
+       no sandbox attribute                    renders
+       <embed type="application/pdf">          renders
+
+   The same http url renders unsandboxed and fails sandboxed, so it is the
+   sandbox and not the blob. Showing a PDF therefore means dropping the one
+   mitigation she attached to accepting the risk, which is a security decision
+   and hers, not this file's. A picture needs no sandbox: an `<img>` cannot
+   execute anything, and images are the half that is safe to ship today. So
+   pictures are shown, a PDF keeps the download it has always had, and nothing
+   on screen claims otherwise.
+
+   WHAT THE WORDING MAY PROMISE. Friction, not protection. A reader can
+   screenshot this or right-click the picture, and nothing on screen may
+   suggest otherwise. So the line under it says what is true: it saves them
+   keeping a copy, opening it is recorded, and anybody who can see the screen
+   can read it.
+
+   THE URL'S LIFETIME is the viewer's. It is revoked when the viewer closes and
+   when the profile closes, and never on a timer - a timer would blank a
+   document somebody was still reading, which is exactly what 10 seconds would
+   have done here. */
+var MPF_DOC = null;
+
+function mpfShowDoc(blob, name, btn) {
+  mpfCloseDoc();                       /* one document at a time */
+  var url = URL.createObjectURL(blob);
+  MPF_DOC = { url: url, btn: btn || null };
+  var box = document.createElement("div");
+  box.className = "mpf-dv";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("tabindex", "-1");
+  box.setAttribute("aria-label", drT("Document: {0}", [name]));
+  box.innerHTML = '<div class="mpf-dv-in">'
+    + '<div class="mpf-dv-h"><h2 class="mpf-dv-t">' + esc(name) + "</h2>"
+    + '<button type="button" class="btn btn-outline btn-sm" data-mpf="doc-close">'
+    + esc(drT("Close")) + "</button></div>"
+    + '<div class="mpf-dv-b">'
+    + '<img class="mpf-dv-i" alt="' + esc(drT("Document: {0}", [name])) + '">'
+    + "</div>"
+    + '<p class="mpf-dv-say gp-hint">' + esc(drT(
+        "Shown here so you do not have to save a copy. Opening it is recorded. "
+        + "Anyone who can see your screen can read it.")) + "</p></div>";
+  document.body.appendChild(box);
+  var holder = box.querySelector(".mpf-dv-i");
+  /* An image type the browser will not draw - a TIFF, say - must not leave a
+     broken square and a reader with nothing. It takes the save it would have
+     had, rather than a type list here that would drift from the browser's. */
+  holder.addEventListener("error", function () {
+    mpfCloseDoc();
+    mpfSaveDoc(blob, name);
+  }, { once: true });
+  holder.src = url;
+  /* A click on the dark part closes it, like every other overlay on the page. */
+  box.addEventListener("click", function (e) {
+    if (e.target === box) mpfCloseDoc();
+  });
+  box.focus();
+}
+
+function mpfCloseDoc() {
+  var box = document.querySelector(".mpf-dv");
+  var was = MPF_DOC;
+  if (box) box.remove();
+  if (was) { URL.revokeObjectURL(was.url); MPF_DOC = null; }
+  /* Back to the View button that opened THIS document - but only while the
+     profile is still open, because the profile may have closed underneath the
+     viewer, and focus must never land on a button inside a hidden drawer
+     (AC-60's rule). closeEmpDrawer sends it somewhere real in that case. */
+  if (box && was && was.btn && was.btn.focus
+      && document.querySelector("#emp-drawer.open")
+      && document.body.contains(was.btn)) {
+    was.btn.focus();
+  }
 }
 
 /* ── the enlargement ─────────────────────────────────────────────────────── */
@@ -11144,8 +11321,16 @@ document.addEventListener("click", function (e) {
     }
   }
   else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
-  else if (what === "settings") { closeEmpDrawer(); switchPanel("org-settings", null); }
+  else if (what === "settings") {
+    /* This one LEAVES the Positions page, so ALV-286's "come back to the tray"
+       is dropped on purpose: a seat tray reopening over the settings panel is
+       the bug again, one screen along. */
+    MPF.tray = null;
+    closeEmpDrawer();
+    switchPanel("org-settings", null);
+  }
   else if (what === "doc") { mpfOpenDoc(t.getAttribute("data-row"), t); }
+  else if (what === "doc-close") { mpfCloseDoc(); }
   else if (what === "hide") {
     /* Slice 065's own behaviour: session only, never remembered. */
     var sec = t.closest(".mpf-docs");
@@ -11187,21 +11372,28 @@ document.addEventListener("mouseout", function (e) {
 /* ONE Escape handler for the whole drawer (AC-60, AC-62).
    The first Escape closes the ENLARGEMENT ONLY and puts focus back on the
    photograph. A second closes the drawer. Getting that order wrong means a
-   reader who presses Escape to put a picture away loses the whole profile. */
+   reader who presses Escape to put a picture away loses the whole profile.
+   ALV-287 adds the document viewer at the top of the same order, for the same
+   reason: it is the thing in front of them. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" && e.key !== "Esc") return;
   var drawer = document.getElementById("emp-drawer");
   if (!drawer || !drawer.classList.contains("open")) return;
   e.preventDefault();
+  if (MPF_DOC) { mpfCloseDoc(); return; }
   if (MPF.big) { mpfCloseBig(); return; }
   closeEmpDrawer();
 });
 
-/* Focus stays inside while it is open. */
+/* Focus stays inside while it is open. ALV-287: while a document is on screen
+   the viewer is what focus stays inside, because it is in FRONT of the drawer
+   and tabbing into the profile behind it would be tabbing into something the
+   reader cannot see. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Tab") return;
   var drawer = document.getElementById("emp-drawer");
   if (!drawer || !drawer.classList.contains("open")) return;
+  drawer = document.querySelector(".mpf-dv") || drawer;
   var able = drawer.querySelectorAll(
     'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex="0"]');
   if (!able.length) return;

@@ -5864,6 +5864,12 @@ function acPaint() {
     + "— there is nothing to be short of.</p>";
 
   document.getElementById("ac-body").innerHTML = html;
+  /* Slice 081: the file block is drawn by JavaScript, after the table's own
+     markup is on the page, because the control carries a hidden input and its
+     own state. It exists only while the form for one day is open. */
+  if (document.getElementById("ac-file")) {
+    evInit("ac-file", "dayfix", {required: false});
+  }
   /* The heading is the constant word "Attendance", so this line is the only
      thing that says WHOSE record is on screen. It leads with the person for
      that reason. */
@@ -6150,6 +6156,11 @@ function acForm(x) {
     + "It decides what the day becomes if HR agrees.</p>"
     + '<label class="form-label">Anything HR should know</label>'
     + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>'
+    /* Slice 081: the file block, with its notice ABOVE the two buttons inside
+       the same block. Optional, and Send works with nothing attached and says
+       nothing about it - there is no confirm, because a confirm on an optional
+       field is a nudge away from the evidence HR needs. */
+    + '<div class="ev-block" id="ac-file"></div>'
     + '<div class="ac-acts">'
     + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date
     + '&quot;)">Ask HR to fix this day</button>'
@@ -6216,7 +6227,10 @@ window.acSubmit = async function (date) {
       await acApi("raise_for_report", {
         employee: other, from_date: date, reason: reason, explanation: explain});
     } else {
-      await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain});
+      /* Slice 081: whatever the person chose to attach, or nothing at all.
+         A request sent with no file says nothing about it. */
+      await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain,
+        file_url: window.evFileUrl("ac-file")});
     }
     hideLoad();
     toast("Sent to HR.", "ok");
@@ -6237,7 +6251,17 @@ function acReqCard(r, mine) {
     + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
     + '<div class="s">' + gpEsc(r.says) + "</div>"
     + (r.note ? '<div class="note">' + gpEsc(r.note) + "</div>" : "")
-    + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "");
+    + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "")
+    /* Slice 081: one line, inside the card that already exists. The card is
+       not a single button - it carries Withdraw, or Fix and Decline - so View
+       can be a real button here. **No thumbnail**: a list that preloaded
+       pictures would put megabytes through eight worker slots on one page
+       view, on the busiest page in the product. */
+    + (r.has_evidence
+        ? '<div class="s ev-row-ok">' + gpEsc(drT("Evidence attached")) + ' · '
+          + '<button type="button" class="ev-link" data-evopen="dayfix" data-name="'
+          + gpEsc(r.name) + '">' + gpEsc(drT("View")) + "</button></div>"
+        : "");
   if (mine && r.state === "waiting") {
     html += '<div class="ac-acts"><button class="btn btn-outline" onclick="acWithdraw(&quot;'
       + gpEsc(r.name) + '&quot;)">Withdraw</button></div>';
@@ -6290,6 +6314,18 @@ async function acReviewQueue() {
            22 Oct 2026). */
         + (r.can_decide === false && r.not_yet
             ? '<div class="note">' + gpEsc(r.not_yet) + "</div>" : "")
+        /* Slice 081 (AC-44, AC-45): "Evidence attached · View", and nothing
+           else. These cards already carry Fix and Decline, so they are not
+           single buttons and View can be a real button here. **No thumbnail,
+           no preloading and no "open all"** - the endpoint reads a whole file
+           into one of eight request slots, so a 47-row queue that preloaded
+           pictures would be the slowest page in the product, on the surface
+           that matters most. One file per tap. */
+        + (r.has_evidence
+            ? '<div class="note ev-row-ok">' + gpEsc(drT("Evidence attached")) + ' · '
+              + '<button type="button" class="ev-link" data-evopen="dayfix" data-name="'
+              + gpEsc(r.name) + '">' + gpEsc(drT("View")) + "</button></div>"
+            : "")
         + '<div class="ac-acts">'
         + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
         + (r.can_decide === false ? "" :
@@ -6489,6 +6525,16 @@ function hmCloseSheet(quiet) {
 document.addEventListener("keydown", function (e) {
   var ov = hmEl("hm-ov");
   if (!ov) return;
+  /* Slice 081: THE VIEWER WINS, AND IT MUST.
+     A bill now opens on top of this sheet. `stopPropagation` does not stop the
+     other keydown listeners on `document` - that would need
+     stopImmediatePropagation - so without this line an Escape pressed over an
+     open bill ran BOTH handlers: this one closed the sheet and the viewer's
+     closed the viewer. The approver lost their place in the claim for pressing
+     Escape to put a picture away, which is exactly the fault the drawer's own
+     Escape order was written to prevent. The viewer's handler does the work;
+     this one stands aside and the Tab trap below does too. */
+  if (typeof MPF_DOC !== "undefined" && MPF_DOC) return;
   if (e.key === "Escape") { e.stopPropagation(); hmCloseSheet(); return; }
   if (e.key !== "Tab") return;
   var f = [].filter.call(ov.querySelectorAll("button, a[href], textarea"), function (n) { return !n.disabled; });
@@ -6566,6 +6612,10 @@ function hmRowView(key, r) {
     v.title = r.employee_name || "";
     v.sub = drT("Expense claim") + " · " + fmtMoney(r.amount) + (r.expense_type ? " · " + r.expense_type : "")
       + (w ? " · " + w : "");
+    /* Slice 081: whether this claim is decidable at all, before anything is
+       opened. The payload carries a boolean and never a url (AQ5). */
+    v.l3 = r.has_bill ? drT("Bill attached") : drT("No bill attached");
+    v.l3dim = !r.has_bill;
     v.go = "Review";
   } else if (key === "goal_updates") {
     v.title = r.employee_name || "";
@@ -6583,9 +6633,17 @@ function hmRowView(key, r) {
   return v;
 }
 function hmPendRowHtml(v, i) {
+  /* Slice 081 (AC-36, AC-37): a THIRD LINE in words - "Bill attached" or "No
+     bill attached" - and it stays a `<span>`. The row is one `<button>`, so a
+     View link inside it would be a button inside a button: unreachable by
+     keyboard and a WCAG 2.2 AA failure. The file is opened from the sheet.
+     "No bill attached" is grey, not red: it is not an error, and an older
+     claim with none is a fact rather than a fault. */
   return '<button type="button" class="hm-row" data-hm="pend" data-i="' + i + '">'
     + '<span class="hm-av" aria-hidden="true">' + esc(v.av || initials(v.title)) + '</span>'
-    + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span><span class="hm-l2">' + esc(v.sub) + '</span></span>'
+    + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span><span class="hm-l2">' + esc(v.sub) + '</span>'
+    + (v.l3 ? '<span class="hm-l3' + (v.l3dim ? " hm-l3-dim" : "") + '">' + esc(v.l3) + '</span>' : "")
+    + '</span>'
     + '<span class="hm-go">' + esc(drT(v.go)) + '</span></button>';
 }
 function hmPaintPending() {
@@ -6665,6 +6723,18 @@ function hmExpenseSheet(r) {
     + (r.note ? '<div class="hm-sub" style="color:var(--text)">' + esc(r.note) + '</div>' : '') + '</div>'
     + '<div class="hm-note" style="margin-top:8px">' + esc((w ? w.charAt(0).toUpperCase() + w.slice(1) + ". " : "")
     + drT("Approving passes it to accounts for payment. You cannot take it back here.")) + '</div>'
+    /* Slice 081 (AC-38, AC-43): View bill in the sheet BODY, above the
+       decision - never between Approve and Decline. The evidence is read
+       before the act that cannot be taken back, and the footer stays the
+       decision. An older claim with no file says so plainly and renders no
+       button, because an empty View lies to the person pressing it. */
+    + '<div class="hm-sh-p" style="padding-top:0">'
+    + (r.has_bill
+        ? '<button type="button" class="btn btn-outline" data-hm="bill" id="hm-bill">'
+          + esc(drT("View bill")) + '</button>'
+          + '<div class="hm-err" id="hm-bill-e" role="alert" style="display:none"></div>'
+        : '<div class="hm-note">' + esc(drT("No bill is attached to this claim, so there is nothing to open.")) + '</div>')
+    + '</div>'
     + '</div>'
     + '<div class="hm-sh-p hm-reason" id="hm-reason" style="display:none;padding-top:0">'
     + '<label for="hm-why">' + esc(drT("Why are you declining? {0} will read this.", [(r.employee_name || "").split(" ")[0]])) + '</label>'
@@ -7825,6 +7895,7 @@ document.addEventListener("click", function (e) {
   else if (what === "pend-all") hmPendAll();
   else if (what === "leave-approve") hmDecide("approve");
   else if (what === "leave-decline") hmDecide("reject");
+  else if (what === "bill") hmOpenBill(t);
   else if (what === "note-all") ntOpenAll();
   else if (what === "bday-all") bdAll();
   else if (what === "team-all") switchPanel("team", null);
@@ -9942,6 +10013,407 @@ function showFinTab(name) {
   if (name === "leave-enc" && !_finTabLoaded["leave-enc"]) { _finTabLoaded["leave-enc"] = true; loadLeaveEncPanel(); }
 }
 
+/* ── EVIDENCE: one file control, two forms (slice 081) ───────────────────────
+
+   The bill on an expense claim (required) and the file on a day-fix request
+   (the person's own choice). One implementation with a container argument,
+   because the two differ by three words and one button - not a class with two
+   subclasses.
+
+   THE PICTURE IS SHRUNK ON THE PHONE FIRST, and that is not an optimisation
+   dressed up as a feature. It does three things no server-side step can:
+
+     * it converts HEIC for free. Pillow in our image has no HEIC reader and
+       `pillow_heif` is not installed (measured), so an iPhone photo posted raw
+       would be refused - and on a MANDATORY field that is a person who cannot
+       file a claim at all, not a shrug. The browser's own decoder turns it
+       into a JPEG on the canvas;
+     * it takes 3-4 MB off a 3G upload from a petrol pump;
+     * it takes the server's work from about 0.5-1.5 s down to about 46 ms
+       (DevOps measured both).
+
+   **It is never the control.** The server re-encodes and caps whatever
+   arrives, because that re-encode is also the metadata strip, and a rule that
+   lives in a browser is not a rule. When the browser cannot decode the file
+   either, the person hears so in about a second with NOTHING sent (state 7b),
+   rather than after a 4 MB upload.
+
+   The technique is `www/field-checkin.html`'s, which already draws a camera
+   frame to a canvas and reads it back as a JPEG. */
+
+var EV_API = "alvoraa_portal.expense_evidence.";
+var EV_EDGE = 1600;        /* the agreed long edge - legibility, not size */
+var EV_Q = 0.82;           /* the agreed quality; the server owns the ladder */
+var EV = {};               /* container id -> this control's state */
+
+/* What the server will take. Checked again on the bytes there; this list only
+   decides what the file picker offers. */
+var EV_ACCEPT = "image/jpeg,image/png,application/pdf";
+
+function evState(id) { return EV[id] || null; }
+
+/* Has this control got a file the form may send? */
+window.evFileUrl = function (id) {
+  var s = EV[id];
+  return (s && s.fileUrl) || null;
+};
+
+function evInit(id, kind, opts) {
+  opts = opts || {};
+  EV[id] = {
+    kind: kind,
+    required: !!opts.required,
+    fileUrl: null, bytes: 0, isPdf: false, label: "",
+    blob: null,          /* what we sent, so View full size needs no round trip */
+    chosen: null,        /* the file the person picked, kept across a retry */
+    gen: 0,
+  };
+  evPaint(id, "empty");
+}
+
+/* The eight states of the control, word for word from the design. Every
+   progress and result line is a live region; every refusal that stops the
+   person is an alert. */
+function evPaint(id, state, extra) {
+  var el = document.getElementById(id), s = EV[id];
+  if (!el || !s) return;
+  extra = extra || {};
+  var label = s.required ? drT("Photo of the bill · required")
+                         : drT("Add a photo or document if you have one");
+  var h = '<div class="ev-lab" id="' + id + '-lab">' + esc(label) + '</div>';
+
+  /* The day-fix notice. **Position is the requirement, not presence** - it
+     comes BEFORE the file picker, inside the same block, as plain grey hint
+     text and never a coloured callout. A warning-coloured box on an optional
+     field is a nudge away from the evidence the reviewer needs.
+     It is a TRANSPARENCY control and never a protection: nothing restricts the
+     manager on a day-fix request, by design (081-SEC-8). */
+  if (!s.required) {
+    h += '<p class="ev-notice gp-hint" id="' + id + '-notice">' + esc(drT(
+      "Your manager reads this request, and will see any file you attach. "
+      + "Attaching one is your choice — HR can fix the day without it.")) + '</p>';
+  } else {
+    h += '<p class="ev-hint gp-hint">' + esc(drT(
+      "A photo or a PDF. We make the picture smaller on your phone before it "
+      + "is sent.")) + '</p>';
+  }
+
+  if (state === "empty" || state === "nothing" || state === "failed") {
+    if (state === "nothing") {
+      h += '<p class="ev-say gp-hint" role="status">' + esc(drT(
+        "Nothing was chosen. If the camera will not open, use Choose a file.")) + '</p>';
+    }
+    if (state === "failed") {
+      h += '<div class="ev-alert" role="alert"><b>' + esc(drT(
+        "We could not send the picture. Nothing was lost.")) + '</b><span>' + esc(drT(
+        "Your file is still here. When you have signal, tap Send the picture again."))
+        + '</span></div>';
+    }
+    h += evButtons(id, state === "failed");
+  } else if (state === "shrinking" || state === "sending") {
+    h += '<p class="ev-say gp-hint" role="status" aria-live="polite">'
+      + '<span class="spinner ev-sp"></span>'
+      + esc(state === "shrinking" ? drT("Making the picture smaller…")
+                                  : drT("Sending the picture…")) + '</p>';
+  } else if (state === "attached") {
+    /* Shown back WITH ITS SIZE. After compression the person is the only one
+       who can tell whether their own bill came out readable, and nobody
+       downstream can hand that judgement back to them. It is also the
+       cheapest instrument the kill criterion has. */
+    h += '<div class="ev-got">'
+      + (s.isPdf
+          ? '<div class="ev-tile" aria-hidden="true">PDF</div>'
+          : '<img class="ev-thumb" alt="' + esc(drT("The picture you attached")) + '" src="'
+            + (s.thumbUrl || "") + '">')
+      + '<div class="ev-got-t"><div class="ev-ok" role="status">'
+      + esc(s.required ? drT("Bill attached") : drT("File attached")) + '</div>'
+      + '<div class="ev-meta">' + esc(s.label) + '</div></div></div>'
+      + '<div class="ev-acts">'
+      + '<button type="button" class="btn btn-outline btn-sm" data-ev="view" data-id="' + id + '">'
+      + esc(drT("View full size")) + '</button>'
+      + '<button type="button" class="btn btn-outline btn-sm" data-ev="pick" data-id="' + id + '">'
+      + esc(drT("Replace")) + '</button>'
+      /* Remove exists only where the file is OPTIONAL. On the claim the file
+         is required, so Replace is the only sensible verb. */
+      + (s.required ? "" : '<button type="button" class="btn btn-outline btn-sm" data-ev="clear" data-id="' + id + '">'
+          + esc(drT("Remove")) + '</button>')
+      + '</div>';
+  } else if (state === "refused") {
+    /* The SERVER's own sentence, verbatim. It names the real size and the real
+       limit, and there is one sentence per type because the advice differs -
+       you cannot stand closer to a PDF. */
+    h += '<div class="ev-alert" role="alert"><span>' + esc(extra.message || "") + '</span></div>'
+      + evButtons(id);
+  }
+
+  /* The standing line, on EVERY state of the control and not only inside a
+     refusal. Somebody who already knows they have no receipt should meet the
+     HR route BEFORE they waste a trip trying to photograph something.
+     It is plain grey hint text: not a button, not a link, not a callout -
+     there is no screen for it to lead to. And it is not an exemption. The
+     claim still needs a file; the signed statement IS the file, and HR
+     attaches it, which is why it says "ask HR". */
+  if (s.required) {
+    h += '<p class="ev-nobill gp-hint">' + esc(drT(
+      "No bill? Ask HR to file this claim with your signed statement of what "
+      + "you spent.")) + '</p>';
+  }
+
+  /* One hidden input, kept OUT of the repaint so a chosen file is not lost
+     when the block redraws. It is keyboard reachable and named by the label. */
+  el.innerHTML = h;
+  el.className = "ev-block";
+  var input = document.getElementById(id + "-input");
+  if (!input) {
+    input = document.createElement("input");
+    input.type = "file";
+    input.id = id + "-input";
+    input.className = "ev-input";
+    input.accept = EV_ACCEPT;
+    input.setAttribute("aria-labelledby", id + "-lab");
+    input.addEventListener("change", function () { evChose(id); });
+    el.appendChild(input);
+  } else {
+    el.appendChild(input);
+  }
+}
+
+function evButtons(id, retry) {
+  var s = EV[id];
+  return '<div class="ev-acts">'
+    + (retry
+        ? '<button type="button" class="btn btn-primary btn-sm" data-ev="resend" data-id="' + id + '">'
+          + esc(drT("Send the picture again")) + '</button>'
+        : '<button type="button" class="btn btn-primary btn-sm" data-ev="cam" data-id="' + id + '">'
+          + "📷 " + esc(s.required ? drT("Take a photo of the bill") : drT("Take a photo")) + '</button>')
+    + '<button type="button" class="btn btn-outline btn-sm" data-ev="pick" data-id="' + id + '">'
+    + esc(drT("Choose a file")) + '</button></div>';
+}
+
+/* The camera button and the file button are two buttons in front of ONE hidden
+   input, copying `www/joining.html`. `capture="environment"` is the back
+   camera - the one pointing at the bill. */
+function evOpenPicker(id, camera) {
+  var input = document.getElementById(id + "-input");
+  if (!input) return;
+  if (camera) input.setAttribute("capture", "environment");
+  else input.removeAttribute("capture");
+  input.value = "";
+  input.click();
+}
+
+function evChose(id) {
+  var s = EV[id], input = document.getElementById(id + "-input");
+  if (!s || !input) return;
+  var f = input.files && input.files[0];
+  /* A DENIED OR CANCELLED CAMERA RETURNS NO FILE AND NO ERROR, so this names
+     the other button rather than guessing at the cause - and **nothing is
+     sent**. A definite "camera permission denied" message would be a guess. */
+  if (!f) { evPaint(id, "nothing"); return; }
+  s.chosen = f;
+  evPrepare(id);
+}
+
+function evPrepare(id) {
+  var s = EV[id];
+  if (!s || !s.chosen) return;
+  var f = s.chosen, gen = ++s.gen;
+  /* A PDF is sent exactly as it is. Nothing here opens it and nothing on the
+     server opens it either: no page count, no text layer, no sanitiser. A
+     parser is attacker-chosen input inside a library. */
+  if (f.type === "application/pdf" || /\.pdf$/i.test(f.name || "")) {
+    evPaint(id, "sending");
+    evRead(f).then(function (b64) {
+      if (gen !== s.gen) return;
+      evUpload(id, b64, true, null);
+    }, function () { if (gen === s.gen) evPaint(id, "failed"); });
+    return;
+  }
+  evPaint(id, "shrinking");
+  evShrink(f).then(function (out) {
+    if (gen !== s.gen) return;
+    evPaint(id, "sending");
+    evUpload(id, out.b64, false, out.url);
+  }, function () {
+    if (gen !== s.gen) return;
+    /* The browser could not decode it - an old format, a corrupt file, a HEIC
+       on a browser with no decoder. **Nothing has been sent**, and the person
+       hears so in about a second rather than after a 4 MB upload. */
+    evPaint(id, "refused", {message: drT(
+      "This phone could not read that picture. Use “Take a photo of the "
+      + "bill” instead — nothing has been sent.")});
+  });
+}
+
+function evRead(file) {
+  return new Promise(function (ok, no) {
+    var r = new FileReader();
+    r.onload = function () { ok(String(r.result).split(",").pop()); };
+    r.onerror = no;
+    r.readAsDataURL(file);
+  });
+}
+
+/* Long edge 1600 px, JPEG 0.82 - the agreed recipe, and the same numbers the
+   server uses. One pass: if it still comes back over the cap the SERVER's
+   ladder is what steps it down, because the server owns the limit. */
+function evShrink(file) {
+  return new Promise(function (ok, no) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) { URL.revokeObjectURL(url); no(); return; }
+        var scale = Math.min(1, EV_EDGE / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+        var c = document.createElement("canvas");
+        c.width = cw; c.height = ch;
+        c.getContext("2d").drawImage(img, 0, 0, cw, ch);
+        var data = c.toDataURL("image/jpeg", EV_Q);
+        URL.revokeObjectURL(url);
+        if (!data || data.indexOf("data:image/jpeg") !== 0) { no(); return; }
+        ok({b64: data.split(",").pop(), url: data});
+      } catch (err) { URL.revokeObjectURL(url); no(); }
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); no(); };
+    img.src = url;
+  });
+}
+
+function evUpload(id, b64, isPdf, thumbUrl) {
+  var s = EV[id], gen = s.gen;
+  gpFetch(EV_API + "upload_evidence", {file: b64, kind: s.kind}).then(function (d) {
+    if (gen !== s.gen) return;
+    s.fileUrl = d.file_url;
+    s.bytes = d.bytes;
+    s.isPdf = !!d.is_pdf;
+    s.label = d.label || "";
+    s.thumbUrl = thumbUrl || null;
+    s.b64 = b64;
+    evPaint(id, "attached");
+  }, function (e) {
+    if (gen !== s.gen) return;
+    /* A REFUSAL and a DROPPED CONNECTION are not the same thing and must not
+       read the same. A refusal is the server's sentence; a dropped upload
+       keeps the chosen file in the page and offers to send it again - so a
+       lost signal never costs a second trip to the pump. */
+    if (e && e.kind === "refused") { evPaint(id, "refused", {message: e.message}); return; }
+    evPaint(id, "failed");
+  });
+}
+
+/* View full size shows what we SENT, from the bytes still in the page - no
+   round trip, and the same viewer the approver gets. */
+function evView(id) {
+  var s = EV[id];
+  if (!s || !s.b64) return;
+  var bin = atob(s.b64), arr = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  var blob = new Blob([arr], {type: s.isPdf ? "application/pdf" : "image/jpeg"});
+  mpfShowDoc(blob, s.isPdf, s.label || drT("Your file"),
+             document.querySelector('[data-ev="view"][data-id="' + id + '"]'), null);
+}
+
+/* ── opening somebody's evidence: ONE call, ONE file, no url ─────────────────
+
+   The browser is never handed a `/private/files/...` address, on any of the
+   four callers. A guarded endpoint checks the reader's permission on the
+   PARENT document - never on a child row, where `has_permission` answers False
+   for everybody - streams the bytes, and records that the file was opened. The
+   viewer gets a blob and gives it back when it closes.
+
+   The honest half, which no string on any of these screens may contradict: a
+   reader who ALREADY holds the url can still fetch it on Frappe's own route,
+   where the last question asked is the parent's read permission - the same
+   question this endpoint asks. Nothing here is protected, secure or hidden,
+   and nothing says it is. What is true: who can open it, that every opening is
+   recorded, and how long it is kept.
+
+   `host` is the container the button lives in, so focus can be sent back to it
+   on close only while that container is still on screen (AC-42).
+
+   POST, because the endpoint's per-user rate limit only applies to POST. */
+function evOpen(kind, name, btn, host, onFail) {
+  if (!name) return;
+  if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
+  var was = btn ? btn.textContent : "";
+  if (btn) btn.textContent = drT("Opening the bill…");
+  var free = function () {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+    btn.textContent = was;
+  };
+  fetch("/api/method/" + EV_API + "open_evidence", {
+    method: "POST",
+    headers: { "Content-Type": "application/json",
+               "X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || "" },
+    body: JSON.stringify({ kind: kind, parent: name }),
+  }).then(function (res) {
+    if (!res.ok) throw new Error("refused");
+    var fname = drT("Bill");
+    var cd = res.headers.get("Content-Disposition") || "";
+    var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+    if (m) fname = decodeURIComponent(m[1]);
+    return res.blob().then(function (blob) {
+      var t = String(blob.type || "").toLowerCase();
+      if (t === "application/pdf" || t.indexOf("image/") === 0) {
+        mpfShowDoc(blob, t === "application/pdf", fname, btn, host);
+      } else {
+        /* A type the browser will not draw must not leave a blank square and
+           a reader with nothing. It takes the save it would have had. */
+        mpfSaveDoc(blob, fname);
+      }
+    });
+  }).then(free, function () {
+    free();
+    /* Says what happened and what to do next. Never "something went wrong",
+       and never blamed on the connection when the server refused - this one
+       line covers both, so it names the thing the person can actually try. */
+    if (onFail) onFail();
+    else toast(drT("The file did not open. Check your signal and try again."), "err");
+  });
+}
+
+/* The approver's View bill, in the sheet body. Its failure line goes INSIDE
+   the sheet rather than into a toast, because the sheet is where the person is
+   and a toast over a decision is easy to miss. */
+function hmOpenBill(btn) {
+  var ov = hmEl("hm-ov"), r = ov && ov._row;
+  if (!r) return;
+  var err = hmEl("hm-bill-e");
+  if (err) { err.style.display = "none"; err.textContent = ""; }
+  evOpen("bill", r.name, btn, ".hm-ov", function () {
+    if (!err) return;
+    err.textContent = drT("The bill did not open. Check your signal and tap View bill again.");
+    err.style.display = "";
+  });
+}
+
+/* The employee's own row, and HR's day-fix card. `data-evopen` is the kind. */
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-evopen]") : null;
+  if (!t) return;
+  evOpen(t.getAttribute("data-evopen"), t.getAttribute("data-name"), t, null);
+});
+
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-ev]") : null;
+  if (!t) return;
+  var what = t.getAttribute("data-ev"), id = t.getAttribute("data-id");
+  if (!EV[id]) return;
+  if (what === "cam") evOpenPicker(id, true);
+  else if (what === "pick") evOpenPicker(id, false);
+  else if (what === "resend") evPrepare(id);
+  else if (what === "view") evView(id);
+  else if (what === "clear") {
+    EV[id].gen++;
+    EV[id].fileUrl = null; EV[id].chosen = null; EV[id].b64 = null;
+    evPaint(id, "empty");
+  }
+});
+
 /* ── EXPENSES ────────────────────────────────────── */
 function loadExpenses() {
   api("get_expense_claims", {}, function(data) {
@@ -9955,6 +10427,16 @@ function loadExpenses() {
       return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div>'
         /* Slice 076 (US-17): the approver's reason, so a decline is not a dead end. */
         + (c.approval_status === "Rejected" && c.decline_reason ? '<div class="expense-date expense-why">' + esc(drT("Declined: {0}", [c.decline_reason])) + '</div>' : '')
+        /* Slice 081 (AC-29, AC-30): the person's own bill, on their own row.
+           After compression THEY are the only one who can tell whether it came
+           out readable, and nobody downstream can hand that judgement back.
+           A claim filed before this shipped says so in plain grey words with
+           NO button: an empty View is worse than an honest absence. */
+        + (c.has_bill
+            ? '<div class="expense-date ev-row-ok">' + esc(drT("Bill attached")) + ' · '
+              + '<button type="button" class="ev-link" data-evopen="bill" data-name="' + gpEsc(c.name) + '">'
+              + esc(drT("View full size")) + '</button></div>'
+            : '<div class="expense-date">' + esc(drT("No bill attached")) + '</div>')
         + '</div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
   }, function(e) { failBox("expense-list", e, loadExpenses); });
@@ -9994,6 +10476,13 @@ function openExpenseModal() {
   document.getElementById("ec-expense-date").value = d.getFullYear() + "-" +
     String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");
+
+  /* Slice 081: the bill control, FIRST in the modal. A departure from the old
+     field order, and deliberate: it is the only step that can fail, the only
+     one that needs the bill physically in the person's hand, and - because the
+     file uploads on its own call - the only one whose refusal can arrive
+     before anything has been typed. */
+  evInit("ec-file", "bill", {required: true});
 
   ecLoadTypes();
   refreshDateWords();
@@ -10064,6 +10553,13 @@ function submitExpenseClaim() {
     expense_date: ed,
     amount: amt,
     description: desc || null,
+    /* Slice 081: the reference to the bill already uploaded on its own call.
+       **The form does not check it is there.** The SERVER refuses, in its own
+       words, and that sentence is what reaches `ec-error` - because the
+       standing lesson here is to test what the form sends and not what it
+       draws. Try again re-posts this same reference and uploads nothing
+       again, which is the whole reason the upload is a separate call. */
+    file_url: window.evFileUrl("ec-file"),
   }, {lostAnswerHandled: true}).then(done, function(e) {
     if (gen !== EC_GEN) return;
     if (e.late) e.late.then(done, function() {});
@@ -10074,8 +10570,13 @@ function submitExpenseClaim() {
       return;
     }
     if (e.kind === "offline") {
+      /* "and your bill" is the one word changed in this state, and it is the
+         point of it: a driver who has just photographed a receipt needs to
+         know the photograph survived the failure too, or he will go back to
+         the pump. The file reference is still in the page and Try again
+         re-posts it. */
       sendSay("ec-send-fail", "We could not reach the office. Nothing was sent.",
-              "Your details are still here. When you have signal, tap Try again.");
+              "Your details and your bill are still here. When you have signal, tap Try again.");
       btn.disabled = false;
       btn.textContent = drT("Try again");
       btn.focus();
@@ -11231,10 +11732,28 @@ function mpfSaveDoc(blob, name) {
    have done here. */
 var MPF_DOC = null;
 
-function mpfShowDoc(blob, isPdf, name, btn) {
+/* ONE VIEWER, FOUR CALLERS (AQ3). Slice 081 added three of them - the
+   employee's own claim row, the approver's decision sheet and HR's day-fix
+   card - and generalising it took more than the extra argument the design
+   priced. THREE separate behaviours were gated on `#emp-drawer.open`, which is
+   the Positions drawer and is NOT the approver's sheet:
+
+     * the Escape order below, so over the sheet Escape fell through to the
+       SHEET's own handler and closed the sheet, losing the reader's place -
+       the exact bug this handler exists to prevent on the drawer;
+     * the Tab focus trap, so Tab walked out of the viewer into the sheet
+       behind it;
+     * the focus return in `mpfCloseDoc`, so focus was simply lost (AC-42).
+
+   So `MPF_DOC` now carries `host`: a selector for the container the opening
+   button lives in, which must still be on screen for focus to be sent back to
+   it. Nothing else about the viewer changed - not the unsandboxed PDF iframe,
+   not the footer line, not the blob's lifetime. Those are ALV-287's decided
+   questions and the reasons are written out above. */
+function mpfShowDoc(blob, isPdf, name, btn, host) {
   mpfCloseDoc();                       /* one document at a time */
   var url = URL.createObjectURL(blob);
-  MPF_DOC = { url: url, btn: btn || null };
+  MPF_DOC = { url: url, btn: btn || null, host: host || "#emp-drawer.open" };
   var box = document.createElement("div");
   box.className = "mpf-dv";
   box.setAttribute("role", "dialog");
@@ -11282,11 +11801,14 @@ function mpfCloseDoc() {
   if (box) box.remove();
   if (was) { URL.revokeObjectURL(was.url); MPF_DOC = null; }
   /* Back to the View button that opened THIS document - but only while the
-     profile is still open, because the profile may have closed underneath the
-     viewer, and focus must never land on a button inside a hidden drawer
-     (AC-60's rule). closeEmpDrawer sends it somewhere real in that case. */
+     thing it lives in is still on screen, because that may have closed
+     underneath the viewer, and focus must never land on a button inside a
+     hidden drawer or a removed sheet (AC-60's rule, and AC-42's).
+     `host` is the caller's own container: the Positions drawer for the mini
+     profile, the decision sheet for the approver. Whoever closed the host
+     sends focus somewhere real. */
   if (box && was && was.btn && was.btn.focus
-      && document.querySelector("#emp-drawer.open")
+      && (!was.host || document.querySelector(was.host))
       && document.body.contains(was.btn)) {
     was.btn.focus();
   }
@@ -11462,10 +11984,15 @@ document.addEventListener("mouseout", function (e) {
    reason: it is the thing in front of them. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" && e.key !== "Esc") return;
+  /* Slice 081: the VIEWER comes first and is no longer gated on the drawer.
+     It is now opened from the approver's sheet and HR's card as well, and the
+     thing in front of the reader is what Escape must put away - wherever it
+     was opened from. The sheet's own Escape handler defers to this one by
+     checking `MPF_DOC` before it closes itself. */
+  if (MPF_DOC) { e.preventDefault(); mpfCloseDoc(); return; }
   var drawer = document.getElementById("emp-drawer");
   if (!drawer || !drawer.classList.contains("open")) return;
   e.preventDefault();
-  if (MPF_DOC) { mpfCloseDoc(); return; }
   if (MPF.big) { mpfCloseBig(); return; }
   closeEmpDrawer();
 });
@@ -11482,9 +12009,13 @@ document.addEventListener("keydown", function (e) {
    it. With only a Close button in the list that is exactly what happened. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Tab") return;
-  var drawer = document.getElementById("emp-drawer");
-  if (!drawer || !drawer.classList.contains("open")) return;
   var viewer = document.querySelector(".mpf-dv");
+  var drawer = document.getElementById("emp-drawer");
+  /* Slice 081: when the viewer is open it is the trap, whether it was opened
+     from the Positions drawer or from the approver's sheet. Without this,
+     tabbing out of a bill on the sheet walked into the decision buttons
+     behind it - and Approve is the act that cannot be taken back. */
+  if (!viewer && (!drawer || !drawer.classList.contains("open"))) return;
   if (viewer && document.activeElement === viewer.querySelector("iframe")) return;
   drawer = viewer || drawer;
   var able = drawer.querySelectorAll(

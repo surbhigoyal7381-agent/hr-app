@@ -3068,15 +3068,31 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
    Its OWN fixed overlay, unlike `.mpf-big`, which is absolute INSIDE the
    drawer at z-index 5. That was a decision, not an oversight: a 240 px
    photograph fits a 480 px drawer and a scanned A4 page does not, and she
-   asked for a generous size. So it is pinned to the window at 1250 - above the
+   asked for a generous size. So it is pinned to the window - above the
    drawer (1101), above the seat tray (1150) and above .gp-backdrop (1200) -
    and it is listed in scripts/check_portal_trays.js like every other overlay.
    The scrim value is .emp-drawer-overlay's, not a new one.
 
+   **1250 -> 1400, slice 081, and this one number is the whole WOW moment.**
+   The approver's decision sheet `.hm-ov` is 1300 (line 712). At 1250 the
+   approver tapped View bill, the viewer opened BEHIND the sheet, and the
+   screen did not change - no error, because nothing had failed. The slice's
+   whole point would have shipped blank.
+
+   The viewer moves and the sheet does not, because lowering the sheet is not
+   available: 1200 is already the employee's own modal. 1400 is free - nothing
+   in this file uses 1301 to 1999 - and it stays below `.mob-acct-menu` (2000)
+   and the two toast layers (3000), which is right: a toast should be readable
+   over a document.
+
+   It only works because `mpfShowDoc` appends the viewer to `document.body`. A
+   z-index on a descendant cannot escape an ancestor's stacking context (the
+   note at line 1254), so inside the sheet this number would do nothing.
+
    A PDF goes in `.mpf-dv-f`, an iframe with NO sandbox. portal.js's
    `mpfShowDoc` has the measurements behind that and her reasons for it; it is
    a decided question, not an oversight. */
-.mpf-dv{position:fixed;inset:0;z-index:1250;background:rgba(0,0,0,.52);
+.mpf-dv{position:fixed;inset:0;z-index:1400;background:rgba(0,0,0,.52);
   display:flex;align-items:center;justify-content:center;padding:24px}
 .mpf-dv-in{display:flex;flex-direction:column;width:min(1040px,100%);
   height:min(880px,100%);background:var(--surface);border-radius:var(--r);
@@ -3101,3 +3117,78 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
   .mpf-dv-in{border-radius:0}
   .mpf-dv-h .btn{min-height:44px}
 }
+
+/* ── Slice 081: the evidence file control, two forms ─────────────────────────
+   The bill on an expense claim and the optional file on a day-fix request.
+   One block, one set of rules, because the two differ by three words and one
+   button.
+
+   16 px on everything a finger touches, so iOS does not zoom the page on
+   focus, and 44 px minimum height on every button. The portal's `--fs-base`
+   is 13 px and the modal's own inputs inherit it; that is existing debt and
+   raising it product-wide is not this slice's call, so the new control sets
+   its own size and leaves the rest alone.
+
+   Nothing here is under 12 px (`--fs-sm` is the floor), and "Bill attached" /
+   "No bill attached" are WORDS - the tick and the warning sign sit beside
+   text, never instead of it. "No bill attached" is grey, not red: it is not an
+   error. */
+.ev-block{margin:0 0 16px;padding:12px;border:1px solid var(--border);
+  border-radius:var(--r-sm);background:var(--surface2)}
+.ev-lab{font-size:16px;font-weight:650;color:var(--text);margin-bottom:4px}
+.ev-hint,.ev-notice,.ev-nobill{margin:4px 0 8px;font-size:var(--fs-sm);
+  color:var(--text2);line-height:1.45}
+/* The day-fix notice is plain grey hint text, directly above the two buttons,
+   inside the same block. **Never a coloured callout**: a warning-coloured box
+   on an optional field is a nudge away from the evidence the reviewer needs,
+   and this notice is a transparency control, never a protection. */
+.ev-notice{margin-bottom:10px}
+/* The standing "No bill?" line. Not a button, not a link - there is no screen
+   for it to lead to. Its job is to tell a driver a door exists. */
+.ev-nobill{margin:10px 0 0;padding-top:8px;border-top:1px dashed var(--border2)}
+.ev-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+/* Devanagari runs about 30% longer, so the two-button row WRAPS rather than
+   overflowing a 360 px screen. The basis is what makes it wrap instead of
+   squeezing both buttons under their tap size. */
+.ev-acts .btn{flex:1 1 9.5em;min-height:44px;font-size:16px;
+  display:inline-flex;align-items:center;justify-content:center}
+.ev-acts .btn:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+/* Visually hidden and still keyboard reachable, named by the block's label.
+   `display:none` would take it out of the tab order and out of the
+   accessibility tree, which is the mistake this avoids. */
+.ev-input{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ev-say{display:flex;align-items:center;gap:8px;margin:8px 0 0;
+  font-size:var(--fs-sm);color:var(--text2)}
+.ev-sp{width:14px;height:14px;border-width:2px;flex:0 0 auto}
+.ev-alert{display:flex;flex-direction:column;gap:2px;margin:8px 0 0;
+  padding:8px 10px;border-radius:var(--r-sm);
+  background:var(--red-lt);color:var(--red);font-size:var(--fs-sm)}
+.ev-alert b{font-weight:650}
+.ev-got{display:flex;gap:10px;align-items:center;margin-top:8px}
+.ev-thumb{width:72px;height:72px;object-fit:cover;border-radius:var(--r-sm);
+  border:1px solid var(--border);background:var(--surface);flex:0 0 auto}
+.ev-tile{width:72px;height:72px;display:flex;align-items:center;
+  justify-content:center;border-radius:var(--r-sm);border:1px solid var(--border);
+  background:var(--surface);font-weight:700;color:var(--text3);flex:0 0 auto}
+.ev-got-t{min-width:0}
+.ev-ok{font-size:16px;font-weight:650;color:var(--text)}
+/* The size and the stored name, which is how a driver judges for himself
+   whether his own bill came out readable. Nobody downstream can hand that
+   judgement back to him. */
+.ev-meta{font-size:var(--fs-sm);color:var(--text2);overflow-wrap:anywhere}
+
+/* The third line on the approver's queue row. It stays a `<span>`: the row is
+   one `<button>`, and a button inside a button is unreachable by keyboard. */
+.hm-l3{display:block;font-size:var(--fs-sm);color:var(--text2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-l3-dim{color:var(--text3)}
+
+/* "Bill attached · View full size" on a row or a card. A real button, because
+   neither of those is a single button, styled as a link. */
+.ev-row-ok{color:var(--text2)}
+.ev-link{border:0;background:none;padding:0;cursor:pointer;
+  font:inherit;font-weight:600;color:var(--primary);text-decoration:underline;
+  min-height:44px}
+.ev-link:focus-visible{outline:2px solid var(--primary);outline-offset:2px;
+  border-radius:var(--r-sm)}

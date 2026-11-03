@@ -2200,10 +2200,20 @@ def get_expense_claims():
         limit=15,
         ignore_permissions=True,
     )
+    # Slice 081: which of the caller's own claims carry a bill. **One query for
+    # the whole list**, not one per row, and a boolean rather than a url - the
+    # file itself only ever arrives through `open_evidence`. A claim filed
+    # before this slice shipped says "No bill attached" in plain words with no
+    # button, because an empty View is worse than an honest absence (AC-30).
+    from alvoraa_portal import expense_evidence
+
+    with_bill = expense_evidence.has_evidence(
+        expense_evidence.CLAIM, [c["name"] for c in claims])
     # Slice 076 (US-17): the reason the approver gave, on the caller's own
     # claims only. Stored escaped for the desk; the page escapes it again.
     for c in claims:
         c["decline_reason"] = html.unescape(c.pop("alvoraa_decline_reason") or "") or None
+        c["has_bill"] = c["name"] in with_bill
     return {"claims": claims, "employee": emp}
 
 

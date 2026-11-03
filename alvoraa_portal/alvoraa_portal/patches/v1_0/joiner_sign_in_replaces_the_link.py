@@ -41,22 +41,15 @@ def execute():
 
 
 def _make_the_role():
-	"""The only place this role is created.
+	"""Delegates to `joiner_invite.make_role`, which is also run by after_install.
 
-	`joiner_invite._role()` reads it and refuses when it is missing, rather than
-	making one on a request path: that bypass was one of the two 079-SEC-7 asked
-	us to remove, and a role is a schema-shaped object that belongs here.
+	It used to be implemented here, and that was the bug: a patch never runs on a
+	site built from scratch, so no new site ever got the role. One implementation,
+	two callers - the same shape as `announcements.make_role`.
 	"""
-	from alvoraa_portal.joiner_invite import JOINER_ROLE
+	from alvoraa_portal.joiner_invite import make_role
 
-	if frappe.db.exists("Role", JOINER_ROLE):
-		return
-	frappe.get_doc({
-		"doctype": "Role",
-		"role_name": JOINER_ROLE,
-		"desk_access": 0,
-		"is_custom": 1,
-	}).insert(ignore_permissions=True)
+	make_role()
 
 
 def _narrow_the_rows():

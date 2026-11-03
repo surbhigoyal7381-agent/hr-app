@@ -1333,3 +1333,54 @@ class TestTheJoiningPage(_Base):
 		for gone in ("joiner.html", "joiner.py"):
 			with self.subTest(gone=gone):
 				self.assertFalse(os.path.exists(os.path.join(root, gone)))
+
+
+class TestTheRoleReachesANewSite(_Base):
+	"""The role must arrive on a site built from scratch, not only on one migrated.
+
+	This is the bug these tests exist for. The `Alvoraa Joiner` role was created
+	only by `patches/v1_0/joiner_sign_in_replaces_the_link.py`, and **Frappe marks
+	every patch as already done when a site is built from scratch**. So no new
+	site ever ran it: `joiner_invite._role()` then refused every invite with "this
+	site has not finished setting up pre-onboarding". CI builds a fresh site each
+	run and reported it as 79 errors from 2 November; a tenant provisioned after
+	079 would have hit the same wall the day the form was switched on.
+	"""
+
+	def test_make_role_is_registered_in_after_install(self):
+		"""The one line that fixes it, pinned. A patch is for sites that already
+		exist; after_install is for one being born. Both are needed, and the
+		precedent is `announcements.make_role`, which 079's own comment cites."""
+		self.assertIn(
+			"alvoraa_portal.joiner_invite.make_role",
+			frappe.get_hooks("after_install", app_name="alvoraa_portal") or [],
+			"A new site would have no Alvoraa Joiner role, and every joiner "
+			"invite on it would refuse. The patch cannot reach a fresh site.")
+
+	def test_make_role_creates_it_with_the_desk_shut(self):
+		"""Run on a site where it is missing, it comes back - and with no desk
+		access, because giving the role to a joiner must never make them a desk
+		user."""
+		if frappe.db.exists("Role", joiner_invite.JOINER_ROLE):
+			frappe.delete_doc("Role", joiner_invite.JOINER_ROLE,
+			                  force=True, ignore_permissions=True)
+		joiner_invite.make_role()
+		self.assertTrue(frappe.db.exists("Role", joiner_invite.JOINER_ROLE))
+		self.assertEqual(
+			0, frappe.db.get_value("Role", joiner_invite.JOINER_ROLE, "desk_access"))
+
+	def test_it_shuts_the_desk_on_a_role_that_already_exists(self):
+		"""Frappe creates a role WITH desk access the first time it meets the
+		name in a permission row. If that ever happened, the second run must take
+		the desk away rather than leave it and return."""
+		joiner_invite.make_role()
+		frappe.db.set_value("Role", joiner_invite.JOINER_ROLE, "desk_access", 1)
+		joiner_invite.make_role()
+		self.assertEqual(
+			0, frappe.db.get_value("Role", joiner_invite.JOINER_ROLE, "desk_access"))
+
+	def test_make_role_runs_twice_without_complaint(self):
+		"""Both callers may run it again on any later upgrade."""
+		joiner_invite.make_role()
+		joiner_invite.make_role()
+		self.assertTrue(frappe.db.exists("Role", joiner_invite.JOINER_ROLE))

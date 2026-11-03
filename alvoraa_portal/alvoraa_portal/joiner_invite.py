@@ -218,6 +218,33 @@ def _role():
 	return JOINER_ROLE
 
 
+def make_role():
+	"""Make the role, with the desk shut. **The only place it is created.**
+
+	Called from two places and for the reason `announcements.make_role` already
+	records: a patch reaches a site that already exists, `after_install` reaches
+	one being born. **Frappe marks every patch as done when a site is built from
+	scratch**, so the patch alone left every new site without this role - and
+	`_role()` above then refuses every invite with "this site has not finished
+	setting up pre-onboarding". That was CI's 79 errors, and it would have been a
+	tenant provisioned after 079 the day the form was switched on.
+
+	The existing-role branch forces `desk_access` back to 0 rather than returning:
+	Frappe creates a role WITH desk access the first time it meets the name in a
+	permission row, and this role must never carry it. No `ignore_permissions` -
+	both callers run as Administrator, and the 010 ceiling for this file stays 3.
+	"""
+	if frappe.db.exists("Role", JOINER_ROLE):
+		frappe.db.set_value("Role", JOINER_ROLE, "desk_access", 0)
+		return
+	frappe.get_doc({
+		"doctype": "Role",
+		"role_name": JOINER_ROLE,
+		"desk_access": 0,
+		"is_custom": 1,
+	}).insert()
+
+
 def _new_credential():
 	"""Three words and two numbers. From `secrets`, on the server, never chosen
 	by HR and never reused (079-SEC-2, and J4 - which is ALV-242 again).

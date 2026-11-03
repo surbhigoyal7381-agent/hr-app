@@ -617,6 +617,10 @@ after_app_install = ["alvoraa_portal.crm_steps.on_app_install"]
 # column alvoraa_review_status". CI is what found it - it builds its site with
 # `bench install-app` and nothing else.
 after_install = [
+    # Slice 079: the Alvoraa Joiner role. The patch that makes it cannot reach a
+    # site built from scratch - Frappe marks patches done at install - so a new
+    # tenant had no role and every joiner invite refused. See joiner_invite.make_role.
+    "alvoraa_portal.joiner_invite.make_role",
     "alvoraa_portal.attendance_correction.after_migrate",
     "alvoraa_portal.field_checkin.after_migrate",
     "alvoraa_portal.branch_scope.after_migrate",

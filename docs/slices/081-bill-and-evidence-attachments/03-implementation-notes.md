@@ -363,3 +363,22 @@ learns his own photo is readable, and the kill criterion's cheapest instrument);
 "No bill?" line on every state; `reserve`'s row lock, which is twelve lines against a claim
 nobody could ever attach a file to; and the 8-year bill pass, which will find nothing for
 years — but the erasure refusal depends on the clock existing.
+
+---
+
+## Surbhi's decisions — 3 November 2026
+
+All three things put to her were accepted, in her words: *"1 2 and 3 all ok"*.
+
+1. **The `ignore_permissions` ceiling of 2 is accepted.** Both entries are on the access log —
+   the log insert, and the log read behind "who opened my bill". **R-11 is closed.**
+2. **The two retention numbers stay as module constants.** **OQ-1 is closed: a fixed default,
+   not a tenant setting, for now.** AC-65 therefore stays *not applicable as shipped*. Turning
+   it into a setting later is one `DEFAULTS` entry and one range. **R-13 is closed.**
+3. **Both prototype departures are agreed.** The `eclist` chip keeps today's wording, and
+   `ap · 7` ("Already decided") is not built. **§18's parity rule is satisfied for this slice.**
+
+Nothing in the code changes because of these three answers. They close the record.
+
+**Still open and still hers:** the five real DTC bills through both re-encode passes (AC-7, the
+kill criterion), one real iPhone upload, and the push to `dev` — which ALV-300 must land before.

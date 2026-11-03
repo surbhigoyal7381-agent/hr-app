@@ -1207,7 +1207,8 @@ as drawn, and any difference needs Surbhi's explicit agreement.**
 the slice:** `eclist`'s "Waiting for approval" chip (the row keeps today's wording) and
 `ap · 7`, the "Already decided" state (not built).
 
-**Both still need Surbhi's agreement under the prototype-parity rule, and neither has it
+**Both were agreed by Surbhi on 3 November 2026** ("1 2 and 3 all ok"), so the
+prototype-parity rule is satisfied for this slice. They did not block the build and have it
 yet.** They are being put to her separately. They do not block the build — nothing is built
 differently either way, because what is at issue is two things *not* being built. **No other
 difference is specified, and none may be introduced at build without her word.**

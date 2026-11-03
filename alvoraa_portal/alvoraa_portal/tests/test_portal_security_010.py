@@ -764,6 +764,26 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "attendance_correction.py"): 0,
 		# ALV-291 (new file): a one-time fix run from bench as Administrator; none.
 		("alvoraa_portal", "alv291_attendance_fix.py"): 0,
+		# Slice 081 (new file). TWO, both on `Alvoraa Photo Access Log`, which
+		# grants read to System Manager and HR Manager and nothing at all to
+		# anybody else - no role holds `create` on it, the way Frappe treats
+		# every record the system keeps about a person.
+		#   1. the log INSERT, after the endpoint has checked the reader's
+		#      permission on the parent document. `employee_documents_read`
+		#      carries exactly one for exactly this reason.
+		#   2. the log READ in `who_opened_mine`, pinned to the caller's own
+		#      employee record, in a function that takes no argument. Without
+		#      it an employee asking "who opened my bill" gets an empty list
+		#      presented as an answer, which 081-PRIV-3 exists to prevent. The
+		#      alternative was a query condition on the doctype, which would
+		#      also change what HR sees in Desk - a wider change than one
+		#      endpoint earns.
+		# Everything else in that module goes through the framework's own gate:
+		# the `File` insert and the bind need no bypass (the role `All` holds
+		# create and write on File, and File.has_permission answers True on
+		# `owner == user`), and the retention deletes run from the scheduler as
+		# Administrator.
+		("alvoraa_portal", "expense_evidence.py"): 2,
 		("alvoraa_goals", "api/goal_api.py"): 0,
 		("alvoraa_goals", "controllers/evidence.py"): 0,
 		# 2 at 4e3ba28; +1 on purpose in slice 010: recalculate_progress saves a

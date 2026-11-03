@@ -2392,7 +2392,18 @@ def _expense_claim_accounts(company, expense_type):
 
 
 @frappe.whitelist()
-def apply_expense_claim(expense_type, expense_date, amount, description=None):
+def apply_expense_claim(expense_type, expense_date, amount, description=None,
+                        file_url=None):
+    """File one expense claim for the caller's own employee record.
+
+    Slice 081: `file_url` is the bill, uploaded on its own call a moment ago by
+    `expense_evidence.upload_evidence`, and it is **required**. The rule also
+    lives on the document at submit, where Desk, the REST API and a data import
+    meet it; this refusal is here as well so the person hears it at the moment
+    they can act on it, in the server's own words.
+    """
+    from alvoraa_portal import expense_evidence
+
     emp = _get_employee()
     if not emp:
         frappe.throw("No employee record is linked to your account.")
@@ -2400,6 +2411,21 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
     amount = float(amount)
     if amount <= 0:
         frappe.throw("Amount must be greater than zero.")
+
+    # Before anything is created, and before the amount is even looked at
+    # twice: a claim with no bill is not filed. The sentence is the server's,
+    # word for word the first line of the Desk refusal, and it reaches the
+    # screen verbatim - never "upload failed", never "check your connection",
+    # never a Python argument error (081-SEC-3, AC-23).
+    if not str(file_url or "").strip():
+        frappe.throw(expense_evidence._msg_no_bill() + " "
+                     + _("Please attach one and send it again."),
+                     title=_("A bill is needed"))
+
+    # The file is claimed for this call BEFORE the claim is inserted, so two
+    # taps cannot leave a second claim behind with no way to get a file onto
+    # it. The lock is held until this request commits.
+    reserved = expense_evidence.reserve(file_url, expense_evidence.CLAIM)
 
     # Slice 076 (SEC-12, Surbhi's decision 4): a claim carries its approver, or
     # it is not filed. Without one it would sit where nobody can see it.
@@ -2444,6 +2470,10 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
         }],
     })
     doc.insert(ignore_permissions=True)
+    # In the same call that created the claim, before the response goes back:
+    # without this the approver's queue would say "No bill attached" to the one
+    # person who needs it, and every retention pass would skip the file (OPS-17).
+    expense_evidence.attach(reserved, expense_evidence.CLAIM, doc.name)
     frappe.db.commit()
     return {"name": doc.name}
 

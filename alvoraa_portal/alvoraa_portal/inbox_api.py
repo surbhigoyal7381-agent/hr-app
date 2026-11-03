@@ -586,13 +586,22 @@ def _part_expense_approvals(who):
 		# One read of the lines of every claim on the page, not one per row. A
 		# portal claim has one line; a desk claim shows its first.
 		first = {}
+		# Slice 081: which of these claims carry a bill. **One query for the
+		# whole page**, the same shape and the same ordering rule as the line
+		# read above: `get_all` checks no permissions, and that is safe only
+		# because `get_list` has already filtered the parents. The count must be
+		# the same for 200 rows as for 20.
+		with_bill = set()
 		if rows:
+			names = [r.name for r in rows]
 			for d in frappe.get_all(
 				"Expense Claim Detail",
-				filters={"parent": ["in", [r.name for r in rows]], "parenttype": "Expense Claim"},
+				filters={"parent": ["in", names], "parenttype": "Expense Claim"},
 				fields=["parent", "expense_type", "expense_date", "description"],
 				order_by="idx asc"):
 				first.setdefault(d.parent, d)
+			from alvoraa_portal import expense_evidence
+			with_bill = expense_evidence.has_evidence("Expense Claim", names)
 		out = []
 		for r in rows:
 			d = first.get(r.name) or {}
@@ -604,6 +613,10 @@ def _part_expense_approvals(who):
 				"amount": r.total_claimed_amount,
 				"note": d.get("description") or None,
 				"waiting_since": str(r.creation) if r.creation else None,
+				# A BOOLEAN, never a url. The row says "Bill attached" or "No
+				# bill attached" in words; the file itself only ever arrives
+				# through `open_evidence`, one per tap (AQ5, AC-36, AC-45).
+				"has_bill": r.name in with_bill,
 				"action": "expense",
 			})
 		return out

@@ -4,12 +4,13 @@
  "creation": "2026-09-13 05:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "description": "Who opened a check-in that carried a photo, or an employee document shown on the Positions page. One row per viewer per record per day. It holds no file, no file address, no document number and no value from the document itself.",
+ "description": "Who opened a check-in that carried a photo, an employee document shown on the Positions page, an expense bill, or the evidence on a day-fix request. One row per viewer per record per day. It holds no file, no file address, no document number and no value from the document itself.",
  "field_order": [
   "checkin",
   "employee",
   "employee_name",
   "document_type",
+  "reference_name",
   "source",
   "column_break_a",
   "viewed_by",
@@ -55,15 +56,24 @@
    "description": "Which TYPE was opened. Never the file, the file address, the document number, or any value from the document (078-PRIV-5)."
   },
   {
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "label": "Reference",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "description": "Slice 081: the id of the document whose evidence was opened - an expense claim or a day-fix request - and nothing else. A Data field and not a Link, because `document_type` above is a Link to Employee Document Type and `checkin` a Link to Employee Checkin, so there was no field here that could name a claim. Empty on every row written before slice 081, which is why both the job and the subject's own view filter on `source` rather than on this."
+  },
+  {
    "fieldname": "source",
    "fieldtype": "Select",
-   "options": "Check-in photo\nEmployee document",
+   "options": "Check-in photo\nEmployee document\nExpense bill\nDay-fix evidence",
    "label": "What was opened",
    "default": "Check-in photo",
    "read_only": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "Two kinds of looking in one table. Existing rows keep the default, which is correct - every row written before slice 078 was a check-in photo view. If their retention ever differs, the job filters on this: a WHERE clause, not a redesign."
+   "description": "Four kinds of looking in one table. Existing rows keep the default, which is correct - every row written before slice 078 was a check-in photo view. If their retention ever differs, the job filters on this: a WHERE clause, not a redesign."
   },
   {
    "fieldname": "column_break_a",
@@ -96,7 +106,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-31 12:00:00.000000",
+ "modified": "2026-11-03 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Photo Access Log",

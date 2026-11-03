@@ -942,8 +942,34 @@ SAY = {
 }
 
 
-def _shape(row):
+def _evidence_set(rows):
+	"""Which of these requests carry a file. **One query for the whole page.**
+
+	A flag read per row would be one query per card on the busiest page in the
+	product, which is what OPS-7 prices. The cost must be the same for 47 cards
+	as for 5.
+	"""
+	from alvoraa_portal import expense_evidence
+
+	return expense_evidence.has_evidence(
+		REQUEST, [r.get("name") for r in rows if r.get("name")])
+
+
+def _shape(row, evidence=None):
+	"""One request, as the screen reads it.
+
+	`evidence` is the set of request names that carry a file, worked out once
+	for the whole page by `_evidence_set`. Passed by every list caller; when it
+	is None - a single request, just created or just decided - the one lookup is
+	made here, which is one query for one row rather than a cache to go stale.
+	"""
 	row = dict(row)
+	if evidence is None:
+		evidence = _evidence_set([row])
+	# Slice 081: a word, never a url. The screen says "Evidence attached" and
+	# the file itself only ever arrives through `open_evidence`, one per tap
+	# (AQ5, AC-45).
+	row["has_evidence"] = bool(row.get("name") and row["name"] in evidence)
 	row["state"] = _state(row)
 	row["says"] = SAY[row["state"]]
 	row["note"] = row.get("alvoraa_review_note")
@@ -960,30 +986,44 @@ def _shape(row):
 
 
 def _my_requests_between(employee, start, end):
-	return [_shape(r) for r in frappe.get_list(
+	rows = frappe.get_list(
 		REQUEST, filters={"employee": employee, "docstatus": ("!=", 2),
 		                  "from_date": ("<=", end), "to_date": (">=", start)},
-		fields=request_fields(), limit_page_length=0)]
+		fields=request_fields(), limit_page_length=0)
+	evidence = _evidence_set(rows)
+	return [_shape(r, evidence) for r in rows]
 
 
 @frappe.whitelist()
 def my_requests(limit=20):
 	"""Every request this person raised, newest first, with its real state."""
 	me = _me()
-	return [_shape(r) for r in frappe.get_list(
+	rows = frappe.get_list(
 		REQUEST, filters={"employee": me.name}, fields=request_fields(),
-		order_by="creation desc", limit_page_length=cint(limit) or 20)]
+		order_by="creation desc", limit_page_length=cint(limit) or 20)
+	evidence = _evidence_set(rows)
+	return [_shape(r, evidence) for r in rows]
 
 
 @frappe.whitelist()
 def raise_correction(from_date, to_date=None, reason=None, explanation=None,
-                     half_day=0, half_day_date=None):
+                     half_day=0, half_day_date=None, file_url=None):
 	"""Ask HR to fix a day.
 
 	Always for the caller's own employee record. The employee is never taken
 	from the request - this endpoint is whitelisted, and a field that named
 	somebody else would let anyone rewrite anyone's attendance.
+
+	Slice 081: `file_url` is a photograph or a document the person chose to
+	attach, uploaded on its own call a moment ago. **It is optional, and a
+	request sent without one says nothing about it** - there is no nudge and no
+	"are you sure?", because a confirm on an optional field is a nudge (081-SEC-8,
+	AC-33). The form tells them plainly, before the file picker, that their
+	manager reads the request and will see anything attached; that is a
+	transparency control and never a restriction on the manager.
 	"""
+	from alvoraa_portal import expense_evidence
+
 	me = _me()
 	to_date = to_date or from_date
 	if getdate(to_date) < getdate(from_date):
@@ -996,6 +1036,11 @@ def raise_correction(from_date, to_date=None, reason=None, explanation=None,
 		frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
 	if reason == "Other" and not (explanation or "").strip():
 		frappe.throw(_("Please say what happened, so HR can act on it."))
+
+	# Claimed before the request is created, for the same reason as a claim's
+	# bill: the loser of two taps is refused before it has inserted anything.
+	# None when nothing was attached, which is the ordinary case here.
+	reserved = expense_evidence.reserve(file_url, expense_evidence.REQUEST)
 
 	doc = frappe.get_doc({
 		"doctype": REQUEST,
@@ -1013,6 +1058,7 @@ def raise_correction(from_date, to_date=None, reason=None, explanation=None,
 	# No ignore_permissions. The Employee role holds create on Attendance
 	# Request, so this is a real permission check and not a formality.
 	doc.insert()
+	expense_evidence.attach(reserved, expense_evidence.REQUEST, doc.name)
 	return _shape(doc.as_dict())
 
 
@@ -1578,8 +1624,9 @@ def to_review(limit=50):
 	# The state filter is in the query now, so nothing should fall out here.
 	# The line stays as a second lock: `_state` is the screen's own definition
 	# of waiting, and if the two ever disagree the screen must win.
+	_evidence = _evidence_set(rows)
 	rows = _with_decide_flag(
-		[r for r in (_shape(x) for x in rows) if r["state"] == "waiting"])
+		[r for r in (_shape(x, _evidence) for x in rows) if r["state"] == "waiting"])
 	# Read only to decide who raised it. The raiser's login is not part of
 	# the row, so it is not sent.
 	for r in rows:

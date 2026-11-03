@@ -28,7 +28,8 @@ Must show: a new `-database.sql.gz` file. Keep it as a last resort only (see the
 bench --site dtc.alvoraa.co execute alvoraa_portal.alv291_attendance_fix.preview --kwargs "{'company': 'Durga Trading Company', 'from_date': '2026-10-01', 'to_date': '2026-10-31'}"
 ```
 Must show:
-- `PEOPLE (N)`. **If N is not the number Surbhi approved, stop.** Run preview again with the approved list:
+- `PEOPLE (N)`. There is no approved number until you have read this list. **Read it, and
+  have Surbhi approve it before step 3.** To change it, run preview again with the approved list:
   add `'employees': ['HR-EMP-…', …]` to the arguments. Every later step uses the list
   preview saved, and refuses without it. Once pause has run, preview refuses to change
   the list; see "Changing the list after pause" below.
@@ -39,7 +40,14 @@ Must show:
 - `REFUSED`: nobody. If anyone is listed, stop.
 - `RETAG`: about 23 people, each `TIMINGS DIFFER`. Abhishek (HR-EMP-00226)
   `AMBALA - 10:30 AM - 8:30 PM -> AMBALA - 10:00 AM - 7:00 PM`.
-- `CANCEL` and every `SKIPPED` row with its reason. Kept: leave, attendance request,
+- `CANCEL`: **one line per date**: what the row is now, and what the job should make of the
+  punches, with the hours. Compare these dates with the client's latest sheet before step 6.
+  A cancelled day cannot be put right by the script afterwards. One punch on a shift with an
+  Absent threshold rebuilds as Absent again, 0 hours; the line says so.
+- `LEFT FOR A PERSON`: each date, with the reason. A one-punch day on a shift with no Absent
+  threshold is here, because the job would make it a full Present. The script leaves these
+  days alone. HR fixes each by hand. (Surbhi's decision is pending; one switch changes it.)
+- Every `SKIPPED` row with its reason. Kept: leave, attendance request,
   confirmed by a manager, made or changed by a person, changed after it was made,
   corrected by hand (amended), not proven to be automatic.
 - `BADGED IN BUT MARKED ABSENT OR HALF DAY`: the job marked these rows on days the person
@@ -47,10 +55,14 @@ Must show:
   **the whole company, read-only: the true size of the fault.** One line per person: rows
   to cancel by status, rows kept with a punch, and Absent rows with no punch that day. Only
   Absent and Half Day rows the job provably made are cancelled. Kept: an Absent that holds a
-  punch (too few hours, Frappe is right), and anything amended, from leave or a request,
+  punch while another punch that day is unused (a person must check the hours: it may be
+  too few hours, or an out-punch that came late), and anything amended, from leave or a
+  request, or on a day HR declined a request,
   confirmed, or made or changed by a person. An Absent with no punch that day is never
   touched. A Present row is never cancelled by this rule. Then the number of punches whose
   skip flag cancel_wrong will clear.
+- `END DATE`: step 8 does not stop at 31 Oct. It marks up to the last finished shift, so it
+  also writes November rows for the listed people. The line gives how many.
 - `SHIFTS`: which are switched on in step 8, and which stay as they were (only on old
   punches). A `WARNING` on any shift with an empty or old last sync.
 - `LOUD WARNING`: **every person who will get Absent days, with the count, employment type
@@ -104,7 +116,8 @@ from an import stays. Undo flags them again.
 ```
 bench --site dtc.alvoraa.co execute alvoraa_portal.alv291_attendance_fix.retag --kwargs K
 ```
-Must show: `retagged` equal to step 5's RETAG, or a little higher, because punches with a
+Must show: `retagged` no lower than step 5's RETAG, and higher by at most the number step 5
+printed on its "Retag's count can be higher" line, because punches with a
 cleared skip flag can now be retagged too. No `NOT retagged` line and no `CHECK` line.
 (Cancel must come first: Frappe does not move a punch that is still linked to attendance.)
 
@@ -148,9 +161,12 @@ Must show (the keys are printed after `VERIFY`):
   hourly job may still mark such a day (preview's `PLUS` line lists the Absent ones).
   Fix each by hand.
 - `absent_on_days_with_a_punch` and `skip_flagged_punches_on_absent_days`: each day is
-  printed by name. Expect two kinds, both correct: the kept hand-made Absent days, and
-  days Frappe marked Absent because the person worked fewer hours than the shift's
+  printed by name. Not all of these are right, so **check each one against the sheet**. They
+  are: the kept rows (a person may need to fix them), rebuilt days where one punch gave 0
+  hours, and days Frappe marked Absent because the person worked fewer hours than the shift's
   minimum. Check every one against the sheet.
+- `cancelled_no_row_now`: must be 0. Each one is printed: this run cancelled the day and it
+  was not rebuilt. Amend the cancelled row, or fix the day by hand.
 - `wrong_tag_on_kept_days`: punches on leave or hand-edited days, left alone on purpose.
 - `reds_before_free_HR-EMP-00226`: Abhishek's reds **before** the 2 free reds a month are
   taken off. The slip charges reds minus 2 (never below 0). Compare with the client's
@@ -169,6 +185,9 @@ It holds the old punch times. Delete it once DTC has signed off October.
 
 ## If step 8 refuses, or a verify count is wrong after it
 
+- **Refused, "still on the wrong shift":** run step 7 (retag) again, then step 8. A kept day
+  never causes this: its punches are left alone.
+
 - **Step 8 refused:** nothing was marked and the shifts are still off. Fix what the message
   names, then run step 8 again. For "last sync that will not move": in the Desk,
   tick "Auto Update Last Sync" on that shift (undo puts the box back as it was). If the
@@ -176,7 +195,7 @@ It holds the old punch times. Delete it once DTC has signed off October.
   LIST and HALF-DAY ROWS** before you enter the new numbers. Never copy them blind.
 - **A count is wrong after step 8** (the shifts are now on): run pause (step 3), then
   set_start (step 4), then step 8 again. Pause keeps the first saved values, so undo still
-  works. Preview may be run again only with the same list.
+  works. Preview may be run again at any time to read the numbers. The list stays frozen.
 
 ## Changing the list after pause
 

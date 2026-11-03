@@ -27,13 +27,12 @@ of a correction workflow. Each permission here names one doctype and reaches
 no further.
 
 A ROLE THAT MUST NEVER BE RESTRICTED GETS NOTHING (ALV-293). A row
-RESTRICTS; it never grants. So a person who is both a line manager and an HR
-Manager was getting rows scoped to their direct reports, and that row then
-capped their HR-wide sight at exactly those reports - measured on production
-on 3 Nov 2026, an HR Manager could see 796 of 18,903 attendance records. The
-excluded-role list is `own_record_permission.excluded_roles()`, reused rather
-than copied, because "who must never be restricted" has to have one answer.
-Skipping the row costs such a person nothing: HR already sees everyone.
+RESTRICTS; it never grants, so a person who is both a line manager and an HR
+Manager had their HR-wide sight capped at their own direct reports - on
+production, 796 of 18,903 attendance records. The list is
+`own_record_permission.excluded_roles()`, reused rather than copied, because
+"who must never be restricted" has to have one answer. Skipping the row costs
+such a person nothing: HR already sees everyone.
 
 `Employee` IS DELIBERATELY NOT ON THE LIST. A manager needs a report's name,
 branch and shift to read the screen, and those already arrive through
@@ -60,7 +59,7 @@ SCOPED_DOCTYPES = (
 ALLOW = "Employee"
 
 
-def _user_of(employee: str) -> str | None:
+def _user_of(employee):
 	return frappe.db.get_value("Employee", employee, "user_id")
 
 
@@ -110,7 +109,7 @@ def grant(manager_employee: str, report_employee: str) -> int:
 	return made
 
 
-def revoke(manager_employee: str, report_employee: str) -> int:
+def revoke(manager_employee, report_employee):
 	"""Take it back when somebody stops reporting to them.
 
 	Only the permissions this module creates: `applicable_for` is always set

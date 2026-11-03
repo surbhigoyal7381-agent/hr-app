@@ -235,8 +235,32 @@ source, so they read it with **docstrings blanked** — this module's own prose 
 
 ## 8 · What else moved while I worked
 
-**`origin/dev` did not move.** It was `c503a6be` when I branched and `c503a6be` at my last
-fetch, so there was nothing to rebase onto and nothing of anybody else's to absorb.
+**`origin/dev` moved once, at the end, and I rebased onto it.** It was `c503a6be` when I
+branched; the final fetch brought **four commits** in, and I read each one's diff before doing
+anything with them:
+
+| Commit | What it is | Files |
+|---|---|---|
+| `a1d3b7f3` | ALV-298: the check-in page shows the notice words it records as read | `www/field-checkin.html`, `test_field_app_step1_013.py` |
+| `400eff11` | ALV-297: on iPhone, take the check-in photo through Apple's camera | `www/field-checkin.html`, **new** `test_checkin_iphone_297.py`, **new** `scripts/browser_check_checkin_iphone_297.js`, its slice docs |
+| `92a1392f` | ALV-297: keep the Check In button at the bottom on iPhone | `www/field-checkin.html`, that script |
+| `56ead1ef` | ALV-297: review fixes before the dev phone test | the same three, plus `02-review.md` |
+
+**Zero overlap with my files.** Not one of them touches `portal.js`, `panels.css`, `hr_api.py`,
+`inbox_api.py`, `attendance_correction.py`, `hooks.py`, `request-modals.html` or the access-log
+JSON. The rebase was clean, five commits replayed with no conflict, tip `438533f6` on
+`origin/dev` `56ead1ef`, and I re-ran the suites afterwards — including **ALV-297's own new
+suite, 10 tests, OK**, so I can say their work still passes on top of mine.
+
+**And I took something from them rather than just noting them.** ALV-297 solved the iPhone
+camera for the check-in photo with the same technique this slice uses, and it records one fact
+I did not have: *"not `createImageBitmap`, which loses the rotation on iPhone."* `evShrink`
+already uses `new Image()` for that reason, and the comment now says so. It also uses
+`accept="image/*"` with `capture` rather than a list of exact types, which is what iOS is most
+reliable with — so the **camera** button now asks for any image (the canvas redraws whatever
+comes back, and the server reads the magic bytes of what actually arrives) while **Choose a
+file** keeps the three stored types, because that is where a PDF comes from. That is a real
+reduction in R-8, the untested iPhone path, bought from somebody else's work an hour old.
 
 **Read before building, as the process requires:** `b7841327` (ALV-286) came in before I
 branched and touches three of my files — `panels.css`, `portal.js` and `drawers.html`. I read
@@ -246,8 +270,9 @@ CSS and one `data-mpf="back"` click branch. **No overlap with any function I cha
 did not touch `mpfShowDoc`, `mpfCloseDoc` or the Escape/Tab handlers, which are mine. Its only
 effect on me was that the `.mpf-dv` block moved 15 lines down the CSS file.
 
-**Conflicts: none.** Nothing of anybody else's was lost, and I can say so because there was
-nothing to merge.
+**Conflicts: none** — the rebase replayed five commits with nothing to resolve. Nothing of
+anybody else's was lost, and the proof is that ALV-297's and ALV-298's own tests pass on top
+of my commits.
 
 **One repair to shared test data, declared.** `test_expense_birthdays_076` was failing on this
 bench before and after my change, on a **pre-existing cross-suite fixture collision**: the

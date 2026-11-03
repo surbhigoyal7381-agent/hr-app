@@ -147,6 +147,7 @@ button{font-family:inherit}
 /* iPhone: no live picture, so no big dark box. Just the words. */
 #b-nophoto[hidden]{display:none}   /* .btn sets display:flex, which beats hidden */
 .cam.picker{flex:0 1 auto;min-height:0;background:var(--surface);border:1px solid var(--border)}
+.cam.picker ~ .footer{margin-top:auto}   /* the button stays at the bottom, where the thumb is */
 .cam.picker .off{color:var(--text)}
 .cam.picker .off .muted{margin-top:8px}
 .cam .tag{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.62);color:#fff;

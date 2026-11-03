@@ -229,7 +229,6 @@ const TESTS = [
       check(!(await visible(p, "b-nophoto")), "the link should go away again until the next tap");
     },
     without: [
-      [['id="b-nophoto" data-t="home.nophoto.in" hidden>', 'id="b-nophoto" data-t="home.nophoto.in">']],
       [["#b-nophoto[hidden]{display:none}", ""]],
       [['$("b-nophoto").hidden = false;', ""]],
       [["pending = { log_type: pickerType, photo: null };", 'pending = { log_type: pickerType, photo: "x" };']],

@@ -412,6 +412,41 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		_punch(one, d3, "18:05")
 		one_present = _row(one, d3, "Present", shift=NOTH)
 		badged_all = {typ, dec, flg, one}
+
+		def request(emp, status, day_to=d1):
+			doc = frappe.new_doc("Attendance Request")
+			doc.update({"name": f"A291-REQ-{emp}", "employee": emp, "company": COMPANY, "from_date": d1,
+			            "to_date": day_to, "reason": "On Duty", "alvoraa_review_status": status, "docstatus": 0})
+			doc.db_insert()
+
+		def badged_person(first):
+			emp = _employee(first, COMPANY, RIGHT)
+			_punch(emp, d1, "09:55")
+			_punch(emp, d1, "19:05")
+			return emp, _row(emp, d1, "Absent", auto)
+
+		# Waiting, and never labelled: HR has not decided, so the row stays.
+		wait, wait_row = badged_person("Wait")
+		request(wait, "Waiting", day_to=d2)
+		_punch(wait, d2, "09:55")                              # the request covers d2, which has no row
+		_punch(wait, d2, "19:05")
+		nul, nul_row = badged_person("Nul")
+		request(nul, None)
+		_punch(nul, d2, "09:55")                               # keeps NUL on the list
+		_punch(nul, d2, "19:05")
+		# Withdrawn: nobody is deciding any more, so the row is cancelled as usual.
+		wdn, _wdn_row = badged_person("Wdn")
+		request(wdn, "Withdrawn")
+		# N1: a half-day leave whose other half was worked.
+		hlf = _employee("Hlf", COMPANY, RIGHT)
+		_punch(hlf, d1, "09:55")
+		_punch(hlf, d1, "14:00")
+		hlf_row = _row(hlf, d1, "Half Day")
+		frappe.db.set_value("Attendance", hlf_row, {"leave_type": "Casual Leave", "modify_half_day_status": 1,
+		                                            "half_day_status": "Absent"})
+		_punch(hlf, d2, "09:55")                               # keeps HLF on the list
+		_punch(hlf, d2, "19:05")
+		badged_all |= {wait, nul, wdn, hlf}
 		frappe.db.commit()
 
 		# ── 0. preview: nothing written to the database; the list is frozen ──
@@ -424,14 +459,15 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(set(scope["employees"]), people)
 		self.assertEqual(out["retag_punches"], 4)        # ABH days 1-2
 		# ABH d1, d2, GRPA's automatic Absent; BDG1 d1 and d2, BDG4 d2, BDG5 d1, BDG6 d3
-		self.assertEqual(out["cancel"], 8)
-		self.assertEqual(out["skipped"], 16)             # BLK's day, four badged rows, TYP, DEC, FLG, ONE
-		self.assertEqual(out["badged_cancel"], 6)        # GRPA's day is one of them
-		self.assertEqual(out["badged_kept"], 12)         # linked, request, person, leave; 5 older; DEC, FLG, ONE
+		self.assertEqual(out["cancel"], 9)
+		self.assertEqual(out["skipped"], 19)             # BLK's day, four badged rows, TYP, DEC, FLG, ONE, WAIT, NUL, HLF
+		self.assertEqual(out["badged_cancel"], 7)        # GRPA's day is one of them
+		self.assertEqual(out["badged_kept"], 15)         # linked, request, person, leave; 5 older; DEC, FLG, ONE, WAIT, NUL, HLF
+		self.assertEqual(out["request_no_row"], 1)       # WAIT d2
 		self.assertEqual(out["no_punch_absent_kept"], 1)
 		self.assertEqual(out["unskip"], 4)               # BDG1 d1 x2, BDG4 09:55 and 19:05, despite the import's copy
 		self.assertEqual(out["stay_flagged"], 1)         # the second Frappe flag in BDG4's 19:05 minute
-		self.assertEqual(out["badged_people_company"], 5)
+		self.assertEqual(out["badged_people_company"], 6)
 		self.assertEqual(out["blocked_days"], 5)         # BLK, BLK2, FLG, ONE x2
 		self.assertGreater(out["absent_after_period"], 0)   # preview states the rows past the period
 		# F1: RIGHT was on, so once its old start is back the hourly job would mark
@@ -442,7 +478,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		# N1: the person outside the list on the formerly-off shift is named and counted.
 		self.assertEqual(out["outside_people"], [offout])
 		self.assertGreater(out["absent_outside_list"], 0)
-		self.assertEqual(out["half_day_rows"], 1)
+		self.assertEqual(out["half_day_rows"], 2)        # OFFOUT's and HLF's
 		# N2: a narrower list names who it drops.
 		narrow = sorted(people - {same})
 		self.assertEqual(fix.preview(COMPANY, frm, to, employees=narrow, start=start)["dropped"], [same])
@@ -450,7 +486,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		# m1: with nobody in the section, the no-punch count is 0, not the whole company's.
 		self.assertEqual(fix.preview(COMPANY, frm, to, employees=[same], start=start)["no_punch_absent_kept"], 0)
 		narrow2 = fix.preview(COMPANY, frm, to, employees=sorted(people - {bdg6}), start=start)
-		self.assertEqual((narrow2["badged_people_company"], narrow2["dropped"]), (5, [bdg6]))
+		self.assertEqual((narrow2["badged_people_company"], narrow2["dropped"]), (6, [bdg6]))
 		fix.preview(COMPANY, frm, to, start=start)
 
 		# ── 1. pause ──
@@ -464,7 +500,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		slip = _slip(abh, frm, to)
 		self.assertEqual(fix._paid(COMPANY, frm, to), {abh})
 		self.assertEqual(fix.preview(COMPANY, frm, to, start=start)["refused"], 1)
-		self.assertEqual(fix._state()["scope"]["cancel"], 6)   # all but ABH's two
+		self.assertEqual(fix._state()["scope"]["cancel"], 7)   # all but ABH's two
 		with self.assertRaises(frappe.ValidationError):
 			fix.enable_and_mark(COMPANY, frm, to, half_day_rows=1, absent_outside_list=out["absent_outside_list"])
 		frappe.db.delete("Salary Slip", {"name": slip})
@@ -476,7 +512,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(str(fix._state()["shifts"][OFF]["process_attendance_after"]), str(d3))
 		self.assertEqual(fix.set_start(COMPANY, frm, to, date=start)["changed"], 0)
 		again = fix.preview(COMPANY, frm, to, start=start)
-		self.assertEqual(again["cancel"], 8)
+		self.assertEqual(again["cancel"], 9)
 		self.assertGreater(again["absent_people"], 0)
 		ack = {"half_day_rows": again["half_day_rows"], "absent_outside_list": again["absent_outside_list"]}
 
@@ -490,9 +526,12 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		fix._save_state(state)
 		with self.assertRaises(frappe.ValidationError):
 			fix.cancel_wrong(COMPANY, frm, to)
-		state["scope"]["cancel"] = 8
+		state["scope"]["cancel"] = 9
 		fix._save_state(state)
-		self.assertEqual(fix.cancel_wrong(COMPANY, frm, to)["cancelled"], 8)
+		self.assertEqual(fix.cancel_wrong(COMPANY, frm, to)["cancelled"], 9)
+		for name in (wait_row, nul_row):                  # a request HR has not decided keeps the row
+			self.assertEqual(frappe.db.get_value("Attendance", name, "docstatus"), 1, name)
+		self.assertEqual(_live(wdn, d1), [])              # a withdrawn one does not
 		self.assertEqual(frappe.get_all("Employee Checkin", filters={"name": ("in", p1)}, pluck="skip_auto_attendance"),
 		                 [0, 0])                                          # Frappe's flags cleared
 		self.assertEqual(frappe.db.get_value("Attendance", declined_row, "docstatus"), 1)   # F2
@@ -575,7 +614,10 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual([r.status for r in _live(bdg5, d1)], ["Half Day"])
 		self.assertEqual([r.status for r in _live(bdg6, d3)], ["Absent"])    # one punch, 0 hours: the threshold
 		# F1: every date preview predicted is what the job really made.
-		self.assertEqual(len(planned), 8)
+		self.assertEqual(len(planned), 9)
+		# N1: the half-day leave stays, and the half that was worked is not Absent.
+		self.assertEqual(frappe.db.get_value("Attendance", hlf_row, ["docstatus", "half_day_status",
+		                                                             "modify_half_day_status"]), (1, "Present", 0))
 		for a in planned:
 			self.assertEqual([r.status for r in _live(a.employee, a.attendance_date)],
 			                 [a.expected.split(",")[0]], (a.employee, a.attendance_date))
@@ -625,7 +667,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(v["cancelled_no_row_now"], 0)
 		# The four kept Absents, BLK, the kept badged rows (BDG4 x2, BDG5, BDG6 x2), BDG6's
 		# rebuilt Absent, and DEC, FLG, ONE.
-		self.assertEqual(v["absent_on_days_with_a_punch"], 14)
+		self.assertEqual(v["absent_on_days_with_a_punch"], 16)   # + WAIT, NUL
 		self.assertEqual(v["skip_flagged_punches_on_absent_days"], 3)  # FLG x2, BDG6's import copy
 		# m4: preview still works after step 8, to read the numbers.
 		fix.preview(COMPANY, frm, to, start=start)

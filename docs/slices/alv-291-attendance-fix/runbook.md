@@ -10,10 +10,11 @@ Every step below except undo takes these same three arguments. They are written 
 K = "{'company': 'Durga Trading Company', 'from_date': '2026-10-01', 'to_date': '2026-10-31'}"
 ```
 
-The start date is **1 Oct 2026** everywhere. The script only ever acts on the people
+"Fix by hand" in this runbook always means by Attendance Request. The start date is
+**1 Oct 2026** everywhere. The script only ever acts on the people
 preview lists. The old count of 73 is out of date: on 3 Nov preview found 49, and missed 27
 people whose Absent rows hid the fault. Preview now finds them too, so expect **76 or
-more**. Surbhi approves the number.
+more**.
 
 ## 1. Backup
 
@@ -29,7 +30,7 @@ bench --site dtc.alvoraa.co execute alvoraa_portal.alv291_attendance_fix.preview
 ```
 Must show:
 - `PEOPLE (N)`. There is no approved number until you have read this list. **Read it, and
-  have Surbhi approve it before step 3.** To change it, run preview again with the approved list:
+  approve it before step 3.** To change it, run preview again with the approved list:
   add `'employees': ['HR-EMP-…', …]` to the arguments. Every later step uses the list
   preview saved, and refuses without it. Once pause has run, preview refuses to change
   the list; see "Changing the list after pause" below.
@@ -46,8 +47,14 @@ Must show:
   Absent threshold rebuilds as Absent again, 0 hours; the line says so.
 - `LEFT FOR A PERSON`: each date, with the reason. A one-punch day on a shift with no Absent
   threshold is here, because the job would make it a full Present. The script leaves these
-  days alone. HR fixes each by hand. (Surbhi's decision is pending; one switch changes it.)
-- Every `SKIPPED` row with its reason. Kept: leave, attendance request,
+  days alone. On a shift that was already on, the hourly job may mark the day first, as it
+  does today, so check the row before you fix it.
+- `Request declined or undecided, on a day with NO row`: a request protects a row only, so
+  step 8 builds these days from the punches. Check each one against its request.
+- Every `SKIPPED` row with its reason. An Absent holding a punch, with another punch unused,
+  stays kept and listed by date for a person to check. (The system-made Present rows are not
+  touched either, Surbhi's decision.) A day covered by a request HR declined, or has not
+  decided yet, keeps its row until HR decides. Kept: leave, attendance request,
   confirmed by a manager, made or changed by a person, changed after it was made,
   corrected by hand (amended), not proven to be automatic.
 - `BADGED IN BUT MARKED ABSENT OR HALF DAY`: the job marked these rows on days the person
@@ -108,8 +115,8 @@ bench --site dtc.alvoraa.co execute alvoraa_portal.alv291_attendance_fix.cancel_
 ```
 Must show: `cancelled` equal to step 5's CANCEL, `failed 0`, and `Skip flag cleared on N
 punches` equal to step 5's number. It clears the flag only on a punch Frappe itself flagged
-(it left its own comment), on a day now free, with no second punch in that minute. A flag
-from an import stays. Undo flags them again.
+(it left its own comment), on a day now free, with no other live punch in that minute. A flag
+from an import stays. Undo flags them again, except punches already used by rebuilt attendance.
 
 ## 7. Retag the punches
 
@@ -174,12 +181,14 @@ Must show (the keys are printed after `VERIFY`):
 
 Then check the client's latest sheet. The sheet wins.
 
-## 10. Delete the undo file (after sign-off)
+## 10. Move the undo file (after sign-off)
 
 ```
 rm sites/dtc.alvoraa.co/alv291_before.json
 ```
-It holds the old punch times. Delete it once DTC has signed off October.
+It holds the old punch times. **After DTC signs off October:** first copy it off the site
+folder to a place only Surbhi can open, and keep that copy until counsel says otherwise. Then
+delete it from the site folder with the command above.
 
 ---
 

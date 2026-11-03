@@ -53,13 +53,6 @@ FRAPPE_SKIP_COMMENT = "Reason for skipping auto attendance:"
 # A row the job makes is saved and submitted in one go. One changed later was
 # changed by somebody, even when they were logged in as Administrator.
 CHANGED_AFTER_SECONDS = 300
-# Two rules Surbhi may still change. Each is this one switch.
-# True: a one-punch day on a shift with no Absent threshold is not cancelled or
-# marked, because the job would make it a full Present. It is left for a person.
-ONE_PUNCH_LEFT_FOR_A_PERSON = True
-# False: an Absent holding a punch, with another punch unused that day, is kept and
-# listed for a person to check. True: it is cancelled and rebuilt like a Half Day.
-REBUILD_ABSENT_WITH_UNUSED_PUNCH = False
 PUNCH_FIELDS = ["shift", "shift_start", "shift_end", "shift_actual_start", "shift_actual_end",
                 "offshift", "overtime_type"]
 
@@ -352,6 +345,7 @@ def _attendance(company, from_date, to_date, employees=None):
 			"name", "employee", "employee_name", "attendance_date", "status", "shift",
 			"leave_application", "leave_type", "attendance_request", "amended_from",
 			"owner", "modified_by", "creation", "modified", "alvoraa_held_confirmed",
+			"modify_half_day_status",
 		],
 		limit_page_length=0,
 	)
@@ -402,12 +396,12 @@ def _derive_people(company, from_date, to_date, employees=None):
 
 
 def _declined_days(people, from_date, to_date):
-	"""Days covered by an Attendance Request HR declined. Declining writes only to
-	the request, so the Attendance row still looks like the job's own."""
+	"""Days covered by an Attendance Request HR declined or has not decided. Neither
+	touches the Attendance row, so it still looks like the job's own."""
 	days = set()
 	for r in frappe.get_all(
 		"Attendance Request",
-		filters={"employee": ("in", list(people)), "alvoraa_review_status": "Declined",
+		filters={"employee": ("in", list(people)), "alvoraa_review_status": ("not in", ["Approved", "Withdrawn"]),
 		         "from_date": ("<=", to_date), "to_date": (">=", from_date)},
 		fields=["employee", "from_date", "to_date"],
 		limit_page_length=0,
@@ -441,7 +435,7 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 	paid = _paid(company, from_date, to_date)
 	if not people:
 		return {"paid": paid, "retag": [], "retag_kept_days": 0, "same_timings": [], "blocked_days": set(),
-		        "one_punch_days": set(), "cancel": [], "badged_cancel": [], "skipped": [], "badged_kept": [],
+		        "one_punch_days": set(), "request_no_row": set(), "cancel": [], "badged_cancel": [], "skipped": [], "badged_kept": [],
 		        "unskip": [], "stay_flagged": 0, "retag_extra": 0}
 	wrong = _wrong_punches(company, from_date, to_date, people, include_same_timings)
 	retag_days = {r.day for r in wrong["retag"]}
@@ -491,7 +485,9 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 
 	def one_punch_no_threshold(day):
 		logs = logs_of(day)
-		if not ONE_PUNCH_LEFT_FOR_A_PERSON or len({minute(r) for r in logs}) != 1:
+		# Surbhi's rule: the job would not count one punch Absent on such a shift. It
+		# would make it Present, or Half Day with a half-day threshold. A person decides.
+		if len({minute(r) for r in logs}) != 1:
 			return False
 		doc = shift_of(logs[0].employee, logs[0].time)
 		return bool(doc) and not flt(doc.working_hours_threshold_for_absent)
@@ -517,8 +513,8 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		if day not in retag_days and not badged:
 			continue
 		# Proof the job made it: it holds the job's wrongly tagged punches, or
-		# Frappe's own "missing Employee Checkins" comment, or it is a Half Day
-		# or (only if switched on below) an Absent the job built from punches.
+		# Frappe's own "missing Employee Checkins" comment, or it is a Half Day the
+		# job built from punches.
 		proven = False
 		if day in blocked:
 			why = "left for a person (a punch is outside the new shift's window)"
@@ -531,7 +527,7 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		elif a.attendance_request:
 			why = "attendance request"
 		elif day in declined:
-			why = "HR declined a request for this day"
+			why = "HR declined a request for this day, or has not decided yet"
 		elif a.alvoraa_held_confirmed:
 			why = "confirmed by a manager"
 		elif a.owner not in SYSTEM_USERS or a.modified_by not in SYSTEM_USERS:
@@ -541,7 +537,7 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		elif a.name in linked:
 			proven = True
 		elif badged and a.status == "Absent" and a.name in holds_punches:
-			proven = REBUILD_ABSENT_WITH_UNUSED_PUNCH
+			# Surbhi's rule: kept and listed by date, for a person to check.
 			why = "a punch is linked to it and another is unused: a person must check the hours"
 		elif badged and ((a.status == "Absent" and a.name in auto_absent)
 		                 or (a.status == "Half Day" and a.name in holds_punches)):
@@ -562,7 +558,7 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		if badged:
 			badged_kept.append(a)
 
-	# A one-punch day with no row at all: the job would make it a full Present.
+	# A one-punch day with no row at all: the job would not count it Absent.
 	row_days = {(a.employee, str(a.attendance_date)) for a in rows}
 	for day in badged_days - row_days - blocked:
 		if one_punch_no_threshold(day):
@@ -595,6 +591,8 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		"same_timings": wrong["same_timings"],
 		"blocked_days": blocked,
 		"one_punch_days": one_punch,
+		# A request protects a row. With no row, step 8 still builds the day from punches.
+		"request_no_row": (declined & badged_days) - row_days - blocked,
 		"cancel": cancel,
 		"badged_cancel": badged_cancel,
 		"skipped": skipped,
@@ -668,7 +666,7 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 	if p["blocked_days"]:
 		print(f"   LEFT FOR A PERSON: {len(p['blocked_days'])} days. The script does not cancel, retag or mark them.")
 		for emp, day in sorted(p["blocked_days"]):
-			why = ("one punch, and the shift has no Absent threshold, so the job would make it a full Present"
+			why = ("one punch, and the shift has no Absent threshold, so the job would not count it Absent"
 			       if (emp, day) in p["one_punch_days"] else "a punch is outside the new shift's window")
 			print(f"      {label(emp)} {day}: {why}")
 
@@ -677,6 +675,10 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 	for a in sorted(p["cancel"], key=lambda a: (a.employee, a.attendance_date)):
 		print(f"   {label(a.employee)} {a.attendance_date}: {a.status} -> {a.expected}"
 		      f"  ({a.punches} punches, {a.target_shift})")
+	print(f"   Request declined or undecided, on a day with NO row: {len(p['request_no_row'])} days. A request"
+	      " protects a row only, so step 8 builds these from the punches. Check them against the request:")
+	for emp, day in sorted(p["request_no_row"]):
+		print(f"      {label(emp)} {day}")
 	print(f"   SKIPPED, kept as they are: {len(p['skipped'])}")
 	for a in sorted(p["skipped"], key=lambda a: (a.employee, a.attendance_date)):
 		print(f"      {a.name} {label(a.employee)} {a.attendance_date}: {a.why}")
@@ -787,8 +789,9 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 	for emp, n in sorted(absent_per.items(), key=lambda kv: -kv[1]):
 		e = emps.get(emp, frappe._dict())
 		print(f"   {label(emp)}: {n} Absent days  [{e.get('employment_type') or '-'} / {e.get('designation') or '-'}]")
-	print(f"   PLUS {len(blocked_absent)} days LEFT FOR A PERSON that the hourly job will still mark Absent (the"
-	      " person badged in). Fix each by hand:")
+	print(f"   PLUS {len(blocked_absent)} days LEFT FOR A PERSON with no row, on a shift that was already on. The"
+	      " hourly job may mark them first, from the punch if it can use it, otherwise Absent. Check the row,"
+	      " then fix each by Attendance Request:")
 	for emp, day in blocked_absent:
 		print(f"      {label(emp)} {day}")
 
@@ -840,6 +843,7 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 		"badged_kept": len(p["badged_kept"]),
 		"no_punch_absent_kept": sum(no_punch.values()),
 		"unskip": len(p["unskip"]),
+		"request_no_row": len(p["request_no_row"]),
 		"badged_people_company": len({a.employee for a in fault_rows}),
 		"half_day_rows": len(half),
 		"absent_outside_list": sum(out_absent.values()),
@@ -1036,8 +1040,11 @@ def enable_and_mark(company, from_date, to_date, half_day_rows=None, absent_outs
 		             " HALF-DAY ROWS before you enter them.")
 
 	# Days left for a person and kept days: their punches are left alone, or Frappe
-	# would flag them, or write a second row if the two shifts do not overlap.
-	blocked = plan["blocked_days"] | {(a.employee, str(a.attendance_date)) for a in plan["skipped"]}
+	# would flag them, or write a second row if the two shifts do not overlap. Not an
+	# open half-day leave: its punches are how Frappe learns the other half was
+	# worked. Without them pass 2 marks that half Absent, for good.
+	blocked = plan["blocked_days"] | {(a.employee, str(a.attendance_date)) for a in plan["skipped"]
+	                                  if not a.modify_half_day_status}
 	# Pass 1 marks every shift's punches; pass 2 the Absent days. The other way
 	# round, an Absent on the default shift blocks a punch on a same-hours shift
 	# and Frappe flags that punch skip for good.

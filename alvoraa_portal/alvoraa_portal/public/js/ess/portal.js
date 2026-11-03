@@ -6230,7 +6230,7 @@ window.acSubmit = async function (date) {
       /* Slice 081: whatever the person chose to attach, or nothing at all.
          A request sent with no file says nothing about it. */
       await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain,
-        file_url: window.evFileUrl("ac-file")});
+        file_id: window.evFileId("ac-file")});
     }
     hideLoad();
     toast("Sent to HR.", "ok");
@@ -10052,10 +10052,13 @@ var EV_ACCEPT = "image/jpeg,image/png,application/pdf";
 
 function evState(id) { return EV[id] || null; }
 
-/* Has this control got a file the form may send? */
-window.evFileUrl = function (id) {
+/* Has this control got a file the form may send? **The row's ID, never its
+   url** - Frappe de-duplicates identical bytes into two rows sharing one url,
+   so a url names an arbitrary one of them. No `/private/files/...` address
+   reaches this page at all. */
+window.evFileId = function (id) {
   var s = EV[id];
-  return (s && s.fileUrl) || null;
+  return (s && s.fileId) || null;
 };
 
 function evInit(id, kind, opts) {
@@ -10063,7 +10066,7 @@ function evInit(id, kind, opts) {
   EV[id] = {
     kind: kind,
     required: !!opts.required,
-    fileUrl: null, bytes: 0, isPdf: false, label: "",
+    fileId: null, bytes: 0, isPdf: false, label: "",
     blob: null,          /* what we sent, so View full size needs no round trip */
     chosen: null,        /* the file the person picked, kept across a retry */
     gen: 0,
@@ -10285,7 +10288,7 @@ function evUpload(id, b64, isPdf, thumbUrl) {
   var s = EV[id], gen = s.gen;
   gpFetch(EV_API + "upload_evidence", {file: b64, kind: s.kind}).then(function (d) {
     if (gen !== s.gen) return;
-    s.fileUrl = d.file_url;
+    s.fileId = d.file_id;
     s.bytes = d.bytes;
     s.isPdf = !!d.is_pdf;
     s.label = d.label || "";
@@ -10409,7 +10412,7 @@ document.addEventListener("click", function (e) {
   else if (what === "view") evView(id);
   else if (what === "clear") {
     EV[id].gen++;
-    EV[id].fileUrl = null; EV[id].chosen = null; EV[id].b64 = null;
+    EV[id].fileId = null; EV[id].chosen = null; EV[id].b64 = null;
     evPaint(id, "empty");
   }
 });
@@ -10559,7 +10562,7 @@ function submitExpenseClaim() {
        standing lesson here is to test what the form sends and not what it
        draws. Try again re-posts this same reference and uploads nothing
        again, which is the whole reason the upload is a separate call. */
-    file_url: window.evFileUrl("ec-file"),
+    file_id: window.evFileId("ec-file"),
   }, {lostAnswerHandled: true}).then(done, function(e) {
     if (gen !== EC_GEN) return;
     if (e.late) e.late.then(done, function() {});

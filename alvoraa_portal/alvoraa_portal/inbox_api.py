@@ -125,8 +125,12 @@ ROW_KEYS = (
 	# Slice 076 Part C (SEC-16): the named approver sees what they are deciding -
 	# whose claim, the type, the day, the amount and the note. No bank, no
 	# account, no advance.
+	# Slice 081: `has_bill` is a BOOLEAN - whether a bill is attached at all.
+	# Never a file name and never a url: the row says "Bill attached" or "No
+	# bill attached" in words, and the file itself only ever arrives through
+	# `expense_evidence.open_evidence`, one per tap (AQ5, AC-36, AC-45).
 	("expense_approvals", ("name", "employee_name", "expense_type", "expense_date",
-	                       "amount", "note", "waiting_since", "action")),
+	                       "amount", "note", "waiting_since", "has_bill", "action")),
 	# No colleague name for a goal or KPI update? There is one, and there has to
 	# be: an approver cannot approve "somebody's" progress. What is absent is the
 	# number's provenance and any note about the person.
@@ -138,8 +142,12 @@ ROW_KEYS = (
 	# `can_decide`: whether the caller may decide it TODAY
 	# (`attendance_correction.not_yours_yet`). Only those rows are listed and
 	# counted, so it is always true; the buttons still follow it.
+	# Slice 081: `has_evidence`, the same boolean for the file an employee chose
+	# to attach to a day-fix. Optional there, so a card without one says nothing
+	# about it.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
-	                      "reason", "context", "action", "can_decide", "waiting_since")),
+	                      "reason", "context", "action", "can_decide", "waiting_since",
+	                      "has_evidence")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
 	                    "shift_type", "action", "waiting_since")),
 	# A policy is a document, not a person. No employee field at all.

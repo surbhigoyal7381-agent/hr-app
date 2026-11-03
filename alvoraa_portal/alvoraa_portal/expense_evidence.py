@@ -416,7 +416,29 @@ def upload_evidence(file: str | None = None, kind: str | None = None) -> dict:
 		"is_private": 1,
 		"content": stored,
 	}).insert()
-	frappe.db.commit()
+	# **No `frappe.db.commit()` here, deliberately.** Frappe commits a request
+	# that succeeded, so the row is durable by the time the browser has its
+	# answer and the next call can lock it - and if anything later in THIS
+	# request fails, rolling the upload back is the better outcome: no orphan at
+	# all rather than one for the sweep to find.
+	#
+	# An explicit commit also reaches further than it looks. It was here at
+	# first, and it broke slice 076's suite: a commit in the middle of a test
+	# makes that test's fixture writes permanent, so `tearDown`'s rollback
+	# cannot undo them and a later test reads a half-applied fixture. The
+	# failure looked nothing like this line - "Department ... does not belong to
+	# company" - which is the kind of cost an unnecessary commit has.
+	#
+	# **The ROW ID is what comes back, and never the url.** Found by a test:
+	# `File.save_file` de-duplicates by content hash (`file.py:823-840`), so two
+	# uploads of byte-identical content produce TWO rows that share ONE
+	# `file_url`. Looking a file up by url therefore returns an arbitrary one of
+	# them - possibly another person's - which is both wrong and a way to touch
+	# a row the caller never uploaded. A row id is unique and unambiguous, and
+	# it is what `employee_documents_read` already takes.
+	#
+	# It also means no response on this path carries a `/private/files/...`
+	# address at all, not even the uploader's (081-SEC-6, AC-52).
 
 	# The size, the type and the document NAME. Never the file name a device
 	# supplied, never the url, never anything about the person (081-PRIV-2).
@@ -426,7 +448,7 @@ def upload_evidence(file: str | None = None, kind: str | None = None) -> dict:
 		   frappe.session.user, now()))
 
 	return {
-		"file_url": row.file_url,
+		"file_id": row.name,
 		"bytes": len(stored),
 		"is_pdf": is_pdf,
 		# What the screen shows back, so the person can judge their own photo.
@@ -437,7 +459,7 @@ def upload_evidence(file: str | None = None, kind: str | None = None) -> dict:
 
 # ── binding it to the document that justifies it ─────────────────────────────
 
-def reserve(file_url: Any, parent_doctype: str) -> str | None:
+def reserve(file_id: Any, parent_doctype: str) -> str | None:
 	"""Claim the uploaded file for this call, **before** the parent is created.
 
 	Two steps rather than one, and the split is the answer to a real race, not
@@ -454,15 +476,21 @@ def reserve(file_url: Any, parent_doctype: str) -> str | None:
 	it waited. `for_update` both serialises the two callers and makes the second
 	one see the latest committed row (slice 021's lesson).
 
+	**It takes the row's ID, not its url**, and that is not a style choice.
+	`File.save_file` de-duplicates by content hash, so two uploads of identical
+	bytes leave two rows sharing one `file_url`; a lookup by url would return an
+	arbitrary one of them, which could be a row this caller never uploaded. A
+	test found that, and the id closes it (081-SEC-5 clause 5).
+
 	Returns the `File` row name, or None when no file was offered - the ordinary
 	case on a day-fix, where attaching is the person's own choice.
 	"""
-	url = str(file_url or "").strip()
-	if not url:
+	file_id = str(file_id or "").strip()
+	if not file_id:
 		return None
 
 	row = frappe.db.get_value(
-		"File", {"file_url": url},
+		"File", file_id,
 		["name", "owner", "is_private", "attached_to_name"],
 		as_dict=True, for_update=True)
 
@@ -636,8 +664,10 @@ def open_evidence(kind: str | None = None, parent: str | None = None) -> None:
 	if not parent_name or not frappe.db.exists(parent_doctype, parent_name):
 		refuse(_("You cannot open that file."), RULE_READ,
 		       "expense_evidence.open_evidence", parent_doctype, parent_name or None)
-	if not frappe.has_permission(parent_doctype, "read", doc=parent_name,
-	                             print_logs=False):
+	# `frappe.has_permission` is the top-level wrapper, and its signature is NOT
+	# `frappe.permissions.has_permission`'s - it takes no `print_logs`. Checked
+	# in `frappe/__init__.py:600-610` after a test raised a TypeError on it.
+	if not frappe.has_permission(parent_doctype, "read", doc=parent_name):
 		refuse(_("You cannot open that file."), RULE_READ,
 		       "expense_evidence.open_evidence", parent_doctype, parent_name)
 

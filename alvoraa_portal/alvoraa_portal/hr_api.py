@@ -2403,11 +2403,13 @@ def _expense_claim_accounts(company, expense_type):
 
 @frappe.whitelist()
 def apply_expense_claim(expense_type, expense_date, amount, description=None,
-                        file_url=None):
+                        file_id=None):
     """File one expense claim for the caller's own employee record.
 
-    Slice 081: `file_url` is the bill, uploaded on its own call a moment ago by
-    `expense_evidence.upload_evidence`, and it is **required**. The rule also
+    Slice 081: `file_id` is the bill, uploaded on its own call a moment ago by
+    `expense_evidence.upload_evidence`, and it is **required**. It is the `File`
+    row's ID and not its url, because Frappe de-duplicates identical bytes into
+    two rows sharing one url - see `expense_evidence.reserve`. The rule also
     lives on the document at submit, where Desk, the REST API and a data import
     meet it; this refusal is here as well so the person hears it at the moment
     they can act on it, in the server's own words.
@@ -2421,21 +2423,6 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None,
     amount = float(amount)
     if amount <= 0:
         frappe.throw("Amount must be greater than zero.")
-
-    # Before anything is created, and before the amount is even looked at
-    # twice: a claim with no bill is not filed. The sentence is the server's,
-    # word for word the first line of the Desk refusal, and it reaches the
-    # screen verbatim - never "upload failed", never "check your connection",
-    # never a Python argument error (081-SEC-3, AC-23).
-    if not str(file_url or "").strip():
-        frappe.throw(expense_evidence._msg_no_bill() + " "
-                     + _("Please attach one and send it again."),
-                     title=_("A bill is needed"))
-
-    # The file is claimed for this call BEFORE the claim is inserted, so two
-    # taps cannot leave a second claim behind with no way to get a file onto
-    # it. The lock is held until this request commits.
-    reserved = expense_evidence.reserve(file_url, expense_evidence.CLAIM)
 
     # Slice 076 (SEC-12, Surbhi's decision 4): a claim carries its approver, or
     # it is not filed. Without one it would sit where nobody can see it.
@@ -2454,6 +2441,27 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None,
     # rate 1; a claim in another currency is not something this portal offers.
     currency = frappe.db.get_value("Company", emp.company, "default_currency")
     accounts = _expense_claim_accounts(emp.company, expense_type)
+
+    # Slice 081: a claim with no bill is not filed, and this is the LAST of the
+    # refusals on purpose. Every check above it - no employee record, no
+    # approver, no expense account for the company - is something only HR can
+    # put right, and a person told "attach a bill" for a claim that could never
+    # have been approved anyway would make a second trip for nothing. The
+    # refusals a person can act on come after the ones they cannot.
+    #
+    # The sentence is the server's own, word for word the first line of the
+    # Desk refusal, and it reaches the screen verbatim - never "upload failed",
+    # never "check your connection", never a Python argument error
+    # (081-SEC-3, AC-23).
+    if not str(file_id or "").strip():
+        frappe.throw(expense_evidence._msg_no_bill() + " "
+                     + _("Please attach one and send it again."),
+                     title=_("A bill is needed"))
+
+    # The file is claimed for this call BEFORE the claim is inserted, so two
+    # taps cannot leave a second claim behind with no way to get a file onto
+    # it. The lock is held until this request commits.
+    reserved = expense_evidence.reserve(file_id, expense_evidence.CLAIM)
 
     doc = frappe.get_doc({
         "doctype": "Expense Claim",

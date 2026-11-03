@@ -1007,14 +1007,14 @@ def my_requests(limit=20):
 
 @frappe.whitelist()
 def raise_correction(from_date, to_date=None, reason=None, explanation=None,
-                     half_day=0, half_day_date=None, file_url=None):
+                     half_day=0, half_day_date=None, file_id=None):
 	"""Ask HR to fix a day.
 
 	Always for the caller's own employee record. The employee is never taken
 	from the request - this endpoint is whitelisted, and a field that named
 	somebody else would let anyone rewrite anyone's attendance.
 
-	Slice 081: `file_url` is a photograph or a document the person chose to
+	Slice 081: `file_id` is a photograph or a document the person chose to
 	attach, uploaded on its own call a moment ago. **It is optional, and a
 	request sent without one says nothing about it** - there is no nudge and no
 	"are you sure?", because a confirm on an optional field is a nudge (081-SEC-8,
@@ -1040,7 +1040,7 @@ def raise_correction(from_date, to_date=None, reason=None, explanation=None,
 	# Claimed before the request is created, for the same reason as a claim's
 	# bill: the loser of two taps is refused before it has inserted anything.
 	# None when nothing was attached, which is the ordinary case here.
-	reserved = expense_evidence.reserve(file_url, expense_evidence.REQUEST)
+	reserved = expense_evidence.reserve(file_id, expense_evidence.REQUEST)
 
 	doc = frappe.get_doc({
 		"doctype": REQUEST,

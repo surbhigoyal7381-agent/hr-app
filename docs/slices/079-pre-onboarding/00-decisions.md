@@ -218,6 +218,70 @@ The rest of the journey — about **151 strings**, 41 server-side and 110 on the
 page — is already wrapped for translation, with **nothing hardcoded**. The
 plumbing exists; only a reviewed `hi.csv` is missing. That stays ALV-267.
 
+## 6d · Aadhaar, settled 2 November — and it goes against counsel
+
+Three answers from Surbhi, given as answers to the three questions drafted for counsel.
+**They replace §6a and §6c's Aadhaar paragraphs. Those are no longer current.**
+
+**1. Aadhaar is MANDATORY.** Her words: *"Aadhaar is mandatory."* Said twice, the second
+time after being shown that **counsel's ruling 5 says the opposite** — voluntary, with
+alternative IDs accepted. Her decision, recorded as hers.
+
+**This needs no code.** The product already lets HR tick any document type as required
+(§2). So "mandatory" is a **tenant configuration choice**, taken by the employer as Data
+Fiduciary, and we supply the switch. **Nothing hard-codes Aadhaar as required for every
+customer, and nothing should** — that would make the choice ours rather than theirs, and
+would impose it on tenants who have taken no such decision.
+
+**Counsel's ruling 5 stays in §7 exactly as written.** It is not deleted, softened or
+re-worded. If this is ever questioned, the record must show that the ruling was on the
+table and a decision was taken against it, not that nobody noticed.
+
+**A basis that may make it lawful, which we cannot assess.** EPF enrolment requires
+Aadhaar seeding for a UAN, so an employer can have a genuine statutory reason to insist.
+If that is the basis, counsel can confirm it in a line. Question 1 of the 1 Nov letter
+now asks exactly this.
+
+**2. The uploaded card is the MASKED Aadhaar.** Her answer to "does the QR carry the full
+number" was *"masked"* — read as: the joiner uploads **UIDAI's own masked Aadhaar**, the
+download where the first eight digits are already hidden.
+
+**This is the best answer of the three and it is better than what §6a chose.** The
+masking is done by UIDAI, not by us and not by the joiner with a pen; there is no
+judgement call and nothing for us to get wrong; and the digits are masked **on the
+uploaded image**, which is the wording of ruling 5.
+
+**3. Guidance is enough.** Her words: *"yes enought."* So the form tells the joiner to
+download their masked Aadhaar from UIDAI and upload that. **We build no masker.** US-11
+and US-12 are **dropped**, not held — 13 of the slice's 83 points.
+
+**The weakness, stated once so it is not rediscovered as a finding:** guidance is an
+instruction, not a lock. A joiner who ignores it, or who photographs the plastic card,
+uploads an unmasked number and we store it. Nothing refuses such a file. §6a's rule was
+"mask or refuse"; there is now neither.
+
+**4. The QR question is answered, and it holds — with one trap.** Surbhi, 2 Nov: the
+masked card's QR carries *"just last 4 digits"*. Checked against UIDAI's own
+**Aadhaar (Authentication and Offline Verification) Regulations 2021**, which define the
+Aadhaar Secure QR Code as digitally signed data holding the **last four digits**, plus
+demographics and photograph. So the masked download really is masked, QR included, and
+answer 2 stands.
+
+**The trap: OLDER Aadhaar prints used QR formats that could hold the full number in
+plain text.** So a joiner who photographs an old physical card can hand us the twelve
+digits through the QR even though the printed digits are covered. Masking the print is
+not the whole of masking on an old card.
+
+**What that means for the guidance, and it is the difference between working and not:**
+the words must say **download the masked Aadhaar from UIDAI**, not "cover the digits on
+your card". A photograph of a covered old card can still carry the number. The guidance
+has one job and this is it.
+
+Sources: UIDAI's regulations (the definition of Aadhaar Secure QR Code) and secondary
+guides on the current format. No direct UIDAI page stating the current QR contents was
+found; the regulation definition is the strongest evidence. Counsel's Question 2 is
+answered for our purposes but is worth their confirmation.
+
 ## 7 · Counsel's rulings, 31 October — all binding
 
 | # | Ruling |

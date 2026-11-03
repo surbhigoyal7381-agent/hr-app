@@ -1223,6 +1223,29 @@ class TestTheJoiningPage(_Base):
 		self.assertNotIn("{{", out, "Jinja was left unrendered on the page.")
 		self.assertNotIn("{%", out)
 
+	def test_the_documents_step_sends_people_to_uidais_masked_download(self):
+		"""Slice 079 §6d. These words are the WHOLE of the Aadhaar control.
+
+		There is no masker, nothing checks the upload and nothing refuses an
+		unmasked card - Surbhi dropped US-11 and US-12 on 2 Nov 2026 and chose
+		guidance instead. So if this sentence goes, the control goes with it and
+		nothing else notices.
+
+		**The negative assertion is the one that matters.** UIDAI's Secure QR
+		carries only the last four digits, so the masked download really is
+		masked. But OLDER prints used QR formats that could hold the full number
+		in plain text, so a photograph of an old card with the digits inked over
+		still hands us all twelve. "Cover the digits yourself" is the helpful
+		rewrite of this instruction, and it is the one that fails.
+		"""
+		out = self._render()
+		self.assertIn("masked Aadhaar from the UIDAI website", out,
+		              "The documents step no longer sends people to UIDAI's masked "
+		              "download. That sentence is the only Aadhaar control there is.")
+		self.assertIn("Do not black out the numbers yourself", out,
+		              "The warning against self-masking is gone. An older card's QR "
+		              "can still carry all twelve digits under the ink.")
+
 	def test_the_notice_comes_before_the_first_input_in_the_dom(self):
 		"""AC-112, the same property the 078 browser test asserts for My
 		Profile's notice with `compareDocumentPosition`. Here it is asserted on
@@ -1247,14 +1270,36 @@ class TestTheJoiningPage(_Base):
 			with self.subTest(sentence=sentence):
 				self.assertIn(sentence, out)
 
-	def test_it_says_nothing_about_aadhaar(self):
-		"""AC-113's closing clause: *"and nothing more than US-11/US-12
-		deliver"*. The masker is held, so it delivers nothing - and a notice
-		promising that we black out the first 8 digits would be a promise we do
-		not keep."""
-		out = self._render()
-		self.assertNotIn("Aadhaar", out)
-		self.assertNotIn("black out", out)
+	def test_it_never_promises_that_WE_mask_anything(self):
+		"""AC-113's closing clause, kept after its mechanism stopped working.
+
+		**This test used to say "the page must not mention Aadhaar at all",
+		and that was right while we said nothing.** US-11 and US-12 were held,
+		so the page named Aadhaar nowhere. On 2 November 2026 Surbhi dropped the
+		masker for good and chose guidance instead (006d), so the page now names
+		Aadhaar on purpose and the old assertion was pinning a decision she had
+		reversed.
+
+		**What survives is the property the old test existed for**, and it is
+		the one that would actually hurt: the joiner must never be told that
+		ALVORA masks anything. Nothing masks, nothing checks, and nothing
+		refuses an unmasked card. A page implying otherwise would leave somebody
+		relying on a protection that is not there - worse than saying nothing.
+
+		So the words we DO show must stay in the imperative, addressed to the
+		joiner. `test_the_documents_step_sends_people_to_uidais_masked_download`
+		pins that they are present; this pins that they never become a promise.
+		"""
+		out = self._render().lower()
+		for promise in ("we will mask", "we mask", "we black out",
+		                "we will black out", "we hide", "we will hide",
+		                "first 8 digits", "first eight digits",
+		                "automatically masked", "is masked for you"):
+			with self.subTest(promise=promise):
+				self.assertNotIn(promise, out,
+				                 "The page implies Alvora does the masking. It does "
+				                 "not: there is no masker, nothing checks the upload "
+				                 "and nothing refuses an unmasked card (079 6d).")
 
 	def test_nothing_of_the_token_or_the_browser_draft_is_left(self):
 		"""The subtraction, asserted rather than claimed. `localStorage` and

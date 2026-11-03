@@ -762,6 +762,8 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# while containing no bypass at all; 0 is both the truth and the
 		# tightest the gate can be, so a future use has to be argued for here.
 		("alvoraa_portal", "attendance_correction.py"): 0,
+		# ALV-291 (new file): a one-time fix run from bench as Administrator; none.
+		("alvoraa_portal", "alv291_attendance_fix.py"): 0,
 		("alvoraa_goals", "api/goal_api.py"): 0,
 		("alvoraa_goals", "controllers/evidence.py"): 0,
 		# 2 at 4e3ba28; +1 on purpose in slice 010: recalculate_progress saves a

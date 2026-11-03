@@ -161,6 +161,23 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
   <div id="j2" class="card hide">
     <h1>{{ _("Your documents") }}</h1>
     <p class="soft">{{ _("A clear photograph of the document is fine. You do not need a scanner.") }}</p>
+    <!-- Slice 079 §6d. The ONLY Aadhaar control there is: we do not mask, we do
+         not check, and nothing refuses an unmasked card. So these words are the
+         whole of it and they have one job - send people to UIDAI's own masked
+         download rather than letting them cover the digits themselves.
+
+         **Why "do not black out the numbers yourself" is in here.** UIDAI's
+         Secure QR carries only the last four digits, so the masked download is
+         genuinely masked. But OLDER Aadhaar prints used QR formats that could
+         hold the full number in plain text - so a photograph of an old card
+         with the digits inked over still hands us all twelve. The helpful
+         version of this instruction is the one that fails.
+
+         Shown to everyone, not only where an Aadhaar type is ticked: tenants
+         name their own document types and this one spells it "Adhaar card", so
+         matching on the name would be the kind of guess that quietly stops
+         working. One sentence of advice costs a reader nothing. -->
+    <p class="soft">{{ _("Sending an identity card? Use the masked copy if the issuer offers one. For Aadhaar, download the masked Aadhaar from the UIDAI website. Do not black out the numbers yourself — the code printed on an older card can still carry them.") }}</p>
     <div id="j2-docs"></div>
     <button class="btn go" id="to-photo">{{ _("Next") }}</button>
   </div>

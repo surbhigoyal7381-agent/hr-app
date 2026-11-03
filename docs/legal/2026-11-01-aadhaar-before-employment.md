@@ -42,17 +42,44 @@ the answers below are.
 
 ## 3 · The two questions
 
-### Question 1 — may the employer ask for an Aadhaar card at all, before the person is employed?
+### Question 1 — the employer intends to make the Aadhaar card COMPULSORY. Is that lawful, and on what basis?
 
-Our reading is that it may be asked **voluntarily, with alternatives genuinely accepted**,
-and that there is no lawful basis to require it from somebody who is not yet an employee —
-the employment purpose has not begun. We have assumed that and built accordingly.
+**This has changed since we last wrote, and it goes against your ruling 5**, which said
+Aadhaar must be voluntary with alternative IDs accepted. Our founder has decided, on
+2 November 2026, that **the Aadhaar card is required** of a new joiner, not offered. We
+are telling you rather than quietly building it.
 
-*What we need:* confirmation, or a correction. If the answer is that it may not be asked
-before the employment relationship exists, we will **not offer the Aadhaar document type on
-this page at all**, and the masking work disappears.
+**What the product actually does, so you are not answering a hypothetical.** We do not
+hard-code this. The employer ticks which documents are compulsory, exactly as they tick
+which ones are asked for at all. So the compulsion is the **employer's** configuration
+choice, taken as Data Fiduciary — we supply the switch. The question is whether an
+employer may lawfully set it that way.
 
-### Question 2 — does the card's QR code carry the full Aadhaar number?
+**One possible basis we are aware of but cannot assess.** EPF enrolment requires Aadhaar
+seeding for a UAN, so an employer may have a genuine statutory reason to insist. If that
+is the basis, saying so in one line would settle it. If it is not, we need to know what
+the employer should be told.
+
+*What we need:* whether a private employer may require an Aadhaar card from a person who
+has **not yet started work**, and if so on what basis. If the answer is no, we will tell
+our customer that the switch must not be set that way, and the tick stays optional.
+
+### Question 2 — the masked card's QR carries only the last four digits. Please confirm, and tell us about OLD cards
+
+**We have since checked this ourselves**, so this is a confirmation rather than an open
+question. UIDAI's **Aadhaar (Authentication and Offline Verification) Regulations 2021**
+define the Aadhaar Secure QR Code as digitally signed data holding the **last four
+digits**, plus demographics and photograph. On that reading the masked download is
+genuinely masked, QR included.
+
+**The part we would value your view on: older Aadhaar prints.** Older QR formats could
+hold the full number in plain text. So a joiner who photographs an old physical card can
+pass us the twelve digits through the QR even with the printed digits covered. Our
+guidance therefore tells people to **download the masked Aadhaar from UIDAI** rather than
+cover the digits on a card they already hold. Is that sufficient, or must an old card be
+refused?
+
+**The original question, kept for the record:**
 
 This is the question that may change the shape of the control rather than its size. Modern
 Aadhaar cards and e-Aadhaar PDFs carry a machine-readable code. **If that code contains the
@@ -72,35 +99,30 @@ between three quite different pieces of work:
 when a machine-readable code may still carry the number — and if not, which of the three
 rows above we should build to.
 
-### Question 3 — is guidance on the form enough, or must the masking be a control?
+### Question 3 — guidance only, pointing at UIDAI's masked Aadhaar. Is that enough?
 
-**Added 2 November 2026, and it now matters more than the other two.** Our
-founder's reading of your advice is that we may **show the joiner guidance on
-the form** explaining how to mask the card themselves before uploading it,
-rather than our software masking it. On that basis we have **not built** the
-masking.
+**Settled on our side, 2 November 2026, and much simpler than when we drafted this.**
+We will **not** mask anything ourselves. The form will tell the joiner to download the
+**masked Aadhaar from UIDAI** — the version where the first eight digits are already
+hidden — and upload that.
 
-We would rather put the weakness to you now than discover it after a card has
-landed. Guidance is an **instruction, not a control**: a joiner who does not
-read it, or cannot follow it on a phone, uploads an unmasked Aadhaar and we
-store it. Nothing refuses it.
+Why we think this answers your ruling 5 better than our own masking would have:
 
-Our reading is that ruling 5 — "the first 8 digits masked **on the uploaded
-image**" — describes the state of the stored file, not the quality of our
-advice, and that guidance alone therefore does not satisfy it.
+- the masking is done by **UIDAI**, not by us and not by the joiner with a pen, so there
+  is no judgement call and nothing for us to get wrong;
+- it is a thing an ordinary person can actually do, unlike "black out the first eight
+  digits";
+- the first eight digits are masked **on the uploaded image**, which is the words of
+  your ruling.
 
-*What we need:* whether guidance on the form discharges ruling 5. If it does
-not, which of these is required:
+**What it does not do, said plainly.** Guidance is an instruction, not a lock. A joiner
+who ignores it, or who photographs the plastic card instead, uploads an unmasked number
+and we store it. There is nothing behind the guidance that refuses such a file.
 
-| Option | What it means for the joiner |
-|---|---|
-| Guidance only | What we have built. An unmasked card can still reach us. |
-| Guidance plus a declaration | They tick "I have masked the first 8 digits" before the upload is accepted. Still not a control, but it is a record and a prompt. |
-| We mask it ourselves | The engineering we have **not** built. Answers the risk properly. |
-| Refuse Aadhaar images | Rely on PAN, passport, licence and voter ID, which we already accept. Cheapest and safest. |
-
-We are not asking you to choose our product design. We are asking which of
-these the obligation permits.
+*What we need:* whether guidance pointing at UIDAI's masked Aadhaar discharges ruling 5,
+or whether something must refuse an unmasked upload. **Question 2 bears directly on
+this** — if the masked card's QR code still carries the full number, then the masked
+card is not really masked and this answer changes again.
 
 ## 4 · One thing we are not asking you to decide
 

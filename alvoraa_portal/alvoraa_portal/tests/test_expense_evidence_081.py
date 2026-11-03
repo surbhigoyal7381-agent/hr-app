@@ -991,6 +991,31 @@ class TheClocks(_Base):
 		                 "an ATTACHED file must never be swept")
 		self.assertGreaterEqual(out["deleted"], 1)
 
+	def test_the_sweep_leaves_a_file_that_is_not_ours(self):
+		"""**The sweep takes our own abandoned uploads and nothing else.**
+
+		The first version of it swept every unparented private file on the site,
+		which is far more than OPS-15 asked for: somebody else's in-flight
+		upload, a file left in the File manager on purpose, another feature's
+		work in progress. There is no flag saying "this one is ours" - the
+		stored NAME is, by construction - so this fixture puts a stranger's
+		unparented private file right in the sweep's path and asserts it
+		survives.
+		"""
+		stranger = frappe.get_doc({
+			"doctype": "File", "file_name": "someone-elses-work.jpg",
+			"is_private": 1, "content": _jpeg(400, 300),
+		}).insert(ignore_permissions=True)
+		ours = self._upload(self.me, _jpeg(420, 320))["file_id"]
+		for name in (stranger.name, ours):
+			frappe.db.set_value("File", name, "creation",
+			                    add_to_date(now(), hours=-30), update_modified=False)
+		expense_evidence.sweep_orphans()
+		self.assertFalse(frappe.db.exists("File", ours),
+		                 "our own abandoned upload should have gone")
+		self.assertTrue(frappe.db.exists("File", stranger.name),
+		                "a file that is not ours must never be swept")
+
 	def test_the_daily_pass_runs_safely_twice(self):
 		"""AC-70b. The second run deletes nothing extra and raises nothing."""
 		claim = self._file_claim(self.me)

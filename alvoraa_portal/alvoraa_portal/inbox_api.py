@@ -142,12 +142,14 @@ ROW_KEYS = (
 	# `can_decide`: whether the caller may decide it TODAY
 	# (`attendance_correction.not_yours_yet`). Only those rows are listed and
 	# counted, so it is always true; the buttons still follow it.
-	# Slice 081: `has_evidence`, the same boolean for the file an employee chose
-	# to attach to a day-fix. Optional there, so a card without one says nothing
-	# about it.
+	# Slice 081 deliberately did NOT add `has_evidence` here. This part builds
+	# its own row dict and never goes through `attendance_correction._shape`, so
+	# the key would have been declared and never set - dead configuration. The
+	# HR surface the design asked for is the day-fix CARD (`acReviewQueue`),
+	# which calls `to_review` directly and is not cut to this list. The Inbox's
+	# own day-fix row is a different screen and is not in the slice.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
-	                      "reason", "context", "action", "can_decide", "waiting_since",
-	                      "has_evidence")),
+	                      "reason", "context", "action", "can_decide", "waiting_since")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
 	                    "shift_type", "action", "waiting_since")),
 	# A policy is a document, not a person. No employee field at all.

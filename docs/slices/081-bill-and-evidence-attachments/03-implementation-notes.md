@@ -268,12 +268,13 @@ decide whether those fixtures should stop sharing records.**
 | `python scripts/check_app_integrity.py` | **911 checks, OK — all consistent** |
 | `node --check portal.js` | parses |
 | `bench --site test_site migrate` | clean; the two `alvoraa_legal_hold` Custom Fields, the four `source` options and the cutoff `2026-11-03` all verified present afterwards |
-| `bench run-tests --module ...test_expense_evidence_081` | **Ran 50, OK** |
+| `bench run-tests --module ...test_expense_evidence_081` | **Ran 51, OK** |
 | `bench run-tests --module ...test_expense_and_scoping` | **Ran 8, OK** |
 | `bench run-tests --module ...test_expense_birthdays_076` | **Ran 35, OK** (after the data repair in §8) |
 | `bench run-tests --module ...test_portal_security_010` | **Ran 45, OK** and **Ran 5, OK** — two batches, both read. This is the suite that owns the `ignore_permissions` ceiling |
 | `node scripts/run_dom_tests.js` | **22 suites run, 0 failed.** Includes 078 faces 186 passed, 070 phone 93 passed, 076 expense 56 passed, redesign 74 passed |
-| `bench run-tests --module ...test_attendance_correction` + `test_decline_scope` | **see §10** |
+| `bench run-tests --module ...test_attendance_correction` | **Ran 111, OK** and **Ran 19, OK** |
+| `bench run-tests --module ...test_decline_scope` | **Ran 11, OK** |
 
 Everything ran in my own container `hrlocal-081`, on the shared `hrlocal-sites` volume, site
 `test_site`, claimed on the work board. **No deploy command was run. Nothing touched dev or
@@ -281,14 +282,30 @@ production.** `jsdom` was installed in the worktree with `--no-save` so the DOM 
 
 ---
 
-## 10 · The one result still outstanding at the time of writing
+## 10 · Everything that was outstanding, now settled
 
-`test_attendance_correction` and `test_decline_scope` were still running when these notes were
-written. **They matter**, because `attendance_correction._shape` is on their path, and the
-report is not complete without them. The result is in §9's last row once they finish, and
-**if they are not green this slice is not done.**
+`test_attendance_correction` (**111 + 19, OK**) and `test_decline_scope` (**11, OK**) were
+still running when §1-§9 were written. Both are green, and they matter because
+`attendance_correction._shape` is on their path.
 
----
+**Totals: 51 + 35 + 8 + 45 + 5 + 111 + 19 + 11 = 285 Python tests green, and 22 DOM suites
+with 0 failures.** Nothing red, nothing skipped, nothing reported that I did not run.
+
+**One more fault found during the final self-review, after the notes were first written, and
+it was the worst one in the slice.** `sweep_orphans` deleted **every** unparented private file
+on the site older than 24 hours, not only the ones this slice created. That is far more than
+OPS-15 asked for, and it would have deleted somebody else's in-flight upload, a file left in
+the File manager on purpose, or another feature's work in progress. There is no flag saying
+"this one is ours" and there does not need to be: the stored name is ours by construction, so
+the sweep now filters on the `bill-` and `dayfix-` prefixes.
+`test_the_sweep_leaves_a_file_that_is_not_ours` puts a stranger's unparented private file
+directly in the sweep's path and asserts it survives. **That is the second thing the generated
+name buys, besides privacy, and it is what makes this sweep safe to have at all.**
+
+The same review removed one piece of dead configuration: `has_evidence` had been declared in
+`inbox_api.ROW_KEYS` for the `attendance_fixes` part, which builds its own row dict and never
+goes through `_shape` - so the key would never have been set. The HR surface the design asked
+for is the day-fix **card** (`acReviewQueue`), which is not cut to that list.
 
 ## 11 · Subtract pass — what I removed
 

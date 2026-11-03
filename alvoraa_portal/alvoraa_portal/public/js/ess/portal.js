@@ -10195,12 +10195,33 @@ function evButtons(id, retry) {
 
 /* The camera button and the file button are two buttons in front of ONE hidden
    input, copying `www/joining.html`. `capture="environment"` is the back
-   camera - the one pointing at the bill. */
+   camera - the one pointing at the bill, not at the person.
+
+   **`accept` differs between the two buttons, and that is ALV-297's lesson.**
+   That slice landed on dev while this one was being built and solved the same
+   problem for the check-in photo. Two things from it:
+
+     * it uses `accept="image/*"` with `capture`, not a list of exact types. A
+       narrow list is the one iOS is least reliable with when the camera is what
+       is being asked for, and it buys nothing here: whatever the camera hands
+       back - HEIC included - is redrawn on the canvas as a JPEG, and the server
+       reads the magic bytes of what actually arrives. So the CAMERA button asks
+       for any image and the CHOOSE A FILE button asks for the three types we
+       store, because that is the button where a PDF comes from;
+     * it says in so many words: **not `createImageBitmap`, which loses the
+       rotation on iPhone.** `evShrink` uses `new Image()` for exactly that
+       reason - it applies the photograph's own orientation - and this comment
+       is here so nobody "modernises" it back. */
 function evOpenPicker(id, camera) {
   var input = document.getElementById(id + "-input");
   if (!input) return;
-  if (camera) input.setAttribute("capture", "environment");
-  else input.removeAttribute("capture");
+  if (camera) {
+    input.setAttribute("capture", "environment");
+    input.accept = "image/*";
+  } else {
+    input.removeAttribute("capture");
+    input.accept = EV_ACCEPT;
+  }
   input.value = "";
   input.click();
 }

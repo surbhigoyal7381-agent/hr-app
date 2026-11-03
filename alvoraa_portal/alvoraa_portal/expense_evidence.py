@@ -925,18 +925,33 @@ def sweep_orphans() -> dict:
 	mandatory field an abandoned claim at a petrol pump would leave a real file
 	on the volume for ever. On one disk (ALV-299) rubbish is not harmless.
 
+	**ONLY OUR OWN UPLOADS.** The first version of this swept every unparented
+	private file on the site, which is far more than OPS-15 asked for and would
+	have deleted somebody else's in-flight or deliberately unattached upload -
+	a file in the File manager, another feature's work in progress. There is no
+	flag saying "this one is ours", but there does not need to be: the stored
+	name is ours by construction (`_stored_name`), so the prefix is the
+	identifier. **That is the one thing the generated name buys besides privacy,
+	and it is why this sweep can exist at all.**
+
 	Bounded per run, and **never a file younger than two hours**, so an upload in
 	flight while the job runs survives it. A file that HAS a parent is never
 	touched - asserted as a negative, with an attached file in the fixture.
 	"""
-	oldest = add_to_date(now(), hours=-ORPHAN_HOURS)
-	floor = add_to_date(now(), hours=-ORPHAN_FLOOR_HOURS)
-	cutoff = min(oldest, floor)
-	rows = frappe.get_all("File", filters={
-		"is_private": 1,
-		"attached_to_name": ("is", "not set"),
-		"creation": ("<", cutoff),
-	}, pluck="name", limit=ORPHAN_LIMIT)
+	# `min` takes the EARLIER of the two, which is the safer cutoff. At the
+	# shipped 24 hours the window is already well past the two-hour floor; the
+	# floor binds only if somebody ever shortens `ORPHAN_HOURS`, and it is two
+	# lines against deleting an upload somebody is still waiting on.
+	cutoff = min(add_to_date(now(), hours=-ORPHAN_HOURS),
+	             add_to_date(now(), hours=-ORPHAN_FLOOR_HOURS))
+	rows = []
+	for prefix in NAME_PREFIX.values():
+		rows += frappe.get_all("File", filters={
+			"is_private": 1,
+			"attached_to_name": ("is", "not set"),
+			"creation": ("<", cutoff),
+			"file_name": ("like", "%s-%%" % prefix),
+		}, pluck="name", limit=ORPHAN_LIMIT)
 	deleted = failed = 0
 	for name in rows:
 		try:

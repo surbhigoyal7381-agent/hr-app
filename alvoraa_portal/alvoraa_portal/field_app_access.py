@@ -17,11 +17,29 @@ filter alone leaves /app/employee-checkin/EMP-CKIN-00042 wide open.
 """
 
 import frappe
+from frappe.model.document import Document
 from frappe.utils import now, today
 
 _HR_ROLES = {"HR Manager", "HR User", "System Manager", "Administrator"}
 
 ACCESS_LOG = "Alvoraa Photo Access Log"
+
+# The role a biometric machine account holds (ALV-302). It files punches. It is
+# not HR and has no employee record, so it reads none of them.
+SYNC_ROLE = "Biometric Sync"
+
+
+def keep_machine_punch_time(doc: Document, method: str | None = None) -> None:
+	"""A machine punch keeps the time the machine recorded (ALV-302).
+
+	`time` is permlevel 1 on Employee Checkin. For a role with no write at that
+	level Frappe replaces the value with the field's default, "Now", without
+	an error - so a punch sent late, after a dropped line or a retry, would be
+	filed at the moment it arrived. Runs on before_insert, which Frappe calls just
+	before that reset. Only for this role: a person's own punch still gets "Now".
+	"""
+	if SYNC_ROLE in frappe.get_roles():
+		doc.flags.ignore_permlevel_for_fields = ["time"]
 
 
 def _viewer(user=None):
@@ -58,10 +76,19 @@ def checkin_query_conditions(user=None):
 	return "`tabEmployee Checkin`.employee in ({0})".format(", ".join(allowed))
 
 
-def checkin_has_permission(doc, user=None, permission_type=None):
-	"""Guards ONE record, opened by name or through the API."""
+def checkin_has_permission(doc: Document, user: str | None = None, ptype: str | None = None) -> bool:
+	"""Guards ONE record, opened by name or through the API.
+
+	The third parameter must be called `ptype`. Frappe calls this with `ptype=`
+	(`frappe/permissions.py`, has_controller_permissions) and `frappe.call` drops
+	any keyword the function does not declare, so under another name it is always
+	None and a create looks the same as a read.
+	"""
 	is_hr, emp = _viewer(user)
 	if is_hr:
+		return True
+	# ALV-302. The machine account files a new punch for anybody, and that is all.
+	if ptype == "create" and doc.is_new() and SYNC_ROLE in frappe.get_roles(user):
 		return True
 	if not emp:
 		return False

@@ -193,6 +193,8 @@ doc_events = {
     # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
     "Employee Checkin": {
         "onload": "alvoraa_portal.field_app_access.log_photo_view",
+        # ALV-302: a machine punch keeps the time the machine recorded.
+        "before_insert": "alvoraa_portal.field_app_access.keep_machine_punch_time",
     },
 
     "Employee": {

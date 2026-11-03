@@ -75,7 +75,6 @@ waiting. Two conditions, both settled by Surbhi on 3 November 2026.
 
 import base64
 import binascii
-import hashlib
 import io
 from typing import Any
 
@@ -98,11 +97,10 @@ ACCESS_LOG = "Alvoraa Photo Access Log"
 SOURCE = {CLAIM: "Expense bill", REQUEST: "Day-fix evidence"}
 NAME_PREFIX = {CLAIM: "bill", REQUEST: "dayfix"}
 
-RULE_SUBMIT = "081-SEC-3"
-RULE_TYPE = "081-SEC-4"
+# Only the two rules a REFUSAL quotes. The others were declared and never used
+# - the subtract pass took them, along with an unused `hashlib` import.
 RULE_BIND = "081-SEC-5"
 RULE_READ = "081-SEC-6"
-RULE_RETAIN = "081-PRIV-1"
 
 # ── the numbers, and where each one comes from ───────────────────────────────
 

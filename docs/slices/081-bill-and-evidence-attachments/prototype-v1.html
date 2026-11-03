@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alvora · Slice 081 · A bill on a claim, evidence on a regularization · prototype v1</title>
+<style>
+/* Alvora design-system tokens, copied from templates/includes/design_system.html */
+html[data-theme="light"]{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;
+  --text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;
+  --primary-d:#3D3461;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;
+  --red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);
+}
+html[data-theme="dark"]{
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;
+  --text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;
+  --primary-d:#7A6BA8;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;
+  --red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+  --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60);
+}
+:root{
+  --font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --r:10px;--r-sm:6px;--r-full:999px;
+  --fs-xs:11px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:var(--fs-base)}
+
+/* review scaffolding: wraps, never sticky (ux-learnings) */
+#rv{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;
+    display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end}
+#rv h1{font-size:var(--fs-md);margin:0 8px 0 0;font-weight:700;align-self:center}
+#rv .g{display:flex;flex-direction:column;gap:3px}
+#rv label{font-size:var(--fs-xs);color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+#rv select{font:inherit;font-size:var(--fs-sm);padding:6px 8px;border:1px solid var(--border2);
+  border-radius:var(--r-sm);background:var(--surface);color:var(--text);min-height:34px}
+#rv .note{font-size:var(--fs-xs);color:var(--text3);max-width:44em;line-height:1.55;flex:1 1 20em}
+#rv .samp{background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber);
+  border-radius:var(--r-full);padding:3px 9px;font-size:var(--fs-xs);font-weight:700;align-self:center}
+
+#stage{padding:20px 14px 70px;display:flex;justify-content:center}
+.app{width:100%;max-width:960px}
+.app.phone{max-width:390px;border:10px solid #121212;border-radius:30px;overflow:hidden;box-shadow:var(--sh3)}
+.app.phone.narrow{max-width:360px}
+.ph-bar{background:#121212;color:#fff;font-size:10px;padding:4px 14px;display:flex;justify-content:space-between}
+.pane{padding:14px;background:var(--bg)}
+.hdr{font-size:var(--fs-lg);font-weight:700;margin:0 0 2px}
+.hdr-s{font-size:var(--fs-sm);color:var(--text3);margin:0 0 14px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:var(--sh1);padding:14px;margin-bottom:12px}
+.card h2{font-size:var(--fs-md);margin:0 0 4px}
+.sub{font-size:var(--fs-sm);color:var(--text3)}
+
+.btn{font:inherit;font-size:16px;min-height:44px;padding:11px 15px;border-radius:var(--r-sm);
+  border:1px solid transparent;cursor:pointer;background:var(--surface2);color:var(--text);
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;line-height:1.25}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-outline{background:transparent;border-color:var(--border2);color:var(--text)}
+.btn[disabled]{opacity:.6;cursor:default}
+.btn-sm{min-height:44px;font-size:var(--fs-base);padding:8px 12px}
+.btn:focus-visible,select:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+.gp-backdrop{background:rgba(0,0,0,.45);padding:14px 8px;border-radius:var(--r)}
+.gp-modal{background:var(--surface);border-radius:var(--r);box-shadow:var(--sh3);max-width:480px;margin:0 auto;overflow:hidden}
+.gp-modal-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 8px 10px 14px;border-bottom:1px solid var(--border)}
+.gp-modal-title{font-weight:700;font-size:var(--fs-md)}
+.gp-modal-close{background:none;border:0;font-size:22px;line-height:1;color:var(--text3);cursor:pointer;min-width:44px;min-height:44px}
+.gp-modal-body{padding:14px}
+.gp-modal-footer{display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border);flex-wrap:wrap}
+.gp-modal-footer .btn{flex:1 1 9em}
+.gp-field{margin-bottom:12px}
+.gp-label{font-size:var(--fs-sm);font-weight:600;margin-bottom:5px}
+.gp-input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--border2);
+  border-radius:var(--r-sm);background:var(--surface);color:var(--text);max-width:36em}
+.gp-row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(13em,100%),1fr));gap:12px}
+.gp-hint{font-size:var(--fs-sm);color:var(--text3);line-height:1.55;margin:7px 0 0}
+.gp-error{background:var(--red-lt);color:var(--red);border-radius:var(--r-sm);padding:10px 12px;
+  font-size:var(--fs-base);line-height:1.55;margin-bottom:12px}
+.send-fail{background:var(--amber-lt);color:var(--amber);border-radius:var(--r-sm);padding:10px 12px;
+  margin-top:10px;font-size:var(--fs-base);line-height:1.55}
+.send-fail b{display:block}
+.send-fail span{display:block;margin-top:2px}
+
+/* the file control, new in 081 */
+.fc{border:1px solid var(--border);border-radius:var(--r);padding:12px;background:var(--surface2);margin-bottom:14px}
+.fc-lab{font-size:var(--fs-sm);font-weight:600}
+.fc-lab .rq{color:var(--text2);font-weight:400}
+.fc-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+.fc-btns .btn{flex:1 1 9.5em}
+.fc-say{font-size:var(--fs-base);line-height:1.55;margin-top:9px;display:flex;gap:8px;align-items:flex-start}
+.fc-say.ok{color:var(--green)}
+.fc-say.bad{color:var(--red)}
+.fc-say .ic{flex:0 0 auto;font-weight:700}
+.fc-shown{display:flex;gap:11px;align-items:flex-start;margin-top:10px;flex-wrap:wrap}
+.fc-thumb{width:82px;height:102px;border-radius:var(--r-sm);border:1px solid var(--border2);
+  background:#fff;flex:0 0 auto;overflow:hidden;position:relative}
+.fc-thumb .bill{position:absolute;inset:0;padding:5px;font-size:5.5px;line-height:1.4;color:#333;font-family:ui-monospace,monospace}
+.fc-thumb .bill .b{font-size:9px;font-weight:700}
+.fc-thumb.pdf{display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);
+  color:var(--text2);background:var(--surface);font-family:var(--font);text-align:center;padding:6px}
+.fc-meta{flex:1 1 11em;min-width:0}
+.fc-meta .n{font-weight:600;font-size:var(--fs-base);word-break:break-word}
+.fc-meta .s{font-size:var(--fs-sm);color:var(--text3);margin-top:3px}
+.fc-meta .acts{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+.spin{width:15px;height:15px;border:2px solid var(--border2);border-top-color:var(--primary);
+  border-radius:50%;display:inline-block;animation:sp .8s linear infinite;flex:0 0 auto;margin-top:3px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{background:var(--green-lt);color:var(--green);border:1px solid var(--green);
+  border-radius:var(--r-sm);padding:11px 12px;font-weight:600;margin-bottom:12px}
+
+.lrow{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:10px}
+.lrow .top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.lrow .nm{font-weight:600}
+.chip{display:inline-block;font-size:var(--fs-sm);padding:3px 9px;border-radius:var(--r-full);
+  border:1px solid var(--border2);color:var(--text2);background:var(--surface2)}
+.chip.g{background:var(--green-lt);color:var(--green);border-color:var(--green)}
+.chip.a{background:var(--amber-lt);color:var(--amber);border-color:var(--amber)}
+.ev{font-size:var(--fs-base);margin-top:9px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ev .w{color:var(--text2)}
+.ev .w.none{color:var(--text3)}
+
+.hm-row{display:flex;width:100%;gap:10px;align-items:center;text-align:left;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r);padding:10px;margin-bottom:8px;
+  font:inherit;cursor:pointer;min-height:56px;color:var(--text)}
+.hm-av{width:34px;height:34px;border-radius:var(--r-full);background:var(--primary-lt);color:var(--primary);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm);flex:0 0 auto}
+.hm-rt{flex:1 1 auto;min-width:0}
+.hm-l1{display:block;font-weight:600}
+.hm-l2{display:block;font-size:var(--fs-sm);color:var(--text3);margin-top:1px}
+.hm-l3{display:block;font-size:var(--fs-sm);color:var(--text2);margin-top:4px;font-weight:600}
+.hm-l3.none{color:var(--text3);font-weight:400}
+.hm-go{color:var(--primary);font-size:var(--fs-sm);flex:0 0 auto}
+
+.sheet{background:var(--surface);border:1px solid var(--border);border-radius:16px 16px var(--r) var(--r);
+  box-shadow:var(--sh3);overflow:hidden;margin-top:12px}
+.sheet .sh-h{padding:12px 14px;border-bottom:1px solid var(--border);font-weight:700;
+  display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sheet .sh-p{padding:14px}
+.sheet .sh-f{padding:12px 14px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap}
+.sheet .sh-f .btn{flex:1 1 9em}
+.hm-fact{background:var(--surface2);border-radius:var(--r);padding:12px;margin:10px 0}
+.hm-amt{font-size:var(--fs-xl);font-weight:700}
+.hm-sub{font-size:var(--fs-sm);color:var(--text3);margin-top:3px}
+.hm-note{font-size:var(--fs-sm);color:var(--text2);line-height:1.55}
+.viewrow{margin:12px 0 2px}
+.viewrow .btn{width:100%}
+
+.dv{background:#111;border-radius:var(--r);overflow:hidden;margin-top:12px;border:2px solid var(--primary)}
+.dv-h{display:flex;justify-content:space-between;align-items:center;padding:7px 8px 7px 12px;color:#fff;
+  background:rgba(0,0,0,.65);font-size:var(--fs-base);gap:10px}
+.dv-h .x{background:none;border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:var(--r-sm);
+  min-height:44px;min-width:44px;font:inherit;font-size:16px;cursor:pointer}
+.dv-b{padding:12px;display:flex;justify-content:center}
+.dv-f{color:rgba(255,255,255,.7);font-size:var(--fs-sm);padding:0 12px 10px;text-align:center}
+.billimg{background:#fff;color:#222;width:100%;max-width:290px;padding:13px;
+  font-family:ui-monospace,monospace;font-size:10px;line-height:1.6;border-radius:3px}
+.billimg .big{font-size:16px;font-weight:700}
+.billimg hr{border:0;border-top:1px dashed #999;margin:7px 0}
+.pdfpg{background:#fff;color:#222;width:100%;max-width:290px;padding:16px;font-size:10px;line-height:1.7;border-radius:3px}
+
+.desk{background:var(--surface);color:var(--text);border-radius:var(--r);border:1px solid var(--border);overflow:hidden}
+.desk-h{padding:11px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:var(--fs-md);
+  display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.desk-b{padding:16px}
+.desk-msg{border:1px solid var(--red);background:var(--red-lt);border-radius:var(--r-sm);padding:14px;max-width:34em}
+.desk-msg .t{font-weight:700;color:var(--red);margin-bottom:7px}
+.desk-msg p{margin:0 0 10px;line-height:1.6;color:var(--text)}
+.desk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(16em,100%),1fr));gap:12px;margin-bottom:14px}
+
+.note-blk{border-left:3px solid var(--primary);background:var(--primary-lt);color:var(--text);
+  padding:10px 12px;border-radius:var(--r-sm);font-size:var(--fs-sm);line-height:1.6;margin-bottom:14px}
+.note-blk b{display:block;margin-bottom:3px}
+.bug{border-left:3px solid var(--red);background:var(--red-lt);color:var(--text);
+  padding:10px 12px;border-radius:var(--r-sm);font-size:var(--fs-sm);line-height:1.6;margin-bottom:12px}
+.bug b{display:block;color:var(--red)}
+.ac-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px}
+.ac-form label.form-label{display:block;font-size:var(--fs-sm);font-weight:600;margin:0 0 5px}
+.ac-form select,.ac-form textarea{width:100%;font:inherit;font-size:16px;padding:10px 12px;
+  border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);
+  margin-bottom:11px;max-width:36em}
+.ac-help{font-size:var(--fs-sm);color:var(--text3);line-height:1.55;margin:-5px 0 11px}
+.ac-acts{display:flex;gap:9px;flex-wrap:wrap}
+.ac-acts .btn{flex:1 1 10em}
+.daytbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
+.daytbl td{padding:10px;border-top:1px solid var(--border);font-size:var(--fs-base);vertical-align:top}
+.daytbl tr:first-child td{border-top:0}
+
+.big-text{font-size:26px}
+.big-text .pane .hdr{font-size:36px}
+.big-text .btn,.big-text .gp-input,.big-text .ac-form select,.big-text .ac-form textarea{font-size:32px;min-height:66px}
+.big-text .gp-label,.big-text .fc-lab,.big-text .gp-hint,.big-text .fc-say,.big-text .hm-l2,
+.big-text .hm-l3,.big-text .hm-note,.big-text .sub,.big-text .chip,.big-text .fc-meta .s,
+.big-text .hm-sub,.big-text .ac-help,.big-text .note-blk,.big-text .hdr-s,.big-text .dv-f{font-size:24px}
+.big-text .hm-amt{font-size:46px}
+.big-text .gp-modal-title,.big-text .fc-meta .n,.big-text .hm-l1,.big-text .lrow .nm,
+.big-text .card h2,.big-text .sheet .sh-h{font-size:28px}
+</style>
+</head>
+<body>
+<div id="rv"></div>
+<div id="stage"></div>
+<script>
+"use strict";
+
+/* ── review state ───────────────────────────────────────────────────────── */
+var S = {screen:"ec", state:"empty", dev:"phone", theme:"light", lang:"en", big:"no"};
+
+/* Screens, and the states each one has. A state missing from here is a state
+   missing from the design, so the list is the contract. */
+var SCREENS = [
+  ["ec",     "Employee · New expense claim (phone)"],
+  ["eclist", "Employee · My expense claims"],
+  ["ar",     "Employee · Fix a day (regularization)"],
+  ["arcard", "Employee · My day-fix request"],
+  ["ap",     "Approver · pending, sheet, viewer"],
+  ["hr",     "HR · day-fix queue"],
+  ["desk",   "Desk · Expense Claim at submit"]
+];
+var STATES = {
+  ec:[
+    ["empty",    "1 · nothing attached"],
+    ["nocam",    "2 · camera gave nothing back"],
+    ["shrink",   "3 · making the picture smaller"],
+    ["upload",   "4 · sending the picture on 3G"],
+    ["attached", "5 · shown back with its size (photo)"],
+    ["pdf",      "5b · shown back (PDF)"],
+    ["bigimg",   "6 · photo still too large"],
+    ["bigpdf",   "6b · PDF too large"],
+    ["badtype",  "7 · a file we cannot read (server)"],
+    ["noread",   "7b · this phone could not read it (device)"],
+    ["uplost",   "8 · the picture did not send, file still held"],
+    ["nofile",   "9 · Send pressed with no bill — the server refuses"],
+    ["sending",  "10 · Sending the claim"],
+    ["offline",  "11 · offline, bill and details still here"],
+    ["noanswer", "12 · no answer from the office"],
+    ["sent",     "13 · sent"]
+  ],
+  eclist:[["mix","claims with a bill, and an older one without"]],
+  ar:[
+    ["empty",   "1 · notice, then the two buttons"],
+    ["shrink",  "2 · making the picture smaller"],
+    ["attached","3 · attached, shown back"],
+    ["sending", "4 · asking HR"]
+  ],
+  arcard:[["mix","my requests, one with evidence"]],
+  ap:[
+    ["rows",   "1 · pending for you — words in the row"],
+    ["sheet",  "2 · the sheet, View bill above the decision"],
+    ["opening","3 · Opening the bill…"],
+    ["openfail","4 · the bill did not open"],
+    ["viewer", "5 · the bill, above the sheet (as it must work)"],
+    ["bug",    "5b · as it works TODAY — the viewer is behind the sheet"],
+    ["nobill", "6 · an older claim with no bill"],
+    ["decided","7 · another role-holder already decided it"]
+  ],
+  hr:[["mix","a queue of day-fix requests, one with evidence"],["view","the evidence open"]],
+  desk:[["refuse","submit refused, with the clause only HR can act on"]]
+};
+
+/* ── words. Hindi is a machine draft where one exists; everything else falls
+      back to English and is listed in 01b as still to translate. ─────────── */
+var T = {
+  en:{
+    fcLab:"Photo of the bill", fcReq:" · required",
+    fcHelp:"A photo or a PDF. We make the picture smaller on your phone before it is sent.",
+    take:"Take a photo of the bill", choose:"Choose a file",
+    nobill:"No bill? Ask HR to file this claim with your signed statement of what you spent.",
+    shrink:"Making the picture smaller…",
+    upl:"Sending the picture…",
+    att:"Bill attached", viewfull:"View full size", replace:"Replace", remove:"Remove",
+    nocam:"Nothing was chosen. If the camera will not open, use Choose a file.",
+    bigimg:"This photo is still 3.4 MB after we shrank it. The limit is 1 MB — take it again with just the bill in the frame.",
+    bigpdf:"This PDF is 7.2 MB and the limit is 3 MB. Send one page with the bill on it, or photograph the bill instead.",
+    badtype:"We can take a JPG, a PNG or a PDF. Most phones can take a JPG — try again from the camera.",
+    noread:"This phone could not read that picture. Use “Take a photo of the bill” instead — nothing has been sent.",
+    uplostH:"We could not send the picture. Nothing was lost.",
+    uplostL:"Your bill is still here. When you have signal, tap Send the picture again.",
+    uplostB:"Send the picture again",
+    nofile:"A claim needs a photo or a PDF of the bill. Please attach one and send it again.",
+    offH:"We could not reach the office. Nothing was sent.",
+    offL:"Your details and your bill are still here. When you have signal, tap Try again.",
+    naH:"No answer from the office. It may have gone through.",
+    naL:"Look in your list before you send it again.",
+    tryagain:"Try again", close:"Close", sending:"Sending…",
+    sent:"Expense claim submitted.",
+    mTitle:"New Expense Claim", cancel:"Cancel", submit:"Submit Claim",
+    type:"Expense Type", date:"Expense Date", amt:"Amount (₹)", purpose:"Purpose / Description",
+    required:" *", pickType:"Diesel — own vehicle",
+    deskRefT:"This claim cannot be submitted yet",
+    deskRef1:"A claim needs a photo or a PDF of the bill.",
+    deskRef2:"Where there is no bill, attach the employee’s signed statement of what was spent and why there is no bill.",
+    arLab:"Add a photo or document if you have one",
+    arNotice:"Your manager reads this request, and will see any file you attach. Attaching one is your choice — HR can fix the day without it.",
+    arTake:"Take a photo", arAtt:"Attached", arAsk:"Ask HR to fix this day",
+    arWhat:"What went wrong?", arPick:"Choose a reason…",
+    arReason:"The biometric did not read my thumb",
+    arHelp:"HR checks the gate register for that day. The day would be marked Present.",
+    arKnow:"Anything HR should know",
+    apBill:"Bill attached", apNoBill:"No bill attached",
+    apView:"View bill", apOpening:"Opening the bill…",
+    apFail:"The bill did not open. Check your signal and tap View bill again.",
+    apFinal:"Approving passes it to accounts for payment. You cannot take it back here.",
+    approve:"Approve", decline:"Decline",
+    apDecidedT:"Already decided",
+    apDecidedL:"Priya Nair approved this 4 minutes ago. There is nothing for you to do.",
+    apBack:"Back to what is waiting",
+    hrEv:"Evidence attached", hrView:"View", hrNoEv:"No file attached",
+    dvFoot:"Shown here so you do not have to save a copy.",
+    waiting:"Waiting for approval", waitingWho:"Waiting for Sunil Mehra",
+    myClaims:"My expense claims", mine:"My requests",
+    pendT:"Pending for you", pendS:"Requests that need you today."
+  },
+  hi:{
+    fcLab:"बिल की फ़ोटो", fcReq:" · ज़रूरी",
+    fcHelp:"फ़ोटो या PDF। बहेजने से पहले हम तस्वीर आपके फोन पर ही क्षोटी कर देते हैं।",
+    take:"बिल की फ़ोटो खींचिए", choose:"फ़ाइल छांटिए",
+    nobill:"बिल नहीं है? HR से कहिए कि आपके हस्ताक्षर किए हुए ब्यौरे के साथ यह क्लेम दर्ज कर दें।",
+    bigimg:"यह फ़ोटो क्षोटा करने के बाद भी 3.4 MB है। सीमा 1 MB है — फ्रेम में सिर्य़ बिल रखकर दोबारा खींचिए।",
+    bigpdf:"यह PDF 7.2 MB है और सीमा 3 MB है। बिल वाला एक पेज भेजिए, या बिल की फ़ोटो खींजिए।",
+    badtype:"हम JPG, PNG या PDF ले सकते हैं। ज़्यादातर फोन JPG खींच सकते हैं — कैमरे से दोबारा कोशिश कीजिए।",
+    arNotice:"आपका यह अनुरोध आपका मैनेजर पढ़ता है, और आप जो फ़ाइल लगाएँगे वह उन्हें भी दिखेगी। फ़ाइल लगाना आपकी मर्ज़ी है — इसके बिना भी HR आपका दिन ठीक कर सकता है।",
+    nofile:"क्लेम के साथ बिल की फ़ोटो या PDF ज़रूरी है। कृपया एक लगाकर दोबारा भेजिए।"
+  }
+};
+function t(k){ var h=T.hi[k]; return (S.lang==="hi" && h) ? h : T.en[k]; }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+/* ── review bar ─────────────────────────────────────────────────────────── */
+function sel(id,label,opts,val){
+  return '<div class="g"><label for="'+id+'">'+esc(label)+'</label><select id="'+id+'">'
+    + opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(o[0]===val?" selected":"")+">"+esc(o[1])+"</option>"; }).join("")
+    + "</select></div>";
+}
+function drawBar(){
+  var st = STATES[S.screen] || [];
+  if (!st.some(function(o){return o[0]===S.state;})) S.state = st[0][0];
+  document.getElementById("rv").innerHTML =
+      '<h1>Slice 081 · prototype v1</h1><span class="samp">Sample data</span>'
+    + sel("sc","Screen",SCREENS,S.screen)
+    + sel("st","State",st,S.state)
+    + sel("dv","Device",[["phone","Phone 390"],["narrow","Phone 360"],["desk","Desktop 960"]],S.dev)
+    + sel("th","Theme",[["light","Light"],["dark","Dark"]],S.theme)
+    + sel("lg","Language",[["en","English"],["hi","हिंदी (draft)"]],S.lang)
+    + sel("bg","Text size",[["no","100%"],["yes","200%"]],S.big)
+    + '<p class="note">Every name, number and bill here is invented — nothing is real tenant '
+    + 'data. Hindi is a machine draft on the designed copy only; the rest falls back to English '
+    + 'and is listed in the design as still to translate.</p>';
+  ["sc","st","dv","th","lg","bg"].forEach(function(id){
+    document.getElementById(id).addEventListener("change", function(e){
+      var map={sc:"screen",st:"state",dv:"dev",th:"theme",lg:"lang",bg:"big"};
+      if (id==="sc") S.state = STATES[e.target.value][0][0];
+      S[map[id]] = e.target.value;
+      draw();
+    });
+  });
+}
+
+/* ── small pieces ───────────────────────────────────────────────────────── */
+function billFace(scale){
+  return '<div class="billimg"'+(scale?' style="max-width:200px"':'')+'>'
+    + 'BHARAT PETROLEUM<br>RO: DTC DEPOT RD, NOIDA<br>'
+    + '<hr>03-11-2026  18:42<br>DIESEL&nbsp;&nbsp;&nbsp;&nbsp;4.42 L<br>RATE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;95.02<br>'
+    + '<hr><span class="big">TOTAL ₹420.00</span><hr>VEH: DL1PC-4471<br>CASH<br>'
+    + '<span style="font-size:8px;color:#777">Sample bill</span></div>';
+}
+function thumbPhoto(){
+  return '<div class="fc-thumb" aria-hidden="true"><div class="bill">BHARAT PETROLEUM<br>DTC DEPOT RD<br>'
+    + '03-11-2026<br>DIESEL 4.42 L<br>RATE 95.02<br><span class="b">₹420.00</span><br>DL1PC-4471</div></div>';
+}
+function thumbPdf(){ return '<div class="fc-thumb pdf" aria-hidden="true">PDF<br>2 pages</div>'; }
+function say(cls, icon, text){
+  return '<p class="fc-say '+cls+'" role="status" aria-live="polite">'
+    + (icon==="spin" ? '<span class="spin"></span>' : '<span class="ic" aria-hidden="true">'+esc(icon)+"</span>")
+    + "<span>"+esc(text)+"</span></p>";
+}
+function phoneWrap(inner){
+  var cls = S.dev==="desk" ? "app" : ("app phone" + (S.dev==="narrow"?" narrow":""));
+  var bar = S.dev==="desk" ? "" :
+    '<div class="ph-bar"><span>9:41</span><span>3G · ●●○○</span></div>';
+  return '<div class="'+cls+(S.big==="yes"?" big-text":"")+'">'+bar+'<div class="pane">'+inner+"</div></div>";
+}
+
+/* ── the file control, every state ──────────────────────────────────────── */
+function fileControl(mode){
+  /* mode: the state of the expense-claim control */
+  var h = '<div class="fc">'
+    + '<div class="fc-lab">'+esc(t("fcLab"))+'<span class="rq">'+esc(t("fcReq"))+"</span></div>"
+    + '<p class="gp-hint" style="margin-top:3px">'+esc(t("fcHelp"))+"</p>";
+  var buttons = '<div class="fc-btns">'
+    + '<button type="button" class="btn btn-primary">📷 '+esc(t("take"))+"</button>"
+    + '<button type="button" class="btn btn-outline">'+esc(t("choose"))+"</button></div>";
+  if (mode==="empty")   h += buttons;
+  if (mode==="nocam")   h += buttons + say("", "ℹ", t("nocam"));
+  if (mode==="shrink")  h += say("", "spin", t("shrink"));
+  if (mode==="upload")  h += say("", "spin", t("upl")) + '<div class="fc-shown">'+thumbPhoto()
+      + '<div class="fc-meta"><div class="n">bill-03-nov.jpg</div><div class="s">380 KB · 1600 px</div></div></div>';
+  if (mode==="attached") h += '<div class="fc-shown">'+thumbPhoto()
+      + '<div class="fc-meta"><div class="n">'+esc(t("att"))+'</div>'
+      + '<div class="s">380 KB · 1600 px · bill-03-nov.jpg</div>'
+      + '<div class="acts"><button type="button" class="btn btn-outline btn-sm">'+esc(t("viewfull"))+"</button>"
+      + '<button type="button" class="btn btn-outline btn-sm">'+esc(t("replace"))+"</button></div></div></div>"
+      + say("ok","✓", t("att"));
+  if (mode==="pdf") h += '<div class="fc-shown">'+thumbPdf()
+      + '<div class="fc-meta"><div class="n">'+esc(t("att"))+'</div>'
+      + '<div class="s">1.8 MB · hotel-invoice.pdf</div>'
+      + '<div class="acts"><button type="button" class="btn btn-outline btn-sm">'+esc(t("viewfull"))+"</button>"
+      + '<button type="button" class="btn btn-outline btn-sm">'+esc(t("replace"))+"</button></div></div></div>"
+      + say("ok","✓", t("att"));
+  if (mode==="bigimg")  h += buttons + say("bad","⚠", t("bigimg"));
+  if (mode==="bigpdf")  h += buttons + say("bad","⚠", t("bigpdf"));
+  if (mode==="badtype") h += buttons + say("bad","⚠", t("badtype"));
+  if (mode==="noread")  h += buttons + say("bad","⚠", t("noread"));
+  if (mode==="uplost")  h += '<div class="fc-shown">'+thumbPhoto()
+      + '<div class="fc-meta"><div class="n">bill-03-nov.jpg</div><div class="s">380 KB</div>'
+      + '<div class="acts"><button type="button" class="btn btn-primary btn-sm">'+esc(t("uplostB"))+"</button>"
+      + '<button type="button" class="btn btn-outline btn-sm">'+esc(t("replace"))+"</button></div></div></div>"
+      + '<div class="send-fail" role="alert"><b>'+esc(t("uplostH"))+"</b><span>"+esc(t("uplostL"))+"</span></div>";
+  /* The route for somebody who has no bill at all. Standing text, always on. */
+  h += '<p class="gp-hint">'+esc(t("nobill"))+"</p></div>";
+  return h;
+}
+
+/* ── screen: the expense claim modal ───────────────────────────────────── */
+function scEc(){
+  var m = S.state, fcMode = m;
+  if (m==="nofile"||m==="sending"||m==="offline"||m==="noanswer") fcMode = "empty";
+  if (m==="offline"||m==="noanswer") fcMode = "attached";
+  if (m==="sent") return phoneWrap(
+      '<div class="toast" role="status">✓ '+esc(t("sent"))+"</div>"
+    + '<p class="hdr">'+esc(t("myClaims"))+"</p>"
+    + claimRow("Diesel — own vehicle","3 Nov 2026","₹420.00","a",t("waitingWho"),true)
+    + '<div class="note-blk"><b>Why this screen</b>The modal closes, the toast says it went, '
+    + 'and the new row already carries “Bill attached · View” — so the person can check '
+    + 'their own photograph came out readable. Nobody else can tell them that.</div>');
+
+  var body = "";
+  if (m==="nofile") body += '<div class="gp-error" role="alert">'+esc(t("nofile"))+"</div>";
+  /* EC8: every input gets a real <label for>. Today these are <div>s, so no
+     input in this modal has an accessible name at all. */
+  body += fileControl(fcMode)
+    + '<div class="gp-field"><label class="gp-label" for="ec-t">'+esc(t("type"))+esc(t("required"))+"</label>"
+    + '<select class="gp-input" id="ec-t"><option>'+esc(t("pickType"))+"</option></select></div>"
+    + '<div class="gp-row2"><div class="gp-field"><label class="gp-label" for="ec-d">'+esc(t("date"))+esc(t("required"))+"</label>"
+    + '<input class="gp-input" id="ec-d" type="date" value="2026-11-03"></div>'
+    + '<div class="gp-field"><label class="gp-label" for="ec-a">'+esc(t("amt"))+esc(t("required"))+"</label>"
+    + '<input class="gp-input" id="ec-a" type="number" value="420.00"></div></div>'
+    + '<div class="gp-field"><label class="gp-label" for="ec-p">'+esc(t("purpose"))+"</label>"
+    + '<textarea class="gp-input" id="ec-p" rows="2">Diesel, Noida depot run</textarea></div>';
+  if (m==="offline") body += '<div class="send-fail" role="alert"><b>'+esc(t("offH"))+"</b><span>"+esc(t("offL"))+"</span></div>";
+  if (m==="noanswer") body += '<div class="send-fail" role="alert"><b>'+esc(t("naH"))+"</b><span>"+esc(t("naL"))+"</span></div>";
+
+  var foot;
+  if (m==="noanswer") foot = '<button class="btn btn-outline" style="flex:1 1 100%">'+esc(t("close"))+"</button>";
+  else if (m==="sending") foot = '<button class="btn btn-outline">'+esc(t("cancel"))+"</button>"
+      + '<button class="btn btn-primary" disabled>'+esc(t("sending"))+"</button>";
+  else if (m==="offline") foot = '<button class="btn btn-outline">'+esc(t("cancel"))+"</button>"
+      + '<button class="btn btn-primary">'+esc(t("tryagain"))+"</button>";
+  else foot = '<button class="btn btn-outline">'+esc(t("cancel"))+"</button>"
+      + '<button class="btn btn-primary">'+esc(t("submit"))+"</button>";
+
+  var notes = {
+    empty:"The bill control comes FIRST, above Expense Type. It is the only step that can fail, the only one that needs the bill in the person’s hand, and — because the file uploads on its own — a size refusal arrives before anything has been typed.",
+    nocam:"A denied camera returns no file and no error. So the hint appears after a camera pick that came back empty, and it names the other button rather than guessing at the cause.",
+    shrink:"1600 px long edge, JPEG 82, in the browser. On a cheap phone a 12 MP decode can take two or three seconds, so this state is real and needs words, not a frozen button.",
+    upload:"The shrunk picture is shown back while it uploads, so the wait has something in it. No percentage bar: a real one is not reliably available on a 3G POST.",
+    attached:"The size is on screen on purpose. The person who photographed the bill is the only one who can tell it came out readable — and this is also how the five-real-bills test gets measured.",
+    pdf:"A PDF has no preview thumbnail, so the row says the type, the name and the size instead. 3 MB cap, not 1 MB: you cannot photograph a PDF closer.",
+    bigimg:"The server’s own sentence, with the real figure in it. One thing to do. Never “upload failed”.",
+    bigpdf:"A separate sentence, because the advice differs: you cannot stand closer to a PDF.",
+    badtype:"The magic-byte check refuses anything that is not a JPG, PNG or PDF — including a HEIC that reached the server unconverted.",
+    noread:"The device’s own refusal, before a single byte leaves the phone. This is the iPhone answer: the browser canvas turns HEIC into JPEG, and when it cannot, the person hears so in one second rather than after a 4 MB upload.",
+    uplost:"The picture is held on the device. Retrying costs the photo again, not the claim — and nothing the person typed is lost.",
+    nofile:"The refusal that must come from the SERVER, in the server’s own words, in the place the Send was pressed. The form also hides this state by guarding first; the test asserts the server’s sentence anyway.",
+    sending:"One press, one request. The button says what is happening and cannot be pressed twice.",
+    offline:"Slice 070’s state, with one word changed: “your details AND YOUR BILL are still here”. The promise has to cover the new thing.",
+    noanswer:"There is no duplicate guard on the server, so nothing offers to send again. Only Close, and “look in your list”."
+  };
+  var inner = '<p class="hdr">'+esc(t("myClaims"))+'</p><p class="hdr-s">Ramesh Kumar · DTC · Sample</p>'
+    + '<div class="gp-backdrop"><div class="gp-modal"><div class="gp-modal-hdr">'
+    + '<div class="gp-modal-title">'+esc(t("mTitle"))+'</div>'
+    + '<button class="gp-modal-close" aria-label="Close">&times;</button></div>'
+    + '<div class="gp-modal-body">'+body+'</div>'
+    + '<div class="gp-modal-footer">'+foot+"</div></div></div>"
+    + (notes[m] ? '<div class="note-blk"><b>Why this state looks like this</b>'+esc(notes[m])+"</div>" : "");
+  return phoneWrap(inner);
+}
+
+/* ── screen: my claims ─────────────────────────────────────────────────── */
+function claimRow(type,date,amt,chip,chipTxt,hasBill){
+  return '<div class="lrow"><div class="top"><div><div class="nm">'+esc(type)+"</div>"
+    + '<div class="sub">'+esc(date)+"</div></div>"
+    + '<div style="text-align:right"><div class="nm">'+esc(amt)+"</div>"
+    + '<span class="chip '+esc(chip)+'">'+esc(chipTxt)+"</span></div></div>"
+    + '<div class="ev">'
+    + (hasBill
+        ? '<span class="w">✓ '+esc(t("apBill"))+'</span><button type="button" class="btn btn-outline btn-sm">'+esc(t("viewfull"))+"</button>"
+        : '<span class="w none">'+esc(t("apNoBill"))+"</span>")
+    + "</div></div>";
+}
+function scEclist(){
+  return phoneWrap('<p class="hdr">'+esc(t("myClaims"))+'</p><p class="hdr-s">Ramesh Kumar · Sample</p>'
+    + claimRow("Diesel — own vehicle","3 Nov 2026","₹420.00","a",t("waitingWho"),true)
+    + claimRow("Medical — clinic","28 Oct 2026","₹1,150.00","a",t("waiting"),true)
+    + claimRow("Autorickshaw","12 Oct 2026","₹120.00","g","Approved",false)
+    + '<div class="note-blk"><b>Three things in these rows</b>'
+    + '“Bill attached · View full size” opens the same viewer the approver uses, so a person can '
+    + 'check their own photograph. The older October claim honestly says “No bill attached” rather '
+    + 'than offering a View that opens nothing. And the medical claim says only “Waiting for '
+    + 'approval” — it is routed to a role, and printing a Frappe role name at a driver would '
+    + 'mean nothing to him.</div>');
+}
+
+/* ── screen: the regularization form ───────────────────────────────────── */
+function scAr(){
+  var m = S.state;
+  var fc = '<div class="fc"><div class="fc-lab">'+esc(t("arLab"))+"</div>"
+    + '<p class="gp-hint" style="margin-top:4px">'+esc(t("arNotice"))+"</p>";
+  if (m==="empty"||m==="sending") fc += '<div class="fc-btns">'
+    + '<button type="button" class="btn btn-outline">📷 '+esc(t("arTake"))+"</button>"
+    + '<button type="button" class="btn btn-outline">'+esc(t("choose"))+"</button></div>";
+  if (m==="shrink") fc += say("","spin",t("shrink"));
+  if (m==="attached") fc += '<div class="fc-shown">'+thumbPhoto()
+    + '<div class="fc-meta"><div class="n">'+esc(t("arAtt"))+'</div>'
+    + '<div class="s">210 KB · gate-register.jpg</div>'
+    + '<div class="acts"><button type="button" class="btn btn-outline btn-sm">'+esc(t("viewfull"))+"</button>"
+    + '<button type="button" class="btn btn-outline btn-sm">'+esc(t("remove"))+"</button></div></div></div>";
+  fc += "</div>";
+
+  var form = '<div class="ac-form">'
+    + '<label class="form-label" for="acr">'+esc(t("arWhat"))+"</label>"
+    + '<select id="acr"><option>'+esc(t("arReason"))+"</option></select>"
+    + '<p class="ac-help">'+esc(t("arHelp"))+"</p>"
+    + '<label class="form-label" for="acx">'+esc(t("arKnow"))+"</label>"
+    + '<textarea id="acx" rows="2">Thumb would not read at the depot gate. The guard noted me in the register.</textarea>'
+    + fc
+    + '<div class="ac-acts">'
+    + '<button class="btn btn-primary"'+(m==="sending"?" disabled":"")+">"
+    + esc(m==="sending" ? t("sending") : t("arAsk"))+"</button>"
+    + '<button class="btn btn-outline">'+esc(t("cancel"))+"</button></div></div>";
+
+  return phoneWrap('<p class="hdr">My attendance</p><p class="hdr-s">Ramesh Kumar · November 2026 · Sample</p>'
+    + '<table class="daytbl"><tr><td><b>Mon 2 Nov</b><br><span class="sub">Present · 9:04 – 18:12</span></td></tr>'
+    + '<tr><td><b>Tue 3 Nov</b><br><span class="sub">Marked absent</span><div style="margin-top:10px">'
+    + form+"</div></td></tr></table>"
+    + '<div class="note-blk"><b>The notice, and why it is grey</b>'
+    + 'Two facts and no advice: who reads the request, and that attaching a file is the person’s '
+    + 'own choice. It sits directly above the two buttons, so it is read BEFORE a file is chosen — '
+    + 'that position is the requirement, not the presence of the words. It is plain grey hint text, '
+    + 'not a coloured warning: a warning box on an optional field pushes people away from giving HR '
+    + 'the one thing that would settle the day. Nothing here restricts the manager, by design.</div>'
+    + '<div class="bug"><b>Measured, and it needs the engineer</b>'
+    + 'This form renders inside a table cell in the day row. At 360 px and 200% text the buttons '
+    + 'leave the screen, so after a file is attached the action row must be scrolled into view. '
+    + 'Switch Device to Phone 360 and Text size to 200% to see it.</div>');
+}
+function scArcard(){
+  return phoneWrap('<p class="hdr">'+esc(t("mine"))+'</p><p class="hdr-s">Ramesh Kumar · Sample</p>'
+    + '<div class="lrow"><div class="top"><div><div class="nm">The biometric did not read my thumb</div>'
+    + '<div class="sub">3 Nov 2026</div></div><span class="chip a">With your manager</span></div>'
+    + '<p class="sub" style="margin:8px 0 0;line-height:1.55">“Thumb would not read at the depot gate. '
+    + 'The guard noted me in the register.”</p>'
+    + '<div class="ev"><span class="w">✓ '+esc(t("hrEv"))+'</span>'
+    + '<button type="button" class="btn btn-outline btn-sm">'+esc(t("viewfull"))+"</button></div></div>"
+    + '<div class="lrow"><div class="top"><div><div class="nm">I was at the Okhla depot</div>'
+    + '<div class="sub">21 Oct 2026</div></div><span class="chip g">Fixed · Present</span></div>'
+    + '<div class="ev"><span class="w none">'+esc(t("hrNoEv"))+"</span></div></div>"
+    + '<div class="note-blk"><b>One line, inside the card that is already there</b>'
+    + 'No new section and no thumbnail. The same “View”, the same viewer, the same words as '
+    + 'everywhere else.</div>');
+}
+
+/* ── screen: the approver ──────────────────────────────────────────────── */
+function pendRow(av,l1,l2,l3,none){
+  return '<button type="button" class="hm-row"><span class="hm-av" aria-hidden="true">'+esc(av)+"</span>"
+    + '<span class="hm-rt"><span class="hm-l1">'+esc(l1)+'</span><span class="hm-l2">'+esc(l2)+"</span>"
+    + (l3 ? '<span class="hm-l3'+(none?" none":"")+'">'+esc(l3)+"</span>" : "")
+    + '</span><span class="hm-go" aria-hidden="true">›</span></button>';
+}
+function expSheet(viewState, decided){
+  var body = '<div class="sh-p"><div class="hm-l1" style="font-size:var(--fs-lg)">Ramesh Kumar</div>'
+    + '<div class="hm-note" style="margin:3px 0 0">Expense claim</div>'
+    + '<div class="hm-fact"><div class="hm-amt">₹420.00</div>'
+    + '<div class="hm-sub">Diesel — own vehicle · 3 Nov 2026</div>'
+    + '<div class="hm-sub" style="color:var(--text)">Diesel, Noida depot run</div></div>';
+  if (decided) {
+    body += '<div class="gp-error" role="alert"><b>'+esc(t("apDecidedT"))+"</b><br>"+esc(t("apDecidedL"))+"</div>";
+    body += '<div class="hm-note">Waiting 3 days.</div></div>';
+    return '<div class="sheet"><div class="sh-h"><span>Expense claim</span>'
+      + '<button class="gp-modal-close" aria-label="Close">&times;</button></div>'+body
+      + '<div class="sh-f"><button class="btn btn-outline" style="flex:1 1 100%">'+esc(t("apBack"))+"</button></div></div>";
+  }
+  body += '<div class="viewrow">';
+  if (viewState==="opening") body += '<button class="btn btn-outline" disabled><span class="spin"></span> '+esc(t("apOpening"))+"</button>";
+  else if (viewState==="nobill") body += '<p class="hm-note" style="margin:0">'+esc(t("apNoBill"))+'. '
+      + 'This claim was filed before a bill was required.</p>';
+  else body += '<button class="btn btn-outline">🗎 '+esc(t("apView"))+"</button>";
+  body += "</div>";
+  if (viewState==="openfail") body += '<div class="send-fail" role="alert"><b>'+esc(t("apFail"))+"</b></div>";
+  body += '<div class="hm-note" style="margin-top:10px">Waiting 3 days. '+esc(t("apFinal"))+"</div></div>";
+  return '<div class="sheet"><div class="sh-h"><span>Expense claim</span>'
+    + '<button class="gp-modal-close" aria-label="Close">&times;</button></div>'+body
+    + '<div class="sh-f"><button class="btn btn-primary">'+esc(t("approve"))+"</button>"
+    + '<button class="btn btn-outline">'+esc(t("decline"))+"</button></div></div>";
+}
+function viewer(kind){
+  return '<div class="dv" role="dialog" aria-modal="true" aria-label="Bill — Ramesh Kumar, 3 November 2026">'
+    + '<div class="dv-h"><span>Bill · Ramesh Kumar · 3 Nov 2026</span>'
+    + '<button class="x" aria-label="'+esc(t("close"))+'">✕</button></div>'
+    + '<div class="dv-b">'+(kind==="pdf"
+        ? '<div class="pdfpg"><b>HOTEL SARAI · TAX INVOICE</b><br>GSTIN 09AABCS1429B1Z1<br><br>'
+          + 'Room 214 · 2 nights<br>₹2,400.00<br>CGST/SGST ₹288.00<br><br><b>TOTAL ₹2,688.00</b>'
+          + '<br><br><span style="color:#777">Sample · page 1 of 2</span></div>'
+        : billFace())
+    + "</div>"
+    + '<p class="dv-f">'+esc(t("dvFoot"))+"</p></div>";
+}
+function scAp(){
+  var m = S.state;
+  var head = '<p class="hdr">'+esc(t("pendT"))+'</p><p class="hdr-s">Sunil Mehra · supervisor, DTC · Sample</p>';
+  var rows = pendRow("RK","Ramesh Kumar","Expense claim · ₹420 · 3 Nov · waiting 3 days", t("apBill"))
+    + pendRow("AS","Anil Sharma","Expense claim · ₹1,980 · 1 Nov · waiting 5 days", t("apBill"))
+    + pendRow("MD","Mohan Das","Expense claim · ₹260 · 14 Oct · waiting 20 days", t("apNoBill"), true)
+    + pendRow("PK","Pooja Kaur","Attendance fix · 2 Nov", t("hrEv"));
+  var note = "";
+  if (m==="rows") {
+    note = '<div class="note-blk"><b>Words in the row, the action in the sheet</b>'
+      + 'The row is a single &lt;button&gt;, so a “View” link inside it would be a button inside a '
+      + 'button — unreachable by keyboard. So the row only tells the truth in words, and the '
+      + 'button to open the bill lives in the sheet the row opens. The 14 October claim says '
+      + '“No bill attached”, because an empty View is worse than an honest absence.</div>';
+    return phoneWrap(head+rows+note);
+  }
+  var sheet, extra = "";
+  if (m==="sheet")   { sheet = expSheet("idle"); extra = '<div class="note-blk"><b>Before the irreversible act</b>'
+      + '“View bill” sits in the body, above Approve and Decline, never between them. The decision '
+      + 'buttons stay the only things in the footer, so the evidence is read before the act that '
+      + 'cannot be taken back.</div>'; }
+  if (m==="opening") { sheet = expSheet("opening"); extra = '<div class="note-blk"><b>Say the wait out loud</b>'
+      + 'A 1 MB bill on 3G is seconds. Today the button is disabled and nothing on screen changes '
+      + 'until it fails. The button carries its own state instead.</div>'; }
+  if (m==="openfail"){ sheet = expSheet("openfail"); extra = '<div class="note-blk"><b>A failure that says what to do</b>'
+      + 'Not “could not load”. The claim is still decidable and the button is still there.</div>'; }
+  if (m==="nobill")  { sheet = expSheet("nobill"); extra = '<div class="note-blk"><b>An older claim</b>'
+      + 'The rule fires at submit, so claims already submitted never meet it. They stay decidable, '
+      + 'and the sheet says plainly that there is nothing to open.</div>'; }
+  if (m==="decided") { sheet = expSheet("idle", true); extra = '<div class="note-blk"><b>The state the approver ROLE creates</b>'
+      + 'With a role, several people can open the same claim. Whoever acts first is recorded as the '
+      + 'approver, so everyone else needs this honest dead end — who acted, when, and that there is '
+      + 'nothing left to do. <b>The mechanism behind it is NOT designed here</b> (brief §3.3): it is the '
+      + 'analyst’s and the engineer’s. This screen ships wherever the role flow ships.</div>'; }
+  if (m==="viewer")  { sheet = viewer("img") + expSheet("idle");
+      extra = '<div class="note-blk"><b>The viewer is ABOVE the sheet</b>'
+      + 'This is the one change the reuse plan needs and does not have: <code>.mpf-dv</code> is '
+      + 'z-index 1250 and <code>.hm-ov</code> is 1300, both in panels.css. Raise the viewer above '
+      + 'the sheet (1400 is clear of everything) — lowering the sheet is not available, because '
+      + '1200 is already the employee’s own modal. Closing the viewer returns focus to the '
+      + '“View bill” button and leaves the sheet exactly as it was.</div>'; }
+  if (m==="bug")     { sheet = expSheet("idle");
+      extra = '<div class="bug"><b>This is what ships if nobody moves the number</b>'
+      + 'The approver taps “View bill”, the viewer opens at 1250 behind the sheet at 1300, and '
+      + 'the screen does not change. Nothing says it failed, because nothing did. Measured in '
+      + 'panels.css:712 and :3064. P1 — the slice’s whole point ships blank.</div>'; }
+  return phoneWrap(head + rows + sheet + extra);
+}
+
+/* ── screen: HR's day-fix queue ────────────────────────────────────────── */
+function scHr(){
+  var m = S.state;
+  function card(nm,reason,day,hasFile){
+    return '<div class="lrow"><div class="top"><div><div class="nm">'+esc(nm)+"</div>"
+      + '<div class="sub">'+esc(reason)+" · "+esc(day)+"</div></div>"
+      + '<span class="chip a">Waiting</span></div>'
+      + '<div class="ev">'
+      + (hasFile
+          ? '<span class="w">✓ '+esc(t("hrEv"))+'</span><button type="button" class="btn btn-outline btn-sm">'+esc(t("hrView"))+"</button>"
+          : '<span class="w none">'+esc(t("hrNoEv"))+"</span>")
+      + '</div><div class="ac-acts" style="margin-top:10px">'
+      + '<button class="btn btn-primary btn-sm">Fix the day</button>'
+      + '<button class="btn btn-outline btn-sm">Decline</button></div></div>';
+  }
+  var list = card("Pooja Kaur","Biometric did not read","2 Nov 2026",true)
+    + card("Ramesh Kumar","Biometric did not read","3 Nov 2026",true)
+    + card("Mohan Das","I was at another depot","1 Nov 2026",false);
+  var inner = '<p class="hdr">Days to fix</p><p class="hdr-s">Kavita Rao · HR, DTC · 3 waiting of 47 · Sample</p>';
+  if (m==="view") inner += viewer("img") + list
+    + '<div class="note-blk"><b>One file per tap</b>No thumbnails in the list, no preloading, no '
+    + '“open all”. The endpoint reads a whole file into one of eight request slots, so a 47-row '
+    + 'queue that preloaded pictures would be the slowest page in the product on the surface that '
+    + 'matters most.</div>';
+  else inner += list
+    + '<div class="note-blk"><b>One line inside the card HR already reads</b>'
+    + 'These cards are not single buttons — they already carry Fix and Decline — so “View” can be '
+    + 'a real button here. Same words, same viewer, same promise as every other surface.</div>';
+  return phoneWrap(inner);
+}
+
+/* ── screen: Desk at submit ────────────────────────────────────────────── */
+function scDesk(){
+  var inner = '<div class="desk"><div class="desk-h"><span>Expense Claim · HR-EXP-2026-00318</span>'
+    + '<span class="chip">Draft · saved</span></div><div class="desk-b">'
+    + '<div class="desk-grid"><div><div class="gp-label">Employee</div>'
+    + '<div>HR-EMP-00412 · Ramesh Kumar</div></div>'
+    + '<div><div class="gp-label">Company</div><div>Delhi Transport Co · Sample</div></div>'
+    + '<div><div class="gp-label">Total claimed</div><div>₹420.00</div></div>'
+    + '<div><div class="gp-label">Attachments</div><div>None</div></div></div>'
+    + '<div class="desk-msg" role="alert"><div class="t">'+esc(t("deskRefT"))+"</div>"
+    + "<p>"+esc(t("deskRef1"))+"</p><p>"+esc(t("deskRef2"))+"</p>"
+    + '<button class="btn btn-outline btn-sm">'+esc(t("close"))+"</button></div>"
+    + '<p class="gp-hint" style="max-width:34em">The draft is still saved. Only Submit is blocked.</p>'
+    + "</div></div>"
+    + '<div class="note-blk"><b>One rule, one first sentence — plus one clause only HR can act on</b>'
+    + 'The first sentence is word-for-word the one the driver sees in the portal, so the rule has a '
+    + 'single voice. The second sentence exists only here, because HR is the only person who can '
+    + 'attach a signed statement on somebody’s behalf. The declaration IS the file — it is not an '
+    + 'exemption from the rule, and the wording must never drift into suggesting a claim can be '
+    + 'filed without one.</div>'
+    + '<div class="note-blk"><b>At submit, not at save</b>'
+    + 'Frappe only draws the attachment sidebar on a document that already exists, so “must have a '
+    + 'file” cannot be checked at save. Checking it at submit also covers the REST API and data '
+    + 'import for free, and leaves a half-finished draft a legal draft.</div>';
+  return '<div class="app'+(S.big==="yes"?" big-text":"")+'"><div class="pane">'
+    + '<p class="hdr">Desk · Expense Claim</p><p class="hdr-s">Kavita Rao · HR Manager · Sample</p>'
+    + inner+"</div></div>";
+}
+
+/* ── draw ──────────────────────────────────────────────────────────────── */
+function draw(){
+  document.documentElement.setAttribute("data-theme", S.theme);
+  document.documentElement.setAttribute("lang", S.lang);
+  drawBar();
+  var f = {ec:scEc, eclist:scEclist, ar:scAr, arcard:scArcard, ap:scAp, hr:scHr, desk:scDesk}[S.screen];
+  document.getElementById("stage").innerHTML = f();
+}
+draw();
+</script>
+</body>
+</html>

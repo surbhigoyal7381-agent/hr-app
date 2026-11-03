@@ -26,6 +26,15 @@ blanket grant would hand every manager their team's payslips as a side effect
 of a correction workflow. Each permission here names one doctype and reaches
 no further.
 
+A ROLE THAT MUST NEVER BE RESTRICTED GETS NOTHING (ALV-293). A row
+RESTRICTS; it never grants. So a person who is both a line manager and an HR
+Manager was getting rows scoped to their direct reports, and that row then
+capped their HR-wide sight at exactly those reports - measured on production
+on 3 Nov 2026, an HR Manager could see 796 of 18,903 attendance records. The
+excluded-role list is `own_record_permission.excluded_roles()`, reused rather
+than copied, because "who must never be restricted" has to have one answer.
+Skipping the row costs such a person nothing: HR already sees everyone.
+
 `Employee` IS DELIBERATELY NOT ON THE LIST. A manager needs a report's name,
 branch and shift to read the screen, and those already arrive through
 `attendance_correction.team_days`, which decides permission explicitly and
@@ -35,6 +44,8 @@ solved.
 """
 
 import frappe
+
+from alvoraa_portal.own_record_permission import excluded_roles
 
 # What a manager must reach to review a day and ask for it to be fixed.
 # Deliberately short. Adding to it is a decision about what a manager may see,
@@ -49,11 +60,21 @@ SCOPED_DOCTYPES = (
 ALLOW = "Employee"
 
 
-def _user_of(employee):
+def _user_of(employee: str) -> str | None:
 	return frappe.db.get_value("Employee", employee, "user_id")
 
 
-def grant(manager_employee, report_employee):
+def never_restrict(user: str) -> bool:
+	"""True for a login that must never carry a restricting row (ALV-293).
+
+	The list is `own_record_permission.excluded_roles()` - HR, System Manager,
+	Administrator and anything else this site lets read Employee - so there is
+	one answer to "who must never be restricted", not two that can drift.
+	"""
+	return bool(set(frappe.get_roles(user)) & excluded_roles())
+
+
+def grant(manager_employee: str, report_employee: str) -> int:
 	"""Let one manager act for one report, on the four doctypes above.
 
 	Runs by itself: a permission that already exists is left alone, so this can
@@ -61,6 +82,11 @@ def grant(manager_employee, report_employee):
 	"""
 	user = _user_of(manager_employee)
 	if not user or not report_employee:
+		return 0
+	if never_restrict(user):
+		# ALV-293. Both write paths come through here - `after_migrate` via
+		# sync_for_manager, and the Employee on_update hook directly - so this
+		# is the one place the check has to be.
 		return 0
 	made = 0
 	for dt in SCOPED_DOCTYPES:
@@ -84,7 +110,7 @@ def grant(manager_employee, report_employee):
 	return made
 
 
-def revoke(manager_employee, report_employee):
+def revoke(manager_employee: str, report_employee: str) -> int:
 	"""Take it back when somebody stops reporting to them.
 
 	Only the permissions this module creates: `applicable_for` is always set
@@ -104,7 +130,7 @@ def revoke(manager_employee, report_employee):
 	return gone
 
 
-def sync_for_manager(manager_employee):
+def sync_for_manager(manager_employee: str) -> dict[str, int]:
 	"""Make the permissions match who reports to this manager right now.
 
 	Grants what is missing and removes what no longer belongs. This is what
@@ -115,15 +141,21 @@ def sync_for_manager(manager_employee):
 	their own reports, who review theirs. Granting the whole subtree would give
 	a regional head every punch in the region, which is a different decision
 	from the one taken here.
+
+	A MANAGER WHO MUST NEVER BE RESTRICTED should own nothing here, so their
+	target list is empty and every row this module ever wrote for them is
+	removed through the ordinary revoke path (ALV-293). That is what repairs a
+	tenant where the rows already exist; it runs on `after_migrate`, so a line
+	manager promoted to HR keeps the rows until the next deploy.
 	"""
 	user = _user_of(manager_employee)
 	if not user:
 		return {"granted": 0, "revoked": 0}
 
-	should = set(frappe.get_all("Employee",
-	                            filters={"reports_to": manager_employee,
-	                                     "status": "Active"},
-	                            pluck="name", limit_page_length=0))
+	should = set() if never_restrict(user) else set(frappe.get_all(
+		"Employee",
+		filters={"reports_to": manager_employee, "status": "Active"},
+		pluck="name", limit_page_length=0))
 	have = set(frappe.get_all("User Permission",
 	                          filters={"user": user, "allow": ALLOW,
 	                                   "applicable_for": ("in", SCOPED_DOCTYPES)},

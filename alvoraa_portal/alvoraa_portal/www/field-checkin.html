@@ -144,6 +144,11 @@ button{font-family:inherit}
 .cam video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .cam .off{color:#fff;text-align:center;padding:18px;font-size:var(--fs-base)}
 .cam .off .btn{margin-top:12px}
+/* iPhone: no live picture, so no big dark box. Just the words. */
+#b-nophoto[hidden]{display:none}   /* .btn sets display:flex, which beats hidden */
+.cam.picker{flex:0 1 auto;min-height:0;background:var(--surface);border:1px solid var(--border)}
+.cam.picker .off{color:var(--text)}
+.cam.picker .off .muted{margin-top:8px}
 .cam .tag{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.62);color:#fff;
   font-size:var(--fs-sm);font-weight:650;padding:5px 10px;border-radius:var(--r-full)}
 .flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:60}
@@ -363,6 +368,10 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
       <div data-t="home.cam.off">The camera is off. You can still check in, but there will be no photo.</div>
       <button class="btn ghost" id="b-cam-retry" data-t="home.cam.retry">Turn on the camera</button>
     </div>
+    <div class="off" id="cam-picker" hidden>
+      <div data-t="home.cam.picker">Press the button below and your camera opens. Take your photo and confirm it to save your attendance.</div>
+      <div class="muted" data-t="home.cam.picker.help">If the camera does not open, close and reopen the app, or check in without a photo.</div>
+    </div>
   </div>
 
   <div class="punches" id="punches" aria-labelledby="punches-h">
@@ -379,6 +388,9 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
       </svg>
       <span id="b-punch-text" data-t="home.checkin">Check In</span>
     </button>
+    <button class="btn link" id="b-nophoto" data-t="home.nophoto.in" hidden>Check in without a photo</button>
+    <!-- Hidden with .sronly, not display:none: this has to be able to open. -->
+    <input type="file" id="i-photo" class="sronly" accept="image/*" capture="user" tabindex="-1" aria-hidden="true">
   </div>
 </section>
 
@@ -406,7 +418,7 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
     <div class="card">
       <div class="kv"><span class="k" data-t="res.where">Where you were</span><span class="v" id="res-place">&mdash;</span></div>
       <div class="kv"><span class="k" data-t="res.photo">Photo</span><span class="v" id="res-photo">&mdash;</span></div>
-      <div class="kv" id="res-photo-why" hidden><span class="k"></span><span class="v" style="font-weight:400;color:var(--text3);font-size:var(--fs-sm)">The camera was not on. Your attendance still counts.</span></div>
+      <div class="kv" id="res-photo-why" hidden><span class="k"></span><span class="v" id="res-photo-why-text" style="font-weight:400;color:var(--text3);font-size:var(--fs-sm)" data-t="res.photo.why">No photo was saved with this punch. Your attendance still counts.</span></div>
       <div class="kv"><span class="k" data-t="res.saved">Saved</span><span class="v" id="res-saved">&mdash;</span></div>
     </div>
     <p class="muted" style="margin:0 16px" data-t="res.privacy">Only HR and your supervisor can see this.</p>
@@ -528,9 +540,14 @@ var T = {
   "home.cam.tag":        ["Your photo is taken when you press the button", "बटन दबाते ही फ़ोटो लिया जाएगा"],
   "home.cam.off":        ["The camera is off. You can still check in, but there will be no photo.", "कैमरा बंद है। आप फिर भी चेक इन कर सकते हैं, पर फ़ोटो नहीं होगी।"],
   "home.cam.retry":      ["Turn on the camera", "कैमरा चालू करें"],
+  "home.cam.picker":     ["Press the button below and your camera opens. Take your photo and confirm it to save your attendance.", "नीचे का बटन दबाएँ, कैमरा खुल जाएगा। फ़ोटो लें और उसकी पुष्टि करें, तब हाज़िरी सेव होगी।"],
+  "home.cam.picker.help":["If the camera does not open, close and reopen the app, or check in without a photo.", "अगर कैमरा न खुले, तो ऐप बंद करके दोबारा खोलें, या बिना फ़ोटो के चेक इन करें।"],
+  "home.nophoto.in":     ["Check in without a photo", "बिना फ़ोटो के चेक इन करें"],
+  "home.nophoto.out":    ["Check out without a photo", "बिना फ़ोटो के चेक आउट करें"],
   "home.place":          ["You must be within {0} m of {1}", "आपको {1} से {0} मीटर के अंदर होना चाहिए"],
 
   "busy.photo":          ["Taking your photo", "फ़ोटो ली जा रही है"],
+  "busy.ready":          ["Getting your photo ready", "आपकी फ़ोटो तैयार हो रही है"],
   "busy.place":          ["Finding where you are", "आपकी जगह देखी जा रही है"],
   "busy.send":           ["Saving your attendance", "हाज़िरी सेव हो रही है"],
   "busy.setup":          ["Setting up this phone", "फ़ोन सेट हो रहा है"],
@@ -541,6 +558,9 @@ var T = {
   "res.photo":           ["Photo", "फ़ोटो"],
   "res.photo.yes":       ["Taken", "ली गई"],
   "res.photo.no":        ["Not taken", "नहीं ली गई"],
+  "res.photo.failed":    ["Not saved", "सेव नहीं हुई"],
+  "res.photo.why":       ["No photo was saved with this punch. Your attendance still counts.", "इस हाज़िरी के साथ कोई फ़ोटो सेव नहीं हुई। आपकी हाज़िरी फिर भी गिनी जाएगी।"],
+  "res.photo.why.failed":["We could not use your photo, so none was saved. Your attendance still counts.", "आपकी फ़ोटो काम में नहीं ली जा सकी, इसलिए सेव नहीं हुई। आपकी हाज़िरी फिर भी गिनी जाएगी।"],
   "res.saved":           ["Saved", "सेव हो गयी"],
   "res.saved.yes":       ["In your HR record", "आपके HR रिकॉर्ड में"],
   "res.privacy":         ["Only HR and your supervisor can see this.", "यह केवल HR और आपके सुपरवाइज़र को दिखता है।"],
@@ -690,7 +710,17 @@ function position(){
 
 /* ── the camera ──────────────────────────────────────────────────────────── */
 var stream = null;
+/* iPhone and iPad take the photo through Apple's own camera screen, not the
+   live camera (ALV-297). An iPad, and possibly an iPhone asking for the desktop
+   site, says "Macintosh", so touch points tell them from a real Mac. platform()
+   is left alone: registration stores what it says. */
+var PICKER = !SAMPLE && (platform() === "iOS" || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
 function startCamera(){
+  if (PICKER) {
+    $("video").hidden = true; $("cam-tag").hidden = true; $("cam-off").hidden = true;
+    $("cam-picker").hidden = false; $("cam").classList.add("picker");
+    return;
+  }
   if (SAMPLE || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return camOff();
   navigator.mediaDevices.getUserMedia({
     video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } }, audio: false
@@ -711,7 +741,7 @@ function stopCamera(){
   stream = null;
 }
 /* A photo is evidence, not a portrait. 480px wide, JPEG 0.6, well under the
-   2 MB the server accepts, and small enough to send on a weak 3G link. */
+   400 KB the server accepts, and small enough to send on a weak 3G link. */
 function snap(){
   if (!stream) return null;
   try {
@@ -723,6 +753,36 @@ function snap(){
     x.drawImage(v, 0, 0, w, h);
     return c.toDataURL("image/jpeg", 0.6);
   } catch (e) { return null; }
+}
+
+/* Apple's camera hands over a file: several MB, and it can carry the place it
+   was taken. Only what the canvas redraws ever leaves the phone. Not
+   createImageBitmap, which loses the rotation on iPhone. No flip: the file is
+   not a mirrored preview. No photo at all is better than a broken one, because
+   the screen says "Taken" whenever a string was sent. */
+function shrink(file, done){
+  var url = URL.createObjectURL(file), img = new Image();
+  function finish(photo){
+    img.onload = img.onerror = null;
+    img.removeAttribute("src");
+    URL.revokeObjectURL(url);
+    done(photo);
+  }
+  img.onerror = function(){ finish(null); };
+  img.onload = function(){
+    var photo = null;
+    try {
+      if (img.naturalWidth > 0) {
+        var w = 480, h = Math.round(w * img.naturalHeight / img.naturalWidth);
+        var c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        var out = c.toDataURL("image/jpeg", 0.6);
+        if (out.indexOf("data:image/jpeg") === 0) photo = out;
+      }
+    } catch (e) { photo = null; }
+    finish(photo);
+  };
+  img.src = url;
 }
 
 /* ── screen 1: setup ─────────────────────────────────────────────────────── */
@@ -833,6 +893,7 @@ $("b-done").addEventListener("click", function(){ goHome(); });
 var lastStatus = null;
 function goHome(){
   show("s-home");
+  $("b-nophoto").hidden = true;
   startCamera();
   refresh();
 }
@@ -858,6 +919,7 @@ function renderHome(s){
   b.className = "btn btn-punch " + (inNow ? "out" : "in");
   $("b-punch-text").textContent = t(inNow ? "home.checkout" : "home.checkin");
   b.setAttribute("data-type", inNow ? "OUT" : "IN");
+  $("b-nophoto").textContent = t(inNow ? "home.nophoto.out" : "home.nophoto.in");
 
   var html = "";
   if (!rows.length) html = '<div class="none">' + esc(t("home.none")) + "</div>";
@@ -879,6 +941,7 @@ function renderHome(s){
 var pending = null;   /* the punch we are retrying: keeps the photo */
 $("b-punch").addEventListener("click", function(){
   var type = this.getAttribute("data-type") || "IN";
+  if (PICKER) return openPicker(type);
   busy(true, "busy.photo");
   var photo = snap();
   if (photo) { $("flash").classList.remove("go"); void $("flash").offsetWidth; $("flash").classList.add("go"); }
@@ -886,6 +949,34 @@ $("b-punch").addEventListener("click", function(){
   sendPunch();
 });
 $("b-cam-retry").addEventListener("click", startCamera);
+
+/* iPhone. Apple only opens the camera from a real tap, so this runs at once,
+   before any busy screen or GPS. waitingForPhoto is what stops a second punch:
+   a photo arriving after "without a photo" was pressed must do nothing. */
+var waitingForPhoto = false, pickerType = "IN";
+var PHOTO_TOO_OLD = 10 * 60 * 1000;
+function openPicker(type){
+  pickerType = type;
+  waitingForPhoto = true;
+  $("b-nophoto").hidden = false;   /* never before the camera has been offered */
+  $("i-photo").click();
+}
+$("i-photo").addEventListener("change", function(){
+  var file = this.files && this.files[0];
+  this.value = "";
+  if (!file || !waitingForPhoto) return;
+  waitingForPhoto = false;
+  busy(true, "busy.ready");
+  shrink(file, function(photo){
+    pending = { log_type: pickerType, photo: photo, takenAt: Date.now(), photoFailed: !photo };
+    sendPunch();
+  });
+});
+$("b-nophoto").addEventListener("click", function(){
+  waitingForPhoto = false;
+  pending = { log_type: pickerType, photo: null };
+  sendPunch();
+});
 
 function sendPunch(){
   busy(true, "busy.place");
@@ -920,7 +1011,9 @@ function result(res, sent){
   var wl = lastStatus && lastStatus.work_location;
   $("res-place").textContent = wl ? t("res.atwork", wl.name) : t("res.recorded");
   var hadPhoto = !!(sent && sent.photo);
-  $("res-photo").textContent = t(hadPhoto ? "res.photo.yes" : "res.photo.no");
+  var photoFailed = !!(sent && sent.photoFailed);
+  $("res-photo").textContent = t(hadPhoto ? "res.photo.yes" : photoFailed ? "res.photo.failed" : "res.photo.no");
+  $("res-photo-why-text").textContent = t(photoFailed ? "res.photo.why.failed" : "res.photo.why");
   $("res-photo-why").hidden = hadPhoto;
   /* The picture itself, when there is one. The plain tick stands in when the
      camera was off, so the screen never looks broken. */
@@ -1054,7 +1147,19 @@ var ACTIONS = {
      the buttons a person actually presses went through it - so arriving at the
      check-in screen from any error, or from the confirmation, left the camera
      off and every punch afterwards recorded "Photo: Not taken". */
-  retry: { key: "btn.try",   run: function(){ if (pending) { show("s-home"); startCamera(); sendPunch(); } else { goHome(); } } },
+  retry: { key: "btn.try",   run: function(){
+    /* iPhone, refused as too far, photo over 10 minutes old: the person may
+       have walked or driven since, so take a new one. This is a real tap, so
+       the camera may open. No captured_at: it would mark the punch Recorded
+       Offline. */
+    if (pending && PICKER && pending.tooFar && pending.photo && Date.now() - pending.takenAt > PHOTO_TOO_OLD) {
+      var type = pending.log_type;
+      pending = null;
+      show("s-home"); startCamera();
+      return openPicker(type);
+    }
+    if (pending) { show("s-home"); startCamera(); sendPunch(); } else { goHome(); }
+  } },
   home:  { key: "btn.back",  run: function(){ pending = null; goHome(); } },
   setup: { key: "btn.setup", run: function(){ pending = null; stopCamera(); show("s-setup"); } }
 };
@@ -1062,6 +1167,7 @@ function pick(pair){ return pair[store.lang === "hi" ? 1 : 0] || pair[0]; }
 
 function problem(kind, serverText){
   var d = PROBLEMS[kind] || PROBLEMS.UNKNOWN;
+  if (kind === "OUTSIDE" && pending) pending.tooFar = true;
   $("err-who").textContent = store.employee_name || "";
   $("err-big").className = "big " + (d.tone === "stop" ? "stop" : d.tone === "ok" ? "ok" : "warn");
   $("err-icon").innerHTML = ICONS[d.icon] || ICONS.stop;
@@ -1227,6 +1333,9 @@ function boot(){
 }
 document.addEventListener("visibilitychange", function(){
   if (document.hidden) { stopCamera(); }
+  /* iPhone: coming back from the camera must not refresh. If that refresh
+     failed it would draw "not saved" over a punch that was saved. */
+  else if (PICKER && (waitingForPhoto || $("busy").classList.contains("on"))) { return; }
   else if (current === "s-home") { startCamera(); refresh(); }
 });
 boot();

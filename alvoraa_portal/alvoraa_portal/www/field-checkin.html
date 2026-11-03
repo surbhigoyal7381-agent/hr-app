@@ -145,7 +145,7 @@ button{font-family:inherit}
 .cam .off{color:#fff;text-align:center;padding:18px;font-size:var(--fs-base)}
 .cam .off .btn{margin-top:12px}
 /* iPhone: no live picture, so no big dark box. Just the words. */
-#b-nophoto[hidden]{display:none}   /* .btn sets display:flex, which beats hidden */
+.btn[hidden]{display:none}   /* .btn sets display:flex, which beats hidden */
 .cam.picker{flex:0 1 auto;min-height:0;background:var(--surface);border:1px solid var(--border)}
 .cam.picker ~ .footer{margin-top:auto}   /* the button stays at the bottom, where the thumb is */
 .cam.picker .off{color:var(--text)}
@@ -1334,9 +1334,17 @@ function boot(){
 }
 document.addEventListener("visibilitychange", function(){
   if (document.hidden) { stopCamera(); }
-  /* iPhone: coming back from the camera must not refresh. If that refresh
-     failed it would draw "not saved" over a punch that was saved. */
-  else if (PICKER && (waitingForPhoto || $("busy").classList.contains("on"))) { return; }
+  /* iPhone, punch on its way: a failed refresh would draw "not saved" over it. */
+  else if (PICKER && $("busy").classList.contains("on")) { return; }
+  /* iPhone, camera offered. It may have just closed, so a failed answer draws
+     nothing. But still ask: iPhone gives no signal for a Cancel, so this can stay
+     on overnight, and the morning's punch must not go as last night's Check Out. */
+  else if (PICKER && waitingForPhoto) {
+    call("field_status", { token: store.token }).then(function(s){
+      lastStatus = s; renderHome(s);
+      pickerType = $("b-punch").getAttribute("data-type") || pickerType;
+    }).catch(function(){});
+  }
   else if (current === "s-home") { startCamera(); refresh(); }
 });
 boot();

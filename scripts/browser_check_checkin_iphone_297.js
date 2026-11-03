@@ -140,6 +140,9 @@ function assertGoodJpeg(photo) {
 async function refusedTooFar(route) {
   return route.fulfill({ status: 417, json: { _server_messages: JSON.stringify([JSON.stringify({ message: TOO_FAR })]) } });
 }
+async function alreadyRecorded(route) {
+  return route.fulfill({ status: 417, json: { _server_messages: JSON.stringify([JSON.stringify({ message: "This punch is already recorded." })]) } });
+}
 /* A photo taken at home, refused as too far, and the clock moved on. */
 async function refusedThenLater(p, minutes) {
   p.answer = refusedTooFar;
@@ -229,7 +232,7 @@ const TESTS = [
       check(!(await visible(p, "b-nophoto")), "the link should go away again until the next tap");
     },
     without: [
-      [["#b-nophoto[hidden]{display:none}", ""]],
+      [[".btn[hidden]{display:none}", ""]],
       [['$("b-nophoto").hidden = false;', ""]],
       [["pending = { log_type: pickerType, photo: null };", 'pending = { log_type: pickerType, photo: "x" };']],
       [["  $(\"b-nophoto\").hidden = true;", ""]],
@@ -296,16 +299,60 @@ const TESTS = [
       check(p.posts.length === 2 && p.posts[1].photo === p.posts[0].photo, "the photo was not resent");
     },
     without: [[['if (kind === "OUTSIDE" && pending) pending.tooFar = true;', "if (pending) pending.tooFar = true;"]]] },
-  { name: "iPhone: coming back from the camera does not refresh, so it cannot draw an error", run: async (p) => {
+  { name: "iPhone: coming back with the camera shut still asks for status, and a failed answer draws no error", run: async (p) => {
       await tap(p);
       const before = p.statusCalls;
       p.statusAnswer = (route) => route.abort();
       await p.page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
       await sleep(400);
-      check(p.statusCalls === before, "a refresh ran while the camera was open");
+      check(p.statusCalls === before + 1, "status was not asked for on return");
       check(await p.page.locator("#s-home.on").count() === 1, "the error screen was drawn");
     },
-    without: [[['(waitingForPhoto || $("busy").classList.contains("on"))', '($("busy").classList.contains("on"))']]] },
+    without: [
+      [["else if (PICKER && waitingForPhoto) {", "else if (PICKER && waitingForPhoto) { return;"]],
+      [["}).catch(function(){});", "}).catch(function(e){ handle(e); });"]],
+    ] },
+  { name: "iPhone: Cancel at night, app left open: in the morning the button and the punch say Check In", opts: { checkedIn: true }, run: async (p) => {
+      await tap(p);                                 // Check Out, then Cancel: iPhone tells us nothing
+      check(await p.page.locator("#b-punch").getAttribute("data-type") === "OUT", "should start checked in");
+      p.statusAnswer = (route) => route.fulfill({ json: { message: { employee_name: "Test Person", checked_in: false, todays_checkins: [], server_time: "2026-11-04 09:00:00" } } });
+      await p.page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await p.page.waitForFunction(() => document.getElementById("b-punch").getAttribute("data-type") === "IN");
+      check(await text(p, "b-nophoto") === "Check in without a photo", "the link still says " + await text(p, "b-nophoto"));
+      await p.page.click("#b-nophoto");             // the link, without pressing the button again
+      await on(p, "s-result");
+      check(p.posts[0].log_type === "IN", "posted " + p.posts[0].log_type + " at the start of the day");
+    },
+    without: [
+      [["else if (PICKER && waitingForPhoto) {", "else if (PICKER && waitingForPhoto) { return;"]],
+      [['pickerType = $("b-punch").getAttribute("data-type") || pickerType;', ""]],
+    ] },
+  { name: "iPhone: Cancel at night, app left open: the big button also sends Check In", opts: { checkedIn: true }, run: async (p) => {
+      await tap(p);
+      p.statusAnswer = (route) => route.fulfill({ json: { message: { employee_name: "Test Person", checked_in: false, todays_checkins: [], server_time: "2026-11-04 09:00:00" } } });
+      await p.page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await p.page.waitForFunction(() => document.getElementById("b-punch").getAttribute("data-type") === "IN");
+      (await tap(p)).setFiles(smallPhoto);
+      await on(p, "s-result");
+      check(p.posts[0].log_type === "IN", "posted " + p.posts[0].log_type);
+    },
+    without: [[["else if (PICKER && waitingForPhoto) {", "else if (PICKER && waitingForPhoto) { return;"]]] },
+  { name: "iPhone: a one-action error screen shows no dead second button", run: async (p) => {
+      p.answer = alreadyRecorded;
+      (await tap(p)).setFiles(smallPhoto);
+      await on(p, "s-err");
+      check(await visible(p, "b-err-1"), "the one real button is missing");
+      check(!(await visible(p, "b-err-2")), "a dead button shows: " + await text(p, "b-err-2"));
+    },
+    without: [[[".btn[hidden]{display:none}", ""]]] },
+  { name: "Android: a one-action error screen shows no dead second button", opts: { ua: ANDROID }, run: async (p) => {
+      await p.page.waitForFunction(() => document.getElementById("video").readyState >= 2);
+      p.answer = alreadyRecorded;
+      await p.page.click("#b-punch");
+      await on(p, "s-err");
+      check(!(await visible(p, "b-err-2")), "a dead button shows: " + await text(p, "b-err-2"));
+    },
+    without: [[[".btn[hidden]{display:none}", ""]]] },
   { name: "iPhone: coming back while the punch is being sent does not refresh either", run: async (p) => {
       let release;
       p.answer = async (route, body) => { await new Promise((r) => { release = r; });
@@ -321,7 +368,7 @@ const TESTS = [
       release();
       await on(p, "s-result");
     },
-    without: [[['(waitingForPhoto || $("busy").classList.contains("on"))', "(waitingForPhoto)"]]] },
+    without: [[['else if (PICKER && $("busy").classList.contains("on")) { return; }', ""]]] },
   { name: "iPhone: when already checked in, the link says Check out and posts OUT", opts: { checkedIn: true }, run: async (p) => {
       await tap(p);
       check(await text(p, "b-nophoto") === "Check out without a photo", "wrong words: " + await text(p, "b-nophoto"));

@@ -70,3 +70,16 @@ class IphoneCameraPinCase(FrappeTestCase):
 		self.assertIn('"res.photo.why.failed":', self.page)
 		self.assertIn('"busy.ready":', self.page)
 		self.assertNotIn("2 MB the server accepts", self.page)
+
+	def test_297_a_hidden_button_is_really_hidden(self):
+		""".btn sets display:flex, which beats hidden: the error screen showed a dead button."""
+		self.assertIn(".btn[hidden]{display:none}", self.page)
+
+	def test_297_a_cancel_does_not_stop_the_page_asking_for_status(self):
+		"""iPhone gives no signal for a cancel. Left overnight, the page must still learn
+		the day changed, or the morning punch goes as OUT."""
+		start = self.page.index("else if (PICKER && waitingForPhoto) {")
+		branch = self.page[start : start + 300]
+		self.assertIn('call("field_status"', branch)
+		self.assertIn("renderHome(s)", branch)
+		self.assertIn('pickerType = $("b-punch").getAttribute("data-type")', branch)

@@ -25,11 +25,16 @@ Fail-without-fix recipe:
     changing tests fail;
   * drop `doc.is_new()` from the hook: the changing test fails (create on a saved punch);
   * drop the role check from the hook: the colleague test fails;
-  * drop the role check from `keep_machine_punch_time`: the own-time test fails;
+  * let everybody through `check_machine_punch`: the own-time test fails;
   * give the role every row in `checkin_query_conditions`: the list test fails.
 
 The reading and colleague tests pass with no fix at all, because they describe
 what is already true. They exist to catch a fix that opens too much.
+
+The review of this slice added three things, pinned below: only a true machine
+account (exactly this role, no Employee record) keeps the sent time; a machine
+punch must be dated within 90 days back and one day ahead; and the role may move
+Shift Type's last-sync marker and change nothing else on that doctype.
 """
 
 import frappe
@@ -39,7 +44,7 @@ from frappe.desk.reportview import execute as report_execute
 from frappe.desk.search import search_link
 from frappe.permissions import add_permission
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, get_datetime, today
+from frappe.utils import add_days, add_to_date, get_datetime, now_datetime, today
 
 from alvoraa_goals.tests.utils import ensure_company
 from alvoraa_portal.field_app_access import SYNC_ROLE
@@ -49,6 +54,8 @@ from hrms.hr.doctype.employee_checkin.employee_checkin import add_log_based_on_e
 
 CHECKIN = "Employee Checkin"
 SHIFT = "ALV302 Shift"
+MARKER_SHIFT = "ALV302 Marker Shift"
+MARKER = "last_sync_of_checkin"
 MACHINE = "ALV302-M1"
 AUTOMATIC_ROLES = {"All", "Guest", "Desk User"}
 
@@ -63,6 +70,32 @@ def _rows(read) -> list:
 		frappe.clear_messages()
 
 
+def _grant(doctype: str, **rights) -> bool:
+	"""Give the role a permission row. True when custom rows were already there."""
+	had_rows = bool(frappe.db.exists("Custom DocPerm", {"parent": doctype}))
+	add_permission(doctype, SYNC_ROLE, ptype="write")
+	frappe.db.set_value("Custom DocPerm", {"parent": doctype, "role": SYNC_ROLE}, rights)
+	return had_rows
+
+
+def _take_back(doctype: str, had_rows: bool) -> None:
+	frappe.db.delete("Custom DocPerm", {"parent": doctype, "role": SYNC_ROLE})
+	if not had_rows:
+		# We caused the copy of the standard rows, so we take it away again.
+		frappe.db.delete("Custom DocPerm", {"parent": doctype})
+
+
+def _ensure_role() -> None:
+	if not frappe.db.exists("Role", SYNC_ROLE):
+		frappe.get_doc({"doctype": "Role", "role_name": SYNC_ROLE}).insert(ignore_permissions=True)
+
+
+def _ensure_shift(name: str) -> None:
+	if not frappe.db.exists("Shift Type", name):
+		frappe.get_doc({"doctype": "Shift Type", "name": name, "start_time": "09:00:00",
+		                "end_time": "18:00:00"}).insert(ignore_permissions=True)
+
+
 class _Checks:
 	"""The checks. Each subclass runs them under one shape of the permission row."""
 
@@ -72,17 +105,9 @@ class _Checks:
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
-		if not frappe.db.exists("Role", SYNC_ROLE):
-			frappe.get_doc({"doctype": "Role", "role_name": SYNC_ROLE}).insert(ignore_permissions=True)
-
-		cls.custom_rows_before = bool(frappe.db.exists("Custom DocPerm", {"parent": CHECKIN}))
-		add_permission(CHECKIN, SYNC_ROLE, ptype="create")
-		frappe.db.set_value("Custom DocPerm", {"parent": CHECKIN, "role": SYNC_ROLE},
-		                    {"create": 1, "read": cls.CAN_READ_ROW, "write": 0})
-
-		if not frappe.db.exists("Shift Type", SHIFT):
-			frappe.get_doc({"doctype": "Shift Type", "name": SHIFT, "start_time": "09:00:00",
-			                "end_time": "18:00:00"}).insert(ignore_permissions=True)
+		_ensure_role()
+		cls.custom_rows_before = _grant(CHECKIN, create=1, read=cls.CAN_READ_ROW, write=0)
+		_ensure_shift(SHIFT)
 
 		company = ensure_company()
 		cls.sync = _user("alv302.sync", [SYNC_ROLE])
@@ -92,16 +117,27 @@ class _Checks:
 		frappe.db.set_value("Employee", cls.worker,
 		                    {"attendance_device_id": "ALV302-W", "default_shift": SHIFT})
 		frappe.db.set_value("Employee", cls.colleague, "attendance_device_id", "ALV302-C")
+		# DTC's account today: the machine role plus HR User, and no employee.
+		cls.dtc_today = _user("alv302.dtc", [SYNC_ROLE, "HR User"])
+		# A person who was also given the machine role, by mistake or by a profile.
+		cls.both = _user("alv302.both", ["Employee", SYNC_ROLE])
+		cls.both_emp = _employee("Alv302 Both", company, user=cls.both)
+		frappe.db.set_value("Employee", cls.both_emp, "attendance_device_id", "ALV302-B")
+		# Only the machine role, but linked to a person.
+		cls.linked = _user("alv302.linked", [SYNC_ROLE])
+		cls.linked_emp = _employee("Alv302 Linked", company, user=cls.linked)
+		frappe.db.set_value("Employee", cls.linked_emp, "attendance_device_id", "ALV302-L")
+		# Linking adds the Employee role. Take it off to get exactly this shape.
+		frappe.db.delete("Has Role", {"parent": cls.linked, "role": "Employee"})
 		frappe.clear_cache()
 		frappe.db.commit()
 
 	@classmethod
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
-		frappe.db.delete("Custom DocPerm", {"parent": CHECKIN, "role": SYNC_ROLE})
-		if not cls.custom_rows_before:
-			# We caused the copy of the standard rows, so we take it away again.
-			frappe.db.delete("Custom DocPerm", {"parent": CHECKIN})
+		_take_back(CHECKIN, cls.custom_rows_before)
+		frappe.db.set_value("Employee", cls.worker, "default_shift", None)
+		frappe.db.delete("Shift Type", {"name": SHIFT})
 		frappe.clear_cache()
 		frappe.db.commit()
 		super().tearDownClass()
@@ -113,7 +149,8 @@ class _Checks:
 
 	def _clean(self):
 		frappe.set_user("Administrator")
-		frappe.db.delete("Employee Checkin", {"employee": ["in", (self.worker, self.colleague)]})
+		frappe.db.delete("Employee Checkin", {"employee": ["in", (
+			self.worker, self.colleague, self.both_emp, self.linked_emp)]})
 		frappe.db.delete("File", {"file_name": "alv302-face.txt"})
 		frappe.db.commit()
 
@@ -215,6 +252,81 @@ class _Checks:
 		                    get_datetime(self.when))
 
 
+	# ── finding 2: only a true machine account ──────────────────────────────
+
+	def test_a_person_who_also_holds_the_role_cannot_file_for_a_colleague(self):
+		frappe.set_user(self.both)
+		with self.assertRaises(frappe.PermissionError):
+			add_log_based_on_employee_field("ALV302-W", self.when, device_id=MACHINE)
+		frappe.clear_messages()
+
+	def test_a_person_who_also_holds_the_role_cannot_back_date_their_own_punch(self):
+		frappe.set_user(self.both)
+		name = add_log_based_on_employee_field("ALV302-B", self.when, device_id=MACHINE).name
+		frappe.set_user("Administrator")
+		self.assertNotEqual(get_datetime(frappe.db.get_value(CHECKIN, name, "time")),
+		                    get_datetime(self.when))
+
+	def test_a_second_role_with_no_employee_record_is_not_a_machine(self):
+		# Not Employee: ERPNext takes that role off a login with no Employee record.
+		user = _user("alv302.norecord", ["Expense Approver", SYNC_ROLE])
+		self.assertEqual(set(frappe.get_roles(user)) - AUTOMATIC_ROLES, {"Expense Approver", SYNC_ROLE})
+		frappe.set_user(user)
+		with self.assertRaises(frappe.PermissionError):
+			add_log_based_on_employee_field("ALV302-W", self.when, device_id=MACHINE)
+		frappe.clear_messages()
+
+	def test_the_role_alone_with_an_employee_record_is_treated_as_a_person(self):
+		self.assertEqual(set(frappe.get_roles(self.linked)) - AUTOMATIC_ROLES, {SYNC_ROLE})
+		frappe.set_user(self.linked)
+		with self.assertRaises(frappe.PermissionError):
+			add_log_based_on_employee_field("ALV302-W", self.when, device_id=MACHINE)
+		frappe.clear_messages()
+		name = add_log_based_on_employee_field("ALV302-L", self.when, device_id=MACHINE).name
+		frappe.set_user("Administrator")
+		self.assertNotEqual(get_datetime(frappe.db.get_value(CHECKIN, name, "time")),
+		                    get_datetime(self.when))
+
+	def test_dtcs_account_as_it_is_today_still_files_with_the_machine_time(self):
+		"""Biometric Sync plus HR User, no employee: must keep working before cut-over."""
+		frappe.set_user(self.dtc_today)
+		name = add_log_based_on_employee_field("ALV302-W", self.when, device_id=MACHINE).name
+		frappe.set_user("Administrator")
+		self.assertEqual(get_datetime(frappe.db.get_value(CHECKIN, name, "time")),
+		                 get_datetime(self.when))
+
+	# ── finding 4: the machine's date has limits ────────────────────────────
+
+	def _file_on(self, days_from_today: int) -> str:
+		frappe.set_user(self.sync)
+		return add_log_based_on_employee_field(
+			"ALV302-W", f"{add_days(today(), days_from_today)} 09:05:00", device_id=MACHINE).name
+
+	def test_a_punch_90_days_old_is_filed(self):
+		self.assertTrue(self._file_on(-90))
+
+	def test_a_punch_91_days_old_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			self._file_on(-91)
+		frappe.clear_messages()
+
+	def test_a_punch_dated_tomorrow_is_filed(self):
+		self.assertTrue(self._file_on(1))
+
+	def test_a_punch_dated_two_days_ahead_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			self._file_on(2)
+		frappe.clear_messages()
+
+	def test_the_date_limit_is_only_for_the_machine_account(self):
+		"""HR entering an old punch by hand is how a real one gets recorded."""
+		frappe.set_user(self.dtc_today)
+		old = f"{add_days(today(), -200)} 09:05:00"
+		name = add_log_based_on_employee_field("ALV302-W", old, device_id=MACHINE).name
+		frappe.set_user("Administrator")
+		self.assertEqual(get_datetime(frappe.db.get_value(CHECKIN, name, "time")), get_datetime(old))
+
+
 class TestAlv302RowGrantsCreateOnly(_Checks, FrappeTestCase):
 	CAN_READ_ROW = 0
 
@@ -223,3 +335,104 @@ class TestAlv302RowAlsoGrantsRead(_Checks, FrappeTestCase):
 	"""The hook alone must hold when the tenant's row also says read."""
 
 	CAN_READ_ROW = 1
+
+
+class TestAlv302ShiftMarker(FrappeTestCase):
+	"""Finding 1. The role may move the last-sync marker forward, and nothing else."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		frappe.set_user("Administrator")
+		_ensure_role()
+		cls.custom_rows_before = _grant("Shift Type", read=1, write=1, create=0)
+		_ensure_shift(MARKER_SHIFT)
+		cls.sync = _user("alv302.sync", [SYNC_ROLE])
+		cls.dtc_today = _user("alv302.dtc", [SYNC_ROLE, "HR User"])
+		cls.both = _user("alv302.both", ["Employee", SYNC_ROLE])
+		frappe.clear_cache()
+		frappe.db.commit()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		_take_back("Shift Type", cls.custom_rows_before)
+		frappe.db.delete("Shift Type", {"name": ["in", (MARKER_SHIFT, "ALV302 New Shift")]})
+		frappe.clear_cache()
+		frappe.db.commit()
+		super().tearDownClass()
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.start = add_days(now_datetime(), -2).replace(microsecond=0)
+		frappe.db.set_value("Shift Type", MARKER_SHIFT,
+		                    {MARKER: self.start, "working_hours_threshold_for_absent": 4})
+		frappe.db.commit()
+		self.addCleanup(frappe.clear_messages)
+		self.addCleanup(frappe.set_user, "Administrator")
+
+	def _save(self, user: str, **changes) -> None:
+		frappe.set_user(user)
+		doc = frappe.get_doc("Shift Type", MARKER_SHIFT)
+		doc.update(changes)
+		doc.save()
+
+	def _stored(self, field: str = MARKER):
+		frappe.set_user("Administrator")
+		return frappe.db.get_value("Shift Type", MARKER_SHIFT, field)
+
+	def test_the_machine_moves_the_marker_forward(self):
+		target = add_to_date(self.start, hours=1)
+		self._save(self.sync, **{MARKER: target})
+		self.assertEqual(get_datetime(self._stored()), target)
+
+	def test_a_small_clock_drift_is_allowed(self):
+		target = add_to_date(now_datetime(), minutes=5).replace(microsecond=0)
+		self._save(self.sync, **{MARKER: target})
+		self.assertEqual(get_datetime(self._stored()), target)
+
+	def test_a_far_future_marker_is_refused(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._save(self.sync, **{MARKER: "2099-01-01 00:00:00"})
+		self.assertEqual(get_datetime(self._stored()), self.start)
+
+	def test_the_marker_cannot_move_back(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._save(self.sync, **{MARKER: add_days(self.start, -1)})
+		self.assertEqual(get_datetime(self._stored()), self.start)
+
+	def test_the_marker_cannot_be_emptied(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._save(self.sync, **{MARKER: None})
+		self.assertEqual(get_datetime(self._stored()), self.start)
+
+	def test_the_absent_threshold_cannot_change(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._save(self.sync, working_hours_threshold_for_absent=1.5)
+		self.assertEqual(self._stored("working_hours_threshold_for_absent"), 4)
+
+	def test_a_threshold_cannot_ride_along_with_a_good_marker_move(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._save(self.sync, working_hours_threshold_for_absent=1.5,
+			           **{MARKER: add_to_date(self.start, hours=1)})
+		self.assertEqual(self._stored("working_hours_threshold_for_absent"), 4)
+		self.assertEqual(get_datetime(self._stored()), self.start)
+
+	def test_it_cannot_create_delete_or_share_a_shift(self):
+		frappe.set_user(self.sync)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc({"doctype": "Shift Type", "name": "ALV302 New Shift", "start_time": "09:00:00",
+			                "end_time": "18:00:00"}).insert()
+		for ptype in ("create", "delete", "share", "submit", "cancel", "amend"):
+			self.assertFalse(frappe.has_permission("Shift Type", ptype, doc=MARKER_SHIFT, user=self.sync),
+			                 f"{ptype} must be refused")
+
+	def test_a_person_who_also_holds_the_role_gets_the_same_fence(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._save(self.both, working_hours_threshold_for_absent=1.5)
+		self.assertEqual(self._stored("working_hours_threshold_for_absent"), 4)
+
+	def test_dtcs_account_as_it_is_today_is_not_fenced(self):
+		"""Holding HR User it may do what HR User may do, until that role comes off."""
+		self._save(self.dtc_today, working_hours_threshold_for_absent=3)
+		self.assertEqual(self._stored("working_hours_threshold_for_absent"), 3)

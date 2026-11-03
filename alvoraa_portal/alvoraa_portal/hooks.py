@@ -193,8 +193,9 @@ doc_events = {
     # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
     "Employee Checkin": {
         "onload": "alvoraa_portal.field_app_access.log_photo_view",
-        # ALV-302: a machine punch keeps the time the machine recorded.
-        "before_insert": "alvoraa_portal.field_app_access.keep_machine_punch_time",
+        # ALV-302: a machine punch keeps the time the machine recorded, and must
+        # be dated within 90 days back and one day ahead.
+        "before_insert": "alvoraa_portal.field_app_access.check_machine_punch",
     },
 
     "Employee": {
@@ -279,6 +280,10 @@ doc_events = {
     "Shift Type": {
         # ALV-211: a new shift accepts punches 3 h before and 3 h after.
         "before_insert": "alvoraa_portal.attendance_correction.default_shift_window",
+        # ALV-302: the machine role may move last_sync_of_checkin forward and
+        # change nothing else. In this entry because a second "Shift Type" key
+        # would silently replace the handlers here.
+        "before_validate": "alvoraa_portal.field_app_access.guard_shift_type_change",
         "after_insert": "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_update":    "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_trash":     "alvoraa_portal.hr_api.invalidate_features_cache",
@@ -480,6 +485,8 @@ permission_query_conditions = {
 
 has_permission = {
     "Employee Checkin": "alvoraa_portal.field_app_access.checkin_has_permission",
+    # ALV-302: the machine role gets read and write on Shift Type, no more.
+    "Shift Type": "alvoraa_portal.field_app_access.shift_type_has_permission",
     "Alvoraa Field Device": "alvoraa_portal.field_app_access.device_has_permission",
     "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_has_permission",
     "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_has_permission",

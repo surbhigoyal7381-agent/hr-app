@@ -18,8 +18,10 @@
        There is no `order:` override, so the reflow order is the DOM order
      - the joiner picker offers the SIX the code allows, not the sixteen the
        prototype drew - the extra ten included bank account and IFSC
-     - the "must fill in" tick exists only on a ticked row, and unticking the
-       row takes it with it
+     - **the "must fill in" decision is a column** (ALV-310): its cell is in
+       every row, it is empty on a row nobody is asked for, nothing is redrawn
+       on a tick, and unticking a row still clears its mark - in place now,
+       because the row is no longer rebuilt
      - the picker saves ASKED first and REQUIRED second, because a detail
        nobody is asked for cannot be compulsory and the setter refuses it
      - HR is told plainly when the employer has not set its own values yet
@@ -112,7 +114,7 @@ const SETTINGS = () => ({
                    "person_to_be_contacted", "relation", "emergency_phone_number"],
   joiner_required_documents: [], notice_text: "Our own words.",
   hr_contact_phone: "+91 98100 00079", hr_contact_email: "",
-  joiner_not_ready: [],
+  joiner_not_ready: [], joiner_not_ready_keys: [],
   last_changed: { by: "Kiran Sandhu", on: "2026-11-01 10:00:00" },
 });
 
@@ -252,24 +254,40 @@ async function openMyProfile(routes) {
         + "happens");
   }
 
-  /* The second tick exists only on a ticked row. */
+  /* ALV-310 CHANGED THIS, and the change is the ticket. The "must fill in"
+     decision used to be a checkbox that existed only on a ticked row, which
+     meant the whole list was redrawn on every tick. It is a COLUMN now: the
+     cell is in every row, always, and is merely empty on a row that is not
+     asked for. So the attribute is on all six, and what used to be proved by
+     the box's ABSENCE is now proved by the row's class and by the box being
+     unchecked. The intention each assertion pinned is unchanged. */
   const needTicks = [...doc.querySelectorAll("#ocs-dlg-bd [data-ocs-need]")]
     .map(i => i.getAttribute("data-ocs-need"));
-  eq(needTicks, ["cell_number", "current_address"],
-     "079 §17.2: the “must fill in” tick exists only on a ticked "
-     + "row");
+  eq(needTicks, ["cell_number", "personal_email", "current_address",
+                 "person_to_be_contacted", "relation", "emergency_phone_number"],
+     "ALV-310: the “must fill in” decision is a column, so its cell is in "
+     + "every row and nothing appears or disappears on a tick");
+  const offRows = [...doc.querySelectorAll("#ocs-dlg-bd tbody tr")]
+    .filter(r => r.className === "oc2-off")
+    .map(r => r.querySelector("[data-ocs-v]").getAttribute("data-ocs-v"));
+  eq(offRows, ["personal_email", "person_to_be_contacted", "relation",
+               "emergency_phone_number"],
+     "079 §17.2: and on a row nobody is asked for it is EMPTY - the row "
+     + "carries oc2-off, which hides the cell and takes it out of the tab order");
 
   /* Unticking the row takes its "must fill in" tick with it - a compulsory
      detail nobody is asked for is a setting that cannot mean anything, and the
-     setter refuses it. */
+     setter refuses it. Now that the row is never rebuilt, the box has to be
+     cleared in place, which is the thing most likely to be got wrong. */
   const row = doc.querySelector('#ocs-dlg-bd [data-ocs-v="cell_number"]');
   row.checked = false;
   row.dispatchEvent(new window.Event("change", { bubbles: true }));
   await settle(40);
-  const left = [...doc.querySelectorAll("#ocs-dlg-bd [data-ocs-need]")]
-    .map(i => i.getAttribute("data-ocs-need"));
-  eq(left, ["current_address"],
-     "079 AC-40: unticking a detail takes its compulsory mark with it");
+  const cleared = doc.querySelector('#ocs-dlg-bd [data-ocs-need="cell_number"]');
+  yes(!!cleared && !cleared.checked,
+      "079 AC-40: unticking a detail takes its compulsory mark with it");
+  yes(row.closest("tr").className === "oc2-off",
+      "and the row says so, so the cell is empty rather than a greyed box");
 
   /* OK sends ASKED first and REQUIRED second, and the order matters: the setter
      refuses a name that is compulsory but not being asked for, so sending them
@@ -302,6 +320,8 @@ async function openMyProfile(routes) {
   const notReady = Object.assign(SETTINGS(), {
     joiner_not_ready: ["how long you keep a photograph of an identity card",
                        "what you tell a joiner before the first question"],
+    joiner_not_ready_keys: ["alvoraa_joiner_document_days",
+                            "alvoraa_joiner_notice_text"],
     notice_text: "",
   });
   ROUTES = Object.assign({}, BASE, { get_people_settings: { ok: notReady } });

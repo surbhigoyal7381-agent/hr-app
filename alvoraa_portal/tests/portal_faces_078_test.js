@@ -433,14 +433,19 @@ async function openMyProfile(routes) {
     yes(!offered.includes(never),
         "078 SEC-1: " + never + " cannot be ticked");
   }
-  yes(/OK - 3 details, seen by 7 people/.test(text($("ocs-ok"))),
+  /* ALV-310 reworded this button and nothing else about it: it says "Save"
+     rather than "OK" and it repeats the dialog's own column headings, so the
+     button and the columns cannot drift into two vocabularies. AC-89's
+     intention - THE CONSEQUENCE IS ON THE BUTTON, never the bare word - is
+     unchanged, and is still what is asserted. */
+  yes(/Save — 3 details, seen by 7 people/.test(text($("ocs-ok"))),
       "078 AC-89: the confirm button NAMES THE CONSEQUENCE", text($("ocs-ok")));
 
   const box = dlg.querySelector('[data-ocs-v="company"]');
   box.checked = true;
   box.dispatchEvent(new window.Event("change", { bubbles: true }));
   await settle(10);
-  yes(/OK - 4 details/.test(text($("ocs-ok"))),
+  yes(/Save — 4 details/.test(text($("ocs-ok"))),
       "078 AC-89: and it follows what is ticked right now");
 
   click(dlg.querySelector('[data-ocs="cancel"]'));
@@ -737,10 +742,16 @@ async function openMyProfile(routes) {
         + "empty heading on My profile", card && card.style.display);
   }
 
-  /* D-6. The laptop footer is Preview, Cancel, OK, so the primary action is on
-     the right where it is expected and Cancel is not where OK was drawn. The
-     phone lifts OK to the top with one `order` rule rather than a second copy
-     of the markup - which is why the DOM order is the laptop's. */
+  /* D-6. The laptop footer is Preview, Cancel, Save, so the primary action is
+     on the right where it is expected and Cancel is not where Save was drawn.
+
+     ALV-310 changed the PHONE half of this and kept the laptop half. The phone
+     used to lift OK to the top with `order:-1`, which made the visual order
+     disagree with the tab order (WCAG 2.2 AA 1.3.2 / 2.4.3); it now stacks in
+     DOM order, so the DOM order below is both the laptop's and the phone's. A
+     spacer sits between Preview and Cancel to push them apart, and carries no
+     `data-ocs` - so the buttons are read by their attribute rather than by
+     counting every child. */
   {
     doc.querySelectorAll(".ocs-dlg").forEach(d => d.remove());
     window.ocsLoad();
@@ -751,9 +762,10 @@ async function openMyProfile(routes) {
       click(picker);
       await settle(40);
       const row = doc.querySelector(".ocs-ft-b");
-      const got = row ? [...row.children].map(b => b.getAttribute("data-ocs")) : [];
+      const got = row ? [...row.querySelectorAll("[data-ocs]")]
+                          .map(b => b.getAttribute("data-ocs")) : [];
       eq(got, ["preview", "cancel", "ok"],
-         "078 D-6: the footer's DOM order is Preview, Cancel, OK - the "
+         "078 D-6: the footer's DOM order is Preview, Cancel, Save - the "
          + "primary action is not where Cancel is expected");
       click(doc.querySelector('[data-ocs="cancel"]'));
       await settle(20);

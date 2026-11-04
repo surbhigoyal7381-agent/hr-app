@@ -131,6 +131,13 @@ const RUN = [
      panels are in everybody's page and only the sidebar has ever kept one out
      of reach. */
   { file: "portal_routing_288_test.js", args: [PAGE] },
+  /* ALV-310, ALV-305, ALV-304: the one settings dialog becomes a table, so the
+     second decision is a column and a tick no longer throws the keyboard focus
+     to <body>; the plain words reach the rows AND the preview, asserted as the
+     text a person sees rather than the hidden attribute; and the five values
+     the invite gate demands can finally be set from a screen, checked by what
+     the dialog SENDS. */
+  { file: "portal_settings_dialog_310_test.js", args: [PAGE] },
 ];
 
 /* **Empty, and it stays empty.** AC-62: an entry here needs a ticket and a
@@ -139,7 +146,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 22;   // ALV-288 portal_routing_288_test.js, 079 portal_joiner_079_test.js, 078 portal_faces_078_test.js, 076 C portal_expense_birthdays_076_test.js, 076 B portal_notices_send_076_test.js, 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js, 066 portal_grooming_066_test.js, ALV-222 portal_signout_222_test.js, 076 portal_home_076_test.js
+const EXPECTED_BROWSER_TESTS = 23;   // ALV-310/305/304 portal_settings_dialog_310_test.js, ALV-288 portal_routing_288_test.js, 079 portal_joiner_079_test.js, 078 portal_faces_078_test.js, 076 C portal_expense_birthdays_076_test.js, 076 B portal_notices_send_076_test.js, 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js, 066 portal_grooming_066_test.js, ALV-222 portal_signout_222_test.js, 076 portal_home_076_test.js
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

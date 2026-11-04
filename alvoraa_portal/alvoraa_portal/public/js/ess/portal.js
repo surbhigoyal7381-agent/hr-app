@@ -7345,6 +7345,15 @@ var OCS_MY_KEY = "alvoraa_my_profile_fields";
 var OCS_JOINER_KEY = "alvoraa_joiner_fields";
 var OCS_JOINER_NEED_KEY = "alvoraa_joiner_required_fields";
 var OCS_MY_NEED_KEY = "alvoraa_my_profile_required_fields";
+/* ALV-304. The five values a joiner has to be told before they hand anything
+   over. `set_people_setting` has accepted all five since slice 079 and
+   `what_the_employer_has_not_set` has blocked every invite until they are set -
+   and until now no screen anywhere could set one of them. */
+var OCS_NOT_HIRED_KEY = "alvoraa_joiner_not_hired_days";
+var OCS_DOC_DAYS_KEY = "alvoraa_joiner_document_days";
+var OCS_NOTICE_KEY = "alvoraa_joiner_notice_text";
+var OCS_HR_PHONE_KEY = "alvoraa_hr_contact_phone";
+var OCS_HR_EMAIL_KEY = "alvoraa_hr_contact_email";
 
 /* The words for each ticked detail. The same list the drawer uses for the
    Positions fields - MPF_FIELDS - because one of them being renamed and not
@@ -7358,12 +7367,93 @@ var OCS_MY_WORDS = {
   relation: "How they are related",
   emergency_phone_number: "Emergency contact number"
 };
+/* The question the JOINER actually reads, and its hint - the same six fields
+   again. Copied from `joining.html`'s own LABELS, which are Jinja-translated at
+   render time and so cannot be imported here. The picker needs them to answer
+   the one question a tick raises: what does this do to somebody else's screen.
+   `test_joiner_words_match_the_joining_page` fails if the two ever disagree. */
+var OCS_JOINER_READS = {
+  cell_number: ["Your mobile number", "The number we will ring"],
+  personal_email: ["Your email", ""],
+  current_address: ["Where you live now", "Where post reaches you today"],
+  person_to_be_contacted: ["Who to ring in an emergency", "A name we can ask for"],
+  relation: ["How they are related to you", "Wife, brother, friend"],
+  emergency_phone_number: ["Their phone number", "A number that will be answered"]
+};
 function ocsWord(key, field) {
-  if (key === OCS_MY_KEY) return drT(OCS_MY_WORDS[field] || field);
+  /* ALV-305. The joiner list holds the SAME SIX fields as My Profile, by
+     identity (`people_fields.MY_PROFILE_WRITE_FIELDS`), so it reads the same
+     plain words. Without the joiner key here it fell through to `return field`
+     and the dialog printed `cell_number` and `person_to_be_contacted`. */
+  if (key === OCS_MY_KEY || key === OCS_JOINER_KEY) {
+    return drT(OCS_MY_WORDS[field] || field);
+  }
   for (var i = 0; i < MPF_FIELDS.length; i++) {
     if (MPF_FIELDS[i][0] === field) return drT(MPF_FIELDS[i][1]);
   }
   return field;
+}
+
+/* ── one list, one set of words ───────────────────────────────────────────
+   ALV-310. The column heading, the tie line, the preview button and the save
+   button all have to say the SAME thing about the same decision. Saying it in
+   four-way ternaries inside five different functions is exactly how "Must fill
+   in", "compulsory" and "Needed" became three words for one idea. So the words
+   for each of the four lists live here, once.
+
+   ONE WORD PER IDEA: HR reads **Must fill in**, the joiner and the employee
+   read **Needed**, the tie line is the only place both appear, and the word
+   "compulsory" does not appear on any screen. */
+function ocsWords(kind) {
+  var d = OCS.data || {};
+  var people = d.audience_count || 0;
+  var roles = (d.audience_roles || []).join(", ");
+  if (kind === "docs") {
+    return {
+      title: drT("Document types shown on a person's profile"),
+      lead: drT("Tick a type and anyone who can open the Positions page can open "
+              + "the file itself — {0} people today ({1}).", [people, roles]),
+      c1: drT("Shown"), c2: "", tie: "",
+      preview: drT("Show me what a reader sees")
+    };
+  }
+  if (kind === "my") {
+    return {
+      title: drT("Details an employee may correct about themselves"),
+      lead: drT("These are the details an employee can change on their own My "
+              + "Profile page. My Profile never refuses a save — anything you "
+              + "keep asking for is asked again on every visit, not blocked."),
+      c1: drT("They may change it"), c2: drT("Keep asking"),
+      tie: drT("A detail you tick under {0} shows the employee a {1} until it is "
+             + "filled in. It never stops them saving.",
+             ["<b>" + esc(drT("Keep asking")) + "</b>",
+              '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>"]),
+      preview: drT("Show me the employee's own page")
+    };
+  }
+  if (kind === "joiner") {
+    return {
+      title: drT("Details a new joiner is asked for"),
+      lead: drT("These are the questions on the joining form a new starter fills "
+              + "in before their first day. A joiner is asked for nothing at all "
+              + "until you tick it here."),
+      c1: drT("Asked for"), c2: drT("Must fill in"),
+      tie: drT("A detail you tick under {0} shows the joiner a {1} beside the "
+             + "question, and they cannot send the form until they have filled it "
+             + "in. Everything else they may leave blank.",
+             ["<b>" + esc(drT("Must fill in")) + "</b>",
+              '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>"]),
+      preview: drT("Show me the form a joiner fills in")
+    };
+  }
+  return {
+    title: drT("Details a Positions reader may see"),
+    lead: drT("These are the job details shown beside a person's name on the "
+            + "Positions page and the organisation chart — seen by {0} people "
+            + "today ({1}).", [people, roles]),
+    c1: drT("Shown"), c2: "", tie: "",
+    preview: drT("Show me what a reader sees")
+  };
 }
 
 function ocsLoad() {
@@ -7484,6 +7574,18 @@ function ocsPaint() {
   var asked = d.joiner_fields || [];
   var reqd = d.joiner_required_fields || [];
   var notReady = d.joiner_not_ready || [];
+  /* ALV-304. Which of the values is still unset, BY KEY. The labels beside it
+     are what HR reads; the keys are how this card can tell "the employer chose
+     180" from "nobody chose anything and `org_settings.get()` handed us our own
+     default". The gate reads these values raw and deliberately, so a card that
+     prints our default as though it were a decision contradicts the gate on the
+     same screen. */
+  var unset = d.joiner_not_ready_keys || [];
+  var isSet = function (key) { return unset.indexOf(key) < 0; };
+  var toldBtn = function (cls) {
+    return '<button type="button" class="btn ' + cls + ' ocs-b" data-ocs="told">'
+      + esc(drT("Set what a joiner is told")) + "</button>";
+  };
   var joiner = '<div class="ocs-sec"><h4 class="ocs-h">'
     + esc(drT("What a new joiner is asked for before day one")) + "</h4>"
     /* The block lands on the person who can fix it. The alternative was a
@@ -7494,12 +7596,20 @@ function ocsPaint() {
           + esc(drT("You cannot invite anybody yet.")) + "</b> "
           + esc(drT("A joiner has to be told these things before they hand "
                   + "anything over, and they come from your settings, not from "
-                  + "us:")) + " " + esc(notReady.join("; ")) + ".</p>"
+                  + "us:")) + " " + esc(notReady.join("; ")) + "."
+          /* ALV-304, and Surbhi's placement: the button goes where the problem
+             is STATED. The card already names what is missing, so the screen
+             that reports it is the screen that fixes it - not a sixth field
+             inside a picker whose Cancel means "write nothing of the ticks". */
+          + '<span class="ocs-told">' + toldBtn("btn-primary") + "</span></p>"
         : "")
     + (asked.length
         ? ocsChips(asked.map(function (f) {
+            /* HR's word is "Must fill in" on every one of HR's screens. The
+               joiner and the employee read "Needed" on theirs. One word per
+               idea per audience, which is what ALV-310 asked for. */
             return ocsWord(OCS_MY_KEY, f)
-              + (reqd.indexOf(f) >= 0 ? " \u00b7 " + drT("Needed") : "");
+              + (reqd.indexOf(f) >= 0 ? " \u00b7 " + drT("Must fill in") : "");
           }))
         : '<p class="gp-hint">' + esc(drT(
             "Nothing. A joiner is asked for no details at all until you tick "
@@ -7512,18 +7622,34 @@ function ocsPaint() {
                (d.joiner_required_documents || []).join(", ")])
           : drT("No document has to be answered for.")) + "</p>"
     /* Both of counsel's periods, separately. One sentence covering both would
-       be wrong about one of them. */
-    + '<p class="gp-hint">' + esc(drT(
-        "Details of somebody who does not join are kept for {0} days. A "
-        + "photograph of an identity card is deleted sooner \u2014 after {1} days.",
-        [d.not_hired_days, d.document_days])) + "</p>"
+       be wrong about one of them - and ALV-304 adds the other half of that: a
+       period NOBODY HAS CHOSEN is not reported as a number at all. The gate
+       reads the value raw on purpose, because a default we picked is not a
+       decision the employer made, so this card must not dress one up as one. */
+    + '<p class="gp-hint">'
+    + esc(isSet(OCS_NOT_HIRED_KEY)
+        ? drT("Details of somebody who does not join are kept for {0} days.",
+              [d.not_hired_days])
+        : drT("How long the details of somebody who does not join are kept is "
+            + "not set yet.")) + " "
+    + esc(isSet(OCS_DOC_DAYS_KEY)
+        ? drT("A photograph of an identity card is deleted sooner \u2014 after "
+            + "{0} days.", [d.document_days])
+        : drT("How long a photograph of an identity card is kept is not set "
+            + "yet.")) + "</p>"
     + '<p class="gp-hint">' + esc(d.notice_text
         ? drT("Your own words are set, and a joiner reads them before the first "
             + "question.")
         : drT("Your own words are not set yet, so no joiner can be asked "
             + "anything.")) + "</p>"
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joiner">'
-    + esc(drT("Add or remove details")) + "</button></div></div>";
+    + esc(drT("Add or remove details")) + "</button>"
+    /* Once everything is set the amber block goes, and with it the button
+       inside it - which would leave the notice text unchangeable for ever. So
+       when there is no amber block the button stands in the action row instead.
+       One button, always exactly one, always reachable. */
+    + (notReady.length ? "" : toldBtn("btn-outline"))
+    + "</div></div>";
 
   hmEl("ocs-body").innerHTML = profile + docsSec + mine + joiner;
   hmEl("ocs-changed").textContent = d.last_changed && d.last_changed.by
@@ -7560,8 +7686,39 @@ function ocsPick(kind) {
   ocsDialog();
 }
 
+/* One row, for any of the four lists. ALV-310.
+
+   THE DECISION IS A COLUMN, NOT A TICK INSIDE A TICK. The "must fill in" cell
+   is in every row, always, and is merely EMPTY on a row that is not asked for
+   (`visibility:hidden`, so it is also out of the tab order). Nothing appears,
+   nothing disappears, so no row is ever redrawn - which is what fixes all three
+   of the faults that shared one cause: the rows stopped jumping, the column can
+   be scanned, and the keyboard focus stays on the box that was just pressed
+   instead of being thrown to `<body>` on every tick (WCAG 2.2 AA 3.2.2).
+
+   An EMPTY cell, never a disabled one. There is nothing to decide about a
+   detail nobody is being asked for. */
+function ocsRow(value, name, sub, chip, w) {
+  return '<tr' + (OCS.pick[value] ? "" : ' class="oc2-off"') + ">"
+    + '<td class="oc2-nm">' + esc(name)
+    + (chip ? '<span class="ocs-cat">' + esc(chip) + "</span>" : "")
+    + (sub ? '<span class="oc2-sub">' + esc(sub) + "</span>" : "") + "</td>"
+    /* The accessible name carries the row AND the column. A `<th scope="col">`
+       alone is not a reliable name on a checkbox. */
+    + '<td><label class="oc2-cell"><input type="checkbox" data-ocs-v="' + esc(value) + '"'
+    + (OCS.pick[value] ? " checked" : "") + ' aria-label="'
+    + esc(name + " — " + w.c1) + '"></label></td>'
+    + (w.c2
+        ? '<td><label class="oc2-cell oc2-n"><input type="checkbox" data-ocs-need="'
+          + esc(value) + '"' + (OCS.need[value] ? " checked" : "") + ' aria-label="'
+          + esc(name + " — " + w.c2) + '"></label></td>'
+        : "")
+    + "</tr>";
+}
+
 function ocsRows() {
   var d = OCS.data || {};
+  var w = ocsWords(OCS.kind);
   if (OCS.kind === "docs") {
     var types = (OCS.types && OCS.types.types) || [];
     var byCat = {}, order = [];
@@ -7574,16 +7731,15 @@ function ocsRows() {
        category as a chip on every row - so a sensitive type cannot be read as
        an ordinary one because it happens to be next to one. */
     return order.map(function (c) {
-      return '<h5 class="ocs-grp">' + esc(c) + "</h5>" + byCat[c].map(function (t) {
-        return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(t.name) + '"'
-          + (OCS.pick[t.name] ? " checked" : "") + '><span><b>' + esc(t.name) + "</b>"
-          + '<span class="ocs-cat">' + esc(t.category || drT("Other")) + "</span>"
-          + '<span class="gp-hint" style="display:block">'
-          + esc([t.collect_from ? drT("collected by {0}", [t.collect_from]) : "",
-                 t.given ? drT("{0} given so far", [t.given]) : drT("nobody has given one"),
-                 t.mandatory ? drT("needed to join") : ""].filter(Boolean).join(" · "))
-          + "</span></span></label>";
-      }).join("");
+      return '<tr class="oc2-grp"><td colspan="' + (w.c2 ? 3 : 2) + '">'
+        + esc(c) + "</td></tr>"
+        + byCat[c].map(function (t) {
+            return ocsRow(t.name, t.name,
+              [t.collect_from ? drT("collected by {0}", [t.collect_from]) : "",
+               t.given ? drT("{0} given so far", [t.given]) : drT("nobody has given one"),
+               t.mandatory ? drT("needed to join") : ""].filter(Boolean).join(" · "),
+              t.category || drT("Other"), w);
+          }).join("");
     }).join("");
   }
   var choices = OCS.kind === "my" ? (d.my_profile_choices || [])
@@ -7591,56 +7747,65 @@ function ocsRows() {
     : (d.profile_choices || []);
   var key = OCS.kind === "my" ? OCS_MY_KEY
     : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
-  var canNeed = OCS.kind === "my" || OCS.kind === "joiner";
   /* THE SAFE LIST ONLY. Bank account, PAN, salary and date of birth are not
      offered, and would be refused at the setter and again at every reader if
      they were. A picker that offers a field it will then refuse is how a tenant
      comes to believe a field is visible. */
   return choices.map(function (f) {
-    return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(f) + '"'
-      + (OCS.pick[f] ? " checked" : "") + '><span><b>' + esc(ocsWord(key, f))
-      + "</b>"
-      /* The "must fill in" tick exists ONLY on a ticked row, and it is not
-         offered at all on the Positions list, where nobody fills anything in. */
-      + (canNeed && OCS.pick[f]
-          ? '<span class="gp-hint" style="display:block">'
-            + '<label><input type="checkbox" data-ocs-need="' + esc(f) + '"'
-            + (OCS.need[f] ? " checked" : "") + "> "
-            + esc(OCS.kind === "joiner"
-                ? drT("Must fill in before they can send the form")
-                : drT("Keep asking for it"))
-            + "</label></span>"
-          : "")
-      + "</span></label>";
+    /* On the joiner list only, the question the JOINER will read. It is the
+       cheapest honest answer to "what does this tick do to somebody else's
+       screen", and it costs the line the repeated sentence used to use. */
+    var reads = OCS.kind === "joiner" && OCS_JOINER_READS[f]
+      ? drT("The joiner reads: “{0}”", [drT(OCS_JOINER_READS[f][0])])
+      : "";
+    return ocsRow(f, ocsWord(key, f), reads, "", w);
   }).join("");
 }
 
 function ocsDialog() {
   var d = OCS.data || {};
-  var title = OCS.kind === "docs" ? drT("Document types shown on a person's profile")
-            : OCS.kind === "my" ? drT("Details an employee may correct about themselves")
-            : OCS.kind === "joiner" ? drT("Details a new joiner is asked for")
-            : drT("Details a Positions reader may see");
+  var w = ocsWords(OCS.kind);
+  var rows = ocsRows();
   var box = document.createElement("div");
   box.className = "ocs-back";
   box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true"'
     + ' aria-labelledby="ocs-dlg-h" tabindex="-1">'
-    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">' + esc(title) + "</h3>"
+    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">' + esc(w.title) + "</h3>"
     + '<button type="button" class="ocs-x" data-ocs="cancel" aria-label="'
     + esc(drT("Cancel")) + '">&times;</button></div>'
-    + '<div class="ocs-dlg-bd" id="ocs-dlg-bd">' + ocsRows() + "</div>"
+    + '<div class="ocs-dlg-bd" id="ocs-dlg-bd">'
+    /* The dialog says what it is for. Without it HR was ticking blind: there
+       was no sentence anywhere saying what the form is or who reads it. */
+    + '<p class="oc2-lead">' + esc(w.lead) + "</p>"
+    /* The ONE place the two words meet, so neither screen has to carry both. */
+    + (w.tie ? '<p class="oc2-tie">' + w.tie + "</p>" : "")
+    + (rows
+        /* The heading row STICKS: at 18 document types it used to scroll away
+           and the tick columns lost their meaning half way down the list. */
+        ? '<table class="oc2-tbl"><thead><tr>'
+          + '<th scope="col">' + esc(drT("Detail")) + "</th>"
+          + '<th scope="col" class="c">' + esc(w.c1) + "</th>"
+          + (w.c2 ? '<th scope="col" class="c">' + esc(w.c2) + "</th>" : "")
+          + "</tr></thead><tbody>" + rows + "</tbody></table>"
+        /* A heading over an empty body is a heading that lies. */
+        : '<p class="gp-hint">' + esc(drT("There is nothing to choose from here yet."))
+          + "</p>")
+    + "</div>"
     + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="ocs-sum" role="status"></p>'
-    /* 01b line 604. Laptop: Preview, then Cancel, then OK - so the primary,
-       saving action is on the right where it is expected, and Cancel is not
-       where OK was drawn. The phone stacks these full width with OK FIRST,
-       which `.ocs-ft-b` does with one `order` rule rather than a second copy
-       of the markup. */
-    + '<div class="ocs-ft-b">'
+    /* Laptop: Preview on the left, Cancel on the right, Save across the full
+       width below them, because Save carries a sentence rather than a word.
+       The phone stacks all three IN DOM ORDER - Preview, Cancel, Save - so
+       what is read matches what is tabbed, and the bottom of the screen, where
+       the thumb lands, is Save and not Cancel. The old `order:-1` rule that
+       lifted OK to the top is gone: it made the visual order disagree with the
+       tab order (WCAG 2.2 AA 1.3.2 / 2.4.3). */
+    + '<div class="ocs-ft-b oc2-ft-b">'
     + '<button type="button" class="btn btn-outline ocs-b" data-ocs="preview">'
-    + esc(drT("Preview what a reader sees")) + "</button>"
+    + esc(w.preview) + "</button>"
+    + '<span class="oc2-sp"></span>'
     + '<button type="button" class="btn btn-outline ocs-b" data-ocs="cancel">'
     + esc(drT("Cancel")) + "</button>"
-    + '<button type="button" class="btn btn-primary ocs-b" data-ocs="ok" id="ocs-ok"></button>'
+    + '<button type="button" class="btn btn-primary ocs-b oc2-ok" data-ocs="ok" id="ocs-ok"></button>'
     + "</div></div></div>";
   document.body.appendChild(box);
   OCS.dlg = box;
@@ -7663,15 +7828,26 @@ function ocsSummary() {
   var needCount = Object.keys(OCS.need || {}).filter(function (k) {
     return OCS.need[k] && OCS.pick[k];
   }).length;
+  /* The button repeats the two COLUMN HEADINGS, so it reads at a glance and
+     HR never has to hold two vocabularies at once. And it says what saving
+     nothing means, rather than printing a zero. */
   hmEl("ocs-ok").textContent = OCS.kind === "docs"
-    ? drT("OK - {0} document types, seen by {1} people", [chosen.length, people])
+    ? (chosen.length
+        ? drT("Save — {0} document types, seen by {1} people", [chosen.length, people])
+        : drT("Save — show no documents to anybody"))
     : OCS.kind === "my"
-      ? drT("OK - {0} details an employee may change, {1} we keep asking for",
-            [chosen.length, needCount])
+      ? (chosen.length
+          ? drT("Save — {0} they may change, {1} we keep asking for",
+                [chosen.length, needCount])
+          : drT("Save — an employee may change nothing"))
       : OCS.kind === "joiner"
-        ? drT("OK - a joiner is asked for {0} details, {1} of them compulsory",
-              [chosen.length, needCount])
-        : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
+        ? (chosen.length
+            ? drT("Save — {0} asked for, {1} must be filled in",
+                  [chosen.length, needCount])
+            : drT("Save — ask a joiner for nothing"))
+        : (chosen.length
+            ? drT("Save — {0} details, seen by {1} people", [chosen.length, people])
+            : drT("Save — show a name and a job role only"));
   /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
   hmEl("ocs-sum").innerHTML = sens.length
     ? '<span class="ocs-warn">' + esc(
@@ -7686,7 +7862,13 @@ function ocsSummary() {
     : OCS.kind === "docs" && chosen.length === 0
       ? esc(drT("Nothing ticked. Nobody will be able to open an employee's documents "
               + "from the Positions page."))
-      : "";
+      /* The two columns disagreeing is a real outcome, so it is said in words
+         rather than left for HR to work out from the counts on the button. */
+      : OCS.kind === "joiner" && chosen.length && !needCount
+        ? '<span class="ocs-warn">' + esc(drT(
+            "Nothing has to be filled in, so a joiner can send the form back "
+            + "empty.")) + "</span>"
+        : "";
 }
 
 function ocsClose() {
@@ -7740,23 +7922,221 @@ function ocsSave() {
 }
 
 function ocsPreview() {
-  /* What a reader sees for what is ticked RIGHT NOW - inside the dialog, so
-     nobody has to save to find out, which is the mistake this exists to stop. */
+  /* What the OTHER PERSON sees for what is ticked RIGHT NOW - inside the
+     dialog, so nobody has to save to find out, which is the mistake this
+     exists to stop.
+
+     ALV-305's SECOND HALF. This used to pick `OCS_PROFILE_KEY` for the joiner
+     list, and `MPF_FIELDS` holds none of the six joiner field names, so the
+     sheet listed `cell_number` and `person_to_be_contacted` even once the rows
+     were fixed. Fixing `ocsWord` alone does not reach this. */
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
-  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
-  var body = OCS.kind === "docs"
-    ? (chosen.length
-        ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
-          + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
-        : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>")
-    : (chosen.length
-        ? '<dl class="mpf-dl">' + chosen.map(function (f) {
-            return "<dt>" + esc(ocsWord(key, f)) + "</dt><dd>"
-              + esc(drT("the person's value")) + "</dd>";
-          }).join("") + "</dl>"
-        : "<p>" + esc(drT("A reader would see a name and a job role, and nothing else."))
-          + "</p>");
-  hmOpenSheet(drT("What a reader sees"), '<div class="hm-sh-p">' + body + "</div>");
+  var w = ocsWords(OCS.kind);
+  var body;
+  if (OCS.kind === "docs") {
+    body = chosen.length
+      ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
+        + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
+      : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>";
+  } else if (OCS.kind === "joiner") {
+    /* A facsimile of the joiner's own first screen, IN THE JOINER'S OWN WORDS.
+       Nobody "reads" a joining form, so neither the button nor this sheet calls
+       them a reader. */
+    var needed = chosen.filter(function (f) { return OCS.need[f]; });
+    body = chosen.length
+      ? '<div class="oc2-prev"><h4>' + esc(drT("Your details")) + "</h4>"
+        + '<p class="gp-hint">' + esc(drT(
+            "Your details · you are here | Your documents · nothing yet")) + "</p>"
+        + '<p class="gp-hint">' + esc(needed.length
+            ? drT("Anything marked Needed has to be filled in before you can send "
+                + "the form. You can leave the rest blank.")
+            : drT("You can leave any of these blank.")) + "</p>"
+        + chosen.map(function (f) {
+            var r = OCS_JOINER_READS[f] || [f, ""];
+            return '<div class="pq"><b>' + esc(drT(r[0]))
+              + (OCS.need[f]
+                  ? '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>" : "")
+              + "</b>" + (r[1] ? "<i>" + esc(drT(r[1])) + "</i>" : "")
+              + '<div class="pbox"></div></div>';
+          }).join("")
+        + '<p class="gp-hint">' + esc(drT(
+            "Then: Your documents, Your photo, Check and send.")) + "</p></div>"
+      : '<div class="oc2-prev"><h4>' + esc(drT("Your details")) + "</h4><p>"
+        + esc(drT("Nothing is ticked, so a joiner would be sent straight past this "
+                + "screen to their documents.")) + "</p></div>";
+  } else {
+    var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+    body = chosen.length
+      ? '<dl class="mpf-dl">' + chosen.map(function (f) {
+          return "<dt>" + esc(ocsWord(key, f))
+            + (OCS.kind === "my" && OCS.need[f]
+                ? '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>" : "")
+            + "</dt><dd>" + esc(drT("the person's value")) + "</dd>";
+        }).join("") + "</dl>"
+      : "<p>" + esc(OCS.kind === "my"
+          ? drT("An employee would see their details, with nothing they can change.")
+          : drT("A reader would see a name and a job role, and nothing else.")) + "</p>";
+  }
+  /* The sheet's own title names the screen too, not "a reader". */
+  hmOpenSheet(w.preview, '<div class="hm-sh-p">' + body + "</div>");
+}
+
+/* ── what a joiner is told, ALV-304 ───────────────────────────────────────
+   The five values the invite gate demands, which until now **no screen
+   anywhere could set**, so the joiner form could never be switched on at any
+   tenant. The back end was already complete: `set_people_setting` takes every
+   one of these keys and hands it to `set_cover_setting`, which owns the
+   System-Manager rule, the range check, the refusal and the `Version` row.
+   Only the form was missing, and this is the form.
+
+   It is a dialog of its own, on the CARD, rather than a sixth field inside the
+   picker (Surbhi, 4 Nov). The picker's whole contract is "OK saves the ticked
+   list, Cancel writes nothing"; that cannot also mean "OK saves five text
+   fields". And the card is the screen that already says these values are
+   missing, so it is the screen that should fix them. */
+var OCS_TOLD = [
+  [OCS_NOTICE_KEY, "ocs-told-notice"],
+  [OCS_NOT_HIRED_KEY, "ocs-told-nothired"],
+  [OCS_DOC_DAYS_KEY, "ocs-told-docdays"],
+  [OCS_HR_PHONE_KEY, "ocs-told-phone"],
+  [OCS_HR_EMAIL_KEY, "ocs-told-email"]
+];
+
+function ocsToldField(id, kind, label, hint, value, extra) {
+  return '<div class="oc2-f"><label for="' + id + '">' + esc(label)
+    + (hint ? '<span class="gp-hint">' + esc(hint) + "</span>" : "") + "</label>"
+    + (kind === "text"
+        ? '<textarea id="' + id + '" rows="4">' + esc(value) + "</textarea>"
+        : '<input id="' + id + '" type="' + (kind === "days" ? "number" : "text")
+          + '" value="' + esc(value) + '"' + (extra || "") + ">")
+    + "</div>";
+}
+
+function ocsTold() {
+  var d = OCS.data || {};
+  var unset = d.joiner_not_ready_keys || [];
+  OCS.opener = document.activeElement;
+  var box = document.createElement("div");
+  box.className = "ocs-back";
+  box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true"'
+    + ' aria-labelledby="ocs-dlg-h" tabindex="-1">'
+    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">'
+    + esc(drT("What a joiner is told")) + "</h3>"
+    + '<button type="button" class="ocs-x" data-ocs="cancel" aria-label="'
+    + esc(drT("Cancel")) + '">&times;</button></div>'
+    + '<div class="ocs-dlg-bd">'
+    /* True in both states: this dialog is also how the notice text is CHANGED
+       once everything is set, and then "nobody can be invited yet" is a lie. */
+    + '<p class="oc2-lead">' + esc(unset.length
+        ? drT("These are yours, not ours. A joiner cannot be asked for anything "
+            + "until they are set, which is why nobody can be invited yet.")
+        : drT("These are yours, not ours. A joiner reads them before the first "
+            + "question.")) + "</p>"
+    + ocsToldField("ocs-told-notice", "text",
+        drT("Your own words, which a joiner reads before the first question"),
+        drT("Why you are asking, what you do with it, and who to contact. A "
+          + "joiner must see this before they hand anything over."),
+        d.notice_text || "")
+    /* The two clocks are DELIBERATELY BLANK when nobody has chosen one. The
+       defaults in our code are a suggestion, not the employer's decision, and
+       prefilling one would turn a suggestion into a decision on the way past. */
+    + ocsToldField("ocs-told-nothired", "days",
+        drT("Keep the details of somebody who does not join for"),
+        drT("Days. Your own candidate record-keeping rules decide this. Between "
+          + "180 and 365."),
+        unset.indexOf(OCS_NOT_HIRED_KEY) < 0 ? d.not_hired_days : "",
+        ' min="180" max="365" inputmode="numeric"')
+    + ocsToldField("ocs-told-docdays", "days",
+        drT("Delete a photograph of an identity card after"),
+        drT("Days, counted from the day it arrives. Much shorter than the line "
+          + "above, because an identity document is not a candidate record. "
+          + "Between 30 and 60."),
+        unset.indexOf(OCS_DOC_DAYS_KEY) < 0 ? d.document_days : "",
+        ' min="30" max="60" inputmode="numeric"')
+    + ocsToldField("ocs-told-phone", "line",
+        drT("A phone number a joiner can ring"), "",
+        d.hr_contact_phone || "", ' inputmode="tel"')
+    + ocsToldField("ocs-told-email", "line",
+        drT("An email address a joiner can write to"),
+        drT("Either this or the phone number above is enough."),
+        d.hr_contact_email || "")
+    + "</div>"
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="ocs-told-sum" role="status"></p>'
+    + '<div class="ocs-ft-b oc2-ft-b"><span class="oc2-sp"></span>'
+    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="cancel">'
+    + esc(drT("Cancel")) + "</button>"
+    + '<button type="button" class="btn btn-primary ocs-b oc2-ok" data-ocs="told-ok" '
+    + 'id="ocs-told-ok">' + esc(drT("Save what a joiner is told")) + "</button>"
+    + "</div></div></div>";
+  document.body.appendChild(box);
+  OCS.dlg = box;
+  box.querySelector("#ocs-dlg-h").focus();
+}
+
+function ocsToldSave() {
+  var d = OCS.data || {};
+  var was = {};
+  was[OCS_NOTICE_KEY] = String(d.notice_text || "");
+  was[OCS_NOT_HIRED_KEY] = String(
+    (d.joiner_not_ready_keys || []).indexOf(OCS_NOT_HIRED_KEY) < 0
+      ? d.not_hired_days : "");
+  was[OCS_DOC_DAYS_KEY] = String(
+    (d.joiner_not_ready_keys || []).indexOf(OCS_DOC_DAYS_KEY) < 0
+      ? d.document_days : "");
+  was[OCS_HR_PHONE_KEY] = String(d.hr_contact_phone || "");
+  was[OCS_HR_EMAIL_KEY] = String(d.hr_contact_email || "");
+
+  /* ONLY WHAT CHANGED is sent. Five settings are five independent writes, each
+     with its own Version row, so re-sending an unchanged value would record a
+     change nobody made. */
+  var jobs = [];
+  OCS_TOLD.forEach(function (f) {
+    var el = hmEl(f[1]);
+    if (!el) return;
+    var v = String(el.value == null ? "" : el.value).trim();
+    if (v !== was[f[0]]) jobs.push([f[0], v, f[1]]);
+  });
+  var btn = hmEl("ocs-told-ok");
+  if (!jobs.length) { ocsClose(); return; }
+  btn.disabled = true;
+
+  /* THE SERVER DECIDES. The ranges are on the inputs so the browser can help,
+     but nothing here refuses a value: `_set_access_setting` range-checks every
+     one of these, refuses a blank rather than reading it as "for ever", logs
+     the refusal and writes the Version row. A check in a browser that looked
+     like the rule would be a second place for the rule to be wrong. */
+  var step = function (i) {
+    if (i >= jobs.length) return Promise.resolve();
+    return gpFetch(OCS_API + "set_people_setting",
+                   { key: jobs[i][0], value: jobs[i][1] },
+                   { lostAnswerHandled: true }).then(function () {
+      return step(i + 1);
+    }, function (e) {
+      /* Which field, and the server's own sentence about it. A partial save of
+         independent settings is recoverable: the gate stays shut until all of
+         them are set, and the card still says which are missing. */
+      e = e || {};
+      e.ocsField = jobs[i][2];
+      throw e;
+    });
+  };
+  step(0).then(function () {
+    ocsClose();
+    /* Repainted from the SERVER, never from what was typed: the amber block
+       must never say "ready" because a browser believes it is. */
+    ocsLoad();
+    toast(drT("Saved. A joiner will be told this before the first question."), "ok");
+  }, function (e) {
+    btn.disabled = false;
+    var bad = e && e.ocsField ? hmEl(e.ocsField) : null;
+    var why = mayHaveGone(e)
+      ? drT("No answer from the office. It may have gone through. Close this and "
+          + "look before you save it again.")
+      : (e && e.message) || drT("Could not save that. Try again.");
+    hmEl("ocs-told-sum").innerHTML = '<span class="ocs-warn">' + esc(why) + "</span>";
+    if (bad && bad.focus) bad.focus();
+    toast(why, "err");
+  });
 }
 
 document.addEventListener("click", function (e) {
@@ -7769,6 +8149,8 @@ document.addEventListener("click", function (e) {
   else if (what === "pick-joiner") ocsPick("joiner");
   else if (what === "cancel") ocsClose();
   else if (what === "ok") ocsSave();
+  else if (what === "told") ocsTold();
+  else if (what === "told-ok") ocsToldSave();
   else if (what === "preview") ocsPreview();
   else if (what === "who") {
     gpFetch(OCS_API + "who_can_open_positions", {}).then(function (d) {
@@ -7787,14 +8169,29 @@ document.addEventListener("change", function (e) {
   if (t.getAttribute("data-ocs-v")) {
     var which = t.getAttribute("data-ocs-v");
     OCS.pick[which] = t.checked ? 1 : 0;
+    /* ALV-310. NOTHING IS REDRAWN. This used to be
+       `body.innerHTML = ocsRows()`, because the second tick existed only on a
+       ticked row - and that one line caused all three faults: the rows jumped,
+       the scroll position was lost at 18 rows, and the keyboard focus landed on
+       `<body>` after every single tick (WCAG 2.2 AA 3.2.2, measured). The
+       decision is a column now, so a tick changes one row's class, at most one
+       other box, and the footer. The focus stays where the person put it. */
+    var row = t.closest ? t.closest("tr") : null;
+    if (row) row.className = t.checked ? "" : "oc2-off";
     /* Unticking a detail takes its "must fill in" tick with it. A compulsory
        detail nobody is being asked for is a setting that cannot mean anything,
-       and leaving it set would be refused at the setter on the next save. */
-    if (!t.checked && OCS.need) OCS.need[which] = 0;
-    /* The second tick only exists on a ticked row, so the rows are redrawn
-       rather than toggled in place - one source of truth for the markup. */
-    var body = hmEl("ocs-dlg-bd");
-    if (body) body.innerHTML = ocsRows();
+       and leaving it set would be refused at the setter on the next save.
+       Cleared in BOTH places - the value and the box - because the box is no
+       longer rebuilt from the value. */
+    if (!t.checked && OCS.need) {
+      OCS.need[which] = 0;
+      /* Matched by attribute rather than by selector: a field name is never put
+         into a CSS selector, however closed the allow-list it came from. */
+      var boxes = OCS.dlg ? OCS.dlg.querySelectorAll("[data-ocs-need]") : [];
+      for (var bi = 0; bi < boxes.length; bi++) {
+        if (boxes[bi].getAttribute("data-ocs-need") === which) boxes[bi].checked = false;
+      }
+    }
     ocsSummary();
     return;
   }

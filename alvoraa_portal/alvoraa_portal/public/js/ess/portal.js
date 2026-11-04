@@ -10378,7 +10378,13 @@ function evOpen(kind, name, btn, host, onFail) {
     if (!res.ok) throw new Error("refused");
     var fname = drT("Bill");
     var cd = res.headers.get("Content-Disposition") || "";
-    var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+    /* The quotes are written " and ' ON PURPOSE, and this is not
+       decoration. `test_browser_call_args_045` blanks strings to count braces
+       and has no idea what a regular expression is, so a literal quote inside
+       one puts it into a string that never ends: this exact line silently hid
+       21 later call sites from the argument checker, two of them this slice's
+       own. Same expression, no bare quote characters. */
+    var m = /filename\*?=(?:UTF-8\x27\x27)?\x22?([^\x22;]+)\x22?/i.exec(cd);
     if (m) fname = decodeURIComponent(m[1]);
     return res.blob().then(function (blob) {
       var t = String(blob.type || "").toLowerCase();

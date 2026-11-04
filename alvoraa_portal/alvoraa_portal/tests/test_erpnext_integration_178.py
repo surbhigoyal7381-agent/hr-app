@@ -15,8 +15,13 @@ import inspect
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from alvoraa_portal.tests.leave_fixtures import ensure_employee_with_leave, ensure_leave_type
-from alvoraa_portal.tests.test_expense_and_scoping import ensure_expense_type
+from alvoraa_portal.tests.leave_fixtures import (
+	ensure_employee_with_leave,
+	ensure_leave_type,
+	ensure_user,
+	link_user_to_employee,
+)
+from alvoraa_portal.tests.test_expense_and_scoping import a_bill, ensure_expense_type
 from alvoraa_portal.tests.utils import ensure_fiscal_years
 
 EC = "hrms.hr.doctype.expense_claim.expense_claim"
@@ -147,6 +152,11 @@ class TestExpenseClaimPaidEndToEnd(FrappeTestCase):
 		cls.employee = ensure_employee_with_leave("Payee", lt, days=1, last_name="ALV178")
 		cls.company = frappe.db.get_value("Employee", cls.employee, "company")
 		cls.etype = ensure_expense_type(company=cls.company)
+		# Slice 081: a bill is uploaded BY the claimant, through the real
+		# endpoint, so the employee needs a login. Administrator has no Employee
+		# record and the upload refuses it, correctly.
+		cls.claimant = ensure_user("alvoraa.alv178.payee@example.com")
+		link_user_to_employee(cls.employee, cls.claimant)
 		cls.bank = frappe.db.get_value(
 			"Account", {"company": cls.company, "account_type": "Cash", "is_group": 0}, "name"
 		)
@@ -180,6 +190,22 @@ class TestExpenseClaimPaidEndToEnd(FrappeTestCase):
 			}
 		)
 		claim.insert(ignore_permissions=True)
+		# Slice 081 made a bill compulsory on an APPROVED claim, and these three
+		# tests set `approval_status: "Approved"` above, so they meet the gate.
+		# The bill is attached here rather than the gate being relaxed: what these
+		# tests pin is the ERPNext ledger path, and a claim that reaches the ledger
+		# in the real product has a bill on it.
+		from alvoraa_portal import expense_evidence
+
+		# Upload AND reserve as the claimant: `reserve` refuses a row whose owner
+		# is not the caller, which is the check that stops one person attaching
+		# another person's file. Administrator is not exempt from it.
+		frappe.set_user(self.claimant)
+		try:
+			reserved = expense_evidence.reserve(a_bill(), expense_evidence.CLAIM)
+			expense_evidence.attach(reserved, expense_evidence.CLAIM, claim.name)
+		finally:
+			frappe.set_user("Administrator")
 		claim.submit()
 		return claim
 

@@ -59,14 +59,20 @@ def _the_submission(submission: str | None, ptype: str) -> Document:
 	"""
 	if not submission or not isinstance(submission, str):
 		frappe.throw(_("No joiner record was named."), frappe.ValidationError)
+	# **The doctype right first, before the row is looked for at all.** Otherwise
+	# "there is no joiner record called X" is an existence oracle: a caller with
+	# no business here would learn which references exist from the difference
+	# between that message and a refusal. 078's own lesson, in its own words -
+	# an error naming something somebody guessed at tells them it is there.
+	frappe.has_permission(DOCTYPE, ptype, throw=True)
 	if not frappe.db.exists(DOCTYPE, submission):
-		# The same answer for a row that never existed and one the caller may
-		# not see is not needed here: holding read on this doctype is HR-only
-		# already, and a wrong reference is a typing mistake HR must be told
-		# about.
+		# Past that door the caller is HR, and a wrong reference is a typing
+		# mistake they must be told about plainly.
 		frappe.throw(_("There is no joiner record called {0}.").format(submission),
 		             frappe.DoesNotExistError)
 	doc = frappe.get_doc(DOCTYPE, submission)
+	# Again, now with the document, so a User Permission narrowing the caller to
+	# some rows and not others applies.
 	doc.check_permission(ptype)
 	return doc
 

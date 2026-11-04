@@ -430,6 +430,16 @@ class TestTheLink(_Base):
 		with self.assertRaises(frappe.DoesNotExistError):
 			j2e.link_the_employee(submission=name, employee="HR-EMP-99999082")
 
+	def test_a_refused_caller_cannot_tell_a_real_reference_from_a_made_up_one(self):
+		"""The existence oracle, closed. A caller with no right on the doctype
+		gets the same refusal for a real row and for a name they invented, so
+		the difference between the two tells them nothing."""
+		real = self._submission()
+		frappe.set_user(self.staff)
+		for reference in (real, "not-a-real-row"):
+			with self.assertRaises(frappe.PermissionError):
+				j2e.link_the_employee(submission=reference, employee=self.employee)
+
 	def test_a_plain_staff_login_and_a_joiner_are_both_refused(self):
 		"""AC-19 and AC-18 for the write side. Afterwards the row is unchanged -
 		a refusal that half-wrote something is not a refusal."""

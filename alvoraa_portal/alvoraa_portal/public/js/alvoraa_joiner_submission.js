@@ -213,8 +213,12 @@ function linkEmployeeRecord(frm) {
 		}],
 		(v) => frappe.db.get_value("Employee", v.employee, "employee_name")
 			.then((got) => {
-				const named = (got && got.message && got.message.employee_name)
-					|| v.employee;
+				/* Escaped: `frappe.warn` and `frappe.msgprint` render HTML, and
+				   this name came out of the database. `makeSignIn` below already
+				   does the same for the message it builds. */
+				const named = frappe.utils.escape_html(
+					(got && got.message && got.message.employee_name)
+					|| v.employee);
 				frappe.warn(
 					__("Link this invite to {0}?", [named]),
 					__("Everything this person sent becomes part of {0} ({1}), "
@@ -234,12 +238,16 @@ function linkItNow(frm, employee) {
 		freeze: true,
 	}).then((r) => {
 		const d = (r && r.message) || {};
+		/* Rendered as HTML by `msgprint`, and both came out of the database -
+		   so escaped, the way `makeSignIn` above already does it. */
+		const who = frappe.utils.escape_html(d.employee_name || "");
+		const which = frappe.utils.escape_html(d.employee || "");
 		/* Real counts, computed from what actually moved. And the documents are
 		   told the truth: nothing moves them to the employee record yet, so
 		   this must not claim a tick that does not exist. */
 		const lines = [
 			__("{0} details are now on {1} ({2}), and their joiner sign-in is closed.",
-			   [d.details, d.employee_name || "", d.employee || ""]),
+			   [d.details, who, which]),
 		];
 		if (d.documents_left_behind) {
 			lines.push(__("The {0} document(s) they uploaded are still on this "
@@ -250,7 +258,7 @@ function linkItNow(frm, employee) {
 			lines.push(__("They uploaded no documents."));
 		}
 		frappe.msgprint({
-			title: __("{0} is now an employee", [d.employee_name || ""]),
+			title: __("{0} is now an employee", [who]),
 			indicator: "green",
 			message: lines.map((l) => `<p>${l}</p>`).join(""),
 		});

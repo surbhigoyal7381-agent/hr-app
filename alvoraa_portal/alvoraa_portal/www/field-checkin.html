@@ -901,7 +901,7 @@ function goHome(){
 function refresh(){
   return call("field_status", { token: store.token })
     .then(function(s){ lastStatus = s; renderHome(s); })
-    .catch(function(e){ handle(e); });
+    .catch(function(e){ handle(e, true); });   /* quiet: asking is not a punch */
 }
 function renderHome(s){
   s = s || {};
@@ -1052,6 +1052,10 @@ var PROBLEMS = {
     steps: [["Swipe down from the top of your phone.", "फ़ोन के ऊपर से नीचे स्वाइप करें।"],
             ["Press Location so it turns on.", "Location दबाएँ ताकि वह चालू हो जाए।"],
             ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
+    /* iPhone has no quick Location switch in this place; the Settings path is Apple's own wording. */
+    stepsIphone: [["Open Settings. Press Privacy & Security, then Location Services.", "Settings खोलें। Privacy & Security दबाएँ, फिर Location Services।"],
+                  ["Make sure Location Services is on.", "देखें कि Location Services चालू है।"],
+                  ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
     a1: "retry", a2: "home"
   },
   LOCATION_BLOCKED: {
@@ -1062,6 +1066,11 @@ var PROBLEMS = {
     steps: [["Press the lock icon next to the address at the top.", "ऊपर पते के पास ताले का निशान दबाएँ।"],
             ["Press Permissions, then allow Location.", "Permissions दबाएँ, फिर Location को इजाज़त दें।"],
             ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
+    /* iPhone Home Screen app: no address bar, so no lock icon. */
+    stepsIphone: [["Open Settings. Press Privacy & Security, then Location Services.", "Settings खोलें। Privacy & Security दबाएँ, फिर Location Services।"],
+                  ["Scroll down to find this app. If it is not in the list, find Safari.", "नीचे जाकर यह ऐप ढूँढें। सूची में न मिले तो Safari ढूँढें।"],
+                  ["Press it and choose While Using the App.", "उसे दबाएँ और While Using the App चुनें।"],
+                  ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
     a1: "retry", a2: "home"
   },
   LOCATION_SLOW: {
@@ -1180,11 +1189,12 @@ function problem(kind, serverText){
   else if (!body && serverText) body = serverText;
   $("err-p").textContent = body;
 
-  if (d.steps) {
+  var steps = PICKER && d.stepsIphone ? d.stepsIphone : d.steps;
+  if (steps) {
     var html = "";
-    for (var i = 0; i < d.steps.length; i++)
+    for (var i = 0; i < steps.length; i++)
       html += '<div class="rowline"><span class="n">' + (i + 1) + '</span><span class="tx">'
-            + esc(pick(d.steps[i])) + "</span></div>";
+            + esc(pick(steps[i])) + "</span></div>";
     $("err-steps").innerHTML = html; $("err-card").hidden = false;
   } else { $("err-card").hidden = true; }
 
@@ -1208,10 +1218,12 @@ function problem(kind, serverText){
 /* Turn anything that went wrong into one of the screens above. The server
    already writes plain sentences; we match on them rather than on codes,
    because field_checkin.py throws text, not error keys. */
-function handle(e){
-  if (!e) return problem("UNKNOWN");
+function handle(e, quiet){
+  /* quiet: a status check, not a punch. When it fails, no punch is waiting, so the
+     "attendance has not been saved" screens would be false. Say nothing for those. */
+  if (!e) return quiet ? undefined : problem("UNKNOWN");
   if (e.kind) return problem(e.kind);                 /* from position() */
-  if (e instanceof NetError || e.name === "NetError") return problem("NO_SIGNAL");
+  if (e instanceof NetError || e.name === "NetError") return quiet ? undefined : problem("NO_SIGNAL");
   var txt = e.text || "";
   if (/not set up|register it again/i.test(txt))      return problem("NOT_REGISTERED");
   if (/waiting for HR|already registered/i.test(txt)) return problem("PENDING", txt);
@@ -1222,7 +1234,7 @@ function handle(e){
   if (/accurate to about/i.test(txt))                 return problem("GPS_VAGUE", txt);
   if (/m from|too far/i.test(txt))                    return problem("OUTSIDE", txt);
   if (/not available|subscription|feature/i.test(txt))return problem("FEATURE_OFF");
-  return problem("UNKNOWN", txt);
+  return quiet ? undefined : problem("UNKNOWN", txt);
 }
 window.addEventListener("offline", function(){ if (pending) problem("NO_SIGNAL"); });
 

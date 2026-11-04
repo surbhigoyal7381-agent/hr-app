@@ -414,6 +414,50 @@ const TESTS = [
       check(p.posts.length === 2 && p.posts[1].photo === p.posts[0].photo, "Android retry changed");
     },
     without: [[["var PICKER = !SAMPLE && (", "var PICKER = !SAMPLE && (true || "]]] },
+  { name: "iPhone: a punch that saved stays 'Checked in' when the status check after it fails", run: async (p) => {
+      p.statusAnswer = (route) => route.abort();
+      await (await tap(p)).setFiles(bigPhoto);
+      await sleep(1500);                       // the punch, then the failed status check
+      check(p.posts.length === 1, "expected one punch");
+      check(await p.page.locator("#s-result.on").count() === 1, "the screen left Checked in: " + await text(p, "err-h"));
+      await p.page.click("#b-res-done");      // goHome(): the same status check, from Done
+      await sleep(600);
+      check(await p.page.locator("#s-home.on").count() === 1, "Done drew the error screen: " + await text(p, "err-p"));
+    },
+    without: [[["function refresh(){", "function refresh(){ return call('field_status',{token:store.token}).then(function(s){ lastStatus = s; renderHome(s); }).catch(function(e){ handle(e); });"]]] },
+  { name: "Android: a punch that saved stays 'Checked in' when the status check after it fails", opts: { ua: ANDROID }, run: async (p) => {
+      await p.page.waitForFunction(() => document.getElementById("video").readyState >= 2);
+      p.statusAnswer = (route) => route.abort();
+      await p.page.click("#b-punch");
+      await on(p, "s-result");
+      await sleep(600);
+      check(await p.page.locator("#s-result.on").count() === 1, "the screen left Checked in: " + await text(p, "err-h"));
+    },
+    without: [[["function refresh(){", "function refresh(){ return call('field_status',{token:store.token}).then(function(s){ lastStatus = s; renderHome(s); }).catch(function(e){ handle(e); });"]]] },
+  { name: "iPhone: a punch that did NOT save still says it was not saved", run: async (p) => {
+      p.answer = (route) => route.abort();
+      (await tap(p)).setFiles(bigPhoto);
+      await on(p, "s-err");
+      check(/has not been saved/.test(await text(p, "err-p")), "wrong words: " + await text(p, "err-p"));
+    },
+    without: [[["return quiet ? undefined : problem(\"NO_SIGNAL\");", "return;"]]] },
+  { name: "iPhone: location refused shows Settings steps, not the lock icon", run: async (p) => {
+      await p.ctx.clearPermissions();
+      await (await tap(p)).setFiles(bigPhoto);
+      await on(p, "s-err");
+      const steps = await text(p, "err-steps");
+      check(/Privacy & Security/.test(steps) && /Location Services/.test(steps), "no Settings steps: " + steps);
+      check(!/lock icon|address/.test(steps), "still talks of an address bar: " + steps);
+    },
+    without: [[["var steps = PICKER && d.stepsIphone ? d.stepsIphone : d.steps;", "var steps = d.steps;"]]] },
+  { name: "Android: location refused keeps the lock icon steps", opts: { ua: ANDROID }, run: async (p) => {
+      await p.page.waitForFunction(() => document.getElementById("video").readyState >= 2);
+      await p.ctx.clearPermissions();
+      await p.page.click("#b-punch");
+      await on(p, "s-err");
+      check(/lock icon next to the address/.test(await text(p, "err-steps")), "Android steps changed: " + await text(p, "err-steps"));
+    },
+    without: [[["var steps = PICKER && d.stepsIphone ? d.stepsIphone : d.steps;", "var steps = d.stepsIphone || d.steps;"]]] },
   { name: "iPad saying Macintosh, with touch: treated as iPhone", opts: { ua: MAC, touch: true }, run: async (p) => {
       check(await gum(p) === 0, "the live camera was asked for");
       await tap(p);

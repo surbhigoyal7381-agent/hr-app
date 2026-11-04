@@ -673,11 +673,17 @@ class TheNoticeSaysWhatItSaid(FrappeTestCase):
 		with open(path, encoding="utf-8") as f:
 			page = f.read()
 
+		# The page holds two copies: the plain HTML, and the table T that
+		# people actually see once the language is applied. Each must carry
+		# every row, so a count of one means one copy drifted.
+		def copies(text):
+			return page.count(text)
+
 		for heading, body in self.ROWS:
-			self.assertIn(heading, page, f"the page lost the heading {heading!r}")
+			self.assertGreaterEqual(copies(heading), 2, f"a copy of the page lost the heading {heading!r}")
 			if body:
-				self.assertIn(body, page, f"the page does not show the current version on {heading!r}")
-		self.assertIn(self.AGREE, page)
+				self.assertGreaterEqual(copies(body), 2, f"a copy of the page does not show the current version on {heading!r}")
+		self.assertGreaterEqual(copies(self.AGREE), 2)
 
 	def test_013_the_retention_line_is_not_versioned(self):
 		"""It quotes the tenant's own setting, which the tenant may change

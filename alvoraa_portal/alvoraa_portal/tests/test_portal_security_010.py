@@ -958,6 +958,10 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# messages now go through ONE `_tell()` helper, so the count stayed where
 		# it was instead of drifting up. It deletes nothing a user asked about.
 		("alvoraa_portal", "joiner_housekeeping.py"): 6,
+		# Slice 082 (new file), 082-SEC-3: the prefill and the link both run with
+		# HR's own rights, on the row and on the Employee. ZERO, and it must
+		# stay zero - a bypass here would be a bypass on a personnel record.
+		("alvoraa_portal", "joiner_to_employee.py"): 0,
 		# The controller: FOUR, unchanged. The erase - the File deletes and the
 		# save that clears the fields - which is a retention duty rather than a
 		# request, and runs from the scheduler as well as from HR. 079 added the

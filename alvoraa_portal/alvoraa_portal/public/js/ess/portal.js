@@ -10188,7 +10188,7 @@ function evButtons(id, retry) {
         ? '<button type="button" class="btn btn-primary btn-sm" data-ev="resend" data-id="' + id + '">'
           + esc(drT("Send the picture again")) + '</button>'
         : '<button type="button" class="btn btn-primary btn-sm" data-ev="cam" data-id="' + id + '">'
-          + "📷 " + esc(s.required ? drT("Take a photo of the bill") : drT("Take a photo")) + '</button>')
+          + esc(s.required ? drT("Take a photo of the bill") : drT("Take a photo")) + '</button>')
     + '<button type="button" class="btn btn-outline btn-sm" data-ev="pick" data-id="' + id + '">'
     + esc(drT("Choose a file")) + '</button></div>';
 }

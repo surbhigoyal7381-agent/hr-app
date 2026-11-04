@@ -237,9 +237,14 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # pin below is checked out. On 2026-11-04 frappe/lms released 16.0.0, its tip
 # stopped building here, and every build on every branch failed for code we never
 # ship. Its front end is built once, from the pin, by `bench build --app lms` below.
+#
+# The pip install is here because get-app's own one read the TIP's dependency list.
+# 16.0.0 dropped markdown and lxml from it, the pin still imports them, and the
+# image built fine and then failed at migrate on the first site with lms installed.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --skip-assets --branch version-16 https://github.com/frappe/lms \
  && (git -C apps/lms fetch --quiet --depth=1 https://github.com/frappe/lms "${LMS_COMMIT}" || true) \
  && git -C apps/lms checkout --quiet --force "${LMS_COMMIT}" \
+ && ./env/bin/pip install --no-cache-dir -e apps/lms \
  && git -C apps/lms log -1 --format='lms pinned at %h (%cs)'
 
 # Declares required_apps = ["telephony"] in Helpdesk's hooks.py, so this must

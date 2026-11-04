@@ -6,7 +6,7 @@ Recorded 4 November 2026. These are Surbhi's decisions, written down so they are
 
 | # | Decision | What it means |
 |---|---|---|
-| 1 | Fix the false "not saved" message, on iPhone and on Android | After a punch saves, a failed status check no longer draws "No internet. Your attendance has not been saved yet." A punch that really did not save still says so. |
+| 1 | Never say "not saved" when nothing is waiting to be saved, on iPhone and on Android. It does not mean say nothing. | After a punch saves, home is redrawn from the punch reply (its list of today's punches), so it is right even if the status check that follows fails. If the first status check of a session fails and nothing is known yet, the person sees a "Could not check" screen with Try again, and no words about attendance. If a status is already known and a later check fails, the screen stays and a short line says it may be out of date; the line clears on the next good check. A punch that really fails to send still says "has not been saved". Real refusals on a status check (blocked, not set up, left) show as before. |
 | 2 | Accept the 10-minute photo gap for now | On iPhone, after "too far", a retry within 10 minutes resends the same photo. After 10 minutes the camera opens again. After no signal or a location error, the earlier photo is resent at any age. This is not changed. It is logged as its own YouTrack ticket. |
 | 3 | Accept, and record, leaving the "never a file" rule on iPhone | See below. |
 

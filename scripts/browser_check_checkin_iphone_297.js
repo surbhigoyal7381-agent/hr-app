@@ -59,7 +59,7 @@ const NOT_AN_IMAGE = { name: "photo.jpg", mimeType: "image/jpeg", buffer: Buffer
 
 /* One fresh phone: its own storage, the page served (perhaps with a fix removed),
    and every check-in call answered here and written down. */
-async function phone(without, { ua = IPHONE, touch = false, lang = "en", checkedIn = false } = {}) {
+async function phone(without, { ua = IPHONE, touch = false, lang = "en", checkedIn = false, statusDown = null } = {}) {
   const ctx = await browser.newContext({
     userAgent: ua, hasTouch: touch, viewport: { width: 390, height: 844 },
     geolocation: { latitude: 28.57, longitude: 77.32, accuracy: 14 }, permissions: ["geolocation"],
@@ -102,16 +102,34 @@ async function phone(without, { ua = IPHONE, touch = false, lang = "en", checked
       const body = route.request().postDataJSON();
       p.posts.push(body);
       if (p.answer) return p.answer(route, body);
-      return route.fulfill({ json: { message: { status: "ok", log_type: body.log_type, time: "2026-11-03 09:01:00", employee_name: "Test Person" } } });
+      // As the real server answers: with today's punches in it.
+      const rows = (checkedIn ? [{ name: "C1", log_type: "IN", time: "2026-11-03 08:00:00", device_id: "alvoraa-field-app" }] : [])
+        .concat([{ name: "C2", log_type: body.log_type, time: "2026-11-03 09:01:00", device_id: "alvoraa-field-app" }]);
+      return route.fulfill({ json: { message: { status: "ok", log_type: body.log_type, time: "2026-11-03 09:01:00", employee_name: "Test Person", todays_checkins: rows } } });
     }
     return route.abort();
   });
+  if (statusDown) p.statusAnswer = statusDown;   // the very first status check fails
   await page.goto(PAGE);
+  if (statusDown) { await page.waitForSelector("#s-err.on"); return p; }
   await page.waitForSelector("#s-home.on");
   await page.waitForFunction(() => document.getElementById("b-punch").getAttribute("data-type"));
   return p;
 }
 
+async function homeSaysCheckedIn(p) {
+  check(await p.page.locator("#s-home.on").count() === 1, "not on home: " + await text(p, "err-h"));
+  check(/checked in since/.test(await text(p, "home-state-text")), "chip says " + await text(p, "home-state-text"));
+  check(await text(p, "b-punch-text") === "Check Out", "button says " + await text(p, "b-punch-text"));
+  check(await p.page.locator("#b-punch").getAttribute("data-type") === "OUT", "button would send IN again");
+  check(await p.page.locator("#punch-rows .punch").count() === 1, "the new punch is not in today's list");
+}
+async function noStatusScreen(p) {
+  const h = await text(p, "err-h"), body = await text(p, "err-p");
+  check(/could not check/i.test(h + body), "words: " + h + " / " + body);
+  check(!/not been saved|was not saved|not saved/i.test(h + body), "talks of attendance not saved: " + body);
+  check(await text(p, "b-err-1") === "Try again", "button: " + await text(p, "b-err-1"));
+}
 const on = (p, screen) => p.page.waitForSelector("#" + screen + ".on");
 const text = (p, id) => p.page.locator("#" + id).innerText();
 const visible = (p, id) => p.page.locator("#" + id).isVisible();
@@ -440,13 +458,14 @@ const TESTS = [
       await on(p, "s-err");
       check(/has not been saved/.test(await text(p, "err-p")), "wrong words: " + await text(p, "err-p"));
     },
-    without: [[["return quiet ? undefined : problem(\"NO_SIGNAL\");", "return;"]]] },
+    without: [[["return quiet ? statusFailed() : problem(\"NO_SIGNAL\");", "return;"]]] },
   { name: "iPhone: location refused shows Settings steps, not the lock icon", run: async (p) => {
       await p.ctx.clearPermissions();
       await (await tap(p)).setFiles(bigPhoto);
       await on(p, "s-err");
       const steps = await text(p, "err-steps");
       check(/Privacy & Security/.test(steps) && /Location Services/.test(steps), "no Settings steps: " + steps);
+      check(/Safari Websites/.test(steps), "the Safari Websites line is missing: " + steps);
       check(!/lock icon|address/.test(steps), "still talks of an address bar: " + steps);
     },
     without: [[["var steps = PICKER && d.stepsIphone ? d.stepsIphone : d.steps;", "var steps = d.steps;"]]] },
@@ -458,6 +477,75 @@ const TESTS = [
       check(/lock icon next to the address/.test(await text(p, "err-steps")), "Android steps changed: " + await text(p, "err-steps"));
     },
     without: [[["var steps = PICKER && d.stepsIphone ? d.stepsIphone : d.steps;", "var steps = d.stepsIphone || d.steps;"]]] },
+  { name: "iPhone: saved Check In, status check fails, Done: home says checked in and offers Check Out", run: async (p) => {
+      p.statusAnswer = (route) => route.abort();
+      await (await tap(p)).setFiles(bigPhoto);
+      await sleep(1500);
+      await p.page.click("#b-res-done");
+      await sleep(600);
+      await homeSaysCheckedIn(p);
+    },
+    without: [[["function applyPunch(res){", "function applyPunch(res){ return;"]]] },
+  { name: "Android: saved Check In, status check fails, Done: home says checked in and offers Check Out", opts: { ua: ANDROID }, run: async (p) => {
+      await p.page.waitForFunction(() => document.getElementById("video").readyState >= 2);
+      p.statusAnswer = (route) => route.abort();
+      await p.page.click("#b-punch");
+      await sleep(1500);
+      await p.page.click("#b-res-done");
+      await sleep(600);
+      await homeSaysCheckedIn(p);
+    },
+    without: [[["function applyPunch(res){", "function applyPunch(res){ return;"]]] },
+  { name: "iPhone: saved Check Out, status check fails, Done: home says not checked in, offers Check In, lists both punches", opts: { checkedIn: true }, run: async (p) => {
+      p.statusAnswer = (route) => route.abort();
+      await (await tap(p)).setFiles(bigPhoto);
+      await sleep(1500);
+      check(p.posts[0].log_type === "OUT", "expected an OUT punch");
+      await p.page.click("#b-res-done");
+      await sleep(600);
+      check(await p.page.locator("#s-home.on").count() === 1, "not on home");
+      check(await text(p, "b-punch-text") === "Check In", "button says " + await text(p, "b-punch-text"));
+      check(await p.page.locator("#b-punch").getAttribute("data-type") === "IN", "button would send OUT again");
+      check(await text(p, "home-state-text") === "Not checked in yet today", "chip says " + await text(p, "home-state-text"));
+      check(await p.page.locator("#punch-rows .punch").count() === 2, "punch list does not show both punches");
+    },
+    without: [[["function applyPunch(res){", "function applyPunch(res){ return;"]]] },
+  { name: "First open with no signal: a could-not-check screen with Try again, never 'not saved'", opts: { statusDown: (route) => route.abort() }, run: async (p) => {
+      await noStatusScreen(p);
+      p.statusAnswer = null;
+      await p.page.click("#b-err-1");
+      await on(p, "s-home");
+      await p.page.waitForFunction(() => document.getElementById("b-punch").getAttribute("data-type") === "IN");
+      check(await text(p, "b-punch-text") === "Check In", "button after Try again: " + await text(p, "b-punch-text"));
+    },
+    without: [[["function statusFailed(){", "function statusFailed(){ return;"]]] },
+  { name: "First open, already checked in, status check fails on a 500: could-not-check screen, then the right home", opts: { checkedIn: true, statusDown: (route) => route.fulfill({ status: 500, body: "boom" }) }, run: async (p) => {
+      await noStatusScreen(p);
+      p.statusAnswer = null;
+      await p.page.click("#b-err-1");
+      await on(p, "s-home");
+      await p.page.waitForFunction(() => document.getElementById("b-punch").getAttribute("data-type") === "OUT");
+      check(await text(p, "b-punch-text") === "Check Out", "button: " + await text(p, "b-punch-text"));
+    },
+    without: [[["return quiet ? statusFailed() : problem(\"UNKNOWN\", txt);", "return quiet ? undefined : problem(\"UNKNOWN\", txt);"]]] },
+  { name: "Status check refused as blocked: still shows the blocked screen", opts: { statusDown: (route) => route.fulfill({ status: 401, json: { _server_messages: JSON.stringify([JSON.stringify({ message: "This phone has been blocked. Please speak to HR." })]) } }) }, run: async (p) => {
+      check(/stopped/.test(await text(p, "err-h")), "heading: " + await text(p, "err-h"));
+    },
+    without: [[["if (/blocked/i.test(txt))                           return problem(\"BLOCKED\");", "if (/blocked/i.test(txt))                           return;"]]] },
+  { name: "Status known, a later check fails: screen kept, a short line says it may be out of date, and it clears", opts: { ua: ANDROID, checkedIn: true }, run: async (p) => {
+      check(await p.page.locator("#home-stale").isHidden(), "line shown too early");
+      p.statusAnswer = (route) => route.abort();
+      await p.page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await sleep(600);
+      check(await p.page.locator("#s-home.on").count() === 1, "left home");
+      check(await text(p, "b-punch-text") === "Check Out", "state lost");
+      check(await p.page.locator("#home-stale").isVisible(), "no line");
+      check(!/saved/i.test(await text(p, "home-stale")), "line talks about saving: " + await text(p, "home-stale"));
+      p.statusAnswer = null;
+      await p.page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await p.page.waitForFunction(() => document.getElementById("home-stale").hidden);
+    },
+    without: [[["function statusFailed(){", "function statusFailed(){ return;"]]] },
   { name: "iPad saying Macintosh, with touch: treated as iPhone", opts: { ua: MAC, touch: true }, run: async (p) => {
       check(await gum(p) === 0, "the live camera was asked for");
       await tap(p);

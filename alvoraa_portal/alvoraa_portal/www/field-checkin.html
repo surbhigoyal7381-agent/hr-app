@@ -233,6 +233,8 @@ button{font-family:inherit}
 }
 
 /* Sample-data mode only */
+.stale{margin:6px 16px 0;font-size:var(--fs-sm);font-weight:650;color:var(--amber)}
+.stale[hidden]{display:none}
 .ribbon{background:var(--amber);color:#fff;font-size:var(--fs-sm);font-weight:700;
   padding:5px 16px;text-align:center;display:none}
 body.demo .ribbon{display:block}
@@ -361,6 +363,7 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
     <span class="dot" aria-hidden="true"></span>
     <span id="home-state-text" data-t="home.state.out">Not checked in yet today</span>
   </div>
+  <div class="stale" id="home-stale" role="status" data-t="home.stale" hidden>We could not check just now. This may be out of date.</div>
 
   <div class="cam" id="cam">
     <video id="video" playsinline muted autoplay></video>
@@ -534,6 +537,7 @@ var T = {
   "home.checkout":       ["Check Out", "चेक आउट"],
   "home.today":          ["Today", "आज"],
   "home.none":           ["No punches yet today.", "आज अभी कोई हाज़िरी नहीं।"],
+  "home.stale":          ["We could not check just now. This may be out of date.", "अभी जाँच नहीं हो पाई। यह जानकारी पुरानी हो सकती है।"],
   "home.in":             ["Checked in", "चेक इन"],
   "home.out":            ["Checked out", "चेक आउट"],
   "home.src.phone":      ["This phone", "यह फ़ोन"],
@@ -903,8 +907,25 @@ function refresh(){
     .then(function(s){ lastStatus = s; renderHome(s); })
     .catch(function(e){ handle(e, true); });   /* quiet: asking is not a punch */
 }
+/* A status check failed. Never "not saved": no punch is waiting. With no status
+   known, home would show the page's blank defaults, so say we could not check.
+   With one known, keep it and add a line that clears on the next good check. */
+function statusFailed(){
+  if (lastStatus) $("home-stale").hidden = false;
+  else problem("NO_STATUS");
+}
+/* A punch just saved. Its reply carries today's punches, so home is right even
+   if the status check that follows fails. */
+function applyPunch(res){
+  lastStatus = Object.assign({}, lastStatus, {
+    employee_name: res.employee_name, server_time: res.time,
+    checked_in: res.log_type === "IN", todays_checkins: res.todays_checkins || []
+  });
+  renderHome(lastStatus);
+}
 function renderHome(s){
   s = s || {};
+  $("home-stale").hidden = true;
   var inNow = !!s.checked_in;
   $("home-who").textContent = s.employee_name || store.employee_name || "";
   $("punch-date").textContent = shortDate(s.server_time);
@@ -993,6 +1014,7 @@ function sendPunch(){
     });
   }).then(function(res){
     busy(false);
+    applyPunch(res);
     result(res, pending);
     pending = null;
     refresh();
@@ -1068,7 +1090,7 @@ var PROBLEMS = {
             ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
     /* iPhone Home Screen app: no address bar, so no lock icon. */
     stepsIphone: [["Open Settings. Press Privacy & Security, then Location Services.", "Settings खोलें। Privacy & Security दबाएँ, फिर Location Services।"],
-                  ["Scroll down to find this app. If it is not in the list, find Safari.", "नीचे जाकर यह ऐप ढूँढें। सूची में न मिले तो Safari ढूँढें।"],
+                  ["Scroll down to find this app. If it is not in the list, find Safari Websites.", "नीचे जाकर यह ऐप ढूँढें। सूची में न मिले तो Safari Websites ढूँढें।"],
                   ["Press it and choose While Using the App.", "उसे दबाएँ और While Using the App चुनें।"],
                   ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
     a1: "retry", a2: "home"
@@ -1143,6 +1165,13 @@ var PROBLEMS = {
     p:  ["Field check-in is not part of your company's plan yet. Please tell HR.",
          "फ़ील्ड चेक इन अभी आपकी कंपनी के प्लान में नहीं है। कृपया HR को बताएँ।"],
     a1: "none"
+  },
+  NO_STATUS: {   /* a status check failed and nothing is known yet: not a punch, so no "not saved" */
+    tone: "warn", icon: "wifi",
+    h:  ["Could not check", "जाँच नहीं हो पाई"],
+    p:  ["We could not check your attendance for today. Move to a place with signal and press Try again.",
+         "आज की हाज़िरी की जाँच नहीं हो पाई। जहाँ सिग्नल हो वहाँ जाकर “फिर से कोशिश” दबाएँ।"],
+    a1: "retry"
   },
   UNKNOWN: {
     tone: "stop", icon: "stop",
@@ -1220,10 +1249,10 @@ function problem(kind, serverText){
    because field_checkin.py throws text, not error keys. */
 function handle(e, quiet){
   /* quiet: a status check, not a punch. When it fails, no punch is waiting, so the
-     "attendance has not been saved" screens would be false. Say nothing for those. */
-  if (!e) return quiet ? undefined : problem("UNKNOWN");
+     "attendance has not been saved" screens would be false. Use statusFailed(). */
+  if (!e) return quiet ? statusFailed() : problem("UNKNOWN");
   if (e.kind) return problem(e.kind);                 /* from position() */
-  if (e instanceof NetError || e.name === "NetError") return quiet ? undefined : problem("NO_SIGNAL");
+  if (e instanceof NetError || e.name === "NetError") return quiet ? statusFailed() : problem("NO_SIGNAL");
   var txt = e.text || "";
   if (/not set up|register it again/i.test(txt))      return problem("NOT_REGISTERED");
   if (/waiting for HR|already registered/i.test(txt)) return problem("PENDING", txt);
@@ -1234,7 +1263,7 @@ function handle(e, quiet){
   if (/accurate to about/i.test(txt))                 return problem("GPS_VAGUE", txt);
   if (/m from|too far/i.test(txt))                    return problem("OUTSIDE", txt);
   if (/not available|subscription|feature/i.test(txt))return problem("FEATURE_OFF");
-  return quiet ? undefined : problem("UNKNOWN", txt);
+  return quiet ? statusFailed() : problem("UNKNOWN", txt);
 }
 window.addEventListener("offline", function(){ if (pending) problem("NO_SIGNAL"); });
 
@@ -1277,7 +1306,7 @@ function mockCall(method, args){
         mockState.rows.push({ name: "EMP-CKIN-" + (mockState.rows.length + 1),
                               log_type: args.log_type, time: tm, device_id: "alvoraa-field-app" });
         mockState.checked_in = args.log_type === "IN";
-        return resolve({ status: "ok", log_type: args.log_type, time: tm,
+        return resolve({ status: "ok", log_type: args.log_type, time: tm, todays_checkins: mockState.rows.slice(),
                          name: "EMP-CKIN-0000" + mockState.rows.length, employee_name: "Ramesh Kumar" });
       }
       reject(new ApiError("Unknown method", 404));

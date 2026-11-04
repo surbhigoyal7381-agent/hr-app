@@ -193,6 +193,9 @@ doc_events = {
     # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
     "Employee Checkin": {
         "onload": "alvoraa_portal.field_app_access.log_photo_view",
+        # ALV-302: a machine punch keeps the time the machine recorded. One dated
+        # over 90 days back or over a day ahead is filed, and attendance skips it.
+        "before_insert": "alvoraa_portal.field_app_access.check_machine_punch",
     },
 
     "Employee": {
@@ -277,6 +280,10 @@ doc_events = {
     "Shift Type": {
         # ALV-211: a new shift accepts punches 3 h before and 3 h after.
         "before_insert": "alvoraa_portal.attendance_correction.default_shift_window",
+        # ALV-302: the machine role may move last_sync_of_checkin forward and
+        # change nothing else. In this entry because a second "Shift Type" key
+        # would silently replace the handlers here.
+        "before_validate": "alvoraa_portal.field_app_access.guard_shift_type_change",
         "after_insert": "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_update":    "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_trash":     "alvoraa_portal.hr_api.invalidate_features_cache",
@@ -433,7 +440,22 @@ doc_events = {
     # Slice 076 Part C (SEC-13): nobody approves their own expense claim, on
     # any door, whatever HR Settings says about self-approval.
     "Expense Claim": {
-        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        "before_submit": [
+            "hrms.alvoraa_hr_core.access.refuse_own_submit",
+            # Slice 081 (081-SEC-3): an APPROVED claim carries its bill, on
+            # every door - Desk, the REST API and a data import. On the
+            # document and not in `apply_expense_claim`, because that endpoint
+            # inserts with `ignore_permissions=True` and a rule written inside
+            # a bypass is a rule inside a bypass.
+            #
+            # It fires only on an approval, and only for claims created on or
+            # after the release. Both conditions are load-bearing and the
+            # reasons are at `require_bill_before_submit`: a portal claim waits
+            # as a DRAFT and `decide_expense` submits it for Decline as well as
+            # Approve, so a bare gate would make declining impossible and would
+            # strand every claim already in a queue.
+            "alvoraa_portal.expense_evidence.require_bill_before_submit",
+        ],
         # Review C: the claimant cannot pick their own approver (HR may).
         "validate": "alvoraa_portal.hr_api.keep_claim_approver",
         # ALV-249: HR may change the approver; see own_record_permission.
@@ -463,6 +485,8 @@ permission_query_conditions = {
 
 has_permission = {
     "Employee Checkin": "alvoraa_portal.field_app_access.checkin_has_permission",
+    # ALV-302: the machine role gets read and write on Shift Type, no more.
+    "Shift Type": "alvoraa_portal.field_app_access.shift_type_has_permission",
     "Alvoraa Field Device": "alvoraa_portal.field_app_access.device_has_permission",
     "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_has_permission",
     "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_has_permission",
@@ -512,6 +536,14 @@ scheduler_events = {
         # months after the relieving date. OFF until the site config holds
         # grooming_erase_enabled = 1 - see the note above erase_daily.
         "alvoraa_portal.grooming.erase_daily",
+        # Slice 081 (081-PRIV-1, OPS-15): the evidence files' three clocks -
+        # a bill to the end of the 8th financial year after its claim's, a
+        # day-fix file six months after the person left, and an abandoned
+        # upload within a day. Legal hold wins on every pass, each pass logs
+        # its own count, and the day-fix pass is OFF until the site config
+        # holds alvoraa_dayfix_erase_enabled = 1. **The only scheduled work
+        # this slice adds, and it is one entry in a list that already runs.**
+        "alvoraa_portal.expense_evidence.daily",
     ],
     "monthly": [
         "alvoraa_portal.scheduled_jobs.generate_monthly_scorecards",
@@ -586,6 +618,12 @@ after_migrate = [
     # helpdesk_defaults.py for why this never flips a value HR chose back.
     "alvoraa_portal.lms_defaults.after_migrate",
     "alvoraa_portal.helpdesk_defaults.after_migrate",
+    # Slice 081: the legal-hold flag on Expense Claim and Attendance Request,
+    # the same Custom Field `branch_scope.after_migrate` already puts on those
+    # two doctypes; and the day the bill rule starts applying, set once. On
+    # migrate AND on install, because a site built with `bench install-app`
+    # never runs a migrate. See expense_evidence.after_migrate.
+    "alvoraa_portal.expense_evidence.after_migrate",
     # Slice 059: the columns the pay-rule engine writes each day's verdict
     # into. The engine and its tests were committed without them, and nothing
     # noticed because both its hooks return early on a company with no rule
@@ -617,6 +655,10 @@ after_app_install = ["alvoraa_portal.crm_steps.on_app_install"]
 # column alvoraa_review_status". CI is what found it - it builds its site with
 # `bench install-app` and nothing else.
 after_install = [
+    # Slice 079: the Alvoraa Joiner role. The patch that makes it cannot reach a
+    # site built from scratch - Frappe marks patches done at install - so a new
+    # tenant had no role and every joiner invite refused. See joiner_invite.make_role.
+    "alvoraa_portal.joiner_invite.make_role",
     "alvoraa_portal.attendance_correction.after_migrate",
     "alvoraa_portal.field_checkin.after_migrate",
     "alvoraa_portal.branch_scope.after_migrate",
@@ -644,6 +686,15 @@ after_install = [
     # ALV-149: a new tenant's app name is "Alvora HRMS", not Frappe's default.
     # Same once-only reasoning as brand.after_install above.
     "alvoraa_portal.brand_text.after_install",
+    # Slice 081 / ALV-312: the legal-hold flag on Expense Claim and Attendance
+    # Request, and the day the bill rule starts applying. Its own docstring and
+    # its `after_migrate` entry both say "on migrate AND on install", and it was
+    # only in `after_migrate` - so provision_tenant.sh, which runs `install-app`
+    # and never a migrate, left a new tenant with no legal-hold field at all and
+    # took the cutoff from the next release instead of from its install date.
+    # After branch_scope above, which creates `alvoraa_branch` on these same two
+    # doctypes. Safe to run again, so being in both lists costs nothing.
+    "alvoraa_portal.expense_evidence.after_migrate",
     # ALV-174: outgoing email stops saying "Sent via ERPNext" and gets the
     # Alvora lockup in its header, from a tenant's first email onward. Safe to
     # run again later (a patch does, on migrate) if the sending Email Account

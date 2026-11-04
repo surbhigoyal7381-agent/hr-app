@@ -88,6 +88,10 @@ def get_people_settings():
 	joiner_asked, joiner_required = people_fields.asked_and_required(
 		JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY)
 	_my_asked, my_required = people_fields.asked_and_required(MY_KEY, MY_REQUIRED_KEY)
+	# Asked for ONCE and read twice: the labels are what HR reads, the keys are
+	# how the card tells "the employer chose 180 days" from "nobody chose
+	# anything and `org_settings.get()` handed the browser our own default".
+	not_ready = what_the_employer_has_not_set()
 	return {
 		"profile_fields": list(people_fields.allowed(
 			PROFILE_KEY, frappe.db.get_default(PROFILE_KEY))),
@@ -137,7 +141,15 @@ def get_people_settings():
 		# What HR cannot invite anybody until somebody sets. The same list the
 		# refusal names, from the same function, so the card and the refusal
 		# can never disagree.
-		"joiner_not_ready": [m["what"] for m in what_the_employer_has_not_set()],
+		"joiner_not_ready": [m["what"] for m in not_ready],
+		# ALV-304. The same list again, by KEY rather than by label, so the card
+		# can print a retention period only where the employer actually chose
+		# one. `org_settings.get()` falls back to our own default and the invite
+		# gate reads the value raw on purpose - a default we picked is not a
+		# decision the employer made - so a card that printed the fallback was
+		# contradicting the gate on the same screen. Key names only: no value,
+		# and nothing about anybody.
+		"joiner_not_ready_keys": [m["key"] for m in not_ready],
 		"last_changed": _last_changed(),
 	}
 

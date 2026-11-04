@@ -1,15 +1,19 @@
-/* Three buttons on the joiner submission form (slice 078 step 6, 079).
+/* The buttons on the joiner submission form (slice 078 step 6, 079, 082).
  *
  * Desk, not a new portal screen: HR reviews a submission here, HR Manager
- * already has Desk, and a second screen for three actions would be a surface
- * before an answer.
+ * already has Desk, and a second screen for a handful of actions would be a
+ * surface before an answer.
  *
- * WHAT IS DELIBERATELY NOT HERE: anything that creates an Employee. 078-SEC-12
- * - HR makes the personnel record by hand and sets the joining date itself,
- * because a back-dated joining date makes Frappe mark the person Absent for
- * every day since and deleting those rows does not help. That is a logged DTC
- * fault, not a theory. Linking the Employee on this form is what moves the
- * status on, in the controller's own validate.
+ * WHAT IS DELIBERATELY NOT HERE, and slice 082 narrowed this rather than
+ * dropping it: nothing fills in a date. "Make their employee record" opens a
+ * new, UNSAVED Employee form with the six details and the name on it and NO
+ * date of any kind, and HR types the real first working day before they press
+ * Save. A back-dated joining date makes Frappe mark the person Absent for every
+ * day since and deleting those rows does not help - a logged DTC fault, not a
+ * theory. Nothing here saves an Employee; HR's own Save does.
+ *
+ * Neither button is a permission. Both endpoints check the caller's rights on
+ * the row and on the Employee, server side, every time.
  */
 frappe.ui.form.on("Alvoraa Joiner Submission", {
 	refresh(frm) {
@@ -30,6 +34,26 @@ frappe.ui.form.on("Alvoraa Joiner Submission", {
 
 		if (frm.doc.status === "Invited" && !frm.doc.user && frm.doc.login_id) {
 			frm.add_custom_button(__("Make the sign-in"), () => makeSignIn(frm));
+		}
+
+		/* Slice 082. Only a submitted invite that nobody has linked yet, and
+		   only while there is still something on it to copy. */
+		if (frm.doc.status === "Submitted" && !frm.doc.employee
+				&& !frm.doc.erased_on) {
+			frm.dashboard.add_comment(
+				__("It will not fill in the joining date. Type the real first "
+				 + "working day — a date in the past marks them absent for "
+				 + "every day since."),
+				"blue", true);
+
+			if (frappe.model.can_create("Employee")) {
+				frm.add_custom_button(__("Make their employee record"),
+				                      () => makeEmployeeRecord(frm));
+			}
+			if (frm.perm[0] && frm.perm[0].write) {
+				frm.add_custom_button(__("Link the employee record"),
+				                      () => linkEmployeeRecord(frm));
+			}
 		}
 
 		if (["Invited", "Submitted"].includes(frm.doc.status)) {
@@ -143,6 +167,100 @@ function makeSignIn(frm) {
 					"This sign-in opens their own form and nothing else here. They are "
 					+ "not an employee, not in your headcount, not on the organisation "
 					+ "chart, and not a paid seat until they start.")}</p>`,
+		});
+		frm.reload_doc();
+	});
+}
+
+/* Slice 082, US-1. The six details and the name onto a new, UNSAVED Employee.
+ *
+ * `frappe.new_doc("Employee", values)` is Frappe's own mechanism, the one
+ * `Employee Onboarding` uses to hand HR a filled-in form: the values go into
+ * `frappe.route_options`, `frappe.model.get_new_doc` copies them onto the new
+ * document (`create_new.js:60-67`), and because `Employee` has no quick entry
+ * the full form opens instead of a dialog (`quick_entry.js:57-70`). Read in the
+ * installed source, v16.33.1, not from memory.
+ *
+ * The server decides what crosses. This function names no field at all, so the
+ * map cannot drift away from `COLUMN_FOR_TICK` - which is the whole reason the
+ * prefill is an endpoint rather than a list in here.
+ */
+function makeEmployeeRecord(frm) {
+	frappe.call({
+		method: "alvoraa_portal.joiner_to_employee.details_for_a_new_employee",
+		args: { submission: frm.doc.name },
+		freeze: true,
+	}).then((r) => {
+		if (!r || !r.message) return;
+		frappe.new_doc("Employee", r.message);
+	});
+}
+
+/* Slice 082, US-3 and 082-SEC-6. Name the person before anything is written.
+ *
+ * Linking the WRONG employee is the worst thing that can happen here and it
+ * cannot be undone - "Made an employee" is terminal. So HR picks the record,
+ * is shown the name on it, and says yes to that name. The name comes from the
+ * Employee row itself, not from this form, so a confirmation cannot agree with
+ * the mistake.
+ */
+function linkEmployeeRecord(frm) {
+	frappe.prompt(
+		[{
+			fieldname: "employee", fieldtype: "Link", options: "Employee",
+			reqd: 1, label: __("Their employee record"),
+			description: __("The record you have just saved for this person."),
+		}],
+		(v) => frappe.db.get_value("Employee", v.employee, "employee_name")
+			.then((got) => {
+				/* Escaped: `frappe.warn` and `frappe.msgprint` render HTML, and
+				   this name came out of the database. `makeSignIn` below already
+				   does the same for the message it builds. */
+				const named = frappe.utils.escape_html(
+					(got && got.message && got.message.employee_name)
+					|| v.employee);
+				frappe.warn(
+					__("Link this invite to {0}?", [named]),
+					__("Everything this person sent becomes part of {0} ({1}), "
+					 + "their joiner sign-in is closed, and this cannot be "
+					 + "undone. Check the name is the right one.",
+					   [named, v.employee]),
+					() => linkItNow(frm, v.employee),
+					__("Link it"), true);
+			}),
+		__("Link the employee record"), __("Next"));
+}
+
+function linkItNow(frm, employee) {
+	frappe.call({
+		method: "alvoraa_portal.joiner_to_employee.link_the_employee",
+		args: { submission: frm.doc.name, employee: employee },
+		freeze: true,
+	}).then((r) => {
+		const d = (r && r.message) || {};
+		/* Rendered as HTML by `msgprint`, and both came out of the database -
+		   so escaped, the way `makeSignIn` above already does it. */
+		const who = frappe.utils.escape_html(d.employee_name || "");
+		const which = frappe.utils.escape_html(d.employee || "");
+		/* Real counts, computed from what actually moved. And the documents are
+		   told the truth: nothing moves them to the employee record yet, so
+		   this must not claim a tick that does not exist. */
+		const lines = [
+			__("{0} details are now on {1} ({2}), and their joiner sign-in is closed.",
+			   [d.details, who, which]),
+		];
+		if (d.documents_left_behind) {
+			lines.push(__("The {0} document(s) they uploaded are still on this "
+			            + "invite and have NOT moved to the employee record. "
+			            + "Download anything you need to keep.",
+			              [d.documents_left_behind]));
+		} else {
+			lines.push(__("They uploaded no documents."));
+		}
+		frappe.msgprint({
+			title: __("{0} is now an employee", [who]),
+			indicator: "green",
+			message: lines.map((l) => `<p>${l}</p>`).join(""),
 		});
 		frm.reload_doc();
 	});

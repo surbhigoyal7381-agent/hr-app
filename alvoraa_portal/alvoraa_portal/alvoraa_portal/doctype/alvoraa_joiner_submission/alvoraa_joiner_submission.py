@@ -3,12 +3,20 @@
 Slice 078, step 6. The controller holds three rules and nothing else; the token,
 the public page and the erase job live in their own modules.
 
-**It never becomes an Employee by itself (078-SEC-12).** There is no code path
-anywhere that creates an `Employee` from one of these. HR creates the personnel
-record by hand, in Desk, and sets the joining date themselves - because a
-back-dated joining date makes Frappe mark the person Absent for every day since
-and deleting those rows does not help. That is a logged DTC fault, not a
-theory.
+**It never becomes an Employee by itself.** No code anywhere creates an
+`Employee` from one of these: HR presses Save on a form in front of them, and
+**no code writes `Employee.date_of_joining`** - because a back-dated joining
+date makes Frappe mark the person Absent for every day since and deleting those
+rows does not help. That is a logged DTC fault, not a theory.
+
+Slice 082 narrowed 078-SEC-12, which banned every copy in order to protect that
+one date, into three rules that protect the date by name: **082-SEC-1** no code
+writes a date and no date is in the prefill payload; **082-SEC-2** nothing a
+joiner can reach reads, creates or writes an `Employee`, and the one prefill
+endpoint is HR-only; **082-SEC-3** no `ignore_permissions` on the `Employee`
+side. The six details that may cross are `COLUMN_FOR_TICK` below, plus
+`full_name` into `first_name`, and nothing else (082-SEC-4). The copying lives
+in `alvoraa_portal/joiner_to_employee.py`.
 
 **Every move out of Invited or Submitted is terminal.** A link cannot be
 revived, which `Alvoraa App Invite` already established for the field app.
@@ -114,9 +122,19 @@ class AlvoraaJoinerSubmission(Document):
 	def _follow_the_employee(self):
 		"""HR linking the personnel record is what moves it on.
 
-		Declarative on purpose: there is no "turn this into an employee" button
-		to press by accident, and no endpoint that could be called with somebody
-		else's id. HR makes the Employee, opens this row, picks it, and saves.
+		Declarative on purpose: the status follows the link rather than being set
+		by whoever remembered to. HR makes the Employee, then links it.
+
+		**Slice 082 made this reachable for the first time.** The field is
+		`read_only: 1` and nothing wrote it until `joiner_to_employee.
+		link_the_employee`, which checks write on this row and write on the
+		target `Employee`, names the person to HR before it writes, and re-reads
+		the link under a row lock so two people cannot both win. It is not a
+		button that can be pressed by accident and it takes nobody else's id.
+
+		It accepts `Invited` as well as `Submitted` because a person can be
+		hired without ever sending the form back; the endpoint is narrower and
+		allows only `Submitted`, since an `Invited` row holds nothing to copy.
 		"""
 		if self.employee and self.status in ("Invited", "Submitted"):
 			self.status = "Made an employee"

@@ -2200,10 +2200,20 @@ def get_expense_claims():
         limit=15,
         ignore_permissions=True,
     )
+    # Slice 081: which of the caller's own claims carry a bill. **One query for
+    # the whole list**, not one per row, and a boolean rather than a url - the
+    # file itself only ever arrives through `open_evidence`. A claim filed
+    # before this slice shipped says "No bill attached" in plain words with no
+    # button, because an empty View is worse than an honest absence (AC-30).
+    from alvoraa_portal import expense_evidence
+
+    with_bill = expense_evidence.has_evidence(
+        expense_evidence.CLAIM, [c["name"] for c in claims])
     # Slice 076 (US-17): the reason the approver gave, on the caller's own
     # claims only. Stored escaped for the desk; the page escapes it again.
     for c in claims:
         c["decline_reason"] = html.unescape(c.pop("alvoraa_decline_reason") or "") or None
+        c["has_bill"] = c["name"] in with_bill
     return {"claims": claims, "employee": emp}
 
 
@@ -2392,7 +2402,20 @@ def _expense_claim_accounts(company, expense_type):
 
 
 @frappe.whitelist()
-def apply_expense_claim(expense_type, expense_date, amount, description=None):
+def apply_expense_claim(expense_type, expense_date, amount, description=None,
+                        file_id=None):
+    """File one expense claim for the caller's own employee record.
+
+    Slice 081: `file_id` is the bill, uploaded on its own call a moment ago by
+    `expense_evidence.upload_evidence`, and it is **required**. It is the `File`
+    row's ID and not its url, because Frappe de-duplicates identical bytes into
+    two rows sharing one url - see `expense_evidence.reserve`. The rule also
+    lives on the document at submit, where Desk, the REST API and a data import
+    meet it; this refusal is here as well so the person hears it at the moment
+    they can act on it, in the server's own words.
+    """
+    from alvoraa_portal import expense_evidence
+
     emp = _get_employee()
     if not emp:
         frappe.throw("No employee record is linked to your account.")
@@ -2419,6 +2442,27 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
     currency = frappe.db.get_value("Company", emp.company, "default_currency")
     accounts = _expense_claim_accounts(emp.company, expense_type)
 
+    # Slice 081: a claim with no bill is not filed, and this is the LAST of the
+    # refusals on purpose. Every check above it - no employee record, no
+    # approver, no expense account for the company - is something only HR can
+    # put right, and a person told "attach a bill" for a claim that could never
+    # have been approved anyway would make a second trip for nothing. The
+    # refusals a person can act on come after the ones they cannot.
+    #
+    # The sentence is the server's own, word for word the first line of the
+    # Desk refusal, and it reaches the screen verbatim - never "upload failed",
+    # never "check your connection", never a Python argument error
+    # (081-SEC-3, AC-23).
+    if not str(file_id or "").strip():
+        frappe.throw(expense_evidence._msg_no_bill() + " "
+                     + _("Please attach one and send it again."),
+                     title=_("A bill is needed"))
+
+    # The file is claimed for this call BEFORE the claim is inserted, so two
+    # taps cannot leave a second claim behind with no way to get a file onto
+    # it. The lock is held until this request commits.
+    reserved = expense_evidence.reserve(file_id, expense_evidence.CLAIM)
+
     doc = frappe.get_doc({
         "doctype": "Expense Claim",
         "employee": emp.name,
@@ -2444,6 +2488,10 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
         }],
     })
     doc.insert(ignore_permissions=True)
+    # In the same call that created the claim, before the response goes back:
+    # without this the approver's queue would say "No bill attached" to the one
+    # person who needs it, and every retention pass would skip the file (OPS-17).
+    expense_evidence.attach(reserved, expense_evidence.CLAIM, doc.name)
     frappe.db.commit()
     return {"name": doc.name}
 

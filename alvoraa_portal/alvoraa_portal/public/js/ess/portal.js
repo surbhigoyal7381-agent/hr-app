@@ -5864,6 +5864,12 @@ function acPaint() {
     + "— there is nothing to be short of.</p>";
 
   document.getElementById("ac-body").innerHTML = html;
+  /* Slice 081: the file block is drawn by JavaScript, after the table's own
+     markup is on the page, because the control carries a hidden input and its
+     own state. It exists only while the form for one day is open. */
+  if (document.getElementById("ac-file")) {
+    evInit("ac-file", "dayfix", {required: false});
+  }
   /* The heading is the constant word "Attendance", so this line is the only
      thing that says WHOSE record is on screen. It leads with the person for
      that reason. */
@@ -6150,6 +6156,11 @@ function acForm(x) {
     + "It decides what the day becomes if HR agrees.</p>"
     + '<label class="form-label">Anything HR should know</label>'
     + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>'
+    /* Slice 081: the file block, with its notice ABOVE the two buttons inside
+       the same block. Optional, and Send works with nothing attached and says
+       nothing about it - there is no confirm, because a confirm on an optional
+       field is a nudge away from the evidence HR needs. */
+    + '<div class="ev-block" id="ac-file"></div>'
     + '<div class="ac-acts">'
     + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date
     + '&quot;)">Ask HR to fix this day</button>'
@@ -6216,7 +6227,10 @@ window.acSubmit = async function (date) {
       await acApi("raise_for_report", {
         employee: other, from_date: date, reason: reason, explanation: explain});
     } else {
-      await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain});
+      /* Slice 081: whatever the person chose to attach, or nothing at all.
+         A request sent with no file says nothing about it. */
+      await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain,
+        file_id: window.evFileId("ac-file")});
     }
     hideLoad();
     toast("Sent to HR.", "ok");
@@ -6237,7 +6251,17 @@ function acReqCard(r, mine) {
     + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
     + '<div class="s">' + gpEsc(r.says) + "</div>"
     + (r.note ? '<div class="note">' + gpEsc(r.note) + "</div>" : "")
-    + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "");
+    + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "")
+    /* Slice 081: one line, inside the card that already exists. The card is
+       not a single button - it carries Withdraw, or Fix and Decline - so View
+       can be a real button here. **No thumbnail**: a list that preloaded
+       pictures would put megabytes through eight worker slots on one page
+       view, on the busiest page in the product. */
+    + (r.has_evidence
+        ? '<div class="s ev-row-ok">' + gpEsc(drT("Evidence attached")) + ' · '
+          + '<button type="button" class="ev-link" data-evopen="dayfix" data-name="'
+          + gpEsc(r.name) + '">' + gpEsc(drT("View")) + "</button></div>"
+        : "");
   if (mine && r.state === "waiting") {
     html += '<div class="ac-acts"><button class="btn btn-outline" onclick="acWithdraw(&quot;'
       + gpEsc(r.name) + '&quot;)">Withdraw</button></div>';
@@ -6290,6 +6314,18 @@ async function acReviewQueue() {
            22 Oct 2026). */
         + (r.can_decide === false && r.not_yet
             ? '<div class="note">' + gpEsc(r.not_yet) + "</div>" : "")
+        /* Slice 081 (AC-44, AC-45): "Evidence attached · View", and nothing
+           else. These cards already carry Fix and Decline, so they are not
+           single buttons and View can be a real button here. **No thumbnail,
+           no preloading and no "open all"** - the endpoint reads a whole file
+           into one of eight request slots, so a 47-row queue that preloaded
+           pictures would be the slowest page in the product, on the surface
+           that matters most. One file per tap. */
+        + (r.has_evidence
+            ? '<div class="note ev-row-ok">' + gpEsc(drT("Evidence attached")) + ' · '
+              + '<button type="button" class="ev-link" data-evopen="dayfix" data-name="'
+              + gpEsc(r.name) + '">' + gpEsc(drT("View")) + "</button></div>"
+            : "")
         + '<div class="ac-acts">'
         + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
         + (r.can_decide === false ? "" :
@@ -6489,6 +6525,16 @@ function hmCloseSheet(quiet) {
 document.addEventListener("keydown", function (e) {
   var ov = hmEl("hm-ov");
   if (!ov) return;
+  /* Slice 081: THE VIEWER WINS, AND IT MUST.
+     A bill now opens on top of this sheet. `stopPropagation` does not stop the
+     other keydown listeners on `document` - that would need
+     stopImmediatePropagation - so without this line an Escape pressed over an
+     open bill ran BOTH handlers: this one closed the sheet and the viewer's
+     closed the viewer. The approver lost their place in the claim for pressing
+     Escape to put a picture away, which is exactly the fault the drawer's own
+     Escape order was written to prevent. The viewer's handler does the work;
+     this one stands aside and the Tab trap below does too. */
+  if (typeof MPF_DOC !== "undefined" && MPF_DOC) return;
   if (e.key === "Escape") { e.stopPropagation(); hmCloseSheet(); return; }
   if (e.key !== "Tab") return;
   var f = [].filter.call(ov.querySelectorAll("button, a[href], textarea"), function (n) { return !n.disabled; });
@@ -6566,6 +6612,10 @@ function hmRowView(key, r) {
     v.title = r.employee_name || "";
     v.sub = drT("Expense claim") + " · " + fmtMoney(r.amount) + (r.expense_type ? " · " + r.expense_type : "")
       + (w ? " · " + w : "");
+    /* Slice 081: whether this claim is decidable at all, before anything is
+       opened. The payload carries a boolean and never a url (AQ5). */
+    v.l3 = r.has_bill ? drT("Bill attached") : drT("No bill attached");
+    v.l3dim = !r.has_bill;
     v.go = "Review";
   } else if (key === "goal_updates") {
     v.title = r.employee_name || "";
@@ -6583,9 +6633,17 @@ function hmRowView(key, r) {
   return v;
 }
 function hmPendRowHtml(v, i) {
+  /* Slice 081 (AC-36, AC-37): a THIRD LINE in words - "Bill attached" or "No
+     bill attached" - and it stays a `<span>`. The row is one `<button>`, so a
+     View link inside it would be a button inside a button: unreachable by
+     keyboard and a WCAG 2.2 AA failure. The file is opened from the sheet.
+     "No bill attached" is grey, not red: it is not an error, and an older
+     claim with none is a fact rather than a fault. */
   return '<button type="button" class="hm-row" data-hm="pend" data-i="' + i + '">'
     + '<span class="hm-av" aria-hidden="true">' + esc(v.av || initials(v.title)) + '</span>'
-    + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span><span class="hm-l2">' + esc(v.sub) + '</span></span>'
+    + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span><span class="hm-l2">' + esc(v.sub) + '</span>'
+    + (v.l3 ? '<span class="hm-l3' + (v.l3dim ? " hm-l3-dim" : "") + '">' + esc(v.l3) + '</span>' : "")
+    + '</span>'
     + '<span class="hm-go">' + esc(drT(v.go)) + '</span></button>';
 }
 function hmPaintPending() {
@@ -6665,6 +6723,18 @@ function hmExpenseSheet(r) {
     + (r.note ? '<div class="hm-sub" style="color:var(--text)">' + esc(r.note) + '</div>' : '') + '</div>'
     + '<div class="hm-note" style="margin-top:8px">' + esc((w ? w.charAt(0).toUpperCase() + w.slice(1) + ". " : "")
     + drT("Approving passes it to accounts for payment. You cannot take it back here.")) + '</div>'
+    /* Slice 081 (AC-38, AC-43): View bill in the sheet BODY, above the
+       decision - never between Approve and Decline. The evidence is read
+       before the act that cannot be taken back, and the footer stays the
+       decision. An older claim with no file says so plainly and renders no
+       button, because an empty View lies to the person pressing it. */
+    + '<div class="hm-sh-p" style="padding-top:0">'
+    + (r.has_bill
+        ? '<button type="button" class="btn btn-outline" data-hm="bill" id="hm-bill">'
+          + esc(drT("View bill")) + '</button>'
+          + '<div class="hm-err" id="hm-bill-e" role="alert" style="display:none"></div>'
+        : '<div class="hm-note">' + esc(drT("No bill is attached to this claim, so there is nothing to open.")) + '</div>')
+    + '</div>'
     + '</div>'
     + '<div class="hm-sh-p hm-reason" id="hm-reason" style="display:none;padding-top:0">'
     + '<label for="hm-why">' + esc(drT("Why are you declining? {0} will read this.", [(r.employee_name || "").split(" ")[0]])) + '</label>'
@@ -7275,6 +7345,15 @@ var OCS_MY_KEY = "alvoraa_my_profile_fields";
 var OCS_JOINER_KEY = "alvoraa_joiner_fields";
 var OCS_JOINER_NEED_KEY = "alvoraa_joiner_required_fields";
 var OCS_MY_NEED_KEY = "alvoraa_my_profile_required_fields";
+/* ALV-304. The five values a joiner has to be told before they hand anything
+   over. `set_people_setting` has accepted all five since slice 079 and
+   `what_the_employer_has_not_set` has blocked every invite until they are set -
+   and until now no screen anywhere could set one of them. */
+var OCS_NOT_HIRED_KEY = "alvoraa_joiner_not_hired_days";
+var OCS_DOC_DAYS_KEY = "alvoraa_joiner_document_days";
+var OCS_NOTICE_KEY = "alvoraa_joiner_notice_text";
+var OCS_HR_PHONE_KEY = "alvoraa_hr_contact_phone";
+var OCS_HR_EMAIL_KEY = "alvoraa_hr_contact_email";
 
 /* The words for each ticked detail. The same list the drawer uses for the
    Positions fields - MPF_FIELDS - because one of them being renamed and not
@@ -7288,12 +7367,93 @@ var OCS_MY_WORDS = {
   relation: "How they are related",
   emergency_phone_number: "Emergency contact number"
 };
+/* The question the JOINER actually reads, and its hint - the same six fields
+   again. Copied from `joining.html`'s own LABELS, which are Jinja-translated at
+   render time and so cannot be imported here. The picker needs them to answer
+   the one question a tick raises: what does this do to somebody else's screen.
+   `test_joiner_words_match_the_joining_page` fails if the two ever disagree. */
+var OCS_JOINER_READS = {
+  cell_number: ["Your mobile number", "The number we will ring"],
+  personal_email: ["Your email", ""],
+  current_address: ["Where you live now", "Where post reaches you today"],
+  person_to_be_contacted: ["Who to ring in an emergency", "A name we can ask for"],
+  relation: ["How they are related to you", "Wife, brother, friend"],
+  emergency_phone_number: ["Their phone number", "A number that will be answered"]
+};
 function ocsWord(key, field) {
-  if (key === OCS_MY_KEY) return drT(OCS_MY_WORDS[field] || field);
+  /* ALV-305. The joiner list holds the SAME SIX fields as My Profile, by
+     identity (`people_fields.MY_PROFILE_WRITE_FIELDS`), so it reads the same
+     plain words. Without the joiner key here it fell through to `return field`
+     and the dialog printed `cell_number` and `person_to_be_contacted`. */
+  if (key === OCS_MY_KEY || key === OCS_JOINER_KEY) {
+    return drT(OCS_MY_WORDS[field] || field);
+  }
   for (var i = 0; i < MPF_FIELDS.length; i++) {
     if (MPF_FIELDS[i][0] === field) return drT(MPF_FIELDS[i][1]);
   }
   return field;
+}
+
+/* ── one list, one set of words ───────────────────────────────────────────
+   ALV-310. The column heading, the tie line, the preview button and the save
+   button all have to say the SAME thing about the same decision. Saying it in
+   four-way ternaries inside five different functions is exactly how "Must fill
+   in", "compulsory" and "Needed" became three words for one idea. So the words
+   for each of the four lists live here, once.
+
+   ONE WORD PER IDEA: HR reads **Must fill in**, the joiner and the employee
+   read **Needed**, the tie line is the only place both appear, and the word
+   "compulsory" does not appear on any screen. */
+function ocsWords(kind) {
+  var d = OCS.data || {};
+  var people = d.audience_count || 0;
+  var roles = (d.audience_roles || []).join(", ");
+  if (kind === "docs") {
+    return {
+      title: drT("Document types shown on a person's profile"),
+      lead: drT("Tick a type and anyone who can open the Positions page can open "
+              + "the file itself — {0} people today ({1}).", [people, roles]),
+      c1: drT("Shown"), c2: "", tie: "",
+      preview: drT("Show me what a reader sees")
+    };
+  }
+  if (kind === "my") {
+    return {
+      title: drT("Details an employee may correct about themselves"),
+      lead: drT("These are the details an employee can change on their own My "
+              + "Profile page. My Profile never refuses a save — anything you "
+              + "keep asking for is asked again on every visit, not blocked."),
+      c1: drT("They may change it"), c2: drT("Keep asking"),
+      tie: drT("A detail you tick under {0} shows the employee a {1} until it is "
+             + "filled in. It never stops them saving.",
+             ["<b>" + esc(drT("Keep asking")) + "</b>",
+              '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>"]),
+      preview: drT("Show me the employee's own page")
+    };
+  }
+  if (kind === "joiner") {
+    return {
+      title: drT("Details a new joiner is asked for"),
+      lead: drT("These are the questions on the joining form a new starter fills "
+              + "in before their first day. A joiner is asked for nothing at all "
+              + "until you tick it here."),
+      c1: drT("Asked for"), c2: drT("Must fill in"),
+      tie: drT("A detail you tick under {0} shows the joiner a {1} beside the "
+             + "question, and they cannot send the form until they have filled it "
+             + "in. Everything else they may leave blank.",
+             ["<b>" + esc(drT("Must fill in")) + "</b>",
+              '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>"]),
+      preview: drT("Show me the form a joiner fills in")
+    };
+  }
+  return {
+    title: drT("Details a Positions reader may see"),
+    lead: drT("These are the job details shown beside a person's name on the "
+            + "Positions page and the organisation chart — seen by {0} people "
+            + "today ({1}).", [people, roles]),
+    c1: drT("Shown"), c2: "", tie: "",
+    preview: drT("Show me what a reader sees")
+  };
 }
 
 function ocsLoad() {
@@ -7414,6 +7574,18 @@ function ocsPaint() {
   var asked = d.joiner_fields || [];
   var reqd = d.joiner_required_fields || [];
   var notReady = d.joiner_not_ready || [];
+  /* ALV-304. Which of the values is still unset, BY KEY. The labels beside it
+     are what HR reads; the keys are how this card can tell "the employer chose
+     180" from "nobody chose anything and `org_settings.get()` handed us our own
+     default". The gate reads these values raw and deliberately, so a card that
+     prints our default as though it were a decision contradicts the gate on the
+     same screen. */
+  var unset = d.joiner_not_ready_keys || [];
+  var isSet = function (key) { return unset.indexOf(key) < 0; };
+  var toldBtn = function (cls) {
+    return '<button type="button" class="btn ' + cls + ' ocs-b" data-ocs="told">'
+      + esc(drT("Set what a joiner is told")) + "</button>";
+  };
   var joiner = '<div class="ocs-sec"><h4 class="ocs-h">'
     + esc(drT("What a new joiner is asked for before day one")) + "</h4>"
     /* The block lands on the person who can fix it. The alternative was a
@@ -7424,12 +7596,20 @@ function ocsPaint() {
           + esc(drT("You cannot invite anybody yet.")) + "</b> "
           + esc(drT("A joiner has to be told these things before they hand "
                   + "anything over, and they come from your settings, not from "
-                  + "us:")) + " " + esc(notReady.join("; ")) + ".</p>"
+                  + "us:")) + " " + esc(notReady.join("; ")) + "."
+          /* ALV-304, and Surbhi's placement: the button goes where the problem
+             is STATED. The card already names what is missing, so the screen
+             that reports it is the screen that fixes it - not a sixth field
+             inside a picker whose Cancel means "write nothing of the ticks". */
+          + '<span class="ocs-told">' + toldBtn("btn-primary") + "</span></p>"
         : "")
     + (asked.length
         ? ocsChips(asked.map(function (f) {
+            /* HR's word is "Must fill in" on every one of HR's screens. The
+               joiner and the employee read "Needed" on theirs. One word per
+               idea per audience, which is what ALV-310 asked for. */
             return ocsWord(OCS_MY_KEY, f)
-              + (reqd.indexOf(f) >= 0 ? " \u00b7 " + drT("Needed") : "");
+              + (reqd.indexOf(f) >= 0 ? " \u00b7 " + drT("Must fill in") : "");
           }))
         : '<p class="gp-hint">' + esc(drT(
             "Nothing. A joiner is asked for no details at all until you tick "
@@ -7442,18 +7622,58 @@ function ocsPaint() {
                (d.joiner_required_documents || []).join(", ")])
           : drT("No document has to be answered for.")) + "</p>"
     /* Both of counsel's periods, separately. One sentence covering both would
-       be wrong about one of them. */
-    + '<p class="gp-hint">' + esc(drT(
-        "Details of somebody who does not join are kept for {0} days. A "
-        + "photograph of an identity card is deleted sooner \u2014 after {1} days.",
-        [d.not_hired_days, d.document_days])) + "</p>"
+       be wrong about one of them - and ALV-304 adds the other half of that: a
+       period NOBODY HAS CHOSEN is not reported as a number at all. The gate
+       reads the value raw on purpose, because a default we picked is not a
+       decision the employer made, so this card must not dress one up as one. */
+    + '<p class="gp-hint">'
+    + esc(isSet(OCS_NOT_HIRED_KEY)
+        ? drT("Details of somebody who does not join are kept for {0} days.",
+              [d.not_hired_days])
+        : drT("How long the details of somebody who does not join are kept is "
+            + "not set yet.")) + " "
+    + esc(isSet(OCS_DOC_DAYS_KEY)
+        ? drT("A photograph of an identity card is deleted sooner \u2014 after "
+            + "{0} days.", [d.document_days])
+        : drT("How long a photograph of an identity card is kept is not set "
+            + "yet.")) + "</p>"
     + '<p class="gp-hint">' + esc(d.notice_text
         ? drT("Your own words are set, and a joiner reads them before the first "
             + "question.")
         : drT("Your own words are not set yet, so no joiner can be asked "
             + "anything.")) + "</p>"
+    /* ALV-304, Surbhi 4 Nov 2026. The switch itself. It has existed on the
+       server since 078 with a label and a 0/1 refusal written for it, and no
+       screen anywhere set it - so the only way to use the joining form was a
+       command typed on the server.
+
+       **Refusable, not hidden, while anything is unset.** Turning on a form
+       that then refuses every invite would be a switch that lies, and the
+       amber block above already says what is missing. Disabled carries the
+       reason in its own words rather than leaving the reader to connect two
+       parts of the card. */
+    + '<label class="ocs-opt" for="ocs-jon"><input type="checkbox" id="ocs-jon"'
+    + (d.joiner_form_on ? " checked" : "")
+    + (notReady.length ? " disabled" : "")
+    + ' data-ocs-joiner-on="1"><span><b>'
+    + esc(drT("Ask new joiners for their details before day one")) + "</b>"
+    + '<span class="gp-hint" style="display:block">' + esc(
+        notReady.length
+          ? drT("You cannot turn this on until the things above are set. A "
+              + "joiner would be sent a sign-in and then refused.")
+          : drT("Off until you turn it on. A new starter gets their own "
+              + "sign-in, fills in what you have ticked, and sends it before "
+              + "their first day. Turning it off again stops new invites; it "
+              + "does not close a sign-in somebody already has."))
+    + "</span></span></label>"
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joiner">'
-    + esc(drT("Add or remove details")) + "</button></div></div>";
+    + esc(drT("Add or remove details")) + "</button>"
+    /* Once everything is set the amber block goes, and with it the button
+       inside it - which would leave the notice text unchangeable for ever. So
+       when there is no amber block the button stands in the action row instead.
+       One button, always exactly one, always reachable. */
+    + (notReady.length ? "" : toldBtn("btn-outline"))
+    + "</div></div>";
 
   hmEl("ocs-body").innerHTML = profile + docsSec + mine + joiner;
   hmEl("ocs-changed").textContent = d.last_changed && d.last_changed.by
@@ -7490,8 +7710,39 @@ function ocsPick(kind) {
   ocsDialog();
 }
 
+/* One row, for any of the four lists. ALV-310.
+
+   THE DECISION IS A COLUMN, NOT A TICK INSIDE A TICK. The "must fill in" cell
+   is in every row, always, and is merely EMPTY on a row that is not asked for
+   (`visibility:hidden`, so it is also out of the tab order). Nothing appears,
+   nothing disappears, so no row is ever redrawn - which is what fixes all three
+   of the faults that shared one cause: the rows stopped jumping, the column can
+   be scanned, and the keyboard focus stays on the box that was just pressed
+   instead of being thrown to `<body>` on every tick (WCAG 2.2 AA 3.2.2).
+
+   An EMPTY cell, never a disabled one. There is nothing to decide about a
+   detail nobody is being asked for. */
+function ocsRow(value, name, sub, chip, w) {
+  return '<tr' + (OCS.pick[value] ? "" : ' class="oc2-off"') + ">"
+    + '<td class="oc2-nm">' + esc(name)
+    + (chip ? '<span class="ocs-cat">' + esc(chip) + "</span>" : "")
+    + (sub ? '<span class="oc2-sub">' + esc(sub) + "</span>" : "") + "</td>"
+    /* The accessible name carries the row AND the column. A `<th scope="col">`
+       alone is not a reliable name on a checkbox. */
+    + '<td><label class="oc2-cell"><input type="checkbox" data-ocs-v="' + esc(value) + '"'
+    + (OCS.pick[value] ? " checked" : "") + ' aria-label="'
+    + esc(name + " — " + w.c1) + '"></label></td>'
+    + (w.c2
+        ? '<td><label class="oc2-cell oc2-n"><input type="checkbox" data-ocs-need="'
+          + esc(value) + '"' + (OCS.need[value] ? " checked" : "") + ' aria-label="'
+          + esc(name + " — " + w.c2) + '"></label></td>'
+        : "")
+    + "</tr>";
+}
+
 function ocsRows() {
   var d = OCS.data || {};
+  var w = ocsWords(OCS.kind);
   if (OCS.kind === "docs") {
     var types = (OCS.types && OCS.types.types) || [];
     var byCat = {}, order = [];
@@ -7504,16 +7755,15 @@ function ocsRows() {
        category as a chip on every row - so a sensitive type cannot be read as
        an ordinary one because it happens to be next to one. */
     return order.map(function (c) {
-      return '<h5 class="ocs-grp">' + esc(c) + "</h5>" + byCat[c].map(function (t) {
-        return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(t.name) + '"'
-          + (OCS.pick[t.name] ? " checked" : "") + '><span><b>' + esc(t.name) + "</b>"
-          + '<span class="ocs-cat">' + esc(t.category || drT("Other")) + "</span>"
-          + '<span class="gp-hint" style="display:block">'
-          + esc([t.collect_from ? drT("collected by {0}", [t.collect_from]) : "",
-                 t.given ? drT("{0} given so far", [t.given]) : drT("nobody has given one"),
-                 t.mandatory ? drT("needed to join") : ""].filter(Boolean).join(" · "))
-          + "</span></span></label>";
-      }).join("");
+      return '<tr class="oc2-grp"><td colspan="' + (w.c2 ? 3 : 2) + '">'
+        + esc(c) + "</td></tr>"
+        + byCat[c].map(function (t) {
+            return ocsRow(t.name, t.name,
+              [t.collect_from ? drT("collected by {0}", [t.collect_from]) : "",
+               t.given ? drT("{0} given so far", [t.given]) : drT("nobody has given one"),
+               t.mandatory ? drT("needed to join") : ""].filter(Boolean).join(" · "),
+              t.category || drT("Other"), w);
+          }).join("");
     }).join("");
   }
   var choices = OCS.kind === "my" ? (d.my_profile_choices || [])
@@ -7521,56 +7771,65 @@ function ocsRows() {
     : (d.profile_choices || []);
   var key = OCS.kind === "my" ? OCS_MY_KEY
     : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
-  var canNeed = OCS.kind === "my" || OCS.kind === "joiner";
   /* THE SAFE LIST ONLY. Bank account, PAN, salary and date of birth are not
      offered, and would be refused at the setter and again at every reader if
      they were. A picker that offers a field it will then refuse is how a tenant
      comes to believe a field is visible. */
   return choices.map(function (f) {
-    return '<label class="ocs-opt"><input type="checkbox" data-ocs-v="' + esc(f) + '"'
-      + (OCS.pick[f] ? " checked" : "") + '><span><b>' + esc(ocsWord(key, f))
-      + "</b>"
-      /* The "must fill in" tick exists ONLY on a ticked row, and it is not
-         offered at all on the Positions list, where nobody fills anything in. */
-      + (canNeed && OCS.pick[f]
-          ? '<span class="gp-hint" style="display:block">'
-            + '<label><input type="checkbox" data-ocs-need="' + esc(f) + '"'
-            + (OCS.need[f] ? " checked" : "") + "> "
-            + esc(OCS.kind === "joiner"
-                ? drT("Must fill in before they can send the form")
-                : drT("Keep asking for it"))
-            + "</label></span>"
-          : "")
-      + "</span></label>";
+    /* On the joiner list only, the question the JOINER will read. It is the
+       cheapest honest answer to "what does this tick do to somebody else's
+       screen", and it costs the line the repeated sentence used to use. */
+    var reads = OCS.kind === "joiner" && OCS_JOINER_READS[f]
+      ? drT("The joiner reads: “{0}”", [drT(OCS_JOINER_READS[f][0])])
+      : "";
+    return ocsRow(f, ocsWord(key, f), reads, "", w);
   }).join("");
 }
 
 function ocsDialog() {
   var d = OCS.data || {};
-  var title = OCS.kind === "docs" ? drT("Document types shown on a person's profile")
-            : OCS.kind === "my" ? drT("Details an employee may correct about themselves")
-            : OCS.kind === "joiner" ? drT("Details a new joiner is asked for")
-            : drT("Details a Positions reader may see");
+  var w = ocsWords(OCS.kind);
+  var rows = ocsRows();
   var box = document.createElement("div");
   box.className = "ocs-back";
   box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true"'
     + ' aria-labelledby="ocs-dlg-h" tabindex="-1">'
-    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">' + esc(title) + "</h3>"
+    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">' + esc(w.title) + "</h3>"
     + '<button type="button" class="ocs-x" data-ocs="cancel" aria-label="'
     + esc(drT("Cancel")) + '">&times;</button></div>'
-    + '<div class="ocs-dlg-bd" id="ocs-dlg-bd">' + ocsRows() + "</div>"
+    + '<div class="ocs-dlg-bd" id="ocs-dlg-bd">'
+    /* The dialog says what it is for. Without it HR was ticking blind: there
+       was no sentence anywhere saying what the form is or who reads it. */
+    + '<p class="oc2-lead">' + esc(w.lead) + "</p>"
+    /* The ONE place the two words meet, so neither screen has to carry both. */
+    + (w.tie ? '<p class="oc2-tie">' + w.tie + "</p>" : "")
+    + (rows
+        /* The heading row STICKS: at 18 document types it used to scroll away
+           and the tick columns lost their meaning half way down the list. */
+        ? '<table class="oc2-tbl"><thead><tr>'
+          + '<th scope="col">' + esc(drT("Detail")) + "</th>"
+          + '<th scope="col" class="c">' + esc(w.c1) + "</th>"
+          + (w.c2 ? '<th scope="col" class="c">' + esc(w.c2) + "</th>" : "")
+          + "</tr></thead><tbody>" + rows + "</tbody></table>"
+        /* A heading over an empty body is a heading that lies. */
+        : '<p class="gp-hint">' + esc(drT("There is nothing to choose from here yet."))
+          + "</p>")
+    + "</div>"
     + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="ocs-sum" role="status"></p>'
-    /* 01b line 604. Laptop: Preview, then Cancel, then OK - so the primary,
-       saving action is on the right where it is expected, and Cancel is not
-       where OK was drawn. The phone stacks these full width with OK FIRST,
-       which `.ocs-ft-b` does with one `order` rule rather than a second copy
-       of the markup. */
-    + '<div class="ocs-ft-b">'
+    /* Laptop: Preview on the left, Cancel on the right, Save across the full
+       width below them, because Save carries a sentence rather than a word.
+       The phone stacks all three IN DOM ORDER - Preview, Cancel, Save - so
+       what is read matches what is tabbed, and the bottom of the screen, where
+       the thumb lands, is Save and not Cancel. The old `order:-1` rule that
+       lifted OK to the top is gone: it made the visual order disagree with the
+       tab order (WCAG 2.2 AA 1.3.2 / 2.4.3). */
+    + '<div class="ocs-ft-b oc2-ft-b">'
     + '<button type="button" class="btn btn-outline ocs-b" data-ocs="preview">'
-    + esc(drT("Preview what a reader sees")) + "</button>"
+    + esc(w.preview) + "</button>"
+    + '<span class="oc2-sp"></span>'
     + '<button type="button" class="btn btn-outline ocs-b" data-ocs="cancel">'
     + esc(drT("Cancel")) + "</button>"
-    + '<button type="button" class="btn btn-primary ocs-b" data-ocs="ok" id="ocs-ok"></button>'
+    + '<button type="button" class="btn btn-primary ocs-b oc2-ok" data-ocs="ok" id="ocs-ok"></button>'
     + "</div></div></div>";
   document.body.appendChild(box);
   OCS.dlg = box;
@@ -7593,15 +7852,26 @@ function ocsSummary() {
   var needCount = Object.keys(OCS.need || {}).filter(function (k) {
     return OCS.need[k] && OCS.pick[k];
   }).length;
+  /* The button repeats the two COLUMN HEADINGS, so it reads at a glance and
+     HR never has to hold two vocabularies at once. And it says what saving
+     nothing means, rather than printing a zero. */
   hmEl("ocs-ok").textContent = OCS.kind === "docs"
-    ? drT("OK - {0} document types, seen by {1} people", [chosen.length, people])
+    ? (chosen.length
+        ? drT("Save — {0} document types, seen by {1} people", [chosen.length, people])
+        : drT("Save — show no documents to anybody"))
     : OCS.kind === "my"
-      ? drT("OK - {0} details an employee may change, {1} we keep asking for",
-            [chosen.length, needCount])
+      ? (chosen.length
+          ? drT("Save — {0} they may change, {1} we keep asking for",
+                [chosen.length, needCount])
+          : drT("Save — an employee may change nothing"))
       : OCS.kind === "joiner"
-        ? drT("OK - a joiner is asked for {0} details, {1} of them compulsory",
-              [chosen.length, needCount])
-        : drT("OK - {0} details, seen by {1} people", [chosen.length, people]);
+        ? (chosen.length
+            ? drT("Save — {0} asked for, {1} must be filled in",
+                  [chosen.length, needCount])
+            : drT("Save — ask a joiner for nothing"))
+        : (chosen.length
+            ? drT("Save — {0} details, seen by {1} people", [chosen.length, people])
+            : drT("Save — show a name and a job role only"));
   /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
   hmEl("ocs-sum").innerHTML = sens.length
     ? '<span class="ocs-warn">' + esc(
@@ -7616,7 +7886,13 @@ function ocsSummary() {
     : OCS.kind === "docs" && chosen.length === 0
       ? esc(drT("Nothing ticked. Nobody will be able to open an employee's documents "
               + "from the Positions page."))
-      : "";
+      /* The two columns disagreeing is a real outcome, so it is said in words
+         rather than left for HR to work out from the counts on the button. */
+      : OCS.kind === "joiner" && chosen.length && !needCount
+        ? '<span class="ocs-warn">' + esc(drT(
+            "Nothing has to be filled in, so a joiner can send the form back "
+            + "empty.")) + "</span>"
+        : "";
 }
 
 function ocsClose() {
@@ -7670,23 +7946,221 @@ function ocsSave() {
 }
 
 function ocsPreview() {
-  /* What a reader sees for what is ticked RIGHT NOW - inside the dialog, so
-     nobody has to save to find out, which is the mistake this exists to stop. */
+  /* What the OTHER PERSON sees for what is ticked RIGHT NOW - inside the
+     dialog, so nobody has to save to find out, which is the mistake this
+     exists to stop.
+
+     ALV-305's SECOND HALF. This used to pick `OCS_PROFILE_KEY` for the joiner
+     list, and `MPF_FIELDS` holds none of the six joiner field names, so the
+     sheet listed `cell_number` and `person_to_be_contacted` even once the rows
+     were fixed. Fixing `ocsWord` alone does not reach this. */
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
-  var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
-  var body = OCS.kind === "docs"
-    ? (chosen.length
-        ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
-          + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
-        : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>")
-    : (chosen.length
-        ? '<dl class="mpf-dl">' + chosen.map(function (f) {
-            return "<dt>" + esc(ocsWord(key, f)) + "</dt><dd>"
-              + esc(drT("the person's value")) + "</dd>";
-          }).join("") + "</dl>"
-        : "<p>" + esc(drT("A reader would see a name and a job role, and nothing else."))
-          + "</p>");
-  hmOpenSheet(drT("What a reader sees"), '<div class="hm-sh-p">' + body + "</div>");
+  var w = ocsWords(OCS.kind);
+  var body;
+  if (OCS.kind === "docs") {
+    body = chosen.length
+      ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
+        + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
+      : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>";
+  } else if (OCS.kind === "joiner") {
+    /* A facsimile of the joiner's own first screen, IN THE JOINER'S OWN WORDS.
+       Nobody "reads" a joining form, so neither the button nor this sheet calls
+       them a reader. */
+    var needed = chosen.filter(function (f) { return OCS.need[f]; });
+    body = chosen.length
+      ? '<div class="oc2-prev"><h4>' + esc(drT("Your details")) + "</h4>"
+        + '<p class="gp-hint">' + esc(drT(
+            "Your details · you are here | Your documents · nothing yet")) + "</p>"
+        + '<p class="gp-hint">' + esc(needed.length
+            ? drT("Anything marked Needed has to be filled in before you can send "
+                + "the form. You can leave the rest blank.")
+            : drT("You can leave any of these blank.")) + "</p>"
+        + chosen.map(function (f) {
+            var r = OCS_JOINER_READS[f] || [f, ""];
+            return '<div class="pq"><b>' + esc(drT(r[0]))
+              + (OCS.need[f]
+                  ? '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>" : "")
+              + "</b>" + (r[1] ? "<i>" + esc(drT(r[1])) + "</i>" : "")
+              + '<div class="pbox"></div></div>';
+          }).join("")
+        + '<p class="gp-hint">' + esc(drT(
+            "Then: Your documents, Your photo, Check and send.")) + "</p></div>"
+      : '<div class="oc2-prev"><h4>' + esc(drT("Your details")) + "</h4><p>"
+        + esc(drT("Nothing is ticked, so a joiner would be sent straight past this "
+                + "screen to their documents.")) + "</p></div>";
+  } else {
+    var key = OCS.kind === "my" ? OCS_MY_KEY : OCS_PROFILE_KEY;
+    body = chosen.length
+      ? '<dl class="mpf-dl">' + chosen.map(function (f) {
+          return "<dt>" + esc(ocsWord(key, f))
+            + (OCS.kind === "my" && OCS.need[f]
+                ? '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>" : "")
+            + "</dt><dd>" + esc(drT("the person's value")) + "</dd>";
+        }).join("") + "</dl>"
+      : "<p>" + esc(OCS.kind === "my"
+          ? drT("An employee would see their details, with nothing they can change.")
+          : drT("A reader would see a name and a job role, and nothing else.")) + "</p>";
+  }
+  /* The sheet's own title names the screen too, not "a reader". */
+  hmOpenSheet(w.preview, '<div class="hm-sh-p">' + body + "</div>");
+}
+
+/* ── what a joiner is told, ALV-304 ───────────────────────────────────────
+   The five values the invite gate demands, which until now **no screen
+   anywhere could set**, so the joiner form could never be switched on at any
+   tenant. The back end was already complete: `set_people_setting` takes every
+   one of these keys and hands it to `set_cover_setting`, which owns the
+   System-Manager rule, the range check, the refusal and the `Version` row.
+   Only the form was missing, and this is the form.
+
+   It is a dialog of its own, on the CARD, rather than a sixth field inside the
+   picker (Surbhi, 4 Nov). The picker's whole contract is "OK saves the ticked
+   list, Cancel writes nothing"; that cannot also mean "OK saves five text
+   fields". And the card is the screen that already says these values are
+   missing, so it is the screen that should fix them. */
+var OCS_TOLD = [
+  [OCS_NOTICE_KEY, "ocs-told-notice"],
+  [OCS_NOT_HIRED_KEY, "ocs-told-nothired"],
+  [OCS_DOC_DAYS_KEY, "ocs-told-docdays"],
+  [OCS_HR_PHONE_KEY, "ocs-told-phone"],
+  [OCS_HR_EMAIL_KEY, "ocs-told-email"]
+];
+
+function ocsToldField(id, kind, label, hint, value, extra) {
+  return '<div class="oc2-f"><label for="' + id + '">' + esc(label)
+    + (hint ? '<span class="gp-hint">' + esc(hint) + "</span>" : "") + "</label>"
+    + (kind === "text"
+        ? '<textarea id="' + id + '" rows="4">' + esc(value) + "</textarea>"
+        : '<input id="' + id + '" type="' + (kind === "days" ? "number" : "text")
+          + '" value="' + esc(value) + '"' + (extra || "") + ">")
+    + "</div>";
+}
+
+function ocsTold() {
+  var d = OCS.data || {};
+  var unset = d.joiner_not_ready_keys || [];
+  OCS.opener = document.activeElement;
+  var box = document.createElement("div");
+  box.className = "ocs-back";
+  box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true"'
+    + ' aria-labelledby="ocs-dlg-h" tabindex="-1">'
+    + '<div class="ocs-dlg-hd"><h3 id="ocs-dlg-h" tabindex="-1">'
+    + esc(drT("What a joiner is told")) + "</h3>"
+    + '<button type="button" class="ocs-x" data-ocs="cancel" aria-label="'
+    + esc(drT("Cancel")) + '">&times;</button></div>'
+    + '<div class="ocs-dlg-bd">'
+    /* True in both states: this dialog is also how the notice text is CHANGED
+       once everything is set, and then "nobody can be invited yet" is a lie. */
+    + '<p class="oc2-lead">' + esc(unset.length
+        ? drT("These are yours, not ours. A joiner cannot be asked for anything "
+            + "until they are set, which is why nobody can be invited yet.")
+        : drT("These are yours, not ours. A joiner reads them before the first "
+            + "question.")) + "</p>"
+    + ocsToldField("ocs-told-notice", "text",
+        drT("Your own words, which a joiner reads before the first question"),
+        drT("Why you are asking, what you do with it, and who to contact. A "
+          + "joiner must see this before they hand anything over."),
+        d.notice_text || "")
+    /* The two clocks are DELIBERATELY BLANK when nobody has chosen one. The
+       defaults in our code are a suggestion, not the employer's decision, and
+       prefilling one would turn a suggestion into a decision on the way past. */
+    + ocsToldField("ocs-told-nothired", "days",
+        drT("Keep the details of somebody who does not join for"),
+        drT("Days. Your own candidate record-keeping rules decide this. Between "
+          + "180 and 365."),
+        unset.indexOf(OCS_NOT_HIRED_KEY) < 0 ? d.not_hired_days : "",
+        ' min="180" max="365" inputmode="numeric"')
+    + ocsToldField("ocs-told-docdays", "days",
+        drT("Delete a photograph of an identity card after"),
+        drT("Days, counted from the day it arrives. Much shorter than the line "
+          + "above, because an identity document is not a candidate record. "
+          + "Between 30 and 60."),
+        unset.indexOf(OCS_DOC_DAYS_KEY) < 0 ? d.document_days : "",
+        ' min="30" max="60" inputmode="numeric"')
+    + ocsToldField("ocs-told-phone", "line",
+        drT("A phone number a joiner can ring"), "",
+        d.hr_contact_phone || "", ' inputmode="tel"')
+    + ocsToldField("ocs-told-email", "line",
+        drT("An email address a joiner can write to"),
+        drT("Either this or the phone number above is enough."),
+        d.hr_contact_email || "")
+    + "</div>"
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="ocs-told-sum" role="status"></p>'
+    + '<div class="ocs-ft-b oc2-ft-b"><span class="oc2-sp"></span>'
+    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="cancel">'
+    + esc(drT("Cancel")) + "</button>"
+    + '<button type="button" class="btn btn-primary ocs-b oc2-ok" data-ocs="told-ok" '
+    + 'id="ocs-told-ok">' + esc(drT("Save what a joiner is told")) + "</button>"
+    + "</div></div></div>";
+  document.body.appendChild(box);
+  OCS.dlg = box;
+  box.querySelector("#ocs-dlg-h").focus();
+}
+
+function ocsToldSave() {
+  var d = OCS.data || {};
+  var was = {};
+  was[OCS_NOTICE_KEY] = String(d.notice_text || "");
+  was[OCS_NOT_HIRED_KEY] = String(
+    (d.joiner_not_ready_keys || []).indexOf(OCS_NOT_HIRED_KEY) < 0
+      ? d.not_hired_days : "");
+  was[OCS_DOC_DAYS_KEY] = String(
+    (d.joiner_not_ready_keys || []).indexOf(OCS_DOC_DAYS_KEY) < 0
+      ? d.document_days : "");
+  was[OCS_HR_PHONE_KEY] = String(d.hr_contact_phone || "");
+  was[OCS_HR_EMAIL_KEY] = String(d.hr_contact_email || "");
+
+  /* ONLY WHAT CHANGED is sent. Five settings are five independent writes, each
+     with its own Version row, so re-sending an unchanged value would record a
+     change nobody made. */
+  var jobs = [];
+  OCS_TOLD.forEach(function (f) {
+    var el = hmEl(f[1]);
+    if (!el) return;
+    var v = String(el.value == null ? "" : el.value).trim();
+    if (v !== was[f[0]]) jobs.push([f[0], v, f[1]]);
+  });
+  var btn = hmEl("ocs-told-ok");
+  if (!jobs.length) { ocsClose(); return; }
+  btn.disabled = true;
+
+  /* THE SERVER DECIDES. The ranges are on the inputs so the browser can help,
+     but nothing here refuses a value: `_set_access_setting` range-checks every
+     one of these, refuses a blank rather than reading it as "for ever", logs
+     the refusal and writes the Version row. A check in a browser that looked
+     like the rule would be a second place for the rule to be wrong. */
+  var step = function (i) {
+    if (i >= jobs.length) return Promise.resolve();
+    return gpFetch(OCS_API + "set_people_setting",
+                   { key: jobs[i][0], value: jobs[i][1] },
+                   { lostAnswerHandled: true }).then(function () {
+      return step(i + 1);
+    }, function (e) {
+      /* Which field, and the server's own sentence about it. A partial save of
+         independent settings is recoverable: the gate stays shut until all of
+         them are set, and the card still says which are missing. */
+      e = e || {};
+      e.ocsField = jobs[i][2];
+      throw e;
+    });
+  };
+  step(0).then(function () {
+    ocsClose();
+    /* Repainted from the SERVER, never from what was typed: the amber block
+       must never say "ready" because a browser believes it is. */
+    ocsLoad();
+    toast(drT("Saved. A joiner will be told this before the first question."), "ok");
+  }, function (e) {
+    btn.disabled = false;
+    var bad = e && e.ocsField ? hmEl(e.ocsField) : null;
+    var why = mayHaveGone(e)
+      ? drT("No answer from the office. It may have gone through. Close this and "
+          + "look before you save it again.")
+      : (e && e.message) || drT("Could not save that. Try again.");
+    hmEl("ocs-told-sum").innerHTML = '<span class="ocs-warn">' + esc(why) + "</span>";
+    if (bad && bad.focus) bad.focus();
+    toast(why, "err");
+  });
 }
 
 document.addEventListener("click", function (e) {
@@ -7699,6 +8173,8 @@ document.addEventListener("click", function (e) {
   else if (what === "pick-joiner") ocsPick("joiner");
   else if (what === "cancel") ocsClose();
   else if (what === "ok") ocsSave();
+  else if (what === "told") ocsTold();
+  else if (what === "told-ok") ocsToldSave();
   else if (what === "preview") ocsPreview();
   else if (what === "who") {
     gpFetch(OCS_API + "who_can_open_positions", {}).then(function (d) {
@@ -7717,14 +8193,29 @@ document.addEventListener("change", function (e) {
   if (t.getAttribute("data-ocs-v")) {
     var which = t.getAttribute("data-ocs-v");
     OCS.pick[which] = t.checked ? 1 : 0;
+    /* ALV-310. NOTHING IS REDRAWN. This used to be
+       `body.innerHTML = ocsRows()`, because the second tick existed only on a
+       ticked row - and that one line caused all three faults: the rows jumped,
+       the scroll position was lost at 18 rows, and the keyboard focus landed on
+       `<body>` after every single tick (WCAG 2.2 AA 3.2.2, measured). The
+       decision is a column now, so a tick changes one row's class, at most one
+       other box, and the footer. The focus stays where the person put it. */
+    var row = t.closest ? t.closest("tr") : null;
+    if (row) row.className = t.checked ? "" : "oc2-off";
     /* Unticking a detail takes its "must fill in" tick with it. A compulsory
        detail nobody is being asked for is a setting that cannot mean anything,
-       and leaving it set would be refused at the setter on the next save. */
-    if (!t.checked && OCS.need) OCS.need[which] = 0;
-    /* The second tick only exists on a ticked row, so the rows are redrawn
-       rather than toggled in place - one source of truth for the markup. */
-    var body = hmEl("ocs-dlg-bd");
-    if (body) body.innerHTML = ocsRows();
+       and leaving it set would be refused at the setter on the next save.
+       Cleared in BOTH places - the value and the box - because the box is no
+       longer rebuilt from the value. */
+    if (!t.checked && OCS.need) {
+      OCS.need[which] = 0;
+      /* Matched by attribute rather than by selector: a field name is never put
+         into a CSS selector, however closed the allow-list it came from. */
+      var boxes = OCS.dlg ? OCS.dlg.querySelectorAll("[data-ocs-need]") : [];
+      for (var bi = 0; bi < boxes.length; bi++) {
+        if (boxes[bi].getAttribute("data-ocs-need") === which) boxes[bi].checked = false;
+      }
+    }
     ocsSummary();
     return;
   }
@@ -7732,6 +8223,35 @@ document.addEventListener("change", function (e) {
     if (!OCS.need) OCS.need = {};
     OCS.need[t.getAttribute("data-ocs-need")] = t.checked ? 1 : 0;
     ocsSummary();
+    return;
+  }
+  if (t.getAttribute("data-ocs-joiner-on")) {
+    /* The disabled attribute is how it LOOKS refused; this is how it IS.
+       A real browser fires nothing on a disabled input, but the attribute is
+       one devtools edit away and the server does not check readiness - it
+       only refuses anything that is not 0 or 1. So the switch could be turned
+       on with nothing set, and every invite would then be refused by the gate
+       while the card said the form was on. A test caught this.
+
+       Found by `test ... and clicking it sends nothing at all`. */
+    if (t.disabled) { t.checked = !t.checked; return; }
+    /* Saved on the tick, like the photographs switch above it. The server
+       refuses anything but 0 or 1 and writes a Version row naming who changed
+       it, so nothing about who may do this is decided twice here. */
+    var jon = t.checked;
+    t.disabled = true;
+    gpFetch(OCS_API + "set_people_setting",
+            { key: "alvoraa_joiner_form_on", value: jon ? "1" : "0" },
+            { lostAnswerHandled: true }).then(function () {
+      t.disabled = false;
+      if (OCS.data) OCS.data.joiner_form_on = jon;
+      toast(jon ? drT("New joiners can now be invited.")
+                : drT("New joiners can no longer be invited."), "ok");
+    }, function (err) {
+      t.disabled = false;
+      t.checked = !jon;
+      toast((err && err.message) || drT("Could not save that. Try again."), "err");
+    });
     return;
   }
   if (!t.getAttribute("data-ocs-mail")) return;
@@ -7825,6 +8345,7 @@ document.addEventListener("click", function (e) {
   else if (what === "pend-all") hmPendAll();
   else if (what === "leave-approve") hmDecide("approve");
   else if (what === "leave-decline") hmDecide("reject");
+  else if (what === "bill") hmOpenBill(t);
   else if (what === "note-all") ntOpenAll();
   else if (what === "bday-all") bdAll();
   else if (what === "team-all") switchPanel("team", null);
@@ -9942,6 +10463,437 @@ function showFinTab(name) {
   if (name === "leave-enc" && !_finTabLoaded["leave-enc"]) { _finTabLoaded["leave-enc"] = true; loadLeaveEncPanel(); }
 }
 
+/* ── EVIDENCE: one file control, two forms (slice 081) ───────────────────────
+
+   The bill on an expense claim (required) and the file on a day-fix request
+   (the person's own choice). One implementation with a container argument,
+   because the two differ by three words and one button - not a class with two
+   subclasses.
+
+   THE PICTURE IS SHRUNK ON THE PHONE FIRST, and that is not an optimisation
+   dressed up as a feature. It does three things no server-side step can:
+
+     * it converts HEIC for free. Pillow in our image has no HEIC reader and
+       `pillow_heif` is not installed (measured), so an iPhone photo posted raw
+       would be refused - and on a MANDATORY field that is a person who cannot
+       file a claim at all, not a shrug. The browser's own decoder turns it
+       into a JPEG on the canvas;
+     * it takes 3-4 MB off a 3G upload from a petrol pump;
+     * it takes the server's work from about 0.5-1.5 s down to about 46 ms
+       (DevOps measured both).
+
+   **It is never the control.** The server re-encodes and caps whatever
+   arrives, because that re-encode is also the metadata strip, and a rule that
+   lives in a browser is not a rule. When the browser cannot decode the file
+   either, the person hears so in about a second with NOTHING sent (state 7b),
+   rather than after a 4 MB upload.
+
+   The technique is `www/field-checkin.html`'s, which already draws a camera
+   frame to a canvas and reads it back as a JPEG. */
+
+var EV_API = "alvoraa_portal.expense_evidence.";
+var EV_EDGE = 1600;        /* the agreed long edge - legibility, not size */
+var EV_Q = 0.82;           /* the agreed quality; the server owns the ladder */
+var EV = {};               /* container id -> this control's state */
+
+/* What the server will take. Checked again on the bytes there; this list only
+   decides what the file picker offers. */
+var EV_ACCEPT = "image/jpeg,image/png,application/pdf";
+
+function evState(id) { return EV[id] || null; }
+
+/* Has this control got a file the form may send? **The row's ID, never its
+   url** - Frappe de-duplicates identical bytes into two rows sharing one url,
+   so a url names an arbitrary one of them. No `/private/files/...` address
+   reaches this page at all. */
+window.evFileId = function (id) {
+  var s = EV[id];
+  return (s && s.fileId) || null;
+};
+
+function evInit(id, kind, opts) {
+  opts = opts || {};
+  EV[id] = {
+    kind: kind,
+    required: !!opts.required,
+    fileId: null, bytes: 0, isPdf: false, label: "",
+    blob: null,          /* what we sent, so View full size needs no round trip */
+    chosen: null,        /* the file the person picked, kept across a retry */
+    gen: 0,
+  };
+  evPaint(id, "empty");
+}
+
+/* The eight states of the control, word for word from the design. Every
+   progress and result line is a live region; every refusal that stops the
+   person is an alert. */
+function evPaint(id, state, extra) {
+  var el = document.getElementById(id), s = EV[id];
+  if (!el || !s) return;
+  extra = extra || {};
+  var label = s.required ? drT("Photo of the bill · required")
+                         : drT("Add a photo or document if you have one");
+  var h = '<div class="ev-lab" id="' + id + '-lab">' + esc(label) + '</div>';
+
+  /* The day-fix notice. **Position is the requirement, not presence** - it
+     comes BEFORE the file picker, inside the same block, as plain grey hint
+     text and never a coloured callout. A warning-coloured box on an optional
+     field is a nudge away from the evidence the reviewer needs.
+     It is a TRANSPARENCY control and never a protection: nothing restricts the
+     manager on a day-fix request, by design (081-SEC-8). */
+  if (!s.required) {
+    h += '<p class="ev-notice gp-hint" id="' + id + '-notice">' + esc(drT(
+      "Your manager reads this request, and will see any file you attach. "
+      + "Attaching one is your choice — HR can fix the day without it.")) + '</p>';
+  } else {
+    h += '<p class="ev-hint gp-hint">' + esc(drT(
+      "A photo or a PDF. We make the picture smaller on your phone before it "
+      + "is sent.")) + '</p>';
+  }
+
+  if (state === "empty" || state === "nothing" || state === "failed") {
+    if (state === "nothing") {
+      h += '<p class="ev-say gp-hint" role="status">' + esc(drT(
+        "Nothing was chosen. If the camera will not open, use Choose a file.")) + '</p>';
+    }
+    if (state === "failed") {
+      h += '<div class="ev-alert" role="alert"><b>' + esc(drT(
+        "We could not send the picture. Nothing was lost.")) + '</b><span>' + esc(drT(
+        "Your file is still here. When you have signal, tap Send the picture again."))
+        + '</span></div>';
+    }
+    h += evButtons(id, state === "failed");
+  } else if (state === "shrinking" || state === "sending") {
+    h += '<p class="ev-say gp-hint" role="status" aria-live="polite">'
+      + '<span class="spinner ev-sp"></span>'
+      + esc(state === "shrinking" ? drT("Making the picture smaller…")
+                                  : drT("Sending the picture…")) + '</p>';
+  } else if (state === "attached") {
+    /* Shown back WITH ITS SIZE. After compression the person is the only one
+       who can tell whether their own bill came out readable, and nobody
+       downstream can hand that judgement back to them. It is also the
+       cheapest instrument the kill criterion has. */
+    h += '<div class="ev-got">'
+      + (s.isPdf
+          ? '<div class="ev-tile" aria-hidden="true">PDF</div>'
+          : '<img class="ev-thumb" alt="' + esc(drT("The picture you attached")) + '" src="'
+            + (s.thumbUrl || "") + '">')
+      + '<div class="ev-got-t"><div class="ev-ok" role="status">'
+      + esc(s.required ? drT("Bill attached") : drT("File attached")) + '</div>'
+      + '<div class="ev-meta">' + esc(s.label) + '</div></div></div>'
+      + '<div class="ev-acts">'
+      + '<button type="button" class="btn btn-outline btn-sm" data-ev="view" data-id="' + id + '">'
+      + esc(drT("View full size")) + '</button>'
+      + '<button type="button" class="btn btn-outline btn-sm" data-ev="pick" data-id="' + id + '">'
+      + esc(drT("Replace")) + '</button>'
+      /* Remove exists only where the file is OPTIONAL. On the claim the file
+         is required, so Replace is the only sensible verb. */
+      + (s.required ? "" : '<button type="button" class="btn btn-outline btn-sm" data-ev="clear" data-id="' + id + '">'
+          + esc(drT("Remove")) + '</button>')
+      + '</div>';
+  } else if (state === "refused") {
+    /* The SERVER's own sentence, verbatim. It names the real size and the real
+       limit, and there is one sentence per type because the advice differs -
+       you cannot stand closer to a PDF. */
+    h += '<div class="ev-alert" role="alert"><span>' + esc(extra.message || "") + '</span></div>'
+      + evButtons(id);
+  }
+
+  /* The standing line, on EVERY state of the control and not only inside a
+     refusal. Somebody who already knows they have no receipt should meet the
+     HR route BEFORE they waste a trip trying to photograph something.
+     It is plain grey hint text: not a button, not a link, not a callout -
+     there is no screen for it to lead to. And it is not an exemption. The
+     claim still needs a file; the signed statement IS the file, and HR
+     attaches it, which is why it says "ask HR". */
+  if (s.required) {
+    h += '<p class="ev-nobill gp-hint">' + esc(drT(
+      "No bill? Ask HR to file this claim with your signed statement of what "
+      + "you spent.")) + '</p>';
+  }
+
+  /* One hidden input, kept OUT of the repaint so a chosen file is not lost
+     when the block redraws. It is keyboard reachable and named by the label. */
+  el.innerHTML = h;
+  el.className = "ev-block";
+  var input = document.getElementById(id + "-input");
+  if (!input) {
+    input = document.createElement("input");
+    input.type = "file";
+    input.id = id + "-input";
+    input.className = "ev-input";
+    input.accept = EV_ACCEPT;
+    input.setAttribute("aria-labelledby", id + "-lab");
+    input.addEventListener("change", function () { evChose(id); });
+    el.appendChild(input);
+  } else {
+    el.appendChild(input);
+  }
+}
+
+function evButtons(id, retry) {
+  var s = EV[id];
+  return '<div class="ev-acts">'
+    + (retry
+        ? '<button type="button" class="btn btn-primary btn-sm" data-ev="resend" data-id="' + id + '">'
+          + esc(drT("Send the picture again")) + '</button>'
+        : '<button type="button" class="btn btn-primary btn-sm" data-ev="cam" data-id="' + id + '">'
+          + esc(s.required ? drT("Take a photo of the bill") : drT("Take a photo")) + '</button>')
+    + '<button type="button" class="btn btn-outline btn-sm" data-ev="pick" data-id="' + id + '">'
+    + esc(drT("Choose a file")) + '</button></div>';
+}
+
+/* The camera button and the file button are two buttons in front of ONE hidden
+   input, copying `www/joining.html`. `capture="environment"` is the back
+   camera - the one pointing at the bill, not at the person.
+
+   **`accept` differs between the two buttons, and that is ALV-297's lesson.**
+   That slice landed on dev while this one was being built and solved the same
+   problem for the check-in photo. Two things from it:
+
+     * it uses `accept="image/*"` with `capture`, not a list of exact types. A
+       narrow list is the one iOS is least reliable with when the camera is what
+       is being asked for, and it buys nothing here: whatever the camera hands
+       back - HEIC included - is redrawn on the canvas as a JPEG, and the server
+       reads the magic bytes of what actually arrives. So the CAMERA button asks
+       for any image and the CHOOSE A FILE button asks for the three types we
+       store, because that is the button where a PDF comes from;
+     * it says in so many words: **not `createImageBitmap`, which loses the
+       rotation on iPhone.** `evShrink` uses `new Image()` for exactly that
+       reason - it applies the photograph's own orientation - and this comment
+       is here so nobody "modernises" it back. */
+function evOpenPicker(id, camera) {
+  var input = document.getElementById(id + "-input");
+  if (!input) return;
+  if (camera) {
+    input.setAttribute("capture", "environment");
+    input.accept = "image/*";
+  } else {
+    input.removeAttribute("capture");
+    input.accept = EV_ACCEPT;
+  }
+  input.value = "";
+  input.click();
+}
+
+function evChose(id) {
+  var s = EV[id], input = document.getElementById(id + "-input");
+  if (!s || !input) return;
+  var f = input.files && input.files[0];
+  /* A DENIED OR CANCELLED CAMERA RETURNS NO FILE AND NO ERROR, so this names
+     the other button rather than guessing at the cause - and **nothing is
+     sent**. A definite "camera permission denied" message would be a guess. */
+  if (!f) { evPaint(id, "nothing"); return; }
+  s.chosen = f;
+  evPrepare(id);
+}
+
+function evPrepare(id) {
+  var s = EV[id];
+  if (!s || !s.chosen) return;
+  var f = s.chosen, gen = ++s.gen;
+  /* A PDF is sent exactly as it is. Nothing here opens it and nothing on the
+     server opens it either: no page count, no text layer, no sanitiser. A
+     parser is attacker-chosen input inside a library. */
+  if (f.type === "application/pdf" || /\.pdf$/i.test(f.name || "")) {
+    evPaint(id, "sending");
+    evRead(f).then(function (b64) {
+      if (gen !== s.gen) return;
+      evUpload(id, b64, true, null);
+    }, function () { if (gen === s.gen) evPaint(id, "failed"); });
+    return;
+  }
+  evPaint(id, "shrinking");
+  evShrink(f).then(function (out) {
+    if (gen !== s.gen) return;
+    evPaint(id, "sending");
+    evUpload(id, out.b64, false, out.url);
+  }, function () {
+    if (gen !== s.gen) return;
+    /* The browser could not decode it - an old format, a corrupt file, a HEIC
+       on a browser with no decoder. **Nothing has been sent**, and the person
+       hears so in about a second rather than after a 4 MB upload. */
+    evPaint(id, "refused", {message: drT(
+      "This phone could not read that picture. Use “Take a photo of the "
+      + "bill” instead — nothing has been sent.")});
+  });
+}
+
+function evRead(file) {
+  return new Promise(function (ok, no) {
+    var r = new FileReader();
+    r.onload = function () { ok(String(r.result).split(",").pop()); };
+    r.onerror = no;
+    r.readAsDataURL(file);
+  });
+}
+
+/* Long edge 1600 px, JPEG 0.82 - the agreed recipe, and the same numbers the
+   server uses. One pass: if it still comes back over the cap the SERVER's
+   ladder is what steps it down, because the server owns the limit. */
+function evShrink(file) {
+  return new Promise(function (ok, no) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) { URL.revokeObjectURL(url); no(); return; }
+        var scale = Math.min(1, EV_EDGE / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+        var c = document.createElement("canvas");
+        c.width = cw; c.height = ch;
+        c.getContext("2d").drawImage(img, 0, 0, cw, ch);
+        var data = c.toDataURL("image/jpeg", EV_Q);
+        URL.revokeObjectURL(url);
+        if (!data || data.indexOf("data:image/jpeg") !== 0) { no(); return; }
+        ok({b64: data.split(",").pop(), url: data});
+      } catch (err) { URL.revokeObjectURL(url); no(); }
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); no(); };
+    img.src = url;
+  });
+}
+
+function evUpload(id, b64, isPdf, thumbUrl) {
+  var s = EV[id], gen = s.gen;
+  gpFetch(EV_API + "upload_evidence", {file: b64, kind: s.kind}).then(function (d) {
+    if (gen !== s.gen) return;
+    s.fileId = d.file_id;
+    s.bytes = d.bytes;
+    s.isPdf = !!d.is_pdf;
+    s.label = d.label || "";
+    s.thumbUrl = thumbUrl || null;
+    s.b64 = b64;
+    evPaint(id, "attached");
+  }, function (e) {
+    if (gen !== s.gen) return;
+    /* A REFUSAL and a DROPPED CONNECTION are not the same thing and must not
+       read the same. A refusal is the server's sentence; a dropped upload
+       keeps the chosen file in the page and offers to send it again - so a
+       lost signal never costs a second trip to the pump. */
+    if (e && e.kind === "refused") { evPaint(id, "refused", {message: e.message}); return; }
+    evPaint(id, "failed");
+  });
+}
+
+/* View full size shows what we SENT, from the bytes still in the page - no
+   round trip, and the same viewer the approver gets. */
+function evView(id) {
+  var s = EV[id];
+  if (!s || !s.b64) return;
+  var bin = atob(s.b64), arr = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  var blob = new Blob([arr], {type: s.isPdf ? "application/pdf" : "image/jpeg"});
+  mpfShowDoc(blob, s.isPdf, s.label || drT("Your file"),
+             document.querySelector('[data-ev="view"][data-id="' + id + '"]'), null);
+}
+
+/* ── opening somebody's evidence: ONE call, ONE file, no url ─────────────────
+
+   The browser is never handed a `/private/files/...` address, on any of the
+   four callers. A guarded endpoint checks the reader's permission on the
+   PARENT document - never on a child row, where `has_permission` answers False
+   for everybody - streams the bytes, and records that the file was opened. The
+   viewer gets a blob and gives it back when it closes.
+
+   The honest half, which no string on any of these screens may contradict: a
+   reader who ALREADY holds the url can still fetch it on Frappe's own route,
+   where the last question asked is the parent's read permission - the same
+   question this endpoint asks. Nothing here is protected, secure or hidden,
+   and nothing says it is. What is true: who can open it, that every opening is
+   recorded, and how long it is kept.
+
+   `host` is the container the button lives in, so focus can be sent back to it
+   on close only while that container is still on screen (AC-42).
+
+   POST, because the endpoint's per-user rate limit only applies to POST. */
+function evOpen(kind, name, btn, host, onFail) {
+  if (!name) return;
+  if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
+  var was = btn ? btn.textContent : "";
+  if (btn) btn.textContent = drT("Opening the bill…");
+  var free = function () {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+    btn.textContent = was;
+  };
+  fetch("/api/method/" + EV_API + "open_evidence", {
+    method: "POST",
+    headers: { "Content-Type": "application/json",
+               "X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || "" },
+    body: JSON.stringify({ kind: kind, parent: name }),
+  }).then(function (res) {
+    if (!res.ok) throw new Error("refused");
+    var fname = drT("Bill");
+    var cd = res.headers.get("Content-Disposition") || "";
+    /* The quotes are written " and ' ON PURPOSE, and this is not
+       decoration. `test_browser_call_args_045` blanks strings to count braces
+       and has no idea what a regular expression is, so a literal quote inside
+       one puts it into a string that never ends: this exact line silently hid
+       21 later call sites from the argument checker, two of them this slice's
+       own. Same expression, no bare quote characters. */
+    var m = /filename\*?=(?:UTF-8\x27\x27)?\x22?([^\x22;]+)\x22?/i.exec(cd);
+    if (m) fname = decodeURIComponent(m[1]);
+    return res.blob().then(function (blob) {
+      var t = String(blob.type || "").toLowerCase();
+      if (t === "application/pdf" || t.indexOf("image/") === 0) {
+        mpfShowDoc(blob, t === "application/pdf", fname, btn, host);
+      } else {
+        /* A type the browser will not draw must not leave a blank square and
+           a reader with nothing. It takes the save it would have had. */
+        mpfSaveDoc(blob, fname);
+      }
+    });
+  }).then(free, function () {
+    free();
+    /* Says what happened and what to do next. Never "something went wrong",
+       and never blamed on the connection when the server refused - this one
+       line covers both, so it names the thing the person can actually try. */
+    if (onFail) onFail();
+    else toast(drT("The file did not open. Check your signal and try again."), "err");
+  });
+}
+
+/* The approver's View bill, in the sheet body. Its failure line goes INSIDE
+   the sheet rather than into a toast, because the sheet is where the person is
+   and a toast over a decision is easy to miss. */
+function hmOpenBill(btn) {
+  var ov = hmEl("hm-ov"), r = ov && ov._row;
+  if (!r) return;
+  var err = hmEl("hm-bill-e");
+  if (err) { err.style.display = "none"; err.textContent = ""; }
+  evOpen("bill", r.name, btn, ".hm-ov", function () {
+    if (!err) return;
+    err.textContent = drT("The bill did not open. Check your signal and tap View bill again.");
+    err.style.display = "";
+  });
+}
+
+/* The employee's own row, and HR's day-fix card. `data-evopen` is the kind. */
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-evopen]") : null;
+  if (!t) return;
+  evOpen(t.getAttribute("data-evopen"), t.getAttribute("data-name"), t, null);
+});
+
+document.addEventListener("click", function (e) {
+  var t = e.target && e.target.closest ? e.target.closest("[data-ev]") : null;
+  if (!t) return;
+  var what = t.getAttribute("data-ev"), id = t.getAttribute("data-id");
+  if (!EV[id]) return;
+  if (what === "cam") evOpenPicker(id, true);
+  else if (what === "pick") evOpenPicker(id, false);
+  else if (what === "resend") evPrepare(id);
+  else if (what === "view") evView(id);
+  else if (what === "clear") {
+    EV[id].gen++;
+    EV[id].fileId = null; EV[id].chosen = null; EV[id].b64 = null;
+    evPaint(id, "empty");
+  }
+});
+
 /* ── EXPENSES ────────────────────────────────────── */
 function loadExpenses() {
   api("get_expense_claims", {}, function(data) {
@@ -9955,6 +10907,16 @@ function loadExpenses() {
       return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + esc(c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div>'
         /* Slice 076 (US-17): the approver's reason, so a decline is not a dead end. */
         + (c.approval_status === "Rejected" && c.decline_reason ? '<div class="expense-date expense-why">' + esc(drT("Declined: {0}", [c.decline_reason])) + '</div>' : '')
+        /* Slice 081 (AC-29, AC-30): the person's own bill, on their own row.
+           After compression THEY are the only one who can tell whether it came
+           out readable, and nobody downstream can hand that judgement back.
+           A claim filed before this shipped says so in plain grey words with
+           NO button: an empty View is worse than an honest absence. */
+        + (c.has_bill
+            ? '<div class="expense-date ev-row-ok">' + esc(drT("Bill attached")) + ' · '
+              + '<button type="button" class="ev-link" data-evopen="bill" data-name="' + gpEsc(c.name) + '">'
+              + esc(drT("View full size")) + '</button></div>'
+            : '<div class="expense-date">' + esc(drT("No bill attached")) + '</div>')
         + '</div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
   }, function(e) { failBox("expense-list", e, loadExpenses); });
@@ -9994,6 +10956,13 @@ function openExpenseModal() {
   document.getElementById("ec-expense-date").value = d.getFullYear() + "-" +
     String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");
+
+  /* Slice 081: the bill control, FIRST in the modal. A departure from the old
+     field order, and deliberate: it is the only step that can fail, the only
+     one that needs the bill physically in the person's hand, and - because the
+     file uploads on its own call - the only one whose refusal can arrive
+     before anything has been typed. */
+  evInit("ec-file", "bill", {required: true});
 
   ecLoadTypes();
   refreshDateWords();
@@ -10064,6 +11033,13 @@ function submitExpenseClaim() {
     expense_date: ed,
     amount: amt,
     description: desc || null,
+    /* Slice 081: the reference to the bill already uploaded on its own call.
+       **The form does not check it is there.** The SERVER refuses, in its own
+       words, and that sentence is what reaches `ec-error` - because the
+       standing lesson here is to test what the form sends and not what it
+       draws. Try again re-posts this same reference and uploads nothing
+       again, which is the whole reason the upload is a separate call. */
+    file_id: window.evFileId("ec-file"),
   }, {lostAnswerHandled: true}).then(done, function(e) {
     if (gen !== EC_GEN) return;
     if (e.late) e.late.then(done, function() {});
@@ -10074,8 +11050,13 @@ function submitExpenseClaim() {
       return;
     }
     if (e.kind === "offline") {
+      /* "and your bill" is the one word changed in this state, and it is the
+         point of it: a driver who has just photographed a receipt needs to
+         know the photograph survived the failure too, or he will go back to
+         the pump. The file reference is still in the page and Try again
+         re-posts it. */
       sendSay("ec-send-fail", "We could not reach the office. Nothing was sent.",
-              "Your details are still here. When you have signal, tap Try again.");
+              "Your details and your bill are still here. When you have signal, tap Try again.");
       btn.disabled = false;
       btn.textContent = drT("Try again");
       btn.focus();
@@ -10727,6 +11708,10 @@ function openEmpDrawer(empId, color) {
   overlay.classList.add("open");
   drawer.classList.add("open");
   document.body.style.overflow = "hidden";
+  /* The manager drawer shares this element with the mini profile and is never
+     reached from a seat tray, so it must not inherit a way back. */
+  MPF.tray = null;
+  mpfBackPaint();
   document.getElementById("ed-body").innerHTML = '<div style="padding:40px;text-align:center;color:var(--text3)"><div class="spinner" style="margin:0 auto 12px;border-color:var(--border);border-top-color:var(--primary)"></div>Loading...</div>';
 
   api("get_employee_detail_for_manager", {employee_id: empId}, function(d) {
@@ -10754,6 +11739,7 @@ function closeEmpDrawer() {
   var was = MPF.emp;
   MPF.opener = null;
   MPF.tray = null;
+  mpfBackPaint();          /* the way back goes with the drawer it belonged to */
   MPF.emp = null;
   MPF.big = false;
   MPF.pinned = false;
@@ -10828,6 +11814,29 @@ function mpfPromise() {
     + "identity numbers, date of birth and personal contact details are never shown here.");
 }
 
+/* The way back to the seat tray, at the top of the drawer. Drawn from
+   `MPF.tray`, which is set only when mpfOpen closed a tray to get here, so the
+   Positions table and the seat page - same drawer, no tray - show nothing.
+
+   It calls `closeEmpDrawer`, the path that ALREADY reopens the tray at the
+   same seat and scroll and puts focus on the same name. A second restore path
+   would be a second thing to keep in step with that one. This is a label on
+   the door that was always there, which is the whole change.
+
+   Also the one place that CLEARS the element, because `openEmpDrawer` - the
+   older manager drawer - shares it and must never inherit a stale way back. */
+function mpfBackPaint() {
+  var el = document.getElementById("ed-back");
+  if (!el) return;
+  var t = MPF.tray;
+  if (!t) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = '<button type="button" class="mpf-back-b" data-mpf="back">'
+    + '<span aria-hidden="true">←</span> '
+    + esc(t.title ? drT("Back to {0}", [t.title]) : drT("Back to the seat"))
+    + "</button>";
+}
+
 window.mpfOpen = function (employee, opener) {
   if (!employee) return;
   var overlay = document.getElementById("emp-drawer-overlay");
@@ -10852,7 +11861,12 @@ window.mpfOpen = function (employee, opener) {
   if (POS.sheet && POS.sheet.kind === "seat"
       && MPF.opener && MPF.opener.closest && MPF.opener.closest("#pos-layer")) {
     var trayBody = document.querySelector("#pos-layer .sh-b");
-    MPF.tray = { id: POS.sheet.id, scroll: trayBody ? trayBody.scrollTop : 0 };
+    /* The seat's own heading, read off the tray before it is taken down, so
+       the way back can name where it goes rather than say "Back". It is the
+       text the reader was looking at a moment ago. */
+    var trayHead = document.getElementById("pos-sh-t");
+    MPF.tray = { id: POS.sheet.id, scroll: trayBody ? trayBody.scrollTop : 0,
+                 title: trayHead ? trayHead.textContent.trim() : "" };
     /* `true` = do not move focus: focus is about to go into this drawer, and
        the button it would go back to is the one being taken off the page. */
     posCloseSheet(true);
@@ -10861,6 +11875,7 @@ window.mpfOpen = function (employee, opener) {
   drawer.classList.add("open");
   document.body.style.overflow = "hidden";
 
+  mpfBackPaint();
   document.getElementById("ed-av").innerHTML = "";
   document.getElementById("ed-name").textContent = drT("Getting the details…");
   document.getElementById("ed-role").textContent = "";
@@ -11005,8 +12020,30 @@ function mpfList(d) {
      about the PDF and the sandbox is written down with the measurements
      behind it. */
 function mpfDocsLoad(employee) {
+  /* The profile paints first and this list follows in its own call, so without
+     a placeholder there is nothing on screen at all until it lands and then a
+     whole section drops in. A grey bar under the heading says "more is
+     coming", using the same `hm-skel` shape the profile itself waits with.
+
+     **It must be taken away on EVERY path**, or a person with no documents at
+     all is left with a bar that never resolves - which is a worse lie than
+     showing nothing. The three ways out are below: the list arrived, there
+     were none, and the call failed. */
+  var wait = null;
+  var body = document.querySelector("#ed-body .mpf-body");
+  if (body) {
+    wait = document.createElement("div");
+    wait.className = "mpf-docs mpf-docs-wait";
+    wait.innerHTML = '<h3 class="mpf-dh">' + esc(drT("Documents")) + "</h3>"
+      + '<div class="hm-skel" aria-hidden="true"></div>'
+      + '<p class="gp-hint" role="status">' + esc(drT("Getting the documents…")) + "</p>";
+    body.appendChild(wait);
+  }
+  var drop = function () { if (wait && wait.parentNode) wait.parentNode.removeChild(wait); };
+
   gpFetch(MPF_API.replace("positions_profile.", "employee_documents_read.")
           + "get_employee_documents", { employee: employee }).then(function (d) {
+    drop();
     if (MPF.emp !== employee) return;
     var rows = (d && d.documents) || [];
     if (!rows.length) return;               /* no section at all */
@@ -11035,9 +12072,8 @@ function mpfDocsLoad(employee) {
                   + "</span>")
             + "</div>";
         }).join("");
-    var body = document.querySelector("#ed-body .mpf-body");
     if (body) body.appendChild(box);
-  }, function () { /* no section rather than a broken one */ });
+  }, function () { drop(); /* no section rather than a broken one */ });
 }
 
 function mpfDocs(d) {
@@ -11176,10 +12212,28 @@ function mpfSaveDoc(blob, name) {
    have done here. */
 var MPF_DOC = null;
 
-function mpfShowDoc(blob, isPdf, name, btn) {
+/* ONE VIEWER, FOUR CALLERS (AQ3). Slice 081 added three of them - the
+   employee's own claim row, the approver's decision sheet and HR's day-fix
+   card - and generalising it took more than the extra argument the design
+   priced. THREE separate behaviours were gated on `#emp-drawer.open`, which is
+   the Positions drawer and is NOT the approver's sheet:
+
+     * the Escape order below, so over the sheet Escape fell through to the
+       SHEET's own handler and closed the sheet, losing the reader's place -
+       the exact bug this handler exists to prevent on the drawer;
+     * the Tab focus trap, so Tab walked out of the viewer into the sheet
+       behind it;
+     * the focus return in `mpfCloseDoc`, so focus was simply lost (AC-42).
+
+   So `MPF_DOC` now carries `host`: a selector for the container the opening
+   button lives in, which must still be on screen for focus to be sent back to
+   it. Nothing else about the viewer changed - not the unsandboxed PDF iframe,
+   not the footer line, not the blob's lifetime. Those are ALV-287's decided
+   questions and the reasons are written out above. */
+function mpfShowDoc(blob, isPdf, name, btn, host) {
   mpfCloseDoc();                       /* one document at a time */
   var url = URL.createObjectURL(blob);
-  MPF_DOC = { url: url, btn: btn || null };
+  MPF_DOC = { url: url, btn: btn || null, host: host || "#emp-drawer.open" };
   var box = document.createElement("div");
   box.className = "mpf-dv";
   box.setAttribute("role", "dialog");
@@ -11227,11 +12281,14 @@ function mpfCloseDoc() {
   if (box) box.remove();
   if (was) { URL.revokeObjectURL(was.url); MPF_DOC = null; }
   /* Back to the View button that opened THIS document - but only while the
-     profile is still open, because the profile may have closed underneath the
-     viewer, and focus must never land on a button inside a hidden drawer
-     (AC-60's rule). closeEmpDrawer sends it somewhere real in that case. */
+     thing it lives in is still on screen, because that may have closed
+     underneath the viewer, and focus must never land on a button inside a
+     hidden drawer or a removed sheet (AC-60's rule, and AC-42's).
+     `host` is the caller's own container: the Positions drawer for the mini
+     profile, the decision sheet for the approver. Whoever closed the host
+     sends focus somewhere real. */
   if (box && was && was.btn && was.btn.focus
-      && document.querySelector("#emp-drawer.open")
+      && (!was.host || document.querySelector(was.host))
       && document.body.contains(was.btn)) {
     was.btn.focus();
   }
@@ -11348,6 +12405,9 @@ document.addEventListener("click", function (e) {
     }
   }
   else if (what === "retry") { mpfOpen(MPF.emp, MPF.opener); }
+  /* Nothing of its own: closeEmpDrawer is what reopens the tray at the same
+     seat, scrolled where it was left, with focus on the same name. */
+  else if (what === "back") { closeEmpDrawer(); }
   else if (what === "settings") {
     /* This one LEAVES the Positions page, so ALV-286's "come back to the tray"
        is dropped on purpose: a seat tray reopening over the settings panel is
@@ -11404,10 +12464,15 @@ document.addEventListener("mouseout", function (e) {
    reason: it is the thing in front of them. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Escape" && e.key !== "Esc") return;
+  /* Slice 081: the VIEWER comes first and is no longer gated on the drawer.
+     It is now opened from the approver's sheet and HR's card as well, and the
+     thing in front of the reader is what Escape must put away - wherever it
+     was opened from. The sheet's own Escape handler defers to this one by
+     checking `MPF_DOC` before it closes itself. */
+  if (MPF_DOC) { e.preventDefault(); mpfCloseDoc(); return; }
   var drawer = document.getElementById("emp-drawer");
   if (!drawer || !drawer.classList.contains("open")) return;
   e.preventDefault();
-  if (MPF_DOC) { mpfCloseDoc(); return; }
   if (MPF.big) { mpfCloseBig(); return; }
   closeEmpDrawer();
 });
@@ -11424,9 +12489,13 @@ document.addEventListener("keydown", function (e) {
    it. With only a Close button in the list that is exactly what happened. */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "Tab") return;
-  var drawer = document.getElementById("emp-drawer");
-  if (!drawer || !drawer.classList.contains("open")) return;
   var viewer = document.querySelector(".mpf-dv");
+  var drawer = document.getElementById("emp-drawer");
+  /* Slice 081: when the viewer is open it is the trap, whether it was opened
+     from the Positions drawer or from the approver's sheet. Without this,
+     tabbing out of a bill on the sheet walked into the decision buttons
+     behind it - and Approve is the act that cannot be taken back. */
+  if (!viewer && (!drawer || !drawer.classList.contains("open"))) return;
   if (viewer && document.activeElement === viewer.querySelector("iframe")) return;
   drawer = viewer || drawer;
   var able = drawer.querySelectorAll(

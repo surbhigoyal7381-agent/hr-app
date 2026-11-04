@@ -53,6 +53,44 @@ def ensure_expense_type(name="Alvoraa Travel", company=None):
 	return name
 
 
+def a_bill(user=None):
+	"""One real uploaded bill, and the `File` row id `apply_expense_claim` needs.
+
+	Slice 081 made the bill compulsory. **Every test that files a claim
+	successfully was updated to pass one, and not one assertion was loosened to
+	let a bill-less claim through** - that would have deleted the feature from
+	the suite while leaving the tests green.
+
+	It is a real upload through the real endpoint, so these fixtures exercise
+	the magic-byte check and the re-encode rather than planting a `File` row
+	that the product would never have produced.
+	"""
+	from PIL import Image
+
+	import base64
+	import io
+
+	from alvoraa_portal import expense_evidence
+
+	img = Image.new("RGB", (900, 700))
+	px = img.load()
+	for y in range(0, 700, 3):
+		for x in range(0, 900, 3):
+			px[x, y] = ((x * 7) % 256, (y * 13) % 256, (x * y) % 256)
+	out = io.BytesIO()
+	img.save(out, format="JPEG", quality=90)
+
+	was = frappe.session.user
+	if user:
+		frappe.set_user(user)
+	try:
+		return expense_evidence.upload_evidence(
+			file=base64.b64encode(out.getvalue()).decode(), kind="bill")["file_id"]
+	finally:
+		if user:
+			frappe.set_user(was)
+
+
 def _give_an_approver(*employees):
 	"""Slice 076 Part C (decision 4): a claim with no approver is refused, so the
 	claimants here get one, as real data must have."""
@@ -101,7 +139,8 @@ class TestExpenseClaims(FrappeTestCase):
 		"""There is no on-behalf path here: the claim must belong to whoever called."""
 		frappe.set_user(self.user_a)
 		res = hr_api.apply_expense_claim(
-			expense_type=self.etype, expense_date=frappe.utils.today(), amount=123
+			expense_type=self.etype, expense_date=frappe.utils.today(), amount=123,
+			file_id=a_bill(),
 		)
 		doc = frappe.get_doc("Expense Claim", res["name"])
 		self.assertEqual(doc.employee, self.emp_a)
@@ -110,7 +149,8 @@ class TestExpenseClaims(FrappeTestCase):
 		"""ALV-178: without these the claim cannot be approved (submitted)."""
 		frappe.set_user(self.user_a)
 		res = hr_api.apply_expense_claim(
-			expense_type=self.etype, expense_date=frappe.utils.today(), amount=45
+			expense_type=self.etype, expense_date=frappe.utils.today(), amount=45,
+			file_id=a_bill(),
 		)
 		doc = frappe.get_doc("Expense Claim", res["name"])
 		company = frappe.db.get_value(
@@ -174,7 +214,8 @@ class TestEmployeeScoping(FrappeTestCase):
 	def test_expense_claims_are_not_visible_across_employees(self):
 		frappe.set_user(self.user_a)
 		hr_api.apply_expense_claim(
-			expense_type=ensure_expense_type(), expense_date=frappe.utils.today(), amount=77
+			expense_type=ensure_expense_type(), expense_date=frappe.utils.today(), amount=77,
+			file_id=a_bill(),
 		)
 
 		frappe.set_user(self.user_b)

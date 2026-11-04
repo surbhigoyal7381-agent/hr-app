@@ -660,17 +660,11 @@ class TheNoticeSaysWhatItSaid(FrappeTestCase):
 		self.assertIn(self.OLD_VERSION, notice.NOTICE)
 		self.assertEqual(notice.NOTICE[self.OLD_VERSION]["rows"], self.OLD_ROWS)
 
-	def test_013_the_web_page_still_shows_the_pre_review_wording(self):
-		"""AC-35 protects `www/field-checkin.html` from this slice's client-app
-		work, and `field_checkin.notice_facts()`'s own comment says the page
-		reading the store "belongs with the page's own work" - not yet done. So
-		the page still shows the OLD version's words, missing the phone-model
-		disclosure ALV-43 added. This is a NAMED, DECLARED gap (see
-		00-impact-analysis-daily-use.md §4.5), not a silent one: this test used
-		to guard against the store and the page drifting apart by accident: now
-		that ALV-43 has deliberately moved the store on, it guards the other
-		direction - that the page really is still on the old words, not some
-		third, undocumented version, until somebody does that page's migration."""
+	def test_013_the_web_page_shows_the_words_it_records_as_read(self):
+		"""ALV-298. The page submits CURRENT_VERSION and the history row says
+		those are the words this person read, so the page must show them. It
+		holds its own copy, so when a new version is added this fails until the
+		page is changed to match."""
 		import os
 
 		import alvoraa_portal
@@ -679,14 +673,17 @@ class TheNoticeSaysWhatItSaid(FrappeTestCase):
 		with open(path, encoding="utf-8") as f:
 			page = f.read()
 
-		for heading, body in self.OLD_ROWS:
-			self.assertIn(heading, page, f"the page lost the heading {heading!r}")
+		# The page holds two copies: the plain HTML, and the table T that
+		# people actually see once the language is applied. Each must carry
+		# every row, so a count of one means one copy drifted.
+		def copies(text):
+			return page.count(text)
+
+		for heading, body in self.ROWS:
+			self.assertGreaterEqual(copies(heading), 2, f"a copy of the page lost the heading {heading!r}")
 			if body:
-				self.assertIn(body, page, f"the page no longer matches the old version on {heading!r}")
-		self.assertIn(self.AGREE, page)
-		# And the new disclosure must NOT be there yet - if it is, someone did
-		# the page's migration and this test (and its docstring) are stale.
-		self.assertNotIn("this phone's model name", page)
+				self.assertGreaterEqual(copies(body), 2, f"a copy of the page does not show the current version on {heading!r}")
+		self.assertGreaterEqual(copies(self.AGREE), 2)
 
 	def test_013_the_retention_line_is_not_versioned(self):
 		"""It quotes the tenant's own setting, which the tenant may change

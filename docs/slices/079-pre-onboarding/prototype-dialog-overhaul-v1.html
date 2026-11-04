@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alvora — "Details a new joiner is asked for" · dialog overhaul v1</title>
+<style>
+/* ── Alvora design-system tokens, copied from design_system.html ─────────── */
+html[data-theme="light"]{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;
+  --text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;
+  --primary-d:#3D3461;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;
+  --red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);
+}
+html[data-theme="dark"]{
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;
+  --text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;
+  --primary-d:#7A6BA8;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;
+  --red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+  --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);
+}
+html{--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --r:10px;--r-sm:6px;--r-full:999px;
+  --fs-xs:11px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);
+  font-size:var(--fs-base)}
+
+/* ── review scaffolding: wraps, never sticky, always above the scrim ─────── */
+#rev{position:relative;z-index:3000;background:var(--surface);
+  border-bottom:1px solid var(--border2);padding:10px 14px}
+#rev h1{margin:0 0 2px;font-size:var(--fs-md)}
+#rev p.sub{margin:0 0 10px;color:var(--text2);font-size:var(--fs-sm)}
+.revrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.revrow > b{font-size:var(--fs-sm);min-width:62px;color:var(--text2);font-weight:650}
+.rb{min-height:34px;padding:6px 11px;border:1px solid var(--border2);background:var(--surface);
+  color:var(--text);border-radius:var(--r-full);font:inherit;font-size:var(--fs-sm);cursor:pointer}
+.rb[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:#fff}
+html[data-theme="dark"] .rb[aria-pressed="true"]{color:#1A1815}
+.rb:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.note{margin:8px 0 0;padding:8px 10px;border-left:3px solid var(--primary);
+  background:var(--primary-lt);font-size:var(--fs-sm);line-height:1.5;max-width:900px}
+.samp{display:inline-block;padding:0 6px;border-radius:var(--r-full);background:var(--amber-lt);
+  color:var(--amber);border:1px solid var(--amber);font-size:var(--fs-sm);font-weight:700}
+
+/* ── the stage: a frame that stands in for the app ───────────────────────── */
+#stage{padding:18px;display:flex;justify-content:center}
+.frame{position:relative;width:1100px;max-width:100%;background:var(--bg);
+  border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;min-height:720px}
+.frame.ph{width:390px;zoom:1}
+.frame.ph360{width:360px}
+.frame.zoom2{width:195px;zoom:2}
+.frame-lab{position:absolute;top:0;right:0;z-index:5;padding:2px 8px;font-size:var(--fs-sm);
+  background:var(--text3);color:var(--surface);border-bottom-left-radius:var(--r-sm)}
+.pad{padding:16px}
+
+/* ── the people-settings card, as it is today ────────────────────────────── */
+.pf-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:16px;box-shadow:var(--sh1)}
+.pf-card > h3{margin:0 0 4px;font-size:var(--fs-md)}
+.gp-hint{margin:6px 0;color:var(--text2);font-size:var(--fs-sm);line-height:1.55}
+.btn{font:inherit;font-size:var(--fs-base);border-radius:var(--r-sm);padding:8px 14px;cursor:pointer}
+.btn-outline{background:var(--surface);border:1px solid var(--border2);color:var(--text)}
+.btn-primary{background:var(--primary);border:1px solid var(--primary);color:#fff}
+html[data-theme="dark"] .btn-primary{color:#1A1815}
+.btn:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* ══ BEFORE: panels.css ocs- rules, copied verbatim from the product ═══════ */
+.ocs-sec{padding-top:16px;margin-top:16px;border-top:1px solid var(--border2)}
+.ocs-sec:first-child{padding-top:0;margin-top:0;border-top:0}
+.ocs-h{margin:0 0 8px;font-size:var(--fs-base);font-weight:650;color:var(--text)}
+.ocs-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.ocs-chip{display:inline-block;padding:3px 9px;border-radius:var(--r-full);
+  background:var(--bg);border:1px solid var(--border2);font-size:var(--fs-sm);color:var(--text)}
+.ocs-cat{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:var(--r-full);
+  background:var(--bg);font-size:var(--fs-sm);color:var(--text3)}
+.ocs-warn{display:block;margin:0 0 10px;padding:10px 12px;border-radius:var(--r-sm);
+  background:var(--bg);border-left:3px solid var(--amber);font-size:var(--fs-base);
+  line-height:1.5;color:var(--text)}
+.ocs-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.ocs-b{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.ocs-b:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.ocs-back{position:absolute;inset:0;z-index:1200;background:rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;padding:16px}
+.ocs-dlg{background:var(--surface);border-radius:var(--r);width:620px;max-width:100%;
+  max-height:100%;display:flex;flex-direction:column;box-shadow:var(--sh2)}
+.ocs-dlg-hd{display:flex;align-items:center;gap:10px;padding:14px 16px;
+  border-bottom:1px solid var(--border2)}
+.ocs-dlg-hd h3{margin:0;flex:1;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+.ocs-x{min-width:44px;min-height:44px;background:none;border:0;font-size:var(--fs-xl);
+  line-height:1;color:var(--text3);cursor:pointer}
+.ocs-x:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.ocs-dlg-bd{padding:8px 16px 16px;overflow-y:auto;flex:1;min-height:0}
+.ocs-grp{margin:14px 0 4px;font-size:var(--fs-sm);font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.04em}
+.ocs-opt{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:6px 0;cursor:pointer}
+.ocs-opt input{width:20px;height:20px;margin:3px 0 0;flex:none;accent-color:var(--primary)}
+.ocs-opt b{font-weight:650;font-size:var(--fs-base);color:var(--text)}
+.ocs-dlg-ft{padding:12px 16px;border-top:1px solid var(--border2)}
+.ocs-sum{margin:0 0 10px;font-size:var(--fs-sm);color:var(--text2)}
+.ocs-ft-b{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.ocs-opt .gp-hint label{display:inline-flex;gap:6px;align-items:center;min-height:30px}
+
+/* ══ AFTER: the proposal. Prefix oc2-. Only what the change needs. ════════ */
+/* One row per detail. The decision lives in columns, so the sentence that is
+   repeated six times today becomes one column heading. */
+.oc2-tbl{width:100%;border-collapse:collapse}
+.oc2-tbl thead th{position:sticky;top:0;z-index:2;background:var(--surface);
+  text-align:left;font-size:var(--fs-sm);font-weight:700;color:var(--text2);
+  padding:8px 6px;border-bottom:1px solid var(--border2);vertical-align:bottom;line-height:1.35}
+.oc2-tbl thead th.c{text-align:center;width:78px}
+.oc2-tbl tbody td{padding:0;border-bottom:1px solid var(--border)}
+.oc2-nm{font-size:var(--fs-base);font-weight:650;color:var(--text);padding:9px 6px 9px 0}
+.oc2-nm .oc2-sub{display:block;font-weight:400;font-size:var(--fs-sm);color:var(--text2);
+  margin-top:1px;line-height:1.4}
+/* The whole cell is the 44 px target; the box is 20 px inside it. */
+.oc2-cell{display:flex;align-items:center;justify-content:center;min-height:44px;
+  cursor:pointer;margin:0}
+.oc2-cell input{width:20px;height:20px;margin:0;accent-color:var(--primary)}
+.oc2-cell:focus-within{outline:3px solid var(--primary);outline-offset:-3px;border-radius:var(--r-sm)}
+/* Nothing to decide until the detail is asked for, so the cell is EMPTY -
+   never a greyed box. visibility:hidden also takes it out of the tab order,
+   so no row is ever redrawn and no keyboard focus is ever thrown away. */
+tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
+tr.oc2-need .oc2-nm::after{content:"";}
+.oc2-grp td{background:var(--bg);font-size:var(--fs-sm);font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.04em;padding:10px 6px 4px}
+.oc2-lead{margin:10px 0 2px;font-size:var(--fs-base);line-height:1.55;color:var(--text2)}
+.oc2-tie{margin:2px 0 12px;padding:9px 11px;border-radius:var(--r-sm);background:var(--bg);
+  border-left:3px solid var(--primary);font-size:var(--fs-sm);line-height:1.55;color:var(--text)}
+.oc2-chip{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:var(--r-full);
+  background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber);
+  font-size:var(--fs-sm);font-weight:700;vertical-align:1px}
+/* Two rows on a laptop, deliberately: Preview left and Cancel right, then
+   Save across the full width, because Save carries a sentence. */
+.oc2-ft-b{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.oc2-ft-b .oc2-ok{flex:1 0 100%}
+.oc2-ft-b .oc2-sp{flex:1 1 auto}
+.oc2-ok{min-height:44px;display:inline-flex;align-items:center;justify-content:center;
+  font-weight:650;text-align:center}
+/* A preview of somebody else's screen, inside the dialog, so nobody has to
+   save to find out. It is the joiner's own words, not ours. */
+.oc2-prev{margin:0;padding:14px;background:var(--bg);border:1px dashed var(--border2);
+  border-radius:var(--r-sm)}
+.oc2-prev h4{margin:0 0 2px;font-size:var(--fs-md)}
+.oc2-prev .pq{margin:12px 0 0}
+.oc2-prev .pq b{display:block;font-size:var(--fs-base);font-weight:650}
+.oc2-prev .pq i{display:block;font-style:normal;font-size:var(--fs-sm);color:var(--text2);margin:1px 0 4px}
+.oc2-prev .pbox{height:40px;border:1px solid var(--border2);border-radius:var(--r-sm);
+  background:var(--surface)}
+.oc2-prev .pbox.tall{height:64px}
+.oc2-back{position:absolute;inset:0;z-index:1300;background:rgba(0,0,0,.45);
+  display:flex;align-items:flex-end;justify-content:center;padding:16px}
+.oc2-sheet{background:var(--surface);border-radius:var(--r);width:520px;max-width:100%;
+  max-height:100%;overflow:auto;box-shadow:var(--sh2)}
+</style>
+<!-- The phone rules are written ONCE, in the script below, and injected twice:
+     as the product's own @media block, and copied under the frame classes. A
+     hand-made second copy is how a prototype and a product drift. -->
+<style id="ph-rules"></style>
+</head>
+<body>
+
+<div id="rev">
+  <h1>"Details a new joiner is asked for" — the picker, overhauled</h1>
+  <p class="sub">Slice 079 · prototype v1 · 4 Nov 2026 · one dialog, four lists.
+     Click a row's boxes, change list, change device, then press the footer button.
+     No personal data is on this page.</p>
+
+  <div class="revrow"><b>Version</b>
+    <button class="rb" data-ver="before" aria-pressed="false">Before — what is there today</button>
+    <button class="rb" data-ver="after"  aria-pressed="true">After — the proposal</button>
+    <button class="rb" data-ver="min"    aria-pressed="false">Option B — smallest possible fix</button>
+  </div>
+  <div class="revrow"><b>List</b>
+    <button class="rb" data-k="joiner"  aria-pressed="true">A new joiner (6)</button>
+    <button class="rb" data-k="my"      aria-pressed="false">What an employee may correct (6)</button>
+    <button class="rb" data-k="docs"    aria-pressed="false">Document types (18)</button>
+    <button class="rb" data-k="profile" aria-pressed="false">Positions fields (11)</button>
+  </div>
+  <div class="revrow"><b>Device</b>
+    <button class="rb" data-d="desk"  aria-pressed="true">Laptop 1100</button>
+    <button class="rb" data-d="ph"    aria-pressed="false">Phone 390</button>
+    <button class="rb" data-d="ph360" aria-pressed="false">Phone 360</button>
+    <button class="rb" data-d="zoom2" aria-pressed="false">Phone at 200% text</button>
+  </div>
+  <div class="revrow"><b>Theme</b>
+    <button class="rb" data-t="light" aria-pressed="true">Light</button>
+    <button class="rb" data-t="dark"  aria-pressed="false">Dark</button>
+  </div>
+  <p class="note" id="rev-note"></p>
+</div>
+
+<div id="stage"><div class="frame" id="frame"><div class="frame-lab" id="frame-lab">Laptop</div>
+  <div class="pad" id="card"></div>
+  <div id="dlg-host"></div>
+</div></div>
+
+<script>
+"use strict";
+/* ─────────────────────────────────────────────────────────────────────────────
+   One source for the phone rules. The product's own @media block, plus the
+   same text copied under the frame classes so the frame behaves like a phone
+   inside a desktop browser. Pattern D1, slice 009.
+   ────────────────────────────────────────────────────────────────────────── */
+var PHONE_CSS = [
+  /* today's rules, verbatim from panels.css, minus the order:-1 line the      */
+  /* proposal deletes (see finding F8) - the BEFORE view adds it back itself.  */
+  ".ocs-back{padding:0;align-items:stretch}",
+  ".ocs-dlg{width:100%;border-radius:0;max-height:none}",
+  ".ocs-ft-b{flex-direction:column}",
+  ".ocs-ft-b .ocs-b{width:100%}",
+  /* the proposal's own phone rules */
+  /* Stacked in DOM order, so what is read matches what is tabbed, and the
+     bottom of the screen - where the thumb lands - is Save, not Cancel. */
+  ".oc2-ft-b{flex-direction:column}",
+  ".oc2-ft-b .ocs-b,.oc2-ft-b .oc2-ok{width:100%}",
+  ".oc2-ft-b .oc2-sp{display:none}",
+  ".oc2-tbl thead th.c{width:58px}",
+  ".oc2-back{padding:0;align-items:stretch}",
+  ".oc2-sheet{width:100%;border-radius:0;max-height:none}"
+].join("\n");
+(function injectPhoneCss() {
+  var pref = ["ph", "ph360", "zoom2"].map(function (c) {
+    return PHONE_CSS.replace(/^\./gm, ".frame." + c + " .");
+  }).join("\n");
+  document.getElementById("ph-rules").textContent =
+    "@media (max-width:640px){\n" + PHONE_CSS + "\n}\n" + pref
+    + "\n.frame.ph .ocs-ft-b [data-ocs=ok].oldorder{order:-1}";
+})();
+</script>
+<script>
+"use strict";
+function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function el(id){return document.getElementById(id);}
+
+/* ── the audience figure. Real on a real tenant; SAMPLE here. ────────────── */
+var PEOPLE = 7, ROLES = "HR Manager, System Manager";
+
+/* ── The six details, with the words from BOTH screens side by side ────────
+   Left: what this dialog calls it (OCS_MY_WORDS, portal.js).
+   Right: the question the joiner actually reads (LABELS, joining.html).
+   They are two lists in two files today, which is why the dialog cannot
+   honestly say what the joiner sees. */
+var SIX = [
+  ["cell_number",            "Mobile number",            "Your mobile number",      "The number we will ring"],
+  ["personal_email",         "Personal email",           "Your email",              ""],
+  ["current_address",        "Where they live now",      "Where you live now",      "Where post reaches you today"],
+  ["person_to_be_contacted", "Emergency contact name",   "Who to ring in an emergency", "A name we can ask for"],
+  ["relation",               "How they are related",     "How they are related to you", "Wife, brother, friend"],
+  ["emergency_phone_number", "Emergency contact number", "Their phone number",      "A number that will be answered"]
+];
+var PROFILE_11 = [
+  ["designation","Job role"],["department","Department"],["branch","Branch"],
+  ["company","Company"],["reports_to","Reports to"],["grade","Grade"],
+  ["employment_type","Kind of employment"],["date_of_joining","In the company since"],
+  ["default_shift","Usual shift"],["company_email","Work email"],
+  ["alvoraa_alternative_number","Alternative number"]
+];
+/* The 18 real document types at the PP Jewellers demo copy, read from the
+   bench on 4 Nov 2026. Type names are configuration, not anybody's data. */
+var DOCS_18 = [
+  ["Address proof (current)","Address",1,"collected by HR","12 given so far"],
+  ["Signed policy acknowledgement","Company Issued",0,"collected by HR","nobody has given one"],
+  ["Vault access authorisation","Company Issued",0,"collected by HR","nobody has given one"],
+  ["Highest education certificate","Education",0,"collected by HR","3 given so far"],
+  ["Last 3 months' salary slips","Employment",0,"collected by HR","nobody has given one"],
+  ["Previous employer relieving letter","Employment",0,"collected by HR","1 given so far"],
+  ["Signed offer and appointment letter","Employment",0,"collected by HR","nobody has given one"],
+  ["Aadhaar card","Identity",1,"collected by HR","41 given so far"],
+  ["PAN card","Identity",1,"collected by HR","38 given so far"],
+  ["Passport-size photographs","Identity",0,"collected by HR","nobody has given one"],
+  ["Bank account proof","Statutory",0,"collected by HR","9 given so far"],
+  ["ESI number (if applicable)","Statutory",0,"collected by HR","nobody has given one"],
+  ["Security agency licence","Statutory",0,"collected by HR","nobody has given one"],
+  ["UAN / PF details","Statutory",0,"collected by HR","4 given so far"],
+  ["Background verification report","Verification",0,"collected by HR","nobody has given one"],
+  ["Police verification acknowledgement","Verification",0,"collected by HR","nobody has given one"],
+  ["Police verification certificate","Verification",0,"collected by HR","2 given so far"],
+  ["Reference check note","Verification",0,"collected by HR","nobody has given one"]
+];
+var SENSITIVE = ["Identity","Statutory","Verification","Employment","Address"];
+
+/* ── the four lists, one object each ─────────────────────────────────────── */
+var LISTS = {
+  joiner: {
+    title: "Details a new joiner is asked for",
+    lead: "These are the questions on the joining form a new starter fills in before "
+        + "their first day. A joiner is asked for nothing at all until you tick it here.",
+    c1: "Asked for", c2: "Must fill in",
+    tie: "A detail you tick under <b>Must fill in</b> shows the joiner a "
+       + "<span class=\"oc2-chip\">Needed</span> beside the question, and they cannot send "
+       + "the form until they have filled it in. Everything else they may leave blank.",
+    rows: SIX.map(function (r) { return { k: r[0], nm: r[1], sub: "The joiner reads: “" + r[2] + "”" }; }),
+    on: ["cell_number","personal_email","current_address","person_to_be_contacted","relation","emergency_phone_number"],
+    need: ["cell_number","personal_email","current_address","person_to_be_contacted","relation","emergency_phone_number"],
+    oldc2: "Must fill in before they can send the form",
+    prev: "joiner"
+  },
+  my: {
+    title: "Details an employee may correct about themselves",
+    lead: "These are the details an employee can change on their own My Profile page. "
+        + "My Profile never refuses a save — anything you keep asking for is asked "
+        + "again on every visit, not blocked.",
+    c1: "They may change it", c2: "Keep asking",
+    tie: "A detail you tick under <b>Keep asking</b> shows the employee a "
+       + "<span class=\"oc2-chip\">Needed</span> until it is filled in. It never stops them saving.",
+    rows: SIX.map(function (r) { return { k: r[0], nm: r[1], sub: "" }; }),
+    on: ["cell_number","personal_email","current_address"],
+    need: ["cell_number"],
+    oldc2: "Keep asking for it",
+    prev: "self"
+  },
+  docs: {
+    title: "Document types shown on a person's profile",
+    lead: "Tick a type and anyone who can open the Positions page can open the file "
+        + "itself — " + PEOPLE + " people today (" + ROLES + "). <span class=\"samp\">Sample count</span>",
+    c1: "Shown", c2: "",
+    tie: "", grouped: true,
+    on: ["Aadhaar card","PAN card","Address proof (current)"],
+    need: [], prev: "reader"
+  },
+  profile: {
+    title: "Details a Positions reader may see",
+    lead: "These are the job details shown beside a person's name on the Positions page "
+        + "and the organisation chart — seen by " + PEOPLE + " people today "
+        + "(" + ROLES + "). <span class=\"samp\">Sample count</span>",
+    c1: "Shown", c2: "", tie: "",
+    rows: PROFILE_11.map(function (r) { return { k: r[0], nm: r[1], sub: "" }; }),
+    on: ["designation","department","branch","reports_to","date_of_joining"],
+    need: [], prev: "reader"
+  }
+};
+/* the document rows, grouped the way the product groups them */
+LISTS.docs.rows = DOCS_18.map(function (d) {
+  return { k: d[0], nm: d[0], cat: d[1],
+           sub: [d[3], d[4], d[2] ? "needed to join" : ""].filter(Boolean).join(" · ") };
+});
+
+var S = { v: "after", k: "joiner", d: "desk", t: "light", pick: {}, need: {}, open: false };
+function reset(k) {
+  S.pick = {}; S.need = {};
+  LISTS[k].on.forEach(function (x) { S.pick[x] = 1; });
+  LISTS[k].need.forEach(function (x) { S.need[x] = 1; });
+}
+function chosen() { return Object.keys(S.pick).filter(function (x) { return S.pick[x]; }); }
+function needed() { return Object.keys(S.need).filter(function (x) { return S.need[x] && S.pick[x]; }); }
+function sens() {
+  return chosen().filter(function (n) {
+    var r = LISTS.docs.rows.filter(function (x) { return x.k === n; })[0];
+    return r && SENSITIVE.indexOf(r.cat) >= 0;
+  });
+}
+</script>
+<script>
+"use strict";
+/* ── the card the dialog opens from. Unchanged, EXCEPT the second button the
+      proposal puts on it for the four values ALV-304 is about. ───────────── */
+function cardHtml() {
+  var L = LISTS[S.k], on = chosen(), nd = needed();
+  var chips = on.length
+    ? '<div class="ocs-chips">' + L.rows.filter(function (r) { return S.pick[r.k]; })
+        .map(function (r) {
+          return '<span class="ocs-chip">' + esc(r.nm)
+            + (S.need[r.k] ? " · Needed" : "") + "</span>";
+        }).join("") + "</div>"
+    : '<p class="gp-hint">Nothing. A joiner is asked for no details at all until you '
+      + "tick something here.</p>";
+  var notReady = (S.k === "joiner" && S.v !== "before")
+    ? '<p class="ocs-warn" role="note"><b>You cannot invite anybody yet.</b> A joiner has '
+      + "to be told these things before they hand anything over, and they come from your "
+      + "settings, not from us: your own words about why you are asking; how long you keep "
+      + "the details of somebody who does not join; how long you keep a photograph of an "
+      + "identity card; a phone number and an email address a joiner can use to reach you."
+      + '<span style="display:block;margin-top:10px"><button class="btn btn-primary ocs-b" '
+      + 'data-go="set-told">Set what a joiner is told</button></span></p>'
+    : (S.k === "joiner"
+        ? '<p class="ocs-warn" role="note"><b>You cannot invite anybody yet.</b> A joiner has '
+          + "to be told these things before they hand anything over, and they come from your "
+          + "settings, not from us: your own words; how long details are kept; how long a "
+          + "photograph is kept; a phone number and an email address."
+          + '<span style="display:block;margin-top:6px;color:var(--text2)">'
+          + "(Today there is no button here, and no screen anywhere, that sets any of them "
+          + "— ALV-304.)</span></p>"
+        : "");
+  return '<div class="pf-card"><h3>What people can see and change about each other</h3>'
+    + '<p class="gp-hint">One card. Everything chosen is listed by name.</p>'
+    + '<div class="ocs-sec"><h4 class="ocs-h">' + esc(L.title) + "</h4>"
+    + notReady + chips
+    + (S.k === "joiner"
+        ? '<p class="gp-hint">1 document type must be answered for: Aadhaar card. A '
+          + "photograph or “I will bring it on my first day” both count.</p>"
+          + '<p class="gp-hint">Details of somebody who does not join are kept for 90 days. '
+          + "A photograph of an identity card is deleted sooner — after 30 days. "
+          + '<span class="samp">Sample</span></p>'
+        : "")
+    + '<div class="ocs-acts"><button class="btn btn-outline ocs-b" data-go="open">'
+    + "Add or remove details</button></div></div></div>";
+}
+
+/* ══ BEFORE ═══════════════════════════════════════════════════════════════ */
+function beforeRows() {
+  var L = LISTS[S.k], canNeed = (S.k === "my" || S.k === "joiner");
+  if (L.grouped) {
+    var seen = {}, out = "";
+    L.rows.forEach(function (r) {
+      if (!seen[r.cat]) { seen[r.cat] = 1; out += '<h5 class="ocs-grp">' + esc(r.cat) + "</h5>"; }
+      out += '<label class="ocs-opt"><input type="checkbox" data-v="' + esc(r.k) + '"'
+        + (S.pick[r.k] ? " checked" : "") + '><span><b>' + esc(r.nm) + "</b>"
+        + '<span class="ocs-cat">' + esc(r.cat) + "</span>"
+        + '<span class="gp-hint" style="display:block">' + esc(r.sub) + "</span></span></label>";
+    });
+    return out;
+  }
+  return L.rows.map(function (r) {
+    /* The raw database columns ALV-305 is about are assumed FIXED, so this
+       shows the plain words. The repetition and the nesting are what is left. */
+    return '<label class="ocs-opt"><input type="checkbox" data-v="' + esc(r.k) + '"'
+      + (S.pick[r.k] ? " checked" : "") + '><span><b>' + esc(r.nm) + "</b>"
+      + (canNeed && S.pick[r.k]
+          ? '<span class="gp-hint" style="display:block"><label><input type="checkbox" '
+            + 'data-n="' + esc(r.k) + '"' + (S.need[r.k] ? " checked" : "") + "> "
+            + esc(L.oldc2) + "</label></span>"
+          : "")
+      + "</span></label>";
+  }).join("");
+}
+function beforeOk() {
+  var n = chosen().length, q = needed().length;
+  return S.k === "docs" ? "OK - " + n + " document types, seen by " + PEOPLE + " people"
+    : S.k === "my" ? "OK - " + n + " details an employee may change, " + q + " we keep asking for"
+    : S.k === "joiner" ? "OK - a joiner is asked for " + n + " details, " + q + " of them compulsory"
+    : "OK - " + n + " details, seen by " + PEOPLE + " people";
+}
+function beforeSum() {
+  var sv = S.k === "docs" ? sens() : [];
+  if (sv.length) return '<span class="ocs-warn">' + sv.length + " of these are identity, "
+    + "statutory, verification, employment or address documents. Anyone who can open the "
+    + "Positions page will be able to open the file itself - " + PEOPLE + " people today.</span>";
+  if (S.k === "docs" && !chosen().length) return "Nothing ticked. Nobody will be able to open "
+    + "an employee's documents from the Positions page.";
+  return "";
+}
+function beforeDlg() {
+  return '<div class="ocs-back"><div class="ocs-dlg" role="dialog" aria-modal="true" '
+    + 'aria-labelledby="bh" tabindex="-1"><div class="ocs-dlg-hd"><h3 id="bh" tabindex="-1">'
+    + esc(LISTS[S.k].title) + '</h3><button class="ocs-x" data-go="close" aria-label="Cancel">'
+    + "&times;</button></div>"
+    + '<div class="ocs-dlg-bd" id="bd">' + beforeRows() + "</div>"
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" role="status">' + beforeSum() + "</p>"
+    + '<div class="ocs-ft-b">'
+    + '<button class="btn btn-outline ocs-b" data-go="prev-old">Preview what a reader sees</button>'
+    + '<button class="btn btn-outline ocs-b" data-go="close">Cancel</button>'
+    + '<button class="btn btn-primary ocs-b" data-ocs="ok" data-go="close">'
+    + esc(beforeOk()) + "</button></div></div></div></div>";
+}
+</script>
+<script>
+"use strict";
+/* ══ AFTER — the proposal ═════════════════════════════════════════════════
+   One row per detail. The decision is columns, so the sentence that is
+   written six times today is written once, at the top of a column that
+   sticks while the list scrolls. Nothing appears or disappears, so no row is
+   ever redrawn and no keyboard focus is ever thrown away. */
+function afterRows() {
+  var L = LISTS[S.k], two = !!L.c2, out = "", seen = {};
+  L.rows.forEach(function (r) {
+    if (L.grouped && !seen[r.cat]) {
+      seen[r.cat] = 1;
+      out += '<tr class="oc2-grp"><td colspan="' + (two ? 3 : 2) + '">' + esc(r.cat) + "</td></tr>";
+    }
+    var off = S.pick[r.k] ? "" : " oc2-off";
+    /* No per-row "Needed" chip: the Must fill in column already says it, and
+       the chip would be the same thing twice on one line. */
+    out += "<tr class=\"" + off.trim() + '"><td class="oc2-nm">' + esc(r.nm)
+      + (r.sub ? '<span class="oc2-sub">' + esc(r.sub) + "</span>" : "") + "</td>"
+      + '<td><label class="oc2-cell"><input type="checkbox" data-v="' + esc(r.k) + '"'
+      + (S.pick[r.k] ? " checked" : "") + ' aria-label="' + esc(r.nm + " — " + L.c1)
+      + '"></label></td>'
+      + (two
+          ? '<td><label class="oc2-cell oc2-n"><input type="checkbox" data-n="' + esc(r.k) + '"'
+            + (S.need[r.k] ? " checked" : "") + ' aria-label="' + esc(r.nm + " — " + L.c2)
+            + '"></label></td>'
+          : "")
+      + "</tr>";
+  });
+  return out;
+}
+function afterOk() {
+  var n = chosen().length, q = needed().length;
+  if (S.k === "joiner") return n ? "Save — " + n + " asked for, " + q + " must be filled in"
+                                 : "Save — ask a joiner for nothing";
+  if (S.k === "my") return n ? "Save — " + n + " they may change, " + q + " we keep asking for"
+                             : "Save — an employee may change nothing";
+  if (S.k === "docs") return n ? "Save — " + n + " document types, seen by " + PEOPLE + " people"
+                               : "Save — show no documents to anybody";
+  return n ? "Save — " + n + " details, seen by " + PEOPLE + " people"
+           : "Save — show a name and a job role only";
+}
+function afterSum() {
+  var n = chosen().length, q = needed().length, sv = S.k === "docs" ? sens() : [];
+  if (sv.length) return '<span class="ocs-warn">' + sv.length + " of these are identity, "
+    + "statutory, verification, employment or address documents. Anyone who can open the "
+    + "Positions page can open the file itself — " + PEOPLE + " people today ("
+    + ROLES + ").</span>";
+  if (S.k === "docs" && !n) return "Nothing ticked. Nobody will be able to open an "
+    + "employee's documents from the Positions page.";
+  /* A real consequence of the two columns disagreeing, said in words. */
+  if (S.k === "joiner" && n && !q) return '<span class="ocs-warn">Nothing has to be '
+    + "filled in, so a joiner can send the form back empty.</span>";
+  return "";
+}
+function afterDlg() {
+  var L = LISTS[S.k], two = !!L.c2;
+  return '<div class="ocs-back"><div class="ocs-dlg" role="dialog" aria-modal="true" '
+    + 'aria-labelledby="ah" tabindex="-1"><div class="ocs-dlg-hd"><h3 id="ah" tabindex="-1">'
+    + esc(L.title) + '</h3><button class="ocs-x" data-go="close" aria-label="Cancel">'
+    + "&times;</button></div>"
+    + '<div class="ocs-dlg-bd" id="bd"><p class="oc2-lead">' + L.lead + "</p>"
+    + (L.tie ? '<p class="oc2-tie">' + L.tie + "</p>" : "")
+    + '<table class="oc2-tbl"><thead><tr><th scope="col">Detail</th>'
+    + '<th scope="col" class="c">' + esc(L.c1) + "</th>"
+    + (two ? '<th scope="col" class="c">' + esc(L.c2) + "</th>" : "")
+    + "</tr></thead><tbody>" + afterRows() + "</tbody></table></div>"
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="sum" role="status">' + afterSum() + "</p>"
+    + '<div class="ocs-ft-b oc2-ft-b">'
+    + '<button class="btn btn-outline ocs-b" data-go="prev">' + esc(previewWord()) + "</button>"
+    + '<span class="oc2-sp"></span>'
+    + '<button class="btn btn-outline ocs-b" data-go="close">Cancel</button>'
+    + '<button class="btn btn-primary ocs-b oc2-ok" id="ok" data-go="close">'
+    + esc(afterOk()) + "</button></div></div></div></div>";
+}
+/* The button names the screen it opens. One label for four lists was wrong on
+   two of them: nobody "reads" a joining form, and My Profile is the person's
+   own page, not a reader's. */
+function previewWord() {
+  return S.k === "joiner" ? "Show me the form a joiner fills in"
+    : S.k === "my" ? "Show me the employee's own page"
+    : "Show me what a reader sees";
+}
+</script>
+<script>
+"use strict";
+/* ══ OPTION B — the smallest fix that removes the repetition ═══════════════
+   Today's two nested ticks, unchanged, with the sentence hoisted out of the
+   row and written once. Nothing else moves. Drawn so the cheaper rung can be
+   chosen on its merits. */
+function minDlg() {
+  var L = LISTS[S.k], canNeed = (S.k === "my" || S.k === "joiner");
+  var rows = L.grouped ? beforeRows() : L.rows.map(function (r) {
+    return '<label class="ocs-opt"><input type="checkbox" data-v="' + esc(r.k) + '"'
+      + (S.pick[r.k] ? " checked" : "") + '><span><b>' + esc(r.nm) + "</b>"
+      + (canNeed && S.pick[r.k]
+          ? '<span class="gp-hint" style="display:block"><label><input type="checkbox" '
+            + 'data-n="' + esc(r.k) + '"' + (S.need[r.k] ? " checked" : "") + "> "
+            + esc(S.k === "joiner" ? "Must fill in" : "Keep asking") + "</label></span>"
+          : "")
+      + "</span></label>";
+  }).join("");
+  return '<div class="ocs-back"><div class="ocs-dlg" role="dialog" aria-modal="true" '
+    + 'aria-labelledby="mh" tabindex="-1"><div class="ocs-dlg-hd"><h3 id="mh" tabindex="-1">'
+    + esc(L.title) + '</h3><button class="ocs-x" data-go="close" aria-label="Cancel">'
+    + "&times;</button></div>"
+    + '<div class="ocs-dlg-bd" id="bd"><p class="oc2-lead">' + L.lead + "</p>"
+    + (L.tie ? '<p class="oc2-tie">' + L.tie + "</p>" : "") + rows + "</div>"
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="sum" role="status">' + afterSum() + "</p>"
+    + '<div class="ocs-ft-b">'
+    + '<button class="btn btn-outline ocs-b" data-go="prev">' + esc(previewWord()) + "</button>"
+    + '<button class="btn btn-outline ocs-b" data-go="close">Cancel</button>'
+    + '<button class="btn btn-primary ocs-b" id="ok" data-go="close">' + esc(afterOk())
+    + "</button></div></div></div></div>";
+}
+
+/* ══ the previews ═════════════════════════════════════════════════════════ */
+function prevOldHtml() {
+  /* What the product does today. For the joiner list ocsPreview() falls back to
+     the Positions word map, which holds none of the six names - so the sheet
+     lists raw database columns even once ALV-305 is fixed in the rows. */
+  var on = chosen();
+  if (S.k === "docs") {
+    return "<p>A reader would see these rows, each with a View link:</p><ul>"
+      + on.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>";
+  }
+  var raw = (S.k === "joiner");
+  if (!on.length) return "<p>A reader would see a name and a job role, and nothing else.</p>";
+  return "<dl>" + LISTS[S.k].rows.filter(function (r) { return S.pick[r.k]; })
+    .map(function (r) {
+      return "<dt><b>" + esc(raw ? r.k : r.nm) + "</b></dt><dd>the person's value</dd>";
+    }).join("") + "</dl>"
+    + (raw ? '<p class="gp-hint"><b>Note for review:</b> these are the raw database '
+           + "column names, and the heading says “a reader”. Nobody reads a "
+           + "joining form — a joiner fills it in.</p>" : "");
+}
+function prevNewHtml() {
+  var on = LISTS[S.k].rows.filter(function (r) { return S.pick[r.k]; });
+  if (S.k === "joiner") {
+    if (!on.length) return '<div class="oc2-prev"><h4>Your details</h4>'
+      + "<p>Nothing is ticked, so a joiner would be sent straight past this screen to "
+      + "their documents.</p></div>";
+    return '<div class="oc2-prev"><h4>Your details</h4>'
+      + '<p class="gp-hint" style="margin:0">Your details · you are here &nbsp;|&nbsp; '
+      + "Your documents · nothing yet</p>"
+      + (needed().length
+          ? '<p class="gp-hint">Anything marked <b>Needed</b> has to be filled in before you '
+            + "can send the form. You can leave the rest blank.</p>"
+          : '<p class="gp-hint">You can leave any of these blank.</p>')
+      + on.map(function (r) {
+          var six = SIX.filter(function (x) { return x[0] === r.k; })[0];
+          return '<div class="pq"><b>' + esc(six[2])
+            + (S.need[r.k] ? '<span class="oc2-chip">Needed</span>' : "") + "</b>"
+            + (six[3] ? "<i>" + esc(six[3]) + "</i>" : "")
+            + '<div class="pbox' + (r.k === "current_address" ? " tall" : "") + '"></div></div>';
+        }).join("")
+      + '<p class="gp-hint" style="margin-top:14px">Then: Next → Your documents → '
+      + "Your photo → Check and send.</p></div>";
+  }
+  if (S.k === "my") {
+    return '<div class="oc2-prev"><h4>My profile</h4>'
+      + (needed().length
+          ? '<p class="gp-hint">We will keep asking for ' + needed().length
+            + " of these until they are filled in. Your save is never refused.</p>" : "")
+      + (on.length
+          ? on.map(function (r) {
+              return '<div class="pq"><b>' + esc(r.nm)
+                + (S.need[r.k] ? '<span class="oc2-chip">Needed</span>' : "") + "</b>"
+                + '<div class="pbox"></div></div>';
+            }).join("")
+          : "<p>An employee would see their details, with nothing they can change.</p>")
+      + "</div>";
+  }
+  if (S.k === "docs") {
+    return '<div class="oc2-prev"><h4>Documents, on a person’s profile</h4>'
+      + (on.length
+          ? "<ul>" + on.map(function (r) {
+              return "<li>" + esc(r.nm) + " — <u>View</u></li>"; }).join("") + "</ul>"
+          : "<p>A reader would see no documents section at all.</p>") + "</div>";
+  }
+  return '<div class="oc2-prev"><h4>On the Positions page</h4>'
+    + (on.length
+        ? "<dl>" + on.map(function (r) {
+            return "<dt><b>" + esc(r.nm) + "</b></dt><dd>the person’s value</dd>";
+          }).join("") + "</dl>"
+        : "<p>A reader would see a name and a job role, and nothing else.</p>") + "</div>";
+}
+function sheet(title, body) {
+  var h = document.createElement("div");
+  h.className = "oc2-back";
+  h.id = "sheet";
+  h.innerHTML = '<div class="oc2-sheet" role="dialog" aria-modal="true" aria-labelledby="sh" '
+    + 'tabindex="-1"><div class="ocs-dlg-hd"><h3 id="sh" tabindex="-1">' + esc(title)
+    + '</h3><button class="ocs-x" data-go="sheet-close" aria-label="Close">&times;</button>'
+    + '</div><div style="padding:14px 16px">' + body + "</div>"
+    + '<div class="ocs-dlg-ft"><button class="btn btn-primary ocs-b" data-go="sheet-close" '
+    + 'style="width:100%">Back to the list</button></div></div>';
+  el("frame").appendChild(h);
+  h.querySelector("#sh").focus();
+}
+</script>
+<script>
+"use strict";
+var NOTES = {
+  before: "<b>Before.</b> This is today's dialog, with ALV-305 assumed fixed so the plain "
+    + "words show. What is left: the same sentence on all six rows, a tick that appears and "
+    + "disappears under another tick, no word about what the joiner actually sees, and a "
+    + "Preview button that names the wrong audience on two of the four lists. Tick "
+    + "“Mobile number” off and on with the keyboard (Space) and watch where the "
+    + "focus goes.",
+  after: "<b>After.</b> One row per detail, the decision in two columns, so the repeated "
+    + "sentence becomes one sticky column heading. Every joiner row carries the question the "
+    + "joiner will actually read. Nothing appears or disappears, so nothing is redrawn and "
+    + "focus stays put. The footer button repeats the column words.",
+  min: "<b>Option B — the cheapest rung.</b> Today's two nested ticks, untouched, with "
+    + "the repeated sentence hoisted out of the rows and written once. It removes the "
+    + "repetition and nothing else: the tick still appears and disappears, the rows are "
+    + "still redrawn, and you still cannot scan which rows are compulsory."
+};
+function render() {
+  var f = el("frame");
+  f.className = "frame" + (S.d === "desk" ? "" : " " + S.d);
+  el("frame-lab").textContent = S.d === "desk" ? "Laptop 1100"
+    : S.d === "ph" ? "Phone 390" : S.d === "ph360" ? "Phone 360" : "Phone at 200% text";
+  document.documentElement.setAttribute("data-theme", S.t);
+  el("rev-note").innerHTML = NOTES[S.v];
+  el("card").innerHTML = cardHtml();
+  el("dlg-host").innerHTML = S.open
+    ? (S.v === "before" ? beforeDlg() : S.v === "min" ? minDlg() : afterDlg())
+    : "";
+  /* Focus moves to the heading when the dialog OPENS. It is deliberately NOT
+     moved on a redraw, because the product does not move it either - that is
+     the fault the Before view is here to show. */
+  if (S.open && S.focusNext) {
+    S.focusNext = 0;
+    var h = el("dlg-host").querySelector("h3");
+    if (h) h.focus();
+  }
+}
+/* On a tick in the AFTER view nothing is redrawn: the row's class, its chip,
+   the summary and the button are the only things that change. */
+function touchAfter(k) {
+  var tr = el("dlg-host").querySelector('[data-v="' + k + '"]');
+  tr = tr && tr.closest("tr");
+  if (!tr) return false;
+  tr.className = S.pick[k] ? "" : "oc2-off";
+  var nm = tr.querySelector(".oc2-nm"), r = LISTS[S.k].rows.filter(function (x) { return x.k === k; })[0];
+  nm.innerHTML = esc(r.nm)
+    + (r.sub ? '<span class="oc2-sub">' + esc(r.sub) + "</span>" : "");
+  var nb = tr.querySelector("[data-n]");
+  if (nb) nb.checked = !!S.need[k];
+  el("sum").innerHTML = afterSum();
+  el("ok").textContent = afterOk();
+  return true;
+}
+document.addEventListener("click", function (e) {
+  var b = e.target.closest ? e.target.closest("[data-v],[data-n],[data-go],[data-k],[data-d],[data-t],[data-ver]") : null;
+  if (!b) return;
+  if (b.hasAttribute("data-v") || b.hasAttribute("data-n")) return;   /* handled on change */
+  var go = b.getAttribute("data-go");
+  if (go === "open") { S.open = true; S.focusNext = 1; render(); return; }
+  if (go === "close") { S.open = false; reset(S.k); render(); return; }
+  if (go === "prev") { sheet(previewWord().replace(/^Show me /, "").replace(/^the /, "The "),
+                             prevNewHtml()); return; }
+  if (go === "prev-old") { sheet("What a reader sees", prevOldHtml()); return; }
+  if (go === "sheet-close") {
+    var s = el("sheet"); if (s) s.parentNode.removeChild(s);
+    var h = el("dlg-host").querySelector("h3"); if (h) h.focus();
+    return;
+  }
+  if (go === "set-told") {
+    sheet("What a joiner is told", "<p>The four values ALV-304 is about belong <b>here, on "
+      + "the card</b> — not inside the picker. The card is already the screen that says "
+      + "they are missing, and acting where the problem is stated is the rule.</p>"
+      + '<div class="oc2-prev"><div class="pq"><b>Your own words, which a joiner reads before '
+      + "the first question</b><i>Why you are asking, in your words. A joiner must see this "
+      + 'before they hand anything over.</i><div class="pbox tall"></div></div>'
+      + '<div class="pq"><b>Keep the details of somebody who does not join for</b>'
+      + '<i>days</i><div class="pbox"></div></div>'
+      + '<div class="pq"><b>Delete a photograph of an identity card after</b><i>days, counted '
+      + 'from the day it arrives</i><div class="pbox"></div></div>'
+      + '<div class="pq"><b>A phone number a joiner can ring</b><i></i><div class="pbox"></div></div>'
+      + '<div class="pq"><b>An email address a joiner can write to</b><i></i><div class="pbox"></div></div>'
+      + "</div><p><b>Recommendation, not a build.</b> One button, one small dialog, on the "
+      + "card that already names what is missing. ALV-304's owner decides.</p>");
+    return;
+  }
+  /* The review bar's own attributes. "ver" is not "v": the row checkboxes own
+     data-v, and one attribute doing two jobs made the version switch dead. */
+  [["k","k"],["d","d"],["t","t"],["ver","v"]].forEach(function (pr) {
+    var a = pr[0];
+    if (!b.hasAttribute("data-" + a)) return;
+    S[pr[1]] = b.getAttribute("data-" + a);
+    if (a === "k") reset(S.k);
+    S.focusNext = 0;
+    document.querySelectorAll("#rev [data-" + a + "]").forEach(function (x) {
+      x.setAttribute("aria-pressed", x.getAttribute("data-" + a) === S[pr[1]] ? "true" : "false");
+    });
+    render();
+  });
+});
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!t.getAttribute) return;
+  var v = t.getAttribute("data-v"), n = t.getAttribute("data-n");
+  if (v) {
+    S.pick[v] = t.checked ? 1 : 0;
+    if (!t.checked) S.need[v] = 0;
+    if (S.v === "after" && touchAfter(v)) return;
+    /* Before and Option B redraw the whole list on every tick, because the
+       second tick only exists on a ticked row. Faithful to the product: the
+       keyboard focus goes to nothing and the scroll position is lost. */
+    render();
+    return;
+  }
+  if (n) {
+    S.need[n] = t.checked ? 1 : 0;
+    if (S.v === "after") { touchAfter(n); return; }
+    var ok = el("ok"), sm = el("sum");
+    if (ok) ok.textContent = S.v === "before" ? beforeOk() : afterOk();
+    if (sm) sm.innerHTML = S.v === "before" ? beforeSum() : afterSum();
+  }
+});
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape") return;
+  var s = el("sheet");
+  if (s) { s.parentNode.removeChild(s); var h = el("dlg-host").querySelector("h3"); if (h) h.focus(); return; }
+  if (S.open) { S.open = false; reset(S.k); render(); }
+});
+reset("joiner");
+render();
+</script>
+</body></html>

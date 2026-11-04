@@ -123,6 +123,12 @@
 <div class="emp-drawer-overlay" id="emp-drawer-overlay" onclick="closeEmpDrawer()"></div>
 <div class="emp-drawer" id="emp-drawer" role="dialog" aria-modal="true"
      aria-labelledby="ed-name" tabindex="-1">
+  <!-- The way back to the seat tray this profile was opened from. Empty and
+       hidden unless mpfOpen closed a tray to get here, because the Positions
+       table and the seat page use this same drawer and have no tray. It is a
+       SECOND DOOR onto closeEmpDrawer, which already puts the tray back at the
+       same seat and scroll - no second restore path to keep in step. -->
+  <div class="mpf-back" id="ed-back" hidden></div>
   <div class="emp-drawer-head">
     <div class="emp-drawer-av" id="ed-av"></div>
     <div class="emp-drawer-meta">

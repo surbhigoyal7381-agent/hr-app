@@ -8,7 +8,7 @@ Surbhi's four defaults of 31 October.
 | Case | Rule | Setting, default |
 |---|---|---|
 | **Their identity documents** | **A second clock, and counsel's ruling 4 is why it exists.** A photograph of an identity card goes much sooner than a candidate record: 30 to 60 days against 180 to 365. It deletes the `File` rows only, bytes included, and leaves every typed field alone - **including on a row nobody ever actioned**, counted from when it arrived, or an ignored submission would keep an identity document until the 90-day backstop took the whole row | `alvoraa_joiner_document_days`, **30**, range 30-60 |
-| They became an employee | the details are already their personnel record, so the copy is redundant. Erased on the next run | — |
+| They became an employee | the details are already their personnel record, so the copy is redundant. Erased on the next run - **unless the row still holds the files the person uploaded, in which case it is skipped** (slice 082: nothing moves those files to the `Employee` yet, so erasing them would destroy the only copy). Their files stay on the document clock above | — |
 | They did not join (Cancelled or Expired) | **not erased the moment HR gives up on them** - counsel reversed that, because the employer has its own candidate record-keeping duties. A window from when the invite closed | `alvoraa_joiner_not_hired_days`, **180**, range 180-365 |
 | Nobody ever actioned it | erased anyway, from when it arrived, **whatever state it is in** - because the 18 September 2026 policy prohibits indefinite retention in so many words | `alvoraa_joiner_backstop_days`, **90** |
 | Before that happens | HR is **told**, so the backstop is a safety net rather than a surprise | `alvoraa_joiner_warn_days`, **75** |
@@ -93,12 +93,62 @@ def _todo(filters):
 
 
 def _erase_the_redundant_copies():
-	"""They joined, so the details are already their Employee record."""
-	done = 0
+	"""They joined, so the details are already their Employee record.
+
+	**Slice 082 put a guard in front of this, and without it the slice would
+	destroy the customer's own records.** Linking the Employee is new: before
+	082 nothing in the product wrote `Alvoraa Joiner Submission.employee`, so
+	*Made an employee* was unreachable and this pass never fired on a real row.
+	The moment HR can link, it fires - and `erase` calls
+	`delete_the_documents`, which deletes the uploaded identity documents
+	permanently, bytes included. This pass runs FIRST in `run_daily`, so it
+	would happen the first night.
+
+	The typed details really are redundant once HR has saved them onto the
+	`Employee`. **The uploaded files are not, because nothing copies them
+	anywhere yet** - the document move waits on a count of who can read an
+	`Employee` (082-PRIV-1) and on counsel's answer in writing (082-PRIV-2).
+
+	So: **a hired row that still holds its uploaded files is skipped.** Its files
+	stay on the 30-day document clock they are already on
+	(`_delete_the_documents_sooner`, counsel's ruling 4), which is unchanged -
+	nothing is kept longer than before and nothing is deleted sooner.
+
+	**The guard retires itself.** When the move ships, a moved row has no files
+	attached to it any more, so this pass resumes on its own. There is no switch
+	to remember and no flag to clear.
+	"""
+	done = kept = 0
 	for name in _todo({"status": "Made an employee"}):
+		if _still_holds_its_documents(name):
+			kept += 1
+			continue
 		if erase(name, why="They became an employee, so the copy was redundant"):
 			done += 1
+	if kept:
+		# A count and a reason. Never a name, never a file.
+		frappe.logger("alvoraa").info(
+			f"joiner retention: {kept} hired row(s) kept, because the documents "
+			f"the person uploaded are still on the invite and nothing has moved "
+			f"them to the employee record yet")
 	return done
+
+
+def _still_holds_its_documents(name):
+	"""True while the uploaded files are still attached to the invite.
+
+	**Fail closed: if it cannot tell, it says yes and the documents are kept.**
+	A false yes costs one row an extra erase cycle; a false no destroys a
+	person's identity documents for good.
+	"""
+	try:
+		return bool(frappe.db.count("File", {
+			"attached_to_doctype": DOCTYPE, "attached_to_name": name,
+		}))
+	except Exception:
+		frappe.log_error(f"Could not count the files on {name}, so they were kept",
+		                 "Joiner retention")
+		return True
 
 
 def _erase_the_ones_who_did_not_join():

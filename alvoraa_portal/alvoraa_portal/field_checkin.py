@@ -1131,7 +1131,7 @@ def after_migrate():
 				"insert_after": "device_id",
 				"read_only": 1,
 				"no_copy": 1,
-				"description": "Taken by the field app at the moment of the punch. Stored privately.",
+				"description": "Taken on the phone for this punch. A retry can resend the earlier photo. Stored privately.",
 			},
 			{
 				"fieldname": "alvoraa_gps_accuracy",

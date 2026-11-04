@@ -2981,18 +2981,88 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
 .ocs-dlg-ft{padding:12px 16px;border-top:1px solid var(--border2)}
 .ocs-sum{margin:0 0 10px;font-size:var(--fs-sm);color:var(--text2)}
 .ocs-ft-b{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+/* ALV-304. The button that sets what a joiner is told, inside the amber block
+   that already says those values are missing. */
+.ocs-told{display:block;margin-top:10px}
+
+/* ── the picker as a TABLE, ALV-310 ───────────────────────────────────────
+   Prefix oc2. One row per detail; the decision lives in COLUMNS, so the
+   sentence that was written six times is written once, at the top of a column
+   that sticks while the list scrolls. Nothing appears or disappears, so no row
+   is ever redrawn and no keyboard focus is ever thrown away. */
+.oc2-tbl{width:100%;border-collapse:collapse}
+.oc2-tbl thead th{position:sticky;top:0;z-index:2;background:var(--surface);
+  text-align:left;font-size:var(--fs-sm);font-weight:700;color:var(--text2);
+  padding:8px 6px;border-bottom:1px solid var(--border2);vertical-align:bottom;
+  line-height:1.35}
+.oc2-tbl thead th.c{text-align:center;width:78px}
+.oc2-tbl tbody td{padding:0;border-bottom:1px solid var(--border)}
+.oc2-nm{font-size:var(--fs-base);font-weight:650;color:var(--text);padding:9px 6px 9px 0}
+.oc2-nm .oc2-sub{display:block;font-weight:400;font-size:var(--fs-sm);
+  color:var(--text2);margin-top:1px;line-height:1.4}
+/* The whole cell is the 44 px target; the box is 20 px inside it, as before. */
+.oc2-cell{display:flex;align-items:center;justify-content:center;min-height:44px;
+  cursor:pointer;margin:0}
+.oc2-cell input{width:20px;height:20px;margin:0;accent-color:var(--primary)}
+.oc2-cell:focus-within{outline:3px solid var(--primary);outline-offset:-3px;
+  border-radius:var(--r-sm)}
+/* Nothing to decide until the detail is asked for, so the cell is EMPTY -
+   never a greyed box. `visibility:hidden` also takes it out of the tab order,
+   which is what lets the row stay in the DOM instead of being rebuilt. */
+tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
+.oc2-grp td{background:var(--bg);font-size:var(--fs-sm);font-weight:700;
+  color:var(--text3);text-transform:uppercase;letter-spacing:.04em;padding:10px 6px 4px}
+.oc2-lead{margin:10px 0 2px;font-size:var(--fs-base);line-height:1.55;color:var(--text2)}
+/* The one place HR's word and the joiner's word meet. */
+.oc2-tie{margin:2px 0 12px;padding:9px 11px;border-radius:var(--r-sm);
+  background:var(--bg);border-left:3px solid var(--primary);font-size:var(--fs-sm);
+  line-height:1.55;color:var(--text)}
+.oc2-chip{display:inline-block;margin-left:7px;padding:1px 7px;
+  border-radius:var(--r-full);background:var(--amber-lt);color:var(--amber);
+  border:1px solid var(--amber);font-size:var(--fs-sm);font-weight:700}
+/* Two rows on a laptop, deliberately: Preview on the left and Cancel on the
+   right, then Save across the full width, because Save carries a sentence. */
+.oc2-ft-b{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.oc2-ft-b .oc2-sp{flex:1 1 auto}
+.oc2-ft-b .oc2-ok{flex:1 0 100%}
+.oc2-ok{min-height:44px;display:inline-flex;align-items:center;
+  justify-content:center;font-weight:650;text-align:center}
+/* The other person's screen, drawn inside the dialog so nobody has to save to
+   find out what their tick did. */
+.oc2-prev{margin:0;padding:14px;background:var(--bg);border:1px dashed var(--border2);
+  border-radius:var(--r-sm)}
+.oc2-prev h4{margin:0 0 2px;font-size:var(--fs-md)}
+.oc2-prev .pq{margin:12px 0 0}
+.oc2-prev .pq b{display:block;font-size:var(--fs-base);font-weight:650}
+.oc2-prev .pq i{display:block;font-style:normal;font-size:var(--fs-sm);
+  color:var(--text2);margin:1px 0 4px}
+.oc2-prev .pbox{height:40px;border:1px solid var(--border2);
+  border-radius:var(--r-sm);background:var(--surface)}
+/* ALV-304's five fields. */
+.oc2-f{margin:12px 0 0}
+.oc2-f label{display:block;font-size:var(--fs-base);font-weight:650;color:var(--text)}
+.oc2-f label .gp-hint{display:block;font-weight:400;margin:1px 0 5px}
+.oc2-f input,.oc2-f textarea{width:100%;min-height:44px;padding:9px 11px;
+  font:inherit;font-size:var(--fs-base);color:var(--text);background:var(--surface);
+  border:1px solid var(--border2);border-radius:var(--r-sm)}
+.oc2-f textarea{min-height:88px;line-height:1.5;resize:vertical}
+.oc2-f input:focus-visible,.oc2-f textarea:focus-visible{outline:3px solid var(--primary);
+  outline-offset:1px}
 
 @media (max-width:640px){
   .ocs-back{padding:0;align-items:stretch}
   .ocs-dlg{width:100%;border-radius:0;max-height:none}
-  /* OK first on a phone, then Preview, then Cancel - stacked, full width. The
-     thumb reaches the bottom first, and the destructive-of-work button should
-     not be what it lands on. The laptop's row is Preview, Cancel, OK (01b line
-     604), which is the DOM order, so OK is lifted to the top here rather than
-     drawn twice. */
   .ocs-ft-b{flex-direction:column}
   .ocs-ft-b .ocs-b{width:100%}
-  .ocs-ft-b [data-ocs="ok"]{order:-1}
+  /* Stacked in DOM ORDER - Preview, Cancel, Save - so what is read matches
+     what is tabbed, and the bottom of the screen, where the thumb lands, is
+     Save rather than Cancel. The `[data-ocs="ok"]{order:-1}` rule that used to
+     lift OK to the top is gone: it made the visual order disagree with the tab
+     order (WCAG 2.2 AA 1.3.2 / 2.4.3). */
+  .oc2-ft-b{flex-direction:column}
+  .oc2-ft-b .ocs-b,.oc2-ft-b .oc2-ok{width:100%}
+  .oc2-ft-b .oc2-sp{display:none}
+  .oc2-tbl thead th.c{width:58px}
 }
 
 /* ── The seat page, slice 078 ─────────────────────────────────────────────
@@ -3041,6 +3111,21 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
    the document - picture or PDF - in `.mpf-dv` below (ALV-287). */
 .mpf-docs{margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)}
 .mpf-dh{margin:0 0 6px;font-size:var(--fs-md);font-weight:650;color:var(--text)}
+/* While the document list is still coming. The shared `.hm-skel` bar is sized
+   for a whole panel, so inside this section it is cut down to one row's worth
+   and loses the page margin it carries for the body. */
+.mpf-docs-wait .hm-skel{min-height:38px;margin:0}
+
+/* ALV-286's way back, at the top of the drawer. Reads as a link, not another
+   button competing with Close: the drawer already has one button up there. */
+.mpf-back{padding:10px 16px 0}
+.mpf-back-b{display:inline-flex;gap:6px;align-items:center;max-width:100%;
+  padding:4px 0;border:0;background:none;cursor:pointer;
+  font-size:var(--fs-sm);font-weight:600;color:var(--primary);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mpf-back-b:hover{text-decoration:underline}
+.mpf-back-b:focus-visible{outline:2px solid var(--primary);outline-offset:2px;
+  border-radius:var(--r-sm)}
 .mpf-doc{display:flex;gap:10px;align-items:center;padding:8px 0;
   border-bottom:1px solid var(--border2)}
 .mpf-doc:last-child{border-bottom:0}
@@ -3053,15 +3138,31 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
    Its OWN fixed overlay, unlike `.mpf-big`, which is absolute INSIDE the
    drawer at z-index 5. That was a decision, not an oversight: a 240 px
    photograph fits a 480 px drawer and a scanned A4 page does not, and she
-   asked for a generous size. So it is pinned to the window at 1250 - above the
+   asked for a generous size. So it is pinned to the window - above the
    drawer (1101), above the seat tray (1150) and above .gp-backdrop (1200) -
    and it is listed in scripts/check_portal_trays.js like every other overlay.
    The scrim value is .emp-drawer-overlay's, not a new one.
 
+   **1250 -> 1400, slice 081, and this one number is the whole WOW moment.**
+   The approver's decision sheet `.hm-ov` is 1300 (line 712). At 1250 the
+   approver tapped View bill, the viewer opened BEHIND the sheet, and the
+   screen did not change - no error, because nothing had failed. The slice's
+   whole point would have shipped blank.
+
+   The viewer moves and the sheet does not, because lowering the sheet is not
+   available: 1200 is already the employee's own modal. 1400 is free - nothing
+   in this file uses 1301 to 1999 - and it stays below `.mob-acct-menu` (2000)
+   and the two toast layers (3000), which is right: a toast should be readable
+   over a document.
+
+   It only works because `mpfShowDoc` appends the viewer to `document.body`. A
+   z-index on a descendant cannot escape an ancestor's stacking context (the
+   note at line 1254), so inside the sheet this number would do nothing.
+
    A PDF goes in `.mpf-dv-f`, an iframe with NO sandbox. portal.js's
    `mpfShowDoc` has the measurements behind that and her reasons for it; it is
    a decided question, not an oversight. */
-.mpf-dv{position:fixed;inset:0;z-index:1250;background:rgba(0,0,0,.52);
+.mpf-dv{position:fixed;inset:0;z-index:1400;background:rgba(0,0,0,.52);
   display:flex;align-items:center;justify-content:center;padding:24px}
 .mpf-dv-in{display:flex;flex-direction:column;width:min(1040px,100%);
   height:min(880px,100%);background:var(--surface);border-radius:var(--r);
@@ -3086,3 +3187,78 @@ button.mpf-face:focus-visible{outline:3px solid var(--primary);outline-offset:2p
   .mpf-dv-in{border-radius:0}
   .mpf-dv-h .btn{min-height:44px}
 }
+
+/* ── Slice 081: the evidence file control, two forms ─────────────────────────
+   The bill on an expense claim and the optional file on a day-fix request.
+   One block, one set of rules, because the two differ by three words and one
+   button.
+
+   16 px on everything a finger touches, so iOS does not zoom the page on
+   focus, and 44 px minimum height on every button. The portal's `--fs-base`
+   is 13 px and the modal's own inputs inherit it; that is existing debt and
+   raising it product-wide is not this slice's call, so the new control sets
+   its own size and leaves the rest alone.
+
+   Nothing here is under 12 px (`--fs-sm` is the floor), and "Bill attached" /
+   "No bill attached" are WORDS - the tick and the warning sign sit beside
+   text, never instead of it. "No bill attached" is grey, not red: it is not an
+   error. */
+.ev-block{margin:0 0 16px;padding:12px;border:1px solid var(--border);
+  border-radius:var(--r-sm);background:var(--surface2)}
+.ev-lab{font-size:16px;font-weight:650;color:var(--text);margin-bottom:4px}
+.ev-hint,.ev-notice,.ev-nobill{margin:4px 0 8px;font-size:var(--fs-sm);
+  color:var(--text2);line-height:1.45}
+/* The day-fix notice is plain grey hint text, directly above the two buttons,
+   inside the same block. **Never a coloured callout**: a warning-coloured box
+   on an optional field is a nudge away from the evidence the reviewer needs,
+   and this notice is a transparency control, never a protection. */
+.ev-notice{margin-bottom:10px}
+/* The standing "No bill?" line. Not a button, not a link - there is no screen
+   for it to lead to. Its job is to tell a driver a door exists. */
+.ev-nobill{margin:10px 0 0;padding-top:8px;border-top:1px dashed var(--border2)}
+.ev-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+/* Devanagari runs about 30% longer, so the two-button row WRAPS rather than
+   overflowing a 360 px screen. The basis is what makes it wrap instead of
+   squeezing both buttons under their tap size. */
+.ev-acts .btn{flex:1 1 9.5em;min-height:44px;font-size:16px;
+  display:inline-flex;align-items:center;justify-content:center}
+.ev-acts .btn:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+/* Visually hidden and still keyboard reachable, named by the block's label.
+   `display:none` would take it out of the tab order and out of the
+   accessibility tree, which is the mistake this avoids. */
+.ev-input{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ev-say{display:flex;align-items:center;gap:8px;margin:8px 0 0;
+  font-size:var(--fs-sm);color:var(--text2)}
+.ev-sp{width:14px;height:14px;border-width:2px;flex:0 0 auto}
+.ev-alert{display:flex;flex-direction:column;gap:2px;margin:8px 0 0;
+  padding:8px 10px;border-radius:var(--r-sm);
+  background:var(--red-lt);color:var(--red);font-size:var(--fs-sm)}
+.ev-alert b{font-weight:650}
+.ev-got{display:flex;gap:10px;align-items:center;margin-top:8px}
+.ev-thumb{width:72px;height:72px;object-fit:cover;border-radius:var(--r-sm);
+  border:1px solid var(--border);background:var(--surface);flex:0 0 auto}
+.ev-tile{width:72px;height:72px;display:flex;align-items:center;
+  justify-content:center;border-radius:var(--r-sm);border:1px solid var(--border);
+  background:var(--surface);font-weight:700;color:var(--text3);flex:0 0 auto}
+.ev-got-t{min-width:0}
+.ev-ok{font-size:16px;font-weight:650;color:var(--text)}
+/* The size and the stored name, which is how a driver judges for himself
+   whether his own bill came out readable. Nobody downstream can hand that
+   judgement back to him. */
+.ev-meta{font-size:var(--fs-sm);color:var(--text2);overflow-wrap:anywhere}
+
+/* The third line on the approver's queue row. It stays a `<span>`: the row is
+   one `<button>`, and a button inside a button is unreachable by keyboard. */
+.hm-l3{display:block;font-size:var(--fs-sm);color:var(--text2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-l3-dim{color:var(--text3)}
+
+/* "Bill attached · View full size" on a row or a card. A real button, because
+   neither of those is a single button, styled as a link. */
+.ev-row-ok{color:var(--text2)}
+.ev-link{border:0;background:none;padding:0;cursor:pointer;
+  font:inherit;font-weight:600;color:var(--primary);text-decoration:underline;
+  min-height:44px}
+.ev-link:focus-visible{outline:2px solid var(--primary);outline-offset:2px;
+  border-radius:var(--r-sm)}

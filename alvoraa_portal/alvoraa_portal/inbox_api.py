@@ -125,8 +125,12 @@ ROW_KEYS = (
 	# Slice 076 Part C (SEC-16): the named approver sees what they are deciding -
 	# whose claim, the type, the day, the amount and the note. No bank, no
 	# account, no advance.
+	# Slice 081: `has_bill` is a BOOLEAN - whether a bill is attached at all.
+	# Never a file name and never a url: the row says "Bill attached" or "No
+	# bill attached" in words, and the file itself only ever arrives through
+	# `expense_evidence.open_evidence`, one per tap (AQ5, AC-36, AC-45).
 	("expense_approvals", ("name", "employee_name", "expense_type", "expense_date",
-	                       "amount", "note", "waiting_since", "action")),
+	                       "amount", "note", "waiting_since", "has_bill", "action")),
 	# No colleague name for a goal or KPI update? There is one, and there has to
 	# be: an approver cannot approve "somebody's" progress. What is absent is the
 	# number's provenance and any note about the person.
@@ -138,6 +142,12 @@ ROW_KEYS = (
 	# `can_decide`: whether the caller may decide it TODAY
 	# (`attendance_correction.not_yours_yet`). Only those rows are listed and
 	# counted, so it is always true; the buttons still follow it.
+	# Slice 081 deliberately did NOT add `has_evidence` here. This part builds
+	# its own row dict and never goes through `attendance_correction._shape`, so
+	# the key would have been declared and never set - dead configuration. The
+	# HR surface the design asked for is the day-fix CARD (`acReviewQueue`),
+	# which calls `to_review` directly and is not cut to this list. The Inbox's
+	# own day-fix row is a different screen and is not in the slice.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
 	                      "reason", "context", "action", "can_decide", "waiting_since")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
@@ -586,13 +596,22 @@ def _part_expense_approvals(who):
 		# One read of the lines of every claim on the page, not one per row. A
 		# portal claim has one line; a desk claim shows its first.
 		first = {}
+		# Slice 081: which of these claims carry a bill. **One query for the
+		# whole page**, the same shape and the same ordering rule as the line
+		# read above: `get_all` checks no permissions, and that is safe only
+		# because `get_list` has already filtered the parents. The count must be
+		# the same for 200 rows as for 20.
+		with_bill = set()
 		if rows:
+			names = [r.name for r in rows]
 			for d in frappe.get_all(
 				"Expense Claim Detail",
-				filters={"parent": ["in", [r.name for r in rows]], "parenttype": "Expense Claim"},
+				filters={"parent": ["in", names], "parenttype": "Expense Claim"},
 				fields=["parent", "expense_type", "expense_date", "description"],
 				order_by="idx asc"):
 				first.setdefault(d.parent, d)
+			from alvoraa_portal import expense_evidence
+			with_bill = expense_evidence.has_evidence("Expense Claim", names)
 		out = []
 		for r in rows:
 			d = first.get(r.name) or {}
@@ -604,6 +623,10 @@ def _part_expense_approvals(who):
 				"amount": r.total_claimed_amount,
 				"note": d.get("description") or None,
 				"waiting_since": str(r.creation) if r.creation else None,
+				# A BOOLEAN, never a url. The row says "Bill attached" or "No
+				# bill attached" in words; the file itself only ever arrives
+				# through `open_evidence`, one per tap (AQ5, AC-36, AC-45).
+				"has_bill": r.name in with_bill,
 				"action": "expense",
 			})
 		return out

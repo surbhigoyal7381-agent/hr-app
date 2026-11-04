@@ -11,12 +11,34 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import manager_scope as ms
+from alvoraa_portal import own_record_permission as orp
+
+
+def _an_excluded_role():
+	"""A role this site really does refuse to restrict, as a Role record.
+
+	Taken from `own_record_permission.excluded_roles()` rather than named, so
+	the test asks the same question the code asks. "System Manager" is in that
+	set by name on every site, so there is always an answer; HR Manager is
+	preferred because it is the role the production fault was found on.
+	"""
+	excluded = orp.excluded_roles()
+	for role in ("HR Manager", "HR User", "System Manager"):
+		if role in excluded and frappe.db.exists("Role", role):
+			return role
+	raise AssertionError("no excluded role exists on this site: %s" % sorted(excluded))
 
 
 def _company():
+	# `country` is mandatory on Company, and without it this fallback has never
+	# been able to run: on test_site and in CI a company always exists by the
+	# time this module does, so the `or` branch was dead. It only fires on a site
+	# with no company at all - which is exactly the fresh-site run this fix was
+	# verified on. Same value as the other 24 fixture files.
 	return (frappe.db.get_value("Company", {}, "name")
 	        or frappe.get_doc({"doctype": "Company", "company_name": "MS Test Co",
-	                           "abbr": "MSTC", "default_currency": "INR"}
+	                           "abbr": "MSTC", "default_currency": "INR",
+	                           "country": "India"}
 	                          ).insert(ignore_permissions=True).name)
 
 
@@ -47,6 +69,11 @@ class ScopeCase(FrappeTestCase):
 			"status": "Active", "user_id": email,
 		}).insert(ignore_permissions=True)
 		return e.name, email
+
+	def promote(self, email, role):
+		"""Give a login a role, and forget the cached role list Frappe keeps."""
+		frappe.get_doc("User", email).add_roles(role)
+		frappe.cache.hdel("roles", email)
 
 	def perms(self, user, **extra):
 		f = {"user": user, "allow": "Employee"}
@@ -180,3 +207,98 @@ class WhenTheReportingLineMoves(ScopeCase):
 		self.assertTrue(self.perms(self.old_email, for_value=self.rep))
 		self.assertEqual(self.perms(self.old_email, for_value=below), [],
 		                 "the grandchild is their own manager's business")
+
+
+class AnHrManagerIsNeverRestricted(ScopeCase):
+	"""ALV-293. A User Permission row RESTRICTS; it never grants.
+
+	So a person who is both a line manager and HR must get no row at all.
+	Measured on production on 3 Nov 2026: an HR Manager who also managed 21
+	people could see 796 of 18,903 attendance records - 4% - because
+	`manager_scope` had written rows for them and nothing undid it.
+
+	`own_record_permission` already refused to write its own row for these
+	roles (ALV-226: "three HR Managers were cut off by one"). This module did
+	not. These tests hold both modules to the one list.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.role = _an_excluded_role()
+		self.boss, self.boss_email = self.person("Hr")
+		self.rep, _ = self.person("Hrrep")
+		self.promote(self.boss_email, self.role)
+
+	def test_the_role_is_really_one_the_site_refuses_to_restrict(self):
+		"""Guards the guard: if this fails, the three tests below prove nothing."""
+		self.assertIn(self.role, orp.excluded_roles())
+		self.assertTrue(ms.never_restrict(self.boss_email))
+
+	def test_granting_writes_nothing(self):
+		self.assertEqual(ms.grant(self.boss, self.rep), 0)
+		self.assertEqual(self.perms(self.boss_email, for_value=self.rep), [])
+
+	def test_a_reporting_line_save_writes_nothing(self):
+		"""The hook path, not the migrate path. `on_employee_update` calls
+		`grant` directly, so a check that only sat in `sync_for_manager` would
+		leave this door open - and this is the door a real HR team walks
+		through, because somebody saves an Employee every day."""
+		e = frappe.get_doc("Employee", self.rep)
+		e.reports_to = self.boss
+		e.save(ignore_permissions=True)
+		narrow = [p for p in self.perms(self.boss_email) if p.applicable_for]
+		self.assertEqual(narrow, [],
+		                 "saving a reporting line must not restrict HR")
+
+	def test_sync_grants_nothing_and_clears_what_is_already_there(self):
+		"""The repair. `after_migrate` calls this for every manager, so a
+		tenant that already carries the rows heals on the next deploy without a
+		one-off script."""
+		ms.grant(self.boss, self.rep)          # as the old code would have
+		self.assertEqual(self.perms(self.boss_email, for_value=self.rep), [],
+		                 "the guard should already have stopped this")
+		frappe.db.set_value("Employee", self.rep, "reports_to", self.boss)
+
+		# The rows a tenant on the old code is carrying right now.
+		for dt in ms.SCOPED_DOCTYPES:
+			frappe.get_doc({"doctype": "User Permission", "user": self.boss_email,
+			                "allow": "Employee", "for_value": self.rep,
+			                "apply_to_all_doctypes": 0, "applicable_for": dt}
+			               ).insert(ignore_permissions=True)
+		self.assertEqual(len(self.perms(self.boss_email, for_value=self.rep)),
+		                 len(ms.SCOPED_DOCTYPES))
+
+		out = ms.sync_for_manager(self.boss)
+		self.assertEqual(out["granted"], 0)
+		self.assertEqual(out["revoked"], len(ms.SCOPED_DOCTYPES))
+		self.assertEqual(self.perms(self.boss_email, for_value=self.rep), [],
+		                 "the stray rows must go, or HR stays capped at 4%")
+
+	def test_no_login_that_must_not_be_restricted_carries_a_narrow_row(self):
+		"""THE PATTERN, not the two rows found on production.
+
+		Read over the whole User Permission table: after the module's own
+		repair has run for every manager, no login holding an excluded role may
+		carry a narrow Employee row on one of the scoped doctypes. A check
+		written against two known logins would pass again the moment a third
+		person is promoted."""
+		e = frappe.get_doc("Employee", self.rep)
+		e.reports_to = self.boss
+		e.save(ignore_permissions=True)
+
+		for manager in {m for m in frappe.get_all(
+				"Employee", filters={"reports_to": ("is", "set"), "status": "Active"},
+				pluck="reports_to", limit_page_length=0) if m}:
+			ms.sync_for_manager(manager)
+
+		excluded = orp.excluded_roles()
+		offenders = sorted({
+			r.user for r in frappe.get_all(
+				"User Permission",
+				filters={"allow": "Employee",
+				         "applicable_for": ("in", ms.SCOPED_DOCTYPES)},
+				fields=["user"], limit_page_length=0)
+			if set(frappe.get_roles(r.user)) & excluded})
+		self.assertEqual(offenders, [],
+		                 "a row restricts: these logins are capped by one - %s"
+		                 % ", ".join(offenders))

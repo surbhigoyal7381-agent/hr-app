@@ -71,25 +71,39 @@
         </div>
         <div class="gp-modal-body">
           <div class="gp-error" id="ec-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,var(--red-lt));color:var(--red,var(--red));border-radius:var(--r-sm);font-size:var(--fs-base)"></div>
+          <!-- Slice 081. THE BILL CONTROL IS FIRST, before Expense Type, and
+               that order is deliberate: it is the only step that can fail, the
+               only one that needs the bill physically in the person's hand,
+               and - because the file uploads on its own call - the only one
+               whose size refusal can arrive before anything has been typed.
+               Drawn by `evInit("ec-file", "bill")`; the eight states, their
+               words and the standing "No bill?" line all live there. -->
+          <div class="ev-block" id="ec-file"></div>
+          <!-- Slice 081 (EC8, AC-73). Every label here was a `<div>`, so NO
+               input in this modal had an accessible name - including the new
+               control's neighbours. One `for` each, which is the whole fix.
+               Required is said in WORDS on the file control above; these keep
+               the asterisk they already had rather than being re-worded in a
+               slice that was not asked to re-word them. -->
           <div class="gp-field">
-            <div class="gp-label">Expense Type *</div>
+            <label class="gp-label" for="ec-expense-type">Expense Type *</label>
             <select class="gp-input" id="ec-expense-type">
               <option value="">Loading…</option>
             </select>
           </div>
           <div class="gp-row2">
             <div class="gp-field">
-              <div class="gp-label">Expense Date *</div>
+              <label class="gp-label" for="ec-expense-date">Expense Date *</label>
               <input class="gp-input" id="ec-expense-date" type="date">
               <div class="date-words" aria-live="polite"></div>
             </div>
             <div class="gp-field">
-              <div class="gp-label">Amount (₹) *</div>
+              <label class="gp-label" for="ec-amount">Amount (₹) *</label>
               <input class="gp-input" id="ec-amount" type="number" step="0.01" min="0.01" placeholder="0.00">
             </div>
           </div>
           <div class="gp-field">
-            <div class="gp-label">Purpose / Description</div>
+            <label class="gp-label" for="ec-description">Purpose / Description</label>
             <textarea class="gp-input" id="ec-description" rows="3" placeholder="Brief description of the expense…" style="resize:vertical;min-height:72px"></textarea>
           </div>
           <div class="send-fail" id="ec-send-fail" role="alert" style="display:none"></div>

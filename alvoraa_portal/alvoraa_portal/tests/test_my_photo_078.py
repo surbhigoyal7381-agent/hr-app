@@ -647,12 +647,31 @@ class TestAPhotoNeverReachesAModel(_Base):
 			with self.subTest(file=rel):
 				self.assertNotRegex(text, libs,
 				                    f"{rel} pulls in a DOM-to-image library")
+		# Slice 081 put a SECOND legitimate canvas inside portal.js itself, so
+		# scoping by file is no longer enough and the rule is scoped by FUNCTION.
+		# `evShrink` re-encodes a bill the person has just photographed, from a
+		# file they chose, drawn from an object URL - it never reads the page. The
+		# thing this test exists to stop is a drawing of the CHART or a PROFILE,
+		# which would carry faces past the permission system.
+		#
+		# One name, with its reason, and the count is pinned: a second export in
+		# `evShrink` or one anywhere else still fails. Add a name here only with
+		# the same kind of reason, never to make a failure go away.
+		allowed = {"public/js/ess/portal.js": {"evShrink": 1}}
 		for rel in chart_files:
 			self.assertIn(rel, tree, f"{rel} moved - fix this test's list")
+			text = tree[rel]
+			seen = {}
+			for m in export.finditer(text):
+				before = text[:m.start()]
+				fn = re.findall(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(", before)
+				owner = fn[-1] if fn else "(top level)"
+				seen[owner] = seen.get(owner, 0) + 1
 			with self.subTest(file=rel):
-				self.assertNotRegex(
-					tree[rel], export,
-					f"{rel} can export the chart, the table or a profile as an image")
+				self.assertEqual(
+					seen, allowed.get(rel, {}),
+					f"{rel} can export the chart, the table or a profile as an "
+					f"image. Found {seen}, allowed {allowed.get(rel, {})}")
 
 
 	def test_no_matching_scoring_or_emotion_wording_exists_about_a_face(self):

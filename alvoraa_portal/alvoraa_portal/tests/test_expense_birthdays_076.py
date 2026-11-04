@@ -25,12 +25,17 @@ from alvoraa_portal import home_people, hr_api, inbox_api
 from alvoraa_portal.patches.v1_0 import expense_claim_approver_backfill
 from alvoraa_portal.tests.leave_fixtures import ensure_user
 from alvoraa_portal.tests.measure_044 import _Spy
-from alvoraa_portal.tests.test_expense_and_scoping import ensure_expense_type
+from alvoraa_portal.tests.test_expense_and_scoping import a_bill, ensure_expense_type
 from alvoraa_portal.tests.test_home_076 import link_user_to_employee
 from alvoraa_portal.tests.utils import ensure_fiscal_years
 
+# Slice 081 added ONE key: `has_bill`, a boolean saying whether a bill is
+# attached. The exact-set assertion below is the point of this constant - the
+# row's key list is the contract, so a key that appears without being added
+# here fails, and a key that is added has been thought about. It is a boolean
+# and never a url (AQ5).
 EXPENSE_KEYS = {"name", "employee_name", "expense_type", "expense_date", "amount", "note",
-                "waiting_since", "action"}
+                "waiting_since", "has_bill", "action"}
 
 
 def _person(first, user=None, roles=("Employee",), last="C076"):
@@ -123,9 +128,15 @@ class TestExpenseFromPending(FrappeTestCase):
 		frappe.db.rollback()
 
 	def _file(self, user, amount=2300, note="Taxi to the supplier visit"):
+		"""Slice 081 made the bill compulsory, so every claim filed here carries
+		one. **Not one assertion in this file was loosened** - the refusal
+		tests above and below still assert their own sentences, because the
+		bill is the LAST refusal in `apply_expense_claim` and the ones they
+		pin (no approver, no account, their own approver) all come first."""
 		frappe.set_user(user)
 		name = hr_api.apply_expense_claim(expense_type=self.etype, expense_date=today(),
-		                                  amount=amount, description=note)["name"]
+		                                  amount=amount, description=note,
+		                                  file_id=a_bill())["name"]
 		frappe.set_user("Administrator")
 		return name
 

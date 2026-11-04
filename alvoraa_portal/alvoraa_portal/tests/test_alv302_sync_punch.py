@@ -33,8 +33,10 @@ what is already true. They exist to catch a fix that opens too much.
 
 The review of this slice added three things, pinned below: only a true machine
 account (exactly this role, no Employee record) keeps the sent time; a machine
-punch must be dated within 90 days back and one day ahead; and the role may move
-Shift Type's last-sync marker and change nothing else on that doctype.
+punch dated more than 90 days back or more than one day ahead is filed but flagged
+so attendance does not use it (Surbhi chose this over refusing it, because the sync
+tool stops a machine's whole batch on a refusal); and the role may move Shift
+Type's last-sync marker and change nothing else on that doctype.
 """
 
 import frappe
@@ -47,7 +49,8 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_to_date, get_datetime, now_datetime, today
 
 from alvoraa_goals.tests.utils import ensure_company
-from alvoraa_portal.field_app_access import SYNC_ROLE
+from alvoraa_portal.alv291_attendance_fix import _free_punches
+from alvoraa_portal.field_app_access import PUNCH_OUT_OF_RANGE, SYNC_ROLE
 from alvoraa_portal.tests.test_field_app_step2_013 import _employee
 from alvoraa_portal.tests.test_portal_security_010 import _user
 from hrms.hr.doctype.employee_checkin.employee_checkin import add_log_based_on_employee_field
@@ -149,6 +152,7 @@ class _Checks:
 
 	def _clean(self):
 		frappe.set_user("Administrator")
+		frappe.db.delete("Error Log", {"method": PUNCH_OUT_OF_RANGE})
 		frappe.db.delete("Employee Checkin", {"employee": ["in", (
 			self.worker, self.colleague, self.both_emp, self.linked_emp)]})
 		frappe.db.delete("File", {"file_name": "alv302-face.txt"})
@@ -295,36 +299,75 @@ class _Checks:
 		self.assertEqual(get_datetime(frappe.db.get_value(CHECKIN, name, "time")),
 		                 get_datetime(self.when))
 
-	# ── finding 4: the machine's date has limits ────────────────────────────
+	# ── finding 4: a far-off date is filed, and attendance does not use it ──
 
-	def _file_on(self, days_from_today: int) -> str:
-		frappe.set_user(self.sync)
-		return add_log_based_on_employee_field(
-			"ALV302-W", f"{add_days(today(), days_from_today)} 09:05:00", device_id=MACHINE).name
-
-	def test_a_punch_90_days_old_is_filed(self):
-		self.assertTrue(self._file_on(-90))
-
-	def test_a_punch_91_days_old_is_refused(self):
-		with self.assertRaises(frappe.ValidationError):
-			self._file_on(-91)
-		frappe.clear_messages()
-
-	def test_a_punch_dated_tomorrow_is_filed(self):
-		self.assertTrue(self._file_on(1))
-
-	def test_a_punch_dated_two_days_ahead_is_refused(self):
-		with self.assertRaises(frappe.ValidationError):
-			self._file_on(2)
-		frappe.clear_messages()
-
-	def test_the_date_limit_is_only_for_the_machine_account(self):
-		"""HR entering an old punch by hand is how a real one gets recorded."""
-		frappe.set_user(self.dtc_today)
-		old = f"{add_days(today(), -200)} 09:05:00"
-		name = add_log_based_on_employee_field("ALV302-W", old, device_id=MACHINE).name
+	def _file_on(self, days_from_today: int, user: str | None = None, device: str = "ALV302-W"):
+		"""File a punch and read back what was stored."""
+		frappe.set_user(user or self.sync)
+		sent = f"{add_days(today(), days_from_today)} 09:05:00"
+		name = add_log_based_on_employee_field(device, sent, device_id=MACHINE).name
 		frappe.set_user("Administrator")
-		self.assertEqual(get_datetime(frappe.db.get_value(CHECKIN, name, "time")), get_datetime(old))
+		row = frappe.db.get_value(CHECKIN, name, ["time", "skip_auto_attendance", "shift"], as_dict=True)
+		row.update(name=name, sent=get_datetime(sent))
+		return row
+
+	def test_a_punch_90_days_old_is_filed_and_not_flagged(self):
+		row = self._file_on(-90)
+		self.assertEqual(get_datetime(row.time), row.sent)
+		self.assertEqual(row.skip_auto_attendance, 0)
+
+	def test_a_punch_dated_tomorrow_is_filed_and_not_flagged(self):
+		row = self._file_on(1)
+		self.assertEqual(get_datetime(row.time), row.sent)
+		self.assertEqual(row.skip_auto_attendance, 0)
+
+	def test_a_punch_91_days_old_is_filed_flagged_with_its_time(self):
+		row = self._file_on(-91)
+		self.assertEqual(get_datetime(row.time), row.sent)
+		self.assertEqual(row.skip_auto_attendance, 1)
+
+	def test_a_punch_two_days_ahead_is_filed_flagged_with_its_time(self):
+		row = self._file_on(2)
+		self.assertEqual(get_datetime(row.time), row.sent)
+		self.assertEqual(row.skip_auto_attendance, 1)
+
+	def test_a_persons_own_punch_is_unchanged_whatever_date_they_send(self):
+		"""Their time becomes Now as it always did, so the date limit never reaches them."""
+		row = self._file_on(-200, user=self.staff, device="ALV302-C")
+		self.assertNotEqual(get_datetime(row.time), row.sent)
+		self.assertEqual(row.skip_auto_attendance, 0)
+
+	def test_hr_entering_an_old_punch_by_hand_is_not_flagged(self):
+		"""This is how a real old punch gets recorded, and attendance must see it."""
+		row = self._file_on(-200, user=self.dtc_today)
+		self.assertEqual(get_datetime(row.time), row.sent)
+		self.assertEqual(row.skip_auto_attendance, 0)
+
+	def test_frappes_attendance_job_does_not_see_a_flagged_punch(self):
+		flagged, usable = self._file_on(-91), self._file_on(-3)
+		self.assertEqual(flagged.shift, SHIFT, "must be left out for the flag, not for having no shift")
+		frappe.db.set_value("Shift Type", SHIFT, {"process_attendance_after": add_days(today(), -200),
+		                                          "last_sync_of_checkin": now_datetime()})
+		seen = [log.name for log in frappe.get_doc("Shift Type", SHIFT).get_employee_checkins()]
+		self.assertIn(usable.name, seen)
+		self.assertNotIn(flagged.name, seen)
+
+	def test_the_alv291_repair_does_not_pull_a_flagged_punch_back(self):
+		"""It clears only the flags Frappe set itself, which carry a Comment."""
+		flagged = self._file_on(-91)
+		day = str(flagged.sent.date())
+		self.assertNotIn(flagged.name, [r.name for r in _free_punches([self.worker], day, day)])
+
+	def test_a_machine_sending_thousands_leaves_one_error_row_a_day(self):
+		frappe.db.delete("Error Log", {"method": PUNCH_OUT_OF_RANGE})
+		self._file_on(-91)
+		self._file_on(-92)
+		self._file_on(3)
+		self.assertEqual(frappe.db.count("Error Log", {"method": PUNCH_OUT_OF_RANGE}), 1)
+		logged = frappe.db.get_value("Error Log", {"method": PUNCH_OUT_OF_RANGE}, "error")
+		self.assertIn(MACHINE, logged)
+		self.assertNotIn("Worker", logged, "the log must not name a person")
+		self.assertNotIn(self.worker, logged, "the log must not name a person")
 
 
 class TestAlv302RowGrantsCreateOnly(_Checks, FrappeTestCase):

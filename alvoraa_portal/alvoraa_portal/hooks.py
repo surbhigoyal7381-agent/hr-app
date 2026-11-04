@@ -193,8 +193,8 @@ doc_events = {
     # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
     "Employee Checkin": {
         "onload": "alvoraa_portal.field_app_access.log_photo_view",
-        # ALV-302: a machine punch keeps the time the machine recorded, and must
-        # be dated within 90 days back and one day ahead.
+        # ALV-302: a machine punch keeps the time the machine recorded. One dated
+        # over 90 days back or over a day ahead is filed, and attendance skips it.
         "before_insert": "alvoraa_portal.field_app_access.check_machine_punch",
     },
 

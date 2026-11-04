@@ -70,6 +70,14 @@ Also correct the commit message wording, and the test name `test_cannot_read_a_p
 
 The key filed punches dated 2001, 2003 and 2099, and all were stored as sent (**Proven**). A 2099 punch landed with no shift. Today's HR User key can do the same, so this is not new, but this role exists only for machines. A limit of "not more than 15 minutes in the future", as in slice 041's fence, would catch a broken clock. Back-dating has to stay, or the backlog fails. Ship and track it. **Owner:** `hrms-fullstack-engineer`.
 
+### Decision on finding 4 (Surbhi, 4 Nov 2026): option B
+
+A first build refused a machine punch dated more than 90 days back or more than one day ahead. It was replaced before release, because the public sync tool stops a machine's whole batch on a refusal it does not recognise and tries the same punch again on every run. One bad date would have held back every later punch from that machine.
+
+**What happens now:** the punch is filed with the machine's time and `skip_auto_attendance = 1`, and the machine carries on. One Error Log row a day, titled "Machine punch outside the date window", names the machine and the date.
+
+**What this does not cover:** the flag only stops Frappe's attendance job. `payroll_rules_apply.py:353` and the month and team views in `attendance_correction.py` read punches without looking at it. Filtering there would also drop the real punches Frappe itself flags, so it was not changed.
+
 ## Your questions
 
 | Question | Answer | Label |

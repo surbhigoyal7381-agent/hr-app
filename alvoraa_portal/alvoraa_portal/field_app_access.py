@@ -32,10 +32,11 @@ SYNC_ROLE = "Biometric Sync"
 # Roles Frappe gives everybody, which say nothing about who a user is.
 _AUTOMATIC_ROLES = {"All", "Guest", "Desk User"}
 
-# How far a machine punch may be from today. A backlog can be weeks old; a date
-# outside this is a broken clock on the machine, or a misused key.
+# How far a machine punch may be from today before attendance ignores it. A backlog
+# can be weeks old; a date outside this is a broken clock, or a misused key.
 MACHINE_PUNCH_DAYS_BACK = 90
 MACHINE_PUNCH_DAYS_AHEAD = 1
+PUNCH_OUT_OF_RANGE = "Machine punch outside the date window"
 
 # The one field on Shift Type the role may change, and how far ahead of the server
 # clock it may go: the bridge sits on the customer's computer and its clock drifts.
@@ -56,25 +57,37 @@ def is_machine_account(user: str | None = None) -> bool:
 
 
 def check_machine_punch(doc: Document, method: str | None = None) -> None:
-	"""before_insert Employee Checkin. A machine punch must be dated sanely, and
-	keeps the time the machine recorded (ALV-302).
+	"""before_insert Employee Checkin. A machine punch keeps the time the machine
+	recorded, and a far-off date is flagged so attendance does not use it (ALV-302).
 
 	`time` is permlevel 1 on Employee Checkin. For a role with no write at that
 	level Frappe replaces the value with the field's default, "Now", without
 	an error - so a punch sent late, after a dropped line or a retry, would be
 	filed at the moment it arrived. Frappe calls before_insert just before that
 	reset. Only for a machine account: a person's own punch still gets "Now".
+
+	Flagged and not refused, because the sync tool stops a machine's whole batch on
+	a refusal it does not recognise and tries the same punch again on every run, so
+	one bad date would hold back every later punch from that machine. Frappe's
+	attendance job skips a flagged punch. Our own month view and pay rules read
+	punches without looking at the flag, as they do for every flagged punch.
+
+	One Error Log row a day, however many punches: a machine whose clock was reset
+	can send thousands. It names the machine and the date, never the person.
 	"""
 	if not is_machine_account():
 		return
-	date = getdate(doc.time)
-	if not add_days(today(), -MACHINE_PUNCH_DAYS_BACK) <= str(date) <= add_days(today(), MACHINE_PUNCH_DAYS_AHEAD):
-		frappe.throw(_(
-			"This punch is dated {0}, more than {1} days back or {2} day ahead of today, so it "
-			"was not filed. Check the clock on the attendance machine. If the punch is real, "
-			"ask HR to enter it by hand."
-		).format(date, MACHINE_PUNCH_DAYS_BACK, MACHINE_PUNCH_DAYS_AHEAD))
 	doc.flags.ignore_permlevel_for_fields = ["time"]
+	date = getdate(doc.time)
+	if add_days(today(), -MACHINE_PUNCH_DAYS_BACK) <= str(date) <= add_days(today(), MACHINE_PUNCH_DAYS_AHEAD):
+		return
+	doc.skip_auto_attendance = 1
+	if not frappe.db.exists("Error Log", {"method": PUNCH_OUT_OF_RANGE, "creation": (">=", today())}):
+		frappe.log_error(
+			title=PUNCH_OUT_OF_RANGE,
+			message=f"Machine {doc.device_id} sent a punch dated {date}. It was filed but attendance "
+			        "will not use it, and later ones today are not logged here. Check that machine's clock.",
+		)
 
 
 def _only_moves_the_marker(user: str | None = None) -> bool:

@@ -30,9 +30,15 @@ def _an_excluded_role():
 
 
 def _company():
+	# `country` is mandatory on Company, and without it this fallback has never
+	# been able to run: on test_site and in CI a company always exists by the
+	# time this module does, so the `or` branch was dead. It only fires on a site
+	# with no company at all - which is exactly the fresh-site run this fix was
+	# verified on. Same value as the other 24 fixture files.
 	return (frappe.db.get_value("Company", {}, "name")
 	        or frappe.get_doc({"doctype": "Company", "company_name": "MS Test Co",
-	                           "abbr": "MSTC", "default_currency": "INR"}
+	                           "abbr": "MSTC", "default_currency": "INR",
+	                           "country": "India"}
 	                          ).insert(ignore_permissions=True).name)
 
 

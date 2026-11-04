@@ -159,7 +159,7 @@ busy. **Add `ps -eo args | grep worker` to the checks before trusting a red resu
 stop the worker: it belongs to every session and to the main checkout, and stopping it is a
 "say it on the board and ask" action.
 
-## 5a · The UI flow, traced by hand — and what I could not click
+## 6a · The UI flow, traced by hand — and what I could not click
 
 The change process asks for a hand trace of every affected UI flow for a JavaScript change.
 This JS is a **Desk form script** registered through `doctype_js` (so `hooks.py` is unchanged),
@@ -213,7 +213,7 @@ site of its own.
 `test_someone_who_joined_has_the_copy_erased`, and it is green in my own suite — so the pass I
 changed still erases what it should.
 
-## 6a · The door list from `data-doors.md`, walked
+## 6c · The door list from `data-doors.md`, walked
 
 **The thing that makes this slice easy to answer: it adds no readable data anywhere.** No new
 field, no new DocType, no new record type, and **no file and no value moves to any record a

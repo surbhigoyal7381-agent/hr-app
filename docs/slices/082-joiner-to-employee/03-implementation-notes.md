@@ -139,6 +139,7 @@ with no uploads at all is still erased, which is the shipped intent.
 | `node scripts/check_portal_handlers.js` | **all reachable and callable** |
 | `node scripts/check_undefined_js.js` | **none** |
 | `node scripts/check_rating_bands.js` · `python scripts/check_nginx_conf.py` · `python scripts/check_no_demo_passwords.py` | **OK** |
+| `semgrep --config hrms/semgrep` | **NOT RUN — semgrep is not installed on this machine.** The CI step is `continue-on-error` anyway. Checked by hand against what those rules catch: no `frappe.db.sql` in the new module at all, the one `sql` call in the test is parameterised with `%s`, every `_()` takes a literal and is `.format()`-ed **after** translation (never an f-string inside `_()`), and no endpoint takes `allow_guest` |
 | `ruff check` on my two new files + `joiner_housekeeping.py` | **1 error, pre-existing**: `I001` on `joiner_housekeeping.py`'s import block, which I did not touch. My new files are clean. The CI step is `continue-on-error` against a 1,050-violation backlog |
 
 ### Two things about running these tests that cost me an hour

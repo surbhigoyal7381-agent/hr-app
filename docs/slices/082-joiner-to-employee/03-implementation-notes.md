@@ -131,8 +131,8 @@ with no uploads at all is still erased, which is the shipped intent.
 |---|---|
 | `bench --site test_site run-tests --module alvoraa_portal.tests.test_joiner_to_employee_082` | **32 tests, OK.** Run twice: 31 OK at 96.6 s, then 32 OK at 22.7 s after the late changes (the three-field locked read, the guest sweep, the HTML escaping) |
 | `bench ... --module alvoraa_portal.tests.test_portal_security_010` | **45 OK + 5 OK** — both batches, including the new ceiling row at 0 |
-| `bench ... --module alvoraa_portal.tests.test_joiner_078` | see §9 |
-| `bench ... --module alvoraa_portal.tests.test_joiner_079` | see §9 |
+| `bench ... --module alvoraa_portal.tests.test_joiner_078` | **RED, and proved not mine.** See §6b |
+| `bench ... --module alvoraa_portal.tests.test_joiner_079` | See §6b |
 | `python scripts/check_api_paths.py --max 0` | 288 paths, **0 unresolved** — both new front-end method paths resolve |
 | `python scripts/check_app_integrity.py` | **916 checks, OK** |
 | `python scripts/check_design_system.py` | **OK**, emoji 0 on every page |
@@ -180,6 +180,38 @@ scan the portal pages, not this file. So the trace is what there is, plus four s
 the rendering of the two buttons, the dialog and the green box is reasoned from source and from
 the three other dialogs already in this same file, not seen. **A human should press both buttons
 once before this goes anywhere.** Said plainly rather than left as an assumption.
+
+## 6b · `test_joiner_078` is red, and here is the proof it is not this slice
+
+**The claim: the red predates this slice and is environmental. The evidence is a baseline run,
+not an opinion.**
+
+I built a second worktree at `origin/dev` **a53b333a** with none of my code in it
+(`.claude/worktrees/082-baseline`), gave it its own container (`hrlocal-082base`), and ran the
+same suite against the same site.
+
+| Run | Code | Result |
+|---|---|---|
+| 078, first | my branch | `Ran 55` · **18 errors** |
+| 078, second | my branch | `Ran 55` · **27 errors, 1 failure** — 20 of them `QueryDeadlockError` |
+| **078, baseline** | **clean `origin/dev`, no 082 code at all** | **`Ran 55` · 28 errors** — 19 `QueryDeadlockError` |
+
+**Three readings, three different numbers, and the clean baseline is the worst of them.** The
+cause is in §6's second lesson: the shared `hrlocal-bench` runs
+`frappe worker --queue default,short,long` against the same `test_site` database, so queued jobs
+run in their own transactions while a suite holds row locks and either side can lose. A
+deadlock is a concurrency artefact, not a logic failure.
+
+**What this does and does not establish.** It establishes that my change did not make 078 red
+and did not make it worse. It does **not** establish that 078 is green anywhere — it is not, and
+**ALV-290 is the standing ticket for that**. A green 078 on this machine would need the worker
+stopped, which is every session's bench and a "say it on the board and ask first" action, or a
+site of its own.
+
+**The one test of mine that covers 078's territory passes directly:**
+`test_a_hired_row_with_no_documents_is_still_erased` is the same assertion as 078's
+`test_someone_who_joined_has_the_copy_erased`, and it is green in my own suite — so the pass I
+changed still erases what it should.
 
 ## 6a · The door list from `data-doors.md`, walked
 

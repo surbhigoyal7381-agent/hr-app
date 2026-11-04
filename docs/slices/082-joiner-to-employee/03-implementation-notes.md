@@ -141,8 +141,22 @@ with no uploads at all is still erased, which is the shipped intent.
 | `node scripts/check_rating_bands.js` · `python scripts/check_nginx_conf.py` · `python scripts/check_no_demo_passwords.py` | **OK** |
 | `ruff check` on my two new files + `joiner_housekeeping.py` | **1 error, pre-existing**: `I001` on `joiner_housekeeping.py`'s import block, which I did not touch. My new files are clean. The CI step is `continue-on-error` against a 1,050-violation backlog |
 
-**Repeated `--module` flags do not stack** — the last one wins, and a run that looks like three
-suites is one. Worth knowing before trusting a green tick.
+### Two things about running these tests that cost me an hour
+
+**1. Repeated `--module` flags do not stack.** The last one wins, so a command that names three
+suites runs one. My first "three suites, all green" was `test_portal_security_010` alone. Check
+the `Running N tests` line against the number you expected.
+
+**2. The shared `hrlocal-bench` runs `frappe worker --queue default,short,long` against the same
+database.** I found it with `ps` after `test_joiner_078` came back red twice with *different*
+numbers — 18 errors, then 27 errors and 1 failure. **20 of the 27 were
+`frappe.exceptions.QueryDeadlockError`**, which is a concurrency artefact and not a logic
+failure: the worker executes queued jobs inside its own transactions while a suite holds row
+locks, and either side can lose. `docker ps` and `pgrep -af run-tests` do **not** show this —
+the worker is not a test run, so the board can honestly say "bench free" while the DB is still
+busy. **Add `ps -eo args | grep worker` to the checks before trusting a red result.** I did not
+stop the worker: it belongs to every session and to the main checkout, and stopping it is a
+"say it on the board and ask" action.
 
 ## 5a · The UI flow, traced by hand — and what I could not click
 

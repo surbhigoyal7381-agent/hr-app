@@ -72,8 +72,11 @@ def check_machine_punch(doc: Document, method: str | None = None) -> None:
 	attendance job skips a flagged punch. Our own month view and pay rules read
 	punches without looking at the flag, as they do for every flagged punch.
 
-	One Error Log row a day, however many punches: a machine whose clock was reset
-	can send thousands. It names the machine and the date, never the person.
+	One Error Log row a day per machine, however many punches: a machine whose clock
+	was reset can send thousands, and one row for the whole site would hide a second
+	bad machine. The row gives the machine and the date. Frappe also copies the
+	request into its metadata, badge number included, so that is cleared. A fault
+	here must never fail the punch, or that machine's batch stops.
 	"""
 	if not is_machine_account():
 		return
@@ -82,12 +85,18 @@ def check_machine_punch(doc: Document, method: str | None = None) -> None:
 	if add_days(today(), -MACHINE_PUNCH_DAYS_BACK) <= str(date) <= add_days(today(), MACHINE_PUNCH_DAYS_AHEAD):
 		return
 	doc.skip_auto_attendance = 1
-	if not frappe.db.exists("Error Log", {"method": PUNCH_OUT_OF_RANGE, "creation": (">=", today())}):
-		frappe.log_error(
-			title=PUNCH_OUT_OF_RANGE,
-			message=f"Machine {doc.device_id} sent a punch dated {date}. It was filed but attendance "
-			        "will not use it, and later ones today are not logged here. Check that machine's clock.",
-		)
+	title = f"{PUNCH_OUT_OF_RANGE}: {doc.device_id}"[:140]
+	try:
+		if not frappe.db.exists("Error Log", {"method": title, "creation": (">=", today())}):
+			row = frappe.log_error(
+				title=title,
+				message=f"Machine {doc.device_id} sent a punch dated {date}. It was filed but attendance "
+				        "will not use it, and its later ones today are not logged here. Check that "
+				        "machine's clock.",
+			)
+			row.db_set("metadata", None, update_modified=False)
+	except Exception:
+		frappe.logger("alvoraa_portal").warning(f"{title}: could not write the Error Log row")
 
 
 def _only_moves_the_marker(user: str | None = None) -> bool:

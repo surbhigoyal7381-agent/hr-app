@@ -74,9 +74,24 @@ The key filed punches dated 2001, 2003 and 2099, and all were stored as sent (**
 
 A first build refused a machine punch dated more than 90 days back or more than one day ahead. It was replaced before release, because the public sync tool stops a machine's whole batch on a refusal it does not recognise and tries the same punch again on every run. One bad date would have held back every later punch from that machine.
 
-**What happens now:** the punch is filed with the machine's time and `skip_auto_attendance = 1`, and the machine carries on. One Error Log row a day, titled "Machine punch outside the date window", names the machine and the date.
+**What happens now:** the punch is filed with the machine's time and `skip_auto_attendance = 1`, and the machine carries on. One Error Log row a day per machine, titled "Machine punch outside the date window: <machine>", gives the machine and the date. Frappe also copies the request into a row's metadata, including the badge number (`employee_field_value`). That one field is cleared on this row. If clearing it ever failed, the badge number would stay on the row, readable only by System Manager.
 
 **What this does not cover:** the flag only stops Frappe's attendance job. `payroll_rules_apply.py:353` and the month and team views in `attendance_correction.py` read punches without looking at it. Filtering there would also drop the real punches Frappe itself flags, so it was not changed.
+
+## Re-review of the option B code (4 Nov 2026)
+
+Verdict: **SHIP WITH FIXES.** No code change has to block the release. Two risks need Surbhi's written acceptance, and HR User stays on until the cut-over checks pass.
+
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| 1 | P2 | **Pay rules count a flagged punch.** A punch dated 5 days ahead was stored flagged, and `_punches` (`payroll_rules_apply.py:353`) still returned it for that date. The month and team views (`attendance_correction.py:517`, `:1800`) have no filter either. When the date arrives, the false punch can widen the first and last punch times, for example hiding a late arrival. No worse than today, when the same punch feeds attendance as well as pay. Filtering on the flag would drop real punches Frappe itself flags. Suggested rule: ignore a punch only when `time` is more than a day after `creation`. Only System Manager can read the Error Log, so DTC's HR would never see the warning. A clock up to one day ahead is not flagged at all, by Surbhi's decision. | **Open.** Needs Surbhi's written acceptance and its own ticket |
+| 2 | P2 | **Finding 3 above, "reads nothing" is not quite true.** Left out on purpose, with no written acceptance found. It does not matter while HR User is on. | **Open.** Needs Surbhi's acceptance before the cut-over |
+| 3 | P3 | **The log cap was per site.** M1 and M2 both sent bad dates and only M1 got a row, so a second bad machine stayed hidden. | **Fixed.** One row a day per machine, with a test |
+| 4 | P3 | **"Never the person" was not quite true.** Frappe adds the request to the row's metadata, including the badge number. A key misusing `employee_fieldname` could put an email address there too. Only System Manager can read it. | **Fixed.** Metadata cleared on this row, wording corrected, with a test |
+| 5 | P3 | **The log write was not protected.** If it raised, the punch failed with an error the sync tool does not recognise, and that batch stopped. | **Fixed.** Wrapped in `try/except`, with a test that forces the fault |
+| 6 | P3 | **Not from this branch: any login with read on Shift Type can write unlimited Error Log rows.** `run_doc_method` with `process_auto_attendance` reached the job as plain staff and as the sync key. It wrote no attendance, even with thresholds the reviewer sent, because Attendance's own permission check refused it. So this is not a way round the fence. Each call adds an uncapped row with a full traceback. | **Open.** Needs its own ticket |
+
+Also from the re-review: `not a date` and `2026-13-45` return 417, and `0000-00-00 00:00:00` returns 500. The sync tool should never send these, since it sends a real datetime (from memory of the public tool, not DTC's copy). With `allow_geolocation_tracking` on, punches with no position are refused, as they are today. This was not checked at DTC.
 
 ## Your questions
 

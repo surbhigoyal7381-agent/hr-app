@@ -39,6 +39,8 @@ tool stops a machine's whole batch on a refusal); and the role may move Shift
 Type's last-sync marker and change nothing else on that doctype.
 """
 
+from unittest.mock import patch
+
 import frappe
 import frappe.client
 import frappe.share
@@ -148,11 +150,12 @@ class _Checks:
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.when = f"{add_days(today(), -3)} 09:05:00"
+		frappe.db.delete("Error Log", {"method": ["like", f"{PUNCH_OUT_OF_RANGE}%"]})
 		self.addCleanup(self._clean)
 
 	def _clean(self):
 		frappe.set_user("Administrator")
-		frappe.db.delete("Error Log", {"method": PUNCH_OUT_OF_RANGE})
+		frappe.db.delete("Error Log", {"method": ["like", f"{PUNCH_OUT_OF_RANGE}%"]})
 		frappe.db.delete("Employee Checkin", {"employee": ["in", (
 			self.worker, self.colleague, self.both_emp, self.linked_emp)]})
 		frappe.db.delete("File", {"file_name": "alv302-face.txt"})
@@ -301,11 +304,12 @@ class _Checks:
 
 	# ── finding 4: a far-off date is filed, and attendance does not use it ──
 
-	def _file_on(self, days_from_today: int, user: str | None = None, device: str = "ALV302-W"):
+	def _file_on(self, days_from_today: int, user: str | None = None, device: str = "ALV302-W",
+	             machine: str = MACHINE):
 		"""File a punch and read back what was stored."""
 		frappe.set_user(user or self.sync)
 		sent = f"{add_days(today(), days_from_today)} 09:05:00"
-		name = add_log_based_on_employee_field(device, sent, device_id=MACHINE).name
+		name = add_log_based_on_employee_field(device, sent, device_id=machine).name
 		frappe.set_user("Administrator")
 		row = frappe.db.get_value(CHECKIN, name, ["time", "skip_auto_attendance", "shift"], as_dict=True)
 		row.update(name=name, sent=get_datetime(sent))
@@ -358,16 +362,42 @@ class _Checks:
 		day = str(flagged.sent.date())
 		self.assertNotIn(flagged.name, [r.name for r in _free_punches([self.worker], day, day)])
 
+	def _log_rows(self) -> list:
+		return frappe.get_all("Error Log", filters={"method": ["like", f"{PUNCH_OUT_OF_RANGE}%"]},
+		                      fields=["method", "error", "metadata"])
+
 	def test_a_machine_sending_thousands_leaves_one_error_row_a_day(self):
-		frappe.db.delete("Error Log", {"method": PUNCH_OUT_OF_RANGE})
 		self._file_on(-91)
 		self._file_on(-92)
 		self._file_on(3)
-		self.assertEqual(frappe.db.count("Error Log", {"method": PUNCH_OUT_OF_RANGE}), 1)
-		logged = frappe.db.get_value("Error Log", {"method": PUNCH_OUT_OF_RANGE}, "error")
-		self.assertIn(MACHINE, logged)
-		self.assertNotIn("Worker", logged, "the log must not name a person")
-		self.assertNotIn(self.worker, logged, "the log must not name a person")
+		rows = self._log_rows()
+		self.assertEqual(len(rows), 1)
+		self.assertIn(MACHINE, rows[0].error)
+		self.assertNotIn("Worker", rows[0].error, "the log must not name a person")
+		self.assertNotIn(self.worker, rows[0].error, "the log must not name a person")
+
+	def test_a_second_bad_machine_gets_its_own_row(self):
+		"""One row a day for the whole site would hide the second machine."""
+		self._file_on(-91)
+		self._file_on(-92, machine="ALV302-M2")
+		self._file_on(-93, machine="ALV302-M2")
+		self.assertEqual(len(self._log_rows()), 2)
+		self.assertTrue(any("ALV302-M2" in r.error for r in self._log_rows()))
+
+	def test_the_row_does_not_keep_the_badge_number(self):
+		"""Frappe copies the request into the row's metadata. That one row leaves it out."""
+		request = '{"form_dict": {"employee_field_value": "ALV302-W"}}'
+		with patch("frappe.utils.error.get_error_metadata", return_value=request):
+			self._file_on(-91)
+		self.assertNotIn("ALV302-W", self._log_rows()[0].metadata or "")
+
+	def test_a_logging_fault_never_stops_the_punch(self):
+		"""An error the sync tool does not recognise would stop that machine's batch."""
+		with patch("frappe.log_error", side_effect=RuntimeError("the log is broken")):
+			row = self._file_on(-91)
+		self.assertEqual(get_datetime(row.time), row.sent)
+		self.assertEqual(row.skip_auto_attendance, 1)
+		self.assertEqual(self._log_rows(), [])
 
 
 class TestAlv302RowGrantsCreateOnly(_Checks, FrappeTestCase):

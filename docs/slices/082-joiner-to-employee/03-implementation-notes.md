@@ -256,6 +256,8 @@ mistaken for a door test.
 | **G7** | `run_daily()` in a test operates on the whole site, so a leftover row from another suite could be erased by my test run. `test_joiner_078` already does this, so it is the house pattern, not new. | **acceptable simplification** |
 | **G8** | **Three wordings are still the product manager's draft, not an approved design** (§13 of the spec): the button labels, the joining-date line and the result line. There is no `01b` and no prototype for this slice, so **prototype parity could not be checked — there is nothing to check against.** | **needs Surbhi.** A label is a one-line edit |
 
+| **G9** | **`test_joiner_078` and `test_joiner_079` cannot be run green on this machine at all**, because the shared bench's worker contends with them on the same database (§6b). I proved my change is not the cause with a clean `origin/dev` baseline, but **nobody has a green reading of those two suites to compare against.** | **temporary debt that is not mine to clear** — ALV-290 owns it. What removes it: a site the worker does not touch, or stopping the worker with the board's and Surbhi's agreement |
+
 **Nothing is labelled dangerous debt.** The one item that would have been — the overnight
 destruction of a hired joiner's identity documents — is the thing the guard fixes, and it is
 proved by a test.

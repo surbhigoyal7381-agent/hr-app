@@ -17,7 +17,7 @@ scope_built: the button and the linking step. The document move is OUT of scope.
 | `alvoraa_portal/alvoraa_portal/joiner_housekeeping.py` — `_erase_the_redundant_copies` + new `_still_holds_its_documents` | **extend** | The guard. Six lines in the pass this slice switches on, and one fail-closed helper |
 | `.../doctype/alvoraa_joiner_submission/alvoraa_joiner_submission.py` — **two docstrings only, no code** | **correct the record** | The module docstring said "no code path anywhere creates an Employee from one of these (078-SEC-12)" and `_follow_the_employee` said "no endpoint that could be called with somebody else's id". Both are now false. A docstring that lies is a lesson this repo has already paid for, so they say what is true and name 082-SEC-1/2/3/4 |
 | `alvoraa_portal/alvoraa_portal/public/js/alvoraa_joiner_submission.js` | **extend** | Two buttons, one guidance line, one confirmation naming the person, one honest result line. Already registered by `doctype_js`, so **`hooks.py` is untouched** |
-| **NEW** `alvoraa_portal/alvoraa_portal/tests/test_joiner_to_employee_082.py` | **build** | 31 tests |
+| **NEW** `alvoraa_portal/alvoraa_portal/tests/test_joiner_to_employee_082.py` | **build** | 32 tests |
 | `alvoraa_portal/alvoraa_portal/tests/test_portal_security_010.py` | **extend** | One `CEILINGS` row: `joiner_to_employee.py` at **0** |
 
 **Not touched, deliberately:** `hooks.py`, `patches.txt`, every DocType JSON, `portal.js`,
@@ -129,7 +129,7 @@ with no uploads at all is still erased, which is the shipped intent.
 
 | Command | Result |
 |---|---|
-| `bench --site test_site run-tests --module alvoraa_portal.tests.test_joiner_to_employee_082` | **31 tests, OK** (96.6 s) |
+| `bench --site test_site run-tests --module alvoraa_portal.tests.test_joiner_to_employee_082` | **32 tests, OK.** Run twice: 31 OK at 96.6 s, then 32 OK at 22.7 s after the late changes (the three-field locked read, the guest sweep, the HTML escaping) |
 | `bench ... --module alvoraa_portal.tests.test_portal_security_010` | **45 OK + 5 OK** — both batches, including the new ceiling row at 0 |
 | `bench ... --module alvoraa_portal.tests.test_joiner_078` | see §9 |
 | `bench ... --module alvoraa_portal.tests.test_joiner_079` | see §9 |

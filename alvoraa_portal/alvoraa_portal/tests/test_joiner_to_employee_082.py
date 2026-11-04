@@ -291,6 +291,20 @@ class TestWhoMayPrefill(_Base):
 		with self.assertRaises(frappe.PermissionError):
 			j2e.details_for_a_new_employee(submission=name)
 
+	def test_neither_endpoint_is_reachable_without_signing_in(self):
+		"""Pre-onboarding's public write surface is zero and must stay zero.
+
+		`test_joiner_079` sweeps `joiner_public`, `joiner_invite` and
+		`joiner_housekeeping` for guest methods; **it does not know this module
+		exists**, so the same claim is made here rather than by editing a test
+		file another session may be in. Static, on `frappe.guest_methods`, so it
+		cannot pass by accident.
+		"""
+		guests = [name for name, fn in inspect.getmembers(j2e, inspect.isfunction)
+		          if fn in frappe.guest_methods]
+		self.assertEqual(guests, [], "a joiner-to-employee endpoint is open to "
+		                             "the public: %s" % guests)
+
 	def test_hr_user_may_prefill_but_hr_user_may_not_link(self):
 		"""AC-21. The existing 078/079 split: HR User reads submissions and HR
 		Manager writes them. HR User may fill the form in; committing is not

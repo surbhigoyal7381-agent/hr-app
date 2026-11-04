@@ -302,8 +302,9 @@ class TestWhoMayPrefill(_Base):
 		"""
 		guests = [name for name, fn in inspect.getmembers(j2e, inspect.isfunction)
 		          if fn in frappe.guest_methods]
-		self.assertEqual(guests, [], "a joiner-to-employee endpoint is open to "
-		                             "the public: %s" % guests)
+		self.assertEqual(guests, [],
+		                 f"a joiner-to-employee endpoint is open to the "
+		                 f"public: {guests}")
 
 	def test_hr_user_may_prefill_but_hr_user_may_not_link(self):
 		"""AC-21. The existing 078/079 split: HR User reads submissions and HR

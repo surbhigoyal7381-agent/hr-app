@@ -232,7 +232,12 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # build, not assumed: docs/slices/166-167-helpdesk-lms/01e-test-build-results.md
 # §3. A future engineer bumping either pin should not "fix" this - there is
 # nothing to fix.
-RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/lms \
+#
+# ALV-317. --skip-assets: get-app would otherwise build the branch TIP before the
+# pin below is checked out. On 2026-11-04 frappe/lms released 16.0.0, its tip
+# stopped building here, and every build on every branch failed for code we never
+# ship. Its front end is built once, from the pin, by `bench build --app lms` below.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --skip-assets --branch version-16 https://github.com/frappe/lms \
  && (git -C apps/lms fetch --quiet --depth=1 https://github.com/frappe/lms "${LMS_COMMIT}" || true) \
  && git -C apps/lms checkout --quiet --force "${LMS_COMMIT}" \
  && git -C apps/lms log -1 --format='lms pinned at %h (%cs)'

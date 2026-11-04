@@ -686,6 +686,15 @@ after_install = [
     # ALV-149: a new tenant's app name is "Alvora HRMS", not Frappe's default.
     # Same once-only reasoning as brand.after_install above.
     "alvoraa_portal.brand_text.after_install",
+    # Slice 081 / ALV-312: the legal-hold flag on Expense Claim and Attendance
+    # Request, and the day the bill rule starts applying. Its own docstring and
+    # its `after_migrate` entry both say "on migrate AND on install", and it was
+    # only in `after_migrate` - so provision_tenant.sh, which runs `install-app`
+    # and never a migrate, left a new tenant with no legal-hold field at all and
+    # took the cutoff from the next release instead of from its install date.
+    # After branch_scope above, which creates `alvoraa_branch` on these same two
+    # doctypes. Safe to run again, so being in both lists costs nothing.
+    "alvoraa_portal.expense_evidence.after_migrate",
     # ALV-174: outgoing email stops saying "Sent via ERPNext" and gets the
     # Alvora lockup in its header, from a tenant's first email onward. Safe to
     # run again later (a patch does, on migrate) if the sending Email Account

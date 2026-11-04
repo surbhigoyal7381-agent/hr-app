@@ -7642,6 +7642,30 @@ function ocsPaint() {
             + "question.")
         : drT("Your own words are not set yet, so no joiner can be asked "
             + "anything.")) + "</p>"
+    /* ALV-304, Surbhi 4 Nov 2026. The switch itself. It has existed on the
+       server since 078 with a label and a 0/1 refusal written for it, and no
+       screen anywhere set it - so the only way to use the joining form was a
+       command typed on the server.
+
+       **Refusable, not hidden, while anything is unset.** Turning on a form
+       that then refuses every invite would be a switch that lies, and the
+       amber block above already says what is missing. Disabled carries the
+       reason in its own words rather than leaving the reader to connect two
+       parts of the card. */
+    + '<label class="ocs-opt" for="ocs-jon"><input type="checkbox" id="ocs-jon"'
+    + (d.joiner_form_on ? " checked" : "")
+    + (notReady.length ? " disabled" : "")
+    + ' data-ocs-joiner-on="1"><span><b>'
+    + esc(drT("Ask new joiners for their details before day one")) + "</b>"
+    + '<span class="gp-hint" style="display:block">' + esc(
+        notReady.length
+          ? drT("You cannot turn this on until the things above are set. A "
+              + "joiner would be sent a sign-in and then refused.")
+          : drT("Off until you turn it on. A new starter gets their own "
+              + "sign-in, fills in what you have ticked, and sends it before "
+              + "their first day. Turning it off again stops new invites; it "
+              + "does not close a sign-in somebody already has."))
+    + "</span></span></label>"
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joiner">'
     + esc(drT("Add or remove details")) + "</button>"
     /* Once everything is set the amber block goes, and with it the button
@@ -8199,6 +8223,35 @@ document.addEventListener("change", function (e) {
     if (!OCS.need) OCS.need = {};
     OCS.need[t.getAttribute("data-ocs-need")] = t.checked ? 1 : 0;
     ocsSummary();
+    return;
+  }
+  if (t.getAttribute("data-ocs-joiner-on")) {
+    /* The disabled attribute is how it LOOKS refused; this is how it IS.
+       A real browser fires nothing on a disabled input, but the attribute is
+       one devtools edit away and the server does not check readiness - it
+       only refuses anything that is not 0 or 1. So the switch could be turned
+       on with nothing set, and every invite would then be refused by the gate
+       while the card said the form was on. A test caught this.
+
+       Found by `test ... and clicking it sends nothing at all`. */
+    if (t.disabled) { t.checked = !t.checked; return; }
+    /* Saved on the tick, like the photographs switch above it. The server
+       refuses anything but 0 or 1 and writes a Version row naming who changed
+       it, so nothing about who may do this is decided twice here. */
+    var jon = t.checked;
+    t.disabled = true;
+    gpFetch(OCS_API + "set_people_setting",
+            { key: "alvoraa_joiner_form_on", value: jon ? "1" : "0" },
+            { lostAnswerHandled: true }).then(function () {
+      t.disabled = false;
+      if (OCS.data) OCS.data.joiner_form_on = jon;
+      toast(jon ? drT("New joiners can now be invited.")
+                : drT("New joiners can no longer be invited."), "ok");
+    }, function (err) {
+      t.disabled = false;
+      t.checked = !jon;
+      toast((err && err.message) || drT("Could not save that. Try again."), "err");
+    });
     return;
   }
   if (!t.getAttribute("data-ocs-mail")) return;

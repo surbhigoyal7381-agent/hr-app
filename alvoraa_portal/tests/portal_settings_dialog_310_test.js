@@ -370,6 +370,47 @@ const dlgText = () => text(doc.querySelector(".ocs-dlg"));
   yes($("ocs-told-ok").disabled === false,
       "and the save button works again, so it can be corrected and sent");
 
+  // 10 - ALV-304: the on/off switch, which had no screen at all
+  await card({ joiner_not_ready: [], joiner_not_ready_keys: [], joiner_form_on: false });
+  const jon = $("ocs-jon");
+  yes(!!jon, "ALV-304: the joining form has an on/off switch on the card");
+  no(jon.checked, "off when the tenant has not turned it on");
+  no(jon.disabled, "and usable once everything it needs is set");
+
+  CALLS.length = 0;
+  jon.checked = true;
+  change(jon);
+  await settle(200);
+  eq(callsTo("set_people_setting").map(c => c.args.key), ["alvoraa_joiner_form_on"],
+     "ALV-304: ticking it SENDS the switch, through the endpoint that already existed");
+  eq(callsTo("set_people_setting").map(c => c.args.value), ["1"],
+     "and sends 1, which is the only thing the server accepts besides 0");
+
+  CALLS.length = 0;
+  jon.checked = false;
+  change(jon);
+  await settle(200);
+  eq(callsTo("set_people_setting").map(c => c.args.value), ["0"],
+     "and unticking it sends 0, because a switch you cannot turn back is not a switch");
+
+  // 11 - ALV-304: it cannot be turned on while anything it needs is unset.
+  /* A switch that turns on a form which then refuses every invite would be a
+     switch that lies. Refusable and explained, never hidden. */
+  await card({ joiner_not_ready: ["what you tell a joiner before the first question"],
+               joiner_not_ready_keys: ["alvoraa_joiner_notice_text"],
+               joiner_form_on: false });
+  yes($("ocs-jon").disabled,
+      "ALV-304: the switch is refused while the joiner form has nothing to tell anybody");
+  yes(/cannot turn this on/i.test(text($("ocs-jon").closest(".ocs-opt"))),
+      "and it says why in its own words, beside itself",
+      text($("ocs-jon").closest(".ocs-opt")));
+
+  CALLS.length = 0;
+  click($("ocs-jon"));
+  await settle(120);
+  eq(callsTo("set_people_setting").length, 0,
+     "and clicking it sends nothing at all");
+
   console.log(`\n### ALV-310 / 305 / 304 settings dialog DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

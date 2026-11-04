@@ -130,7 +130,7 @@ with no uploads at all is still erased, which is the shipped intent.
 | Command | Result |
 |---|---|
 | `bench --site test_site run-tests --module alvoraa_portal.tests.test_joiner_to_employee_082` | **33 tests, OK.** Run three times as the code tightened: 31 OK, 32 OK, then **33 OK in 86.9 s** on the final state (the three-field locked read, the guest sweep, the HTML escaping and the existence-oracle fix) |
-| `bench ... --module alvoraa_portal.tests.test_portal_security_010` | **45 OK + 5 OK** — both batches, including the new ceiling row at 0 |
+| `bench ... --module alvoraa_portal.tests.test_portal_security_010` | **45 OK + 5 OK** — **both** batch summaries read, including the new ceiling row at 0. Re-run after the rebase: 45 OK + 5 OK again |
 | `bench ... --module alvoraa_portal.tests.test_joiner_078` | **RED, and proved not mine.** See §6b |
 | `bench ... --module alvoraa_portal.tests.test_joiner_079` | **69 tests, OK** (31 min). This is the suite that calls `joiner_housekeeping.run_daily()`, so it exercises the pass I changed |
 | `python scripts/check_api_paths.py --max 0` | 288 paths, **0 unresolved** — both new front-end method paths resolve |
@@ -295,7 +295,7 @@ is byte-identical to `origin/dev` (`git diff --quiet origin/dev..HEAD -- <file>`
 new test file `test_joiner_words_305.py` is present, and `portal.js` still carries all 956
 `drT(` calls their dialog work added.
 
-**Re-verified on top of their work, after the rebase:** `test_joiner_to_employee_082` **33 OK**,
+**Re-verified on top of their work, after the rebase:** `test_joiner_to_employee_082` **33 OK**, `test_portal_security_010` **45 OK + 5 OK**,
 and `check_app_integrity` (916 checks), `check_api_paths --max 0`, `check_design_system` and
 `check_undefined_js` all still pass. `test_joiner_079`'s 69 OK was measured **before** the
 rebase; their change does not touch a file it reads, so I did not spend another 31 minutes on

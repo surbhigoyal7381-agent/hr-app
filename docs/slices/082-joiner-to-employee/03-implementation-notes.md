@@ -132,7 +132,7 @@ with no uploads at all is still erased, which is the shipped intent.
 | `bench --site test_site run-tests --module alvoraa_portal.tests.test_joiner_to_employee_082` | **33 tests, OK.** Run three times as the code tightened: 31 OK, 32 OK, then **33 OK in 86.9 s** on the final state (the three-field locked read, the guest sweep, the HTML escaping and the existence-oracle fix) |
 | `bench ... --module alvoraa_portal.tests.test_portal_security_010` | **45 OK + 5 OK** — both batches, including the new ceiling row at 0 |
 | `bench ... --module alvoraa_portal.tests.test_joiner_078` | **RED, and proved not mine.** See §6b |
-| `bench ... --module alvoraa_portal.tests.test_joiner_079` | See §6b |
+| `bench ... --module alvoraa_portal.tests.test_joiner_079` | **69 tests, OK** (31 min). This is the suite that calls `joiner_housekeeping.run_daily()`, so it exercises the pass I changed |
 | `python scripts/check_api_paths.py --max 0` | 288 paths, **0 unresolved** — both new front-end method paths resolve |
 | `python scripts/check_app_integrity.py` | **916 checks, OK** |
 | `python scripts/check_design_system.py` | **OK**, emoji 0 on every page |
@@ -256,7 +256,7 @@ mistaken for a door test.
 | **G7** | `run_daily()` in a test operates on the whole site, so a leftover row from another suite could be erased by my test run. `test_joiner_078` already does this, so it is the house pattern, not new. | **acceptable simplification** |
 | **G8** | **Three wordings are still the product manager's draft, not an approved design** (§13 of the spec): the button labels, the joining-date line and the result line. There is no `01b` and no prototype for this slice, so **prototype parity could not be checked — there is nothing to check against.** | **needs Surbhi.** A label is a one-line edit |
 
-| **G9** | **`test_joiner_078` and `test_joiner_079` cannot be run green on this machine at all**, because the shared bench's worker contends with them on the same database (§6b). I proved my change is not the cause with a clean `origin/dev` baseline, but **nobody has a green reading of those two suites to compare against.** | **temporary debt that is not mine to clear** — ALV-290 owns it. What removes it: a site the worker does not touch, or stopping the worker with the board's and Surbhi's agreement |
+| **G9** | **`test_joiner_078` cannot be run green on this machine at all** (079 does come back green), because the shared bench's worker contends with them on the same database (§6b). I proved my change is not the cause with a clean `origin/dev` baseline, but **nobody has a green reading of 078 to compare against.** | **temporary debt that is not mine to clear** — ALV-290 owns it. What removes it: a site the worker does not touch, or stopping the worker with the board's and Surbhi's agreement |
 
 **Nothing is labelled dangerous debt.** The one item that would have been — the overnight
 destruction of a hired joiner's identity documents — is the thing the guard fixes, and it is
@@ -269,6 +269,34 @@ list is either out of scope by decision or a question for a human.
 
 ## 9 · What else moved while I worked
 
-`origin/dev` was at **a53b333a** when I started and my branch was identical to it. I fetched
-again before each commit. **To be completed at the final commit with what, if anything, came in,
-and how each conflict was resolved.**
+`origin/dev` was at **a53b333a** when I started. I fetched again before each commit, and on the
+last fetch **three commits had arrived**:
+
+| Commit | What it is |
+|---|---|
+| `b0e6eea2` | ALV-303: scope the chart-export guard by function rather than by file |
+| `94fc9bfc` | ALV-310 / ALV-305 / ALV-304: the settings picker becomes a table, and what a joiner is told can finally be set |
+| `4c7e97ec` | the impact analysis and implementation notes for that work |
+
+**I read the incoming diff before building on it**, as the 8 September force-push lesson
+requires. Eleven files: `people_settings.py`, `panels.css`, `portal.js`, three Python test
+files, three JavaScript test files, `run_dom_tests.js` and two documents. Nothing hidden in it —
+no vendored bundle, no font, no unrelated binary.
+
+**Zero overlap with anything I touched**, proved rather than assumed:
+`comm -12` over the two file lists returns nothing. And nothing in their diff writes
+`employee`, reaches *Made an employee*, or touches `delete_the_documents` or the erase pass, so
+there is no behavioural collision either — their change is wording and a settings dialog.
+
+**Conflicts: none.** `git rebase origin/dev` replayed all fourteen of my commits cleanly.
+
+**How I proved nothing of theirs was lost:** after the rebase, every one of their eleven files
+is byte-identical to `origin/dev` (`git diff --quiet origin/dev..HEAD -- <file>` for each). Their
+new test file `test_joiner_words_305.py` is present, and `portal.js` still carries all 956
+`drT(` calls their dialog work added.
+
+**Re-verified on top of their work, after the rebase:** `test_joiner_to_employee_082` **33 OK**,
+and `check_app_integrity` (916 checks), `check_api_paths --max 0`, `check_design_system` and
+`check_undefined_js` all still pass. `test_joiner_079`'s 69 OK was measured **before** the
+rebase; their change does not touch a file it reads, so I did not spend another 31 minutes on
+it, and I am saying so rather than implying otherwise.

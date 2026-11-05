@@ -86,10 +86,21 @@ class _Base(Wave4Base):
 		# through `make_sign_in`: the sign-in needs the employer's own settings
 		# and a site-wide mobile-login switch, and none of that is what these
 		# tests are about. What matters is the roles the session holds.
-		from alvoraa_portal.joiner_invite import JOINER_ROLE, make_role
+		#
+		# **ALV-318 made the role refusable.** Only `make_sign_in` may hand it
+		# out, so this fixture has to say out loud that it is standing in for
+		# that path - the flag is server-side only and no request can set it, so
+		# claiming it here is exactly what it is for. Built in two steps because
+		# `own_user` saves the document itself and there is no moment in it where
+		# the flag could be set.
+		from alvoraa_portal.joiner_invite import INVITE_FLAG, JOINER_ROLE, make_role
 
 		make_role()
-		cls.joiner = own_user("s082joiner", (JOINER_ROLE,))
+		cls.joiner = own_user("s082joiner", ())
+		joiner_doc = frappe.get_doc("User", cls.joiner)
+		joiner_doc.append("roles", {"role": JOINER_ROLE})
+		joiner_doc.flags[INVITE_FLAG] = True
+		joiner_doc.save(ignore_permissions=True)
 		cls.employee = cls.p["no_photo"]
 		cls.other_employee = cls.p["gps"]
 		frappe.db.commit()

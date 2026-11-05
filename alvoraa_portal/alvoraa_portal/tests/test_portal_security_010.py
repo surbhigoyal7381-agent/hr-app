@@ -929,6 +929,11 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# time; and the File listing behind Export, which reads names and dates
 		# and no bytes. Each runs after _require_hr().
 		("alvoraa_portal", "joiner_invite.py"): 3,
+		# ALV-319: auth.py holds the joiner gate and the cache-forget that
+		# releases an account when its roles change. **ZERO**, and pinned here so
+		# that a bypass in the one file every single request passes through has
+		# to be argued for in this dict first.
+		("alvoraa_portal", "auth.py"): 0,
 		# joiner_public.py: FIVE to THREE, and this is the file 079-SEC-7 was
 		# written about. Four of the five existed only because the caller was
 		# **Guest** and held no permission on anything; with a session and a

@@ -263,9 +263,16 @@ doc_events = {
     # with one SQL statement and writes the rest with db_update() - so hooks on
     # that child doctype look correct and never fire.
     "User": {
-        # Slice 043 (V-6): a user may not hold an AI intake mailbox unless they
-        # are a sales user without an HR role. Silent on sites without the field.
-        "validate":     "alvoraa_portal.ai_leads.guards.validate_user",
+        "validate":     [
+            # Slice 043 (V-6): a user may not hold an AI intake mailbox unless
+            # they are a sales user without an HR role. Silent on sites without
+            # the field.
+            "alvoraa_portal.ai_leads.guards.validate_user",
+            # ALV-318: only HR's "Make sign-in" button may hand out the joiner
+            # role. Anywhere else it locks the person out of every page but the
+            # joining form. Refuses GAINING it, not holding it.
+            "alvoraa_portal.joiner_invite.keep_the_joiner_role_to_the_invite",
+        ],
         "after_insert": "alvoraa_portal.module_access.apply_on_user_insert",
         "on_update":    ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
                          "alvoraa_portal.module_access.apply_on_user_update",
@@ -275,7 +282,18 @@ doc_events = {
                          "alvoraa_portal.field_app_device.block_phones_for_disabled_login",
                          # ALV-249: promoted to HR loses the own-record row,
                          # a disabled login loses it, back to staff gets it.
-                         "alvoraa_portal.own_record_permission.on_user_update"],
+                         "alvoraa_portal.own_record_permission.on_user_update",
+                         # ALV-319: the joiner gate caches "is this account a
+                         # joiner?" per user. Taking the role away has to take
+                         # effect, and before this it did not.
+                         "alvoraa_portal.auth.forget_whether_they_are_a_joiner"],
+    },
+    # ALV-318: the joiner role is for ONE invited stranger at a time. A role
+    # profile is applied to many people and re-applied on every save, so one
+    # edit to a profile locks out everybody on it. That happened for real on
+    # amata.dev on 5 November 2026.
+    "Role Profile": {
+        "validate": "alvoraa_portal.joiner_invite.keep_the_joiner_role_out_of_profiles",
     },
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes
@@ -649,6 +667,12 @@ after_migrate = [
     # Slice 076 Part C: the birthdays switch (ships off), the opt-out tick and
     # the expense decline reason. See home_people.py.
     "alvoraa_portal.home_people.after_migrate",
+    # ALV-318: the sentence on the joiner role saying what it is for, so the next
+    # person reading a role list does not tick it out of curiosity. It lives in
+    # `make_role`, which 079's patch already ran on every live site - and a patch
+    # never runs twice, so without this line no existing tenant would get it.
+    # Safe to run every migrate.
+    "alvoraa_portal.joiner_invite.make_role",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.

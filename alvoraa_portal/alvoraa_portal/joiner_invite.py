@@ -78,6 +78,28 @@ JOINER_ROLE = "Alvoraa Joiner"
 # requirement is "not routable", not this exact string.
 LOGIN_DOMAIN = "joiner.invalid"
 
+# ALV-318. What the role is for, written on the role's own record, so that
+# somebody scrolling a role list does not tick this one out of curiosity. The
+# `Role` doctype ships no description field (field list read on v16.33.1:
+# role_name, disabled, desk_access, two_factor_auth, restrict_to_domain,
+# home_page, column_break_4, is_custom), so a Custom Field is the only way to
+# put words there. Read-only, because the words are ours and not a tenant's.
+ROLE_PURPOSE_FIELD = {
+	"fieldname": "alvoraa_role_purpose",
+	"label": "What this role is for",
+	"fieldtype": "Small Text",
+	"insert_after": "desk_access",
+	"read_only": 1,
+	"no_copy": 1,
+}
+
+ROLE_PURPOSE = (
+	"One invited joiner at a time. HR's “Make sign-in” button adds it, and it is "
+	"removed when the sign-in ends. Whoever holds it can reach the joining form "
+	"and no other page, so it must never go on a role profile and must never be "
+	"given to a member of staff: it would lock them out of everything."
+)
+
 # Words for the credential: short, unambiguous when read aloud, no homophones,
 # nothing that could be misheard down a phone line, and no word that spells
 # anything unfortunate next to another. 96 of them.
@@ -233,16 +255,105 @@ def make_role():
 	Frappe creates a role WITH desk access the first time it meets the name in a
 	permission row, and this role must never carry it. No `ignore_permissions` -
 	both callers run as Administrator, and the 010 ceiling for this file stays 3.
+
+	It also writes the sentence that says what the role is for (ALV-318), which is
+	why it is in `after_migrate` as well: a patch never runs twice, so a site that
+	already ran 079's patch would otherwise never get it.
 	"""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	# Safe to run twice: `create_custom_fields` writes only what is missing and
+	# updates in place.
+	create_custom_fields({"Role": [ROLE_PURPOSE_FIELD]})
+
 	if frappe.db.exists("Role", JOINER_ROLE):
-		frappe.db.set_value("Role", JOINER_ROLE, "desk_access", 0)
+		frappe.db.set_value("Role", JOINER_ROLE, {
+			"desk_access": 0,
+			ROLE_PURPOSE_FIELD["fieldname"]: ROLE_PURPOSE,
+		})
 		return
 	frappe.get_doc({
 		"doctype": "Role",
 		"role_name": JOINER_ROLE,
 		"desk_access": 0,
 		"is_custom": 1,
+		ROLE_PURPOSE_FIELD["fieldname"]: ROLE_PURPOSE,
 	}).insert()
+
+
+# ── the role cannot be handed out anywhere else (ALV-318) ───────────────────
+#
+# **A real lockout, amata.dev, 5 November 2026.** The role was added to the CFO
+# Role Profile at 08:56; a user inherited it a minute later; from then on every
+# page they opened redirected to the joining form with code `JOIN-ONEPAGE`, and
+# Desk was unreachable. The gate in `auth.py` did exactly what it was built to
+# do. The fault is that the role reached somebody it was never meant to reach.
+#
+# A Role Profile is the opposite of what this role is for. It is applied to many
+# people at once and **re-applied to every one of them on every save**
+# (`RoleProfile.on_update` -> `update_all_users` -> `user.save()` per user), so
+# one edit to a profile with fifty staff on it is fifty lockouts.
+#
+# Both guards hang off `validate`, which is the one place every door passes
+# through - checked in the installed source on v16.33.1: the Desk user form,
+# `PUT /api/resource/User`, a `Has Role` row written through `frappe.client`
+# (`insert_doc` and `set_value` both save the PARENT), a Data Import,
+# `user.add_roles()` from code, and Frappe's own Role Profile re-apply.
+#
+# The one door they do not close is `POST /api/resource/Has Role`, which inserts
+# the child row on its own without re-saving the parent. It needs `write` on
+# `User` - System Manager - and that same person is caught at the user form, so
+# it is a deliberate act by somebody who already holds full rights rather than
+# the accident ALV-318 describes. Recorded as a known gap in the slice notes
+# instead of closed.
+
+INVITE_FLAG = "alvoraa_joiner_invite"
+
+
+def keep_the_joiner_role_out_of_profiles(doc, method=None) -> None:
+	"""`Role Profile.validate`. This role is for one person, never for a group."""
+	if JOINER_ROLE not in {cstr(row.role) for row in (doc.get("roles") or [])}:
+		return
+	frappe.throw(
+		_("“{0}” cannot be part of a role profile. Whoever holds it can reach "
+		  "the joining form and no other page, and a profile hands it to "
+		  "everybody on the profile at once - which locks all of them out. Take "
+		  "it out of the roles below and save again. A joiner gets it from HR's "
+		  "“Make sign-in” button instead.").format(JOINER_ROLE),
+		frappe.ValidationError)
+
+
+def keep_the_joiner_role_to_the_invite(doc, method=None) -> None:
+	"""`User.validate`. Only `make_sign_in` may hand this role to an account.
+
+	It refuses **gaining** the role, never holding it. An account that already
+	has the row saves normally, and it has to: Frappe's own Role Profile sync,
+	our `module_access` and `field_app_device` hooks, and HR disabling the login
+	all re-save a live joiner, and refusing those would swap one lockout for
+	another.
+
+	`make_sign_in` is let through by a flag on the document, which no caller can
+	reach: `"flags"` is in Frappe's `RESERVED_KEYWORDS`
+	(`frappe/model/base_document.py`), so `BaseDocument.update` skips it, and
+	`frappe/api/v1.py: update_doc` deletes it from the payload as well.
+	"""
+	if JOINER_ROLE not in {cstr(row.role) for row in (doc.get("roles") or [])}:
+		return
+	if doc.flags.get(INVITE_FLAG):
+		return
+	if not doc.is_new() and frappe.db.exists("Has Role", {
+			"parent": doc.name, "parenttype": "User", "role": JOINER_ROLE}):
+		return
+	frappe.throw(
+		_("“{0}” cannot be given to an account here. It is made for one invited "
+		  "joiner at a time by HR's “Make sign-in” button, and whoever holds it "
+		  "can reach the joining form and no other page - so adding it would "
+		  "lock this person out of their own portal. Remove it from the roles "
+		  "below and save again. If it keeps coming back, it is on a role "
+		  "profile: take it out of the profile first, then off this account - "
+		  "that order matters, because the profile's roles are re-applied every "
+		  "time the account is saved.").format(JOINER_ROLE),
+		frappe.ValidationError)
 
 
 def _new_credential():
@@ -385,6 +496,11 @@ def make_sign_in(submission=None):
 		"new_password": password,
 		"roles": [{"role": _role()}],
 	})
+	# ALV-318. This is the ONE path that may hand out the role, and this flag is
+	# how `keep_the_joiner_role_to_the_invite` knows it. A flag, not a field,
+	# because `"flags"` is reserved in Frappe and so cannot be set from a request.
+	user.flags[INVITE_FLAG] = True
+
 	# The one bypass here, and the permission system genuinely cannot do it: an
 	# HR Manager holds no `create` on `User` - Frappe ships that to System
 	# Manager - and the whole point of decision 1 is that HR, not an
@@ -470,10 +586,15 @@ def end_the_sign_in(doc, why):
 		clear_sessions(user=name, force=True)
 		delete_all_passwords_for("User", name)
 		# Frappe's own per-user cache, which holds the roles we have just taken
-		# away. The gate's own answer is deliberately NOT cleared - see
-		# `auth._JOINER_CACHE`: a cached "yes" for a closed account is the answer
-		# we want, because a session that somehow survives should still be
-		# refused.
+		# away. The gate's own answer in `auth._JOINER_CACHE` is deliberately NOT
+		# cleared here, and the reason stands on its own rather than on the
+		# argument ALV-319 disproved: this account is being CLOSED, not released.
+		# It is disabled, its sessions are gone and its password is destroyed, so
+		# a cached "yes" can only ever refuse an account that must be refused.
+		# **A role taken away from an account that stays open is the other case,
+		# and that one is cleared** - by `auth.forget_whether_they_are_a_joiner`
+		# on `User.on_update`. This path writes with `frappe.db.delete` and saves
+		# no document, so no hook fires here.
 		frappe.clear_cache(user=name)
 		frappe.db.commit()
 	except Exception:

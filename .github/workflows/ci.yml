@@ -329,11 +329,13 @@ jobs:
   test-python:
     name: Python tests
     runs-on: ubuntu-latest
-    # 90, not 60: a COLD build clones frappe and erpnext and runs yarn install for both,
+    # 120, not 90: on 2026-11-04 slow runners hit the 90-minute limit twice, with no
+    # test failed in either run, so neither gave a full result.
+    # 90, not 60, because a COLD build clones frappe and erpnext and runs yarn install for both,
     # which alone reaches 30-50 minutes on a standard runner. The cache key includes
     # FRAPPE_TAG, so any version bump forces exactly that cold path. Warm runs are
     # minutes. The per-step timeout bounds the slow part on its own.
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     services:
       mariadb:

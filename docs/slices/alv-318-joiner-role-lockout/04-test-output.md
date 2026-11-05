@@ -32,7 +32,10 @@ Two suites here print two.
 | `test_first_use_backfill_242` (auth.py) | 8 tests in 4s | **OK** |
 | `test_joiner_to_employee_082` — **first run** | 0 tests in 11s | **FAILED, 4 errors** — see below |
 | `test_joiner_to_employee_082` — after the fixture fix | 33 tests in 16s | **OK** |
-| `test_joiner_079` — re-run on the finished code | (recorded below) | |
+| `test_joiner_079` — re-run on the finished code | 84 tests in 1654s | **OK** |
+
+**Total: 292 tests across nine suites, every batch OK**, plus the 082 first run
+whose four fixture errors are explained below and are green on the re-run.
 
 ## The one real failure, and what it was
 

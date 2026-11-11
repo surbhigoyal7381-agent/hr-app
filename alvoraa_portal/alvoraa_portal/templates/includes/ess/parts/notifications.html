@@ -1,0 +1,29 @@
+      <!-- ══ NOTIFICATIONS (slice 083) ══════════════════════════════════════
+           One page, three groups: what needs you, then notices from HR, then
+           what you are waiting on somebody else for. The order never changes
+           with the filter.
+
+           A part holds NO Jinja - ess_parts.py refuses a file with a template
+           tag in it rather than rendering one, because this page's include
+           chain already uses about 25 of Frappe's 32 compiled-template slots
+           and a part is pasted, never compiled. So every word on this screen
+           is written by portal.js through drT(), which is also what keeps it
+           at parity in Hindi (AC-50). The title and the sub-line below are
+           deliberately empty here for that reason, not by oversight.
+
+           The panel's id matters: switchPanel does an unguarded
+           getElementById("panel-" + name), so this element existing is what
+           stops every route to #notifications throwing. -->
+      <div id="panel-notifications" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title" id="nf-title"></h1>
+            <p class="page-sub" id="nf-sub"></p>
+          </div>
+        </div>
+        <!-- All · To do · Unread notices. Real buttons with aria-pressed, in a
+             named group, filled by nfPaint. They filter the rows already in the
+             browser: pressing one sends no request. -->
+        <div class="nf-chips" id="nf-chips" role="group"></div>
+        <div id="nf-body"></div>
+      </div>

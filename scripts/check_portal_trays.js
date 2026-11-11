@@ -60,6 +60,12 @@ const INVENTORY = {
   ".sidebar-overlay":     { page: "portal", kind: "shell" },
   ".bottom-nav":          { page: "portal", kind: "shell" },
   ".loading-overlay":     { page: "portal", kind: "shell" },
+  /* Slice 083: the desktop bell. `position:fixed` is its FALLBACK only -
+     nfHomeTheBell moves the node into Frappe's navbar at boot and adds
+     `.nf-bell-set`, which hands the position back to the bar's flex row. It is
+     part of the frame, always on screen above 768 px, and outside every
+     panel. */
+  ".nf-bell":             { page: "portal", kind: "shell" },
   ".toast-wrap":          { page: "portal", kind: "toast" },
   ".gp-toast-wrap":       { page: "portal", kind: "toast" },
   ".tv-toast":            { page: "portal", kind: "toast" },

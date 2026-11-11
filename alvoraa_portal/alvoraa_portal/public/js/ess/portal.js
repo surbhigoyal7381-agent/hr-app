@@ -8871,14 +8871,23 @@ function dmWhere(m) {
             percent: null, notArrived: true};
   }
 
-  var now = dmUnwrap(dmNow(), anchor);
-  var worked = Math.max(0, now - dmUnwrap(arrived, anchor));
+  /* ALV-326: worked time runs from the anchor the server sent, less any
+     break already over the allowance. Where the rule set counts only shift
+     hours, the anchor is the shift start for anybody within grace and the
+     clock stops at the shift end. Unwrapped against the earlier of the
+     arrival and the anchor, so somebody in before their shift does not read
+     as tomorrow. */
+  var base = Math.min(arrived, anchor);
+  var now = dmUnwrap(dmNow(), base);
+  var end = lad.shift_hours_only && m.shift ? dmParse(m.shift.end) : null;
+  end = end === null ? now : dmUnwrap(end, base);
+  var worked = Math.max(0, Math.min(now, end) - anchor - (lad.break_over || 0));
 
   /* Steps arrive best-first, so the first rung already reached is the best
      one reached. */
   var at = null, next = null;
   for (var i = 0; i < lad.steps.length; i++) {
-    var t = dmUnwrap(dmParse(lad.steps[i].leave_after), anchor);
+    var t = dmUnwrap(dmParse(lad.steps[i].leave_after), base);
     if (t !== null && now >= t) { at = lad.steps[i]; break; }
     next = lad.steps[i];
     next.when = t;
@@ -8888,8 +8897,8 @@ function dmWhere(m) {
 
   var inRedWindow = false;
   if (at && at.red_from && at.red_to) {
-    var rf = dmUnwrap(dmParse(at.red_from), anchor);
-    var rt = dmUnwrap(dmParse(at.red_to), anchor);
+    var rf = dmUnwrap(dmParse(at.red_from), base);
+    var rt = dmUnwrap(dmParse(at.red_to), base);
     inRedWindow = now >= rf && now <= rt;
   }
 
@@ -9076,11 +9085,18 @@ function dmMarks(m) {
   }
   var r = m.red;
   if (r && r.late) {
+    /* ALV-326: say what the lateness costs, as the payslip will, where the
+       rule set sets a late limit. Staff who earn no marks are told of no red. */
+    var free = r.free_per_month && r.earns_marks !== false
+      ? " The first " + r.free_per_month + " a month are free." : "";
+    var cost = r.late_charge === "quarter"
+      ? " Arriving after " + r.late_red_until + " costs a quarter of a day and"
+        + " no red. Staying late does not win it back."
+      : r.late_charge === "red"
+        ? " Arriving by " + r.late_red_until + " costs 1 red." + free
+        : free;
     out.push(["bad", "Late by " + r.late_by_minutes + " min",
-              "On time meant " + r.on_time_until + "."
-              + (r.free_per_month
-                  ? " The first " + r.free_per_month + " a month are free."
-                  : "")]);
+              "On time meant " + r.on_time_until + "." + cost]);
   }
   if (r && r.in_late_window && r.late_window) {
     out.push(["bad", "Inside the late window",

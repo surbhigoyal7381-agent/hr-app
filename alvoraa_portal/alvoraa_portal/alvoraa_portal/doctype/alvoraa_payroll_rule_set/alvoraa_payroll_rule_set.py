@@ -70,6 +70,8 @@ class AlvoraaPayrollRuleSet(Document):
 		self.free_reds_per_month = cint(self.free_reds_per_month)
 		self.special_day_multiplier = cint(self.special_day_multiplier) or 1
 		self.late_window_extra_quarters = cint(self.late_window_extra_quarters)
+		self.late_quarter_after_minutes = cint(self.late_quarter_after_minutes)
+		self.break_allowance_minutes = cint(self.break_allowance_minutes)
 		self.grade_field = (self.grade_field or "").strip()
 		self.late_window_employee_field = (self.late_window_employee_field or "").strip()
 
@@ -77,6 +79,19 @@ class AlvoraaPayrollRuleSet(Document):
 			frappe.throw(_("Grace minutes cannot be negative."))
 		if self.free_reds_per_month < 0:
 			frappe.throw(_("Free reds per month cannot be negative."))
+		if self.late_quarter_after_minutes < 0:
+			frappe.throw(_("Late minutes before a quarter cannot be negative. "
+			               "0 switches the rule off."))
+		if self.break_allowance_minutes < 0:
+			frappe.throw(_("The break allowance cannot be negative. "
+			               "0 switches the break rule off."))
+		# Security review M1: a limit at or below grace would turn every late red
+		# into a quarter, silently.
+		if 0 < self.late_quarter_after_minutes <= self.grace_minutes:
+			frappe.throw(_("Late minutes before a quarter ({0}) must be more than the "
+			               "grace minutes ({1}), or every late arrival would cost a "
+			               "quarter. Use 0 to switch the rule off.")
+			             .format(self.late_quarter_after_minutes, self.grace_minutes))
 		if self.special_day_multiplier < 1:
 			frappe.throw(_("The special day multiplier has to be 1 or more. "
 			               "1 means special days are treated like any other day."))
@@ -317,6 +332,8 @@ class AlvoraaPayrollRuleSet(Document):
 			cat = (row.category or "").strip()
 			row.category = cat
 			row.grace_minutes = cint(row.grace_minutes)
+			row.late_quarter_after_minutes = cint(row.late_quarter_after_minutes)
+			row.break_allowance_minutes = cint(row.break_allowance_minutes)
 			if not cat:
 				frappe.throw(_("Row {0} of the categories has no value.")
 				             .format(row.idx))
@@ -327,6 +344,15 @@ class AlvoraaPayrollRuleSet(Document):
 			seen[cat] = row.idx
 			if row.grace_minutes < 0:
 				frappe.throw(_("Row {0}: grace cannot be negative.").format(row.idx))
+			if row.late_quarter_after_minutes < 0 or row.break_allowance_minutes < 0:
+				frappe.throw(_("Row {0}: late minutes and the break allowance cannot be "
+				               "negative. 0 means use the rule set's.").format(row.idx))
+			limit = row.late_quarter_after_minutes or cint(self.late_quarter_after_minutes)
+			grace = row.grace_minutes or cint(self.grace_minutes)
+			if limit and limit <= grace:
+				frappe.throw(_("Category {0}: late minutes before a quarter ({1}) must be "
+				               "more than its grace ({2}), or every late arrival would "
+				               "cost a quarter.").format(frappe.bold(cat), limit, grace))
 
 		if self.enabled and self.categories and not self.category_field:
 			frappe.throw(

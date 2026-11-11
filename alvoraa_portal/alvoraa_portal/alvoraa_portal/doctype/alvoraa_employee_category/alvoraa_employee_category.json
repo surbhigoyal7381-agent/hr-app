@@ -10,7 +10,9 @@
   "grace_minutes",
   "earns_marks",
   "earns_leave_credits",
-  "doubles_deduction"
+  "doubles_deduction",
+  "late_quarter_after_minutes",
+  "break_allowance_minutes"
  ],
  "fields": [
   {
@@ -55,11 +57,25 @@
    "fieldname": "doubles_deduction",
    "fieldtype": "Check",
    "label": "Doubles Deduction"
+  },
+  {
+   "default": "0",
+   "description": "Late minutes before a quarter, for this category only. 0 means use the rule set's.",
+   "fieldname": "late_quarter_after_minutes",
+   "fieldtype": "Int",
+   "label": "Late Minutes Before A Quarter"
+  },
+  {
+   "default": "0",
+   "description": "Break allowance in minutes, for this category only. 0 means use the rule set's.",
+   "fieldname": "break_allowance_minutes",
+   "fieldtype": "Int",
+   "label": "Break Allowance (Minutes)"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-10-09 12:00:00.000000",
+ "modified": "2026-11-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Employee Category",

@@ -64,6 +64,32 @@ plus the addendum of 8 Oct 2026):
 
   GRN-02/03      Morning green: in two hours or more early, open to everyone.
                  Night green: out an hour or more late, flagged staff only.
+
+THREE SETTINGS FROM DTC'S ANSWERS OF 6 AND 11 NOVEMBER 2026 (ALV-326). Each is
+on the rule set and off by default, so a tenant that sets none of them is judged
+exactly as before. Surbhi, 2026-11-11: nothing company-specific in code.
+
+  count_shift_hours_only  Only time inside the shift counts. Staying late does
+                 not make up for arriving late, arriving early buys nothing, and
+                 arriving within grace counts from the shift start. Off: first
+                 punch to last, capped at 100%, as ever. (DTC: on.)
+
+  break_allowance_minutes  A break is the gap between punch 2 and 3, 4 and 5,
+                 and so on. Up to this many minutes a day are free; beyond is
+                 deducted. A day with an odd number of punches has one missing,
+                 so nobody can say which gap was a break: none is deducted, and
+                 the reasons say so. A two-punch day (a muster-roll day, first
+                 and last only) has no gap at all. 0: no break rule. (DTC: 40.)
+
+  late_quarter_after_minutes  From the shift start, in whole minutes. Past
+                 grace and up to this many minutes late: 1 red. Later: the
+                 larger of 1 quarter and the band's quarters, and no red. A late
+                 red and a band red on one day are one red, not two - except the
+                 two-red rule above, which still stands (DTC, 2026-11-11). 0: no
+                 late rule, the band alone decides. (DTC: 30.)
+
+  The last two can be overridden per employee category (0 = the rule set's).
+  Greens and the late window still read the real first and last punch.
 """
 
 from dataclasses import dataclass, field
@@ -104,6 +130,95 @@ def collapse_duplicate_punches(times, window_minutes=DUPLICATE_PUNCH_MINUTES):
 			continue
 		distinct.append(t)
 	return distinct
+
+
+def break_gaps(times: list) -> list:
+	"""The gaps between punch 2 and 3, 4 and 5, and so on, as (out, back) pairs.
+
+	`times` is the day's distinct punches in order. The first punch is the
+	arrival and, on a finished day, the last is the departure; every pair in
+	between is a break. The home banner asks this during the day too, when only
+	the breaks already over have a pair.
+	"""
+	return [(times[k], times[k + 1]) for k in range(1, len(times) - 1, 2)]
+
+
+def late_charge(late_by: float, grace_minutes: float, quarter_after: int) -> str:
+	"""What arriving `late_by` minutes after the shift start costs (ALV-326).
+
+	"" within grace, or when the rule is off (`quarter_after` 0). "red" up to
+	`quarter_after` minutes after the start, "quarter" beyond.
+	"""
+	if not quarter_after or quarter_after <= 0 or late_by <= grace_minutes:
+		return ""
+	if late_by <= quarter_after:
+		return "red"
+	return "quarter"
+
+
+def charge_for(late: str, band_quarters: int, band_red: bool) -> tuple:
+	"""Quarters and reds for a day, from its arrival charge and its band.
+
+	The one place the two meet, so the payslip and the home banner cannot
+	disagree. `band_quarters` is whatever the caller charges for the band - the
+	engine passes it after special-day doubling, the banner (which shows no
+	doubling) before.
+
+	  "" (in grace, or rule off)  the band decides alone
+	  "red"      the band's quarters and 1 red; a band red is that same red
+	  "quarter"  the larger of 1 quarter and the band's quarters, no red.
+	                "Larger", not "added": DTC took 2 quarters, not 3, from a
+	                99-minute-late day whose band said 2.
+
+	The two-red rule needs the early departure as well, so the engine adds it.
+	"""
+	if late == "quarter":
+		return max(1, band_quarters), 0
+	if late == "red":
+		return band_quarters, 1
+	return band_quarters, 1 if band_red else 0
+
+
+def _worked_percent(counted_from: float, last_out: float, shift_start: int, shift_end: int,
+                    length: float, shift_hours_only: bool, gaps, odd_count: bool,
+                    break_allowance: int, reasons: list) -> float:
+	"""The share of `length` worked, less breaks over the allowance.
+
+	With `shift_hours_only` the span is clipped to the shift; without it, it
+	runs from `counted_from` to the last punch and is capped at 100%, as it
+	always was. `break_allowance` 0 means no break rule. Writes its working
+	into `reasons`.
+	"""
+	start, end = counted_from, last_out
+	if shift_hours_only:
+		start, end = max(start, shift_start), min(end, shift_end)
+	span = max(0, end - start)
+	over = 0
+	if break_allowance > 0:
+		if odd_count:
+			reasons.append(
+				"A punch is missing from the middle of the day, so breaks could not "
+				"be measured and none is deducted.")
+		else:
+			on_break = sum(max(0, min(back, end) - max(out, start)) for out, back in gaps)
+			over = max(0, on_break - break_allowance)
+			if on_break:
+				reasons.append(
+					"Breaks: {0:.0f} minutes. The first {1} are allowed, so {2:.0f} "
+					"deducted.".format(on_break, break_allowance, over))
+	worked = max(0, span - over)
+	percent = min(100.0, worked / length * 100.0)
+	if shift_hours_only:
+		reasons.append(
+			"Counted {0:.0f} of {1:.0f} minutes, {2:.1f}%. Only time inside the shift "
+			"counts, from {3:02d}:{4:02d} to {5:02d}:{6:02d}.".format(
+				worked, length, percent, int(start) // 60, int(start) % 60,
+				int(end) // 60, int(end) % 60))
+	else:
+		reasons.append(
+			"Present {0:.0f} of {1:.0f} shift minutes, {2:.1f}% of the shift."
+			.format(worked, length, percent))
+	return percent
 
 
 @dataclass
@@ -307,8 +422,9 @@ def _window_applies(window_from, window_to, shift_start, grace_minutes):
 	return window_from > shift_start + grace_minutes
 
 
-def _judge_other_half(v, shift_minutes, first_in, last_out, punch_count, regularised,
-                      slabs, doubles, multiplier, earns_marks):
+def _judge_other_half(v, shift_start, shift_end, first_in, last_out, punch_count, regularised,
+                      slabs, doubles, multiplier, earns_marks, shift_hours_only=False,
+                      gaps=(), break_allowance=0):
 	"""The worked half of a half-day leave day (slice 063; 01d D1-D5, OD-1 iv).
 
 	Surbhi, 21 Oct 2026. Frappe does not record WHICH half was the leave, so
@@ -326,13 +442,14 @@ def _judge_other_half(v, shift_minutes, first_in, last_out, punch_count, regular
 	v.reasons.append("Half-day leave: half the day is approved leave, funded at month level.")
 
 	if punch_count >= 2 and first_in is not None and last_out is not None:
-		half = shift_minutes / 2.0
-		worked = max(0, last_out - first_in)
-		percent = min(100.0, worked / half * 100.0)
+		# ALV-326: the same shift-hours and break settings as a full day. There
+		# is no late charge on this day (D4), so the count starts at the real
+		# first punch.
+		v.reasons.append("Other half, measured against half the shift:")
+		percent = _worked_percent(first_in, last_out, shift_start, shift_end,
+		                          (shift_end - shift_start) / 2.0, shift_hours_only, gaps,
+		                          punch_count % 2 == 1, break_allowance, v.reasons)
 		v.attendance_percent = percent
-		v.reasons.append(
-			"Other half: present {0:.0f} of {1:.0f} minutes (half the shift), {2:.1f}%."
-			.format(worked, half, percent))
 		row = find_slab(slabs, percent)
 		if row is None:
 			v.held = True
@@ -393,11 +510,17 @@ def evaluate_day(
 	earns_marks=True,
 	half_day_leave=False,
 	other_half_regularised=False,
+	shift_hours_only=False,
+	late_quarter_after_minutes=0,
+	break_allowance_minutes=0,
+	break_gaps=(),
 ) -> DayVerdict:
 	"""Judge one employee on one day.
 
 	Every time is minutes from midnight. `first_in` and `last_out` may be None
-	on a day with no usable punches.
+	on a day with no usable punches. `break_gaps` is the day's (out, back)
+	pairs from `break_gaps()`; it is ignored on a day with an odd punch count.
+	The three ALV-326 settings default to off, which is the old behaviour.
 
 	`half_day_leave` (slice 063): half of the day is approved leave. The other
 	half is judged by `_judge_other_half`. `other_half_regularised` says HR
@@ -416,9 +539,10 @@ def evaluate_day(
 
 	if half_day_leave:
 		return _judge_other_half(
-			v, shift_minutes, first_in, last_out, punch_count, other_half_regularised,
+			v, shift_start, shift_end, first_in, last_out, punch_count, other_half_regularised,
 			slabs, is_special_day and double_deduction_applies and special_day_multiplier > 1,
-			special_day_multiplier, earns_marks)
+			special_day_multiplier, earns_marks, shift_hours_only, break_gaps,
+			break_allowance_minutes)
 
 	# ── A genuine absence, versus a day nobody can measure ───────────────────
 	# Three cases look alike from a distance and must not be treated alike.
@@ -469,6 +593,7 @@ def evaluate_day(
 			"The day is measured from that time, not paid in full."
 			.format(int(confirmed_out) // 60, int(confirmed_out) % 60))
 
+	late = ""
 	if first_in is None or last_out is None:
 		if marked_absent:
 			percent = 0.0
@@ -482,20 +607,33 @@ def evaluate_day(
 				"should pay.")
 			return v
 	else:
-		# ── ATT-01: the employee's own gross shift is the denominator ────────
-		worked = max(0, last_out - first_in)
-		percent = min(100.0, worked / shift_minutes * 100.0)
-		v.reasons.append(
-			"Present {0:.0f} of {1:.0f} shift minutes, {2:.1f}% of the shift."
-			.format(worked, shift_minutes, percent))
-
 		# ── GBL-04: the two infractions ──────────────────────────────────────
 		v.late_arrival = first_in > shift_start + grace_minutes
 		v.early_departure = last_out < shift_end
-		if v.late_arrival:
+		# ALV-326: what the arrival itself costs, where the rule set says.
+		late = late_charge(first_in - shift_start, grace_minutes, late_quarter_after_minutes)
+		if late == "red":
+			v.reasons.append(
+				"Arrived {0:.0f} minutes after shift start, past the {1} minute grace "
+				"and within {2}: 1 red.".format(
+					first_in - shift_start, grace_minutes, late_quarter_after_minutes))
+		elif late == "quarter":
+			v.reasons.append(
+				"Arrived {0:.0f} minutes after shift start, more than {1}: at least a "
+				"quarter of a day, and no red.".format(
+					first_in - shift_start, late_quarter_after_minutes))
+		elif v.late_arrival:
 			v.reasons.append(
 				"Arrived {0:.0f} minutes after shift start, past the {1} minute grace."
 				.format(first_in - shift_start, grace_minutes))
+
+		# ── ATT-01: the employee's own gross shift is the denominator ────────
+		# ALV-326: with shift hours only, an arrival within grace counts from
+		# the shift start.
+		counted_from = shift_start if (shift_hours_only and not v.late_arrival) else first_in
+		percent = _worked_percent(counted_from, last_out, shift_start, shift_end,
+		                          shift_minutes, shift_hours_only, break_gaps,
+		                          punch_count % 2 == 1, break_allowance_minutes, v.reasons)
 		if v.early_departure:
 			v.reasons.append(
 				"Left {0:.0f} minutes before shift end.".format(shift_end - last_out))
@@ -535,16 +673,31 @@ def evaluate_day(
 		v.reasons.append(
 			"Special day, but this employee takes the single deduction, so the "
 			"quarters are not multiplied.")
-	v.slab_quarters = slab_quarters
+	# ── DTC 2026-11-11: the arrival charge meets the band ────────────────────────
+	# The late quarter is never doubled, like the ATT-04 quarter: it charges the
+	# act of arriving, not minutes missed. Doubled band quarters can still exceed it.
+	v.slab_quarters, v.reds = charge_for(late, slab_quarters, slab_red)
+	if v.slab_quarters != slab_quarters:
+		v.reasons.append(
+			"More than {0} minutes late: 1 quarter, as the band charged less."
+			.format(late_quarter_after_minutes))
+	# Security review M2: the words must never show a red that was not charged.
+	if late == "quarter" and slab_red:
+		v.reasons.append("No red: the late quarter replaces the band's red.")
+	elif late == "red" and slab_red and not (
+			v.early_departure and not int(row.quarters_off or 0)):
+		# (Late, early and a no-quarter band is the two-red rule, below.)
+		v.reasons.append("The band's red and the late red are the same red: 1 red.")
 
 	# ── ATT-03 + the 8 Oct ruling: how many reds ─────────────────────────────
-	# The band supplies the first red. The second needs both infractions AND no
-	# slab quarter - a quarter already charges the missing minutes, so a second
-	# red for the same minutes is the double penalty GBL-09 forbids. The
-	# comparison is against the slab quarters BEFORE doubling, because doubling
-	# changes the size of a deduction, not whether one happened.
-	v.reds = 1 if slab_red else 0
-	if slab_red and v.late_arrival and v.early_departure:
+	# The first red comes from the band or the late arrival (one red, not two).
+	# The second needs both infractions AND no slab quarter - a quarter already
+	# charges the missing minutes, so a second red for the same minutes is the
+	# double penalty GBL-09 forbids. The comparison is against the slab
+	# quarters BEFORE doubling, because doubling changes the size of a
+	# deduction, not whether one happened. Kept as it was (DTC, 2026-11-11).
+	# A day charged the ALV-326 late quarter carries no red at all.
+	if slab_red and v.late_arrival and v.early_departure and late != "quarter":
 		if int(row.quarters_off or 0) == 0:
 			v.reds = 2
 			v.reasons.append(

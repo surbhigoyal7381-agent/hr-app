@@ -26,7 +26,7 @@ The monthly roll-up and the salary slip read these figures later.
 import frappe
 from frappe.utils import get_datetime, getdate, now
 
-from alvoraa_portal.payroll_rules import collapse_duplicate_punches, evaluate_day
+from alvoraa_portal.payroll_rules import break_gaps, collapse_duplicate_punches, evaluate_day
 
 # Values of a tenant's double-deduction field that mean "yes, double it".
 # Frappe Select fields store the label, so a tenant may have Yes/No, 1/0 or
@@ -178,6 +178,11 @@ def prepare(rule_set, from_date=None, to_date=None, employee=None):
 		"window_from": _minutes(rule_set.late_window_from),
 		"window_to": _minutes(rule_set.late_window_to),
 		"window_quarters": int(rule_set.late_window_extra_quarters or 0),
+		# ALV-326. Off unless the rule set says; the last two can be overridden
+		# per category, in `_employee_flags`.
+		"shift_hours_only": bool(rule_set.get("count_shift_hours_only")),
+		"late_quarter_after": int(rule_set.get("late_quarter_after_minutes") or 0),
+		"break_allowance": int(rule_set.get("break_allowance_minutes") or 0),
 		"window_field": (rule_set.late_window_employee_field or "").strip(),
 		"double_field": (rule_set.double_deduction_field or "").strip(),
 		"green_field": (rule_set.green_eligibility_field or "").strip(),
@@ -198,6 +203,8 @@ def prepare(rule_set, from_date=None, to_date=None, employee=None):
 				"earns_marks": bool(r.earns_marks),
 				"earns_leave_credits": bool(r.earns_leave_credits),
 				"doubles_deduction": bool(r.doubles_deduction),
+				"late_quarter_after": int(r.get("late_quarter_after_minutes") or 0),
+				"break_allowance": int(r.get("break_allowance_minutes") or 0),
 			}
 			for r in rule_set.categories
 		},
@@ -273,6 +280,10 @@ def _employee_flags(employee, date, ctx, shift_grace=None):
 
 	return {
 		"grace_minutes": grace,
+		# ALV-326: a category figure wins; 0 there means "use the rule set's",
+		# the same convention as grace above.
+		"late_quarter_after_minutes": override.get("late_quarter_after") or ctx["late_quarter_after"],
+		"break_allowance_minutes": override.get("break_allowance") or ctx["break_allowance"],
 		"earns_marks": override.get("earns_marks", True),
 		# ── ATT-04: who the late window applies to ───────────────────────────
 		#
@@ -319,9 +330,13 @@ def _green_on(employee, date, ctx):
 	return best
 
 
-def green_eligibility_on(employee, date, rule_set):
-	"""Which green marks this person can earn on this day: morning, night, both
-	or neither.
+def day_rules_on(employee: str, date, rule_set, shift_grace=None) -> dict:
+	"""Which green marks this person can earn on this day (morning, night, both
+	or neither), and the rest of what the engine will judge them by: the grace
+	in force (category first, then `shift_grace`, then the rule set - exactly
+	as `judge` works it out), whether they earn marks at all, and the ALV-326
+	settings with any category override. Named `green_eligibility_on` until
+	ALV-326; the review (P2-1) found the banner using a different grace.
 
 	THE HOME BANNER ASKS THIS. It tells somebody what is still worth doing
 	today, so it has to be the same answer the engine will pay on - and that is
@@ -337,13 +352,23 @@ def green_eligibility_on(employee, date, rule_set):
 	built once and reused for a batch.
 	"""
 	ctx = prepare(rule_set, date, date, employee=employee)
-	flags = _employee_flags(employee, date, ctx)
+	flags = _employee_flags(employee, date, ctx, shift_grace=shift_grace)
 	return {"morning": bool(flags["morning_green_eligible"]),
-	        "night": bool(flags["night_green_eligible"])}
+	        "night": bool(flags["night_green_eligible"]),
+	        "grace_minutes": flags["grace_minutes"],
+	        "earns_marks": bool(flags["earns_marks"]),
+	        "shift_hours_only": ctx["shift_hours_only"],
+	        "late_quarter_after_minutes": flags["late_quarter_after_minutes"],
+	        "break_allowance_minutes": flags["break_allowance_minutes"]}
 
 
 def _punches(employee, date):
-	"""First and last punch of the day, and how many there were.
+	"""First and last punch of the day, how many there were, and the gaps
+	between them that may be breaks (`break_gaps`).
+
+	Whole minutes (ALV-326, Surbhi's D3, 2026-11-11): DTC's sheet and the home
+	banner both read 10:36:40 as 10:36, so the engine does too. Without it a
+	punch inside the grace minute could be late by seconds.
 
 	Read from Employee Checkin, never from Attendance.working_hours. On DTC all
 	22 shifts compute working hours by alternating in/out pairs, and 1,023
@@ -355,15 +380,15 @@ def _punches(employee, date):
 		                      "{0} 00:00:00".format(date), "{0} 23:59:59".format(date)])},
 	                      pluck="time", order_by="time asc")
 	if not rows:
-		return None, None, 0
-	to_min = lambda d: d.hour * 60 + d.minute + d.second / 60.0
+		return None, None, 0, []
 	# A reader that scans twice in a second has not recorded a working day of
 	# one second. Collapse before counting, or ATT-06 never sees the day as the
 	# single punch it really is.
-	distinct = collapse_duplicate_punches([to_min(get_datetime(t)) for t in rows])
+	distinct = collapse_duplicate_punches(
+		[d.hour * 60 + d.minute for d in map(get_datetime, rows)])
 	if not distinct:
-		return None, None, 0
-	return distinct[0], distinct[-1], len(distinct)
+		return None, None, 0, []
+	return distinct[0], distinct[-1], len(distinct), break_gaps(distinct)
 
 
 def judge(attendance, ctx):
@@ -386,7 +411,7 @@ def judge(attendance, ctx):
 			"shift length to measure against.")
 		return v
 
-	first_in, last_out, count = _punches(attendance.employee, date)
+	first_in, last_out, count, gaps = _punches(attendance.employee, date)
 
 	# Slice 063. A half-day LEAVE is Frappe's "Half Day" with a leave
 	# application behind it. A "Half Day" with nothing behind it is a short
@@ -429,6 +454,8 @@ def judge(attendance, ctx):
 		late_window_extra_quarters=ctx["window_quarters"],
 		half_day_leave=half_day_leave,
 		other_half_regularised=regularised,
+		shift_hours_only=ctx["shift_hours_only"],
+		break_gaps=gaps,
 		**flags)
 
 

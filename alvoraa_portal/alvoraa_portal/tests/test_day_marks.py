@@ -454,6 +454,116 @@ class WhatLeavingNowWouldCost(MarksCase):
 			                 "%s is pay, and this screen is not a payslip" % money)
 
 
+class WhatALateArrivalIsToldALV326(MarksCase):
+	"""ALV-326 with DTC's settings on the rule set: only shift hours count, a
+	quarter after 30 minutes late, 40 minutes of breaks. The classes above keep
+	the rule set as it was, which proves a tenant without these settings sees
+	exactly the old ladder. The late window stays on here, as the fixture has it."""
+
+	SETTINGS = {"count_shift_hours_only": 1, "late_quarter_after_minutes": 30,
+	            "break_allowance_minutes": 40}
+
+	def _set(self, values):
+		name = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY}, "name")
+		frappe.db.set_value("Alvoraa Payroll Rule Set", name, values)
+		frappe.clear_document_cache("Alvoraa Payroll Rule Set", name)
+
+	def setUp(self):
+		super().setUp()
+		self._set(self.SETTINGS)
+
+	def tearDown(self):
+		self._set({k: 0 for k in self.SETTINGS})
+		super().tearDown()
+
+	def test_alv326_an_early_arrival_counts_from_the_shift_start(self):
+		"""Arriving at 10:28 buys nothing: 90% of 600 minutes is nine hours
+		after 10:30."""
+		out = self.marks(self.at("10:28:00"))["ladder"]
+		at = {s["quarters"]: s["leave_after"] for s in out["steps"]}
+		self.assertEqual(out["anchor"], "10:30")
+		self.assertEqual((at[0], at[1], at[2]), ("19:30", "17:00", "14:30"))
+
+	def test_alv326_twenty_minutes_late_is_told_it_is_a_red(self):
+		out = self.marks(self.at("10:50:00"))
+		self.assertEqual(out["red"]["late_charge"], "red")
+		self.assertEqual(out["red"]["late_red_until"], "11:00")
+		at = {s["quarters"]: s for s in out["ladder"]["steps"]}
+		self.assertEqual(out["ladder"]["anchor"], "10:50")
+		self.assertEqual(at[0]["leave_after"], "19:50")
+		# Leaving early on top of the late red is the second red.
+		self.assertEqual((at[0]["red_from"], at[0]["red_to"]), ("19:50", "20:29"))
+		self.assertEqual(at[1]["leave_after"], "17:20")
+		self.assertIsNone(at[1]["red_from"], "the late red is already the day's red")
+
+	def test_alv326_forty_minutes_late_is_told_it_is_a_quarter(self):
+		out = self.marks(self.at("11:10:00"))
+		self.assertEqual(out["red"]["late_charge"], "quarter")
+		at = {s["quarters"]: s for s in out["ladder"]["steps"]}
+		self.assertNotIn(0, at, "a quarter is already gone")
+		self.assertEqual(at[1]["leave_after"], "17:40")
+		self.assertEqual(at[2]["leave_after"], "15:10")
+		self.assertTrue(all(s["red_from"] is None for s in at.values()))
+
+	def test_alv326_no_rung_is_later_than_the_shift_end(self):
+		for arrival in ("10:28:00", "10:50:00", "11:10:00", "14:00:00"):
+			for s in self.marks(self.at(arrival))["ladder"]["steps"]:
+				self.assertLessEqual(s["leave_after"], "20:30", arrival)
+
+	def test_alv326_a_long_lunch_moves_every_rung_later(self):
+		"""Out 13:00, back 14:00: 60 minutes, 20 over the allowance."""
+		out = self.marks(self.at("10:28:00", "13:00:00", "14:00:00"))["ladder"]
+		self.assertEqual(out["break_over"], 20)
+		at = {s["quarters"]: s["leave_after"] for s in out["steps"]}
+		self.assertEqual(at[0], "19:50")
+
+	def test_alv326_a_lunch_inside_the_allowance_moves_nothing(self):
+		out = self.marks(self.at("10:28:00", "13:00:00", "13:30:00"))["ladder"]
+		self.assertEqual(out["break_over"], 0)
+
+	def test_alv326_contract_staff_see_their_own_grace_and_no_red(self):
+		"""Review P2-1. A contract category with 15 minutes' grace and no marks.
+		The payslip counts a 10:40 arrival from 10:30 and never gives them a red;
+		the banner must say the same."""
+		name = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY}, "name")
+		rs = frappe.get_doc("Alvoraa Payroll Rule Set", name)
+		rs.category_field = "employment_type"
+		rs.append("categories", {"category": "Contract", "grace_minutes": 15,
+		                         "earns_marks": 0, "earns_leave_credits": 0,
+		                         "doubles_deduction": 0})
+		rs.flags.ignore_permissions = True
+		rs.save()
+		try:
+			if not frappe.db.exists("Employment Type", "Contract"):
+				frappe.get_doc({"doctype": "Employment Type",
+				                "employee_type_name": "Contract"}).insert(ignore_permissions=True)
+			frappe.db.set_value("Employee", self.emp, "employment_type", "Contract")
+
+			out = self.marks(self.at("10:40:00"))
+			self.assertEqual(out["grace_minutes"], 15)
+			self.assertFalse(out["red"]["late"])
+			self.assertEqual(out["ladder"]["anchor"], "10:30")
+
+			out = self.marks(self.at("10:50:00"))
+			self.assertTrue(out["red"]["late"])
+			self.assertFalse(out["red"]["earns_marks"])
+			self.assertEqual(out["red"]["late_charge"], "", "no marks, so no red")
+			self.assertTrue(all(s["red_from"] is None for s in out["ladder"]["steps"]))
+		finally:
+			rs.reload()
+			rs.category_field = ""
+			rs.set("categories", [])
+			rs.save()
+
+	def test_alv326_without_the_settings_the_banner_says_nothing_new(self):
+		self._set({k: 0 for k in self.SETTINGS})
+		out = self.marks(self.at("11:10:00"))
+		self.assertEqual(out["red"]["late_charge"], "")
+		self.assertIsNone(out["red"]["late_red_until"])
+		self.assertEqual(out["ladder"]["anchor"], "11:10")
+		self.assertFalse(out["ladder"]["shift_hours_only"])
+
+
 class ATenantWithNoQuarters(MarksCase):
 	def setUp(self):
 		super().setUp()

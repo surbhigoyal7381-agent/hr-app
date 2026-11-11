@@ -47,10 +47,6 @@ const dom = new JSDOM(html, {
                   method: (opts && opts.method) || "GET"});
       const h = ROUTES[name] === undefined ? {ok: {}} : ROUTES[name];
       if (h === "drop") return Promise.reject(new TypeError("Failed to fetch"));
-      if (h.refuse) {
-        return Promise.resolve({ok: false, status: 417, json: () => Promise.resolve(
-          {exc_type: "ValidationError", message: h.refuse})});
-      }
       const v = typeof h.ok === "function" ? h.ok(CALLS[CALLS.length - 1].args || {}) : h.ok;
       return Promise.resolve({ok: true, status: 200, json: () => Promise.resolve({message: v})});
     };
@@ -118,7 +114,7 @@ async function open083(routes) {
 
 (async () => {
   await settle(400);
-  for (const fn of ["nfOpen", "ntWorkOwed", "ntPaintBadge", "switchPanel"]) {
+  for (const fn of ["ntWorkOwed", "switchPanel", "mayOpenPanel"]) {
     if (typeof window[fn] !== "function") { bad(fn + " is not on the page"); process.exit(1); }
   }
 

@@ -7336,11 +7336,10 @@ function nfHomeTheBell() {
   bell.classList.add("nf-bell-set");
 }
 
-/* On the window because the DOM tests drive the page through them, and
-   because switchPanel reaches nfOpen from another block. */
-window.nfOpen = nfOpen;
+/* On the window because the DOM tests assert, from a payload, that Home's
+   chip and the bell are computed by this one function. Nothing else needs it:
+   every caller inside this file reaches it directly. */
 window.ntWorkOwed = ntWorkOwed;
-window.ntPaintBadge = ntPaintBadge;
 
 /* ── Birthdays and anniversaries, My profile, the switch (slice 076, Part C)
    Prefixes bd / mp / bs. The server decides who is listed: own branch, Active,

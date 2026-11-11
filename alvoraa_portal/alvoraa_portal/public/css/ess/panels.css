@@ -3321,7 +3321,6 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
    a rule hidden inside a media query is a rule no jsdom test can read back. */
 .nf-list .hm-row{min-height:64px}
 .nf-list .hm-row:first-child{border-top:0}
-.nf-list .hm-empty{border-top:0}
 
 .nf-foot{display:flex;align-items:center;gap:8px;padding:8px 4px 0}
 .nf-foot .hm-sp{flex:1}

@@ -100,3 +100,80 @@ blanked, tree unparsed, so comments and prose do not count):
 | `joiner_invite.py` | **3** | 3, unchanged |
 
 **No `ignore_permissions` added anywhere.**
+
+---
+
+## Re-run after the rebase onto `814d540f` — 11 November 2026
+
+The 6 November run above was against the older base `5c0d3ffc`. Nine **ALV-266** commits
+landed on `dev` in between — "only HR changes someone else's Employee record" — and two of
+them touch files this slice also touches: `hooks.py` (a `before_rename` guard and a
+`has_permission` gate, both on `Employee`) and `employee_field_rights.py`.
+
+The rebase was clean and both slices' hooks are present in the merged `hooks.py`. But a
+clean merge says nothing about runtime behaviour, so every suite was run again on a **fresh
+`test_site` in throwaway containers** (`alv318r-*`, own network, own Redis, removed
+afterwards), on the same image and the same framework versions as 6 November —
+frappe 16.33.1, erpnext 16.34.2 — so the numbers are comparable.
+
+### Result: Pass. Every number matches, and the ALV-266 interaction does not exist.
+
+| Suite | This run | 6 Nov |
+|---|---|---|
+| `test_joiner_079` | 84 in 1182.0s — OK | 84 OK |
+| `test_joiner_078` | 55 in 726.4s — OK | 55 OK |
+| `test_portal_security_010` | 45 in 242.1s — OK **and** 5 in 7.6s — OK | 45 + 5 OK |
+| `test_joiner_to_employee_082` | 33 in 61.9s — OK | 33 OK |
+| `test_home_page_024` | 30 in 60.8s — OK | 30 OK |
+| `test_request_guard_alv249` | 5 in 23.3s — OK **and** 3 in 62.9s — OK | 5 + 3 OK |
+| `test_first_use_lock_242` | 31 in 90.2s — OK | 31 OK |
+| `test_first_use_backfill_242` | 8 in 3.3s — OK | 8 OK |
+| **`test_employee_write_fields_alv266`** | **23 in 118.9s — OK** | **never run before** |
+
+**315 tests, every batch OK.** Every summary was read from the log file, not a tail —
+`^Ran ` was counted per file, and only 010 and alv249 print two batches, as before. Zero
+`FAILED`, zero `ERROR`, zero skipped across all nine logs.
+
+**The suite that mattered** is `test_employee_write_fields_alv266`, which owns ALV-266's
+`Employee` permission gate and had never run with ALV-318's `User` guards live. It passed,
+including the `before_rename` test and the three-persona write tests.
+
+Why the two are genuinely independent, not just lucky: ALV-266's fixture never grants
+`Alvoraa Joiner`, so this slice's `User.validate` guard has nothing to refuse there. The
+live risk was the other direction — ALV-266 refusing a non-HR login writing someone else's
+`Employee` record, which the joiner suites (078, 079, 082) do under real session users.
+All three are green at their old counts.
+
+### Static gates
+
+All of `ci.yml`'s Lint job plus the Key guard: **every one exit 0**, on the Python and Node
+versions CI pins. `check_app_integrity.py` now reports **922 checks** (920 on 6 Nov — it
+grew with `dev`). `run_dom_tests.js` 23 run, 0 failed. `check_brand_spelling.py` 0 visible
+"Alvoraa".
+
+**ruff: no new findings.** Compared rule-by-rule against each file's `origin/dev` baseline:
+19 findings on dev, 18 here. The single difference is an improvement — the 082 fixture edit
+also fixes a pre-existing import-order finding.
+
+### Not run, stated plainly rather than left looking covered
+
+1. **The pin-test inversion.** Nobody has switched the guards off and watched the 16 new
+   tests go red — not on 6 Nov either. The tests use `assertRaises` on the refusal so they
+   cannot pass without the guard, and on 6 Nov the guard caught slice 082's fixture, the
+   only place in the repo handing out the role outside the invite path. That is inference,
+   not proof. **P2, one short run if wanted.**
+2. `check_app_integrity.py`'s bench arm — needs the repo root inside the container; only
+   `apps/*` is mounted. The no-bench arm, which is what CI runs, passed.
+3. semgrep and gitleaks — both `continue-on-error` in CI.
+4. The full `alvoraa_portal` suite — hours under a Windows bind mount. A shared-state leak
+   between these suites and the rest of the app would not have been caught. **P3, the same
+   gap as 6 Nov.**
+5. No browser run. Nothing on screen changed but two refusal messages.
+
+### Still open, and no test can settle them
+
+- **The read-only count, on dev and production, of any `Role Profile` already holding
+  `Alvoraa Joiner`.** Such a tenant finds that profile unsaveable once this ships. This is
+  the one dangerous item and it is Surbhi's to authorise.
+- Whether to close the `POST /api/resource/Has Role` door.
+- Whether the one Custom Field on core `Role` is acceptable.

@@ -24,6 +24,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate, nowdate
 
 import alvoraa_portal.grooming as grooming
+import alvoraa_portal.notices as notices
 import alvoraa_portal.payroll_slip as payroll_slip
 import alvoraa_portal.attendance_correction as ac
 from alvoraa_portal.tests.utils import ensure_fiscal_years
@@ -1033,7 +1034,9 @@ class TestLivePortalBell(Case):
 			self.assertEqual(d["items"][0]["link"], "/hrms-employee?grooming=%s" % TODAY)
 			self.assertIn("Open the day in your Attendance month to read the reason.", d["items"][0]["text"])
 			self.assertNotIn("Torn", json.dumps(d, ensure_ascii=False))
-			grooming.my_notices_seen()
+			# Slice 083: this write moved to `notices.mark_all_seen`, which
+			# clears announcements too. Grooming's own bell is unchanged.
+			notices.mark_all_seen()
 			self.assertEqual(grooming.my_notices()["unread"], 0)
 		with as_user("Ravi"):                           # the marker gets no notice of his own
 			self.assertEqual(grooming.my_notices()["items"], [])

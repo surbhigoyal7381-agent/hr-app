@@ -243,7 +243,8 @@ class TestTheTrueUnreadCount(Case):
 	def test_the_count_is_the_caller_s_own_and_is_smaller_than_the_site_s(self):
 		"""AC-56 / SEC-1. `frappe.db.count` applies NO permission condition, so
 		the explicit `for_user` term is the only protection there is. Delete it
-		and this fails on the second assertion."""
+		and the count becomes 2, so the FIRST assertion fails - `assertLess` still
+		passes, which is why both are here."""
 		_mark("Ravi", "Rahul")
 		# Deepa, not Ritika: Ritika is an HR Manager and does not report to Ravi,
 		# so grooming refuses the mark. Deepa reports to him and has a login -
@@ -462,6 +463,9 @@ class TestTheDoorsToSomebodyElsesNotices(Case):
 			#    forgotten on.
 			found = search_link("Notification Log", "", page_length=50) or frappe.response.get("results") or []
 			names = {d.get("value") for d in found}
+			# Mine first: a negative-only assertion would still pass if link search
+			# stopped returning anything at all, and prove nothing.
+			self.assertIn(self.mine, names, "the caller cannot find their own row")
 			self.assertNotIn(self.theirs, names)
 			self.assertNotIn(self.alsotheirs, names)
 
@@ -480,6 +484,9 @@ class TestTheDoorsToSomebodyElsesNotices(Case):
 		with as_user("Rahul"):
 			self._form(file_format_type="CSV",
 			           fields=json.dumps(["name", "for_user", "subject"]))
+			# Clear it first, or a stale value could satisfy the positive assertion
+			# below and hide a moved key.
+			frappe.response.clear()
 			reportview.export_query()
 			# Which key carries the file has moved between versions, so read every
 			# string the response holds rather than pin one name.
@@ -509,3 +516,37 @@ class TestTheDoorsToSomebodyElsesNotices(Case):
 		count_call = src[src.index('frappe.db.count("Notification Log"'):][:400]
 		self.assertIn('"for_user"', count_call,
 		              "frappe.db.count applies no permission condition of its own")
+
+
+class TestThePageIsGatedAndNeverCached(Case):
+	"""SEC-6. Both controls existed in the code and neither had a test, so
+	nothing would have failed if a later change dropped them.
+
+	This matters because of what the page now is: a durable address holding
+	thirty days of one person's HR messages, on handsets shared by 441 logins at
+	DTC. The Guest redirect is what stops it being readable without signing in;
+	`no_cache` is what makes Frappe send `no-store` and skip its page cache, so
+	the next person on the handset cannot press Back into it.
+	"""
+
+	def test_a_guest_is_sent_to_the_login(self):
+		from alvoraa_portal.www import hrms_employee
+
+		frappe.set_user("Guest")
+		try:
+			with self.assertRaises(frappe.Redirect):
+				hrms_employee.get_context(frappe._dict())
+			self.assertIn("/alvoraa-login", str(frappe.flags.redirect_location),
+			              "a Guest must be sent to sign in, not shown the page")
+		finally:
+			frappe.flags.redirect_location = None
+			frappe.set_user("Administrator")
+
+	def test_the_page_asks_not_to_be_cached(self):
+		from alvoraa_portal.www import hrms_employee
+
+		with as_user("Rahul"):
+			ctx = frappe._dict()
+			hrms_employee.get_context(ctx)
+			self.assertEqual(ctx.no_cache, 1,
+			                 "without this Frappe caches the page and drops no-store")

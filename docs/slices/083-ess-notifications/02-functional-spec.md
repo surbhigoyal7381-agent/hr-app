@@ -172,7 +172,7 @@ handset**, **Line manager**, **HR Manager**, **CXO**.
 | ID | Story | Persona | Points | Prototype screen / state | Requirements carried | ACs |
 |---|---|---|---|---|---|---|
 | **US-1** | *As a line manager on a laptop* I want a bell with a number in the top bar on every screen, *so that* I know something is waiting without going Home first | Line manager | 2 | Desktop 1180 px · navbar | OPS-4, OPS-23 | AC-1, AC-2, AC-3 |
-| **US-2** | *As an employee* I want "Notifications" in the sidebar, *so that* I can reload the page or press Back and still be on it | Employee | 2 | Desktop · sidebar, item 2 | — | AC-4, AC-5, AC-6 |
+| **US-2** | *As an employee* I want "Notifications" in the sidebar, *so that* I can reload the page or press Back and still be on it | Employee | 2 | Desktop · sidebar, after Home/Attendance/Leave (amended 12 Nov) | — | AC-4, AC-5, AC-6 |
 | **US-3** | *As an employee* I want one page with work first, then notices, then my own requests, *so that* I never have to pick a tab before finding my work | Employee, frontline | 5 | "Notifications page" · Loaded | — | AC-7, AC-8, AC-9, AC-10 |
 | **US-4** | *As a frontline employee in a hurry* I want three chips — All, To do, Unread notices — *so that* I can get to just my work in one tap | Frontline | 2 | all five people · chips | OPS-5 | AC-13, AC-14, AC-15 |
 | **US-5** | *As an HR Manager with 86 unread notices* I want each group capped at five rows under All with the real total named, *so that* the page is not 6,744 px tall and I can still reach the third group | HR Manager | 2 | "HR Manager — a busy inbox (capped)" | — | AC-16, AC-17, AC-18 |
@@ -408,9 +408,18 @@ Every one has an observable oracle. Every one belongs to a story.
 
 ### US-2 · The sidebar item
 
-- **AC-4** · *Given* the desktop sidebar, *then* a nav item labelled **"Notifications"**
-  is visible as the **second** item, straight after Home, carrying a bell icon, the word,
-  and the same badge number.
+- **AC-4** · **AMENDED by Surbhi, 12 November 2026.** *Given* the desktop sidebar, *then* a
+  nav item labelled **"Notifications"** is visible **after Home, Attendance and Leave**,
+  carrying a bell icon, the word, and the same badge number.
+
+  It was written as the **second** item, straight after Home, which is how the approved
+  prototype draws it. CI caught the conflict: **slice 060 had deliberately pinned
+  Attendance second**, and said why in its own test — *"the thing people open most should
+  not be eighth"*. That decision was approved too, and this slice never asked to displace
+  it. Surbhi kept 060's order: the bell in the top bar is the way in on every page, so this
+  item is mainly the page's **address** and its label, and buying it a higher position by
+  pushing Attendance down is a worse trade. **The prototype is now out of date on this one
+  point, deliberately and with her word.**
 - **AC-5** · *Given* the person is on `/hrms-employee#notifications`, *when* they
   **reload** the page, *then* the notifications page is shown — **not** Home. *(Oracle:
   `mayOpenPanel("notifications")` returns true because a visible nav item exists.)*

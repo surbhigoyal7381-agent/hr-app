@@ -127,7 +127,14 @@ async function open083(routes) {
   eq(nav.tagName, "BUTTON", "AC-6: it is a real button, reachable by Tab, not a div with an onclick");
   yes(/Notifications/.test(nav.textContent), "AC-4: and it carries the word, not an icon alone");
   const navItems = [...doc.querySelectorAll(".sidebar-nav .nav-item")];
-  eq(navItems.indexOf(nav), 1, "AC-4: second in the rail, straight after Home");
+  // AC-4, amended by Surbhi on 12 Nov 2026. The prototype drew this item
+  // second, under Home. CI then caught the conflict: slice 060 had pinned
+  // Attendance second on purpose - "the thing people open most should not be
+  // eighth" - and that was approved too. She kept 060's order, because the
+  // bell in the top bar is the way in on every page and this item is mainly
+  // the page's address and its label. So: after Home, Attendance and Leave.
+  eq(navItems.indexOf(nav), 3,
+     "AC-4 (amended): in the rail after Home, Attendance and Leave");
   yes($("panel-notifications"), "the panel markup exists, so switchPanel cannot throw on this route");
 
   // ── US-1: the bell on a laptop ───────────────────────────────────────

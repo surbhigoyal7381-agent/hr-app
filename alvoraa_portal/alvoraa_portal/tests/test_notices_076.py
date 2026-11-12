@@ -379,3 +379,133 @@ class TestMarkAllSeen(Case):
 				notices.mark_all_seen()
 		finally:
 			frappe.set_user("Administrator")
+
+
+class TestTheDoorsToSomebodyElsesNotices(Case):
+	"""AC-55 / SEC-5. The ALV-249 canary, as a test rather than a one-off check.
+
+	This is the most important test in slice 083, because the page it guards is a
+	durable address holding thirty days of one person's HR messages, on handsets
+	shared by 441 logins at DTC.
+
+	`Notification Log` grants role **All** read, report, export, print, email and
+	share, so the protection is not the DocType's permissions - it is Frappe's own
+	`get_permission_query_conditions` and `has_permission`, which pin `for_user`
+	to the session user. Every door below has to land on that, including the ones
+	nobody uses from our own screens.
+
+	Rahul holds only `Employee` (`roles=E` in the world's fixture), so this is a
+	plain staff login, not an HR one.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		# One row each for three different people, so "only mine" has something
+		# to be wrong about.
+		self.mine = _notice("Rahul", notices.ANNOUNCEMENT, "ANN-DOORS-1", "Mine")
+		self.theirs = _notice("Olga", notices.ANNOUNCEMENT, "ANN-DOORS-2", "Olga's")
+		self.alsotheirs = _notice("Ritika", notices.ANNOUNCEMENT, "ANN-DOORS-3", "Ritika's")
+		frappe.db.commit()
+
+	def _form(self, **kw):
+		"""reportview reads its arguments from form_dict, not from parameters."""
+		frappe.local.form_dict = frappe._dict({
+			"doctype": "Notification Log",
+			"fields": json.dumps(["name", "for_user", "subject"]),
+			"limit_page_length": 0,
+		}, **kw)
+
+	def test_every_door_returns_only_my_own_rows(self):
+		from frappe.desk import reportview
+		from frappe.desk.search import search_link
+
+		with as_user("Rahul"):
+			mine = user("Rahul")
+
+			# 1. The list API, which is what our own page uses. `get_list`, not
+			#    `get_all`: get_all is get_list with the permission check switched
+			#    off, so testing it would prove nothing. That is also why notices.py
+			#    reads these rows with get_list (lines 84 and 97).
+			rows = frappe.get_list("Notification Log", fields=["name", "for_user"],
+			                       limit_page_length=0)
+			self.assertTrue(rows, "the caller should see their own rows")
+			self.assertEqual({r.for_user for r in rows}, {mine}, "another person's row came back")
+
+			# 2. A hostile filter naming somebody else. Frappe ANDs its own
+			#    condition on, so this is empty rather than Olga's row.
+			self.assertEqual(
+				frappe.get_list("Notification Log", filters={"for_user": user("Olga")},
+				                fields=["name"], limit_page_length=0), [])
+
+			# 3. reportview.get - the Desk list view's own door.
+			self._form()
+			got = reportview.get()
+			col = got["keys"].index("for_user")
+			self.assertEqual({v[col] for v in got["values"]}, {mine})
+
+			# 4. reportview.get_count, which has its own query path.
+			self._form()
+			self.assertEqual(int(reportview.get_count()), len(rows))
+
+			# 5. The client API, all three readers.
+			self.assertEqual(
+				{r["for_user"] for r in frappe.client.get_list(
+					"Notification Log", fields=json.dumps(["for_user"]), limit_page_length=0)},
+				{mine})
+			self.assertEqual(int(frappe.client.get_count("Notification Log")), len(rows))
+			# Empty, not None: get_value hands back {} when the row is out of reach.
+			self.assertFalse(frappe.client.get_value(
+				"Notification Log", "subject", {"name": self.theirs}),
+				"a colleague's subject came back through get_value")
+
+			# 6. Link search, which is the door a permission gate is most often
+			#    forgotten on.
+			found = search_link("Notification Log", "", page_length=50) or frappe.response.get("results") or []
+			names = {d.get("value") for d in found}
+			self.assertNotIn(self.theirs, names)
+			self.assertNotIn(self.alsotheirs, names)
+
+	def test_a_colleagues_named_row_is_refused(self):
+		with as_user("Rahul"):
+			with self.assertRaises(frappe.PermissionError):
+				frappe.client.get("Notification Log", self.theirs)
+
+	def test_the_export_door_hands_over_nobody_elses_words(self):
+		"""`export` is granted to role All, so this is the door that would hand
+		over the actual message text. It goes through the same DatabaseQuery, and
+		`DISALLOWED_PARAMS` strips `user` and `ignore_permissions` from the
+		request - so asking for somebody else's subject returns only your own."""
+		from frappe.desk import reportview
+
+		with as_user("Rahul"):
+			self._form(file_format_type="CSV",
+			           fields=json.dumps(["name", "for_user", "subject"]))
+			reportview.export_query()
+			# Which key carries the file has moved between versions, so read every
+			# string the response holds rather than pin one name.
+			parts = []
+			for v in frappe.response.values():
+				if isinstance(v, bytes):
+					parts.append(v.decode("utf-8", "replace"))
+				elif isinstance(v, str):
+					parts.append(v)
+			body = chr(10).join(parts)
+			self.assertIn("Mine", body, "the caller's own notice should be in their export")
+			self.assertNotIn("Olga's", body, "a colleague's words left the server")
+			self.assertNotIn("Ritika's", body, "a colleague's words left the server")
+
+	def test_the_rows_are_never_read_with_get_all(self):
+		"""SEC-1. `frappe.get_all` is `get_list` with the permission check turned
+		off, and `frappe.db.count` applies no condition at all. So every read of
+		Notification Log in notices.py must be `get_list`, and the one count must
+		carry an explicit `for_user`. Delete that term and the badge starts
+		reporting the whole site's unread."""
+		import inspect
+
+		src = inspect.getsource(notices)
+		self.assertNotIn('get_all("Notification Log"', src,
+		                 "get_all skips the permission check; use get_list")
+		self.assertIn('"Notification Log"', src, "the feed must read the rows itself")
+		count_call = src[src.index('frappe.db.count("Notification Log"'):][:400]
+		self.assertIn('"for_user"', count_call,
+		              "frappe.db.count applies no permission condition of its own")

@@ -269,7 +269,11 @@ def _people():
 def _wipe():
 	people = _people()
 	frappe.db.delete(grooming.MARK, {"employee": ("in", people)})
-	frappe.db.delete("Notification Log", {"document_type": ("in", [grooming.MARK, grooming.REVIEW])})
+	# Announcement too, since slice 083: its tests are the first to make
+	# announcement rows, and a leftover one makes every later test in this
+	# file count one notice too many.
+	frappe.db.delete("Notification Log",
+	                 {"document_type": ("in", [grooming.MARK, grooming.REVIEW, "Announcement"])})
 	frappe.db.delete("Salary Slip", {"employee": ("in", people)})
 	frappe.db.delete("Additional Salary", {"employee": ("in", people)})
 	frappe.db.delete("Attendance", {"employee": ("in", people)})

@@ -245,7 +245,9 @@ class TestTheTrueUnreadCount(Case):
 		the explicit `for_user` term is the only protection there is. Delete it
 		and this fails on the second assertion."""
 		_mark("Ravi", "Rahul")
-		_mark("Ravi", "Ritika")
+		# Aman, not Ritika: Ritika is an HR Manager and does not report to Ravi,
+		# so grooming refuses the mark - "only Ritika's current manager or HR".
+		_mark("Ravi", "Aman")
 		_notice("Olga", notices.ANNOUNCEMENT, "ANN-083-3", "For Olga only")
 		site_wide = frappe.db.count(
 			"Notification Log",
@@ -315,8 +317,10 @@ class TestMarkAllSeen(Case):
 		"""AC-32. Drop the `for_user` term and ONLY this fails. This is the
 		riskiest line in the slice."""
 		_mark("Ravi", "Rahul")
+		# Aman, not Ritika: Ritika is an HR Manager who does not report to Ravi,
+		# so the mark would be refused before the test could get to its point.
 		theirs = [_notice("Olga", notices.ANNOUNCEMENT, "ANN-083-5", "For Olga"),
-		          _notice("Ritika", grooming.MARK, _mark("Ravi", "Ritika"), "For Ritika")]
+		          _notice("Aman", grooming.MARK, _mark("Ravi", "Aman"), "For Aman")]
 		with as_user("Rahul"):
 			notices.mark_all_seen()
 		for row in theirs:

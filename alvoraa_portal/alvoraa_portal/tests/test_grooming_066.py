@@ -1081,6 +1081,41 @@ class TestLivePortalBell(Case):
 
 # ── Prototype v3 (approved 25 Oct 2026, Z1-Z17) ──────────────────────────────
 
+class TestTheClockTurningOver(Case):
+	"""ALV-329: what a run that crosses midnight used to do.
+
+	This suite settled TODAY once, when the file was imported, and punched
+	against it. The run on 11 Nov 2026 started at 23:24 and ended at 00:39, so
+	the punch was on one day and the mark on the next, and `grooming.mark`
+	refused all of them with R8 - "has no punch on this day". Fifty-six tests
+	failed on dev and it read like a code regression rather than a clock.
+
+	The test puts the module back into that stale state on purpose and shows
+	both halves, so neither the bug nor the fix can come back unnoticed.
+	"""
+
+	def _go_stale(self):
+		"""Leave the module as midnight used to leave it: dates and punches one
+		day behind the real clock."""
+		global TODAY, YESTERDAY, DAY2, M_START, M_END
+		TODAY = add_days(getdate(nowdate()), -1)
+		YESTERDAY = add_days(TODAY, -1)
+		DAY2 = add_days(TODAY, -2)
+		M_START, M_END = getdate(get_first_day(TODAY)), getdate(get_last_day(TODAY))
+		_make_punches()
+
+	def test_a_day_behind_is_refused_and_refreshing_fixes_it(self):
+		self._go_stale()
+		# Exactly the failure dev saw: the only punch is on yesterday.
+		self.refused(_mark, "Ravi", "Rahul")
+		# And the fix: the dates and the punches catch the clock up.
+		_refresh_dates()
+		self.assertEqual(TODAY, getdate(nowdate()))
+		name = _mark("Ravi", "Rahul")
+		self.assertEqual(getdate(frappe.db.get_value(grooming.MARK, name, "mark_date")),
+		                 getdate(nowdate()))
+
+
 class TestPrototypeV3Words(Case):
 	def test_z1_to_z12_the_screen_words_are_v3_s_and_live_in_one_table(self):
 		js = open(os.path.join(os.path.dirname(grooming.__file__), "public", "js", "ess",

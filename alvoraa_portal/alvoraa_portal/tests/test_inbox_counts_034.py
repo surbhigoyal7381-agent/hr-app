@@ -234,13 +234,27 @@ class TestTheCorrectionsCountEqualsItsScreen(_InboxFixture):
 		self.assertEqual(self._part(payload, "attendance_fixes")["count"], 1)
 
 	def test_company_wide_hr_counts_all_three(self):
-		"""AC-52 rows 2 and 3. No Branch permission means company-wide."""
+		"""AC-52 rows 2 and 3. No Branch permission means company-wide.
+
+		**Three MORE than there were, not three in total (ALV-309).** This count
+		is company-wide on purpose, so it includes every waiting Attendance
+		Request anybody else left on the site - and `setUp` can only clear this
+		file's own rows, because deleting another suite's fixtures mid-run is
+		worse than a red test. On the shared `test_site` sixteen drafts left by
+		other sessions made this read `19 != 3` for everybody who ran it.
+
+		The delta still proves what the test is for: all three rows counted, the
+		one in another branch included. It is the literal `3` that was never the
+		requirement.
+		"""
+		before = self._part(self._counts(self.wide_user), "attendance_fixes")["count"]
+		frappe.set_user("Administrator")
 		_correction(self.in_a, "2026-03-04")
 		_correction(self.in_b, "2026-03-04")
 		_correction(self.no_branch, "2026-03-04")
 		frappe.db.commit()
 		payload = self._counts(self.wide_user)
-		self.assertEqual(self._part(payload, "attendance_fixes")["count"], 3)
+		self.assertEqual(self._part(payload, "attendance_fixes")["count"], before + 3)
 
 	def test_the_count_equals_the_list_the_row_links_to(self):
 		"""The rule itself, for both HR shapes. If these two ever disagree the
@@ -335,14 +349,34 @@ class TestTheCorrectionsCountEqualsItsScreen(_InboxFixture):
 			user.append("roles", {"role": role})
 			user.save(ignore_permissions=True)
 		frappe.clear_cache(user=self.plain_user)
-		_correction(self.in_a, "2026-03-11")
-		_correction(self.in_b, "2026-03-11")
-		_correction(self.no_branch, "2026-03-11")
-		frappe.db.commit()
 		try:
+			# A delta, for the reason spelled out in
+			# test_company_wide_hr_counts_all_three (ALV-309). Read with the
+			# role already granted, so `before` is measured through the same
+			# scope the assertion below uses.
+			#
+			# Inside the try, and so are the rows: this reads the queue AS the
+			# reviewer, which is the very thing under test and so the most
+			# likely line here to throw. Outside, a throw would leave the role
+			# and its Custom DocPerm on a site every other session shares -
+			# the same kind of leftover that made ALV-309.
+			before = self._part(self._counts(self.plain_user),
+			                    "attendance_fixes")["count"]
+			frappe.set_user("Administrator")
+			_correction(self.in_a, "2026-03-11")
+			_correction(self.in_b, "2026-03-11")
+			_correction(self.no_branch, "2026-03-11")
+			frappe.db.commit()
 			payload = self._counts(self.plain_user)
-			self.assertEqual(self._part(payload, "attendance_fixes")["count"], 3,
-			                 "a non-HR reviewer's queue was narrowed to nothing")
+			count = self._part(payload, "attendance_fixes")["count"]
+			# Say which way it went. "narrowed to nothing" printed on a count of
+			# 19 sent the last reader looking in the wrong place (ALV-309).
+			self.assertEqual(
+				count, before + 3,
+				"a non-HR reviewer's queue counted %s of the 3 corrections just "
+				"raised (it held %s before them). Too few means an HR filter was "
+				"applied to them and failed closed; too many means the scope grew."
+				% (count - before, before))
 			self.assertFalse(payload["corrections_hr_scope"])
 		finally:
 			frappe.set_user("Administrator")

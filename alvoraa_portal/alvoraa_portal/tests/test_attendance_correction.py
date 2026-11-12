@@ -429,6 +429,88 @@ class TheShapeOfADay(CorrectionCase):
 		self.assertEqual([m["log_type"] for m in day["punches"]], ["IN", "OUT"])
 		self.assertFalse(day["missing_punch"])
 
+	def test_alv315_a_duplicate_stops_a_complete_day_being_flagged(self):
+		"""ALV-315, the 724-day case, and the commonest one.
+
+		A clean in-and-out day plus one double-read is three stored punches.
+		Three is odd, so the screen said a punch was missing and HR was asked
+		to confirm a leaving time that is already recorded. At DTC 724 days of
+		October's 1,315 flagged days - 55% - were this, so more than half the
+		worklist was noise.
+		"""
+		p, email = self.person("ACDupPhantom")
+		att = self.day(p, self.d(3), 9.0)
+		self.punch(p, self.d(3) + " 09:00:00", None, att, "M1")
+		self.punch(p, self.d(3) + " 09:00:05", None, att, "M1")   # the double read
+		self.punch(p, self.d(3) + " 18:00:00", None, att, "M1")
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual([m["at"] for m in day["punches"]], ["09:00", "18:00"])
+		self.assertEqual([m["log_type"] for m in day["punches"]], ["IN", "OUT"])
+		self.assertFalse(day["missing_punch"],
+		                 "a double-read made a complete day look unfinished")
+
+	def test_alv315_a_duplicate_no_longer_hides_a_real_missing_punch(self):
+		"""ALV-315, the 88-day case, and the worse direction.
+
+		Somebody arrived and never punched out. The reader double-read the
+		arrival, so two punches were stored, two is even, and the screen said
+		the day was complete. Nothing flagged it and nobody was asked. Silent.
+		"""
+		p, email = self.person("ACDupHidden")
+		att = self.day(p, self.d(3), 0.0)
+		self.punch(p, self.d(3) + " 09:00:00", None, att, "M1")
+		self.punch(p, self.d(3) + " 09:00:05", None, att, "M1")
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual([m["at"] for m in day["punches"]], ["09:00"])
+		self.assertEqual([m["log_type"] for m in day["punches"]], ["IN"])
+		self.assertTrue(day["missing_punch"],
+		                "a double-read hid a day with no check-out at all")
+
+	def test_alv315_punches_far_enough_apart_are_two_punches(self):
+		"""The guard on the guard. Collapsing a real pair would erase somebody's
+		working day, which is far worse than the bug being fixed, so the window
+		has to be narrow enough that an ordinary day is untouched."""
+		p, email = self.person("ACDupRealPair")
+		att = self.day(p, self.d(3), 9.0)
+		self.punch(p, self.d(3) + " 09:00:00", None, att)
+		self.punch(p, self.d(3) + " 18:00:00", None, att)
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual([m["at"] for m in day["punches"]], ["09:00", "18:00"])
+		self.assertFalse(day["missing_punch"])
+
+	def test_alv315_a_gap_wider_than_the_window_is_kept(self):
+		"""Three minutes apart is not a double-read. The window is two minutes,
+		and a punch just outside it must survive - otherwise the rule is doing
+		more than it was asked to."""
+		p, email = self.person("ACDupJustOutside")
+		att = self.day(p, self.d(3), 8.5)
+		self.punch(p, self.d(3) + " 09:00:00", None, att)
+		self.punch(p, self.d(3) + " 09:03:00", None, att)
+		frappe.set_user(email)
+		self.assertEqual([m["at"] for m in self.my_day(email, 3)["punches"]],
+		                 ["09:00", "09:03"])
+
+	def test_alv315_a_night_shift_across_midnight_is_not_collapsed(self):
+		"""The date matters, not only the clock.
+
+		A night shift's punches sit on two calendar days and belong to one
+		attendance. Read on the clock alone, 22:00 and the next morning's 06:00
+		are 'minus sixteen hours' apart, which is inside any window - so a
+		whole night's work would collapse to a single punch and then be held as
+		a day with no check-out. Measuring the date too is what stops that.
+		"""
+		p, email = self.person("ACDupNight")
+		att = self.day(p, self.d(3), 8.0)
+		self.punch(p, self.d(3) + " 22:00:00", None, att, "M1")
+		self.punch(p, add_days(self.d(3), 1) + " 06:00:00", None, att, "M1")
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual([m["at"] for m in day["punches"]], ["22:00", "06:00"])
+		self.assertFalse(day["missing_punch"])
+
 	def test_alv210_a_punch_hr_typed_in_says_so(self):
 		"""HR's punch carries the person's own badge number ("830") as its
 		device, or was filed by an HR login. Either reads "added by HR"; a

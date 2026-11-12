@@ -19,7 +19,7 @@ filter alone leaves /app/employee-checkin/EMP-CKIN-00042 wide open.
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, add_to_date, get_datetime, getdate, now, now_datetime, today
+from frappe.utils import add_days, add_to_date, cint, get_datetime, getdate, now, now_datetime, today
 
 _HR_ROLES = {"HR Manager", "HR User", "System Manager", "Administrator"}
 
@@ -187,12 +187,50 @@ def _viewer(user=None):
 	return is_hr, emp
 
 
+# ALV-328: an organisation may let managers see punches - and the break worked out
+# from them - for their whole reporting line, not only their direct reports. Off
+# unless a System Manager ticks it (field_app_settings guards the change).
+WHOLE_LINE_SETTING = "alvoraa_manager_sees_whole_line_punches"
+
+# The rights anybody outside HR may have on a punch that is not a new one of their
+# own (ALV-332, ALV-333): look, and pick it in a link field. A punch decides pay,
+# so changing, deleting or sharing one is HR's.
+_READ_RIGHTS = ("read", "select")
+
+
+def whole_line_on() -> bool:
+	"""The organisation switch, read fresh. Off when missing or unreadable (PRIV-4)."""
+	try:
+		return bool(cint(frappe.db.get_single_value("HR Settings", WHOLE_LINE_SETTING, cache=False)))
+	except Exception:
+		return False
+
+
+def _line_sql(manager_sql: str) -> str:
+	"""The people besides themselves whose punches this manager may read, as SQL.
+
+	ONE TEXT FOR BOTH HOOKS, so the list and the single record cannot disagree
+	(SEC-6). Active at every level, as `attendance_analytics._reports_to` is: a
+	report under a manager who has left is not reached. With the switch off,
+	direct reports only. The scope stays in the database rather than a list of
+	ids read into Python (nfr-budget §2); `union` ends a loop in `reports_to`.
+	"""
+	if not whole_line_on():
+		return ("select name from `tabEmployee` "
+		        f"where reports_to = {manager_sql} and status = 'Active'")
+	return ("with recursive line (name) as ("
+	        f"select name from `tabEmployee` where reports_to = {manager_sql} and status = 'Active' "
+	        "union select e.name from `tabEmployee` e join line on e.reports_to = line.name "
+	        "where e.status = 'Active') select name from line")
+
+
 def checkin_query_conditions(user=None):
 	"""Row filter for the Employee Checkin list.
 
-	HR sees everything. A manager sees their own and their direct reports'. An
-	employee sees their own. Anybody with no employee record sees nothing, which
-	is deliberately stricter than "sees everything" - the failure mode of a
+	HR sees everything. A manager sees their own and their direct reports' - or
+	their whole line, where the organisation allows it (ALV-328). An employee
+	sees their own. Anybody with no employee record sees nothing, which is
+	deliberately stricter than "sees everything" - the failure mode of a
 	permission rule should be silence, not disclosure.
 	"""
 	is_hr, emp = _viewer(user)
@@ -200,20 +238,18 @@ def checkin_query_conditions(user=None):
 		return ""
 	if not emp:
 		return "1=0"
-
-	esc = frappe.db.escape
-	allowed = [esc(emp)]
-	# A line manager legitimately needs their own team's attendance. Direct
-	# reports only - not the whole tree - because that is what a manager acts on
-	# and it keeps the list from quietly widening as an org chart deepens.
-	allowed += [esc(e) for e in frappe.get_all(
-		"Employee", filters={"reports_to": emp, "status": "Active"}, pluck="name")]
-
-	return "`tabEmployee Checkin`.employee in ({0})".format(", ".join(allowed))
+	me = frappe.db.escape(emp)
+	return (f"(`tabEmployee Checkin`.employee = {me} "
+	        f"or `tabEmployee Checkin`.employee in ({_line_sql(me)}))")
 
 
 def checkin_has_permission(doc: Document, user: str | None = None, ptype: str | None = None) -> bool:
 	"""Guards ONE record, opened by name or through the API.
+
+	Outside HR a punch is read-only (ALV-332, ALV-333): a person may file a new
+	punch of their own and read the punches the list above shows them, and that
+	is all. Frappe's role rows still give the Employee role write and delete;
+	this hook can only take rights away, which is what it does.
 
 	The third parameter must be called `ptype`. Frappe calls this with `ptype=`
 	(`frappe/permissions.py`, has_controller_permissions) and `frappe.call` drops
@@ -229,9 +265,12 @@ def checkin_has_permission(doc: Document, user: str | None = None, ptype: str | 
 	if not emp:
 		return False
 	if doc.employee == emp:
-		return True
-	return bool(frappe.db.exists("Employee", {
-		"name": doc.employee, "reports_to": emp, "status": "Active"}))
+		return ptype in _READ_RIGHTS or (ptype == "create" and doc.is_new())
+	if ptype not in _READ_RIGHTS or not doc.employee:
+		return False
+	return bool(frappe.db.sql(
+		f"select 1 from `tabEmployee` where name = %(employee)s and name in ({_line_sql('%(me)s')})",
+		{"employee": doc.employee, "me": emp}))
 
 
 # ── who may see a phone record (slice 013 step 2, C-11c) ─────────────────────

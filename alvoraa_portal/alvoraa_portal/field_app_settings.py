@@ -39,6 +39,7 @@ from frappe.utils import cint, get_fullname
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device.alvoraa_field_device import (
 	APP_JOIN_METHODS,
 )
+from alvoraa_portal.field_app_access import WHOLE_LINE_SETTING
 from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
 
 SETTINGS = "HR Settings"
@@ -230,6 +231,24 @@ def _designations_on(doc):
 	return {row.designation for row in (doc.get(F_DESIGNATIONS) or []) if row.designation}
 
 
+def _refuse_whole_line_change(doc) -> None:
+	"""ALV-328 (SEC-9): only a System Manager may widen or narrow who sees punches.
+
+	HR Manager can write HR Settings, so the role rows alone would let them. Asked
+	before anything else here, so no door that saves the document skips it.
+	"""
+	if not doc.meta.has_field(WHOLE_LINE_SETTING):
+		return
+	before = doc.get_doc_before_save()
+	old = cint(before.get(WHOLE_LINE_SETTING)) if before else 0
+	if cint(doc.get(WHOLE_LINE_SETTING)) == old:
+		return
+	if frappe.session.user == "Administrator" or "System Manager" in frappe.get_roles():
+		return
+	frappe.throw(_("Only a System Manager can change who sees punches across the reporting line."),
+	             frappe.PermissionError)
+
+
 def validate_hr_settings(doc, method=None):
 	"""doc_events HR Settings validate.
 
@@ -238,6 +257,7 @@ def validate_hr_settings(doc, method=None):
 	and each only throws for its own, so HR can always save the page when both
 	are happy - a test saves HR Settings with both apps installed.
 	"""
+	_refuse_whole_line_change(doc)
 	if not doc.meta.has_field(F_ENABLED):
 		# Fields not installed yet on this site (the installer has not run).
 		return
@@ -567,6 +587,15 @@ def after_migrate():
 				"fieldname": F_INFO,
 				"fieldtype": "HTML",
 				"insert_after": F_INFO_SECTION,
+			},
+			# ALV-328. Off on every site until a System Manager ticks it.
+			{
+				"fieldname": WHOLE_LINE_SETTING,
+				"fieldtype": "Check",
+				"label": "Managers see punches and breaks for their whole reporting line",
+				"default": "0",
+				"insert_after": F_INFO,
+				"description": "Off: a manager sees punches, and the break worked out from them, for their direct reports only. On: also for everyone further down their reporting line. A punch includes its photo and location. Only a System Manager can change this.",
 			},
 		]
 	}, ignore_validate=True)

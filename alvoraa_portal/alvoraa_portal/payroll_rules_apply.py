@@ -26,7 +26,7 @@ The monthly roll-up and the salary slip read these figures later.
 import frappe
 from frappe.utils import get_datetime, getdate, now
 
-from alvoraa_portal.payroll_rules import break_gaps, collapse_duplicate_punches, evaluate_day
+from alvoraa_portal.payroll_rules import break_gaps, evaluate_day, minutes_on_break, punch_minutes
 
 # Values of a tenant's double-deduction field that mean "yes, double it".
 # Frappe Select fields store the label, so a tenant may have Yes/No, 1/0 or
@@ -384,11 +384,65 @@ def _punches(employee, date):
 	# A reader that scans twice in a second has not recorded a working day of
 	# one second. Collapse before counting, or ATT-06 never sees the day as the
 	# single punch it really is.
-	distinct = collapse_duplicate_punches(
-		[d.hour * 60 + d.minute for d in map(get_datetime, rows)])
+	distinct = punch_minutes(map(get_datetime, rows))
 	if not distinct:
 		return None, None, 0, []
 	return distinct[0], distinct[-1], len(distinct), break_gaps(distinct)
+
+
+def breaks_by_day(employee: str, company: str | None, days: dict, times_by_date: dict) -> tuple:
+	"""The break the engine would count on each day, for one person (ALV-328).
+
+	`days` maps "YYYY-MM-DD" to (status, shift) for the person's submitted
+	Attendance rows; `times_by_date` maps the same dates to that calendar day's
+	punch datetimes, already read by the caller with `get_list` - so a caller
+	who may not read this person's punches passes none and gets no break.
+
+	Returns (allowance, {date: values}). Values hold only keys that have one:
+	`break_state` "measured" or "not_measured", `break_minutes`, `break_over`.
+	(0, {}) when there is nothing to show: no punches, no enabled rule set, or
+	no break rule for this person. A constant handful of queries, never one a day.
+	"""
+	if not any(times_by_date.values()):
+		return 0, {}
+	rule_set = rule_set_for(company)
+	if not rule_set:
+		return 0, {}
+	dates = sorted(days)
+	ctx = prepare(rule_set, dates[0], dates[-1], employee=employee) if dates else None
+	if not ctx:
+		return 0, {}
+	allowance = int(_employee_flags(employee, getdate(dates[0]), ctx)["break_allowance_minutes"] or 0)
+	if allowance <= 0:
+		return 0, {}
+
+	out = {}
+	for date in dates:
+		status, shift_name = days[date]
+		shift = ctx["shifts"].get(shift_name)
+		# The engine holds a day with no shift, or a shift with no length (a night
+		# shift ending after midnight), and deducts nothing for an approved leave.
+		if status == "On Leave" or not shift or shift[1] <= shift[0]:
+			continue
+		distinct = punch_minutes(times_by_date.get(date) or ())
+		if len(distinct) <= 2:
+			continue
+		if len(distinct) % 2:
+			out[date] = {"break_state": "not_measured"}
+			continue
+		# The engine's window, as far as a break can tell: every break starts after
+		# the first punch, so with shift hours only it is the shift start up to the
+		# earlier of the last punch and the shift end, whatever the grace.
+		if ctx["shift_hours_only"]:
+			start, end = shift[0], min(distinct[-1], shift[1])
+		else:
+			start, end = distinct[0], distinct[-1]
+		minutes = int(round(minutes_on_break(break_gaps(distinct), start, end)))
+		values = {"break_state": "measured", "break_minutes": minutes}
+		if minutes > allowance:
+			values["break_over"] = minutes - allowance
+		out[date] = values
+	return (allowance, out) if out else (0, {})
 
 
 def judge(attendance, ctx):

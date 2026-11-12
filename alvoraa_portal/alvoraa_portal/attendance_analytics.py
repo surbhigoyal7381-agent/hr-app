@@ -32,7 +32,9 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, add_months, cint, flt, getdate, nowdate
+from frappe.utils import add_days, add_months, cint, flt, get_datetime, getdate, nowdate
+
+from alvoraa_portal.payroll_rules_apply import breaks_by_day
 
 # The tolerance before a day counts as short is an ORGANISATION's decision, not
 # ours. The same data gives 12.9% of days at no tolerance and 4.4% at an hour;
@@ -633,9 +635,27 @@ def person(employee, date_from=None, date_to=None):
 
 	shift_cache = {}
 	default_shift = _default_shift_of([employee]).get(employee)
+	subject = frappe.db.get_value("Employee", employee, ["employee_name", "company"],
+	                              as_dict=True) or frappe._dict()
+	rows = _gather([employee], start, end)
+	# ALV-328: the break the pay rules count, per day. One punch read for the whole
+	# range, with get_list, so the punch rule decides whose punches the caller may
+	# read; a caller who may read none gets no break. A login with no read right on
+	# punches at all still gets the page: get_list would refuse the whole request.
+	times_by_date = {}
+	for c in (frappe.get_list(
+			"Employee Checkin",
+			filters={"employee": employee,
+			         "time": ("between", [f"{start} 00:00:00", f"{end} 23:59:59"])},
+			fields=["time"], order_by="time asc", limit_page_length=0)
+			if frappe.has_permission("Employee Checkin", "read") else ()):
+		times_by_date.setdefault(str(c.time)[:10], []).append(get_datetime(c.time))
+	_allowance, breaks = breaks_by_day(
+		employee, subject.company,
+		{str(r.attendance_date): (r.status, r.shift or default_shift) for r in rows},
+		times_by_date)
 	days = []
-	for r in sorted(_gather([employee], start, end),
-	                key=lambda x: str(x.attendance_date), reverse=True):
+	for r in sorted(rows, key=lambda x: str(x.attendance_date), reverse=True):
 		expected = _shift_minutes(shift_cache, r.shift or default_shift)
 		worked = flt(r.working_hours)
 		short_by = 0.0
@@ -651,8 +671,9 @@ def person(employee, date_from=None, date_to=None):
 			"short_by": short_by,
 			"late": cint(r.late_entry), "early": cint(r.early_exit),
 			"leave_type": r.leave_type,
+			**breaks.get(str(r.attendance_date), {}),
 		})
 	return {"employee": employee,
-	        "name": frappe.db.get_value("Employee", employee, "employee_name"),
+	        "name": subject.employee_name,
 	        "from": str(start), "to": str(end),
 	        "tolerance_mins": tolerance, "days": days}

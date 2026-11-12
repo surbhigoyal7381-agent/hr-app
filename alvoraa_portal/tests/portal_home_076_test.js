@@ -236,7 +236,16 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   window.gpOpenGoalDetail = cxoReal.g; window.switchPanel = cxoReal.s;
   eq(cxoOpened, [["goal", "GOAL-G1", "G1"], ["panel", "team"]], "a CXO's goal row opens the oldest goal in scope; the leave row still opens Team");
   yes(/14 waiting/.test(rows[0].textContent), "each row carries its count");
-  eq($("home-pending-chip").textContent, "29 waiting", "the CXO chip adds the kinds shown");
+  // Slice 083 / AC-23: four kinds, so four - NOT 29, the sum of their counts.
+  // This assertion used to say "29 waiting" and that is what let the fault
+  // through: Home summed the counts while the bell counted kinds, so one CXO
+  // load showed "278 waiting" on Home and 4 on the bell. One definition now.
+  eq($("home-pending-chip").textContent, "4 waiting",
+     "a CXO's chip counts kinds, the same number the bell shows");
+  if ($("notif-badge")) {
+    eq($("notif-badge").textContent, "4",
+       "AC-23: the bell and the chip cannot disagree for a CXO");
+  }
   yes(/your queue/.test(rows[0].textContent) && !/across your companies/.test($("home-pending-body").textContent), "the CXO label says 'your queue'");
   window._roles.is_system_manager = false;
 

@@ -469,6 +469,34 @@ class TestTheDoorsToSomebodyElsesNotices(Case):
 			self.assertNotIn(self.theirs, names)
 			self.assertNotIn(self.alsotheirs, names)
 
+	def test_the_share_and_count_doors_are_shut_too(self):
+		"""The review found the list above had five doors where SEC-5 asked for
+		six. Both of these are closed, but an untested door is a hole in the
+		canary, not a safe one.
+
+		`share` matters because a DocShare row **overrides** the has_permission
+		hook for a single document - so the question is not whether sharing works,
+		it is whether you can share a row that is not yours. And `get_count` with
+		`reference_doctype` is a second query path with its own permission
+		handling."""
+		from frappe.desk import reportview
+
+		with as_user("Rahul"):
+			self.assertFalse(
+				frappe.has_permission("Notification Log", "share",
+				                      doc=frappe.get_doc("Notification Log", self.theirs)),
+				"a colleague's notice must not be shareable by somebody else")
+			self.assertTrue(
+				frappe.has_permission("Notification Log", "read",
+				                      doc=frappe.get_doc("Notification Log", self.mine)),
+				"and the caller must still reach their own, or this proves nothing")
+
+			self._form(reference_doctype="Notification Log")
+			mine_only = frappe.get_list("Notification Log", fields=["name"],
+			                            limit_page_length=0)
+			self.assertEqual(int(reportview.get_count()), len(mine_only),
+			                 "the reference_doctype count path must scope like the rest")
+
 	def test_a_colleagues_named_row_is_refused(self):
 		with as_user("Rahul"):
 			with self.assertRaises(frappe.PermissionError):

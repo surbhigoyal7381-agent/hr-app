@@ -419,7 +419,13 @@ select + .fail{margin-top:8px}
   display:flex;align-items:center;justify-content:center;
   color:var(--text2);cursor:pointer;padding:0;font-family:inherit;
 }
-.nf-bell.nf-bell-set{position:static;margin-right:8px}
+/* `relative`, not `static`: the badge inside is absolutely positioned, so it
+   anchors to its nearest POSITIONED ancestor. With `static` here nothing
+   between the badge and `nav.navbar` (which is fixed) is positioned, so the
+   number flew to the top-right corner of the whole bar, clipped, and the bell
+   itself showed no count. `relative` changes no layout - it only gives the
+   badge something to hang on. */
+.nf-bell.nf-bell-set{position:relative;margin-right:8px}
 .nf-bell:hover{background:var(--surface2);color:var(--text)}
 .nf-bell:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
 @media (max-width:768px){.nf-bell{display:none}}

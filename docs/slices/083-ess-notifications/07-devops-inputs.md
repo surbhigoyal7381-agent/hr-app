@@ -6,7 +6,8 @@ recommendation with the **Decision column left blank for Surbhi**.
 `07-devops-inputs.md` grows by dated sections, each dated and added without rewriting the
 ones before it. §1 Brief (OPS-1 to OPS-12), §2 Design (OPS-13 to OPS-20) and §3 Requirements
 (OPS-21 to OPS-30) were written on 6 November 2026 and are **unchanged**. **§4 Strategy
-(OPS-31 to OPS-40) was added on 11 November 2026.** §5 Release readiness is still to come.
+(OPS-31 to OPS-40) was added on 11 November 2026**, and **§5 Release readiness (OPS-41 to
+OPS-52) on 12 November 2026**. §1–§4 are unchanged by that append; only this paragraph moved.
 
 ---
 
@@ -1656,3 +1657,487 @@ a copy of 597 people's data.
 **Written by `hrms-devops-engineer`, 11 November 2026. Advisory only. Nothing deployed,
 nothing measured on dev or production, nothing changed on the shared bench. I recommend;
 Surbhi decides.**
+
+## §5 Release readiness — 12 November 2026
+
+Appended. **§1, §2, §3 and §4 above are unchanged.** Numbering continues from OPS-40.
+
+**Two P1s first, because both change what happens next.**
+
+**P1 · Pushing to `dev` deploys this code whether CI passes or not. CI is not in the deploy
+chain.** **Fact — read today:** `build-image.yml` fires on `push: branches: [dev, test, main]`
+(line 15–17). `deploy.yml` fires on `workflow_run` of **Build Image** and its only condition is
+`github.event.workflow_run.conclusion == 'success'` (line 80). **Nothing anywhere waits for
+`ci.yml`.** So the image builds and dev is deployed while the Python suite is still running —
+and `ci.yml` gives that suite **120 minutes**. The full suite has **never run on this branch**:
+four suites ran today, about **175 test outcomes out of 4,360 test methods in 204 files** in
+`alvoraa_portal` alone (**Measured by me today** — `grep -c "def test_"` across
+`tests/test_*.py`). That is **4%**. Pushing to dev is therefore a decision to serve
+unverified-by-full-suite code to dev and keep rollback as the defence. I am not saying do not
+push — dev is where this gets proven. I am saying the green tick you will see first is the
+**deploy's**, not the suite's. **OPS-41.**
+
+**P1 · OPS-38 is still open, and the four green suites did not close it.** **Measured by me
+today**, read-only inside the caller's own container:
+
+```
+$ docker exec a83-bench bash -lc 'grep -m1 __version__ .../apps/frappe/frappe/__init__.py; ...'
+frappe  __version__ = "16.33.1"     (git describe: v16.33.1)
+erpnext __version__ = "16.34.2"
+$ docker ps --format '{{.Names}}\t{{.Image}}'
+a83-bench   ghcr.io/surbhigoyal7381-agent/hr-app:dev-3830ed3
+```
+
+The suites ran on **Frappe 16.33.1 / ERPNext 16.34.2**, from an image in the **old `hr-app`
+package**. The repository pins **`FRAPPE_TAG=v16.35.0`, `ERPNEXT_TAG=v16.36.0`** (**Fact** —
+`ci.yml:363–364`, and `check_version_pins.py` green in §4.0). So the four Frappe behaviours
+this slice leans on are still argued from a version we do not ship. **What closes it is free
+and already queued:** `ci.yml` does its own `bench init --frappe-branch "$FRAPPE_TAG"` and
+`bench get-app --branch "$ERPNEXT_TAG"` (lines 432–434), so **the Python job on the dev push
+is the run that proves them on the shipped version.** Until it is green, treat them as
+unproven. **OPS-42.**
+
+**Good news, in three lines.** OPS-36 re-checked against the built code and the deploy: **a
+real workflow deploy is safe, and I can now name why line by line.** `deploy/nginx.conf` is
+**not in the diff** — confirmed by command, below. Nothing in this slice makes the
+failed-deploy-restarts-nginx trap worse. And the dry run my §3 removed **stays removed for
+slice 083**, re-checked against the built diff rather than the plan.
+
+**No P0. Nothing here is dangerous debt.** The two dangerous-debt items the engineer escalated
+(G-1 the unrun suite, G-2 AC-55) are **closed**: AC-55 is commit `45e9b1c7`, and four suites
+ran. What replaces them is narrower and named above.
+
+---
+
+### 5.0 · What I read and ran today, and what I did not
+
+**Fact — read in this worktree at `45e9b1c7`:**
+`docs/slices/083-ess-notifications/03-implementation-notes.md` (509 lines, in full) ·
+`00-impact-analysis.md` and `02-functional-spec.md` as needed · `08-dtc-counts.md` · my own
+§1–§4 · the whole diff `git diff origin/dev...HEAD` by file · `.github/workflows/deploy.yml`
+(the `plan` job, the nginx gate, the pull loop, the migrate block, the smoke test, the asset
+gate, the worker gate), `build-image.yml` (triggers and package names), `ci.yml` (the pinned
+tags and the bench build) · `scripts/refresh_bench_files.sh` · `scripts/check_portal_trays.js` ·
+`scripts/check_tag_balance.py` · `scripts/check_design_system.py` (the `PAGES` list) ·
+`alvoraa_portal/ess_parts.py` · `www/hrms_employee.py` · `notices.py` (the two decorators) ·
+`tests/test_announcements_076.py`.
+
+**Measured / run by me today — all read-only, every command and its real output:**
+
+```
+$ git fetch origin main dev            # read-only
+$ git rev-list --count origin/main..origin/dev            -> 22
+$ git diff --stat origin/main...origin/dev -- "*/doctype/*" "*patches.txt" "*/hooks.py" ".github/workflows"
+   ci.yml | 6 ++  alvoraa_employee_category.json | 20 ++  alvoraa_payroll_rule_set.json | 26 ++
+   alvoraa_payroll_rule_set.py | 26 ++  hooks.py | 36 ++
+$ git diff origin/main...origin/dev -- "*patches.txt"      -> EMPTY (no new patch anywhere)
+$ git diff --name-only origin/dev...HEAD | grep -E 'deploy/|nginx|compose|Dockerfile'
+                                                           -> NO MATCH
+$ grep -c "def test_" alvoraa_portal/alvoraa_portal/tests/test_*.py | awk ...
+                                                           -> 4,360 methods in 204 files
+$ grep -rn "my_notices_seen" --include=*.py --include=*.js --include=*.html .
+   -> one hit, a comment in notices.py:153. No caller anywhere.
+$ docker ps --format "{{.Names}}\t{{.Image}}\t{{.Status}}"
+$ docker exec a83-bench bash -lc 'grep -m1 "__version__" ...'   (versions above)
+```
+
+**What I did not do.** No bench command, no site opened, no record changed, no cache cleared,
+no container started, stopped or removed, no `docker cp`, nothing against dev or production,
+no deploy command, no `gh` call, and **not one byte written to the shared checkout
+`C:/Surbhi-Git/hr-app`**. I did not touch `hrlocal-bench`, `hrlocal-326*` or `hrlocal-328`.
+The only command that reached a container was the read-only `grep` above, inside `a83-bench`,
+which the caller said is theirs and read-only is fine. **I started no throwaway container and
+left none.** I measured **no timing anywhere**: every millisecond in §5 is quoted from §1/§2
+or from slice 044, with its original date.
+
+---
+
+### 5.1 · The four §4 predictions, re-checked against what was built
+
+| §4 row | What happened | Verdict |
+|---|---|---|
+| **OPS-33** — `PINNED_DEPTH` entry needed | In, `scripts/check_tag_balance.py`, `"notifications.html": 0`, with a three-line reason. **And the engineer found a second one nobody predicted:** `scripts/check_portal_trays.js` `INVENTORY[".nf-bell"]`, because a new `position:fixed` element fails that gate by design | **Right, and incomplete.** Three gate scripts in the diff, not one. See the recipe below |
+| **OPS-34** — radii at 3 of 3 as well as sizes at 7 of 7 | Held. `check_design_system.py` reports sizes **7 (limit 7)**, radii **3 (limit 3)**, palette 6, loose 0, undefined 0, gradients 0, emoji 0 — **unchanged from my 11 Nov baseline**. `design_system.html` is not in the diff | **Held. Nothing to do** |
+| **OPS-36** — the 24-hour part cache | Re-checked line by line below. **A real deploy is safe. A hand `docker cp` and the local bench are not.** The engineer wrote it into their own NFR notes (§8), so it is not only in my file | **Confirmed, and now the post-deploy proof is a specific string to look for** |
+| **OPS-38** — the bench runs a version we do not ship | **Still open**, and the four green suites did not close it: they ran on 16.33.1 / 16.34.2 from the old `hr-app` package image. **CI's own bench, built on v16.35.0, is what closes it** | **Open. OPS-42** |
+
+#### How to spot this class of gap before the next slice pays for it again
+
+The shape is: **a gate that holds a hard-coded inventory keyed by name fails closed when you
+add a named thing.** It is not clever; it is a short, enumerable list. **Fact — I read all
+four today:**
+
+| If the slice adds… | …add a row to | What the gate says if you forget |
+|---|---|---|
+| a markup part under `templates/includes/ess/parts/` | `scripts/check_tag_balance.py` → `PINNED_DEPTH` | *"parts/X is new and has no pinned depth. It measures %+d."* |
+| an element that is `position:fixed` (even as a fallback) | `scripts/check_portal_trays.js` → `INVENTORY` | *"X is position:fixed but is not in INVENTORY"* — and the reverse, if a fixed element stops being fixed |
+| a jsdom test file | `scripts/run_dom_tests.js` → `RUN` **and** `EXPECTED_BROWSER_TESTS` | the runner fails rather than silently running fewer tests |
+| a new `www` page | `scripts/check_design_system.py` → `PAGES` (line 74) | nothing — **the page is simply never checked.** This one fails *open*, which is worse |
+
+**Recommendation: put that four-row table in `.claude/context/frappe-conventions.md`, not in a
+slice artifact.** It is a documentation line, not code, and the cost of it being missing was
+paid twice in one slice. **OPS-50.**
+
+#### OPS-36, re-checked against the built code
+
+**Fact — `alvoraa_portal/ess_parts.py`:** `key = "ess_part:%s:%s" % (get_build_version(), name)`
+(line 51), `frappe.cache().get_value(key)` (52), `set_value(..., expires_in_sec=24*60*60)` (55),
+and `get_build_version` is imported from `frappe.utils` (31) — it is the **modified time of
+`sites/assets/assets.json`**.
+
+**Why a real deploy is safe. Four facts, in order:**
+
+1. `deploy.yml:505` runs `bash ../../scripts/refresh_bench_files.sh "$FULL_IMAGE" "${PROJECT}_sites"`
+   — **outside and before** the `if [ "$MIGRATE" = "true" ]` block (migrate is line 570,
+   `clear-cache` line 571).
+2. `refresh_bench_files.sh` **skips** `assets.json` inside its per-entry loop
+   (line 55: `case "$entry" in assets.json|assets-rtl.json) continue ;;`) and copies it
+   **last**, at line 67, with a copy-beside-then-`mv` swap.
+3. So the manifest's mtime changes on **every** deploy, migrations on or off. The cache key
+   changes with it, and the next render reads the new part from disk.
+4. **It even tells you.** Line 80 prints
+   `refresh_bench_files: assets manifest dated <timestamp>`. That line in the Deploy log is a
+   free, honest proof that the stamp moved — no server command needed.
+
+**Where it is not safe, unchanged:** a hand `docker cp` of `portal.js` or the new part file
+changes no stamp, so the browser keeps the old JS/CSS for up to 30 days (`/assets/` is
+`expires 30d; immutable`) **and** the server keeps the old part markup for up to 24 hours. And
+`bench --site all clear-cache` is **inside** the migrate block, so it is not what protects you.
+
+---
+
+### 5.2 · The migration dry run — still no, for this slice. But say what the release carries
+
+**Confirmed against the built diff, not the plan: slice 083 has no migration and no patch.**
+**Fact — commands run today:** `git diff origin/dev...HEAD` names 27 files; none is a
+`patches.txt`, a DocType `.json`, `hooks.py`, a `deploy/` file or a Compose file. The only
+non-feature files are the **three gate scripts** in §5.1. So my §3 call stands: **a rehearsal
+stack, a dump and a restore to prove that zero patches of ours run cleanly would cost half a
+day and prove nothing.** It stays removed.
+
+**What changes it:** if anything is added before the push that lands in `patches.txt`, a
+DocType JSON, a Custom Field fixture, a Custom DocPerm row, a property setter or a data fix,
+**the dry run comes straight back as a P1** on the `REHEARSAL.md` shape in §4.2. Nothing in
+the current diff does.
+
+**But the release this slice travels in is not empty, and that is worth one honest paragraph.**
+**Measured today:** `origin/dev` is **22 commits** ahead of `origin/main`. Among them:
+
+| Came in on dev | What it changes that a migrate touches |
+|---|---|
+| **ALV-326** (shift hours only) | **Three new fields** across two DocTypes — `count_shift_hours_only`, `break_allowance_minutes`, `late_quarter_after_minutes` on `Alvoraa Payroll Rule Set`, and two of them on `Alvoraa Employee Category`. Additive columns, no patch |
+| **ALV-318 / ALV-319** (joiner role lockout) | `hooks.py`: `doc_events["User"]["validate"]` becomes a **list**, a new `Role Profile` validate hook, and a new **`after_migrate`** entry — `joiner_invite.make_role`, which its own comment says is safe to run every migrate |
+| **ALV-266** (who changes what on an Employee) | permission code, no schema |
+| **ALV-309, ALV-329** | tests and a counting fix |
+| **`ci.yml`** | the Python-test timeout raised to 120 minutes |
+| **`patches.txt`** | **empty diff — no new patch anywhere in the 22 commits** (checked) |
+
+**So: no rehearsal, and no new patch — but the migrate on a push to `main` will add three
+columns at every tenant and run a new `after_migrate` hook.** That is additive and
+idempotent by the code's own comment, and it is **not slice 083's**. The reason to write it
+down is that "this slice has no migration" is true and misleading in the same breath, and at
+DTC the payroll rule set is live. **Name these three in the release note so a failure in the
+migrate window is attributed to the right change.** **OPS-47.**
+
+---
+
+### 5.3 · Rollout: local → dev → main
+
+**Every command below is for Surbhi to approve. I have run none of them.** Where a command is
+quoted rather than run, it says so — and that is all of them in this section.
+
+#### Stage 1 · Local, before any push
+
+| # | Step | Command (quoted, not run) |
+|---|---|---|
+| L1 | **The one suite nobody ran that touches the changed function.** `test_announcements_076.py` calls `notices.notices_feed()` (line 482) and was not in today's four. It is cheap in the container that is already built | `docker exec a83-bench bash -lc 'cd ~/frappe-bench && bench --site test_site run-tests --app alvoraa_portal --module alvoraa_portal.tests.test_announcements_076'` — and **read both batch summaries**; tailing hides a batch |
+| L2 | **The static gates, in the worktree**, as the baseline for any later red | the nine in §4.3 step 1. All green per the engineer's §5 and my 11 Nov baseline |
+| L3 | **`check_app_integrity.py` with a bench available** — the no-bench run does not do the doctype-shadowing half | `docker exec a83-bench bash -lc 'BENCH_APPS_PATH=/home/frappe/frappe-bench/apps python …'`, or accept CI's own run at line 504, which does exactly this |
+| L4 | **Do not try to get the full suite onto the shared bench.** The shared checkout still holds another session's 289 modified files and a local `dev` behind `origin/dev`. A `merge --ff-only` is refused, and every command that forces it through destroys their work. **A refusal is the right outcome.** The full suite's real home is CI | — |
+
+#### Stage 2 · dev — only when Surbhi says "push to dev"
+
+| # | Step | Command (quoted, not run) |
+|---|---|---|
+| D1 | **Let any running CI finish first.** A new push to `dev` cancels it | `gh run list --branch dev --limit 5` |
+| D2 | Fetch, rebase, read every incoming diff | `git fetch origin dev && git rebase origin/dev` in the worktree |
+| D3 | Bring the branch into `dev` without overwriting anyone — rebase, then `merge --ff-only`. **The shared checkout is not mergeable today (L4), so the route is Surbhi's to choose** | quoted only; I propose nothing that writes to `C:/Surbhi-Git/hr-app` ⚠ |
+| D4 | **Expect two runs, not one, and they do not gate each other.** Build Image → Deploy (automatic, `migrate=true`) **and** CI, in parallel | `gh run list --branch dev --limit 6` |
+| D5 | Run the after-deploy list in §5.4 **in order** | below |
+| D6 | **Wait for CI's Python job to go green before Surbhi's browser check counts as a pass** — that is the run that proves the 23 new Python assertions and OPS-42's four Frappe behaviours on v16.35.0 | `gh run watch <id>` |
+
+**On `--ref dev`:** nothing in this slice changes `deploy.yml`, so the automatic run using
+**`main`'s** copy of the workflow is harmless here. The flag matters only if the deploy
+misbehaves and someone fixes `deploy.yml` on `dev` — that fix does nothing to the automatic
+run, and dev's copy is exercised only by `gh workflow run Deploy --ref dev`.
+
+#### Stage 3 · main — only when she says "push to main", after she has tested dev
+
+| # | Step | Why |
+|---|---|---|
+| M1 | **Not in DTC's 11 AM punch quarter.** Maintenance mode refuses biometric posts for about a minute | A refused punch becomes a payroll correction later |
+| M2 | **Check DTC's job queue before the push.** On 5 Nov 1,780 queued deletes stalled the migrate; the new image stayed on and later sites were never migrated | OPS-32 |
+| M3 | Name what the release carries — the three ALV-326 columns and the ALV-318 `after_migrate` (§5.2) | So a migrate failure is attributed correctly |
+| M4 | Push `main` only on her word, then the same after-deploy list, **per site** | A green tick is not per-site proof |
+| M5 | Know the rollback tag **before** starting | §5.5 |
+
+---
+
+### 5.4 · After the deploy — the ordered list, with the thing to look for
+
+Written for 3am. **Stop at the first line that fails.** Steps 1–6 need no server access and no
+command: they are reads of the Deploy run's own log. Steps 7–10 need a signed-in browser.
+
+| # | Look at | The specific thing | If it is wrong |
+|---|---|---|---|
+| 1 | The Deploy run's **Plan** step | It names **the tag you just pushed** — `dev-<first 7 of your sha>`, from `ghcr.io/surbhigoyal7381-agent/alvoraa-app`. **A green deploy of an older tag hides everything** | Wrong tag → the run you are reading is not your release. Find yours |
+| 2 | The pin file the run wrote | dev writes **`.image.dev.env`**, production **`.image.env`** (`deploy.yml:114`, `:118`). The tag in it equals step 1's | A stack reading the other stack's pin is lessons 2 and 3 |
+| 3 | The **`refresh_bench_files`** output | the line `refresh_bench_files: assets manifest dated <timestamp>` and the timestamp is **today, minutes ago** (`refresh_bench_files.sh:80`) | The stamp did not move → the 24-hour part cache and the 30-day browser cache both still serve the old build. **This is OPS-36's whole failure mode** |
+| 4 | **Smoke test** step | `ping OK` on `dev.alvoraa.co` (or `alvoraa.co`) | 502 from a healthy backend is usually nginx holding the old address — the deploy already restarts it twice; if not, that is the fix |
+| 5 | **"Portal assets must be served"** step | all four lines `OK … (HTTP 200, N bytes)`, **N greater than zero** — a zero-length `portal.js` answers 200 and is just as dead | A 404 or 0 bytes on `portal.js` is **the whole portal gone, silently**, with nothing in any log |
+| 6 | **"Background workers must be working"** step | it passed as a **gate** (it is no longer `continue-on-error`). Do not read `docker ps` instead — a container reports "Up" while its process is dead | A queue with no live worker is a failed deploy |
+| 7 | **Sign in to dev and view source** (Ctrl-U, then Ctrl-F) | the string **`id="panel-notifications"`**. Also that the asset URLs carry a **new `?v=`** value | Right tag, right manifest date, missing panel = the part cache. Fix: `bench --site <site> clear-cache` — **needs approval**, and prove it by re-reading the source, not by an `ls` |
+| 8 | The browser **console**, and **DevTools → Network** | No red error. On opening `#notifications`: **exactly two requests**, `notices.notices_feed` and `inbox_api.get_nav_counts`. On pressing a chip: **none**. Leave the page open two minutes: **no repeating request** (the no-timer rule, OPS-27) | A repeating request is the one change that multiplies this slice's run cost tenfold |
+| 9 | The bell and the page, by eye, once | the badge's number **equals** the two headings' numbers on the page beneath it. `inbox_api`'s first rule: *a count must equal the list it links to* | A badge saying 4 over three rows is the exact failure slices 034/042/076 exist to prevent |
+| 10 | **Desk → Error Log**, after a few page loads | rows naming **`notices`** or **`inbox_api`**. The bell fails silently, so this is the only place a tenant with an odd role row shows up | One tenant's bad role row, not a product fault — but you only see it here |
+| 11 | **CI** for the same sha | `gh run list --branch dev` — the **Python** job green. It is **not** in the deploy chain (OPS-41) | A red suite on code already serving dev. Decide: fix forward, or roll back |
+
+**On a `main` release, add:** repeat 7–10 **per tenant that matters** (DTC, PPJ), and confirm
+the migrate finished **per site** rather than trusting the run's green tick (the 5 Nov lesson).
+
+**Also: one `docker ps` is not evidence.** If anything looks half-dead, check `docker top`,
+the `rq:workers` registration and the heartbeats — and check disk first, because a full disk
+breaks redis's AOF write, kills the workers and makes `docker ps` lie.
+
+---
+
+### 5.5 · Rollback, concretely
+
+**What "rolled back" means here: redeploy the previous tag with migrations OFF.** There is no
+patch of ours to undo, and `patches.txt` is unchanged across the whole 22-commit payload
+(checked today), so nothing has to be un-migrated. The release is a code and asset swap.
+
+**The command — a hand dispatch, because only a hand dispatch can turn migrations off**
+(`deploy.yml:143` takes `inputs.run_migrations`; the automatic path hard-codes `true` at
+line 159). **Quoted for Surbhi to approve. I have not run it:**
+
+```bash
+gh workflow run Deploy --ref main \
+  -f environment=dev            # or production \
+  -f image_tag=<the previous tag> \
+  -f image_package=alvoraa-app \
+  -f run_migrations=false
+```
+
+**Note `--ref main` on purpose:** the workflow file that runs is the one on the ref you name,
+and `main`'s copy is the one the automatic path uses too.
+
+**The tag to name, and how to be sure it exists.**
+
+| Stack | The tag I believe it is now | How the tag is formed | Standing |
+|---|---|---|---|
+| dev | **`dev-7514918`** | `dev-<first 7 of the head sha>`; `origin/dev` is `75149184` today | **Inference** from `deploy.yml`'s rule plus a sha I read. I did **not** read `.image.dev.env` |
+| production | **`prod-08307f4`** | `prod-<first 7>`; `origin/main` is `08307f42`, the 5 Nov release | **Inference**, same basis. I did **not** read `.image.env` |
+
+**Before starting a rollback, confirm the tag exists in the package you will pull from —
+`alvoraa-app`, not the old public `hr-app`.** `deploy.yml` accepts `hr-app` only with a
+warning, for releases never copied across. A rollback that names a tag the package does not
+hold fails after it has already stopped the stack.
+
+**The asset trap, spelled out.** A **workflow** rollback fixes the assets by itself: step 3 of
+§5.4 applies in reverse — `refresh_bench_files.sh` runs unconditionally, moves `assets.json`
+last, and so bumps the stamp, which both invalidates the 24-hour part cache and gives every
+browser new asset URLs. **A hand `docker cp` does not**, and this project has paid for that
+twice. If anyone ever fixes a file by hand: re-run `refresh_bench_files.sh`, or bump
+`sites/assets/assets.json`, **and prove it from outside by URL** — never with a server-side
+`ls`.
+
+**How long it really takes: budget 8–10 minutes, not two.** The deploy waits for
+`bench version`, which crashes on our image, so the loop burns its full 60 turns —
+**Measured 22 September 2026 from the run logs: 6 min 54 s on dev, 7 min 09 s on production.**
+`nfr-budget.md` §3 budgets rollback at ≤ 15 minutes, so it fits, but only just.
+
+**What rollback does not undo.** Nothing in this slice writes data, with one exception: a
+person who pressed **"Mark all as read"** has had their `Notification Log` rows set to read,
+and rolling the code back does not unread them. It is not recoverable and it is not harmful —
+it is the same effect the old "See all" sheet already had. Worth knowing before someone asks.
+
+---
+
+### 5.6 · Monitoring — and what gets no new alert
+
+**Unchanged from §3.5, which I re-read rather than rewrote. Watch three things for a week.
+None of them is a new alert.**
+
+| Watch | Where it already shows | Why |
+|---|---|---|
+| Error Log rows naming `notices` or `inbox_api` | Desk Error Log, read after every release anyway | The bell swallows its own errors, so this is the only place ALV-250's shape appears |
+| The existing `TOO_MANY_TRIES` counters | already summed by `field_app_housekeeping.py` | If the new bulk write starts being refused, it shows there. The limit is 30 per user per hour |
+| The badge equalling its lists, once, on a real tenant | by eye | Step 9 of §5.4 |
+
+**On a `main` release, add one — and it is not this slice's:** that `bench --site all migrate`
+**reached every site**. On 5 Nov it did not, and nothing alerted.
+
+**Explicitly NOT added, and this is deliberate:**
+
+- **No alert on `get_nav_counts` or `notices_feed` error rate.** Both calls already fail
+  silently and leave the badge as it was, so **this slice adds no new failure mode to alert
+  on.** Ruled out in §1, §3 and again here.
+- **No new dashboard, no new metric, no new log shipper, no new container, no new scheduled
+  check.**
+- **No alert on the badge being "wrong".** There is no server-side definition of wrong. The
+  test is the gate; a monitor would be a second, worse one.
+
+`nfr-budget.md` §8 asks for named alerts with named owners for failed background jobs,
+integration failures and permission-denied spikes. **This slice creates none of the three.**
+
+---
+
+### 5.7 · The deploy's own traps, for this release
+
+| Trap | Does it bite this release? | What to do |
+|---|---|---|
+| **An automatic Deploy run uses `main`'s copy of `deploy.yml`** | **No** — nothing here changes `deploy.yml`. It bites only if the deploy misbehaves and someone patches the workflow on `dev` | Exercise dev's copy with `gh workflow run Deploy --ref dev` if, and only if, you change it |
+| **`deploy.yml:159` hard-codes `migrate=true`, with no opt-out** | **Yes.** Every tenant enters maintenance mode and every *other* app's pending patch runs in this window | §5.2: name what is riding along. Check DTC's queue. Not at 11 AM |
+| **A full queue stalls the migrate and later sites never run** | **Yes, at DTC** | Check queue depth before the push; verify **per site** after |
+| **The 11 AM punch quarter** | **Yes, at DTC** | Do not release into it |
+| **CI is not in the deploy chain** | **Yes — this is the new one** | OPS-41 |
+| **A green deploy of an old tag hides everything** | **Yes, always** | §5.4 step 1 |
+| **A container reports "Up" while its process is dead; a full disk defeats the restart policy** | Standing | The deploy has a disk-headroom gate (`deploy.yml:277–280`) and a real worker gate. Read them, not `docker ps` |
+| **Required reviewers are a paid feature on a private repo** | Standing | **There is no approval prompt.** The production gate is a human starting the deploy. Do not plan around one |
+| **Git Bash mangles `ref:path` and leading-slash paths** | Standing | Every command here is written for PowerShell or for a bash heredoc. A zero from a failed command looks exactly like a zero from a clean one — confirm the command ran |
+
+---
+
+### 5.8 · nginx — in writing
+
+**Nothing in this slice touches `deploy/nginx.conf`, and nothing in it makes the
+failed-deploy-changes-live-nginx trap worse. Confirmed by command today:**
+
+```
+$ git diff --name-only origin/dev...HEAD | grep -E 'deploy/|nginx|compose|Dockerfile'
+  (no match)
+```
+
+**The trap itself is unchanged and still live, and it is honest to say so.** The deploy's
+checkout step writes `deploy/nginx.conf` to disk from the branch being deployed, and the
+**Restore service** step restarts `compose-nginx-1` (`deploy.yml:680–681`) — the one nginx that
+serves **production and dev from that one file**. So **any** deploy from this branch, including
+a failed one, will restart the live site's proxy. Because the file is byte-identical to what
+is already on disk, that restart is a brief blip serving the same config, not a change — but
+it is a restart of production's proxy, and it will happen. There is nothing to fix here; there
+is something not to be surprised by.
+
+The page is a **hash route** inside `/hrms-employee` (`#notifications`), so it adds no address,
+inherits the gzip whitelist, inherits `Cache-Control: no-store` and inherits the Guest
+redirect in `www/hrms_employee.py`. `check_nginx_parses.sh` runs inside the deploy, not in CI —
+irrelevant here, and that is *why* it is irrelevant.
+
+---
+
+### 5.9 · Capacity — one paragraph, no new numbers
+
+Unchanged and still small. **Estimate from §1, not re-measured:** about **+21 statements and
+638 bytes per non-Home page load** at DTC, roughly **134,000 extra statements a day**, under
+**one extra call a second** even in the 11 AM burst, against a page that is already ~235 KB
+gzipped. The one thing that would change the shape tenfold is a timer, and there is none —
+asserted in the built source (AC-64/65). **No new container, volume, worker, queue, job,
+dependency, secret or alert anywhere in this release from this slice.**
+
+---
+
+### 5.10 · The OPS rows — continuing from OPS-40
+
+| ID | Recommendation | Why | Cost of ignoring it | Weight | Decision |
+|---|---|---|---|---|---|
+| **OPS-41** | **⚠ DECISION — know before you push that `dev` deploys whether CI passes or not, and decide how to use that.** My recommendation: **push, then watch both runs**, work §5.4 steps 1–10 off the Deploy log, and treat **Surbhi's browser check as a pass only once CI's Python job is also green**. If CI goes red on something real, roll dev back per §5.5 rather than leaving dev on unproven code while a fix is written | **Fact — read today:** `build-image.yml` fires on `push: branches: [dev, test, main]` (line 15); `deploy.yml` fires on `workflow_run` of Build Image with the single condition `conclusion == 'success'` (line 80). **Nothing waits for `ci.yml`**, which has 120 minutes for the Python job. **Measured today:** the four suites that ran cover about **175 of the 4,360 test methods** in `alvoraa_portal`'s 204 test files — **4%** — and the full suite has never run on this branch | Dev serves code whose suite is still running, and the first green tick anyone sees is the deploy's. That is how a red suite gets read as "already fine on dev" | **⚠ DECISION · Recommend · P1** | |
+| **OPS-42** | **Do not treat the four Frappe behaviours as proven until CI's Python job on the dev push is green. OPS-38 is still open.** The four: `db.set_value` with a dict filter is one `UPDATE`; `db.count` applies no permission condition; `Notification Log` pins `for_user` in both doors; the rate limiter skips a non-POST | **Measured by me today**, read-only in `a83-bench`: **Frappe 16.33.1, ERPNext 16.34.2**, from `ghcr.io/…/hr-app:dev-3830ed3` — the **old** package. The repo pins **v16.35.0 / v16.36.0** (`ci.yml:363–364`). **Fact:** `ci.yml` builds its own bench with `bench init --frappe-branch "$FRAPPE_TAG"` and `bench get-app --branch "$ERPNEXT_TAG"` (lines 432–434), so that run is the one that proves them on the shipped version. **One mitigation already landed:** the write is `@frappe.whitelist(methods=["POST"])` as well as `@_limited(...)`, so the GET trap is closed by the framework's own door, not only by the caller's argument shape | A security control argued from a version production does not run — the exact standing-of-evidence fault §4 named, still open at the release gate | **Recommend · P1** | |
+| **OPS-43** | **Run one more suite before the push: `test_announcements_076.py`.** It is the only other Python suite that calls the changed `notices.notices_feed` (line 482) and it was not in today's four. It runs in the container that is already built | Cheap, specific, and it closes the one named regression path in the 96% of the suite that has not run. **Fact — grepped today:** the deleted `grooming.my_notices_seen` has **no caller anywhere** in the repository (one comment in `notices.py:153`), so the move itself is clean; `test_grooming_066` (65 + 1 OK) already covers the new call site | The one suite that reads the function whose return shape changed is the one nobody ran | **Recommend · P2** | |
+| **OPS-44** | **The post-deploy proof of the new panel is two specific strings, not a vibe: `refresh_bench_files: assets manifest dated <today>` in the Deploy log, and `id="panel-notifications"` in the delivered HTML.** If the second is missing while the tag and the manifest date are right, it is the part cache — `bench --site <site> clear-cache`, **needs approval**, then re-read the source | **Fact — re-checked today:** `ess_parts.py:51–55` caches each part per site under `ess_part:<get_build_version()>:<name>` for 24 hours; `get_build_version()` is `assets.json`'s mtime. `deploy.yml:505` runs `refresh_bench_files.sh` **unconditionally, before any container swap**, and that script copies `assets.json` **last** (line 67, skipped in the loop at line 55) and **prints the manifest date** (line 80). `clear-cache` is **inside** the `if MIGRATE` block (line 571) and is not what protects you | A release that reports success while the new page does not exist for up to 24 hours — the most expensive kind of green tick | **Recommend · P1** | |
+| **OPS-45** | **Follow §5.4 in order and stop at the first failure.** Steps 1–6 are reads of the Deploy log and need no server access; 7–10 need a signed-in browser; 11 is CI. On `main`, repeat 7–10 per tenant and confirm the migrate reached **every site** | A check list that says "verify it works" is not a check list. Each row names the string, number or absence to look for, and what it means when it is wrong. **Three of the eleven are gates the deploy already runs** — reading them is free, and they are the ones that catch a silently dead portal | Somebody at 3am inventing the order, and reading `docker ps` as proof of life | **Recommend · P1** | |
+| **OPS-46** | **Rollback = redeploy the previous tag with `run_migrations: false`, by hand dispatch, from the `alvoraa-app` package — and confirm the tag exists there first.** `dev-7514918` for dev and `prod-08307f4` for production are my **inference** from `deploy.yml`'s tag rule and the two branch heads I read; **I did not read either pin file.** Budget **8–10 minutes**. One thing rollback cannot undo: rows already marked read | Only a hand dispatch can turn migrations off (`deploy.yml:143` against the hard-coded `true` at `:159`). A workflow rollback fixes the assets by itself because `refresh_bench_files.sh` always bumps the stamp; **a hand `docker cp` does not**, and the browser then keeps the old JS and CSS for up to 30 days. **Measured 22 Sep 2026** from the run logs: the wait-for-`bench version` loop burns 6 min 54 s on dev and 7 min 09 s on production because `bench version` crashes on our image | A rollback that reports success while every phone still runs the code you rolled back — or one that stops the stack and then fails because the tag is not in the package | **Recommend · P1** | |
+| **OPS-47** | **Name what else is in the release.** `origin/dev` is **22 commits** ahead of `main`: ALV-326 adds **three fields** to two DocTypes, ALV-318/319 adds a **new `after_migrate` hook** and turns a `doc_events` string into a list, ALV-266 changes Employee permissions, and `ci.yml`'s Python timeout rose to 120 minutes. **`patches.txt` is unchanged across all 22** | **Measured today:** `git rev-list --count origin/main..origin/dev` → 22; the doctype diff adds `count_shift_hours_only`, `break_allowance_minutes`, `late_quarter_after_minutes`; `git diff … -- "*patches.txt"` is **empty**. The new `after_migrate` (`joiner_invite.make_role`) says in its own comment that it is safe to run every migrate. Additive columns need no rehearsal — **but at DTC the payroll rule set is live** | A failure in the migrate window attributed to a front-end slice, while the change that caused it goes unexamined | **Recommend · P2** | |
+| **OPS-48** | **The `REHEARSAL.md` dry run stays removed — re-checked against the built diff, not the plan.** 27 files; no `patches.txt`, no DocType JSON, no `hooks.py`, no `deploy/`, no Compose, no Dockerfile. **If anything of that shape is added before the push, the dry run returns as a P1** on the §4.2 shape | A rehearsal of zero patches of ours would cost half a day and prove nothing. §3 and §4 both made this call; this is the third check, and the first one made against code that exists | Either half a day of theatre, or — if the diff changes shape — a schema change reaching DTC with no rehearsal at all | **Recommend · P2** | |
+| **OPS-49** | **Confirmed in writing: `deploy/nginx.conf`, the Compose files, the Dockerfile and both workflows are NOT in this diff** (command and empty output in §5.8). The failed-deploy-restarts-live-nginx trap is **not made worse** — and it is **not gone**: any deploy from this branch, including a failed one, restarts `compose-nginx-1`, the one proxy serving production and dev, with a byte-identical config | A restart serving the same config is a blip, not a change — but it is production's proxy, and the surprise is what hurts. Saying it in writing is cheaper than re-deriving it at the next gate | "No infrastructure change" claimed and then quietly grown — this project's own history | **FYI · P2** | |
+| **OPS-50** | **Write the four-row gate-inventory table from §5.1 into `.claude/context/frappe-conventions.md`**: a new part file → `PINNED_DEPTH`; a new `position:fixed` element → `check_portal_trays.js` `INVENTORY`; a new jsdom test → `RUN` **and** `EXPECTED_BROWSER_TESTS`; a new `www` page → `check_design_system.py` `PAGES`. It is a documentation line, not code | This slice paid for the first two separately — I predicted one (OPS-33) and the engineer found the other while building. **Fact — I read all four gates today.** Three fail **closed** with a clear message; the fourth (`PAGES`) fails **open**, so a new page is simply never design-checked, which is the worse one | The same half-day of surprise red CI, once per slice that adds a named thing | **Recommend · P3** | |
+| **OPS-51** | **No new alert, metric, dashboard or scheduled check — confirmed again at the release gate.** Watch the three things in §5.6 for a week, and on a `main` release add one that is not this slice's: that the migrate reached **every** site | Both calls still fail silently and leave the badge as it was, so this slice adds **no new failure mode**. `nfr-budget.md` §8's three alert classes — failed jobs, integration failures, permission-denied spikes — are none of them created here. **Nothing new to tune, own or upgrade for ever** | A 2am page for a hidden badge, or alert fatigue that makes the real alerts ignorable | **Recommend · P3** | |
+| **OPS-52** | **⚠ DECISION — the OPS-40 measurement: the standing assertion is enough for *this release*. My recommendation: do not hold 083 for the fixture-site run.** The assertion landed in `test_inbox_parts_042.py` (32 OK today) and holds the axis nobody held — statement count flat as the correction backlog grows. Keep the fixture measurement as a backlog item attached to **the next change that touches `inbox_api`**, not to this slice | The half I most wanted is done, and it is the half that lasts: a one-off number decays, an assertion runs on every push. What the fixture would add is a p95 and a shape under DTC's two configuration properties — worth having, **≈1 hour of unattended bench time plus an hour of work**, and it changes nothing about whether this release is safe. The data half was closed on 11 Nov (`08-dtc-counts.md`: DTC holds **zero** rows of all three notice kinds). And the refused routes stay refused: **no DTC restore** (it would rotate away DTC's only backup) and **no impersonating a real HR user on production** | Either a release held for a number that would not change the decision, or the measurement quietly forgotten because nobody wrote down where it went | **⚠ DECISION · Consider · P2** | |
+
+---
+
+### 5.11 · What I could not check
+
+- **Either pin file.** `dev-7514918` and `prod-08307f4` in OPS-46 are **inferences** from
+  `deploy.yml`'s tag rule and two branch heads I read. **I did not read `.image.dev.env` or
+  `.image.env`, and I did not go near the server.** Confirm the tag before a rollback.
+- **Whether those tags exist in the `alvoraa-app` package.** That needs a `gh` call against
+  the package; I made none.
+- **Free disk on either host.** It is the thing that caused the 10 September outage and it
+  gates everything. The deploy has its own headroom check; a human does not.
+- **Whether `DEPLOY_HOST` is set** — i.e. whether the push really deploys by itself.
+  Unchanged from §3 and §4: I cannot read a repository secret. **Treat the automatic deploy
+  as live.**
+- **Any timing, anywhere.** I measured no milliseconds in §5. Every performance number is
+  quoted from §1/§2 or slice 044, with its date.
+- **Whether ALV-299 (no off-server backup copy) is still open.** Quoted from slice 081's
+  artifacts of 3 November, not re-checked. It does not block this release.
+- **Anything a browser would show.** The badge colour, the four theme × brand contrast
+  combinations including a tenant with **no brand seed**, Hindi at 390 px, 200% text, and the
+  bell at 1180 px. **No browser has ever shown this page**, and every claim about its
+  appearance in any artifact of this slice is an argument from a CSS token.
+
+### 5.12 · What I left behind
+
+**Nothing.** Read-only git commands and greps in this worktree, one `docker ps`, one read-only
+`grep` inside the already-running `a83-bench`, and this artifact. No bench command, no site
+opened, no record changed, no cache cleared, no container started, stopped or removed, no
+throwaway container, no `docker cp`, nothing against dev or production, no deploy command, and
+**not one byte written to the shared checkout**. I did not touch `hrlocal-bench`,
+`hrlocal-326*` or `hrlocal-328`. **Nothing in §5 is a secret or a path to one** —
+`deploy/server.env` was not read. Every recommendation above is advice with the Decision
+column blank.
+
+### 5.13 · Subtract pass
+
+Read §5 once more asking only what I could delete. **Removed:**
+
+- **A full "what to look at in the browser" design list** — badge colour, contrast, Hindi,
+  200% text. That is the UX designer's gate and Surbhi's own eye, and duplicating it here
+  would create a second, worse checklist. §5.4 keeps only the four browser checks that are
+  **operational** and that no test can make on a real server: the panel's id in the delivered
+  HTML, a clean console, two requests on open and none on a chip, and the badge equalling its
+  lists.
+- **A proposed post-deploy smoke step in `deploy.yml`** that fetched the notifications route.
+  Deleted for the third time, for the third good reason: §3 removed it because the asset gate
+  already covers the three files; §4 removed it because OPS-36's one-line proof does the same
+  job with no workflow edit; and now because the route needs a signed-in session, so a
+  workflow step could not fetch it without a credential this release has no reason to own.
+- **A capacity section with fresh arithmetic.** §1 costed it, OPS-27 holds the only thing that
+  could change it, and nothing built moves either figure. Reduced to one quoted paragraph
+  (§5.9).
+- **An OPS row asking for the full `alvoraa_portal` suite to be run locally before the push.**
+  It cannot be done without merging into the shared checkout, which is not mergeable and whose
+  workarounds destroy another session's work. Recommending the impossible is worse than naming
+  the real gate, which is CI — so it became **OPS-41** instead, plus one cheap suite in
+  **OPS-43**.
+- **An OPS row on the `check_version_pins.py` gate not being wired into any workflow.**
+  Already recorded as OPS-37. One owner per finding.
+- **A rollback row for production separate from dev.** The command is identical but for
+  `environment=` and the tag; two rows would have been one row twice.
+- **An OPS row proposing a per-site migrate verification script.** The 5 Nov lesson is real,
+  but a new script is a new permanent thing, and §5.4's "confirm per site" plus OPS-32 covers
+  it with no new moving part.
+
+**Kept despite the pass, each with a reason:** the CI-is-not-a-gate finding (**OPS-41**),
+because it is the one thing in §5 that changes what Surbhi is about to do; the version
+mismatch (**OPS-42**), because the four suites look like they closed it and they did not; the
+two post-deploy strings (**OPS-44**), because this is the only way this release can be green
+and invisible at the same time; and the rollback tag table with its honest **Inference** label
+(**OPS-46**), because a rollback that names a tag nobody confirmed stops the stack first and
+fails second.
+
+---
+
+**Written by `hrms-devops-engineer`, 12 November 2026. Advisory only. Nothing deployed,
+nothing measured on dev or production, nothing changed on the shared bench or in the shared
+checkout. I recommend; Surbhi decides.**

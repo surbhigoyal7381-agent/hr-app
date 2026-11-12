@@ -6715,8 +6715,14 @@ function hmPaintPending() {
      with the bell - see ntWorkOwed. It used to be `d.total` minus shift
      requests, which still INCLUDED the person's own open requests, so an
      employee with a leave request of their own had a number they could not
-     take to zero. A CXO's chip adds the kinds it is showing, as before. */
-  var total = hmIsCxo() ? rows.reduce(function (n, v) { return n + v.count; }, 0) : ntWorkOwed(d);
+     take to zero.
+
+     This was `hmIsCxo() ? rows.reduce(sum of count) : ntWorkOwed(d)` and that
+     was a second definition: a CXO saw "278 waiting" on Home and 4 on the
+     bell, on one page load, because ntWorkOwed counts KINDS for a CXO
+     (AC-49). AC-23 says any payload gives the same number everywhere, so
+     there is one call and no persona branch. */
+  var total = ntWorkOwed(d);
   NT.work = ntWorkOwed(d);
   ntPaintBadge();
   hmChip("home-pending-chip", total ? drT("{0} waiting", [total]) : "");

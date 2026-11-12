@@ -438,8 +438,8 @@ Each labelled. A shortcut declared is a decision; a shortcut hidden is a defect.
 
 | # | What | Label | What removes it |
 |---|---|---|---|
-| G-1 | **The Python suite has not run, so 23 new assertions and two edits are unexecuted** — including the three write assertions, which guard the riskiest lines in the slice | **dangerous debt — escalating now, not noting it** | One bench run, which needs either Docker up **and** the other session's two CSS files committed, or Surbhi's word on how to proceed. **Nothing in this slice should reach dev before that run is green** |
-| G-2 | **AC-55's six-door list is not written** | **dangerous debt — escalating** | `hrms-test-automation-engineer`, on a fresh site, as a plain staff login. This is the ALV-249 canary |
+| G-1 | ~~The Python suite has not run~~ — **CLOSED 12 Nov 2026.** Four suites green on a fresh site in throwaway containers: `test_notices_076` **30 OK**, `test_grooming_066` **65 + 1 OK**, `test_portal_security_010` **45 + 5 OK**, `test_inbox_parts_042` **32 OK**. Nine problems were found on the way and **every one was in the tests, not the product**. The three write assertions are executed and were proved independent by removing each filter term in turn | closed | — |
+| G-2 | ~~AC-55's six-door list is not written~~ — **CLOSED 12 Nov 2026.** Written as `TestTheDoorsToSomebodyElsesNotices`, then audited by the security review (which re-ran the doors itself) and by the architect review (which reproduced them as `deepa@g066.test`). Three faults in the first version were fixed, and the review's missing share and `reference_doctype` count doors were added, so all six are covered | closed | — |
 | G-3 | AC-34's refusal is proved by pinning the decorator's numbers, not by exceeding the limit; the POST half **is** proved | **temporary debt** | One Python test with a real request |
 | G-4 | AC-39 (one part of `get_nav_counts` raising) has no test | **temporary debt** | One Python test |
 | G-5 | AC-54's four theme × brand contrast combinations, AC-50's Hindi, 200 % text and the bell at 1180 px are unseen | **temporary debt** | A browser pass as `ashok.mittal336@ppjewellers.demo`, which needs a running bench |
@@ -507,3 +507,32 @@ rate-limited and a double tap should not spend two of the thirty.
 **Written by `hrms-fullstack-engineer`, 12 November 2026. Built locally, in a
 worktree. Nothing pushed, nothing on dev, nothing deployed, and the Python suite
 has not run. I recommend; Surbhi decides.**
+
+---
+
+## Correction, 12 November 2026
+
+Three statements above were true when they were written and are not true now. They are
+corrected here rather than edited in place, so the record shows what changed.
+
+1. **G-1 and G-2 are closed**, as marked in the table.
+2. **§7's "no file this slice changes was touched" is stale.** `origin/dev` moved from
+   `dd609e0d` to `75149184` while this slice was being built, bringing ALV-326, ALV-329 and
+   ALV-309 — which touch `portal.js`, `test_grooming_066.py` and `test_inbox_counts_034.py`,
+   all files this slice also changes. The rebase was clean, ancestry was checked and nothing
+   was lost, but the sentence as written is no longer accurate.
+3. **Two faults got past every suite and were caught by review, not by testing.** Both were
+   one line and both were invisible to the tests by construction:
+   - the desktop badge anchored to the fixed top bar instead of the bell, because
+     `.nf-bell-set` was `position:static`. jsdom loads the page with no Frappe navbar, so the
+     code that moves the bell returns early and the rule is never applied — the tests only
+     ever saw the fallback, which is correct.
+   - for a CXO, Home summed the queue counts while the bell counted kinds, so one page load
+     showed "278 waiting" and "4". **The suite had pinned the bug**: an assertion asserted
+     the summed value. It now asserts the shared one, and that the two surfaces agree.
+
+   The second was the one thing the subtract pass missed, and the fix was a deletion.
+
+**Scalability should read "neutral in queries, unbounded in rows"**, not "neutral": the
+unread read is `limit_page_length=0` and flat in statements but not in rows, which is why
+the statement tests are right and blind at once. No number has ever been measured.

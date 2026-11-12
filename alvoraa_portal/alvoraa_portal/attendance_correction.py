@@ -42,6 +42,12 @@ from frappe.utils import cint, flt, get_datetime, getdate, nowdate
 
 from alvoraa_portal.call_cache import close_cache, holiday_list_for, is_open, once, open_cache
 from alvoraa_portal.grooming import month_lines
+# ALV-315. The one definition of "these two punches are the same event" lives
+# with the pay engine, which has collapsed on it since slice 326. Imported, not
+# repeated: two numbers that are meant to agree and are written down twice will
+# stop agreeing, and this screen disagreeing with the engine about a day is the
+# bug being fixed.
+from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -687,8 +693,51 @@ def month(year=None, month=None, employee=None):
 	return out
 
 
+def _distinct_punches(marks):
+	"""Fold a reader's repeat scans into one punch each (ALV-315).
+
+	A biometric reader double-reads: one arrival is stored two, three, up to
+	nine times, seconds apart. At DTC 1,960 of October's 24,707 punches landed
+	within a minute of the person's previous one, on 1,280 employee-days.
+
+	**Every duplicate flips the day's parity, and parity is how this screen
+	works.** Where a tenant's check-ins carry no In/Out label - DTC's carry
+	none - the day is read in order, first In, next Out, and an odd count means
+	a punch is missing. So a single arrival stored twice reads as a complete
+	in-and-out day. Measured on DTC's October: 724 days were flagged as needing
+	a leaving time when nothing was missing, and 88 days genuinely missing a
+	punch were hidden, because a duplicate padded the count to even. HR was
+	being sent to the wrong 812 days.
+
+	`marks` arrives in time order - the query that builds it is ordered by time
+	- so one pass is enough. Gaps are measured across the date as well as the
+	clock, because a night shift's punches sit on two calendar days and the
+	minutes alone would make 23:59 and 00:01 look an hour apart.
+
+	Nothing is written. The stored rows are left exactly as they are, so this
+	is reversible and no figure already computed from them changes.
+	"""
+	kept, last = [], None
+	for m in marks:
+		at = _minutes(m.get("at"))
+		on = m.get("on")
+		when = (getdate(on).toordinal() * 1440 + at) if at is not None and on else None
+		if when is not None and last is not None and when - last <= DUPLICATE_PUNCH_MINUTES:
+			continue
+		kept.append(m)
+		if when is not None:
+			last = when
+	return kept
+
+
 def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, today,
          marks=(), weekly_offs=()):
+	# ALV-315, before anything reads them. The punch list the page draws, the
+	# In/Out labels, the missing-punch flag and the worked span are all built
+	# from `marks` below, and every one of them was wrong on a day the reader
+	# double-read. Collapsing once here is what keeps them agreeing with each
+	# other and with the pay engine.
+	marks = _distinct_punches(marks)
 	d = getdate(date)
 	out = {
 		"date": date,

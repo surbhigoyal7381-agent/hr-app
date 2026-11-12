@@ -118,6 +118,9 @@ def setUpModule():
 	# DTC's shape: Red and Green at a fixed 0, not by payment days.
 	_component(payroll_slip.RED_COMPONENT, "RV", "Deduction")
 	_component(payroll_slip.GREEN_COMPONENT, "GV", "Earning")
+	# ALV-334: the third engine line. Same name and abbreviation the grooming
+	# suites use, so the two files share one Salary Component on the site.
+	_component(payroll_slip.GROOMING_COMPONENT, "GRV", "Deduction")
 	_component(BASIC, "L067B", "Earning", by_payment_days=1)
 	_component(INCENTIVE, "L067I", "Earning")
 	_component(ARREAR_WHOLE, "L067A", "Earning", by_payment_days=0)
@@ -132,7 +135,14 @@ def setUpModule():
 		             {"salary_component": payroll_slip.GREEN_COMPONENT, "amount": 0},
 		             {"salary_component": INCENTIVE, "amount": 0}],
 		         "deductions": [
-		             {"salary_component": payroll_slip.RED_COMPONENT, "amount": 0}]},
+		             {"salary_component": payroll_slip.RED_COMPONENT, "amount": 0},
+		             # ALV-334: DTC's live structure carries a zero row for ALL
+		             # THREE engine components, grooming included. Red and green
+		             # were already modelled that way here; grooming was not, so
+		             # the one shape the tenant actually has was the one shape no
+		             # test exercised. A zero row plus an Additional Salary for
+		             # the same component is the case that has to work.
+		             {"salary_component": payroll_slip.GROOMING_COMPONENT, "amount": 0}]},
 		        submit=True)
 
 	if not frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY}):
@@ -171,9 +181,10 @@ def _wipe(*employees):
 	                             "content": ("like", "%red and green lines%")})
 
 
-def _summary(red=0.0, green=0.0, paid_days=None):
+def _summary(red=0.0, green=0.0, grooming=0.0, paid_days=None):
 	return MonthSummary(paid_days=DAYS if paid_days is None else paid_days,
-	                    red_deduction=red, green_earning=green)
+	                    red_deduction=red, green_earning=green,
+	                    grooming_deduction=grooming)
 
 
 def _slip(emp, summary=None):
@@ -292,6 +303,39 @@ class TestReplacedNeverAdded(SlipCase):
 		self.assertEqual(len(red), 1)
 		self.assertEqual(red[0].docstatus, 1)
 		self.assertEqual(getdate(red[0].payroll_date), END)
+
+	def test_the_grooming_line_replaces_its_zero_structure_row(self):
+		"""ALV-334. DTC's live structure carries `Grooming Red Value` at zero,
+		and the engine writes an Additional Salary for the same component.
+
+		Red and green were already proven in this shape; grooming was not. What
+		must NOT happen is two rows for the component - the zero one from the
+		structure sitting beside the engine's - because a slip would then show
+		the wrong figure depending on which row anything read first, and
+		`_line` here reads the first.
+
+		DTC has made no salary slip yet, so this test is the only place the
+		behaviour is established before its first payroll.
+		"""
+		slip = _slip(self.junior, _summary(red=300, green=200, grooming=150))
+		rows = [r for r in slip.deductions
+		        if r.salary_component == payroll_slip.GROOMING_COMPONENT]
+		self.assertEqual(len(rows), 1,
+		                 "the zero structure row and the engine's line both "
+		                 "survived, so the slip carries the component twice")
+		self.assertEqual(_line(slip, payroll_slip.GROOMING_COMPONENT), 150)
+		records = _engine(self.junior, payroll_slip.GROOMING_COMPONENT)
+		self.assertEqual(len(records), 1)
+		self.assertEqual(records[0].docstatus, 1)
+
+	def test_a_grooming_figure_of_nothing_leaves_the_zero_row_alone(self):
+		"""The other half: most months have no grooming red. The structure's
+		own zero row must stay a plain zero and own no engine record, or every
+		slip would carry a cancelled line nobody asked for."""
+		slip = _slip(self.junior, _summary(red=300, green=200, grooming=0))
+		self.assertIn(_line(slip, payroll_slip.GROOMING_COMPONENT), (0, None))
+		self.assertEqual(_engine(self.junior, payroll_slip.GROOMING_COMPONENT,
+		                         docstatus=1), [])
 
 	def test_saving_twice_writes_nothing_new(self):
 		slip = _slip(self.junior, _summary(red=300, green=200))

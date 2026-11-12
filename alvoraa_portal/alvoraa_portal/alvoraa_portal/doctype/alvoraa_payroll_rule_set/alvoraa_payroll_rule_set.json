@@ -17,6 +17,9 @@
   "basics_section",
   "grace_minutes",
   "free_reds_per_month",
+  "count_shift_hours_only",
+  "late_quarter_after_minutes",
+  "break_allowance_minutes",
   "column_break_basics",
   "special_day_multiplier",
   "special_day_holiday_list",
@@ -96,6 +99,27 @@
    "fieldname": "free_reds_per_month",
    "fieldtype": "Int",
    "label": "Free Reds Per Month"
+  },
+  {
+   "default": "0",
+   "description": "Only time inside the shift counts. Staying late does not make up for arriving late, arriving early buys nothing, and arriving within grace counts from the shift start. Off: the day is measured from the first punch to the last.",
+   "fieldname": "count_shift_hours_only",
+   "fieldtype": "Check",
+   "label": "Count Only Time Inside Shift Hours"
+  },
+  {
+   "default": "0",
+   "description": "Past grace and up to this many minutes after shift start: 1 red. Later: at least a quarter of a day and no red. 0 switches the rule off, and the slab table alone decides.",
+   "fieldname": "late_quarter_after_minutes",
+   "fieldtype": "Int",
+   "label": "Late Minutes Before A Quarter"
+  },
+  {
+   "default": "0",
+   "description": "Breaks (the gaps between punch 2 and 3, 4 and 5, and so on) up to this many minutes a day are not deducted; time beyond it is. 0 switches the rule off: breaks are never deducted.",
+   "fieldname": "break_allowance_minutes",
+   "fieldtype": "Int",
+   "label": "Break Allowance (Minutes)"
   },
   {
    "fieldname": "column_break_basics",
@@ -237,7 +261,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-27 12:00:00.000000",
+ "modified": "2026-11-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Payroll Rule Set",

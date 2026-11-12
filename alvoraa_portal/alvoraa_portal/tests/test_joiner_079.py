@@ -1384,3 +1384,247 @@ class TestTheRoleReachesANewSite(_Base):
 		joiner_invite.make_role()
 		joiner_invite.make_role()
 		self.assertTrue(frappe.db.exists("Role", joiner_invite.JOINER_ROLE))
+
+
+# ── ALV-318 and ALV-319 · the lockout on amata.dev, 5 November 2026 ─────────
+
+
+class TestTheRoleCannotBeHandedOut(_Base):
+	"""**A real lockout, and these tests are the reason it cannot happen twice.**
+
+	`Alvoraa Joiner` was added to the CFO Role Profile at 08:56; a user inherited
+	it a minute later; every page they opened redirected to the joining form with
+	code `JOIN-ONEPAGE`, and Desk was unreachable. The gate above did exactly what
+	it was built to do - the fault is that the role reached somebody it was never
+	meant to reach.
+
+	A role profile is the opposite of what this role is for: applied to many
+	people at once and re-applied to every one of them on every save. Fifty staff
+	on one profile is fifty lockouts from one edit.
+	"""
+
+	PROFILE = "S318 CFO"
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		if frappe.db.exists("Role Profile", self.PROFILE):
+			frappe.delete_doc("Role Profile", self.PROFILE, force=True,
+			                  ignore_permissions=True)
+		super().tearDown()
+
+	def _profile(self, *roles):
+		return frappe.get_doc({
+			"doctype": "Role Profile",
+			"role_profile": self.PROFILE,
+			"roles": [{"role": r} for r in roles],
+		})
+
+	def test_a_role_profile_cannot_carry_it(self):
+		"""AC-1, and the incident itself. The refusal names the role."""
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self._profile("Employee", joiner_invite.JOINER_ROLE).insert()
+		self.assertIn(joiner_invite.JOINER_ROLE, str(caught.exception))
+		self.assertFalse(frappe.db.exists("Role Profile", self.PROFILE))
+
+	def test_it_cannot_be_added_to_a_profile_that_already_exists(self):
+		"""The incident was an EDIT to a profile people were already on, not a
+		new one, so the refusal has to hold on a save as well as on an insert."""
+		profile = self._profile("Employee")
+		profile.insert()
+		profile.append("roles", {"role": joiner_invite.JOINER_ROLE})
+		with self.assertRaises(frappe.ValidationError):
+			profile.save()
+
+	def test_an_ordinary_role_profile_still_saves(self):
+		"""The other half, and without it the test above proves nothing: the
+		guard must have an opinion about ONE role and about nothing else."""
+		self._profile("Employee", "HR Manager").insert()
+		self.assertTrue(frappe.db.exists("Role Profile", self.PROFILE))
+
+	def test_a_member_of_staff_cannot_be_given_it_on_their_user_record(self):
+		"""AC-2, the Desk user form door, and the message has to carry the
+		recovery order: the PROFILE first, then the account. Taking it off the
+		account first does nothing, because Frappe re-applies a profile's roles
+		on every save."""
+		user = frappe.get_doc("User", self.kamal_user)
+		user.append("roles", {"role": joiner_invite.JOINER_ROLE})
+		with self.assertRaises(frappe.ValidationError) as caught:
+			user.save()
+		said = str(caught.exception)
+		self.assertIn(joiner_invite.JOINER_ROLE, said)
+		self.assertIn("profile", said.lower())
+		frappe.clear_document_cache("User", self.kamal_user)
+		self.assertFalse(frappe.db.exists("Has Role", {
+			"parent": self.kamal_user, "parenttype": "User",
+			"role": joiner_invite.JOINER_ROLE}))
+
+	def test_the_rest_api_child_write_door_is_refused(self):
+		"""AC-2 through `frappe.client`, which is what the REST API and every
+		scripted caller use. `insert_doc` appends the row to the PARENT and saves
+		it, so the guard on `User.validate` is what stops it."""
+		from frappe.client import insert as client_insert
+
+		with self.assertRaises(frappe.ValidationError):
+			client_insert({
+				"doctype": "Has Role",
+				"parenttype": "User",
+				"parentfield": "roles",
+				"parent": self.kamal_user,
+				"role": joiner_invite.JOINER_ROLE,
+			})
+		frappe.clear_document_cache("User", self.kamal_user)
+
+	def test_a_data_import_cannot_slip_it_in(self):
+		"""AC-2 through a Data Import. Frappe sets `flags.in_import` and saves
+		the document as usual, and plenty of validations skip themselves in that
+		mode. This one must not."""
+		was = frappe.flags.in_import
+		frappe.flags.in_import = True
+		try:
+			user = frappe.get_doc("User", self.kamal_user)
+			user.append("roles", {"role": joiner_invite.JOINER_ROLE})
+			with self.assertRaises(frappe.ValidationError):
+				user.save()
+		finally:
+			frappe.flags.in_import = was
+			frappe.clear_document_cache("User", self.kamal_user)
+
+	def test_the_invite_exemption_cannot_be_claimed_from_outside(self):
+		"""The exemption is a flag on the document rather than a field, because
+		`"flags"` is in Frappe's `RESERVED_KEYWORDS`: `BaseDocument.update` skips
+		it, so a caller posting it is ignored. Asserted rather than trusted."""
+		user = frappe.get_doc("User", self.kamal_user)
+		user.update({"flags": {joiner_invite.INVITE_FLAG: True}})
+		user.append("roles", {"role": joiner_invite.JOINER_ROLE})
+		with self.assertRaises(frappe.ValidationError):
+			user.save()
+		frappe.clear_document_cache("User", self.kamal_user)
+
+	def test_hr_can_still_make_a_sign_in(self):
+		"""AC-3. **The guard is worthless if it also breaks the one path that is
+		allowed to hand out the role**, and that path is the whole slice."""
+		doc, out = self._sign_in(mobile="+91 98100 10318",
+		                         name="S318 Rohan Mehta")
+		self.assertTrue(out.get("password"))
+		self.assertEqual(
+			[joiner_invite.JOINER_ROLE],
+			frappe.get_all("Has Role", filters={"parent": doc.user,
+			                                    "parenttype": "User"},
+			               pluck="role"))
+
+	def test_a_live_joiner_account_can_still_be_saved(self):
+		"""The guard refuses GAINING the role, never holding it. Frappe's own
+		role-profile sync, our module-access and phone-block hooks and HR
+		disabling the login all re-save a live joiner account, and refusing those
+		would have swapped one lockout for another."""
+		doc, _out = self._sign_in(mobile="+91 98100 10319",
+		                          name="S318 Meera Rao")
+		user = frappe.get_doc("User", doc.user)
+		user.enabled = 0
+		user.save()
+		self.assertEqual(0, frappe.db.get_value("User", doc.user, "enabled"))
+
+	def test_the_role_says_what_it_is_for(self):
+		"""AC-4. So that the next person reading a role list does not tick it out
+		of curiosity, which is exactly how the incident started."""
+		joiner_invite.make_role()
+		said = frappe.db.get_value(
+			"Role", joiner_invite.JOINER_ROLE,
+			joiner_invite.ROLE_PURPOSE_FIELD["fieldname"]) or ""
+		self.assertIn("role profile", said.lower())
+		self.assertIn("joining form", said.lower())
+
+	def test_the_guards_are_registered_and_the_043_one_survived(self):
+		"""The pin test. `User.validate` was a single string before this change,
+		so the obvious edit - replacing the key - would have switched off slice
+		043's AI mailbox guard silently. Both have to be there."""
+		events = frappe.get_hooks("doc_events", app_name="alvoraa_portal")
+		user_validate = events.get("User", {}).get("validate", [])
+		self.assertIn("alvoraa_portal.joiner_invite.keep_the_joiner_role_to_the_invite",
+		              user_validate)
+		self.assertIn("alvoraa_portal.ai_leads.guards.validate_user", user_validate)
+		self.assertIn(
+			"alvoraa_portal.joiner_invite.keep_the_joiner_role_out_of_profiles",
+			events.get("Role Profile", {}).get("validate", []))
+		self.assertIn(
+			"alvoraa_portal.joiner_invite.make_role",
+			frappe.get_hooks("after_migrate", app_name="alvoraa_portal") or [],
+			"A site that already ran 079's patch never runs it again, so the "
+			"role's description would reach no existing tenant.")
+
+
+class TestTakingTheRoleAwayReleasesTheAccount(_Base):
+	"""**ALV-319.** The gate remembers "is this account a joiner?" per user, and
+	it used to remember it for ever: the comment in `auth.py` said plainly that it
+	never needed invalidating. On 5 November a user gained the role from a role
+	profile and, when it was taken away again, the cached "yes" went on confining
+	them to the joining form. Only a hand-typed
+	`frappe.cache().delete_key("alvoraa_is_a_joiner")` released them.
+
+	A permission change that silently does not apply is the worst shape a bug can
+	take here: the administrator sees the role gone from the record and has
+	nothing on screen that would lead them to a cache.
+	"""
+
+	def test_the_cached_yes_goes_when_the_roles_change(self):
+		"""AC-5. The gate is asked first, so the "yes" is genuinely in the cache
+		before the role is removed - otherwise this test passes on an empty cache
+		and proves nothing."""
+		doc, _out = self._sign_in(mobile="+91 98100 10320",
+		                          name="S318 Anil Verma")
+		self.assertTrue(auth._is_a_joiner(doc.user))
+		self.assertIsNotNone(frappe.cache().hget(auth._JOINER_CACHE, doc.user))
+
+		user = frappe.get_doc("User", doc.user)
+		user.set("roles", [])
+		user.save()
+
+		self.assertIsNone(frappe.cache().hget(auth._JOINER_CACHE, doc.user))
+		self.assertFalse(auth._is_a_joiner(doc.user))
+
+	def test_the_gate_then_lets_them_through(self):
+		"""The same thing said in the terms the person experienced: the pages
+		stop redirecting. This is what the manual cache deletion bought on the
+		day, and it must now happen by itself."""
+		doc, _out = self._sign_in(mobile="+91 98100 10321",
+		                          name="S318 Sunita Das")
+		self._as_the_joiner(doc)
+		frappe.local.request = fx.FakeRequest("/hrms-employee")
+		frappe.local.form_dict = frappe._dict()
+		try:
+			with self.assertRaises(auth._GoToTheJoiningPage):
+				auth.lock_to_the_joining_page()
+		finally:
+			frappe.local.request = None
+			frappe.local.form_dict = frappe._dict()
+			frappe.set_user("Administrator")
+
+		user = frappe.get_doc("User", doc.user)
+		user.set("roles", [])
+		user.save()
+
+		self._as_the_joiner(doc)
+		frappe.local.request = fx.FakeRequest("/hrms-employee")
+		frappe.local.form_dict = frappe._dict()
+		try:
+			auth.lock_to_the_joining_page()
+		finally:
+			frappe.local.request = None
+			frappe.local.form_dict = frappe._dict()
+			frappe.set_user("Administrator")
+
+	def test_a_name_with_no_cached_answer_is_harmless(self):
+		"""It runs on every single `User` save on the site, including the first
+		one on a fresh install, so it must never raise."""
+		auth.forget_whether_they_are_a_joiner("nobody.s318@example.com")
+		auth.forget_whether_they_are_a_joiner(None)
+
+	def test_the_comment_that_was_wrong_is_gone(self):
+		"""**ALV-319 asked for this by name.** The old comment argued that the
+		answer never needs to change. It is now known to be false, and leaving it
+		would send the next reader down the same path."""
+		import inspect
+
+		source = inspect.getsource(auth)
+		self.assertNotIn("never invalidated", source)
+		self.assertIn("ALV-319", source)

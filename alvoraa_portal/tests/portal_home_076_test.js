@@ -83,6 +83,11 @@ const fixRow = (name, who, ago) => ({name, employee_name: who, from_date: "2026-
 const polRow = (name, title, ago) => ({name, title, version: 2, action: "policy", waiting_since: iso(ago)});
 const noteRow = (name, text, read) => ({name, text, link: null, when: "2026-10-27 16:10:00", read: read ? 1 : 0});
 const feed = (items, unread, any) => ({unread, any: any === undefined ? items.length > 0 : any, items});
+/* Slice 083: one of the person's OWN open requests - waiting on somebody
+   else, drawn on the card, counted by nothing. */
+const myRow = (name, title, ago) => ({name, kind: "my_leave", title, from_date: "2026-11-20",
+  to_date: "2026-11-21", state: "Open", says: "Waiting for your manager",
+  action: "my_leave", waiting_since: iso(ago)});
 
 async function loadHomeWith(routes) {
   ROUTES = Object.assign({}, BASE_ROUTES, routes);
@@ -231,7 +236,16 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   window.gpOpenGoalDetail = cxoReal.g; window.switchPanel = cxoReal.s;
   eq(cxoOpened, [["goal", "GOAL-G1", "G1"], ["panel", "team"]], "a CXO's goal row opens the oldest goal in scope; the leave row still opens Team");
   yes(/14 waiting/.test(rows[0].textContent), "each row carries its count");
-  eq($("home-pending-chip").textContent, "29 waiting", "the CXO chip adds the kinds shown");
+  // Slice 083 / AC-23: four kinds, so four - NOT 29, the sum of their counts.
+  // This assertion used to say "29 waiting" and that is what let the fault
+  // through: Home summed the counts while the bell counted kinds, so one CXO
+  // load showed "278 waiting" on Home and 4 on the bell. One definition now.
+  eq($("home-pending-chip").textContent, "4 waiting",
+     "a CXO's chip counts kinds, the same number the bell shows");
+  if ($("notif-badge")) {
+    eq($("notif-badge").textContent, "4",
+       "AC-23: the bell and the chip cannot disagree for a CXO");
+  }
   yes(/your queue/.test(rows[0].textContent) && !/across your companies/.test($("home-pending-body").textContent), "the CXO label says 'your queue'");
   window._roles.is_system_manager = false;
 
@@ -245,7 +259,14 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   eq(rows.length, 3, "Notices lists the unread notices");
   eq($("home-notices-chip").textContent, "3 unread", "the chip says '3 unread'");
   eq($("notif-badge").textContent, "3", "the bell shows the same number");
-  eq($("mob-notif-btn").getAttribute("aria-label"), "Notices, 3 unread", "the bell's accessible name carries the number");
+  /* CHANGED DELIBERATELY by slice 083. This line was 076's own pin test and
+     it is not being weakened: the assertion still proves the name carries
+     the number. The WORDS changed because the number did - the badge now
+     counts work owed as well as unread notices, so "3 unread" would be a
+     false description of it (design 01b section 6.1, approved 6 Nov 2026).
+     Here work owed is 0, so 3 is still the whole number. */
+  eq($("mob-notif-btn").getAttribute("aria-label"), "Notifications, 3 waiting",
+     "the bell's accessible name carries the number");
   yes(!$("home-notices-body").querySelector("img, script") && $("home-notices-body").textContent.includes("<img src=x"),
       "a notice written as <img onerror> is shown as text on the card");
 
@@ -267,14 +288,24 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   yes(!dlg.querySelector("img, script") && dlg.textContent.includes("<img src=x"), "a hostile notice is text in the sheet too");
   click(dlg.querySelector("[data-hm=close]"));
   await settle(60);
-  window.toggleNotifPanel();      // the bell
+  /* Slice 083 changed the BELL's destination and nothing else: Home's own
+     "See all" still opens the sheet it always did. */
+  click($("home-notices-foot").querySelector("[data-hm=note-all]"));
   await settle(60);
   dlg = $("hm-sheet");
-  yes(dlg && /Notices, last 30 days/.test(dlg.textContent), "the bell opens the Notices sheet");
+  yes(dlg && /Notices, last 30 days/.test(dlg.textContent), "Home's See all opens the Notices sheet");
   yes([...dlg.querySelectorAll(".hm-row")].some(b => /Read/.test(b.textContent)), "the sheet marks read notices 'Read'");
   yes(!dlg.querySelector("img, script"), "no element is made from a notice in See all");
   eq(callsTo("notices_feed").pop().args, {see_all: 1}, "See all asks the same function with see_all=1");
   doc.dispatchEvent(new window.KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+  /* The bell now opens the notifications page, where the work owed its
+     number counts is actually listed. A sheet of notices could not account
+     for the other half of the number. */
+  window.toggleNotifPanel();
+  await settle(60);
+  yes($("panel-notifications").classList.contains("active"),
+      "the bell opens the notifications page, not the notices sheet");
+  window.switchPanel("home", null);
 
   // ── the leave sheet ──────────────────────────────────────────────────
   const leaveInbox = () => inbox([part("leave_approvals", [leaveRow("L1", "Anita Verma", 3), leaveRow("L2", "Bhavna Shah", 9)]),
@@ -325,6 +356,68 @@ const lines = b => b.querySelector(".hm-l1").textContent;
   window.hmRefreshIfStale();
   await settle(60);
   eq([callsTo("get_inbox").length, callsTo("notices_feed").length > 0], [before + 1, true], "a stale Home asks Pending and Notices again");
+
+  // ── slice 083: work owed, and the person's own requests ──────────────
+  /* THE FIXTURE EVERY CASE ABOVE LACKS: my_requests greater than zero.
+     Every earlier pending fixture in this file sets it to 0, so "the chip
+     and the badge agree" passed on a coincidence until now - the number the
+     chip used to compute (d.total minus shift requests) INCLUDED a person's
+     own open requests, and no fixture had any. */
+  await loadHomeWith({
+    get_inbox: {ok: inbox([
+      part("leave_approvals", [leaveRow("L1", "Anita Verma", 3), leaveRow("L2", "Bhavna Shah", 9)]),
+      part("expense_approvals", [], 1),
+      part("goal_updates", []),
+      part("attendance_fixes", [fixRow("A1", "Dinesh Pal", 1)]),
+      part("shift_requests", [], 3),
+      part("policies", []),
+      part("my_requests", [myRow("M1", "Casual leave", 4), myRow("M2", "Attendance fix", 6)]),
+    ])},
+    notices_feed: {ok: feed([noteRow("N1", "One"), noteRow("N2", "Two"), noteRow("N3", "Three")], 3, true)},
+  });
+  eq($("home-pending-chip").textContent, "4 waiting",
+     "AC-21: the chip counts work owed only - 2 leave, 1 expense, 1 fix");
+  eq($("notif-badge").textContent, "7", "AC-11: 4 work owed plus 3 unread notices");
+  yes($("notif-badge").textContent !== "9",
+      "AC-11: not 9, which is the old d.total minus shift requests, plus unread");
+  eq($("mob-notif-btn").getAttribute("aria-label"), "Notifications, 7 waiting",
+     "and the spoken name carries the same number");
+  eq(window.ntWorkOwed(window.HM.pend), 4, "one function computes work owed, for both surfaces");
+  const subh = $("home-pending-body").querySelector(".hm-subh");
+  yes(subh && /Waiting on someone else/.test(subh.textContent)
+      && /not counted/.test(subh.textContent),
+      "AC-22: the person's own requests sit under their own sub-heading, named as not counted");
+  const kids = [...$("home-pending-body").children];
+  const atSub = kids.indexOf(subh);
+  eq([atSub, kids.length - atSub - 1], [3, 2],
+     "three approval rows above the sub-heading, the two own requests below it");
+  yes(!/Anita Verma/.test(kids.slice(atSub + 1).map(k => k.textContent).join("")),
+      "no approval row slipped below the sub-heading");
+  /* Tapping an own request still goes to its own screen, as it always has,
+     and still sends nothing. */
+  const ownOpened = [];
+  const ownReal = window.switchPanel;
+  window.switchPanel = (n) => ownOpened.push(n);
+  const sent = CALLS.length;
+  click(kids[atSub + 1]);
+  window.switchPanel = ownReal;
+  eq([ownOpened.length, CALLS.length], [1, sent], "an own-request row navigates and sends nothing");
+
+  /* The footer's two numbers. They stop agreeing the moment own requests
+     leave the count unless BOTH come from the rows above the sub-heading. */
+  await loadHomeWith({
+    get_inbox: {ok: inbox([
+      part("leave_approvals", [leaveRow("L1", "A One", 3), leaveRow("L2", "B Two", 4),
+                               leaveRow("L3", "C Three", 5), leaveRow("L4", "D Four", 6),
+                               leaveRow("L5", "E Five", 7), leaveRow("L6", "F Six", 8)]),
+      part("my_requests", [myRow("M1", "Casual leave", 4), myRow("M2", "Attendance fix", 6)]),
+    ])},
+    notices_feed: {ok: feed([], 0, false)},
+  });
+  const footText = $("home-pending-foot").textContent;
+  yes(/Showing 5 of 6/.test(footText) && /See all 6/.test(footText),
+      "the footer's two numbers agree, and neither counts the own requests");
+  eq($("home-pending-chip").textContent, "6 waiting", "and the chip is the six approvals");
 
   // ── the grid: a lone last card spans the row ─────────────────────────
   const grid = $("home-grid");

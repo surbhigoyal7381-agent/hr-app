@@ -29,6 +29,22 @@ TODAY = getdate(nowdate())
 DUE = add_days(add_months(TODAY, -6), -1)       # 6 months and a day ago
 EDGE = add_months(TODAY, -6)                     # exactly 6 months ago: kept
 OLD_EDIT = add_days(TODAY, -60)                  # D-1 satisfied
+
+
+def _refresh_dates():
+	"""Work the dates out again before each test.
+
+	ALV-329. These were settled once, when this file was imported. `erase_daily`
+	works from the real today, so a run that crossed midnight compared a cutoff
+	one day old against rows built for the day before - and the row meant to be
+	kept on the six-month boundary was erased instead. Same fault as
+	test_grooming_066, same fix.
+	"""
+	global TODAY, DUE, EDGE, OLD_EDIT
+	TODAY = getdate(nowdate())
+	DUE = add_days(add_months(TODAY, -6), -1)
+	EDGE = add_months(TODAY, -6)
+	OLD_EDIT = add_days(TODAY, -60)
 OTHER_TEXT = "R066 torn jacket sleeve"
 ON = {"grooming_erase_enabled": 1}
 
@@ -163,6 +179,9 @@ class Case(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		frappe.local.request_cache.clear()
+		# ALV-329: the clock can turn over mid-run; the cutoff must match the
+		# rows this test is about to build.
+		_refresh_dates()
 		_wipe()
 
 	def tearDown(self):

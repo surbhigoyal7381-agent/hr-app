@@ -7,12 +7,22 @@ API - and, once DTC's rule set is on, raise their own leave credit. Frappe's
 field permission levels stop that; this file applies them on every site.
 
 THREE LEVELS
-  0  the employee's own details (phone, address, emergency contact) - as today.
-  2  job, pay settings, approvers, identity, and every Employee field a pay rule
-     set names. HR User, HR Manager and System Manager write; every role that
-     reads Employee also reads these, so no screen loses a field.
+  0  only SELF_EDITABLE: the person's own contact, address, emergency contact
+     and CV details (ALV-266).
+  2  everything else that holds a value: job, pay settings, approvers, identity,
+     employment and exit dates, and any field added later. HR User, HR Manager
+     and System Manager write; every role that reads Employee also reads these,
+     so no screen loses a field.
   1  bank, statutory IDs and salary (the 13 PPJ already locked). HR Manager only
      (Surbhi, D2 and D3, 25 Oct 2026): no other role keeps a level-1 row.
+  3  passport, health and family details (D6, ALV-266). HR User, HR Manager and
+     System Manager read and write; nobody else sees them, the person included.
+
+AND NOBODY BUT HR CHANGES SOMEONE ELSE'S RECORD (ALV-266). A manager reaches
+their reports through their own User Permission (ALV-249), and Employee Self
+Service writes level 0 - so without `employee_has_permission` below, a manager
+could change a report's phone or passport. It refuses that, out loud, on every
+path that saves the document.
 
 WHY A MIGRATE FUNCTION, NOT A FIXTURE OR A PATCH. A patch never runs on a new
 install (Frappe marks every patch done), so new tenants would ship open. A
@@ -27,7 +37,10 @@ from each field, so it needs no second list.
 
 import frappe
 from frappe import _
+from frappe.core.doctype.version.version import get_diff
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+from frappe.model import display_fieldtypes, table_fields
+from frappe.model.document import Document
 from frappe.permissions import add_permission, update_permission_property
 
 from hrms.alvoraa_hr_core.access import is_own_record, refuse
@@ -56,8 +69,33 @@ LEVEL_1 = (
 	"payroll_cost_center", "employee_advance_account",
 )
 
+# The only fields a person changes on their own record (ALV-266, Surbhi, 31 Oct
+# 2026). Every other Employee field that holds a value is put at level 2.
+SELF_EDITABLE = (
+	"cell_number", "personal_email", "prefered_contact_email", "prefered_email", "unsubscribed",
+	"current_address", "current_accommodation_type", "permanent_address",
+	"permanent_accommodation_type", "person_to_be_contacted", "emergency_phone_number", "relation",
+	"marital_status", "bio", "image", "salutation", "education", "external_work_history",
+)
+
+# Passport, health and family details: HR roles only, to read AND write (D6,
+# Surbhi, 1 Nov 2026). Not the manager, and not the person either - Frappe's
+# field levels go by role, never by whose record it is, so "HR or the person"
+# cannot be said. The person asks HR. Level 3: level 1 is HR Manager only.
+LEVEL_3 = (
+	"passport_number", "date_of_issue", "valid_upto", "place_of_issue", "health_details",
+	"health_insurance_no", "health_insurance_provider", "family_background", "blood_group",
+)
+
+# Fields someone who is not HR may change on ANOTHER person's record they can
+# reach (a manager, for their reports). Empty: nobody may. Add a fieldname here
+# to grant it. Only a SELF_EDITABLE field works - any other is level 2, and Frappe
+# would put it back.
+MANAGER_EDITABLE = ()
+
 LEVEL_2_WRITERS = ("HR User", "HR Manager", "System Manager")
 LEVEL_1_ROLE = "HR Manager"
+ESS_ROLE = "Employee Self Service"
 
 
 def apply():
@@ -88,6 +126,14 @@ def apply():
 		if writes and not (have and have.write):
 			update_permission_property(EMPLOYEE, r.role, 2, "write", 1)
 			changed = True
+		# D6: level 3 for HR roles only, read as they read level 0, write as they write it.
+		have = at.get((r.role, 3))
+		if r.role in LEVEL_2_WRITERS and not have:
+			add_permission(EMPLOYEE, r.role, 3)
+			changed = True
+		if writes and not (have and have.write):
+			update_permission_property(EMPLOYEE, r.role, 3, "write", 1)
+			changed = True
 
 	if (LEVEL_1_ROLE, 0) in at:
 		have = at.get((LEVEL_1_ROLE, 1))
@@ -98,10 +144,18 @@ def apply():
 			update_permission_property(EMPLOYEE, LEVEL_1_ROLE, 1, "write", 1)
 			changed = True
 
+	# ALV-266: Employee Self Service may not share an Employee record (a manager
+	# could open a report's whole record to anyone; assigning shares it too), nor
+	# export one (D6: a manager's CSV of their reports' personal details).
+	for right in ("share", "export"):
+		if frappe.db.exists("Custom DocPerm", {"parent": EMPLOYEE, "role": ESS_ROLE, "permlevel": 0, right: 1}):
+			update_permission_property(EMPLOYEE, ESS_ROLE, 0, right, 0)
+			changed = True
+
 	# D2: PPJ's Payroll Users (and anyone else) lose level 1. Custom rows only -
 	# a standard DocPerm row cannot be deleted, and Employee ships none at level 1.
 	for r in rows:
-		if r.permlevel == 1 and r.role != LEVEL_1_ROLE and frappe.db.exists("Custom DocPerm", r.name):
+		if ((r.permlevel == 1 and r.role != LEVEL_1_ROLE) or (r.permlevel == 3 and r.role not in LEVEL_2_WRITERS)) 				and frappe.db.exists("Custom DocPerm", r.name):
 			frappe.delete_doc("Custom DocPerm", r.name, ignore_permissions=True, force=True)
 			changed = True
 
@@ -112,13 +166,17 @@ def apply():
 def lock_fields():
 	"""Property Setters only, so an HR Manager saving a rule set can run it too."""
 	meta = frappe.get_meta(EMPLOYEE)
-	wanted = dict.fromkeys(LEVEL_2 + rule_set_fields(), 2)
+	wanted = {df.fieldname: 2 for df in meta.fields
+	          if df.fieldtype not in display_fieldtypes and df.fieldname not in SELF_EDITABLE}
+	wanted.update(dict.fromkeys(LEVEL_2 + rule_set_fields(), 2))
+	wanted.update(dict.fromkeys(LEVEL_3, 3))
 	wanted.update(dict.fromkeys(LEVEL_1, 1))
 	changed = False
 	for fieldname, level in wanted.items():
 		df = meta.get_field(fieldname)
-		# Never lower a field that is already above 0 (PPJ's 13 stay at 1).
-		if df and not df.permlevel:
+		# Never lower a field that is already above 0 (PPJ's 13 stay at 1). A
+		# level-3 field may come up from 2 (D6 moved health insurance from 2 to 3).
+		if df and (not df.permlevel or (level == 3 and df.permlevel == 2)):
 			make_property_setter(EMPLOYEE, fieldname, "permlevel", level, "Int",
 			                     validate_fields_for_doctype=False)
 			changed = True
@@ -147,14 +205,23 @@ def refuse_own_locked_change(doc, method=None):
 
 	Frappe has already put back any locked field the caller may not write, so a
 	change still showing here comes from someone who holds that level - HR.
+
+	Skips read-only fields and tables (ALV-266): code rewrites them on every
+	save (employee_name, documents_summary, a document row turning Expired). No
+	job, pay or bank field is either.
 	"""
 	if doc.is_new() or not doc.get_doc_before_save():
 		return
-	if not any(doc.has_value_changed(df.fieldname) for df in doc.meta.get_high_permlevel_fields()):
+	changed = [_(df.label) for df in doc.meta.get_high_permlevel_fields()
+	           if not df.read_only and df.fieldtype not in table_fields and doc.has_value_changed(df.fieldname)]
+	if not changed:
 		return
 	if is_own_record(doc.name):
+		# Names the fields (labels, never values): since D6 they can be a passport
+		# or health detail, not only job, pay or bank.
 		refuse(
-			own_record_message(),
+			_("You cannot change {0} on your own record. Ask another HR person to make this change.").format(
+				", ".join(changed)),
 			"SEC-17",
 			"Employee save",
 			doc.doctype,
@@ -226,13 +293,73 @@ def lock_new_custom_field(doc, method=None):
 	is set up - after install - so without this they stay open until the next
 	migrate. Same for a pay field a rule set already names.
 	"""
-	if doc.dt != EMPLOYEE or doc.permlevel:
+	if doc.dt != EMPLOYEE or doc.permlevel or doc.fieldtype in display_fieldtypes:
 		return
-	level = 1 if doc.fieldname in LEVEL_1 else 2 if doc.fieldname in LEVEL_2 + rule_set_fields() else 0
+	# ALV-266: a new field is HR's to write unless it is on SELF_EDITABLE.
+	level = (1 if doc.fieldname in LEVEL_1 else 3 if doc.fieldname in LEVEL_3
+	         else 0 if doc.fieldname in SELF_EDITABLE else 2)
 	if level:
 		make_property_setter(EMPLOYEE, doc.fieldname, "permlevel", level, "Int",
 		                     validate_fields_for_doctype=False)
 		frappe.clear_cache(doctype=EMPLOYEE)
+
+
+def employee_has_permission(doc, ptype=None, user=None, debug=False):
+	"""has_permission hook (ALV-266): only HR changes someone else's Employee record.
+
+	Frappe v16 treats anything but True as a denial, so every allowed case
+	returns True. Runs before Frappe quietly puts back fields the caller may not
+	write, so a manager's change to a report's `reports_to` is refused too, not
+	silently undone. An unchanged document (a plain "may this login write it?"
+	check) gets False unless MANAGER_EDITABLE grants a field. The Desk form asks
+	without a type, so it still opens editable; its Save is refused.
+	"""
+	if ptype != "write" or not isinstance(doc, Document) or doc.is_new():
+		return True
+	user = user or frappe.session.user
+	if user == "Administrator" or set(LEVEL_2_WRITERS) & set(frappe.get_roles(user)):
+		return True
+	if is_own_record(doc.name, user):
+		return True  # own record: the field levels decide, as in ALV-215
+
+	changed = changed_fieldnames(doc)
+	if not changed:
+		return bool(MANAGER_EDITABLE)
+	if changed - set(MANAGER_EDITABLE):
+		refuse(
+			_("Only HR can change another person's employee record. Ask HR to make this change."),
+			"ALV-266",
+			"Employee save",
+			EMPLOYEE,
+			doc.name,
+		)
+	return True
+
+
+def changed_fieldnames(doc):
+	"""Names of the fields this save changes - never their values.
+
+	Its own function so that no frame left on the stack when the hook refuses
+	holds the other person's old values: a bulk edit logs the traceback with
+	every local variable (06-security, blocker 1).
+	"""
+	diff = get_diff(frappe.get_doc(EMPLOYEE, doc.name), doc)  # None when nothing changed
+	if not diff:
+		return set()
+	return ({c[0] for c in diff.changed if (c[1] or None) != (c[2] or None)}
+	        | {r[0] for r in diff.added + diff.removed + diff.row_changed})
+
+
+def refuse_rename_unless_hr(doc, method=None, *args, **kwargs):
+	"""Employee before_rename (ALV-266): only HR renames an Employee ID.
+
+	A rename relinks every record that points at the ID, and breaks every
+	outside sheet keyed by it (06-security, blocker 2). Merging goes this way too.
+	"""
+	if frappe.session.user == "Administrator" or set(LEVEL_2_WRITERS) & set(frappe.get_roles()):
+		return
+	refuse(_("Only HR can change an employee ID. Ask HR to make this change."),
+	       "ALV-266", "Employee rename", EMPLOYEE, doc.name)
 
 
 @frappe.whitelist()

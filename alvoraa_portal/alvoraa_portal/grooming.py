@@ -1032,17 +1032,6 @@ def my_notices(limit=20):
 	                   "read": int(r.read or 0)} for r in shown[:max(1, min(cint(limit), 50))]]}
 
 
-@frappe.whitelist(methods=["POST"])
-def my_notices_seen():
-	"""Opening the bell marks the caller's own grooming notices read."""
-	user = frappe.session.user
-	if user == "Guest":
-		frappe.throw(_("Please sign in."), frappe.PermissionError)
-	frappe.db.set_value("Notification Log", {"for_user": user, "read": 0,
-	                                          "document_type": ("in", [MARK, REVIEW])}, "read", 1)
-	return {"ok": 1}
-
-
 def _readable(user, rows):
 	"""Which of these notices' documents the user may read now, in a flat
 	number of queries: the marks' gate (may_read) and the review's gate."""

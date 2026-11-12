@@ -478,21 +478,22 @@ _JOINER_MAY_REACH = (
 # check cannot see. This product has paid for the missing-`cmd` half twice.
 _JOINER_MAY_CALL = frozenset()
 
-# "Has this account got the joiner role?" Remembered, and **never invalidated**,
-# because the answer never needs to change:
-#
-#   * a joiner account is created with the role and never gains or loses one;
-#   * when it is closed, the role IS stripped - but a cached "yes" is then the
-#     answer we want anyway. The account cannot sign in (it is disabled), and a
-#     session that somehow survives should still be refused;
-#   * a member of staff is cached as "no" and nothing in this product ever gives
-#     them the joiner role. On the day somebody does, by hand in Desk, they get
-#     the portal until the cache is cleared - and that is the right way round:
-#     the wrong answer there costs nothing, and the other wrong answer would
-#     cost every request a database read.
-#
+# "Has this account got the joiner role?" Remembered per user, in one hash.
 # Keeping it off the database is the whole of NFR-3: this gate must add no
 # database read for a member of staff.
+#
+# **This comment used to say the entry never needed invalidating, because the
+# answer never needed to change. That was wrong, and it locked a real person out
+# of a real tenant.** ALV-319, amata.dev, 5 November 2026. The recorded reasoning
+# was that a joiner account never gains or loses the role, and that nothing in
+# this product ever gives a member of staff the role. Both premises failed on the
+# same morning: the role was added to a Role Profile (ALV-318), a user inherited
+# it a minute later, and when it was taken away again the cached "yes" went on
+# confining them to the joining form. Nothing on screen pointed at a cache; only
+# a hand-typed `frappe.cache().delete_key("alvoraa_is_a_joiner")` released them.
+#
+# So the entry is now dropped whenever a user's roles change - see
+# `forget_whether_they_are_a_joiner` below.
 _JOINER_CACHE = "alvoraa_is_a_joiner"
 
 # One sentence, used by both halves of the refusal. It names nothing: not the
@@ -508,6 +509,41 @@ def _is_a_joiner(user):
     answer = JOINER_ROLE in set(frappe.get_roles(user))
     cache.hset(_JOINER_CACHE, user, 1 if answer else 0)
     return answer
+
+
+def forget_whether_they_are_a_joiner(user, method=None) -> None:
+    """Frappe `User.on_update` hook. Drop this account's cached answer.
+
+    ALV-319, and the only thing it has to get right is that **taking a role away
+    takes effect**. An administrator who removes a role, sees it gone from the
+    user record and finds the person still locked out has nothing on screen that
+    would lead them to a cache.
+
+    It fires on an insert as well as on a save (`document.py`,
+    `run_post_save_methods` runs `on_update` whenever the action is "save"), so a
+    new account can never inherit a stale entry left behind under a login id that
+    was used before.
+
+    Takes a `User` document or a plain name, so a caller holding only the name
+    can use it too.
+
+    **The one window this does not close, named rather than hidden:** the hook
+    runs before the transaction commits, so a request arriving from the same
+    person in between can read the old roles and cache "yes" again after this
+    `hdel`. It is one request wide, and the next save of that account clears it.
+    `frappe.db.after_commit` would shut it, at the price of a fix that does not
+    run inside a test transaction and so cannot be proved by a test - the wrong
+    trade for one key in one hash.
+    """
+    name = getattr(user, "name", user)
+    if not name:
+        return
+    try:
+        frappe.cache().hdel(_JOINER_CACHE, name)
+    except Exception:
+        # A Redis blip costs us the invalidation, never the person's save. No
+        # user detail in the log line.
+        _quietly("Joiner gate could not forget a cached answer")
 
 
 class _GoToTheJoiningPage(HTTPException):

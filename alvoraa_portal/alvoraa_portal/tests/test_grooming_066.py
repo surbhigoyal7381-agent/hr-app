@@ -24,6 +24,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate, nowdate
 
 import alvoraa_portal.grooming as grooming
+import alvoraa_portal.notices as notices
 import alvoraa_portal.payroll_slip as payroll_slip
 import alvoraa_portal.attendance_correction as ac
 from alvoraa_portal.tests.utils import ensure_fiscal_years
@@ -43,6 +44,50 @@ YESTERDAY = add_days(TODAY, -1)
 DAY2 = add_days(TODAY, -2)
 M_START, M_END = getdate(get_first_day(TODAY)), getdate(get_last_day(TODAY))
 P = {}   # first name -> employee id
+
+# Who needs a punch before they can be marked, and the few whose tests also
+# look at the two days before.
+PUNCH_ALL = ("Rahul", "Aman", "Kiran", "Geeta", "Mohan", "Zara", "Pooja", "Deepa",
+             "Nobase", "Omkar", "Pia", "Leaver", "Vikas", "Tara")
+PUNCH_BACK = ("Rahul", "Aman", "Kiran", "Pooja")
+
+
+def _refresh_dates():
+	"""Work the dates out again, and re-punch if the day has turned over.
+
+	These four used to be settled once, when this file was imported. A test run
+	that crossed midnight then had the punch on one day and the mark on the
+	next, so `grooming.mark` refused every mark with R8 - "has no punch on this
+	day, so there is nothing to mark". That cost 56 failures on dev, and because
+	it only fires late in the evening it read like a code regression instead of
+	a clock problem (ALV-329).
+
+	Called before every test, so the suite stops caring what time it is.
+	"""
+	global TODAY, YESTERDAY, DAY2, M_START, M_END
+	was = TODAY
+	TODAY = getdate(nowdate())
+	YESTERDAY = add_days(TODAY, -1)
+	DAY2 = add_days(TODAY, -2)
+	M_START, M_END = getdate(get_first_day(TODAY)), getdate(get_last_day(TODAY))
+	# Only when the day really turned: normally this costs nothing.
+	if TODAY != was and P:
+		_make_punches()
+
+
+def _make_punches():
+	"""Give everyone a punch for the current day, and the two before for the few
+	who need them. Clears first, so calling it twice leaves the same rows."""
+	people = [P[x] for x in PUNCH_ALL]
+	frappe.db.delete("Employee Checkin", {"employee": ("in", people)})
+	for first in PUNCH_ALL:
+		_punch(P[first], TODAY)
+	for first in PUNCH_BACK:
+		if YESTERDAY >= M_START:
+			_punch(P[first], YESTERDAY)
+		if DAY2 >= M_START:
+			_punch(P[first], DAY2)
+	frappe.db.commit()
 
 
 def user(first):
@@ -208,17 +253,7 @@ def setUpModule():
 		_insert({"doctype": "User Permission", "user": user("Anil"), "allow": "Branch",
 		         "for_value": SOUTH, "apply_to_all_doctypes": 1})
 
-	people = [P[x] for x in ("Rahul", "Aman", "Kiran", "Geeta", "Mohan", "Zara", "Pooja", "Deepa",
-	                         "Nobase", "Omkar", "Pia", "Leaver", "Vikas", "Tara")]
-	frappe.db.delete("Employee Checkin", {"employee": ("in", people)})
-	for emp in people:
-		_punch(emp, TODAY)
-	for emp in (P["Rahul"], P["Aman"], P["Kiran"], P["Pooja"]):
-		if YESTERDAY >= M_START:
-			_punch(emp, YESTERDAY)
-		if DAY2 >= M_START:
-			_punch(emp, DAY2)
-	frappe.db.commit()
+	_make_punches()
 
 
 def tearDownModule():
@@ -234,7 +269,11 @@ def _people():
 def _wipe():
 	people = _people()
 	frappe.db.delete(grooming.MARK, {"employee": ("in", people)})
-	frappe.db.delete("Notification Log", {"document_type": ("in", [grooming.MARK, grooming.REVIEW])})
+	# Announcement too, since slice 083: its tests are the first to make
+	# announcement rows, and a leftover one makes every later test in this
+	# file count one notice too many.
+	frappe.db.delete("Notification Log",
+	                 {"document_type": ("in", [grooming.MARK, grooming.REVIEW, "Announcement"])})
 	frappe.db.delete("Salary Slip", {"employee": ("in", people)})
 	frappe.db.delete("Additional Salary", {"employee": ("in", people)})
 	frappe.db.delete("Attendance", {"employee": ("in", people)})
@@ -305,6 +344,9 @@ class Case(FrappeTestCase):
 		# grooming.is_on() is read once per request; a test run is one long
 		# "request", so start each test from the switch as it really is.
 		frappe.local.request_cache.clear()
+		# ALV-329: the clock can turn over mid-run. Settle the dates and the
+		# punches together, here, or a mark lands on a day with no punch.
+		_refresh_dates()
 		_wipe()
 
 	def tearDown(self):
@@ -996,7 +1038,9 @@ class TestLivePortalBell(Case):
 			self.assertEqual(d["items"][0]["link"], "/hrms-employee?grooming=%s" % TODAY)
 			self.assertIn("Open the day in your Attendance month to read the reason.", d["items"][0]["text"])
 			self.assertNotIn("Torn", json.dumps(d, ensure_ascii=False))
-			grooming.my_notices_seen()
+			# Slice 083: this write moved to `notices.mark_all_seen`, which
+			# clears announcements too. Grooming's own bell is unchanged.
+			notices.mark_all_seen()
 			self.assertEqual(grooming.my_notices()["unread"], 0)
 		with as_user("Ravi"):                           # the marker gets no notice of his own
 			self.assertEqual(grooming.my_notices()["items"], [])
@@ -1043,6 +1087,41 @@ class TestLivePortalBell(Case):
 
 
 # ── Prototype v3 (approved 25 Oct 2026, Z1-Z17) ──────────────────────────────
+
+class TestTheClockTurningOver(Case):
+	"""ALV-329: what a run that crosses midnight used to do.
+
+	This suite settled TODAY once, when the file was imported, and punched
+	against it. The run on 11 Nov 2026 started at 23:24 and ended at 00:39, so
+	the punch was on one day and the mark on the next, and `grooming.mark`
+	refused all of them with R8 - "has no punch on this day". Fifty-six tests
+	failed on dev and it read like a code regression rather than a clock.
+
+	The test puts the module back into that stale state on purpose and shows
+	both halves, so neither the bug nor the fix can come back unnoticed.
+	"""
+
+	def _go_stale(self):
+		"""Leave the module as midnight used to leave it: dates and punches one
+		day behind the real clock."""
+		global TODAY, YESTERDAY, DAY2, M_START, M_END
+		TODAY = add_days(getdate(nowdate()), -1)
+		YESTERDAY = add_days(TODAY, -1)
+		DAY2 = add_days(TODAY, -2)
+		M_START, M_END = getdate(get_first_day(TODAY)), getdate(get_last_day(TODAY))
+		_make_punches()
+
+	def test_a_day_behind_is_refused_and_refreshing_fixes_it(self):
+		self._go_stale()
+		# Exactly the failure dev saw: the only punch is on yesterday.
+		self.refused(_mark, "Ravi", "Rahul")
+		# And the fix: the dates and the punches catch the clock up.
+		_refresh_dates()
+		self.assertEqual(TODAY, getdate(nowdate()))
+		name = _mark("Ravi", "Rahul")
+		self.assertEqual(getdate(frappe.db.get_value(grooming.MARK, name, "mark_date")),
+		                 getdate(nowdate()))
+
 
 class TestPrototypeV3Words(Case):
 	def test_z1_to_z12_the_screen_words_are_v3_s_and_live_in_one_table(self):

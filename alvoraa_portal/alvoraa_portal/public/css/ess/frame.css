@@ -396,3 +396,36 @@ select + .fail{margin-top:8px}
    Tex Clothing Private Limited" would have pushed the new button past the
    right edge of a 320px screen - which fails "always visible" outright. */
 .mob-brand{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── Slice 083: the bell on a laptop ──────────────────────────────────────
+   Until now the bell's only markup was inside `.mob-header`, which the rule
+   above hides above 768 px, so a manager on a laptop had no signal at all
+   while the call that fetched its number ran on every page.
+
+   `position:fixed` here is the FALLBACK, not the plan. nfHomeTheBell moves
+   this node into Frappe's navbar at boot and adds `.nf-bell-set`, which hands
+   the position back to the bar's own flex row. The fallback is what keeps the
+   bell on screen in jsdom, and after a Frappe release that changes the navbar
+   - a bell that could only exist inside somebody else's markup would vanish
+   silently, and no gate in this repository connects deploy/Dockerfile to this
+   page's markup.
+
+   36 px is the desktop floor the design asks for; the phone keeps its own
+   44 px bell, so this one is hidden there. */
+.nf-bell{
+  position:fixed;top:7px;right:150px;z-index:1031;
+  width:36px;height:36px;border-radius:50%;
+  background:var(--surface);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text2);cursor:pointer;padding:0;font-family:inherit;
+}
+/* `relative`, not `static`: the badge inside is absolutely positioned, so it
+   anchors to its nearest POSITIONED ancestor. With `static` here nothing
+   between the badge and `nav.navbar` (which is fixed) is positioned, so the
+   number flew to the top-right corner of the whole bar, clipped, and the bell
+   itself showed no count. `relative` changes no layout - it only gives the
+   badge something to hang on. */
+.nf-bell.nf-bell-set{position:relative;margin-right:8px}
+.nf-bell:hover{background:var(--surface2);color:var(--text)}
+.nf-bell:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+@media (max-width:768px){.nf-bell{display:none}}

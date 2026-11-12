@@ -4767,6 +4767,7 @@ function switchPanel(name, triggerEl) {
 
   if (name === "home") hmRefreshIfStale();
 
+  if (name === "notifications")       { nfOpen(); }
   if (name === "attendance-insights") { aiOpen(); }
   if (name === "att-record")         { acOpen(); }
   if (name === "org-chart") { ocLoad(); }
@@ -6407,8 +6408,38 @@ var HM_IB = "alvoraa_portal.inbox_api.";
 var HM_NT = "alvoraa_portal.notices.";
 var HM_MARK_READ = "frappe.desk.doctype.notification_log.notification_log.mark_as_read";
 var HM_CAP = 5;
-var HM = {pend: null, rows: [], notes: null, all: null, opener: null, at: 0};
+var HM = {pend: null, rows: [], own: [], notes: null, all: null, opener: null, at: 0};
 var HM_STALE_MS = 60000;
+
+/* ── slice 083: the bell's two halves, and the one place they are added ──
+   The badge counts WORK OWED plus UNREAD NOTICES. Two different answers
+   from two different calls, summed here in the browser and nowhere else.
+   `NT.work` and `NT.unread` are the only two inputs; `ntPaintBadge()` takes
+   no argument and is the only thing that writes the number to the screen,
+   so there is exactly one place that can get the arithmetic wrong. */
+var NT = {work: 0, unread: 0};
+
+/* Not counted, and each for its own reason:
+     shift_requests - no screen in the live portal decides one, so the row
+       would lead nowhere (the same reason Home has always left it out);
+     my_requests    - the person's own open requests. They are waiting on
+       somebody else, so counting them gives an employee a number they
+       cannot take to zero however much work they do. They are still on
+       screen, under their own sub-heading, and out of the count.
+   NEVER `d.total`, which is approvals + policies + my_requests, and never
+   `approvals_total`, which includes shift_requests. Both are the wrong
+   answer and both are one property access away. */
+var NT_SKIP = {shift_requests: 1, my_requests: 1};
+function ntWorkOwed(d) {
+  var cxo = hmIsCxo(), n = 0;
+  ((d && d.parts) || []).forEach(function (p) {
+    if (NT_SKIP[p.key]) return;
+    /* A CXO gets one row per KIND, so their badge counts kinds: 1 to 5,
+       and it moves when a queue empties. Rows would read "99+" for ever. */
+    n += cxo ? (p.count ? 1 : 0) : (p.count || 0);
+  });
+  return n;
+}
 
 /* Where "Open" goes, by the row's own `action` word. The inbox's route strings
    belong to the discarded /hrms-employee-next page and mean nothing here. */
@@ -6464,6 +6495,14 @@ function hmWhen(stamp) {
   if (!m) return "";
   var h = +m[4], ap = h < 12 ? "am" : "pm";
   return (+m[3]) + " " + drT(MON3[+m[2] - 1]) + ", " + ((h % 12) || 12) + ":" + m[5] + " " + ap;
+}
+
+/* Slice 083 (AC-22): the person's own open requests, named as what they
+   are. The words say they are not counted, so the chip above and the rows
+   below cannot look as though they disagree. */
+function hmOwnHead() {
+  return '<div class="hm-subh"><b>' + esc(drT("Waiting on someone else")) + '</b>'
+    + '<span>' + esc(drT("not counted \u2014 nothing for you to do yet")) + '</span></div>';
 }
 
 function hmEmpty(head, sub) {
@@ -6548,10 +6587,12 @@ document.addEventListener("keydown", function (e) {
 function homePending() {
   var body = hmEl("home-pending-body");
   if (!body) return;
+  HM.askedPend = 1;
   gpFetch(HM_IB + "get_inbox", {}).then(function (d) {
     HM.pend = d;
     HM.at = Date.now();
     hmPaintPending();
+    nfRepaint();
   }, function (e) {
     hmChip("home-pending-chip", "");
     var foot = hmEl("home-pending-foot");
@@ -6592,6 +6633,24 @@ function hmPendingRows(d) {
     /* The live portal has no screen where a manager decides a shift change, so
        the row would lead nowhere. Out of Pending until Part C or a decide screen. */
     if (p.key === "shift_requests") return;
+    /* Slice 083: the person's own requests are drawn by hmOwnRows, under
+       their own sub-heading, and are not part of the number. */
+    if (p.key === "my_requests") return;
+    (p.rows || []).forEach(function (r) { out.push(hmRowView(p.key, r)); });
+  });
+  out.sort(function (a, b) {
+    var x = a.since || "9999", y = b.since || "9999";
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+  return out;
+}
+/* The person's own open requests, oldest first. A CXO's card is counts by
+   kind and has never listed their own requests, so it is left as it was. */
+function hmOwnRows(d) {
+  if (hmIsCxo()) return [];
+  var out = [];
+  ((d && d.parts) || []).forEach(function (p) {
+    if (p.key !== "my_requests") return;
     (p.rows || []).forEach(function (r) { out.push(hmRowView(p.key, r)); });
   });
   out.sort(function (a, b) {
@@ -6632,14 +6691,14 @@ function hmRowView(key, r) {
   }
   return v;
 }
-function hmPendRowHtml(v, i) {
+function hmPendRowHtml(v, i, what) {
   /* Slice 081 (AC-36, AC-37): a THIRD LINE in words - "Bill attached" or "No
      bill attached" - and it stays a `<span>`. The row is one `<button>`, so a
      View link inside it would be a button inside a button: unreachable by
      keyboard and a WCAG 2.2 AA failure. The file is opened from the sheet.
      "No bill attached" is grey, not red: it is not an error, and an older
      claim with none is a fact rather than a fault. */
-  return '<button type="button" class="hm-row" data-hm="pend" data-i="' + i + '">'
+  return '<button type="button" class="hm-row" data-hm="' + (what || "pend") + '" data-i="' + i + '">'
     + '<span class="hm-av" aria-hidden="true">' + esc(v.av || initials(v.title)) + '</span>'
     + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span><span class="hm-l2">' + esc(v.sub) + '</span>'
     + (v.l3 ? '<span class="hm-l3' + (v.l3dim ? " hm-l3-dim" : "") + '">' + esc(v.l3) + '</span>' : "")
@@ -6650,19 +6709,38 @@ function hmPaintPending() {
   var d = HM.pend, body = hmEl("home-pending-body"), foot = hmEl("home-pending-foot");
   if (!d || !body) return;
   HM.rows = hmPendingRows(d);
-  var rows = HM.rows;
-  var shifts = ((d.parts || []).filter(function (p) { return p.key === "shift_requests"; })[0] || {}).count || 0;
-  var total = hmIsCxo() ? rows.reduce(function (n, v) { return n + v.count; }, 0) : Math.max(0, (d.total || 0) - shifts);
+  HM.own = hmOwnRows(d);
+  var rows = HM.rows, own = HM.own;
+  /* Slice 083: ONE definition of "how much work is waiting on me", shared
+     with the bell - see ntWorkOwed. It used to be `d.total` minus shift
+     requests, which still INCLUDED the person's own open requests, so an
+     employee with a leave request of their own had a number they could not
+     take to zero.
+
+     This was `hmIsCxo() ? rows.reduce(sum of count) : ntWorkOwed(d)` and that
+     was a second definition: a CXO saw "278 waiting" on Home and 4 on the
+     bell, on one page load, because ntWorkOwed counts KINDS for a CXO
+     (AC-49). AC-23 says any payload gives the same number everywhere, so
+     there is one call and no persona branch. */
+  var total = ntWorkOwed(d);
+  NT.work = ntWorkOwed(d);
+  ntPaintBadge();
   hmChip("home-pending-chip", total ? drT("{0} waiting", [total]) : "");
-  if (!rows.length) {
+  if (!rows.length && !own.length) {
     body.innerHTML = hmEmpty("Nothing waiting on you.", "Requests that need you, and policies to read, appear here.");
   } else {
-    body.innerHTML = rows.slice(0, HM_CAP).map(hmPendRowHtml).join("");
+    body.innerHTML = rows.slice(0, HM_CAP).map(function (v, i) { return hmPendRowHtml(v, i, "pend"); }).join("")
+      + (own.length ? hmOwnHead()
+          + own.slice(0, HM_CAP).map(function (v, i) { return hmPendRowHtml(v, i, "own"); }).join("") : "");
   }
+  /* The footer counts the rows ABOVE the sub-heading, and both of its
+     numbers now come from that one list. Before this they came from two
+     different places, so the moment the person's own requests left the
+     count the card could read "Showing 5 of 7" above "See all 5". */
   if (rows.length > HM_CAP) {
     foot.innerHTML = '<span class="hm-note">' + esc(drT(hmIsCxo() ? "Showing {0} of {1} kinds" : "Showing {0} of {1}", [HM_CAP, rows.length]))
       + '</span><span class="hm-sp"></span><button type="button" class="hm-tbtn" data-hm="pend-all">'
-      + esc(drT("See all {0}", [total])) + '</button>';
+      + esc(drT("See all {0}", [rows.length])) + '</button>';
     foot.style.display = "";
   } else {
     foot.innerHTML = "";
@@ -6670,14 +6748,16 @@ function hmPaintPending() {
   }
 }
 function hmPendAll() {
-  var rows = HM.rows;
+  var rows = HM.rows, own = HM.own || [];
   hmOpenSheet(drT("Pending for you"),
-    rows.map(hmPendRowHtml).join("")
+    rows.map(function (v, i) { return hmPendRowHtml(v, i, "pend"); }).join("")
+    + (own.length ? hmOwnHead()
+        + own.map(function (v, i) { return hmPendRowHtml(v, i, "own"); }).join("") : "")
     + '<div class="hm-sh-p hm-note">' + esc(drT(hmIsCxo() ? "Counts by kind. Tap one to open its screen."
       : "Showing all {0} (at most 50 of each kind).", [rows.length])) + '</div>');
 }
-function hmPendOpen(i) {
-  var v = HM.rows[i];
+function hmPendOpen(i, list) {
+  var v = (list || HM.rows)[i];
   if (!v) return;
   if (v.action === "leave" && !hmIsCxo()) { hmLeaveSheet(v); return; }
   if (v.action === "expense" && v.row) { hmExpenseSheet(v.row); return; }
@@ -6788,6 +6868,13 @@ function hmDecide(action) {
     if (mayHaveGone(e)) { sayMayHaveGone(e, btns[btns.length - 1]); return; }
     [].forEach.call(btns, function (b) { b.disabled = false; });
     toast((e && e.message) || drT("Could not save that. Try again."), "err");
+    /* Slice 083 (US-13). The refusal is the server's own sentence - "Anita
+       cancelled this request.", "This claim has already been decided." - and
+       it has just been shown. What the notifications page owes on top of
+       that is an honest list, so it asks again: a row that really did leave
+       the queue disappears, and a row still owed (no approver set, say)
+       stays. Guessing which from the words would get one of the two wrong. */
+    if (_panelNow === "notifications") nfLoad();
   }
   /* The expense decision goes through gpFetch, so a refusal ("This claim has
      already been decided.") comes back as the server's own words. */
@@ -6804,16 +6891,22 @@ function hmDropPending(key, name) {
     p.rows = (p.rows || []).filter(function (x) { return x.name !== name; });
     if (p.rows.length < n) { p.count = Math.max(0, (p.count || 0) - 1); d.total = Math.max(0, (d.total || 0) - 1); }
   });
+  /* hmPaintPending recomputes the work-owed sum from `p.count`, so the chip
+     and the badge both fall by one. `d.total` is kept in step for anything
+     still reading it; the chip and the badge no longer do. */
   hmPaintPending();
+  nfRepaint();
 }
 
 /* ── Notices, and the bell that shares their number ───────────────────── */
 function homeNotices() {
   var body = hmEl("home-notices-body");
   if (!body) return;
+  HM.askedNotes = 1;
   gpFetch(HM_NT + "notices_feed", {see_all: 0}).then(function (d) {
     HM.notes = d;
-    ntPaintBadge(d.unread || 0);
+    NT.unread = d.unread || 0;
+    ntPaintBadge();
     hmPaintNotices();
   }, function (e) {
     hmChip("home-notices-chip", "");
@@ -6822,22 +6915,67 @@ function homeNotices() {
     failBox(body, e, homeNotices);
   });
 }
-function ntPaintBadge(n) {
-  var badge = hmEl("notif-badge"), btn = hmEl("mob-notif-btn");
-  if (badge) { badge.textContent = n > 99 ? "99+" : n; badge.style.display = n > 0 ? "flex" : "none"; }
-  if (btn) {
-    var name = drT("Notices, {0} unread", [n]);
+/* ── the badge, and the only code that writes it (slice 083, AC-12) ─────
+   It takes no argument on purpose. Every caller updates ONE of the two
+   stored halves and then asks for a repaint, so there is exactly one
+   expression in the built file that computes the number. A second place
+   that added it up would be the defect this shape exists to prevent.
+
+   Three places wear the number - the phone bell, the desktop bell and the
+   sidebar item - and all three are written here, from the same two inputs. */
+var NT_BADGES = ["notif-badge", "nf-bell-badge", "sb-notif-badge"];
+var NT_BELLS = ["mob-notif-btn", "nf-bell", "nav-notifications"];
+function ntPaintBadge() {
+  var n = (NT.work || 0) + (NT.unread || 0);
+  var text = n > 99 ? "99+" : String(n);
+  /* A number AND a spoken name: the badge never says it with colour alone. */
+  var name = drT("Notifications, {0} waiting", [n]);
+  NT_BADGES.forEach(function (id) {
+    var badge = hmEl(id);
+    if (!badge) return;
+    badge.textContent = text;
+    badge.style.display = n > 0 ? "flex" : "none";
+  });
+  NT_BELLS.forEach(function (id) {
+    var btn = hmEl(id);
+    if (!btn) return;
     btn.setAttribute("aria-label", name);
     btn.setAttribute("title", name);
-  }
+  });
 }
-/* The bell outside Home: the same function, called once at start-up. */
+/* The bell outside Home, called once at start-up (slice 083: two calls).
+
+   Home asks for both of these itself, so each half is skipped when Home has
+   already asked - the flag is set when the request GOES OUT, not when it
+   lands, or a slow Home would be asked twice.
+
+   `get_nav_counts`, never `get_inbox`: numbers, not rows. The bell has no
+   use for a colleague's name, leave type or claim amount, and this call is
+   on every page load (OPS-1).
+
+   Each half fails on its own and leaves the badge exactly as it was. No
+   toast: nothing the person did has gone wrong, and a bell that cries wolf
+   on a bad lift is worse than a bell that is briefly out of date.
+
+   There is NO timer here and there must never be one. A 60-second refresh
+   across 441 shared DTC handsets is about 15 extra calls a second, all day.
+   Refresh is navigation-triggered, by hmRefreshIfStale. */
 window.ntBellBoot = function () {
-  if (HM.notes) return;
-  gpFetch(HM_NT + "notices_feed", {see_all: 0}).then(function (d) {
-    HM.notes = d;
-    ntPaintBadge(d.unread || 0);
-  }, function () { /* the bell stays as it is; Home shows its own failure box */ });
+  if (!HM.askedNotes) {
+    HM.askedNotes = 1;
+    gpFetch(HM_NT + "notices_feed", {see_all: 0}).then(function (d) {
+      HM.notes = d;
+      NT.unread = d.unread || 0;
+      ntPaintBadge();
+    }, function () { /* the bell stays as it is; Home shows its own failure box */ });
+  }
+  if (!HM.askedPend) {
+    HM.askedPend = 1;
+    gpFetch(HM_IB + "get_nav_counts", {}).then(function (d) {
+      NT.work = ntWorkOwed(d);
+      ntPaintBadge();
+    }, function () { /* as above: the number stays as it was */ });
+  }
 };
 function ntRowHtml(n, i, withRead) {
   /* An announcement is pinned and says who sent it (slice 076 Part B). */
@@ -6874,7 +7012,8 @@ window.ntOpenAll = function () {
   var opener = document.activeElement;
   gpFetch(HM_NT + "notices_feed", {see_all: 1}).then(function (d) {
     HM.all = d;
-    ntPaintBadge(d.unread || 0);
+    NT.unread = d.unread || 0;
+    ntPaintBadge();
     var items = d.items || [];
     var html = items.length ? items.map(function (n, i) { return ntRowHtml(n, i, true); }).join("")
       : hmEmpty("No notices.", "Messages from HR and management, and alerts about your work, appear here.");
@@ -6896,15 +7035,317 @@ function ntOpenOne(n) {
   /* Frappe's own call: it only ever changes a row whose for_user is the caller. */
   gpFetch(HM_MARK_READ, {docname: n.name}).then(function () {
     n.read = 1;
+    /* Both surfaces hold their own copy of this row - Home's card (the
+       first five unread) and the notifications page (the last 30 days) -
+       so both are corrected here, and the badge falls exactly once. */
     var d = HM.notes;
     if (d) {
       d.unread = Math.max(0, (d.unread || 0) - 1);
       d.items = (d.items || []).filter(function (x) { return x.name !== n.name; });
-      ntPaintBadge(d.unread);
       hmPaintNotices();
     }
+    var a = HM.all;
+    if (a) {
+      a.unread = Math.max(0, (a.unread || 0) - 1);
+      (a.items || []).forEach(function (x) { if (x.name === n.name) x.read = 1; });
+    }
+    NT.unread = Math.max(0, (NT.unread || 0) - 1);
+    ntPaintBadge();
+    nfRepaint();
   }, function () { /* left unread; it will be there next time */ });
 }
+
+/* ══ Notifications, the page (slice 083) ═════════════════════════════════
+   Prefix nf. One page, three groups, always in this order: what needs you,
+   then notices from HR, then what you are waiting on somebody else for. The
+   order never changes with the filter, because "what needs you" is the reason
+   anybody opened it.
+
+   It is a hash route inside this same page - #notifications - so there is no
+   new web address, no nginx rule and no new guest route to get wrong. The
+   sidebar item is what gives it an address at all: mayOpenPanel resolves a
+   panel only by finding a VISIBLE nav item, so without one a reload or Back
+   would silently drop to Home.
+
+   Two calls, fired together, each failing on its own:
+     get_inbox            - the work owed, and the person's own requests
+     notices_feed(1)      - the last 30 days of notices
+   Both are the SAME answers Home reads, held in the same HM state, so a
+   decision taken here moves Home's card and the badge with it. The chips
+   filter the rows already in the browser: pressing one sends nothing.
+
+   Nothing on this page is written to localStorage, sessionStorage, IndexedDB
+   or the Cache API. 441 DTC staff logins share factory handsets and this page
+   holds 30 days of one named person's HR messages, so what it knows lives in
+   one variable that dies with the page.
+
+   No timer, and never one. See ntBellBoot for the arithmetic.
+*/
+var NF_CAP = 5;      /* rows per group under "All" - 100 uncapped measured 6,744 px tall */
+var NF_CHIPS = [["all", "All"], ["todo", "To do"], ["unread", "Unread notices"]];
+var NF = {chip: "all", workIn: 0, notesIn: 0, workBad: 0, notesBad: 0, busy: 0};
+
+function nfOpen() {
+  NF.chip = "all";
+  nfLoad();
+}
+
+function nfLoad() {
+  NF.workIn = 0; NF.notesIn = 0; NF.workBad = 0; NF.notesBad = 0;
+  nfPaint();
+  gpFetch(HM_IB + "get_inbox", {}).then(function (d) {
+    HM.pend = d;
+    HM.at = Date.now();
+    HM.askedPend = 1;
+    NF.workIn = 1;
+    /* Home's own paint sets NT.work and repaints the badge, so this page and
+       Home cannot end up with two different ideas of the same number. */
+    hmPaintPending();
+    nfPaint();
+  }, function () { NF.workBad = 1; nfPaint(); });
+  gpFetch(HM_NT + "notices_feed", {see_all: 1}).then(function (d) {
+    HM.all = d;
+    NF.notesIn = 1;
+    NT.unread = d.unread || 0;
+    /* Home's card holds the first five unread; its chip must not be left
+       saying yesterday's number while this page shows today's. */
+    if (HM.notes) { HM.notes.unread = d.unread || 0; hmPaintNotices(); }
+    ntPaintBadge();
+    nfPaint();
+  }, function () { NF.notesBad = 1; nfPaint(); });
+}
+
+/* Repaint only if this page has ever been opened. Called from the shared
+   notices and decision code, which runs whatever screen is on. */
+function nfRepaint() {
+  if (NF.workIn || NF.notesIn || NF.workBad || NF.notesBad) nfPaint();
+}
+
+function nfSetChip(k) {
+  if (!k || NF.chip === k) return;
+  NF.chip = k;
+  nfPaint();                /* no request: the rows are already here */
+}
+
+/* "Mark all as read", and only in the notices group. It cannot reach a work
+   row: this is the only thing that calls it and there is no row id in it. */
+function nfMarkAll() {
+  if (NF.busy) return;
+  NF.busy = 1;
+  /* The `{}` is not decoration. gpSend picks POST only when it is given an
+     arguments object, and Frappe's rate limiter returns early for anything
+     that is not a POST - so a no-argument call here would be a write that
+     looked limited and was not. */
+  gpFetch(HM_NT + "mark_all_seen", {}).then(function () {
+    NF.busy = 0;
+    var a = HM.all;
+    if (a) { a.unread = 0; (a.items || []).forEach(function (n) { n.read = 1; }); }
+    if (HM.notes) {
+      HM.notes.unread = 0;
+      (HM.notes.items || []).forEach(function (n) { n.read = 1; });
+      hmPaintNotices();
+    }
+    NT.unread = 0;
+    ntPaintBadge();
+    nfPaint();
+  }, function (e) {
+    NF.busy = 0;
+    /* The refusal above 30 an hour is the server's own sentence. */
+    toast((e && e.message) || drT("Could not save that. Try again."), "err");
+  });
+}
+
+/* ── the pieces ─────────────────────────────────────────────────────────── */
+
+/* Four row-shaped bars, drawn at once. The bar itself is the product's own
+   `.hm-skel`, so this reuses its pulse and its prefers-reduced-motion rule;
+   `.nf-skel` only resizes it to a row. Named, not a bare spinner. */
+function nfSkeleton() {
+  var bar = '<div class="hm-skel"></div>';
+  return '<div class="nf-skel" role="status" aria-busy="true" aria-label="'
+    + esc(drT("Loading your notifications")) + '">' + bar + bar + bar + bar + '</div>';
+}
+function nfFailBox(head, sub) {
+  return '<div class="fail" role="alert"><h3>' + esc(drT(head)) + '</h3><p>' + esc(drT(sub))
+    + '</p><button type="button" class="btn btn-outline" data-hm="nf-retry">'
+    + esc(drT("Try again")) + '</button></div>';
+}
+function nfHead(title, tag, action) {
+  return '<div class="nf-gh"><h2>' + esc(title) + '</h2>'
+    + (tag ? '<span class="nf-tag">' + esc(tag) + '</span>' : "")
+    + (action || "") + '</div>';
+}
+/* The footer the product already uses on Home. The button SETS A CHIP - it
+   opens no screen and writes no address - so "See all" is one tap back. */
+function nfFoot(shown, total, label, chip) {
+  return '<div class="nf-foot"><span class="hm-note">'
+    + esc(drT("Showing {0} of {1}", [shown, total])) + '</span><span class="hm-sp"></span>'
+    + '<button type="button" class="hm-tbtn" data-hm="nf-chip" data-k="' + chip + '">'
+    + esc(label) + '</button></div>';
+}
+function nfNote(text) { return '<div class="nf-foot"><span class="hm-note">' + esc(text) + '</span></div>'; }
+
+/* A row in group 3 is NOT a button. There is nothing to do to it, and its own
+   state sentence is the answer, so a control would be a lie about who is
+   holding it up. */
+function nfOwnRowHtml(v) {
+  return '<div class="hm-row hm-static">'
+    + '<span class="hm-av" aria-hidden="true">' + esc(initials(v.title)) + '</span>'
+    + '<span class="hm-rt"><span class="hm-l1">' + esc(v.title) + '</span>'
+    + '<span class="hm-l2">' + esc(v.sub) + '</span></span></div>';
+}
+
+/* "Showing the first 50 of 63 attendance fixes" - a part whose own screen
+   shows fewer rows than it counted says so, per part, in its own words. */
+function nfCappedWork(d) {
+  return ((d && d.parts) || []).filter(function (p) {
+    return p.capped && !NT_SKIP[p.key] && HM_KIND[p.key];
+  }).map(function (p) {
+    /* ONE translatable sentence with the kind as a placeholder, rather than
+       five near-identical ones. `toLowerCase` is a no-op in Devanagari, which
+       has no case, and the only other language we ship is English. */
+    return nfNote(drT("Showing the first {0} of {1} {2}",
+                      [p.shown || p.cap, p.count, drT(HM_KIND[p.key][0]).toLowerCase()]));
+  }).join("");
+}
+
+function nfPaint() {
+  var body = hmEl("nf-body"), chips = hmEl("nf-chips");
+  if (!body) return;
+  var title = hmEl("nf-title"), sub = hmEl("nf-sub");
+  if (title) title.textContent = drT("Notifications");
+  if (sub) sub.textContent = drT("Last 30 days");
+  if (chips) {
+    chips.setAttribute("aria-label", drT("Notifications"));
+    chips.innerHTML = NF_CHIPS.map(function (c) {
+      return '<button type="button" class="nf-chip" data-hm="nf-chip" data-k="' + c[0]
+        + '" aria-pressed="' + (NF.chip === c[0]) + '">' + esc(drT(c[1])) + '</button>';
+    }).join("");
+  }
+
+  /* A spinner always ends: it is replaced by rows, an empty box or an amber
+     box, and never left running because one of the two calls is slow. */
+  if (!(NF.workIn || NF.workBad) || !(NF.notesIn || NF.notesBad)) {
+    body.innerHTML = nfSkeleton();
+    return;
+  }
+  if (NF.workBad && NF.notesBad) {
+    body.innerHTML = nfFailBox("Could not load this page.",
+                               "Check your connection and try again. Nothing has been lost.");
+    return;
+  }
+
+  var d = NF.workIn ? HM.pend : null;
+  var f = NF.notesIn ? HM.all : null;
+  var work = d ? HM.rows : [], own = d ? HM.own : [];
+  var items = f ? (f.items || []) : [], unread = f ? (f.unread || 0) : 0;
+  var workN = d ? ntWorkOwed(d) : 0;
+  var all = NF.chip === "all";
+
+  /* Nothing at all. `any` is the feed's own answer to "have you ever had a
+     notice in this window?", which is what tells a first morning apart from a
+     clear desk - and it needs no new field to know it. */
+  if (!work.length && !own.length && !items.length && !NF.workBad && !NF.notesBad) {
+    body.innerHTML = (f && f.any)
+      ? hmEmpty("Nothing waiting on you, and no new notices.",
+                "Requests that need you, notices from HR, and your own open requests all appear here.")
+      : hmEmpty("Nothing here yet.",
+                "This is where you will see anything waiting on you, and every notice sent to you. "
+                + "We will put a number on the bell when something arrives.");
+    return;
+  }
+
+  var out = "";
+
+  /* ── group 1: what needs you ───────────────────────────────────────── */
+  if (NF.chip !== "unread") {
+    out += '<section class="nf-grp">'
+      + nfHead(drT("{0} waiting on you", [workN]), hmIsCxo() ? drT("counts by kind") : "", "");
+    if (NF.workBad) {
+      out += nfFailBox("Could not load this page.",
+                       "Check your connection and try again. Nothing has been lost.");
+    } else if (!work.length) {
+      out += hmEmpty("Nothing waiting on you.",
+                     "Requests that need you, and policies to read, appear here.");
+    } else {
+      var ws = all ? work.slice(0, NF_CAP) : work;
+      out += '<div class="nf-list">'
+        + ws.map(function (v, i) { return hmPendRowHtml(v, i, "pend"); }).join("") + '</div>';
+      if (all && work.length > NF_CAP) {
+        out += nfFoot(ws.length, workN, drT("See all {0} waiting", [workN]), "todo");
+      } else {
+        out += nfCappedWork(d);
+      }
+    }
+    out += '</section>';
+  }
+
+  /* ── group 2: notices ──────────────────────────────────────────────── */
+  if (NF.chip !== "todo") {
+    var list = NF.chip === "unread" ? items.filter(function (n) { return !n.read; }) : items;
+    /* "Mark all as read" belongs to this group and appears only when there is
+       something unread - absent, not greyed, because a greyed control is a
+       question nobody can answer. */
+    var act = unread ? '<span class="nf-act"><button type="button" class="hm-tbtn" data-hm="nf-mark">'
+        + esc(drT("Mark all as read")) + '</button></span>' : "";
+    out += '<section class="nf-grp">';
+    /* The heading names the list under it. Under "All" that list holds read
+       notices too, so the unread count sits beside it as a tag; under the
+       Unread chip the two are the same thing and the heading carries it. */
+    out += NF.chip === "unread"
+      ? nfHead(drT("{0} unread notices", [unread]), "", act)
+      : nfHead(drT("Notices"), unread ? drT("{0} unread", [unread]) : "", act);
+    if (NF.notesBad) {
+      out += nfFailBox("Could not load your notices.",
+                       "Your work is shown below. Nothing has been lost.");
+    } else if (!list.length) {
+      out += hmEmpty("You have read everything.",
+                     "New notices from HR and management appear here.");
+    } else {
+      var ns = all ? list.slice(0, NF_CAP) : list;
+      out += '<div class="nf-list">'
+        + ns.map(function (n) { return ntRowHtml(n, items.indexOf(n), true); }).join("") + '</div>';
+      if (all && list.length > NF_CAP) {
+        /* The true count, never items.length: with 150 unread the list holds
+           100 and saying "of 100" would be the capped number pretending to be
+           a total all over again. */
+        var t = unread > NF_CAP ? unread : list.length;
+        out += nfFoot(ns.length, t, drT("See all {0} notices", [t]), "unread");
+      } else if (f && f.capped) {
+        out += nfNote(drT("Showing the first 100 notices. Older read ones are not kept."));
+      }
+    }
+    out += '</section>';
+  }
+
+  /* ── group 3: waiting on somebody else, and not counted ────────────── */
+  if (all && own.length) {
+    out += '<section class="nf-grp">'
+      + nfHead(drT("Waiting on someone else"), drT("not counted — nothing for you to do yet"), "")
+      + '<div class="nf-list">' + own.slice(0, NF_CAP).map(nfOwnRowHtml).join("") + '</div>'
+      + (own.length > NF_CAP ? nfNote(drT("Showing {0} of {1}", [NF_CAP, own.length])) : "")
+      + '</section>';
+  }
+
+  body.innerHTML = out;
+}
+
+/* The desktop bell, declared in our frame.html and re-homed into Frappe's
+   navbar. See the call site at boot for why it is done this way round. */
+function nfHomeTheBell() {
+  var bell = hmEl("nf-bell");
+  if (!bell) return;
+  var av = document.querySelector(".navbar .nav-avatar, .navbar .dropdown-navbar-user");
+  var host = av && av.closest ? (av.closest("li") || av.parentNode) : null;
+  if (!host || !host.parentNode) return;   /* no navbar: the CSS fallback holds it */
+  host.parentNode.insertBefore(bell, host);
+  bell.classList.add("nf-bell-set");
+}
+
+/* On the window because the DOM tests assert, from a payload, that Home's
+   chip and the bell are computed by this one function. Nothing else needs it:
+   every caller inside this file reaches it directly. */
+window.ntWorkOwed = ntWorkOwed;
 
 /* ── Birthdays and anniversaries, My profile, the switch (slice 076, Part C)
    Prefixes bd / mp / bs. The server decides who is listed: own branch, Active,
@@ -8342,7 +8783,11 @@ document.addEventListener("click", function (e) {
   var what = t.getAttribute("data-hm"), i = +t.getAttribute("data-i");
   if (what === "close") hmCloseSheet();
   else if (what === "pend") hmPendOpen(i);
+  else if (what === "own") hmPendOpen(i, HM.own);
   else if (what === "pend-all") hmPendAll();
+  else if (what === "nf-chip") nfSetChip(t.getAttribute("data-k"));
+  else if (what === "nf-mark") nfMarkAll();
+  else if (what === "nf-retry") nfLoad();
   else if (what === "leave-approve") hmDecide("approve");
   else if (what === "leave-decline") hmDecide("reject");
   else if (what === "bill") hmOpenBill(t);
@@ -8871,14 +9316,23 @@ function dmWhere(m) {
             percent: null, notArrived: true};
   }
 
-  var now = dmUnwrap(dmNow(), anchor);
-  var worked = Math.max(0, now - dmUnwrap(arrived, anchor));
+  /* ALV-326: worked time runs from the anchor the server sent, less any
+     break already over the allowance. Where the rule set counts only shift
+     hours, the anchor is the shift start for anybody within grace and the
+     clock stops at the shift end. Unwrapped against the earlier of the
+     arrival and the anchor, so somebody in before their shift does not read
+     as tomorrow. */
+  var base = Math.min(arrived, anchor);
+  var now = dmUnwrap(dmNow(), base);
+  var end = lad.shift_hours_only && m.shift ? dmParse(m.shift.end) : null;
+  end = end === null ? now : dmUnwrap(end, base);
+  var worked = Math.max(0, Math.min(now, end) - anchor - (lad.break_over || 0));
 
   /* Steps arrive best-first, so the first rung already reached is the best
      one reached. */
   var at = null, next = null;
   for (var i = 0; i < lad.steps.length; i++) {
-    var t = dmUnwrap(dmParse(lad.steps[i].leave_after), anchor);
+    var t = dmUnwrap(dmParse(lad.steps[i].leave_after), base);
     if (t !== null && now >= t) { at = lad.steps[i]; break; }
     next = lad.steps[i];
     next.when = t;
@@ -8888,8 +9342,8 @@ function dmWhere(m) {
 
   var inRedWindow = false;
   if (at && at.red_from && at.red_to) {
-    var rf = dmUnwrap(dmParse(at.red_from), anchor);
-    var rt = dmUnwrap(dmParse(at.red_to), anchor);
+    var rf = dmUnwrap(dmParse(at.red_from), base);
+    var rt = dmUnwrap(dmParse(at.red_to), base);
     inRedWindow = now >= rf && now <= rt;
   }
 
@@ -9076,11 +9530,18 @@ function dmMarks(m) {
   }
   var r = m.red;
   if (r && r.late) {
+    /* ALV-326: say what the lateness costs, as the payslip will, where the
+       rule set sets a late limit. Staff who earn no marks are told of no red. */
+    var free = r.free_per_month && r.earns_marks !== false
+      ? " The first " + r.free_per_month + " a month are free." : "";
+    var cost = r.late_charge === "quarter"
+      ? " Arriving after " + r.late_red_until + " costs a quarter of a day and"
+        + " no red. Staying late does not win it back."
+      : r.late_charge === "red"
+        ? " Arriving by " + r.late_red_until + " costs 1 red." + free
+        : free;
     out.push(["bad", "Late by " + r.late_by_minutes + " min",
-              "On time meant " + r.on_time_until + "."
-              + (r.free_per_month
-                  ? " The first " + r.free_per_month + " a month are free."
-                  : "")]);
+              "On time meant " + r.on_time_until + "." + cost]);
   }
   if (r && r.in_late_window && r.late_window) {
     out.push(["bad", "Inside the late window",
@@ -15484,7 +15945,7 @@ function deleteDrawerNote(noteId, empId) {
   var WRITE_CALL = new RegExp("^(save|create|update|delete|submit|approve|reject|set|assign|end|post|"
     + "propose|add|remove|archive|send|invite|log|relink|return|advance|answer|acknowledge|hr_create|"
     + "hr_generate|hr_set|hr_start|raise|withdraw|decide|undo|mark|keep|ask|record|apply|cancel|"
-    + "action|attach|publish|sync|unarchive)(_|$)|^(data_review_confirm|my_notices_seen)$");
+    + "action|attach|publish|sync|unarchive)(_|$)|^(data_review_confirm)$");
   function gpFetch(method, args, opts) {
     if (navigator.onLine === false) return Promise.reject(gpCallErr("offline"));
     var call = new Promise(function(resolve, reject) {
@@ -18358,12 +18819,15 @@ window.pfRatingLabel = function(value, scale) {
   window.pfFmtDate = pfFmtDate;
 
   /* ── The bell ──────────────────────────────────────────────────────
-     Slice 076: it opens the Notices sheet, the same one as "See all" on Home,
-     and its number is the unread count the Notices card shows. */
+     Slice 076 pointed it at the Notices sheet. Slice 083 points it at the
+     notifications page, because the number on it now counts work owed as well
+     as unread notices and a sheet listing only notices would not account for
+     it. Home's own "See all" keeps the sheet: only the bell's destination
+     changed. */
 
   window.toggleNotifPanel = function(e) {
     if (e) e.stopPropagation();
-    ntOpenAll();
+    switchPanel("notifications", null);
   };
 
   /* ALV-213: the phone header's account menu (My Account, Log out). */
@@ -18389,7 +18853,18 @@ window.pfRatingLabel = function(value, scale) {
     }
   });
 
-  /* Boot: the bell's number, from the same call the Notices card makes. */
+  /* Slice 083: the bell on a laptop. It is DECLARED in our own frame.html -
+     so the tag-balance gate, the handler gate and the jsdom tests all see
+     it - and moved into Frappe's navbar here, immediately left of the
+     avatar, which is where the design puts it and where the bar has 1,280
+     empty pixels. If the navbar is not there (jsdom, or a Frappe release
+     that changes it), the node stays where it was declared and our own CSS
+     keeps it on screen. A bell living only inside Frappe's markup would be
+     lost silently by a pin bump, and no gate connects deploy/Dockerfile to
+     this page's markup. */
+  nfHomeTheBell();
+
+  /* Boot: the bell's number, from the same calls the Home cards make. */
   setTimeout(function() { ntBellBoot(); }, 1500);
 
   /* Rating a KPI outside the review is gone (slice 010 group D, R14). Ratings

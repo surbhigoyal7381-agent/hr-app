@@ -22,8 +22,10 @@ and whether it is read. Nothing else leaves the server.
 handful of queries). The cost does not grow with headcount: it is this person's
 own rows.
 
-Marking a notice read is Frappe's own `mark_as_read(docname)`, which only ever
+Marking ONE notice read is Frappe's own `mark_as_read(docname)`, which only ever
 changes a row where `for_user` is the caller. There is no wrapper to get wrong.
+Marking them ALL read is `mark_all_seen` below, which is a wrapper, and the two
+filter terms in it are the whole of its security - see its docstring.
 """
 
 import html
@@ -33,6 +35,7 @@ from frappe import _
 from frappe.utils import add_days, cint, now_datetime
 
 from alvoraa_portal import grooming
+from alvoraa_portal.field_app_limits import SELF_KEY, _limited
 
 # The kinds of document a notice may be about.
 ANNOUNCEMENT = "Announcement"
@@ -55,6 +58,23 @@ def notices_feed(see_all=0):
 	say "You are up to date" or "No notices". `can_send` is whether the caller
 	holds Notice Sender, so the card shows "Send a notice" (the endpoints check
 	again, AC-51).
+
+	Slice 083 (AC-24 to AC-27): `unread` used to be counted from `shown`, which
+	came from a read already cut off at `READ_CAP`. A person with 150 unread
+	notices was told 100, the bell said "99+", and clearing every notice the
+	screen offered left the bell at 99+ - the one failure the bell exists to
+	prevent. It is now counted on its own, uncapped, and `capped` says when the
+	LIST was cut so the page can say so in words.
+
+	Two extra statements, and they are split by kind on purpose (OPS-13):
+
+	  * an announcement row is the person's own copy, so a plain `COUNT` is
+	    exact and needs no gate;
+	  * a grooming row is only readable while its mark or review still is, so
+	    its rows are folded into the SINGLE `_readable` call this function
+	    already makes. A second `_readable` call would break the <= 14
+	    statement ceiling, and a plain `COUNT(*)` would count notices about
+	    marks the reader may no longer see (AC-26).
 	"""
 	user = frappe.session.user
 	if user == "Guest":
@@ -69,14 +89,35 @@ def notices_feed(see_all=0):
 		fields=["name", "subject", "link", "creation", "read", "document_type", "document_name"],
 		order_by="creation desc", limit_page_length=READ_CAP)
 
+	# Every unread grooming notice, however old and however many - this is the
+	# read the capped one above cannot stand in for. Three fields, no subject,
+	# so a long backlog costs rows and not bytes. `for_user` is named here as
+	# well as being pinned by Frappe's own condition: it is the term that makes
+	# this the caller's own count and nothing else (SEC-1).
+	open_alerts = frappe.get_list(
+		"Notification Log",
+		filters={"for_user": user, "read": 0,
+		         "document_type": ["in", [grooming.MARK, grooming.REVIEW]]},
+		fields=["name", "document_type", "document_name"], limit_page_length=0)
+
 	# An announcement row is the person's own copy: nothing more to gate.
 	alerts = [r for r in rows if r.document_type != ANNOUNCEMENT]
-	allowed = grooming._readable(user, alerts) if alerts else set()
+	# ONE gate call for both sets. `_readable` asks a fixed number of queries
+	# whatever the row count - longer IN lists, not more queries - and it keys
+	# on (doctype, name), so the overlap between the two sets costs nothing.
+	gate = alerts + open_alerts
+	allowed = grooming._readable(user, gate) if gate else set()
 	shown = [r for r in rows if r.document_type == ANNOUNCEMENT
 	         or (r.document_type, r.document_name) in allowed]
 	# Pinned first, then newest first (the sort keeps creation order inside each).
 	shown.sort(key=lambda r: r.document_type != ANNOUNCEMENT)
 	unread = [r for r in shown if not r.read]
+
+	unread_total = (
+		frappe.db.count("Notification Log",
+		                {"for_user": user, "document_type": ANNOUNCEMENT, "read": 0})
+		+ sum(1 for r in open_alerts
+		      if (r.document_type, r.document_name) in allowed))
 
 	chosen = (sorted(shown, key=lambda r: bool(r.read)) if see_all else unread[:CARD_ROWS])
 	# Grooming links open the day only while grooming is on (as the old bell did).
@@ -85,7 +126,11 @@ def notices_feed(see_all=0):
 	senders = dict(frappe.get_all(ANNOUNCEMENT, filters={"name": ["in", sent]},
 	                              fields=["name", "sender_label"], as_list=True)) if sent else {}
 	return {
-		"unread": len(unread),
+		"unread": unread_total,
+		# The LIST was cut, not the count. `get_inbox` already returns `cap`,
+		# `shown` and `capped` per part for exactly this reason, so this is the
+		# same honesty on the sibling endpoint, not a new idea.
+		"capped": len(rows) >= READ_CAP,
 		"any": bool(shown),
 		"can_send": 1 if "Notice Sender" in frappe.get_roles(user) else 0,
 		"items": [{
@@ -98,3 +143,48 @@ def notices_feed(see_all=0):
 			"read": 1 if r.read else 0,
 		} for r in chosen],
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+@_limited(SELF_KEY, "user", limit=30)
+def mark_all_seen():
+	"""Mark every unread notice of the caller's own three kinds as read.
+
+	Slice 083, US-9. Moved here from `grooming.my_notices_seen`, which had no
+	live caller and cleared two of the three kinds from the wrong module. One
+	name, one place, and `NOTICE_DOCTYPES` stays single-sourced - the filter
+	IS the constant the feed above reads, so the two can never drift apart.
+
+	**The two filter terms are the whole of the security here, and Frappe
+	checks neither.** `frappe.db.set_value` with a dict filter issues one
+	direct `UPDATE` through the query builder: no permission condition, no
+	`has_permission` call, nothing. So:
+
+	  * `for_user` is what stops this clearing every colleague's notices. A
+	    wrong write here is silent and unlogged and nobody would report it,
+	    which is why it has an assertion of its own (AC-32).
+	  * `document_type` is what stops it clearing the caller's own Desk
+	    notifications that this page never showed. DTC carries 902 unread
+	    `Employee` rows and PPJ's heaviest user 406 (AC-31).
+
+	Frappe's own `mark_all_as_read` filters on `for_user` ALONE, so it would
+	clear rows this page has never shown. That is why this is not a call to it.
+
+	It takes no arguments at all, so there is no doctype, field, user or filter
+	a browser can post. One set-based statement, not a loop: 86 unread notices
+	cost one `UPDATE`, not 86. `update_modified=False` keeps it to that one
+	statement - the named cost is that nothing records WHEN a bulk clear
+	happened, accepted in the spec (section 14) because no decision turns on it.
+
+	Safe to run twice: it sets `read = 1` where `read = 0`, so a retry, a second
+	tap or a second handset matches nothing and writes nothing.
+	"""
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw(_("Please sign in."), frappe.PermissionError)
+	frappe.db.set_value(
+		"Notification Log",
+		{"for_user": user, "read": 0,
+		 "document_type": ["in", list(NOTICE_DOCTYPES)]},
+		"read", 1, update_modified=False)
+	return {"ok": 1}

@@ -189,3 +189,91 @@ class TestWhoTheLateWindowApplies(FrappeTestCase):
 		emp = _employee("Permanent")
 		flags = _employee_flags(emp, self.date, prepare(rs, self.date, self.date))
 		self.assertFalse(flags["late_window_flagged"])
+
+
+class TestShiftHoursSettingsALV326(FrappeTestCase):
+	"""ALV-326 (Surbhi, 2026-11-11): nothing company-specific in code. The late
+	limit and the break allowance live on the rule set, a category may override
+	either (0 = the rule set's), and a rule set that sets nothing keeps the old
+	behaviour."""
+
+	def setUp(self):
+		self.date = getdate(nowdate())
+
+	def _flags(self, employment_type, **rule_set):
+		rs = _rule_set(**rule_set)
+		ctx = prepare(rs, self.date, self.date)
+		return ctx, _employee_flags(_employee(employment_type), self.date, ctx)
+
+	def test_alv326_a_new_rule_set_switches_all_three_off(self):
+		ctx, flags = self._flags("Permanent")
+		self.assertFalse(ctx["shift_hours_only"])
+		self.assertEqual(flags["late_quarter_after_minutes"], 0)
+		self.assertEqual(flags["break_allowance_minutes"], 0)
+
+	def test_alv326_the_rule_set_figures_reach_the_engine(self):
+		ctx, flags = self._flags("Permanent", count_shift_hours_only=1,
+		                         late_quarter_after_minutes=30, break_allowance_minutes=40)
+		self.assertTrue(ctx["shift_hours_only"])
+		self.assertEqual(flags["late_quarter_after_minutes"], 30)
+		self.assertEqual(flags["break_allowance_minutes"], 40)
+
+	def test_alv326_a_category_overrides_and_zero_means_the_rule_set_s(self):
+		cats = [{"category": "Contract", "grace_minutes": 15, "earns_marks": 0,
+		         "earns_leave_credits": 0, "doubles_deduction": 0,
+		         "late_quarter_after_minutes": 45, "break_allowance_minutes": 0}]
+		_, flags = self._flags("Contract", late_quarter_after_minutes=30,
+		                       break_allowance_minutes=40, categories=cats)
+		self.assertEqual(flags["late_quarter_after_minutes"], 45)
+		self.assertEqual(flags["break_allowance_minutes"], 40)
+
+	def test_alv326_negative_figures_are_refused(self):
+		for field in ("late_quarter_after_minutes", "break_allowance_minutes"):
+			with self.subTest(field=field), self.assertRaises(frappe.ValidationError):
+				_rule_set(**{field: -1})
+		with self.assertRaises(frappe.ValidationError):
+			_rule_set(categories=[{"category": "Contract", "break_allowance_minutes": -5}])
+
+	def test_alv326_a_late_limit_at_or_below_grace_is_refused(self):
+		"""Security review M1: it would turn every late red into a quarter."""
+		for limit in (5, 6):
+			with self.subTest(limit=limit), self.assertRaises(frappe.ValidationError):
+				_rule_set(late_quarter_after_minutes=limit)
+		self.assertTrue(_rule_set(late_quarter_after_minutes=7).name)
+
+	def test_alv326_a_category_grace_above_the_late_limit_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			_rule_set(late_quarter_after_minutes=10, categories=[
+				{"category": "Contract", "grace_minutes": 15}])
+
+
+class TestWholeMinutesALV326(FrappeTestCase):
+	"""Review P3-2, Surbhi's D3: lateness is judged in whole minutes. A real
+	Employee Checkin at 10:36:40 on a 10:30 shift with 6 minutes' grace is
+	10:36, which is on time. With the seconds kept it would be late."""
+
+	SHIFT = "ALV326 Whole Minutes 10:30"
+
+	def test_alv326_a_punch_at_10_36_40_is_on_time(self):
+		from alvoraa_portal.payroll_rules_apply import _punches, judge
+
+		if not frappe.db.exists("Shift Type", self.SHIFT):
+			frappe.get_doc({"doctype": "Shift Type", "name": self.SHIFT,
+			                "start_time": "10:30:00", "end_time": "20:30:00",
+			                "enable_late_entry_marking": 1,
+			                "late_entry_grace_period": 6}).insert(ignore_permissions=True)
+		rs = _rule_set()
+		emp = _employee("Permanent")
+		day = add_days(nowdate(), -3)
+		for t in ("10:36:40", "20:30:00"):
+			frappe.get_doc({"doctype": "Employee Checkin", "employee": emp,
+			                "time": "{0} {1}".format(day, t),
+			                "log_type": ""}).insert(ignore_permissions=True)
+
+		first_in, last_out, count, gaps = _punches(emp, getdate(day))
+		self.assertEqual((first_in, last_out, count, gaps), (636, 1230, 2, []))
+
+		v = judge(frappe._dict(name="not-saved", employee=emp, attendance_date=day,
+		                       status="Present", shift=self.SHIFT),
+		          prepare(rs, getdate(day), getdate(day)))
+		self.assertFalse(v.late_arrival)

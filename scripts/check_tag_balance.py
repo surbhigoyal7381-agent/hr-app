@@ -105,6 +105,10 @@ PINNED_DEPTH = {
 	"drawers.html": -2,
 	"growth.html": 0,
 	"home.html": 0,
+	# Slice 083. One panel, opened and closed inside this file. It closes nothing
+	# the frame opened and leaves nothing for the frame to close, so 0 is the
+	# shape the file is rather than the number that made the check pass.
+	"notifications.html": 0,
 	# Slice 045's two skeletons, pinned when Wave 4 rebased onto this check.
 	# Each is ONE `<div class="nf-skeleton">` that opens and closes inside its
 	# own file, holding only decorative boxes that do the same. Neither closes

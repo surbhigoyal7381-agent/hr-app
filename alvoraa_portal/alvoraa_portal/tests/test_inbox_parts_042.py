@@ -396,6 +396,67 @@ class TestTheCapSaysSo(_WaveTwo):
 		self.assertTrue(part["capped"])
 
 
+# ── Slice 083: the axis nobody covered - how DEEP the backlog is ─────────────
+
+
+class TestADeepBacklogCostsNoMoreQueries(_WaveTwo):
+	"""Slice 083, OPS-40. `get_nav_counts` had no caller in the live portal;
+	after slice 083 the bell calls it on **every non-Home page load**, so its
+	cost is now on everyone's critical path.
+
+	`test_scale_flatness_044.py` holds the HEADCOUNT axis. Nothing held the
+	**backlog-depth** axis, which is the one DTC actually has: a pay rule set
+	switched on and a deep attendance-correction queue. DevOps asked for a
+	one-off measurement on a DTC-shaped fixture site; a one-off number decays
+	and this assertion does not, so this is the half that was worth building
+	first (07 section 4.6).
+
+	Three rows to forty rather than forty to four hundred: the thing being
+	caught is a query inside a loop, and that shape shows itself at forty as
+	plainly as at four hundred, in seconds rather than minutes. If the count
+	ever does grow with depth, raise the numbers and watch it get worse.
+	"""
+
+	def _fill(self, n, first_day):
+		# A day each: Frappe HR refuses two Attendance Requests for one person
+		# over the same period.
+		for i in range(n):
+			self._correction(self.in_b, add_days(nowdate(), first_day - i))
+
+	def _count_statements(self):
+		inbox_api.get_nav_counts()                # warm, in the state being measured
+		with _Recorder() as rec:
+			payload = inbox_api.get_nav_counts()
+		return len(rec.statements), payload
+
+	def test_get_nav_counts_does_not_grow_with_the_correction_backlog(self):
+		self._fill(3, -20)
+		frappe.db.commit()
+		self._as(self.kamal_login)
+		shallow, small = self._count_statements()
+		frappe.set_user("Administrator")
+
+		self._fill(37, -30)
+		frappe.db.commit()
+		self._as(self.kamal_login)
+		deep, big = self._count_statements()
+		frappe.set_user("Administrator")
+
+		def fixes(payload):
+			return next(p for p in payload["parts"]
+			            if p["key"] == "attendance_fixes")["count"]
+
+		# Without this the test passes on an empty queue and proves nothing -
+		# slice 028's lesson, and the reason AC-55 asserts its seeded row first.
+		self.assertEqual((fixes(small), fixes(big)), (3, 40),
+		                 "the backlog did not actually get deeper, so nothing was proved")
+		self.assertLessEqual(
+			deep, shallow + 1,
+			f"get_nav_counts went from {shallow} queries to {deep} when the "
+			"correction backlog went from 3 rows to 40 - that is a query inside "
+			"a loop, and it is now on every non-Home page load")
+
+
 # ── AC-15: the query count, and the N+1 it caught ───────────────────────────
 
 

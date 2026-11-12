@@ -44,6 +44,50 @@ DAY2 = add_days(TODAY, -2)
 M_START, M_END = getdate(get_first_day(TODAY)), getdate(get_last_day(TODAY))
 P = {}   # first name -> employee id
 
+# Who needs a punch before they can be marked, and the few whose tests also
+# look at the two days before.
+PUNCH_ALL = ("Rahul", "Aman", "Kiran", "Geeta", "Mohan", "Zara", "Pooja", "Deepa",
+             "Nobase", "Omkar", "Pia", "Leaver", "Vikas", "Tara")
+PUNCH_BACK = ("Rahul", "Aman", "Kiran", "Pooja")
+
+
+def _refresh_dates():
+	"""Work the dates out again, and re-punch if the day has turned over.
+
+	These four used to be settled once, when this file was imported. A test run
+	that crossed midnight then had the punch on one day and the mark on the
+	next, so `grooming.mark` refused every mark with R8 - "has no punch on this
+	day, so there is nothing to mark". That cost 56 failures on dev, and because
+	it only fires late in the evening it read like a code regression instead of
+	a clock problem (ALV-329).
+
+	Called before every test, so the suite stops caring what time it is.
+	"""
+	global TODAY, YESTERDAY, DAY2, M_START, M_END
+	was = TODAY
+	TODAY = getdate(nowdate())
+	YESTERDAY = add_days(TODAY, -1)
+	DAY2 = add_days(TODAY, -2)
+	M_START, M_END = getdate(get_first_day(TODAY)), getdate(get_last_day(TODAY))
+	# Only when the day really turned: normally this costs nothing.
+	if TODAY != was and P:
+		_make_punches()
+
+
+def _make_punches():
+	"""Give everyone a punch for the current day, and the two before for the few
+	who need them. Clears first, so calling it twice leaves the same rows."""
+	people = [P[x] for x in PUNCH_ALL]
+	frappe.db.delete("Employee Checkin", {"employee": ("in", people)})
+	for first in PUNCH_ALL:
+		_punch(P[first], TODAY)
+	for first in PUNCH_BACK:
+		if YESTERDAY >= M_START:
+			_punch(P[first], YESTERDAY)
+		if DAY2 >= M_START:
+			_punch(P[first], DAY2)
+	frappe.db.commit()
+
 
 def user(first):
 	return "%s@%s" % (first.lower(), DOMAIN)
@@ -208,17 +252,7 @@ def setUpModule():
 		_insert({"doctype": "User Permission", "user": user("Anil"), "allow": "Branch",
 		         "for_value": SOUTH, "apply_to_all_doctypes": 1})
 
-	people = [P[x] for x in ("Rahul", "Aman", "Kiran", "Geeta", "Mohan", "Zara", "Pooja", "Deepa",
-	                         "Nobase", "Omkar", "Pia", "Leaver", "Vikas", "Tara")]
-	frappe.db.delete("Employee Checkin", {"employee": ("in", people)})
-	for emp in people:
-		_punch(emp, TODAY)
-	for emp in (P["Rahul"], P["Aman"], P["Kiran"], P["Pooja"]):
-		if YESTERDAY >= M_START:
-			_punch(emp, YESTERDAY)
-		if DAY2 >= M_START:
-			_punch(emp, DAY2)
-	frappe.db.commit()
+	_make_punches()
 
 
 def tearDownModule():
@@ -305,6 +339,9 @@ class Case(FrappeTestCase):
 		# grooming.is_on() is read once per request; a test run is one long
 		# "request", so start each test from the switch as it really is.
 		frappe.local.request_cache.clear()
+		# ALV-329: the clock can turn over mid-run. Settle the dates and the
+		# punches together, here, or a mark lands on a day with no punch.
+		_refresh_dates()
 		_wipe()
 
 	def tearDown(self):

@@ -126,8 +126,13 @@ reads and one read-only SELECT during step 1.
   translation rows added.
 - **Photo-log gap with the switch on** (SEC-11, R3): unchanged code, accepted by Surbhi.
   *Intentional trade-off*.
-- **Count E on DTC not run** (D1 condition): must show nobody outside HR adds punches for
-  others before release. *Release gate*, not code.
+- **Count E on DTC: 0** (D1 condition, run 12 Nov 2026, recorded in 05-impact-and-strategy):
+  nobody outside HR added punches for others in the last 120 days.
+- **Before main: count punch shares on DTC** (security review R5). A share with write lets
+  someone outside HR edit a punch. Read-only script `step32-punch-shares-readonly.py`.
+- **Browser pass, 13 Nov 2026** on hrlocal-328 with made-up people: both screens drawn, every
+  break figure as the spec, "Why this day" and "Worked out on" shown, no script errors. Phone
+  widths (360 / 390 px) not checked.
 - **Pre-existing, not touched:** ruff E741 at `attendance_correction.py:579`; the setup
   wizard cannot run after alvoraa_portal is installed (joiner guard). Worth a ticket.
 - Desk still shows a Save button to a manager on a report's punch; the server refuses.

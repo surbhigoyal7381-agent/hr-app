@@ -367,7 +367,6 @@ class QueryCounts(BreakCase):
 			call()
 		checkin = [str(c.args[0]) for c in sql.call_args_list
 		           if "tabEmployee Checkin" in str(c.args[0] if c.args else "")]
-		self.checkin_sql = checkin
 		return sql.call_count, len(checkin)
 
 	def test_alv328_month_costs_the_same_for_few_or_many_punches(self):
@@ -380,15 +379,19 @@ class QueryCounts(BreakCase):
 		try:
 			ac.month(YEAR, MONTH, self.rohan)    # warm the caches both calls share
 			many = self.counted(lambda: ac.month(YEAR, MONTH, self.rohan))
-			many_sql = self.checkin_sql
 			less = self.counted(lambda: ac.month(YEAR, MONTH, few))
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(many, less)
 		# The page's own punch list is the only read this slice relies on; the
 		# break adds none. The grooming line, when on, reads punches once more.
-		own = [q for q in many_sql if "`attendance`" in q]
-		self.assertEqual(len(own), 1, "the break adds no Employee Checkin read")
+		frappe.set_user(self.meena_mail)
+		try:
+			with patch.object(ac, "breaks_by_day", return_value=(ALLOWANCE, {})):
+				without = self.counted(lambda: ac.month(YEAR, MONTH, self.rohan))
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(many[1], without[1], "the break adds no Employee Checkin read")
 
 	def test_alv328_person_costs_the_same_for_one_month_or_twelve(self):
 		frappe.set_user(self.meena_mail)

@@ -59,6 +59,7 @@
   },
   {
    "fieldname": "invited_by",
+   "default": "__user",
    "description": "Who issued the link. Survives erasure - it holds no personal data about the joiner.",
    "fieldtype": "Link",
    "label": "Invited by",

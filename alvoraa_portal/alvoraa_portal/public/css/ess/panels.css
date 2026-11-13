@@ -2087,6 +2087,12 @@ body.panel-fullscreen{overflow:hidden}
   background:var(--surface);color:var(--text);width:100%;max-width:420px}
 .ac-form textarea{min-height:56px;resize:vertical}
 .ac-help{font-size:var(--fs-xs);color:var(--text3);margin:5px 0 10px;line-height:1.5}
+/* ALV-328: the break item never splits across lines; the reason keeps its line breaks. */
+.ac-brk{white-space:nowrap}
+.ac-why{margin:8px 0 12px}
+.ac-why h3{font-size:var(--fs-sm);margin:0 0 4px}
+.ac-why-text{font-size:var(--fs-sm);white-space:pre-line;margin:0;line-height:1.5}
+.ac-why-when{font-size:var(--fs-xs);color:var(--text3);margin:4px 0 0}
 .ac-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 
 .ac-req{border:1px solid var(--border);border-left:3px solid var(--border);

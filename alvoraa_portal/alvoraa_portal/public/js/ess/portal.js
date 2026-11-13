@@ -5458,20 +5458,24 @@ window.aiPerson = async function (employee) {
     return;
   }
   var rows = d.days.filter(function (x) { return x.short_by > 0; });
+  /* ALV-328: the break column only where a shown day has a break figure. */
+  var brk = rows.some(function (x) { return !!x.break_state; });
   body.innerHTML =
     '<button class="oc-up" onclick="aiPaint()">&larr; Back to the list</button>'
     + '<h3 style="margin:14px 0 4px;font-size:var(--fs-lg)">' + gpEsc(d.name) + "</h3>"
     + '<p class="ai-note" style="margin:0 0 14px">' + d.from + " to " + d.to + " \u00b7 "
     + rows.length + " day(s) short of the shift</p>"
     + (rows.length
-        ? '<table class="ai-tbl"><thead><tr><th>Date</th><th>Day</th><th>Worked</th>'
+        ? '<div class="tbl-wrap"><table class="ai-tbl"><thead><tr><th>Date</th><th>Day</th><th>Worked</th>'
+          + (brk ? "<th>" + gpEsc(drT("Break")) + "</th>" : "")
           + "<th>Expected</th><th>Short by</th></tr></thead><tbody>"
           + rows.map(function (x) {
               return "<tr><td class='who'>" + gpEsc(x.date) + "</td><td>"
-                + gpEsc(x.weekday) + "</td><td>" + x.hours + "h</td><td>"
-                + (x.expected_hours || "\u2014") + "h</td><td class='hi'>"
+                + gpEsc(x.weekday) + "</td><td>" + x.hours + "h</td>"
+                + (brk ? "<td>" + (acBreak(x, false) || "\u2014") + "</td>" : "")
+                + "<td>" + (x.expected_hours || "\u2014") + "h</td><td class='hi'>"
                 + x.short_by + "h</td></tr>";
-            }).join("") + "</tbody></table>"
+            }).join("") + "</tbody></table></div>"
         : '<p class="ai-empty">No short days in this period.</p>');
 };
 
@@ -5843,7 +5847,8 @@ function acPaint() {
 
   html += '<div class="tbl-wrap"><table class="ac-tbl"><thead><tr>'
     + '<th class="ac-ph"></th><th>Day</th><th class="t">The day</th><th>In</th><th>Out</th>'
-    + "<th>Worked</th><th>Expected</th><th>Arrival</th><th></th>"
+    + "<th>Worked</th>" + (acShowBreak(d) ? "<th>" + gpEsc(drT("Break")) + "</th>" : "")
+    + "<th>Expected</th><th>Arrival</th><th></th>"
     + "</tr></thead><tbody>";
 
   /* Newest first, and nothing that has not happened yet. The month arrives
@@ -5922,6 +5927,7 @@ function acRow(x) {
     if (x.out_time) line2.push(gpEsc(drT("Out {0}", [x.out_time])));
     if (x.hours !== null && x.hours !== undefined) line2.push(gpEsc(drT("{0}h worked", [x.hours])));
     if (x.in_time) line2.push(arrival);
+    if (acBreak(x, true)) line2.push(acBreak(x, true));
   }
   var block = '<span class="ac-l1"><span class="ac-d">' + day + '</span><span class="ac-tags">' + label + "</span>"
     + (pick ? '<span class="ac-go" aria-hidden="true">&rsaquo;</span>' : "") + "</span>"
@@ -5939,6 +5945,7 @@ function acRow(x) {
     + "<td>" + gpEsc(x.out_time || "—") + "</td>"
     + "<td" + (x.short_by > 0 ? ' class="hi"' : "") + ">"
     + (x.hours === null ? "—" : x.hours + "h") + "</td>"
+    + (acShowBreak(acState.data) ? "<td>" + (acBreak(x, false) || "—") + "</td>" : "")
     + "<td>" + (x.expected_hours ? x.expected_hours + "h" : "—") + "</td>"
     + "<td>" + arrival + "</td>"
     + "<td>" + (pick ? "&rsaquo;" : "") + "</td></tr>";
@@ -6040,6 +6047,27 @@ function acMins(n) {
   return h + "h" + (m ? " " + m + "m" : "");
 }
 
+/* ALV-328: a day's break as the pay rules count it, worked out on the server.
+   "Break 55 min (15 over)" on a phone, "55 min (15 over)" in the desktop
+   column; "" when the day has no break figure. The words carry "over"; the red
+   is extra. */
+function acBreak(x, withWord) {
+  if (x.break_state === "not_measured") {
+    return '<span class="ac-brk">' + gpEsc(drT(withWord ? "Break not measured" : "Not measured")) + "</span>";
+  }
+  if (x.break_state !== "measured") return "";
+  var over = x.break_over > 0
+    ? ' <span class="hi">' + gpEsc(drT("({0} over)", [x.break_over < 60 ? String(x.break_over) : acMins(x.break_over)])) + "</span>"
+    : "";
+  var mins = acMins(x.break_minutes);
+  return '<span class="ac-brk">' + gpEsc(withWord ? drT("Break {0}", [mins]) : mins) + over + "</span>";
+}
+
+/* The desktop Break column, only when a day of the month has a figure (S7). */
+function acShowBreak(d) {
+  return !!(d && d.days && d.days.some(function (x) { return !!x.break_state; }));
+}
+
 function acSay(state) {
   return {waiting: "Waiting for HR", approved: "Corrected",
           declined: "Not approved", withdrawn: "Withdrawn"}[state] || state;
@@ -6054,13 +6082,17 @@ window.acToggle = function (date) {
    can still be compared with the days around it. */
 function acDetail(x) {
   var d = acState.data;
-  var html = '<tr class="ac-open"><td colspan="9"><div class="ac-detail">';
+  var html = '<tr class="ac-open"><td colspan="' + (acShowBreak(d) ? 10 : 9) + '"><div class="ac-detail">';
 
   html += '<div class="ac-facts">'
     + "<div>Shift<span>"
     + gpEsc(x.shift_starts ? x.shift_starts + " – " + x.shift_ends : "None set")
     + "</span></div>"
     + "<div>Worked<span>" + (x.hours === null ? "—" : x.hours + "h") + "</span></div>"
+    + (x.break_state === "measured"
+        ? "<div>" + gpEsc(drT("Break")) + "<span>" + acBreak(x, false) + "</span></div>"
+          + "<div>" + gpEsc(drT("Allowed")) + "<span>" + gpEsc(acMins(d.break_allowance_minutes)) + "</span></div>"
+        : "")
     + "<div>Expected<span>" + (x.expected_hours ? x.expected_hours + "h" : "—") + "</span></div>"
     + (x.short_by > 0 ? "<div>Short by<span>" + x.short_by + "h</span></div>" : "")
     + (x.late_by_mins > 0
@@ -6085,6 +6117,23 @@ function acDetail(x) {
     html += '<p class="ac-help"><b>One punch never registered.</b> That is the '
       + "commonest reason a day looks short, and it is what the correction "
       + "below is for.</p>";
+  }
+  if (x.break_state === "not_measured") {
+    html += '<p class="ac-help"><b>' + gpEsc(drT("Break not measured.")) + "</b> "
+      + gpEsc(drT("A punch is missing from the middle of the day, so nobody can tell which gap was a break. No break is deducted."))
+      + "</p>";
+  }
+  /* ALV-328: why the pay rules judged the day as they did, as they wrote it,
+     and when - so a reason older than a correction shows its age. Plain text
+     only: it is escaped, never read as markup. */
+  if (x.rules_why) {
+    var at = x.evaluated_on ? String(x.evaluated_on) : "";
+    html += '<section class="ac-why" aria-labelledby="ac-why-' + gpEsc(x.date) + '">'
+      + '<h3 id="ac-why-' + gpEsc(x.date) + '">' + gpEsc(drT("Why this day")) + "</h3>"
+      + '<p class="ac-why-text">' + gpEsc(x.rules_why) + "</p>"
+      + (at ? '<p class="ac-why-when">' + gpEsc(drT("Worked out on {0} at {1}",
+                [acNice(at.slice(0, 10)), at.slice(11, 16)])) + "</p>" : "")
+      + "</section>";
   }
   html += gmBox(x);
 

@@ -48,6 +48,7 @@ from alvoraa_portal.grooming import month_lines
 # stop agreeing, and this screen disagreeing with the engine about a day is the
 # bug being fixed.
 from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES
+from alvoraa_portal.payroll_rules_apply import breaks_by_day
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -493,7 +494,9 @@ def month(year=None, month=None, employee=None):
 		filters={"employee": me.name, "docstatus": 1,
 		         "attendance_date": ("between", [start, end])},
 		fields=["name", "attendance_date", "status", "working_hours", "shift",
-		        "in_time", "out_time", "late_entry", "early_exit", "leave_type"],
+		        "in_time", "out_time", "late_entry", "early_exit", "leave_type",
+		        # ALV-328: why the pay rules judged the day as they did, and when.
+		        "alvoraa_rules_why", "alvoraa_evaluated_on"],
 		limit_page_length=0)
 
 	leaves = frappe.get_list(
@@ -513,6 +516,9 @@ def month(year=None, month=None, employee=None):
 	# one attendance day. Only punches with no link fall back to their own date.
 	punches = {}
 	by_attendance = {}
+	# ALV-328: the same punches by CALENDAR date, for the break. The engine counts
+	# a day's break that way, whatever attendance row a punch is linked to.
+	times_by_date = {}
 	# ALV-210. A punch HR typed in carries the person's own badge number as its
 	# "device" (HR-EMP-00171 on 14 Oct showed "830"), which reads as a machine
 	# nobody owns. Such a punch, or one filed by somebody other than the
@@ -536,6 +542,7 @@ def month(year=None, month=None, employee=None):
 			by_attendance.setdefault(c.attendance, []).append(mark)
 		else:
 			punches.setdefault(str(c.time)[:10], []).append(mark)
+		times_by_date.setdefault(str(c.time)[:10], []).append(get_datetime(c.time))
 
 	# `weekly_off` tells a Sunday apart from Diwali (043 AC-1). Both arrive as
 	# Holiday rows on the same list and only this flag says which is which, so
@@ -593,6 +600,17 @@ def month(year=None, month=None, employee=None):
 		days.append(_day(date, att, holidays, leave_days, claimed, me,
 		                 shift_cache, tolerance, today,
 		                 marks or punches.get(date, []), weekly_offs))
+
+	# ALV-328: the break the pay rules count, on the days they would count one.
+	# Worked out from the punches read above, so a caller who may not read this
+	# person's punches (a skip-level manager, unless the organisation allows it)
+	# gets none, and nothing is worked out from an empty list.
+	allowance, breaks = breaks_by_day(
+		me.name, me.company,
+		{str(r.attendance_date): (r.status, r.shift or me.default_shift) for r in rows},
+		{d: t for d, t in times_by_date.items() if start <= d <= end})
+	for day in days:
+		day.update(breaks.get(day["date"], {}))
 
 	# DIRECT REPORTS, FOR EVERYBODY - HR INCLUDED (18 Oct 2026). `can_request`
 	# has always been "their own day, or a direct report's", and HR gets it only
@@ -685,6 +703,8 @@ def month(year=None, month=None, employee=None):
 		# with the switch off, because then their manager cannot either.
 		"on_behalf_enabled": manager_on_behalf_on(),
 	}
+	if breaks:
+		out["break_allowance_minutes"] = allowance
 	# Slice 066: the grooming red on this month, only for a viewer its own read
 	# gate lets in. Anybody else gets no `grooming` key at all, not an empty one.
 	grooming = month_lines(me.name, start, end)
@@ -792,6 +812,11 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		"leave_type": att.leave_type or out["leave_type"],
 		"state": (att.status or "").lower().replace(" ", "_") or "no_record",
 	})
+	# ALV-328: sent only when the pay rules have judged the day.
+	if att.get("alvoraa_rules_why"):
+		out["rules_why"] = att.alvoraa_rules_why
+	if att.get("alvoraa_evaluated_on"):
+		out["evaluated_on"] = str(att.alvoraa_evaluated_on)[:19]
 
 	# Where the shift sits in the day, so the page can draw the worked time
 	# against the expected time rather than against an arbitrary 24 hours.

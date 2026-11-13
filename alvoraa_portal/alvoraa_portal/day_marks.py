@@ -36,6 +36,7 @@ from alvoraa_portal.payroll_rules import (
 	charge_for,
 	collapse_duplicate_punches,
 	late_charge,
+	minutes_on_break,
 )
 from alvoraa_portal.payroll_rules_apply import day_rules_on
 
@@ -189,7 +190,7 @@ def _break_over(gaps: list, counted_from: int, end: int, allowance: int) -> int:
 	"""
 	if allowance <= 0:
 		return 0
-	on_break = sum(max(0, min(back, end) - max(out, counted_from)) for out, back in gaps)
+	on_break = minutes_on_break(gaps, counted_from, end)
 	return max(0, on_break - allowance)
 
 

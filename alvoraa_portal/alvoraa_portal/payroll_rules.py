@@ -143,6 +143,25 @@ def break_gaps(times: list) -> list:
 	return [(times[k], times[k + 1]) for k in range(1, len(times) - 1, 2)]
 
 
+def punch_minutes(times) -> list:
+	"""A day's punch times as whole minutes from midnight, repeat scans folded.
+
+	Seconds are dropped (ALV-326, D3: 10:36:40 reads as 10:36). The engine and
+	the break shown on screen (ALV-328) both start here, so the two cannot count
+	one day differently. `times` are datetimes, in any order.
+	"""
+	return collapse_duplicate_punches([t.hour * 60 + t.minute for t in times])
+
+
+def minutes_on_break(gaps, start: float, end: float) -> float:
+	"""Minutes of the (out, back) gaps that fall between `start` and `end`.
+
+	The one break sum: the engine, the home banner and the break shown on screen
+	(ALV-328) all call it, so a day's break is the same number everywhere.
+	"""
+	return sum(max(0, min(back, end) - max(out, start)) for out, back in gaps)
+
+
 def late_charge(late_by: float, grace_minutes: float, quarter_after: int) -> str:
 	"""What arriving `late_by` minutes after the shift start costs (ALV-326).
 
@@ -200,7 +219,7 @@ def _worked_percent(counted_from: float, last_out: float, shift_start: int, shif
 				"A punch is missing from the middle of the day, so breaks could not "
 				"be measured and none is deducted.")
 		else:
-			on_break = sum(max(0, min(back, end) - max(out, start)) for out, back in gaps)
+			on_break = minutes_on_break(gaps, start, end)
 			over = max(0, on_break - break_allowance)
 			if on_break:
 				reasons.append(

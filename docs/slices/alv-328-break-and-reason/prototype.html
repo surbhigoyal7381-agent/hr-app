@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ALV-328 prototype - break per day and why this day</title>
+<style>
+/* Tokens copied from templates/includes/design_system.html (light and dark). */
+:root{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;
+--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--fs-xs:11px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px}
+[data-theme=dark]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:#d9d6d0;color:var(--text)}
+[data-theme=dark] body{background:#0e0d0b}
+
+/* Review bar - prototype only. Wraps, not sticky (ux-learnings checklist). */
+.rv{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 14px;background:#2D2622;color:#F0EDE8;font-size:13px}
+.rv label{display:flex;gap:6px;align-items:center}
+.rv select{font:inherit;padding:4px 6px;min-height:32px}
+.rv b{color:#BBAEE0}
+
+/* The app frame. Desktop 1100 wide; phone 390 wide with .ph rules below. */
+.app{margin:18px auto;background:var(--bg);color:var(--text);border-radius:12px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.2)}
+.app.dt{width:1100px;max-width:calc(100% - 24px)}
+.app.ph{width:390px;max-width:100%}
+.panel{padding:22px 24px 30px}
+.ph .panel{padding:16px 0 24px}
+.ph .page-head,.ph .ac-tiles,.ph .ai-wrap,.ph .ai-note,.ph .ac-note{padding:0 14px}
+.page-title{font-size:var(--fs-xl);font-weight:700;margin:0}
+.page-sub{font-size:var(--fs-sm);color:var(--text2);margin:4px 0 16px}
+.sample{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:0 5px;margin-left:8px;vertical-align:middle}
+
+/* ── Copied from public/css/ess/panels.css ── */
+.tbl-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border)}
+.tbl-wrap table{min-width:480px;border:none}
+.ac-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.ac-tile{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r-sm);padding:9px 15px;min-width:112px;background:var(--surface)}
+.ac-tile .n{font-size:var(--fs-xl);font-weight:700;color:var(--text);line-height:1.1;font-variant-numeric:tabular-nums}
+.ac-tile .l{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-top:3px}
+.ac-tile.warn{border-left-color:var(--amber);background:var(--amber-lt)}
+.ac-tbl{width:100%;border-collapse:collapse;font-size:var(--fs-sm);background:var(--surface)}
+.ac-tbl th{text-align:right;font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;color:var(--text3);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.ac-tbl th:first-child,.ac-tbl td:first-child{text-align:left}
+.ac-tbl th.t,.ac-tbl td.t{text-align:left;width:30%}
+.ac-tbl td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;color:var(--text2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ac-tbl tbody tr.pick{cursor:pointer}
+.ac-tbl tbody tr.pick:hover{background:var(--surface2)}
+.ac-tbl tbody tr.off td{color:var(--text3)}
+.ac-tbl .day{color:var(--text);font-weight:600}
+.ac-tbl .dow{color:var(--text3);font-weight:400;margin-left:5px}
+.hi{color:var(--red);font-weight:700}
+.ac-strip{position:relative;height:8px;border-radius:2px;background:var(--surface2);border:1px solid var(--border);min-width:120px;display:inline-block;width:120px;vertical-align:middle}
+.ac-strip i{position:absolute;top:0;bottom:0;background:var(--primary);border-radius:2px}
+.ac-strip i.gap{background:var(--amber)}
+.ac-strip.none{background:transparent;border-style:dashed}
+.ac-tag{display:inline-block;font-size:var(--fs-xs);font-weight:700;padding:1px 7px;border-radius:var(--r-sm);border:1px solid var(--border);color:var(--text3);background:var(--surface2);letter-spacing:.03em;margin-left:6px}
+.ac-tag.warn{border-color:var(--amber);background:var(--amber-lt);color:var(--amber)}
+.ac-open{background:var(--surface2)}
+.ac-open td{padding:0;border-bottom:1px solid var(--border);text-align:left;white-space:normal}
+.ac-detail{padding:14px 12px;font-size:var(--fs-sm);color:var(--text2);line-height:1.6}
+.ac-punches{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+.ac-punch{border:1px solid var(--border);border-radius:var(--r-sm);padding:4px 9px;background:var(--surface);font-size:var(--fs-xs);color:var(--text2);font-variant-numeric:tabular-nums}
+.ac-punch b{color:var(--text);font-weight:700}
+.ac-facts{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px}
+.ac-facts div{font-size:var(--fs-xs);color:var(--text3);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.ac-facts div span{display:block;font-size:var(--fs-md);color:var(--text);font-weight:700;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums;margin-top:2px}
+.ac-help{font-size:var(--fs-xs);color:var(--text3);margin:5px 0 10px;line-height:1.5}
+.ac-form{border-top:1px solid var(--border);padding-top:12px;margin-top:4px}
+.btn{font:inherit;font-size:var(--fs-sm);font-weight:700;padding:8px 14px;border-radius:var(--r-sm);border:1px solid var(--primary);background:var(--primary);color:#fff;min-height:36px}
+[data-theme=dark] .btn{color:#1A1815}
+.ai-tbl{width:100%;border-collapse:collapse;font-size:var(--fs-sm);background:var(--surface)}
+.ai-tbl th{text-align:right;font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;color:var(--text3);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.ai-tbl th:first-child,.ai-tbl td:first-child{text-align:left}
+.ai-tbl td{padding:9px 10px;border-bottom:1px solid var(--border);text-align:right;color:var(--text2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ai-tbl .who{color:var(--text);font-weight:600}
+.ai-note,.ac-note{font-size:var(--fs-xs);color:var(--text3);margin-top:10px;line-height:1.6}
+.oc-up{font:inherit;font-size:var(--fs-sm);background:none;border:0;color:var(--primary);font-weight:700;padding:8px 0;min-height:44px;cursor:pointer}
+
+/* ── NEW in ALV-328: the "Why this day" block (a few lines in panels.css) ── */
+.ac-why{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);padding:10px 12px;margin:0 0 12px}
+.ac-why h3{margin:0 0 4px;font-size:var(--fs-sm);font-weight:700;color:var(--text)}
+.ac-why p{margin:0;white-space:pre-line;color:var(--text2)}
+.ac-why .when{margin-top:6px;font-size:var(--fs-xs);color:var(--text3)}
+
+/* ── Copied from public/css/ess/frame.css @media (max-width:768px), scoped to .ph ── */
+.ac-tbl .ac-ph{display:none}
+.ac-tbl th:nth-child(2),.ac-tbl td.day{text-align:left}
+.ac-brk{white-space:nowrap}
+.ph{--fs-xs:12px;--fs-sm:13px;--fs-base:15px;--fs-md:16px}
+.ph .tbl-wrap{border-radius:0;border-left:0;border-right:0}
+.ph .ac-tbl thead,.ph .ac-tbl tr.ac-row > td:not(.ac-ph){display:none}
+.ph .tbl-wrap table.ac-tbl{min-width:0}
+.ph .ac-tbl,.ph .ac-tbl tbody,.ph .ac-tbl tr,.ph .ac-tbl td.ac-ph,.ph .ac-tbl tr.ac-open > td{display:block;width:100%}
+.ph .ac-tbl td.ac-ph{padding:0;border-bottom:1px solid var(--border);text-align:left;white-space:normal}
+.ph .ac-day{display:flex;flex-direction:column;justify-content:center;gap:2px;width:100%;min-height:52px;padding:8px 12px 8px 14px;border:0;background:none;text-align:left;font:inherit;font-size:var(--fs-sm);color:var(--text2);cursor:pointer}
+.ph .ac-l1{display:flex;align-items:flex-start;gap:8px;width:100%}
+.ph .ac-d{font-weight:600;color:var(--text);min-width:86px;flex-shrink:0;white-space:nowrap}
+.ph .ac-tags{flex:1;min-width:0}
+.ph .ac-tags .ac-tag:first-child{margin-left:0}
+.ph .ac-go{color:var(--text3);font-size:20px;line-height:1}
+.ph .ac-l2{color:var(--text2)}
+.ph tr.off .ac-d{color:var(--text2)}
+.ph .ai-wrap .tbl-wrap{border-left:1px solid var(--border);border-right:1px solid var(--border);border-radius:var(--r)}
+.ac-day:focus-visible,.btn:focus-visible,.oc-up:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+</style>
+</head>
+<body>
+<div class="rv" role="region" aria-label="Review controls (prototype only)">
+  <b>ALV-328 prototype</b>
+  <label>Screen <select id="c-screen"><option value="att">Attendance page</option><option value="ai">Insights, one person</option></select></label>
+  <label>Viewer <select id="c-who"><option value="self">Rohan Mehta (employee)</option><option value="mgr">Kavita Rao (his manager)</option></select></label>
+  <label>Device <select id="c-dev"><option value="ph">Phone 390</option><option value="dt">Desktop</option></select></label>
+  <label>Theme <select id="c-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+  <label>Language <select id="c-lang"><option value="en">English</option><option value="hi">Hindi (new words only)</option></select></label>
+  <label>Break allowance <select id="c-allow"><option value="40">On, 40 min</option><option value="0">Off (S7)</option></select></label>
+  <span>Names, times and reasons are all made up.</span>
+</div>
+<div id="app" class="app ph"></div>
+
+<script>
+"use strict";
+/* Sample data only. Times are 24-hour, as the punch chips are in the product. */
+var SHIFT = ["09:00", "18:00"];
+var DAYS = [
+  {date:"2026-11-12", wd:"Thursday", status:"Present", punches:["09:05","13:30","14:02","18:05"], hours:8.5, state:"S1 normal, S6 no reason yet", why:null},
+  {date:"2026-11-11", wd:"Wednesday", status:"Present", punches:["08:58","13:15","13:50","18:02"], hours:8.5, state:"S1 normal",
+   why:"Present 540 of 540 shift minutes, 100.0% of the shift. Breaks: 35 minutes. The first 40 are allowed, so 0 deducted. Counted 540 of 540 minutes, 100.0%. Only time inside the shift counts, from 09:00 to 18:00. Slab 97-100%: 0 quarter(s) off, no red.", on:"2026-11-11 23:40"},
+  {date:"2026-11-10", wd:"Tuesday", status:"Present", punches:["09:02","13:00","13:55","18:04"], hours:8.1, state:"S2 over",
+   why:"Present 540 of 540 shift minutes, 100.0% of the shift. Breaks: 55 minutes. The first 40 are allowed, so 15 deducted. Counted 525 of 540 minutes, 97.2%. Only time inside the shift counts, from 09:00 to 18:00. Slab 97-100%: 0 quarter(s) off, no red.", on:"2026-11-10 23:40"},
+  {date:"2026-11-09", wd:"Monday", status:"Present", punches:["09:04","13:10","14:05","16:30","17:00","18:02"], hours:7.6, short:0.9, state:"S2 over, cost a quarter",
+   why:"Present 540 of 540 shift minutes, 100.0% of the shift. Breaks: 85 minutes. The first 40 are allowed, so 45 deducted. Counted 495 of 540 minutes, 91.7%. Only time inside the shift counts, from 09:00 to 18:00. Slab 90-97%: 1 quarter(s) off, no red.", on:"2026-11-09 23:40"},
+  {date:"2026-11-08", wd:"Sunday", holiday:"Weekly off", state:"S5 weekly off"},
+  {date:"2026-11-07", wd:"Saturday", status:"Present", punches:["09:10","13:30","18:05"], hours:8.9, missing:true, state:"S3 odd count",
+   why:"Present 530 of 540 shift minutes, 98.1% of the shift. A punch is missing from the middle of the day, so breaks could not be measured and none is deducted. Counted 530 of 540 minutes, 98.1%. Only time inside the shift counts, from 09:10 to 18:00. Slab 97-100%: 0 quarter(s) off, no red.", on:"2026-11-07 23:40"},
+  {date:"2026-11-06", wd:"Friday", status:"Present", punches:["09:01"], hours:0, short:8.8, missing:true, state:"S4 one punch, held",
+   why:"Held: only one punch, so there is no way to tell when the employee left. Neither paid nor deducted until somebody confirms the time.", on:"2026-11-06 23:40"},
+  {date:"2026-11-05", wd:"Thursday", status:"On Leave", leave:"Casual Leave", state:"S5 leave",
+   why:"Approved leave. No quarters, no marks; the day is funded by a leave credit in the monthly total.", on:"2026-11-05 23:40"},
+  {date:"2026-11-04", wd:"Wednesday", status:"Absent", state:"S5 absent",
+   why:"Marked absent with no punches: 0% of the shift.", on:"2026-11-04 23:40"},
+  {date:"2026-11-03", wd:"Tuesday", status:"Present", punches:["09:00","18:00"], hours:9, state:"S4 two punches",
+   why:"Present 540 of 540 shift minutes, 100.0% of the shift. Counted 540 of 540 minutes, 100.0%. Only time inside the shift counts, from 09:00 to 18:00. Slab 97-100%: 0 quarter(s) off, no red.", on:"2026-11-04 08:15"},
+  {date:"2026-11-02", wd:"Monday", status:"Present", punches:["08:55","18:01"], hours:9.1, state:"S4 two punches, no reason", why:null},
+  {date:"2026-11-01", wd:"Sunday", holiday:"Weekly off", state:"S5 weekly off"}
+];
+
+var T = {
+  en:{brk:"Break", allowed:"Allowed", over:"over", nm:"Break not measured", nmCell:"Not measured",
+      nmHelp:"<b>Break not measured.</b> A punch is missing from the middle of the day, so nobody can tell which gap was a break. No break is deducted.",
+      why:"Why this day", when:"Worked out on {0} at {1}"},
+  hi:{brk:"ब्रेक", allowed:"छूट", over:"ज़्यादा", nm:"ब्रेक नापा नहीं जा सका", nmCell:"नापा नहीं जा सका",
+      nmHelp:"<b>ब्रेक नापा नहीं जा सका।</b> दिन के बीच की एक पंच नहीं है, इसलिए पता नहीं चल सकता कि कौन-सा अंतर ब्रेक था। कोई ब्रेक नहीं काटा गया।",
+      why:"यह दिन ऐसा क्यों गिना गया", when:"{0} को {1} बजे गिना गया"}
+};
+var S = {screen:"att", who:"self", dev:"ph", lang:"en", allow:40, open:"2026-11-10"};
+function t(k){ return T[S.lang][k]; }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function mins(hm){ var b = hm.split(":"); return +b[0] * 60 + +b[1]; }
+/* acMins in portal.js */
+function acMins(n){ if (n < 60) return n + " min"; var h = Math.floor(n/60), m = n % 60; return h + "h" + (m ? " " + m + "m" : ""); }
+function nice(iso){ var p = iso.split("-"), m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return (+p[2]) + " " + m[+p[1]-1] + " " + p[0]; }
+function short(iso){ var p = iso.split("-"); return (+p[2]) + " Nov"; }
+
+/* What the server would send: the engine's fold and gaps, against the person's allowance.
+   state: "ok" | "nm" (odd count) | null (no break: 0-2 punches, leave, absent, rule off). */
+function breakOf(x){
+  if (!S.allow || !x.punches || x.punches.length < 3) return {state:null};
+  if (x.punches.length % 2 === 1) return {state:"nm"};
+  var p = x.punches.map(mins), sum = 0;
+  for (var k = 1; k < p.length - 1; k += 2) sum += p[k+1] - p[k];
+  return {state:"ok", min:sum, over:Math.max(0, sum - S.allow)};
+}
+function overWords(n){ return n < 60 ? String(n) : acMins(n); }
+/* The cell text, without the word "Break" (desktop and Insights). */
+function breakCell(b){
+  if (b.state === "nm") return esc(t("nmCell"));
+  if (b.state !== "ok") return "&mdash;";
+  return esc(acMins(b.min)) + (b.over ? ' <span class="hi">(' + esc(overWords(b.over)) + " " + esc(t("over")) + ")</span>" : "");
+}
+function breakItem(b){
+  if (b.state === "nm") return esc(t("nm"));
+  if (b.state !== "ok") return "";
+  return '<span class="ac-brk">' + esc(t("brk")) + " " + breakCell(b) + "</span>";
+}
+function anyBreak(list){ return list.some(function(x){ return breakOf(x).state; }); }
+
+function strip(x){
+  if (!x.punches || !x.punches.length) return '<span class="ac-strip none"></span>';
+  var from = mins(SHIFT[0]), span = mins(SHIFT[1]) - from, p = x.punches.map(mins), out = "";
+  for (var k = 0; k < p.length; k += 2) {
+    var a = p[k], b = p[k+1] !== undefined ? p[k+1] : mins(SHIFT[1]);
+    var l = Math.max(0, (a - from) / span * 100), r = Math.min(100, (b - from) / span * 100);
+    out += '<i class="' + (p[k+1] === undefined ? "gap" : "") + '" style="left:' + l.toFixed(1) + "%;width:" + Math.max(1.5, r - l).toFixed(1) + '%"></i>';
+  }
+  return '<span class="ac-strip">' + out + "</span>";
+}
+
+function row(x, showCol){
+  var quiet = !!x.holiday, pick = !x.holiday, b = breakOf(x);
+  var label = x.holiday ? '<span class="ac-tag">' + esc(x.holiday) + "</span>"
+    : x.leave ? '<span class="ac-tag">' + esc(x.leave) + "</span>"
+    : '<span class="ac-tag' + (x.status === "Absent" ? " warn" : "") + '">' + esc(x.status) + "</span>";
+  if (x.missing) label += '<span class="ac-tag warn">Missing punch</span>';
+  var p = x.punches || [], inT = p[0], outT = p.length > 1 ? p[p.length-1] : null;
+  var arrival = inT ? (mins(inT) > mins(SHIFT[0]) + 10 ? '<span class="hi">' + acMins(mins(inT) - mins(SHIFT[0])) + " late</span>" : "On time") : "&mdash;";
+  var day = esc(short(x.date)) + '<span class="dow">' + esc(x.wd.slice(0,3)) + "</span>";
+  var l2 = [];
+  if (inT) l2.push("In " + esc(inT));
+  if (outT) l2.push("Out " + esc(outT));
+  if (x.hours !== undefined && p.length) l2.push(esc(x.hours) + "h worked");
+  if (inT) l2.push(arrival);
+  var bi = breakItem(b); if (bi) l2.push(bi);            /* NEW: the break item */
+  var block = '<span class="ac-l1"><span class="ac-d">' + day + '</span><span class="ac-tags">' + label + "</span>"
+    + (pick ? '<span class="ac-go" aria-hidden="true">&rsaquo;</span>' : "") + "</span>"
+    + (l2.length ? '<span class="ac-l2">' + l2.join(" &middot; ") + "</span>" : "");
+  var phone = pick ? '<button type="button" class="ac-day" aria-expanded="' + (S.open === x.date) + '" aria-label="' + esc(nice(x.date)) + ', open the day" onclick="tog(\'' + x.date + '\')">' + block + "</button>"
+                   : '<div class="ac-day">' + block + "</div>";
+  return '<tr class="ac-row ' + (quiet ? "off " : "") + (pick ? "pick" : "") + '"' + (pick ? ' onclick="if(S.dev===\'dt\')tog(\'' + x.date + '\')"' : "") + ">"
+    + '<td class="ac-ph">' + phone + "</td>"
+    + '<td class="day">' + day + "</td>"
+    + '<td class="t">' + strip(x) + label + "</td>"
+    + "<td>" + esc(inT || "—") + "</td><td>" + esc(outT || "—") + "</td>"
+    + "<td" + (x.short ? ' class="hi"' : "") + ">" + (p.length ? x.hours + "h" : "—") + "</td>"
+    + (showCol ? "<td>" + breakCell(b) + "</td>" : "")      /* NEW column */
+    + "<td>" + (x.status === "Present" ? "9h" : "—") + "</td>"
+    + "<td>" + arrival + "</td><td>" + (pick ? "&rsaquo;" : "") + "</td></tr>";
+}
+
+function detail(x, cols){
+  var b = breakOf(x), p = x.punches || [];
+  var h = '<tr class="ac-open"><td colspan="' + cols + '"><div class="ac-detail">';
+  h += '<div class="ac-facts"><div>Shift<span>' + SHIFT[0] + " – " + SHIFT[1] + "</span></div>"
+    + "<div>Worked<span>" + (p.length ? x.hours + "h" : "—") + "</span></div>"
+    + (b.state === "ok" ? "<div>" + esc(t("brk")) + '<span class="ac-brk">' + breakCell(b) + "</span></div><div>" + esc(t("allowed")) + "<span>" + esc(acMins(S.allow)) + "</span></div>" : "")
+    + "<div>Expected<span>" + (x.status === "Present" ? "9h" : "—") + "</span></div>"
+    + (x.short ? "<div>Short by<span>" + x.short + "h</span></div>" : "") + "</div>";
+  if (p.length) {
+    h += '<div class="ac-punches">' + p.map(function(m, i){ return '<span class="ac-punch"><b>' + (i % 2 ? "Out" : "In") + "</b> " + esc(m) + "</span>"; }).join("") + "</div>";
+  } else if (x.status === "Absent") {
+    h += '<p class="ac-help">No individual punches were recorded for this day.</p>';
+  }
+  if (x.missing) h += '<p class="ac-help"><b>One punch never registered.</b> That is the commonest reason a day looks short, and it is what the correction below is for.</p>';
+  if (b.state === "nm") h += '<p class="ac-help">' + t("nmHelp") + "</p>";   /* NEW */
+  if (x.why) {                                                                  /* NEW block */
+    var on = x.on.split(" ");
+    h += '<section class="ac-why" aria-labelledby="why-' + x.date + '"><h3 id="why-' + x.date + '">' + esc(t("why")) + '</h3><p>' + esc(x.why) + '</p>'
+      + '<p class="when">' + esc(t("when").replace("{0}", nice(on[0])).replace("{1}", on[1])) + "</p></section>";
+  }
+  h += '<div class="ac-form"><button type="button" class="btn">' + (S.who === "self" ? "Ask for this day to be corrected" : "Ask HR to fix Rohan Mehta's day")
+    + '</button><p class="ac-help">The existing correction form opens here (not drawn in this prototype).</p></div>';
+  return h + "</div></td></tr>";
+}
+
+function paintAtt(){
+  var list = DAYS, showCol = S.dev === "dt" && anyBreak(list), cols = showCol ? 10 : 9;
+  var h = '<div class="panel"><div class="page-head"><h1 class="page-title">Attendance<span class="sample">Sample</span></h1>'
+    + '<p class="page-sub" role="status">' + (S.who === "self" ? "Your record" : "Rohan Mehta") + " · November 2026</p></div>";
+  var tiles = [[8,"Days present"],["60.3h","Hours worked"],[2,"Days short",1],[2,"Missing punches",1],[0,"Late arrivals"],[1,"On leave"]];
+  h += '<div class="ac-tiles">' + tiles.map(function(x){ return '<div class="ac-tile' + (x[2] ? " warn" : "") + '"><div class="n">' + x[0] + '</div><div class="l">' + x[1] + "</div></div>"; }).join("") + "</div>";
+  h += '<div class="tbl-wrap"><table class="ac-tbl"><thead><tr><th class="ac-ph"></th><th>Day</th><th class="t">The day</th><th>In</th><th>Out</th><th>Worked</th>'
+    + (showCol ? "<th>" + esc(t("brk")) + "</th>" : "") + "<th>Expected</th><th>Arrival</th><th></th></tr></thead><tbody>";
+  list.forEach(function(x){ h += row(x, showCol); if (S.open === x.date) h += detail(x, cols); });
+  h += "</tbody></table></div>";
+  h += '<p class="ac-note">A day counts as short only once it is more than 10 minutes under the shift. Prototype: each day is one state - '
+    + list.map(function(x){ return short(x.date) + " " + x.state; }).join("; ") + ".</p></div>";
+  return h;
+}
+
+function paintAi(){
+  var rows = DAYS.filter(function(x){ return x.short > 0; }), showCol;
+  showCol = rows.some(function(x){ return breakOf(x).state; });
+  var h = '<div class="panel"><div class="ai-wrap"><button class="oc-up" type="button">&larr; Back to the list</button>'
+    + '<h3 style="margin:6px 0 4px;font-size:var(--fs-lg)">Rohan Mehta<span class="sample">Sample</span></h3>'
+    + '<p class="ai-note" style="margin:0 0 14px">2026-10-14 to 2026-11-12 · ' + rows.length + " day(s) short of the shift</p>"
+    + '<div class="tbl-wrap"><table class="ai-tbl"><thead><tr><th>Date</th><th>Day</th><th>Worked</th>'
+    + (showCol ? "<th>" + esc(t("brk")) + "</th>" : "") + "<th>Expected</th><th>Short by</th></tr></thead><tbody>"
+    + rows.map(function(x){ return "<tr><td class='who'>" + x.date + "</td><td>" + x.wd + "</td><td>" + x.hours + "h</td>"
+        + (showCol ? "<td>" + breakCell(breakOf(x)) + "</td>" : "") + "<td>9h</td><td class='hi'>" + x.short + "h</td></tr>"; }).join("")
+    + "</tbody></table></div>"
+    + '<p class="ai-note">Viewer: ' + (S.who === "self" ? "Rohan (own record)" : "Kavita Rao, his manager")
+    + '. Break shows here only, on one person\'s list. Never on the team or company lists. No reason on this page: the Attendance page holds it.</p></div></div>';
+  return h;
+}
+
+function paint(){
+  var app = document.getElementById("app");
+  app.className = "app " + S.dev;
+  app.innerHTML = S.screen === "att" ? paintAtt() : paintAi();
+}
+window.tog = function(d){ S.open = S.open === d ? null : d; paint(); };
+[["c-screen","screen"],["c-who","who"],["c-dev","dev"],["c-lang","lang"],["c-allow","allow"]].forEach(function(p){
+  document.getElementById(p[0]).addEventListener("change", function(e){ S[p[1]] = p[1] === "allow" ? +e.target.value : e.target.value; paint(); });
+});
+document.getElementById("c-theme").addEventListener("change", function(e){ document.documentElement.setAttribute("data-theme", e.target.value); });
+paint();
+</script>
+</body>
+</html>

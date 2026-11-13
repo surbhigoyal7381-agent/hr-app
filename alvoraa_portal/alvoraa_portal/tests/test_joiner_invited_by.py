@@ -14,11 +14,25 @@ So these tests take the two things the old suite skipped:
 
 1. what the FORM is handed when it opens - `frappe.new_doc`, which is what the
    browser builds a new document from, defaults applied;
-2. what the server does for the doors a browser default never reaches - the
-   REST API, a data import, a script.
+2. what a payload posted straight at the server gets - the REST API, a data
+   import, a script, none of which go anywhere near a browser.
 
 A test that inserts a fully-populated document proves neither, which is the
 whole lesson here: test what it SENDS, not just what it draws.
+
+**One guard that was written and then removed.** The first version of this fix
+also set `invited_by` in the controller's `validate`, on the reasoning that a
+REST post never sees a browser default. That reasoning was wrong, and a revert
+proof is what showed it: with the controller line taken out, every test here
+still passed. Frappe applies a field default inside `insert()`, not when the
+document is built - measured, not assumed:
+
+    after get_doc(dict)   invited_by = None
+    after insert()        invited_by = 'Administrator'
+
+So the one line in the doctype covers every door, and the controller line could
+never fire. `test_a_payload_posted_straight_at_the_server_gets_a_name` is what
+holds that ground now.
 """
 
 import frappe
@@ -57,12 +71,13 @@ class TheInviteFormCanBeSaved(FrappeTestCase):
 		self.assertTrue(field.reqd, "invited_by stopped being required")
 		self.assertEqual(field.default, "__user", "invited_by lost its default")
 
-	def test_a_door_with_no_browser_default_still_gets_a_name(self):
-		"""The REST API, a data import and a script never see `__user`.
+	def test_a_payload_posted_straight_at_the_server_gets_a_name(self):
+		"""The REST API, a data import and a script, none of which use a browser.
 
-		Frappe applies a field default when it BUILDS a new document. A payload
-		posted straight at the server does not go through that, so without the
-		controller line this insert is refused for a missing mandatory field.
+		They never build the document the way Desk does, so this is the path
+		that would be refused for a missing mandatory field if the default only
+		worked on screen. It does not: Frappe fills a field default inside
+		`insert()`, which is why no controller line is needed here.
 		"""
 		doc = frappe.get_doc({
 			"doctype": DOCTYPE,

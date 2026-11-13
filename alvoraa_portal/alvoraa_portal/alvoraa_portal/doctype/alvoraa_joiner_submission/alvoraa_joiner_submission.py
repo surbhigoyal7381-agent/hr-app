@@ -68,32 +68,9 @@ COLUMN_FOR_TICK = {
 
 class AlvoraaJoinerSubmission(Document):
 	def validate(self):
-		self._name_the_inviter()
 		self._refuse_a_revival()
 		self._follow_the_employee()
 		self._stamp_the_closing()
-
-	def _name_the_inviter(self):
-		"""Whoever is saving this is the one who invited them.
-
-		`invited_by` is `reqd` and `read_only`, so nobody can type it in. The
-		field carries `"default": "__user"`, which is what makes the DESK form
-		saveable - Frappe fills it when the new document is built, and the
-		browser checks mandatory fields before it sends anything. Until that
-		default existed the form could never be saved at all, by anybody, and
-		every test passed because the fixtures handed the value in directly.
-
-		This line is the same rule for the doors a browser default never
-		reaches: `POST /api/resource/...`, a data import, a script. One
-		definition, every door - rather than a rule that only holds on the
-		screen it was noticed on.
-
-		It never overwrites a value that is already there, so an import that
-		names a real inviter keeps them, and a later save by somebody else
-		does not quietly re-stamp the row with the wrong name.
-		"""
-		if not self.invited_by:
-			self.invited_by = frappe.session.user
 
 	def on_update(self):
 		self._close_the_sign_in()

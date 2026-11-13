@@ -771,13 +771,17 @@ def _todays_punches(employee):
 	"""Today's punches for one employee, oldest first. Uses the `employee`
 	index; `time` is not indexed in Frappe HR and does not need to be at this
 	volume (Finding D)."""
-	return frappe.get_all(
+	from alvoraa_portal.payroll_rules import label_punches
+
+	# A machine punch carries no In/Out (DTC's readers send none). Read the day
+	# in order, or the app says "Check in" to somebody who badged in at the door.
+	return label_punches(frappe.get_all(
 		"Employee Checkin",
 		filters={"employee": employee, "time": [">=", today() + " 00:00:00"]},
 		fields=["name", "log_type", "time", "device_id"],
 		order_by="time asc",
 		ignore_permissions=True,
-	)
+	))
 
 
 def _radius_checked():

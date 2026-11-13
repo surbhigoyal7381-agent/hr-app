@@ -228,10 +228,14 @@ def _punches_today(employee, date_):
 	Reading it twice would be two queries for one fact, and two chances for
 	them to disagree inside one page.
 	"""
-	return [{"time": str(r.time), "log_type": r.log_type} for r in frappe.get_all(
+	from alvoraa_portal.payroll_rules import label_punches
+
+	# Labelled in order where the reader sent no In/Out (DTC), so the banner's
+	# "checked in" agrees with the check-in button.
+	return label_punches([{"time": str(r.time), "log_type": r.log_type} for r in frappe.get_all(
 		"Employee Checkin",
 		filters={"employee": employee, "time": [">=", str(date_) + " 00:00:00"]},
-		fields=["log_type", "time"], order_by="time asc", limit_page_length=0)]
+		fields=["log_type", "time"], order_by="time asc", limit_page_length=0)])
 
 
 # ── The attendance-gap rule (042 section 11) ─────────────────────────────────

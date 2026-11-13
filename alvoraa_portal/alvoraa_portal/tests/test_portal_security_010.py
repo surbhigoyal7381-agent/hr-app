@@ -784,6 +784,12 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# `owner == user`), and the retention deletes run from the scheduler as
 		# Administrator.
 		("alvoraa_portal", "expense_evidence.py"): 2,
+		# Slice 082 (new file, SEC-3). ONE: the guest insert of a CRM Lead from a
+		# public event form. A guest has no right on CRM Lead and must not get one
+		# (that would open the whole lead list); the save writes only the open
+		# form's own fields, after the open check, under a per-event limit.
+		("alvoraa_portal", "event_form.py"): 1,
+		("alvoraa_portal", "www/event_form.py"): 0,
 		("alvoraa_goals", "api/goal_api.py"): 0,
 		("alvoraa_goals", "controllers/evidence.py"): 0,
 		# 2 at 4e3ba28; +1 on purpose in slice 010: recalculate_progress saves a

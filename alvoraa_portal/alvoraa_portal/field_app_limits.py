@@ -41,6 +41,9 @@ OTP_KEY = "signin_otp_key"
 # value (utils/logger.py sanitized_dict) - and what reaches Redis is the hash
 # either way.
 JOINER_KEY = "joiner_token_key"
+# Slice 082: the event form's route, hashed. One bucket per event form, so a
+# 300-person hall on one Wi-Fi is limited as one event, not as one address.
+EVENT_KEY = "event_form_key"
 
 WINDOW_SECONDS = 60 * 60
 
@@ -53,8 +56,12 @@ def _hash(token: str) -> str:
 	return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _limited(field, source, limit):
+def _limited(field, source, limit, window=WINDOW_SECONDS):
 	"""Rate limit an endpoint on one of its arguments, hashed.
+
+	`window` is in seconds. Every endpoint keeps the one-hour default except the
+	event form's save (slice 082, decided 13 Nov 2026): 300 a minute, so "wait 10
+	seconds" stays true for a full hall.
 
 	`source` is the argument's name ("token", "code") or "user" for the signed-in
 	desk user. An empty or malformed argument is hashed as the empty string, so
@@ -62,7 +69,7 @@ def _limited(field, source, limit):
 	answer it always gave (a missing secret is `NOT_SET_UP`, AC-3).
 	"""
 	def decorator(fn):
-		limited = rate_limit(key=field, limit=limit, seconds=WINDOW_SECONDS,
+		limited = rate_limit(key=field, limit=limit, seconds=window,
 		                     methods=["POST"], ip_based=False)(fn)
 
 		@functools.wraps(fn)
@@ -78,13 +85,13 @@ def _limited(field, source, limit):
 				frappe.clear_messages()
 				refuse("TOO_MANY_TRIES",
 				       _("Too many tries. Please wait a while and try again."),
-				       retry_after_s=_seconds_left(hashed, WINDOW_SECONDS))
+				       retry_after_s=_seconds_left(hashed, window))
 			finally:
 				frappe.form_dict.pop(field, None)
 
 		# So a test can read every endpoint's limit off the function itself and
 		# pin the whole table (step 6, US-25): what it is keyed on, and how many.
-		wrapper.__alvoraa_limit__ = (field, source, limit, WINDOW_SECONDS)
+		wrapper.__alvoraa_limit__ = (field, source, limit, window)
 		return wrapper
 
 	return decorator

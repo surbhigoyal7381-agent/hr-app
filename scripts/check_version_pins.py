@@ -47,7 +47,8 @@ PINS = ("FRAPPE_TAG", "ERPNEXT_TAG", "INDIA_COMPLIANCE_TAG", "CRM_TAG", "WHATSAP
         "PAYMENTS_COMMIT", "LMS_COMMIT", "TELEPHONY_COMMIT")
 
 # ARG name in the Dockerfile -> env name in ci.yml's test-python job.
-MUST_MATCH_CI = {"FRAPPE_TAG": "FRAPPE_TAG", "ERPNEXT_TAG": "ERPNEXT_TAG"}
+# CRM since slice 082 (OPS-36): CI installs it so the event-form tests run.
+MUST_MATCH_CI = {"FRAPPE_TAG": "FRAPPE_TAG", "ERPNEXT_TAG": "ERPNEXT_TAG", "CRM_TAG": "CRM_TAG"}
 
 
 def read_args(dockerfile_text):
@@ -118,7 +119,7 @@ def self_test():
 		"LMS_COMMIT": "87168fc7b2f24559e474ea4702cf1aa63b0db4e8",
 		"TELEPHONY_COMMIT": "039cf39f245d6818ead03cf94eea6ce7f9c1e1f7",
 	}
-	good_ci = {"FRAPPE_TAG": "v16.35.0", "ERPNEXT_TAG": "v16.36.0"}
+	good_ci = {"FRAPPE_TAG": "v16.35.0", "ERPNEXT_TAG": "v16.36.0", "CRM_TAG": "v1.84.0"}
 	cases = [
 		("a clean set passes", good_args, good_ci, [], 0),
 		("a branch is caught", dict(good_args, FRAPPE_TAG="version-16"), good_ci, [], 1),
@@ -126,6 +127,7 @@ def self_test():
 		("a missing pin is caught", {k: v for k, v in good_args.items() if k != "CRM_TAG"}, good_ci, [], 1),
 		("ci.yml disagreeing is caught", good_args, dict(good_ci, FRAPPE_TAG="v16.34.0"), [], 1),
 		("ci.yml silent is caught", good_args, {"ERPNEXT_TAG": "v16.36.0"}, [], 1),
+		("ci.yml CRM disagreeing is caught", good_args, dict(good_ci, CRM_TAG="v1.83.0"), [], 1),
 		("a build-arg override is caught", good_args, good_ci, ["FRAPPE_TAG"], 1),
 	]
 	failures = 0

@@ -435,7 +435,7 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 	paid = _paid(company, from_date, to_date)
 	if not people:
 		return {"paid": paid, "retag": [], "retag_kept_days": 0, "same_timings": [], "blocked_days": set(),
-		        "one_punch_days": set(), "request_no_row": set(), "cancel": [], "badged_cancel": [], "skipped": [], "badged_kept": [],
+		        "request_no_row": set(), "cancel": [], "badged_cancel": [], "skipped": [], "badged_kept": [],
 		        "unskip": [], "stay_flagged": 0, "retag_extra": 0}
 	wrong = _wrong_punches(company, from_date, to_date, people, include_same_timings)
 	retag_days = {r.day for r in wrong["retag"]}
@@ -483,15 +483,6 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 	def logs_of(day):
 		return sorted(usable.get(day, []), key=lambda r: r.time)
 
-	def one_punch_no_threshold(day):
-		logs = logs_of(day)
-		# Surbhi's rule: the job would not count one punch Absent on such a shift. It
-		# would make it Present, or Half Day with a half-day threshold. A person decides.
-		if len({minute(r) for r in logs}) != 1:
-			return False
-		doc = shift_of(logs[0].employee, logs[0].time)
-		return bool(doc) and not flt(doc.working_hours_threshold_for_absent)
-
 	rows = _attendance(company, from_date, to_date, people)
 	absent_or_half = [a.name for a in rows if a.status in ("Absent", "Half Day")] or [""]
 	auto_absent = set(frappe.get_all(
@@ -504,12 +495,15 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		"Employee Checkin", filters={"attendance": ("in", absent_or_half)}, pluck="attendance", distinct=True))
 	declined = _declined_days(people, from_date, to_date)
 
-	cancel, badged_cancel, skipped, badged_kept, one_punch = [], [], [], [], set()
+	cancel, badged_cancel, skipped, badged_kept = [], [], [], []
 	for a in rows:
 		day = (a.employee, str(a.attendance_date))
 		# Badged in: the job marked Absent or Half Day, and a punch it could use
 		# that day is not linked to any attendance.
-		badged = a.status in ("Absent", "Half Day") and day in badged_days
+		# ALV-338 review: also an Absent / Half Day the job built from the day's
+		# punches with none left unused - by the 13 Nov rule a punched day is never
+		# Absent, and with no hour thresholds the job rebuilds it as Present.
+		badged = a.status in ("Absent", "Half Day") and (day in badged_days or a.name in holds_punches)
 		if day not in retag_days and not badged:
 			continue
 		# Proof the job made it: it holds the job's wrongly tagged punches, or
@@ -536,18 +530,19 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 			why = "changed after it was made"
 		elif a.name in linked:
 			proven = True
-		elif badged and a.status == "Absent" and a.name in holds_punches:
-			# Surbhi's rule: kept and listed by date, for a person to check.
-			why = "a punch is linked to it and another is unused: a person must check the hours"
-		elif badged and ((a.status == "Absent" and a.name in auto_absent)
+		elif badged and ((a.status == "Absent" and (a.name in auto_absent or a.name in holds_punches))
 		                 or (a.status == "Half Day" and a.name in holds_punches)):
+			# An Absent the job built from punches is rebuilt too (it used to be left
+			# for a person to check the hours): by Surbhi's rule of 13 Nov a day with
+			# a punch is never Absent, and with no hour thresholds the job rebuilds it
+			# as Present; the engine measures the hours from the punches.
 			proven = True
 		else:
 			why = "not proven to be automatic"
-		if proven and one_punch_no_threshold(day):
-			proven, why = False, "left for a person (one punch, and the shift has no Absent threshold)"
-			one_punch.add(day)
-			blocked.add(day)
+		# Surbhi's rule of 13 Nov 2026: one punch is a present day, held for the
+		# missing time - so a one-punch day is rebuilt like any other, no longer
+		# left for a person. The shifts carry no hour thresholds (ALV-337 standard),
+		# so the job rebuilds it as Present and the pay engine holds it (ATT-06).
 		if proven:
 			cancel.append(a)
 			if a.name not in linked:
@@ -558,12 +553,7 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		if badged:
 			badged_kept.append(a)
 
-	# A one-punch day with no row at all: the job would not count it Absent.
 	row_days = {(a.employee, str(a.attendance_date)) for a in rows}
-	for day in badged_days - row_days - blocked:
-		if one_punch_no_threshold(day):
-			one_punch.add(day)
-			blocked.add(day)
 
 	# What each cancelled day should become, for checking against the client's sheet.
 	for a in cancel:
@@ -590,7 +580,6 @@ def _plan(company, from_date, to_date, people, include_same_timings=0):
 		"retag_kept_days": len(wrong["retag"]) - len(retag),
 		"same_timings": wrong["same_timings"],
 		"blocked_days": blocked,
-		"one_punch_days": one_punch,
 		# A request protects a row. With no row, step 8 still builds the day from punches.
 		"request_no_row": (declined & badged_days) - row_days - blocked,
 		"cancel": cancel,
@@ -666,9 +655,7 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 	if p["blocked_days"]:
 		print(f"   LEFT FOR A PERSON: {len(p['blocked_days'])} days. The script does not cancel, retag or mark them.")
 		for emp, day in sorted(p["blocked_days"]):
-			why = ("one punch, and the shift has no Absent threshold, so the job would not count it Absent"
-			       if (emp, day) in p["one_punch_days"] else "a punch is outside the new shift's window")
-			print(f"      {label(emp)} {day}: {why}")
+			print(f"      {label(emp)} {day}: a punch is outside the new shift's window")
 
 	print(f"\nCANCEL (step cancel_wrong): {len(p['cancel'])} attendance records. Check each date against the"
 	      " client's sheet BEFORE step 6. The result is what Frappe's job should make of the punches:")
@@ -739,7 +726,14 @@ def preview(company, from_date, to_date, employees=None, start=START, include_sa
 		      f" last_sync={doc.last_sync_of_checkin or 'EMPTY'} auto_update_last_sync={doc.auto_update_last_sync}"
 		      + ("" if ceiling else "  WARNING: last_sync is empty and will not move - marks NOTHING")
 		      + ("" if not ceiling or ceiling >= get_datetime(f"{add_days(to_date, 1)} 00:00:00")
-		         else f"  WARNING: ceiling {ceiling} is before the end of the period"))
+		         else f"  WARNING: ceiling {ceiling} is before the end of the period")
+		      # 13 Nov rule: a punched day is never Absent. A threshold above 0 here
+		      # rebuilds one-punch days Absent again. Apply the shift standard (step 3a).
+		      + ("" if not (flt(doc.working_hours_threshold_for_absent)
+		                    or flt(doc.working_hours_threshold_for_half_day))
+		         else f"  WARNING: thresholds Absent {doc.working_hours_threshold_for_absent} h /"
+		              f" Half Day {doc.working_hours_threshold_for_half_day} h - one-punch days rebuild"
+		              " Absent; apply the shift standard first (runbook step 3a)"))
 		if not ceiling:
 			continue
 		for x in punches:

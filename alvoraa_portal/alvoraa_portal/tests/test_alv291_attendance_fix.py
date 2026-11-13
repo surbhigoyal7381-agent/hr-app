@@ -348,7 +348,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		bdg4 = _employee("Bdg4", COMPANY, RIGHT)
 		linked_abs = _row(bdg4, d1, "Absent", auto)
 		frappe.db.set_value("Employee Checkin", _punch(bdg4, d1, "09:55"), "attendance", linked_abs)
-		_punch(bdg4, d1, "10:30")                              # Absent holding a punch: kept
+		_punch(bdg4, d1, "10:30")                              # Absent holding a punch: rebuilt (13 Nov rule)
 		_frappe_flag([_punch(bdg4, d2, "09:55"), _punch(bdg4, d2, "19:05")])
 		twin = frappe.get_doc(
 			{"doctype": "Employee Checkin", "employee": bdg4, "time": f"{d2} 19:05:10"}).insert().name
@@ -378,7 +378,12 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		import_abs = _row(bdg6, d2, "Absent", auto)            # import flag only: untouched
 		_punch(bdg6, d3, "09:55")
 		_row(bdg6, d3, "Absent", auto)                         # cancel
-		badged = {bdg1, bdg4, bdg5, bdg6}
+		# ALV-338 review: an Absent the job built from the day's only punch, with no
+		# punch left unused. By the 13 Nov rule a punched day is never Absent: rebuilt.
+		lnk = _employee("Lnk", COMPANY, RIGHT)
+		lnk_row = _row(lnk, d1, "Absent", auto)
+		frappe.db.set_value("Employee Checkin", _punch(lnk, d1, "10:02"), "attendance", lnk_row)
+		badged = {bdg1, bdg4, bdg5, bdg6, lnk}
 		# B1: a typed row, on a day with a loose punch on the wrong shift.
 		typ = _employee("Typ", COMPANY, WRONG)
 		loose = _punch(typ, d1, "10:40")
@@ -402,7 +407,8 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		flg_row = _row(flg, d1, "Absent", auto, shift=WRONG)
 		_frappe_flag(flg_punches)
 		_set_default(flg, RIGHT)
-		# One punch on a shift with no Absent threshold would rebuild as a full Present.
+		# One punch on a shift with no Absent threshold rebuilds as Present: Surbhi's
+		# rule of 13 Nov 2026 (one punch is a present day, held by the pay engine).
 		one = _employee("One", COMPANY, NOTH)
 		_punch(one, d1, "09:05")
 		one_row = _row(one, d1, "Absent", auto, shift=NOTH)
@@ -459,16 +465,21 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(set(scope["employees"]), people)
 		self.assertEqual(out["retag_punches"], 4)        # ABH days 1-2
 		# ABH d1, d2, GRPA's automatic Absent; BDG1 d1 and d2, BDG4 d2, BDG5 d1, BDG6 d3
-		self.assertEqual(out["cancel"], 9)
-		self.assertEqual(out["skipped"], 19)             # BLK's day, four badged rows, TYP, DEC, FLG, ONE, WAIT, NUL, HLF
-		self.assertEqual(out["badged_cancel"], 7)        # GRPA's day is one of them
-		self.assertEqual(out["badged_kept"], 15)         # linked, request, person, leave; 5 older; DEC, FLG, ONE, WAIT, NUL, HLF
+		# + ONE d1 and BDG4 d1 under the 13 Nov rule: a day with a punch is never left Absent
+		self.assertEqual(out["cancel"], 12)                      # + LNK d1 (its only punch linked)
+		self.assertEqual(out["skipped"], 17)             # BLK's day, three badged rows, TYP, DEC, FLG, WAIT, NUL, HLF
+		self.assertEqual(out["badged_cancel"], 10)       # GRPA's day is one of them; + LNK
+		# request, person, leave; 5 older; DEC, FLG, WAIT, NUL, HLF; + 1 kept row whose own punch is
+		# linked to it, now counted as badged in (ALV-338 review) - still kept, never cancelled
+		self.assertEqual(out["badged_kept"], 14)
 		self.assertEqual(out["request_no_row"], 1)       # WAIT d2
-		self.assertEqual(out["no_punch_absent_kept"], 1)
+		# Counted over everybody badged in, now a wider set (ALV-338 review); these rows are
+		# still never touched - the cancel count above is the proof.
+		self.assertEqual(out["no_punch_absent_kept"], 3)
 		self.assertEqual(out["unskip"], 4)               # BDG1 d1 x2, BDG4 09:55 and 19:05, despite the import's copy
 		self.assertEqual(out["stay_flagged"], 1)         # the second Frappe flag in BDG4's 19:05 minute
-		self.assertEqual(out["badged_people_company"], 6)
-		self.assertEqual(out["blocked_days"], 5)         # BLK, BLK2, FLG, ONE x2
+		self.assertEqual(out["badged_people_company"], 8)         # + ONE, LNK (13 Nov rule)
+		self.assertEqual(out["blocked_days"], 3)         # BLK, BLK2, FLG (ONE is no longer left for a person)
 		self.assertGreater(out["absent_after_period"], 0)   # preview states the rows past the period
 		# F1: RIGHT was on, so once its old start is back the hourly job would mark
 		# BLK2's day Absent. Preview counts it.
@@ -486,7 +497,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		# m1: with nobody in the section, the no-punch count is 0, not the whole company's.
 		self.assertEqual(fix.preview(COMPANY, frm, to, employees=[same], start=start)["no_punch_absent_kept"], 0)
 		narrow2 = fix.preview(COMPANY, frm, to, employees=sorted(people - {bdg6}), start=start)
-		self.assertEqual((narrow2["badged_people_company"], narrow2["dropped"]), (6, [bdg6]))
+		self.assertEqual((narrow2["badged_people_company"], narrow2["dropped"]), (8, [bdg6]))
 		fix.preview(COMPANY, frm, to, start=start)
 
 		# ── 1. pause ──
@@ -500,7 +511,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		slip = _slip(abh, frm, to)
 		self.assertEqual(fix._paid(COMPANY, frm, to), {abh})
 		self.assertEqual(fix.preview(COMPANY, frm, to, start=start)["refused"], 1)
-		self.assertEqual(fix._state()["scope"]["cancel"], 7)   # all but ABH's two
+		self.assertEqual(fix._state()["scope"]["cancel"], 10)  # all but ABH's two
 		with self.assertRaises(frappe.ValidationError):
 			fix.enable_and_mark(COMPANY, frm, to, half_day_rows=1, absent_outside_list=out["absent_outside_list"])
 		frappe.db.delete("Salary Slip", {"name": slip})
@@ -512,7 +523,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(str(fix._state()["shifts"][OFF]["process_attendance_after"]), str(d3))
 		self.assertEqual(fix.set_start(COMPANY, frm, to, date=start)["changed"], 0)
 		again = fix.preview(COMPANY, frm, to, start=start)
-		self.assertEqual(again["cancel"], 9)
+		self.assertEqual(again["cancel"], 12)
 		self.assertGreater(again["absent_people"], 0)
 		ack = {"half_day_rows": again["half_day_rows"], "absent_outside_list": again["absent_outside_list"]}
 
@@ -526,9 +537,9 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		fix._save_state(state)
 		with self.assertRaises(frappe.ValidationError):
 			fix.cancel_wrong(COMPANY, frm, to)
-		state["scope"]["cancel"] = 9
+		state["scope"]["cancel"] = 12
 		fix._save_state(state)
-		self.assertEqual(fix.cancel_wrong(COMPANY, frm, to)["cancelled"], 9)
+		self.assertEqual(fix.cancel_wrong(COMPANY, frm, to)["cancelled"], 12)
 		for name in (wait_row, nul_row):                  # a request HR has not decided keeps the row
 			self.assertEqual(frappe.db.get_value("Attendance", name, "docstatus"), 1, name)
 		self.assertEqual(_live(wdn, d1), [])              # a withdrawn one does not
@@ -536,12 +547,14 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		                 [0, 0])                                          # Frappe's flags cleared
 		self.assertEqual(frappe.db.get_value("Attendance", declined_row, "docstatus"), 1)   # F2
 		self.assertEqual(frappe.db.get_value("Attendance", flg_row, "docstatus"), 1)        # F3
-		self.assertEqual(frappe.db.get_value("Attendance", one_row, "docstatus"), 1)        # one punch, no threshold
+		self.assertEqual(frappe.db.get_value("Attendance", one_row, "docstatus"), 2)        # one punch: rebuilt (13 Nov)
+		self.assertEqual(frappe.db.get_value("Attendance", linked_abs, "docstatus"), 2)     # Absent holding a punch: rebuilt
+		self.assertEqual(frappe.db.get_value("Attendance", lnk_row, "docstatus"), 2)        # its only punch linked: rebuilt
 		self.assertEqual(frappe.get_all("Employee Checkin", filters={"name": ("in", flg_punches)},
 		                                pluck="skip_auto_attendance"), [1, 1])              # F3: not cleared
 		self.assertEqual(frappe.db.get_value("Employee Checkin", dup, "skip_auto_attendance"), 1)
 		self.assertEqual(frappe.db.get_value("Employee Checkin", imported, "skip_auto_attendance"), 1)
-		for name in (bdg1_d3, linked_abs, req_abs, person_present, person_absent, leave_abs, import_abs):
+		for name in (bdg1_d3, req_abs, person_present, person_absent, leave_abs, import_abs):
 			self.assertEqual(frappe.db.get_value("Attendance", name, "docstatus"), 1, name)
 		self.assertEqual(_live(abh, d1), [])
 		self.assertEqual(len(_live(abh, d3)), 1)          # leave
@@ -594,7 +607,9 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		fix.enable_and_mark(COMPANY, frm, to, **ack)
 		# M2: the preview named exactly the Absent days the job then made.
 		self.assertEqual(frappe.db.count("Attendance", {"docstatus": 1, "status": "Absent", "company": COMPANY})
-		                 - absent_before, again["absent"] + 1)   # + BDG6 d3, rebuilt as Absent from one punch
+		                 - absent_before, again["absent"] + 3)   # + BDG6 d3, BDG4 d1, LNK d1: this test's shifts keep a
+		# 4-hour Absent threshold, so a day with 0-35 minutes rebuilds as Absent here. DTC's
+		# shifts carry none (ALV-337 standard, 13 Nov rule), so there both rebuild as Present.
 		# M3: nobody outside the frozen list was touched.
 		self.assertEqual(frappe.db.count("Attendance", {"employee": outsider}), 0)
 		for d in (d1, d2):
@@ -614,7 +629,7 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual([r.status for r in _live(bdg5, d1)], ["Half Day"])
 		self.assertEqual([r.status for r in _live(bdg6, d3)], ["Absent"])    # one punch, 0 hours: the threshold
 		# F1: every date preview predicted is what the job really made.
-		self.assertEqual(len(planned), 9)
+		self.assertEqual(len(planned), 12)
 		# N1: the half-day leave stays, and the half that was worked is not Absent.
 		self.assertEqual(frappe.db.get_value("Attendance", hlf_row, ["docstatus", "half_day_status",
 		                                                             "modify_half_day_status"]), (1, "Present", 0))
@@ -625,9 +640,9 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual([r.name for r in _live(typ, d1)], [typed])
 		self.assertEqual(frappe.db.get_value("Employee Checkin", loose, ["attendance", "skip_auto_attendance", "shift"]),
 		                 (None, 0, WRONG))
-		# One punch, no threshold: not a full Present, with or without a row.
-		self.assertEqual([r.name for r in _live(one, d1)], [one_row])
-		self.assertEqual(_live(one, d2), [])
+		# One punch, no threshold: a present day, with or without a row before (13 Nov rule).
+		self.assertEqual([r.status for r in _live(one, d1)], ["Present"])
+		self.assertEqual([r.status for r in _live(one, d2)], ["Present"])
 		self.assertEqual([r.name for r in _live(one, d3)], [one_present])   # the status rule alone
 		# M1: the same-timing day is Present, not Absent with its punches flagged skip.
 		self.assertEqual([r.status for r in _live(same, d1)], ["Present"])
@@ -663,11 +678,11 @@ class TestAlv291AttendanceFix(FrappeTestCase):
 		self.assertEqual(v["days_punched_no_attendance"], 0)
 		self.assertEqual(v["wrong_tag_unlinked"], 0)
 		self.assertEqual(v["wrong_tag_on_kept_days"], 7)   # ABH leave, HAND, FIXADM, TYP
-		self.assertEqual(v["left_for_a_person"], 5)                    # N4: shown, not hidden
+		self.assertEqual(v["left_for_a_person"], 3)                    # N4: shown, not hidden (ONE x2 no longer)
 		self.assertEqual(v["cancelled_no_row_now"], 0)
-		# The four kept Absents, BLK, the kept badged rows (BDG4 x2, BDG5, BDG6 x2), BDG6's
-		# rebuilt Absent, and DEC, FLG, ONE.
-		self.assertEqual(v["absent_on_days_with_a_punch"], 16)   # + WAIT, NUL
+		# The four kept Absents, BLK, the kept badged rows (BDG4 d3, BDG5, BDG6 x2), BDG4 d1 and
+		# BDG6 d3 rebuilt Absent under this test's 4-hour threshold, and DEC, FLG. ONE is Present now.
+		self.assertEqual(v["absent_on_days_with_a_punch"], 16)   # + WAIT, NUL; + LNK d1 (4 h threshold here)
 		self.assertEqual(v["skip_flagged_punches_on_absent_days"], 3)  # FLG x2, BDG6's import copy
 		# m4: preview still works after step 8, to read the numbers.
 		fix.preview(COMPANY, frm, to, start=start)

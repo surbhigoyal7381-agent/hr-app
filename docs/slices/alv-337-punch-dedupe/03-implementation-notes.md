@@ -129,10 +129,17 @@ period — which is 1 November, exactly what the config standard wants. So Octob
 already does part of step 4, and doing it first avoids both the collision and the
 duplicated work.
 
+**Changed again on 13 Nov 2026** (ALV-338 session, Surbhi's rule that a punched
+day is never Absent): the standard now carries no hour thresholds, and it must be
+applied INSIDE October's repair - after `pause`, before `set_start` - because the
+repair rebuilds days with the thresholds the shifts hold at that moment. The
+frozen list of 109 was worked out under the old rules: undo, preview, pause, apply,
+set_start (ALV-291 runbook, "Changed 13 Nov 2026" and step 3a).
+
 1. This code to dev, then main. Nothing touches a tenant.
-2. **October, through ALV-291's runbook, unchanged.** Its frozen list of 109
-   people is already waiting on the live site.
-3. `shift_standard.preview`, read it, then `apply`.
+2. **October, through ALV-291's runbook**, with `shift_standard.preview` then
+   `apply` as its step 3a.
+3. (Was: the standard after October. Now done in step 2.)
 4. ALV-291's cancel for November → `flag_existing` → mark again.
 
 ## What this does not do

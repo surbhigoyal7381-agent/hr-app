@@ -315,7 +315,8 @@ doc_events = {
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes
     "Shift Type": {
-        # ALV-211: a new shift accepts punches 3 h before and 3 h after.
+        # ALV-211: a new shift accepts punches before and after it, 4 h each side
+        # since 13 Nov 2026 (the ALV-337 shift standard's window).
         "before_insert": "alvoraa_portal.attendance_correction.default_shift_window",
         # ALV-302: the machine role may move last_sync_of_checkin forward and
         # change nothing else. In this entry because a second "Shift Type" key

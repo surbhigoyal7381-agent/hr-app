@@ -10,6 +10,9 @@ shifts disagreed four ways:
   difference across 177 people - about 34 minutes each a day.
 - seven shifts had no Absent and no Half Day threshold at all, and one of those
   seven was switched on, so a single punch there became a whole present day.
+  (Superseded the same day: Surbhi ruled that one punch IS a present day, held
+  for the missing time, so the standard is now no hour thresholds on any shift -
+  see STANDARD.)
 - one shift called half a day six hours while the rest called it 4.5.
 - every shift allowed three hours either side of itself. 86 November punches
   landed past that, got no shift, and vanished: the day then held an arrival
@@ -43,9 +46,14 @@ WHAT THIS NEVER TOUCHES, and why it matters more than what it does:
                            one thing a shift is allowed to differ in.
   holiday_list, company    tenant data, not policy.
 
-So the order is: October's repair first, through its own runbook, and only then
-this. Running this first does not corrupt anything - it simply makes October's
-repair refuse until its own `pause` step switches the shifts off again.
+So the order is (changed 13 Nov 2026): October's repair pauses the shifts, THEN
+this is applied, then the repair carries on (set_start, preview, cancel, retag,
+enable_and_mark). It must come before enable_and_mark: the repair rebuilds days
+with whatever thresholds the shifts carry at that moment, and with the old
+2-hour one a one-punch day is rebuilt Absent again (the 13 Nov rule says it is a
+present day). Applied before `pause` it corrupts nothing, but the repair refuses
+until its own `pause` step switches the shifts off again. See ALV-291's runbook,
+step 3a.
 
 Saving a Shift Type starts no marking run: the doctype has no `on_update`, and
 only the hourly job and the Desk button call `process_auto_attendance`. So this
@@ -80,8 +88,16 @@ STANDARD = {
 	# which punishes the honest third punch; first-and-last plus the 40-minute
 	# break allowance ALV-326 built lands in the same place without doing that.
 	"working_hours_calculation_based_on": "First Check-in and Last Check-out",
-	"working_hours_threshold_for_absent": 2.0,
-	"working_hours_threshold_for_half_day": 4.5,
+	# Surbhi's rule, 13 Nov 2026: a day with at least one punch is NOT an absence.
+	# It is present but incomplete - a missing punch - and the pay engine holds it
+	# (ATT-06) until somebody confirms the missing time. So Frappe marks Absent only
+	# a day with no punch at all, and never Half Day from hours: one punch scores
+	# 0.0 hours and any threshold above 0 would call it Absent or Half Day, which
+	# would cut base-salary paid days for a day the engine is holding. Short days
+	# are measured by the engine from the real punches, not by this status. DTC's
+	# own muster roll has no half days either (PP / AA only).
+	"working_hours_threshold_for_absent": 0.0,
+	"working_hours_threshold_for_half_day": 0.0,
 	"begin_check_in_before_shift_start_time": 240,
 	"allow_check_out_after_shift_end_time": 240,
 }

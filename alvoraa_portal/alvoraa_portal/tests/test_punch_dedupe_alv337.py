@@ -267,12 +267,13 @@ class TheShiftStandard(FrappeTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
-		# Drifted the four ways DTC was drifted: wrong hours method, no
-		# thresholds at all, and a three-hour window.
+		# Drifted from the standard: wrong hours method, hour thresholds that
+		# would call a one-punch day Absent (Surbhi's rule of 13 Nov says it is
+		# present but incomplete), and a three-hour window.
 		_shift(DRIFTED,
 		       working_hours_calculation_based_on="Every Valid Check-in and Check-out",
-		       working_hours_threshold_for_absent=0.0,
-		       working_hours_threshold_for_half_day=0.0,
+		       working_hours_threshold_for_absent=2.0,
+		       working_hours_threshold_for_half_day=4.5,
 		       begin_check_in_before_shift_start_time=180,
 		       allow_check_out_after_shift_end_time=180)
 		frappe.db.commit()
@@ -280,6 +281,10 @@ class TheShiftStandard(FrappeTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		path = frappe.get_site_path("alv337_shift_standard_before.json")
+		if os.path.exists(path):
+			# apply() reaches EVERY shift on the test site, not only DRIFTED. Put
+			# them all back, or other suites' shifts keep this standard's values.
+			undo()
 		if os.path.exists(path):
 			os.remove(path)
 		frappe.db.delete("Shift Type", {"name": ("in", (DRIFTED, LONG_SHIFT))})
@@ -353,6 +358,14 @@ class TheShiftStandard(FrappeTestCase):
 		self.assertEqual(int(row.begin_check_in_before_shift_start_time), 30,
 		                 "left exactly as it was")
 		self.assertEqual(int(row.allow_check_out_after_shift_end_time), 30)
+
+	def test_the_standard_never_calls_a_punched_day_absent_or_half(self):
+		"""Pinned. Surbhi's rule, 13 Nov 2026: a day with at least one punch is
+		present but incomplete, held for the missing time - never Absent or Half
+		Day from hours. Any threshold above 0 would mark a one-punch day (0.0 h)
+		Absent again and cut paid days the pay engine is holding."""
+		self.assertEqual(STANDARD["working_hours_threshold_for_absent"], 0)
+		self.assertEqual(STANDARD["working_hours_threshold_for_half_day"], 0)
 
 	def test_the_standard_sets_four_hours_either_side(self):
 		"""Pinned, because three hours is what orphaned 86 November punches.

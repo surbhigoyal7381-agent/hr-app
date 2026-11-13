@@ -193,9 +193,22 @@ doc_events = {
     # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
     "Employee Checkin": {
         "onload": "alvoraa_portal.field_app_access.log_photo_view",
-        # ALV-302: a machine punch keeps the time the machine recorded. One dated
-        # over 90 days back or over a day ahead is filed, and attendance skips it.
-        "before_insert": "alvoraa_portal.field_app_access.check_machine_punch",
+        # Two handlers, one event, and the ORDER is the point.
+        #
+        # ALV-302 first: a machine punch keeps the time the machine recorded,
+        # and one dated over 90 days back or over a day ahead is filed so
+        # attendance skips it. It also clears the permlevel guard on `time`,
+        # which is what stops a late punch being refiled at the moment it
+        # arrived.
+        #
+        # ALV-337 second, and it reads `skip_auto_attendance` to decide whether
+        # to bother: a punch ALV-302 has already filed is not a candidate to be
+        # anybody's duplicate, and is not counted as an anchor either, because
+        # the lookup only measures gaps from punches marking would still use.
+        "before_insert": [
+            "alvoraa_portal.field_app_access.check_machine_punch",
+            "alvoraa_portal.punch_dedupe.skip_repeat_scan",
+        ],
         # ALV-338: a person's own punch must be made near their own branch. On
         # validate, after Frappe HR has set the punch's shift. Machine punches and
         # punches HR adds are never measured. See branch_geofence.py.

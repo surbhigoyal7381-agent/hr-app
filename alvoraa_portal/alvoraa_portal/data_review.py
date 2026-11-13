@@ -108,6 +108,11 @@ SINGLE_COLUMN_INDEXES = (
 
 TWO_COLUMN_INDEXES = (
 	("Employee Checkin", ("alvoraa_branch", "time")),
+	# Added 2026-11-13 (ALV-337). punch_dedupe asks "has this employee a kept
+	# punch in the last two minutes" on EVERY punch insert - about 9,000 a month
+	# at DTC. The employee link index alone narrows to that person's whole
+	# history, which only grows; this pair narrows to the two minutes.
+	("Employee Checkin", ("employee", "time")),
 	("Attendance", ("alvoraa_branch", "attendance_date")),
 	# Added 2026-09-16 (DEF-7). OPS-55 said this one waits until EXPLAIN shows a
 	# full scan: at 1,000 people it did. "Data up to" and the job's "has this

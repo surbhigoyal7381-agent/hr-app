@@ -148,3 +148,14 @@ Removed from this review: a recommendation to block shares in the hook (it canno
 checks shares after the hook), a call for a new audit log on reads of the reason (no
 obligation asks for it), and a re-check of the pay figures (that is the techno-functional
 reviewer's).
+
+## R5 follow-up, 13 Nov 2026 (DTC read-only count, step32)
+
+- Punch shares at DTC: **0** in total, 0 with write, 0 shared with everyone, 0 write shares
+  held by people outside HR. R5 does not block the release.
+- **New fact:** at DTC the roles allowed to share a punch include "Employee Self Service" and
+  "Payroll team", not only HR. A staff member could share their own punch. Frappe should
+  refuse a share that grants write the sharer does not hold, and from this slice nobody
+  outside HR holds write, so the colleague should still not be able to edit. **Not tested.**
+  Add one test: an Employee Self Service login shares its own punch with write; the share is
+  refused or grants no write.

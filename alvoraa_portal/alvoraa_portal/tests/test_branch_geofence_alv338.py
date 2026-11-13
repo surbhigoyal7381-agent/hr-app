@@ -226,14 +226,25 @@ class WhenNothingIsMeasured(Case):
 class FrappeHrsOwnRuleKeepsItsPeople(Case):
 	def test_a_shift_assignment_workplace_wins_and_this_rule_steps_aside(self):
 		"""Two rules must never disagree about one person. With a Shift Location of
-		radius 0 on the assignment, Frappe HR says "no limit" and this rule stays out."""
-		emp, email = self.person("GeoAssigned")
+		radius 0 on the assignment, Frappe HR says "no limit" and this rule stays out.
+
+		Both rules only see the assignment while the punch falls inside its shift, so
+		the shift is set around the clock time of the run. With a fixed 09:00-18:00
+		shift this failed whenever CI punched at night (13 Nov 2026, 01:53 IST)."""
+		hour = frappe.utils.now_datetime().hour
+		times = {"start_time": "%02d:00:00" % ((hour - 1) % 24), "end_time": "%02d:00:00" % ((hour + 2) % 24),
+		         "begin_check_in_before_shift_start_time": 60, "allow_check_out_after_shift_end_time": 60}
+		if frappe.db.exists("Shift Type", "ALV338 Around Now"):
+			frappe.db.set_value("Shift Type", "ALV338 Around Now", times)
+		else:
+			frappe.get_doc({"doctype": "Shift Type", "name": "ALV338 Around Now", **times}).insert(ignore_permissions=True)
+		emp, email = self.person("GeoAssignedNow")
 		loc = frappe.db.get_value("Shift Location", {"location_name": "ALV338 Assigned"}) or frappe.get_doc({
 			"doctype": "Shift Location", "location_name": "ALV338 Assigned",
 			"latitude": PIN[0], "longitude": PIN[1], "checkin_radius": 0,
 		}).insert(ignore_permissions=True).name
 		if not frappe.db.exists("Shift Assignment", {"employee": emp, "shift_location": loc, "docstatus": 1}):
-			frappe.get_doc({"doctype": "Shift Assignment", "employee": emp, "shift_type": SHIFT,
+			frappe.get_doc({"doctype": "Shift Assignment", "employee": emp, "shift_type": "ALV338 Around Now",
 			                "company": frappe.db.get_value("Employee", emp, "company"),
 			                "start_date": "2020-01-01", "shift_location": loc}).insert(ignore_permissions=True).submit()
 		frappe.db.commit()

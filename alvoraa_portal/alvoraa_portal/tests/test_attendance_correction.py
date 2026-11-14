@@ -67,8 +67,8 @@ def _holiday_list(company):
 
 
 class ANewShiftsWindow(FrappeTestCase):
-	"""ALV-211: every new shift accepts punches 3 hours either side, unless
-	somebody typed a different figure."""
+	"""ALV-211: every new shift accepts punches 4 hours either side (the ALV-337
+	standard, approved 13 Nov 2026), unless somebody typed a different figure."""
 
 	def make(self, name, **values):
 		if frappe.db.exists("Shift Type", name):
@@ -77,10 +77,10 @@ class ANewShiftsWindow(FrappeTestCase):
 		                           start_time="09:00:00", end_time="18:00:00",
 		                           **values)).insert(ignore_permissions=True)
 
-	def test_frappes_default_becomes_three_hours(self):
+	def test_frappes_default_becomes_four_hours(self):
 		s = self.make("AC Window Default")
-		self.assertEqual(s.begin_check_in_before_shift_start_time, 180)
-		self.assertEqual(s.allow_check_out_after_shift_end_time, 180)
+		self.assertEqual(s.begin_check_in_before_shift_start_time, 240)
+		self.assertEqual(s.allow_check_out_after_shift_end_time, 240)
 
 	def test_a_typed_figure_is_kept(self):
 		s = self.make("AC Window Typed", begin_check_in_before_shift_start_time=90,
@@ -1185,6 +1185,17 @@ class AManagersWholeTeamOnOnePage(CorrectionCase):
 		row = [r for r in self.team()["rows"] if r["employee"] == self.a][0]
 		self.assertEqual(row["flag"], "no_clock_out")
 		self.assertEqual(row["punches"], 1)
+
+	def test_a_double_read_arrival_on_a_present_day_still_needs_a_look(self):
+		"""ALV-338 review. With no hour thresholds (13 Nov rule) a reader's double
+		scan of one arrival makes a Present row the pay engine HOLDS. Counted raw
+		it read as a finished two-punch day, "ok", and nobody was asked."""
+		day = self.d(4)
+		self.day(self.a, day, 0, status="Present", in_time=day + " 09:58:10")
+		self.punch(self.a, day + " 09:58:10", "IN")
+		self.punch(self.a, day + " 09:58:40", "OUT")
+		row = [r for r in self.team()["rows"] if r["employee"] == self.a and r["date"] == day][0]
+		self.assertEqual(row["flag"], "no_clock_out")
 
 	def test_absent_with_punches_is_told_apart_from_absent(self):
 		"""Two people marked Absent, one of whom badged in twice inside the

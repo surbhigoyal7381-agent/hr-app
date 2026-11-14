@@ -33,6 +33,11 @@ def setUpModule():
 		                "working_hours_threshold_for_half_day": 4.5,
 		                "working_hours_threshold_for_absent": 2.0}
 		               ).insert(ignore_permissions=True)
+	# Set every run, not only on creation: another suite applies the shift
+	# standard (ALV-337, thresholds 0 since 13 Nov) to every shift on the site,
+	# and these tests are about how the lines draw WHEN a shift has thresholds.
+	frappe.db.set_value("Shift Type", SHIFT, {"working_hours_threshold_for_half_day": 4.5,
+	                                          "working_hours_threshold_for_absent": 2.0})
 	# The rule set is REPLACED, not merely created when absent. A test site
 	# outlives a run, so an "only if missing" fixture quietly keeps the
 	# figures from whenever it was first written - which is how the slab

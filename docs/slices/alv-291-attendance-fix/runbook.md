@@ -16,6 +16,22 @@ preview lists. The old count of 73 is out of date: on 3 Nov preview found 49, an
 people whose Absent rows hid the fault. Preview now finds them too, so expect **76 or
 more**.
 
+## Changed 13 Nov 2026: one punch is a present day
+
+Surbhi's rule: **a day with at least one punch is never Absent.** It is present but
+incomplete, a missing punch, and the pay engine holds its pay until somebody confirms the
+missing time (ATT-06). So:
+
+- Every shift DTC uses must carry **no hour thresholds** (Absent 0, Half Day 0) before the
+  days are rebuilt. That is the ALV-337 shift standard, applied in **step 3a**, after pause
+  and before set_start. Run in any other order, step 8 rebuilds one-punch days as Absent
+  again. Preview prints a `WARNING` for any shift still carrying a threshold.
+- One-punch days, and Absent or Half Day rows the job built from the day's punches, are no
+  longer left for a person. They are cancelled and rebuilt as Present.
+- **A list frozen before 13 Nov was worked out under the old rules.** If preview says pause
+  has already run, follow "Changing the list after pause" (undo, preview, pause, step 3a,
+  set_start) so the list is worked out again.
+
 ## 1. Backup
 
 ```
@@ -43,16 +59,16 @@ Must show:
   `AMBALA - 10:30 AM - 8:30 PM -> AMBALA - 10:00 AM - 7:00 PM`.
 - `CANCEL`: **one line per date**: what the row is now, and what the job should make of the
   punches, with the hours. Compare these dates with the client's latest sheet before step 6.
-  A cancelled day cannot be put right by the script afterwards. One punch on a shift with an
-  Absent threshold rebuilds as Absent again, 0 hours; the line says so.
-- `LEFT FOR A PERSON`: each date, with the reason. A one-punch day on a shift with no Absent
-  threshold is here, because the job would make it a full Present. The script leaves these
-  days alone. On a shift that was already on, the hourly job may mark the day first, as it
+  A cancelled day cannot be put right by the script afterwards. With the shift standard
+  applied (step 3a), a day with one punch rebuilds as Present, 0 hours; the pay engine holds
+  it until the missing time is confirmed.
+- `LEFT FOR A PERSON`: each date, with the reason: a punch outside the new shift's window.
+  The script leaves these days alone. On a shift that was already on, the hourly job may mark the day first, as it
   does today, so check the row before you fix it.
 - `Request declined or undecided, on a day with NO row`: a request protects a row only, so
   step 8 builds these days from the punches. Check each one against its request.
-- Every `SKIPPED` row with its reason. An Absent holding a punch, with another punch unused,
-  stays kept and listed by date for a person to check. (The system-made Present rows are not
+- Every `SKIPPED` row with its reason. (An Absent holding a punch is no longer kept: since
+  13 Nov it is rebuilt like any other punched day.) (The system-made Present rows are not
   touched either, Surbhi's decision.) A day covered by a request HR declined, or has not
   decided yet, keeps its row until HR decides. Kept: leave, attendance request,
   confirmed by a manager, made or changed by a person, changed after it was made,
@@ -61,9 +77,8 @@ Must show:
   has a punch no attendance uses. The first line gives rows and people in the list, and
   **the whole company, read-only: the true size of the fault.** One line per person: rows
   to cancel by status, rows kept with a punch, and Absent rows with no punch that day. Only
-  Absent and Half Day rows the job provably made are cancelled. Kept: an Absent that holds a
-  punch while another punch that day is unused (a person must check the hours: it may be
-  too few hours, or an out-punch that came late), and anything amended, from leave or a
+  Absent and Half Day rows the job provably made are cancelled, including one built from the
+  day's own punches with none left unused (13 Nov rule). Kept: anything amended, from leave or a
   request, or on a day HR declined a request,
   confirmed, or made or changed by a person. An Absent with no punch that day is never
   touched. A Present row is never cancelled by this rule. Then the number of punches whose
@@ -94,6 +109,17 @@ bench --site dtc.alvoraa.co execute alvoraa_portal.alv291_attendance_fix.pause -
 ```
 Must show: `pause: N switched off, M were already off` (M about 9). Old values are saved
 in `sites/dtc.alvoraa.co/alv291_before.json`.
+
+## 3a. Apply the shift standard (since 13 Nov 2026)
+
+```
+bench --site dtc.alvoraa.co execute alvoraa_portal.shift_standard.preview --kwargs "{'company': 'Durga Trading Company'}"
+bench --site dtc.alvoraa.co execute alvoraa_portal.shift_standard.apply --kwargs "{'company': 'Durga Trading Company'}"
+```
+Read the preview first. Apply must show every in-use shift at Absent 0, Half Day 0, a
+240-minute window and first-and-last hours. It never switches a shift on and never moves
+its start date: those stay step 4's and step 8's. `shift_standard.undo` puts the old
+values back.
 
 ## 4. Set the start date
 
@@ -168,10 +194,9 @@ Must show (the keys are printed after `VERIFY`):
   hourly job may still mark such a day (preview's `PLUS` line lists the Absent ones).
   Fix each by hand.
 - `absent_on_days_with_a_punch` and `skip_flagged_punches_on_absent_days`: each day is
-  printed by name. Not all of these are right, so **check each one against the sheet**. They
-  are: the kept rows (a person may need to fix them), rebuilt days where one punch gave 0
-  hours, and days Frappe marked Absent because the person worked fewer hours than the shift's
-  minimum. Check every one against the sheet.
+  printed by name. With the shift standard applied these should be only the kept rows (a
+  person may need to fix them). A rebuilt day that is Absent here means a shift still has
+  a threshold: check step 3a. Check every one against the sheet.
 - `cancelled_no_row_now`: must be 0. Each one is printed: this run cancelled the day and it
   was not rebuilt. Amend the cancelled row, or fix the day by hand.
 - `wrong_tag_on_kept_days`: punches on leave or hand-edited days, left alone on purpose.
@@ -210,7 +235,7 @@ delete it from the site folder with the command above.
 
 Preview refuses a different list once pause has run. To change it: run **undo** (it puts
 the shift settings back and unlocks the list; it keeps the record of old punch tags), then
-preview with the new list, then pause and set_start again.
+preview with the new list, then pause, step 3a (shift standard) and set_start again.
 
 If cancel_wrong has already run, the days it cancelled now have no attendance, so preview
 will find those people again: compare its PEOPLE line with the approved list before going on.

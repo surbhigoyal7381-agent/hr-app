@@ -193,9 +193,26 @@ doc_events = {
     # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
     "Employee Checkin": {
         "onload": "alvoraa_portal.field_app_access.log_photo_view",
-        # ALV-302: a machine punch keeps the time the machine recorded. One dated
-        # over 90 days back or over a day ahead is filed, and attendance skips it.
-        "before_insert": "alvoraa_portal.field_app_access.check_machine_punch",
+        # Two handlers, one event, and the ORDER is the point.
+        #
+        # ALV-302 first: a machine punch keeps the time the machine recorded,
+        # and one dated over 90 days back or over a day ahead is filed so
+        # attendance skips it. It also clears the permlevel guard on `time`,
+        # which is what stops a late punch being refiled at the moment it
+        # arrived.
+        #
+        # ALV-337 second, and it reads `skip_auto_attendance` to decide whether
+        # to bother: a punch ALV-302 has already filed is not a candidate to be
+        # anybody's duplicate, and is not counted as an anchor either, because
+        # the lookup only measures gaps from punches marking would still use.
+        "before_insert": [
+            "alvoraa_portal.field_app_access.check_machine_punch",
+            "alvoraa_portal.punch_dedupe.skip_repeat_scan",
+        ],
+        # ALV-338: a person's own punch must be made near their own branch. On
+        # validate, after Frappe HR has set the punch's shift. Machine punches and
+        # punches HR adds are never measured. See branch_geofence.py.
+        "validate": "alvoraa_portal.branch_geofence.check_phone_punch",
     },
 
     "Employee": {
@@ -298,7 +315,8 @@ doc_events = {
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes
     "Shift Type": {
-        # ALV-211: a new shift accepts punches 3 h before and 3 h after.
+        # ALV-211: a new shift accepts punches before and after it, 4 h each side
+        # since 13 Nov 2026 (the ALV-337 shift standard's window).
         "before_insert": "alvoraa_portal.attendance_correction.default_shift_window",
         # ALV-302: the machine role may move last_sync_of_checkin forward and
         # change nothing else. In this entry because a second "Shift Type" key
@@ -397,6 +415,10 @@ doc_events = {
     # an edit to hrms, so `bench update` stays safe.
     "Shift Location": {
         "validate": "alvoraa_portal.field_checkin.refuse_small_radius",
+    },
+    # ALV-338: the same floor for the radius on a Branch.
+    "Branch": {
+        "validate": "alvoraa_portal.branch_geofence.refuse_small_radius",
     },
     # Slice 043 (SEC-8, V-1 to V-7): which mailboxes AI lead intake may read.
     # Refused on the document, so the desk, the REST API and imports all obey it.
@@ -612,6 +634,8 @@ after_migrate = [
     # The photo, GPS accuracy and offline columns on Employee Checkin. Same
     # reasoning as the line above: sites already live never get a baseline run.
     "alvoraa_portal.field_checkin.after_migrate",
+    # ALV-338: the pin and radius fields on Branch, where missing.
+    "alvoraa_portal.branch_geofence.after_migrate",
     # A branch on attendance, leave, claims and the rest, so location HR's
     # Branch permission applies to them (slice 011). See branch_scope.py.
     "alvoraa_portal.branch_scope.after_migrate",
@@ -689,6 +713,8 @@ after_install = [
     "alvoraa_portal.joiner_invite.make_role",
     "alvoraa_portal.attendance_correction.after_migrate",
     "alvoraa_portal.field_checkin.after_migrate",
+    # ALV-338: the pin and radius fields on Branch, where missing.
+    "alvoraa_portal.branch_geofence.after_migrate",
     "alvoraa_portal.branch_scope.after_migrate",
     # Slice 012: indexes only - a new site has no data to check. After branch_scope.
     "alvoraa_portal.data_review.after_install",

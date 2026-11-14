@@ -93,6 +93,7 @@ exactly as before. Surbhi, 2026-11-11: nothing company-specific in code.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 # A day is four quarters. Used to cap a doubled deduction description, never to
 # cap the deduction itself - a fully absent employee on a special day really
@@ -130,6 +131,45 @@ def collapse_duplicate_punches(times, window_minutes=DUPLICATE_PUNCH_MINUTES):
 			continue
 		distinct.append(t)
 	return distinct
+
+
+def label_punches(rows) -> list:
+	"""A day's punches with every missing In/Out filled in from their order.
+
+	Some readers send no direction at all - DTC's machines send a time and
+	nothing else - so a screen that asked "is the last punch an IN?" said
+	"Check in" to somebody who had badged in that morning. This answers it the
+	way the shift and the engine already read the day: in order, first In, next
+	Out. A punch that carries a label keeps it and sets the state; a repeat scan
+	(within DUPLICATE_PUNCH_MINUTES of the punch before it) takes that punch's
+	label instead of flipping the day - in whole minutes, exactly as
+	collapse_duplicate_punches folds them, so the button and the engine always
+	count the same punches.
+
+	`rows` are dicts (or frappe._dicts) with `time` and `log_type`, earliest
+	first, all from one calendar day. Returns copies, of the same type, with
+	`log_type` filled in. Nothing is written anywhere: this is for what a screen
+	shows, never for what is stored.
+
+	Known limit: the lists start at midnight, so a shift that crosses midnight
+	would read the wrong way round. No DTC shift does (latest ends 10 PM).
+	"""
+	out, inside, last = [], False, None
+	for r in rows:
+		r = type(r)(r)
+		t = r.get("time")
+		t = t if isinstance(t, datetime) else datetime.fromisoformat(str(t)[:19])
+		t = t.hour * 60 + t.minute
+		repeat = last is not None and t - last <= DUPLICATE_PUNCH_MINUTES
+		if r.get("log_type") in ("IN", "OUT"):
+			inside, last = r["log_type"] == "IN", t
+		elif repeat and out:
+			r["log_type"] = out[-1]["log_type"]
+		else:
+			r["log_type"] = "OUT" if inside else "IN"
+			inside, last = not inside, t
+		out.append(r)
+	return out
 
 
 def break_gaps(times: list) -> list:

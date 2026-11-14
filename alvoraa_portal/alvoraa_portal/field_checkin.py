@@ -771,13 +771,17 @@ def _todays_punches(employee):
 	"""Today's punches for one employee, oldest first. Uses the `employee`
 	index; `time` is not indexed in Frappe HR and does not need to be at this
 	volume (Finding D)."""
-	return frappe.get_all(
+	from alvoraa_portal.payroll_rules import label_punches
+
+	# A machine punch carries no In/Out (DTC's readers send none). Read the day
+	# in order, or the app says "Check in" to somebody who badged in at the door.
+	return label_punches(frappe.get_all(
 		"Employee Checkin",
 		filters={"employee": employee, "time": [">=", today() + " 00:00:00"]},
 		fields=["name", "log_type", "time", "device_id"],
 		order_by="time asc",
 		ignore_permissions=True,
-	)
+	))
 
 
 def _radius_checked():
@@ -987,11 +991,15 @@ def _geofence_message(exc, employee, lat, lon):
 
 
 def _shift_location_for(employee):
-	"""The Shift Location Frappe HR would have measured against.
+	"""The workplace a phone punch is measured against.
 
-	Mirrors the lookup in `validate_distance_from_shift_location` so the message
-	names the same place the rule used.
+	First the Shift Location Frappe HR would measure against, mirroring the lookup
+	in `validate_distance_from_shift_location`. With none, the person's branch pin
+	(ALV-338, branch_geofence), which is None for a field worker. Either way the
+	message and the phone's screen name the same place the rule used.
 	"""
+	from alvoraa_portal.branch_geofence import branch_site
+
 	names = frappe.get_all(
 		"Shift Assignment",
 		filters={
@@ -1005,7 +1013,7 @@ def _shift_location_for(employee):
 		pluck="shift_location",
 	)
 	if not names:
-		return None
+		return branch_site(employee)
 	return frappe.db.get_value(
 		"Shift Location", names[0],
 		["location_name", "checkin_radius", "latitude", "longitude"], as_dict=True)

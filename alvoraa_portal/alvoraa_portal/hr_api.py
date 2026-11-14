@@ -8,6 +8,7 @@ from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY, _may_see_organis
 from alvoraa_portal.attendance_correction import (MANAGER_FILING_WINDOW_KEY,
                                                  MANAGER_ON_BEHALF_KEY)
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
+from alvoraa_portal.payroll_rules import label_punches
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
@@ -1303,6 +1304,9 @@ def get_employee_scorecard(employee_id):
         order_by="time asc",
         ignore_permissions=True,
     )
+    # A machine punch carries no In/Out (DTC's readers send none), so the day is
+    # read in order first; otherwise a morning badge-in still offered "Check in".
+    checkins = label_punches(checkins)
     last_checkin = checkins[-1] if checkins else None
     checked_in = bool(last_checkin and last_checkin.log_type == "IN")
     today_att = frappe.db.get_value(
@@ -1515,6 +1519,9 @@ def get_employee_detail_for_manager(employee_id):
         order_by="time asc",
         ignore_permissions=True,
     )
+    # A machine punch carries no In/Out (DTC's readers send none), so the day is
+    # read in order first; otherwise a morning badge-in still offered "Check in".
+    checkins = label_punches(checkins)
     last_checkin = checkins[-1] if checkins else None
     checked_in   = bool(last_checkin and last_checkin.log_type == "IN")
 
@@ -1741,6 +1748,9 @@ def get_checkin_status():
         order_by="time asc",
         ignore_permissions=True,
     )
+    # A machine punch carries no In/Out (DTC's readers send none), so the day is
+    # read in order first; otherwise a morning badge-in still offered "Check in".
+    checkins = label_punches(checkins)
     last = checkins[-1] if checkins else None
     checked_in = bool(last and last.log_type == "IN")
     # Also get today's attendance record if exists

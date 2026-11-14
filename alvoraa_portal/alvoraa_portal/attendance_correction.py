@@ -47,8 +47,9 @@ from alvoraa_portal.grooming import month_lines
 # repeated: two numbers that are meant to agree and are written down twice will
 # stop agreeing, and this screen disagreeing with the engine about a day is the
 # bug being fixed.
-from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES
+from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES, punch_minutes
 from alvoraa_portal.payroll_rules_apply import breaks_by_day
+from alvoraa_portal.shift_standard import STANDARD as _SHIFT_STANDARD
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -66,11 +67,13 @@ REQUEST = "Attendance Request"
 # (slice 041). Administrator runs the imports. Anybody else filed it by hand.
 MACHINE_OWNERS = ("biometric.sync@", "attendance.sync@")
 
-# ALV-211. Surbhi's rule: every client's shift accepts punches 3 hours before
-# it starts and 3 hours after it ends. Frappe's 1-hour default left a late
-# out-punch unlinked, the day counted 0 hours and was marked Absent (DTC, 535
-# days).
-SHIFT_WINDOW_MINS = 180
+# ALV-211. Surbhi's rule: every client's shift accepts punches before it starts
+# and after it ends. Frappe's 1-hour default left a late out-punch unlinked, the
+# day counted 0 hours and was marked Absent (DTC, 535 days). Three hours at
+# first; four since 13 Nov 2026 (Surbhi approved ALV-337's standard: 86 November
+# punches fell between three and four hours and were lost). One number, read
+# from the shift standard, so a new shift starts where the standard puts it.
+SHIFT_WINDOW_MINS = _SHIFT_STANDARD["begin_check_in_before_shift_start_time"]
 
 # The reasons an employee can give, in the order they are offered.
 #
@@ -1832,7 +1835,11 @@ def _flag(row, punches, shift):
 	set is switched on.
 	"""
 	status = (row.get("status") or "").strip()
-	if len(punches) == 1:
+	# Repeat scans folded first, as the pay engine folds them (ALV-338 review).
+	# With no hour thresholds (13 Nov rule) a double-read arrival is a Present row
+	# the engine HOLDS; counted raw it would read as a finished two-punch day and
+	# leave the held pay with nobody prompted to confirm the time.
+	if len(punch_minutes([get_datetime(p.time) for p in punches])) == 1:
 		# ATT-06. One punch is not a short day, it is an unfinished one, and it
 		# is the single commonest thing a manager is asked about.
 		return "no_clock_out"

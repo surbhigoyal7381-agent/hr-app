@@ -367,6 +367,33 @@ def _erase_copies(name: str) -> None:
 	frappe.db.delete("Comment", {"reference_doctype": LEAD, "reference_name": name})
 
 
+def forget_unlinked_record(doc, method=None):
+	"""FCRM Note / CRM Task / CRM Call Log on_update (PRIV-5, D1).
+
+	CRM's own delete (crm.api.doc.delete_bulk_docs with "delete linked") first
+	clears the record's link to the lead, saves it, then deletes it. Frappe keeps a
+	Deleted Document copy - text included - and by then the copy no longer names
+	the lead. So the moment a record is unlinked from an EVENT lead is the last
+	moment we can tell; if the record is gone by the commit, its copies go too.
+	A record only unlinked, not deleted, is left alone.
+	"""
+	before = doc.get_doc_before_save()
+	if not before or before.get("reference_doctype") != LEAD or doc.get("reference_docname"):
+		return
+	lead = before.get("reference_docname")
+	if not lead or not frappe.db.get_value(LEAD, lead, EVENT_FORM):
+		return
+	doctype, name = doc.doctype, doc.name
+	frappe.db.before_commit.add(lambda: _erase_record_copies(doctype, name))
+
+
+def _erase_record_copies(doctype: str, name: str) -> None:
+	if frappe.db.exists(doctype, name):
+		return
+	frappe.db.delete("Deleted Document", {"deleted_doctype": doctype, "deleted_name": name})
+	frappe.db.delete("Version", {"ref_doctype": doctype, "docname": name})
+
+
 def ensure_fields() -> bool:
 	"""after_migrate: the five fields on every site with CRM; nothing without it.
 

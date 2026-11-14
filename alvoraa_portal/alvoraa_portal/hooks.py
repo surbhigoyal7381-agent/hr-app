@@ -460,7 +460,14 @@ doc_events = {
     # hand. One read of the lead or deal, only when the task is new or re-pointed.
     "CRM Task": {
         "validate": "alvoraa_portal.crm_steps.set_task_label",
+        # Slice 082 (PRIV-5): a task unlinked from an event lead and deleted in
+        # the same request leaves no Deleted Document or Version copy.
+        "on_update": "alvoraa_portal.event_form.forget_unlinked_record",
     },
+    # Slice 082 (PRIV-5): the same for the event lead's notes and call logs, which
+    # CRM's "delete linked" unlinks and then deletes.
+    "FCRM Note": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
+    "CRM Call Log": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
     # Slice 057 (B): a message forwarded by a listed salesperson goes to AI lead
     # intake (a queued job, only after Meta's signature is checked). A site-config
     # read and nothing more for any other message.

@@ -88,6 +88,7 @@ def _limited(field, source, limit, window=WINDOW_SECONDS):
 				       retry_after_s=_seconds_left(hashed, window))
 			finally:
 				frappe.form_dict.pop(field, None)
+				_keep_expiry(hashed, window)
 
 		# So a test can read every endpoint's limit off the function itself and
 		# pin the whole table (step 6, US-25): what it is keyed on, and how many.
@@ -127,6 +128,17 @@ def _limited_by_address(limit):
 		return wrapper
 
 	return decorator
+
+
+def _keep_expiry(hashed, window):
+	"""Frappe's limiter reads the counter, then adds one. If the key expires
+	between the two, the add makes a key with NO expiry, and that bucket stays
+	counted for ever - a form or a phone refused for good once it fills (slice
+	082, D2). Give such a key its window back. A key that already has an expiry
+	is left alone, so every limit behaves as before."""
+	key = frappe.cache.make_key(f"rl:{frappe.form_dict.cmd}:{hashed}:{window}")
+	if frappe.cache.ttl(key) == -1:
+		frappe.cache.expire(key, window)
 
 
 def _seconds_left(hashed, window):

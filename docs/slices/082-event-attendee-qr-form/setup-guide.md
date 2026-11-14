@@ -132,12 +132,9 @@ plain sort. Assign each 1 and 2 to a sales person with CRM's own **Assign to**.
 - Filter: **Event form** = that form. Columns: the extra questions. Sort by the one you act
   on, for example *Shops, descending*.
 
-**"Event leads – due for deletion"**
-
-- Filters: **Event form** *is set*; **News OK** is *not ticked*; **Created on** *before*
-  today minus 6 months.
-- Delete them **one event at a time** (select, then Delete). Very large deletions run in the
-  background and can stop part-way.
+**Deleting old entries.** Six months after an event, open its leads (filter **Event form** =
+that form, **News OK** *not ticked*), select them and Delete. Do one event at a time: very
+large deletions run in the background and can stop part-way.
 
 A saved view is a convenience, not a lock. Who can see leads is decided by CRM's roles:
 Sales Managers see all leads; a Sales User sees only leads they own or are assigned.

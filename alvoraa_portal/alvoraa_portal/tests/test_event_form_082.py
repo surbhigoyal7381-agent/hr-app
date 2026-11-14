@@ -180,6 +180,8 @@ class Pins(EventFormCase):
 		self.assertIn({"from_route": "/event-form/<route>", "to_route": "event-form"}, hooks.website_route_rules)
 		self.assertIn("alvoraa_portal.event_form.after_lead_delete", hooks.doc_events[ef.LEAD]["after_delete"])
 		self.assertIn("alvoraa_portal.event_form.refuse_guest_perm", hooks.doc_events["Custom DocPerm"]["validate"])
+		for doctype in ("FCRM Note", "CRM Task", "CRM Call Log"):
+			self.assertIn("alvoraa_portal.event_form.forget_unlinked_record", hooks.doc_events[doctype]["on_update"])
 		self.assertIn("alvoraa_portal.event_form.ensure_fields", hooks.after_migrate)
 		self.assertIn("alvoraa_portal.event_form.ensure_fields", hooks.after_install)
 		self.assertIn("alvoraa_portal.event_form.on_app_install", hooks.after_app_install)

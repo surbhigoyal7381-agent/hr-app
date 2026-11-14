@@ -84,10 +84,13 @@ class TestFounderSummary(FrappeTestCase):
 			sent.append(data)
 
 		frappe.db.delete("Email Queue Recipient", {"recipient": FOUNDER_MAIL})
-		with patch.dict(frappe.local.conf, {"crm_founder_summary": conf}), \
-				patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.WhatsAppMessage.notify",
-					  fake_notify):
-			summary.send_daily()
+		with patch.dict(frappe.local.conf, {"crm_founder_summary": conf}):
+			if _wa_installed():
+				with patch("frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message.WhatsAppMessage.notify",
+						   fake_notify):
+					summary.send_daily()
+			else:  # CI has no WhatsApp app; the email-only path must still be proved there
+				summary.send_daily()
 		mails = frappe.get_all("Email Queue Recipient", filters={"recipient": FOUNDER_MAIL},
 							   fields=["parent"], order_by="creation desc")
 		return sent, mails

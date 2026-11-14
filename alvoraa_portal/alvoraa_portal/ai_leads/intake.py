@@ -379,7 +379,8 @@ def service_user_email():
     """The one account every AI-made lead and note is created by (01c: never Administrator)."""
     site = frappe.local.site or ""
     domain = site if "." in site else f"{site}.example.com"
-    return f"ai-leads@{domain}"
+    # An underscore is not allowed in an email domain; CI's site is "test_site".
+    return f"ai-leads@{domain.replace('_', '-')}"
 
 
 @contextmanager

@@ -157,7 +157,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 24;   // 083 portal_notifications_083_test.js, ALV-310/305/304 portal_settings_dialog_310_test.js, ALV-288 portal_routing_288_test.js, 079 portal_joiner_079_test.js, 078 portal_faces_078_test.js, 076 C portal_expense_birthdays_076_test.js, 076 B portal_notices_send_076_test.js, 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js, 066 portal_grooming_066_test.js, ALV-222 portal_signout_222_test.js, 076 portal_home_076_test.js
+const EXPECTED_BROWSER_TESTS = 25;   // 082 event_form_082_dom_test.js, 083 portal_notifications_083_test.js, ALV-310/305/304 portal_settings_dialog_310_test.js, ALV-288 portal_routing_288_test.js, 079 portal_joiner_079_test.js, 078 portal_faces_078_test.js, 076 C portal_expense_birthdays_076_test.js, 076 B portal_notices_send_076_test.js, 063 added portal_leave_063_test.js, 064 added portal_positions_test.js, 069 portal_wall_chart_test.js, 070 portal_phone_070_test.js, 066 portal_grooming_066_test.js, ALV-222 portal_signout_222_test.js, 076 portal_home_076_test.js
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

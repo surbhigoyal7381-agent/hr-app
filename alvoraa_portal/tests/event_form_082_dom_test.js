@@ -15,7 +15,9 @@
 const { JSDOM } = require("jsdom");
 const fs = require("fs");
 const path = require("path");
-const FIX = path.join(__dirname, "fixtures");
+// This file lives with the other DOM tests in alvoraa_portal/tests/; the
+// fixtures stay beside the Python test that checks they are current.
+const FIX = path.join(__dirname, "..", "alvoraa_portal", "tests", "fixtures");
 let fails = 0;
 const ok = (c, m) => { console.log((c ? "  ok   " : "  FAIL ") + m); if (!c) fails++; };
 const tick = () => new Promise(r => setTimeout(r, 20));

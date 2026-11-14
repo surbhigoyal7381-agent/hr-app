@@ -105,8 +105,14 @@ class EventFormCase(FrappeTestCase):
 	@classmethod
 	def tearDownClass(cls):
 		frappe.set_user("Administrator")
-		for name in set(leads()):
+		names = list(set(leads()))
+		for name in names:
 			frappe.delete_doc(ef.LEAD, name, force=True, ignore_permissions=True)
+		# what an assignment leaves behind; a later lead can carry the same name
+		# and then cannot be deleted (LinkExistsError on CRM Notification)
+		for doctype, field in (("ToDo", "reference_name"), ("DocShare", "share_name"),
+		                       ("CRM Notification", "reference_name")):
+			frappe.db.delete(doctype, {field: ["in", names or [""]]})
 		for name in frappe.get_all("Web Form", filters={"route": ["like", f"{TAG}%"]}, pluck="name"):
 			frappe.delete_doc("Web Form", name, force=True, ignore_permissions=True)
 		frappe.db.commit()
@@ -513,10 +519,11 @@ class TheDoors(EventFormCase):
 		lead = frappe.get_doc(ef.LEAD, name)
 		lead.add_comment("Comment", "Called back, wants a demo")
 		lead.set(ef.CONSENT_NEWS, 1)
-		lead.save()
+		lead.save(ignore_version=False)  # Frappe skips Version rows in tests unless told
 		frappe.db.commit()
 		self.assertTrue(frappe.db.count("Comment", {"reference_doctype": ef.LEAD, "reference_name": name,
 		                                            "comment_type": "Comment"}))
+		self.assertTrue(frappe.db.count("Version", {"ref_doctype": ef.LEAD, "docname": name}))
 		frappe.delete_doc(ef.LEAD, name)
 		frappe.db.commit()
 		for doctype, filters in (("Deleted Document", {"deleted_doctype": ef.LEAD, "deleted_name": name}),
@@ -598,3 +605,498 @@ class TheViews(EventFormCase):
 			ef.EVENT_FORM: form, ef.CONSENT_NEWS: 0,
 			"creation": ["<", frappe.utils.add_months(frappe.utils.today(), -6)]})
 		self.assertEqual(due, [old])
+
+
+# ── test engineer, step 4: the doors over real HTTP, the limit, extras, erasure ──
+# Requests go through Frappe's own WSGI app in a thread (frappe.tests.test_api's
+# make_request), so routing, auth, the whitelist and the request guard all run.
+# No port is opened. Logins are API-key logins made here; Guest sends no header.
+
+EMPLOYEE = f"employee.{TAG}@example.com"
+HR = f"hr.{TAG}@example.com"
+SYSMGR = f"sysmgr.{TAG}@example.com"
+SHOP = "custom_s082_shop_name"
+PRODUCTS = "custom_s082_products"
+PRODUCT_OPTIONS = "\nAir coolers · एयर कूलर\nFans · पंखे\nPumps · पंप"
+
+
+def extra_fields() -> None:
+	"""Two extra-question fields a System Manager would add (D8-A). Idempotent."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	create_custom_fields({ef.LEAD: [
+		{"fieldname": SHOP, "label": "Shop name", "fieldtype": "Data", "insert_after": ef.CONSENT_NEWS},
+		{"fieldname": PRODUCTS, "label": "Products of interest", "fieldtype": "Select",
+		 "options": PRODUCT_OPTIONS, "insert_after": SHOP},
+	]}, update=False)
+
+
+def drop_extra_fields() -> None:
+	for fieldname in (SHOP, PRODUCTS):
+		name = frappe.db.get_value("Custom Field", {"dt": ef.LEAD, "fieldname": fieldname})
+		if name:
+			frappe.delete_doc("Custom Field", name, force=True, ignore_permissions=True)
+	frappe.db.commit()
+
+
+def extra_row(fieldname: str, label: str, fieldtype: str = "Data") -> dict:
+	return {"fieldname": fieldname, "label": label, "fieldtype": fieldtype}
+
+
+class HttpCase(EventFormCase):
+	_tokens: dict[str, dict[str, str]] = {}  # noqa: RUF012
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		ensure_user(EMPLOYEE, ["Employee"])
+		ensure_user(HR, ["HR Manager"])
+		ensure_user(SYSMGR, ["System Manager"])
+		frappe.db.commit()
+		cls._tokens = {}
+
+	def auth(self, user: str) -> dict[str, str]:
+		"""An Authorization header for this login; none for Guest."""
+		if user == "Guest":
+			return {}
+		if user not in self._tokens:
+			current = frappe.session.user
+			frappe.set_user("Administrator")
+			doc = frappe.get_doc("User", user)
+			doc.api_key = doc.api_key or frappe.generate_hash(length=15)
+			secret = frappe.generate_hash(length=15)
+			doc.api_secret = secret
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+			frappe.set_user(current)
+			self._tokens[user] = {"Authorization": f"token {doc.api_key}:{secret}"}
+		return self._tokens[user]
+
+	def http(self, method: str, path: str, user: str = "Guest", headers: dict | None = None, **kwargs):
+		"""One real request. Commits first so the request's own connection sees our
+		data, and after so this connection sees what the request wrote."""
+		from frappe.tests.test_api import make_request
+		from frappe.utils import get_test_client
+
+		frappe.db.commit()
+		response = make_request(target=getattr(get_test_client(), method), args=(path,),
+		                        kwargs={"headers": {**self.auth(user), **(headers or {})}, **kwargs},
+		                        site=frappe.local.site)
+		frappe.db.commit()
+		return response
+
+	def http_save(self, values: dict | None = None, route: str = ROUTE, **kwargs):
+		return self.http("post", "/api/method/" + CMD,
+		                 data={"route": route, "values": json.dumps(values or GOOD)}, **kwargs)
+
+
+class OverHttp(HttpCase):
+	def test_082_ac10_ac19_ac30_the_real_page_and_save_are_never_cached_and_get_is_refused(self):
+		page = self.http("get", "/event-form/" + ROUTE)
+		self.assertEqual(page.status_code, 200)
+		self.assertIn("no-store", page.headers.get("Cache-Control", ""))
+		frappe.set_user("Administrator")
+		make_form(f"{TAG}-httpdraft", crm_published=0, published=0)
+		unknown = self.http("get", f"/event-form/{TAG}-never-existed")
+		draft = self.http("get", f"/event-form/{TAG}-httpdraft")
+		self.assertEqual(unknown.status_code, draft.status_code)  # AC-19: same status
+		for response in (unknown, draft):
+			self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+			self.assertIn("This form is not taking answers.", response.get_data(as_text=True))
+		before = self.count()
+		saved = self.http_save()
+		self.assertEqual((saved.status_code, saved.json["message"]), (200, {"saved": 1}))
+		self.assertIn("no-store", saved.headers.get("Cache-Control", ""))
+		self.assertEqual(self.count(), before + 1)
+		got = self.http("get", "/api/method/" + CMD, query_string={"route": ROUTE, "values": json.dumps(GOOD)})
+		self.assertGreaterEqual(got.status_code, 400)  # AC-30: values never travel in a GET
+		self.assertEqual(self.count(), before + 1)
+
+
+class TheLimit(HttpCase):
+	def key(self, route: str = ROUTE) -> bytes:
+		return frappe.cache.make_key(f"rl:{CMD}:{limits._hash(route)}:60")
+
+	def tearDown(self):
+		frappe.cache.delete(self.key())
+		super().tearDown()
+
+	def test_082_ac24_ac25_300_saves_a_minute_per_event_whatever_the_address(self):
+		frappe.cache.delete(self.key())
+		self.assertEqual(self.http_save().status_code, 200)
+		self.assertEqual(int(frappe.cache.get(self.key())), 1)  # one real save counts once
+		self.assertTrue(0 < frappe.cache.ttl(self.key()) <= 60)
+		frappe.cache.setex(self.key(), 60, 299)
+		before = self.count()
+		self.assertEqual(self.http_save().status_code, 200)  # the 300th
+		refused = self.http_save(headers={"X-Forwarded-For": "198.51.100.7"})  # the 301st, another address
+		self.assertEqual((refused.status_code, refused.json.get("code")), (429, "TOO_MANY_TRIES"))
+		self.assertEqual(self.count(), before + 1)
+		# another event's form is not held up by this one's full hall
+		frappe.set_user("Administrator")
+		other = make_form(f"{TAG}-other-hall")
+		self.assertEqual(self.http_save(route=other.route).status_code, 200)
+		frappe.cache.delete(self.key(other.route))
+
+	def test_082_ac25_a_window_that_ends_during_a_save_still_ends(self):
+		"""Frappe's limiter reads the counter, then adds one. If the key expires
+		between the two, the add makes a key with no expiry, and this form stays
+		counted for ever: after 300 more saves every attendee is refused."""
+		frappe.cache.delete(self.key())
+		real_get = frappe.cache.get
+
+		def read_just_before_expiry(key, *args, **kwargs):
+			return b"5" if key == self.key() else real_get(key, *args, **kwargs)
+
+		with patch.object(frappe.cache, "get", side_effect=read_just_before_expiry):
+			self.assertEqual(self.send()[1], 200)
+		self.assertGreater(frappe.cache.ttl(self.key()), 0, "the event's counter has no expiry")
+
+
+class StaffDoors(HttpCase):
+	"""AC-61 to AC-63, SEC-10, data-doors 1-6: every persona, every door, over HTTP."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		extra_fields()
+		cls.doors_form = make_form(f"{TAG}-doors", [*ROWS, extra_row(SHOP, "Shop name")])
+		frappe.db.commit()
+
+	@classmethod
+	def tearDownClass(cls):
+		super().tearDownClass()
+		drop_extra_fields()
+
+	def test_082_ac61_ac62_ac63_sec10_each_persona_reads_only_what_it_should(self):
+		secrets = {}
+		for n in (1, 2, 3):
+			first, shop = f"{TAG} Doorperson Qx{n}", f"Qx-shop-{n}"
+			self.assertEqual(self.http_save(dict(GOOD, first_name=first, **{SHOP: shop}),
+			                                 route=self.doors_form.route).status_code, 200)
+			secrets[n] = (first, shop)
+		frappe.set_user("Administrator")
+		by_first = dict(frappe.get_all(ef.LEAD, filters={ef.EVENT_FORM: self.doors_form.name},
+		                               fields=["first_name", "name"], as_list=True))
+		lead = {n: by_first[secrets[n][0]] for n in secrets}
+		self.assertEqual(frappe.db.get_value(ef.LEAD, lead[2], SHOP), "Qx-shop-2")  # the extra column is filled
+		from frappe.desk.form.assign_to import add
+		frappe.local.request = None
+		add({"doctype": ef.LEAD, "name": lead[1], "assign_to": [SALES]})
+		frappe.db.commit()
+
+		filters = json.dumps([[ef.LEAD, ef.EVENT_FORM, "=", self.doors_form.name]])
+		fields = json.dumps(["name", "first_name", SHOP])
+		resource = "/api/resource/" + ef.LEAD
+		m = "/api/method/"
+
+		def doors(user: str) -> dict:
+			return {
+				"list": self.http("get", resource, user, query_string={"filters": filters, "fields": fields}),
+				"reportview.get": self.http("post", m + "frappe.desk.reportview.get", user,
+				                            data={"doctype": ef.LEAD, "fields": fields, "filters": filters}),
+				"client.get_list": self.http("post", m + "frappe.client.get_list", user,
+				                             data={"doctype": ef.LEAD, "fields": fields, "filters": filters}),
+				"search_link": self.http("post", m + "frappe.desk.search.search_link", user,
+				                         data={"doctype": ef.LEAD, "txt": f"{TAG} Doorperson"}),
+				"export": self.http("post", m + "frappe.desk.reportview.export_query", user,
+				                    data={"doctype": ef.LEAD, "file_format_type": "CSV", "title": "x",
+				                          "fields": fields, "filters": filters}),
+				"get_count": self.http("post", m + "frappe.desk.reportview.get_count", user,
+				                       data={"doctype": ef.LEAD, "filters": filters}),
+				"get L2": self.http("get", f"{resource}/{lead[2]}", user),
+				"client.get L2": self.http("post", m + "frappe.client.get", user,
+				                           data={"doctype": ef.LEAD, "name": lead[2]}),
+				"get_value L2": self.http("post", m + "frappe.client.get_value", user,
+				                          data={"doctype": ef.LEAD, "fieldname": json.dumps(["first_name", SHOP]),
+				                                "filters": json.dumps({"name": lead[2]})}),
+				"put L2": self.http("put", f"{resource}/{lead[2]}", user, json={"first_name": f"{TAG} changed"}),
+				"share L2": self.http("post", m + "frappe.share.add", user,
+				                      data={"doctype": ef.LEAD, "name": lead[2], "user": PLAIN, "read": 1}),
+				"assign L2": self.http("post", m + "frappe.desk.form.assign_to.add", user,
+				                       data={"doctype": ef.LEAD, "name": lead[2],
+				                             "assign_to": json.dumps([PLAIN])}),
+			}
+
+		def text(response) -> str:
+			return response.get_data(as_text=True)
+
+		def sees(body: str, n: int) -> bool:
+			return any(value in body for value in secrets[n])
+
+		for user in ("Guest", EMPLOYEE, HR, PLAIN, SALES2):  # outsiders: nothing at all
+			for door, response in doors(user).items():
+				body = text(response)
+				for n in secrets:
+					self.assertFalse(sees(body, n), f"{user} reads L{n} through {door}")
+				if door in ("put L2", "share L2", "assign L2"):
+					self.assertGreaterEqual(response.status_code, 400, f"{user} {door}")
+				if door == "get_count" and response.status_code == 200:
+					self.assertEqual(response.json["message"], 0, user)
+			if user == "Guest":
+				self.assertEqual(self.http("get", resource).status_code, 403)  # AC-55
+
+		s1 = doors(SALES)  # the assignee: exactly L1
+		for door in ("list", "reportview.get", "client.get_list", "export"):
+			body = text(s1[door])
+			self.assertTrue(sees(body, 1), f"{SALES} cannot read own L1 through {door}")
+			self.assertFalse(sees(body, 2) or sees(body, 3), f"{SALES} reads another's lead through {door}")
+		self.assertEqual(s1["get_count"].json["message"], 1)
+		for door in ("get L2", "client.get L2", "get_value L2", "put L2", "share L2", "assign L2"):
+			if door != "get_value L2":  # get_value answers 200 with nothing in it
+				self.assertGreaterEqual(s1[door].status_code, 400, f"{SALES} {door}")
+			self.assertFalse(sees(text(s1[door]), 2), f"{SALES} reads L2 through {door}")
+
+		access_logs = frappe.db.count("Access Log")
+		for user in (MANAGER, SYSMGR):  # all three
+			response = self.http("post", m + "frappe.desk.reportview.export_query", user,
+			                     data={"doctype": ef.LEAD, "file_format_type": "CSV", "title": "x",
+			                           "fields": fields, "filters": filters})
+			body = text(response)
+			self.assertTrue(all(sees(body, n) for n in secrets), f"{user} export")
+		print(f"\n[082 AC-62] Access Log rows written by 2 exports: {frappe.db.count('Access Log') - access_logs}")
+
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(ef.LEAD, lead[2], "first_name"), secrets[2][0])  # nobody changed it
+		self.assertFalse(frappe.db.exists("DocShare", {"share_doctype": ef.LEAD, "share_name": lead[2]}))
+		self.assertFalse(frappe.db.exists("ToDo", {"reference_type": ef.LEAD, "reference_name": lead[2],
+		                                           "status": "Open"}))
+
+
+class GuestRows(HttpCase):
+	"""SEC-3, SEC-6, D8-A: who can open the lists to the public, and who adds questions."""
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+		frappe.db.delete("Custom DocPerm", {"role": "Guest", "parent": ["in", list(ef.GUEST_CLOSED)]})
+		frappe.db.commit()
+		for doctype in ef.GUEST_CLOSED:
+			frappe.clear_cache(doctype=doctype)
+		super().tearDown()
+
+	def test_082_ac55_no_guest_row_on_crm_lead_or_web_form_and_guest_reads_nothing(self):
+		for table in ("Custom DocPerm", "DocPerm"):
+			self.assertEqual(frappe.db.count(table, {"role": "Guest", "parent": ["in", [ef.LEAD, "Web Form"]]}),
+			                 0, table)
+		self.assertEqual(self.http("get", "/api/resource/" + ef.LEAD).status_code, 403)
+		r = self.http("post", "/api/method/frappe.client.get_list", data={"doctype": ef.LEAD})
+		self.assertEqual(r.status_code, 403)
+
+	def test_082_ac65_every_way_of_adding_a_guest_row_to_a_staff_list_is_refused(self):
+		for doctype in ef.GUEST_CLOSED:  # select only, by a System Manager through the API
+			r = self.http("post", "/api/resource/Custom DocPerm", SYSMGR,
+			              json={"parent": doctype, "parenttype": "DocType", "parentfield": "permissions",
+			                    "role": "Guest", "select": 1})
+			self.assertGreaterEqual(r.status_code, 400, doctype)
+		frappe.set_user("Administrator")
+		from frappe.permissions import add_permission  # Role Permission Manager's "Add a new rule"
+		with self.assertRaises(frappe.PermissionError):
+			add_permission(ef.LEAD, "Guest", 0, "read")
+		frappe.db.rollback()
+		row = frappe.get_doc({"doctype": "Custom DocPerm", "parent": "Employee", "parenttype": "DocType",
+		                      "parentfield": "permissions", "role": "Sales User", "read": 1}).insert()
+		row.role = "Guest"  # an existing row turned into a Guest row
+		with self.assertRaises(frappe.PermissionError):
+			row.save()
+		frappe.db.rollback()
+		self.assertEqual(frappe.db.count("Custom DocPerm", {"role": "Guest",
+		                                                    "parent": ["in", list(ef.GUEST_CLOSED)]}), 0)
+
+	def test_082_ac66_a_guest_link_search_on_user_returns_no_one(self):
+		r = self.http("post", "/api/method/frappe.desk.search.search_link", data={"doctype": "User", "txt": TAG})
+		body = r.get_data(as_text=True)
+		for email in (MANAGER, SALES, SYSMGR):
+			self.assertNotIn(email, body)
+
+	def test_082_ac42_a_sales_manager_cannot_add_a_question_field(self):
+		r = self.http("post", "/api/resource/Custom Field", MANAGER,
+		              json={"dt": ef.LEAD, "fieldname": "custom_s082_by_manager", "label": "By manager",
+		                    "fieldtype": "Data"})
+		self.assertEqual(r.status_code, 403)
+		self.assertFalse(frappe.db.exists("Custom Field", {"dt": ef.LEAD, "fieldname": "custom_s082_by_manager"}))
+
+	def test_082_ac71_guests_still_cannot_upload_files(self):
+		self.assertFalse(frappe.db.get_single_value("System Settings", "allow_guests_to_upload_files"))
+
+
+class ExtraQuestions(EventFormCase):
+	"""AC-31, AC-37 to AC-41, AC-70: what the organiser box says, and extra questions."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		extra_fields()
+		ensure_user(SYSMGR, ["System Manager"])
+		frappe.db.commit()
+
+	@classmethod
+	def tearDownClass(cls):
+		super().tearDownClass()
+		drop_extra_fields()
+
+	def make(self, route: str, rows: list, **values) -> str:
+		frappe.set_user("Administrator")
+		make_form(f"{TAG}-{route}", rows, **values)
+		frappe.db.commit()
+		return f"{TAG}-{route}"
+
+	def test_082_ac31_a_system_manager_gets_the_organiser_box_too(self):
+		html = self.page(user=SYSMGR)
+		self.assertIn("You are signed in as an organiser.", html)
+		self.assertIn("Download QR card", html)
+
+	def test_082_ac37_more_than_five_extras_warns_but_still_offers_the_qr(self):
+		meta = frappe.get_meta(ef.LEAD)
+		spare = [f for f in meta.fields if f.fieldtype in ("Data", "Select", "Text") and not f.hidden
+		         and not f.read_only and not f.reqd and f.fieldname not in ef.NEVER | ef.STANDARD | {SHOP, PRODUCTS}
+		         and not ef._SENSITIVE.search(f"{f.label} {f.fieldname}".lower())]
+		self.assertGreaterEqual(len(spare), 8, "CRM Lead has too few plain fields for this test")
+
+		def rows(n: int) -> list:
+			return [*ROWS, *[extra_row(f.fieldname, f.label, f.fieldtype) for f in spare[:n]]]
+
+		eight = self.page(self.make("eight", rows(8)), user=MANAGER)
+		self.assertIn("This form has 8 extra questions.", eight)
+		self.assertIn("Download QR card", eight)
+		five = self.page(self.make("five", rows(5)), user=MANAGER)
+		self.assertIn("Extra questions: 5.", five)
+		self.assertNotIn("extra questions.</b>", five)
+
+	def test_082_ac38_a_sensitive_label_or_missing_notice_is_named_in_the_box(self):
+		html = self.page(self.make("boxaadhaar", [*ROWS, extra_row(SHOP, "Aadhaar number")]), user=MANAGER)
+		self.assertIn("This form cannot open for attendees yet.", html)
+		self.assertIn("“Aadhaar number”", html)
+		self.assertNotIn("Download QR card", html)
+		no_notice = [dict(r, description="") if r["fieldname"] == ef.CONSENT_EVENT else r for r in ROWS]
+		html = self.page(self.make("boxnonotice", no_notice), user=MANAGER)
+		self.assertIn("The “I agree” question is missing, or has no notice under it.", html)
+		self.assertNotIn("Download QR card", html)
+
+	def test_082_ac39_ac41_an_extra_question_is_drawn_in_place_and_saved_exactly(self):
+		rows = [*ROWS[:3], extra_row(SHOP, "Shop name / दुकान का नाम"),
+		        extra_row(PRODUCTS, "Products of interest", "Select"), *ROWS[3:]]
+		route = self.make("extras", rows)
+		html = self.page(route)
+		self.assertLess(html.index("Email (optional)"), html.index("Shop name"))
+		self.assertLess(html.index("Shop name"), html.index("How was the event?"))
+		before = frappe.db.count(ef.LEAD)
+		frappe.set_user("Guest")
+		bad = self.send(dict(GOOD, **{SHOP: "Kulkarni Traders", PRODUCTS: "Air coolers"}), route=route)
+		self.assertEqual(bad[1:4], (422, "FIELD_INVALID", {"label": "Products of interest"}))
+		self.assertEqual(frappe.db.count(ef.LEAD), before)
+		ok = self.send(dict(GOOD, **{SHOP: "Kulkarni Traders", PRODUCTS: "Air coolers · एयर कूलर"}), route=route)
+		self.assertEqual(ok[1], 200)
+		frappe.set_user("Administrator")
+		stored = frappe.get_all(ef.LEAD, filters={ef.EVENT_FORM: frappe.db.get_value("Web Form", {"route": route})},
+		                        fields=[SHOP, PRODUCTS])[0]
+		self.assertEqual((stored[SHOP], stored[PRODUCTS]), ("Kulkarni Traders", "Air coolers · एयर कूलर"))
+
+	def test_082_ac40_a_question_field_hidden_later_closes_the_form_and_keeps_old_answers(self):
+		route = self.make("hidden", [*ROWS, extra_row(SHOP, "Shop name")])
+		frappe.set_user("Guest")
+		self.assertEqual(self.send(dict(GOOD, **{SHOP: "Patil Stores"}), route=route)[1], 200)
+		frappe.set_user("Administrator")
+		field = frappe.get_doc("Custom Field", {"dt": ef.LEAD, "fieldname": SHOP})
+		field.hidden = 1
+		field.save()
+		frappe.db.commit()
+		self.addCleanup(self.unhide, field.name)
+		self.assertEqual(ef.form_state(route)["problem"], "hidden")
+		frappe.set_user("Guest")
+		self.assertEqual(self.send(dict(GOOD, **{SHOP: "x"}), route=route)[1:3], (404, "FORM_CLOSED"))
+		frappe.set_user("Administrator")
+		self.assertTrue(frappe.db.exists(ef.LEAD, {SHOP: "Patil Stores"}))
+
+	@staticmethod
+	def unhide(name: str) -> None:
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Custom Field", name, "hidden", 0)
+		frappe.db.commit()
+		frappe.clear_cache(doctype=ef.LEAD)
+
+	def test_082_ac70_a_form_flagged_for_lists_and_edits_still_shows_neither(self):
+		route = self.make("listedit", ROWS, allow_edit=1, show_list=1)
+		html = self.page(route)
+		self.assertIn("Send my details", html)
+		self.assertEqual(re.findall(r"<a\s", html), [])
+		self.assertNotIn(f"/{route}/list", html)
+
+
+class PrivacyRecords(EventFormCase):
+	"""PRIV-3c, PRIV-4, PRIV-5 (activities), OPS-24 (no attendee value in a job)."""
+
+	def newest(self) -> str:
+		frappe.set_user("Administrator")
+		return frappe.get_all(ef.LEAD, filters={ef.EVENT_FORM: self.form.name}, order_by="creation desc",
+		                      limit=1, pluck="name")[0]
+
+	def test_082_ac46_unticking_news_is_recorded_with_who_and_when(self):
+		self.send(dict(GOOD, **{ef.CONSENT_NEWS: 1}))
+		name = self.newest()
+		frappe.set_user(MANAGER)
+		lead = frappe.get_doc(ef.LEAD, name)
+		lead.set(ef.CONSENT_NEWS, 0)
+		lead.save(ignore_version=False)  # Frappe skips Version rows in tests unless told; production writes them
+		frappe.set_user("Administrator")
+		versions = frappe.get_all("Version", filters={"ref_doctype": ef.LEAD, "docname": name},
+		                          fields=["owner", "data"])
+		changed = [v for v in versions if ef.CONSENT_NEWS in v.data]
+		self.assertTrue(changed, "no Version row for the withdrawal")
+		self.assertEqual(changed[0].owner, MANAGER)
+		self.assertIn([ef.CONSENT_NEWS, 1, 0], json.loads(changed[0].data)["changed"])
+		self.assertNotIn(name, frappe.get_all(ef.LEAD, filters={ef.EVENT_FORM: self.form.name,
+		                                                         ef.CONSENT_NEWS: 1}, pluck="name"))
+
+	def test_082_ac51_an_edited_notice_keeps_the_old_text_in_history(self):
+		frappe.set_user("Administrator")
+		form = make_form(f"{TAG}-notice")
+		row = next(r for r in form.web_form_fields if r.fieldname == ef.CONSENT_EVENT)
+		row.description = "Collected by Sharma Events. Kept 3 months."
+		form.save(ignore_version=False)
+		data = "".join(frappe.get_all("Version", filters={"ref_doctype": "Web Form", "docname": form.name},
+		                              pluck="data"))
+		self.assertIn(NOTICE, data)
+
+	def test_082_priv5_erasing_an_event_lead_the_crm_way_also_erases_its_notes_and_tasks(self):
+		self.send()
+		name = self.newest()
+		frappe.get_doc({"doctype": "FCRM Note", "title": "Call", "content": "Qz-note wants a demo",
+		                "reference_doctype": ef.LEAD, "reference_docname": name}).insert()
+		frappe.get_doc({"doctype": "CRM Task", "title": "Qz-task call back",
+		                "reference_doctype": ef.LEAD, "reference_docname": name}).insert()
+		frappe.db.commit()
+		self.addCleanup(self.drop_copies)
+		from crm.api.doc import delete_bulk_docs
+		frappe.set_user(MANAGER)
+		frappe.local.request = None
+		delete_bulk_docs(ef.LEAD, json.dumps([name]), delete_linked=True)
+		frappe.db.commit()
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists(ef.LEAD, name))
+		for doctype in ("FCRM Note", "CRM Task"):
+			self.assertFalse(frappe.db.exists(doctype, {"reference_docname": name}), doctype)
+		copies = frappe.get_all("Deleted Document", filters={"data": ["like", "%Qz-%"]}, pluck="deleted_doctype")
+		self.assertEqual(copies, [], "a copy of the erased lead's notes or tasks survives")
+
+	@staticmethod
+	def drop_copies() -> None:
+		frappe.db.delete("FCRM Note", {"content": ["like", "%Qz-note%"]})
+		frappe.db.delete("CRM Task", {"title": ["like", "Qz-task%"]})
+		frappe.db.delete("Deleted Document", {"data": ["like", "%Qz-%"]})
+		frappe.db.commit()
+
+	def test_082_ac59_no_background_job_from_a_save_carries_an_answer(self):
+		calls = []
+
+		def record(*args, **kwargs):
+			calls.append(repr((args, kwargs)))
+
+		with patch("frappe.enqueue", side_effect=record), \
+		     patch("frappe.utils.background_jobs.enqueue", side_effect=record), \
+		     patch("frappe.enqueue_doc", side_effect=record):
+			self.assertEqual(self.send()[1], 200)
+		for call in calls:
+			for value in ("Rakesh", "9822041012", "Could not hear"):
+				self.assertNotIn(value, call)
+		print(f"\n[082 AC-59] jobs enqueued by one save: {len(calls)}")

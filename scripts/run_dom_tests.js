@@ -54,6 +54,10 @@ const TREE_FIXTURE = path.join(__dirname, "..", "alvoraa_portal", "alvoraa_porta
 /* Each entry is the file and the arguments it needs. Two of them take the page
    and a payload; the rest find the page themselves. */
 const RUN = [
+  /* Slice 082: the public event form's script - what Send posts, every
+     failure keeps the answers, the organiser's QR dialog. Reads its two
+     server-rendered pages from tests/fixtures. */
+  { file: "event_form_082_dom_test.js" },
   { file: "portal_dom_test.js" },
   { file: "portal_notes_test.js" },
   { file: "next_frame_test.js" },

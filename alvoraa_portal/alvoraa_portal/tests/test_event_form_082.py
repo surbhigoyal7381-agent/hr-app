@@ -423,6 +423,22 @@ class ThePage(EventFormCase):
 		self.assertNotIn("other.alvoraa.co", html)
 		self.assertNotIn("evil.example", html)
 
+	def test_082_the_dom_fixtures_carry_todays_script(self):
+		"""event_form_082_dom_test.js drives two rendered pages kept in fixtures/.
+		If the page's script changes, render them again (scratch script in 03 §6)
+		or that test keeps passing against yesterday's code."""
+		import os
+
+		def script(html):
+			body = html.split("<script>")[-1].split("</script>")[0]
+			return re.sub(r"var T = .*?;\n", "", body, flags=re.S)
+
+		here = os.path.join(os.path.dirname(__file__), "fixtures")
+		for name, user in (("event_form_082_guest.html", "Guest"), ("event_form_082_manager.html", MANAGER)):
+			with open(os.path.join(here, name), encoding="utf-8") as f:
+				kept = f.read()
+			self.assertEqual(script(kept), script(self.page(user=user)), name)
+
 	def test_082_ac34_ac36_the_box_says_what_is_wrong_and_offers_no_qr(self):
 		frappe.set_user("Administrator")
 		make_form(f"{TAG}-boxdraft", crm_published=0, published=0)
@@ -527,3 +543,58 @@ class TheDoors(EventFormCase):
 		lead.set(ef.CONSENT_EVENT, 0)
 		with self.assertRaises(frappe.CannotChangeConstantError):
 			lead.save()
+
+
+# ── the saved views the setup guide makes (AC-43, AC-44, AC-49) ───────────
+# The views are configuration in CRM, not shipped records; these tests run the
+# same filters and sort a view runs, so the guide's recipe is proved on a site.
+
+
+class TheViews(EventFormCase):
+	def lead(self, form, rating=None, news=0, days_old=0):
+		doc = frappe.get_doc({"doctype": ef.LEAD, "first_name": f"{TAG} view", ef.EVENT_FORM: form,
+		                      ef.RATING: rating, ef.CONSENT_EVENT: 1, ef.CONSENT_NEWS: news}).insert()
+		if days_old:
+			frappe.db.set_value(ef.LEAD, doc.name, "creation", frappe.utils.add_days(frappe.utils.now(), -days_old),
+			                    update_modified=False)
+		return doc.name
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+
+	def test_082_ac43_lowest_first_puts_every_1_before_every_2_and_drops_blanks(self):
+		form = make_form(f"{TAG}-views").name
+		for i in range(20):
+			self.lead(form, ef.RATINGS[i % 5])
+		for _ in range(5):
+			self.lead(form)
+		rows = frappe.get_list(ef.LEAD, filters={ef.EVENT_FORM: form, ef.RATING: ["is", "set"]},
+		                       order_by=f"{ef.RATING} asc, creation asc", pluck=ef.RATING, limit=0)
+		self.assertEqual(len(rows), 20)
+		self.assertEqual([r[0] for r in rows], sorted(r[0] for r in rows))
+		self.assertTrue(rows[0].startswith("1 · ") and rows[-1].startswith("5 · "))
+		# without "is set" the five unrated leads sort FIRST ascending (01b EF13, now a fact)
+		every = frappe.get_list(ef.LEAD, filters={ef.EVENT_FORM: form}, order_by=f"{ef.RATING} asc, creation asc",
+		                        pluck=ef.RATING, limit=0)
+		self.assertEqual([bool(r) for r in every[:5]], [False] * 5)
+		self.assertTrue(all(every[5:]))
+
+	def test_082_ac44_entries_per_form_counts_each_event(self):
+		forms = [make_form(f"{TAG}-count{i}").name for i in range(3)]
+		for form, n in zip(forms, (3, 1, 2), strict=True):
+			for _ in range(n):
+				self.lead(form, ef.RATINGS[0])
+		got = frappe.get_list(ef.LEAD, filters={ef.EVENT_FORM: ["in", forms]},
+		                      fields=[ef.EVENT_FORM, {"COUNT": "name", "as": "n"}], group_by=ef.EVENT_FORM)
+		self.assertEqual({r[ef.EVENT_FORM]: r.n for r in got}, dict(zip(forms, (3, 1, 2), strict=True)))
+
+	def test_082_ac49_due_for_deletion_lists_only_old_leads_without_news(self):
+		form = make_form(f"{TAG}-old").name
+		old = self.lead(form, days_old=210)
+		self.lead(form, days_old=150)
+		self.lead(form, news=1, days_old=210)
+		due = frappe.get_list(ef.LEAD, pluck="name", filters={
+			ef.EVENT_FORM: form, ef.CONSENT_NEWS: 0,
+			"creation": ["<", frappe.utils.add_months(frappe.utils.today(), -6)]})
+		self.assertEqual(due, [old])

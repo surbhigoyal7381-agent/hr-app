@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Pune Dealer Meet, 14 Nov</title>
+<!--
+  Slice 082. The attendee's phone page for one CRM event form.
+  Everything is inline: no font, script, style or image from any other host
+  (OPS-13, PRIV-6). The organiser box below exists in the HTML only for a
+  signed-in Sales Manager or System Manager (SEC-7). Every organiser-typed word
+  is escaped; nothing typed by an attendee is ever put back into the page.
+-->
+<style>
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans","Noto Sans Devanagari",sans-serif;background:#f4f4f4;color:#2b2b2b;-webkit-font-smoothing:antialiased}
+.cf{max-width:560px;margin:0 auto;padding:12px 12px 32px}
+.card{background:#fff;border:1px solid #dcdcdc;border-radius:14px;padding:20px 16px}
+.title{font-size:20px;font-weight:600;color:#1c1c1c;margin:0 0 10px;line-height:1.3}
+.subtitle{font-size:15px;color:#5e5e5e;margin:0 0 20px;line-height:1.5;white-space:pre-wrap}
+.field{margin-bottom:18px}
+label.fl,legend{display:block;font-size:15px;color:#2b2b2b;margin-bottom:6px;line-height:1.35;padding:0;white-space:pre-wrap}
+.req{color:#a3201b;margin-left:2px}
+input[type=text],input[type=tel],input[type=email],input[type=date],textarea,select{width:100%;font:inherit;font-size:16px;line-height:1.4;color:#2b2b2b;background:#f4f4f4;border:1px solid #dcdcdc;border-radius:8px;padding:11px 12px;min-height:48px}
+textarea{min-height:88px;resize:vertical}
+:focus-visible{outline:3px solid rgba(28,28,28,.45);outline-offset:2px}
+.has-error{border-color:#a3201b!important;border-width:2px!important}
+.desc{font-size:14px;color:#5e5e5e;line-height:1.5;white-space:pre-wrap;margin:2px 0 0}
+.check+.desc{margin-left:36px}
+.ferr{display:none;font-size:14px;color:#a3201b;margin-top:6px;font-weight:600}
+.field.bad .ferr{display:block}
+fieldset{border:0;margin:0 0 18px;padding:0;min-width:0}
+.opt{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 12px;border:1px solid #dcdcdc;border-radius:8px;margin-bottom:6px;background:#f4f4f4;font-size:16px;cursor:pointer}
+.opt input{width:22px;height:22px;margin:0;accent-color:#2b2b2b;flex:none}
+.opt:has(input:checked){border-color:#2b2b2b;border-width:2px;background:#fff}
+.hint{color:#5e5e5e}
+.check{display:flex;align-items:flex-start;gap:12px;min-height:48px;padding:10px 0;cursor:pointer;font-size:15px;line-height:1.4;white-space:pre-wrap}
+.check input{width:24px;height:24px;margin:0;flex:none;accent-color:#2b2b2b}
+.form-error{display:none;font-size:15px;line-height:1.45;border-radius:8px;padding:12px;margin:4px 0 12px;background:#fbefee;color:#a3201b}
+.form-error.wait{background:#faf3dc;color:#1c1c1c}
+.form-error.on{display:block}
+.form-error .hi{display:block;margin-top:4px}
+button.submit{width:100%;min-height:48px;font:inherit;font-size:16px;font-weight:600;border:0;border-radius:8px;background:#2b2b2b;color:#fff;cursor:pointer}
+button.submit:disabled{opacity:.6}
+.done{text-align:center;padding:24px 4px 12px}
+.ring{width:56px;height:56px;border-radius:999px;margin:0 auto 16px;background:#e6f4ec;color:#1e6b43;display:flex;align-items:center;justify-content:center;font-size:28px}
+.ring.grey{background:#f4f4f4;color:#2b2b2b}
+.done h2{font-size:19px;color:#1c1c1c;margin:0 0 8px;line-height:1.4}
+.done p{font-size:15px;color:#5e5e5e;margin:0;line-height:1.5}
+.orgbar{background:#faf3dc;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:14px;line-height:1.45;color:#1c1c1c;word-break:break-word}
+.orgbar button{margin-top:8px;min-height:44px;font:inherit;font-size:15px;font-weight:600;border:1px solid #2b2b2b;background:#fff;color:#2b2b2b;border-radius:8px;padding:0 14px;cursor:pointer}
+.modalbg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
+.modal{background:#fff;border-radius:12px;padding:16px;max-width:420px;width:100%}
+.modal h3{margin:0 0 6px;font-size:17px}
+.modal canvas{display:block;width:100%;height:auto;border:1px solid #dcdcdc;border-radius:6px;margin:12px 0}
+.modal .row{display:flex;gap:8px;justify-content:flex-end}
+.modal button{font:inherit;min-height:44px;padding:0 14px;border-radius:8px;cursor:pointer;border:1px solid #bbb;background:#fff}
+.modal button.dark{border:0;background:#1c1c1c;color:#fff}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main class="cf">
+
+  
+  <div class="orgbar" id="orgbar">
+    <b>You are signed in as an organiser.</b> Attendees do not see this box.<br>
+    
+      This form's address: http://localhost/event-form/s082-pune-dealer-meet<br>
+      Extra questions: 0.
+      
+      <br><button type="button" id="openqr">Download QR card</button>
+    
+  </div>
+  
+
+  
+  <div class="card" id="card">
+    <h1 class="title">Pune Dealer Meet, 14 Nov</h1>
+    <p class="subtitle">Takes about one minute.</p>
+    <form id="wf" novalidate>
+    
+      
+      <div class="field" id="f-first_name" data-name="first_name" data-kind="text" data-required="1" data-label="Your name">
+        <label class="fl" for="i-first_name">Your name / आपका नाम<span class="req" aria-hidden="true">*</span></label>
+        
+        <input id="i-first_name" name="first_name" maxlength="140" aria-describedby="e-first_name" aria-required="true"
+          type="text" autocomplete="given-name">
+        
+        <div class="ferr" id="e-first_name">Needed · ज़रूरी</div>
+        
+      </div>
+      
+    
+      
+      <div class="field" id="f-mobile_no" data-name="mobile_no" data-kind="tel" data-required="1" data-label="Mobile number">
+        <label class="fl" for="i-mobile_no">Mobile number / मोबाइल नंबर<span class="req" aria-hidden="true">*</span></label>
+        
+        <input id="i-mobile_no" name="mobile_no" maxlength="140" aria-describedby="e-mobile_no" aria-required="true"
+          type="tel" inputmode="tel" autocomplete="tel"
+          >
+        
+        <div class="ferr" id="e-mobile_no">Needed · ज़रूरी</div>
+        
+      </div>
+      
+    
+      
+      <div class="field" id="f-email" data-name="email" data-kind="email" data-required="0" data-label="Email (optional)">
+        <label class="fl" for="i-email">Email (optional) / ईमेल (वैकल्पिक)</label>
+        
+        <input id="i-email" name="email" maxlength="140" aria-describedby="e-email"
+          type="email" autocomplete="email"
+          >
+        
+        <div class="ferr" id="e-email">Needed · ज़रूरी</div>
+        
+      </div>
+      
+    
+      
+      <fieldset class="field" id="f-custom_event_rating" data-name="custom_event_rating" data-kind="radio" data-required="0" data-label="How was the event?">
+        <legend>How was the event?</legend>
+        
+        <label class="opt"><input type="radio" name="custom_event_rating" value="5 · Very good · बहुत अच्छा"><span>5 · Very good <span class="hint">· बहुत अच्छा</span></span></label>
+        
+        <label class="opt"><input type="radio" name="custom_event_rating" value="4 · Good · अच्छा"><span>4 · Good <span class="hint">· अच्छा</span></span></label>
+        
+        <label class="opt"><input type="radio" name="custom_event_rating" value="3 · OK · ठीक-ठाक"><span>3 · OK <span class="hint">· ठीक-ठाक</span></span></label>
+        
+        <label class="opt"><input type="radio" name="custom_event_rating" value="2 · Poor · खराब"><span>2 · Poor <span class="hint">· खराब</span></span></label>
+        
+        <label class="opt"><input type="radio" name="custom_event_rating" value="1 · Very poor · बहुत खराब"><span>1 · Very poor <span class="hint">· बहुत खराब</span></span></label>
+        
+        <div class="ferr">Needed · ज़रूरी</div>
+        
+      </fieldset>
+      
+    
+      
+      <div class="field" id="f-custom_event_comment" data-name="custom_event_comment" data-kind="textarea" data-required="0" data-label="Anything you want to tell us?">
+        <label class="fl" for="i-custom_event_comment">Anything you want to tell us?</label>
+        
+        <textarea id="i-custom_event_comment" name="custom_event_comment" maxlength="2000" aria-describedby="e-custom_event_comment"></textarea>
+        
+        <div class="ferr" id="e-custom_event_comment">Needed · ज़रूरी</div>
+        
+      </div>
+      
+    
+      
+      <div class="field" id="f-custom_consent_event" data-name="custom_consent_event" data-kind="check" data-required="1" data-label="I agree">
+        <label class="check"><input type="checkbox" id="i-custom_consent_event" name="custom_consent_event" aria-describedby="e-custom_consent_event d-custom_consent_event" aria-required="true"><span>I agree<span class="req" aria-hidden="true">*</span></span></label>
+        <div class="ferr" id="e-custom_consent_event">Needed · ज़रूरी</div>
+        <div class="desc" id="d-custom_consent_event">Collected by Sharma Events for this event. Kept 6 months. privacy@example.com</div>
+      </div>
+      
+    
+      
+      <div class="field" id="f-custom_consent_news" data-name="custom_consent_news" data-kind="check" data-required="0" data-label="Send me news">
+        <label class="check"><input type="checkbox" id="i-custom_consent_news" name="custom_consent_news" aria-describedby="e-custom_consent_news"><span>Send me news</span></label>
+        <div class="ferr" id="e-custom_consent_news">Needed · ज़रूरी</div>
+        
+      </div>
+      
+    
+      <div class="form-error" id="ferr" role="alert" tabindex="-1"></div>
+      <button type="submit" class="submit" id="send">Send my details / जानकारी भेजें</button>
+    </form>
+  </div>
+  
+
+</main>
+
+
+<div class="modalbg" id="qrm" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qrh">
+    <h3 id="qrh">QR card for Pune Dealer Meet, 14 Nov</h3>
+    <p style="font-size:13px;color:#555;margin:0">Downloads as one picture (PNG), ready to print at A6 or larger. The code holds this tenant's own address and never expires.</p>
+    <canvas id="qrc" width="840" height="1188" role="img" aria-label="QR card. Scan to leave your details and feedback. Address: http://localhost/event-form/s082-pune-dealer-meet"></canvas>
+    <div class="row"><button type="button" id="qrclose">Close</button><button type="button" class="dark" id="qrpng">Download PNG</button></div>
+  </div>
+</div>
+
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var T = {"address": "http://localhost/event-form/s082-pune-dealer-meet", "busy": "Many people are sending at the same moment.", "busyRest": "Your answers are still here. Wait 10 seconds, then press Send again.", "button": "Send my details / \u091c\u093e\u0928\u0915\u093e\u0930\u0940 \u092d\u0947\u091c\u0947\u0902", "close": "You can close this page.", "csrf": "", "missing": "Please fill these in: {0}.", "notSent": "Not sent.", "notSentRest": "Your answers are still here. Check your signal, then press Send again.", "organiser": "", "pay": "This is not a payment.", "qr": "[\"111111101110010011000010001111111\", \"100000101010011010111010101000001\", \"101110101110111010001100101011101\", \"101110100100101010111101101011101\", \"101110101001100111000000101011101\", \"100000100010100111010101101000001\", \"111111101010101010101010101111111\", \"000000000111011110100011100000000\", \"100111111010100001100000110010111\", \"111101001101010101110101000111110\", \"100100111010110110000111111011111\", \"000111011011010100101001000100110\", \"000011101111010001010000001100000\", \"010111010111011001111001010100100\", \"100110111010101100011010001010100\", \"011101011101110010001000001101101\", \"101011110000110100001011111110000\", \"100100011111101111111000001010101\", \"001100110001011101111101001001111\", \"001000010010011010000010101111110\", \"011100110100110010110000100101010\", \"100111011010101000000011000011100\", \"100101110100110000011111110000111\", \"101000001011000101111011011110110\", \"110101111010101010000010111111011\", \"000000001010000111100000100010100\", \"111111101111010111011101101010110\", \"100000101100001111100001100010101\", \"101110101000011111001011111110000\", \"101110101011111010100100010000011\", \"101110100101100100011001110111011\", \"100000100000011000010010011011111\", \"111111101111110101010001100100000\"]", "route": "s082-pune-dealer-meet", "scan": "Scan to leave your details and feedback", "sending": "Sending\u2026", "stopped": "This form has stopped taking answers,", "stoppedRest": "so your details were not saved. Please give them at the organiser\u0027s desk.", "thanks": "Thank you. Your details are saved for Pune Dealer Meet, 14 Nov.", "thanksHi": "\u0927\u0928\u094d\u092f\u0935\u093e\u0926\u0964 \u0906\u092a\u0915\u0940 \u091c\u093e\u0928\u0915\u093e\u0930\u0940 Pune Dealer Meet, 14 Nov \u0915\u0947 \u0932\u093f\u090f \u0938\u0939\u0947\u091c \u0932\u0940 \u0917\u0908 \u0939\u0948\u0964", "title": "Pune Dealer Meet, 14 Nov"};
+  var HI = {
+    sending: "भेजा जा रहा है…",
+    missing: "कृपया ये भरें — ऊपर “ज़रूरी” लिखे खाने।",
+    notSent: "नहीं भेजा गया। आपके उत्तर यहीं हैं। नेटवर्क देखें, फिर दोबारा \"भेजें\" दबाएँ।",
+    busy: "इस समय बहुत लोग एक साथ भेज रहे हैं। आपके उत्तर यहीं हैं। 10 सेकंड रुकें, फिर दोबारा \"भेजें\" दबाएँ।",
+    stopped: "यह फ़ॉर्म अब उत्तर नहीं ले रहा, इसलिए आपकी जानकारी सहेजी नहीं गई। कृपया आयोजक की डेस्क पर दें।",
+    close: "आप यह पेज बंद कर सकते हैं।",
+    scan: "अपनी जानकारी और राय देने के लिए स्कैन करें",
+    pay: "यह भुगतान नहीं है।"
+  };
+
+  // ---- the form ---------------------------------------------------------
+  var wf = $("#wf"), send = $("#send"), ferr = $("#ferr"), busy = false;
+
+  function show(kind, html) {
+    ferr.className = "form-error on" + (kind === "wait" ? " wait" : "");
+    ferr.innerHTML = html;
+    ferr.focus();
+  }
+  function text(s) { var d = document.createElement("span"); d.textContent = s; return d.innerHTML; }
+  function message(strong, rest, hi) {
+    return "<b>" + text(strong) + "</b> " + text(rest) + '<span class="hi" lang="hi">' + text(hi) + "</span>";
+  }
+
+  function collect() {
+    var out = {}, missing = [];
+    $$("[data-name]", wf).forEach(function (box) {
+      var name = box.getAttribute("data-name"), kind = box.getAttribute("data-kind"), v;
+      if (kind === "radio") { var c = $("input:checked", box); v = c ? c.value : ""; }
+      else if (kind === "check") { v = $("input", box).checked ? 1 : 0; }
+      else { v = $("input,textarea,select", box).value.trim(); }
+      out[name] = v;
+      var bad = box.getAttribute("data-required") === "1" && (v === "" || v === 0);
+      box.classList.toggle("bad", bad);
+      $$("input,textarea,select", box).forEach(function (i) {
+        if (bad) { i.setAttribute("aria-invalid", "true"); } else { i.removeAttribute("aria-invalid"); }
+        if (kind !== "radio" && kind !== "check") { i.classList.toggle("has-error", bad); }
+      });
+      if (bad) { missing.push(box.getAttribute("data-label")); }
+    });
+    return { values: out, missing: missing };
+  }
+
+  function serverSentence(body) {
+    try { return JSON.parse(JSON.parse(body._server_messages)[0]).message || ""; } catch (e) { return ""; }
+  }
+
+  function done() {
+    $("#card").innerHTML = '<div class="done" role="status" tabindex="-1"><div class="ring" aria-hidden="true">✓</div><h2></h2>'
+      + '<p class="thi" lang="hi"></p><p style="margin-top:14px"></p></div>';
+    $("#card h2").textContent = T.thanks;
+    $("#card .thi").textContent = T.thanksHi;
+    $("#card p:last-child").textContent = T.close + " · " + HI.close;
+    window.scrollTo(0, 0);
+    $("#card .done").focus();
+  }
+
+  if (wf) {
+    wf.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (busy) { return; }
+      var got = collect();
+      if (got.missing.length) {
+        show("err", text(T.missing.replace("{0}", got.missing.join(", "))) + '<span class="hi" lang="hi">' + text(HI.missing) + "</span>");
+        return;
+      }
+      busy = true; send.disabled = true; send.textContent = T.sending + " / " + HI.sending;
+      var ctl = window.AbortController ? new AbortController() : null;
+      var timer = setTimeout(function () { if (ctl) { ctl.abort(); } }, 30000);
+      var body = new URLSearchParams();
+      body.set("route", T.route);
+      body.set("values", JSON.stringify(got.values));
+      var headers = { "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded" };
+      if (T.csrf) { headers["X-Frappe-CSRF-Token"] = T.csrf; }
+      fetch("/api/method/alvoraa_portal.event_form.save", {
+        method: "POST", body: body.toString(), headers: headers, credentials: "same-origin",
+        signal: ctl ? ctl.signal : undefined
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; });
+      }).then(function (res) {
+        clearTimeout(timer);
+        if (res.status === 200 && res.body.message && res.body.message.saved) { done(); return; }
+        if (res.status === 429 || res.status === 503) {
+          show("wait", message(T.busy, T.busyRest, HI.busy));
+        } else if (res.body.code === "FORM_CLOSED") {
+          show("err", message(T.stopped, T.stoppedRest, HI.stopped));
+          send.hidden = true;
+        } else if (res.body.code === "FIELD_INVALID" && serverSentence(res.body)) {
+          show("err", text(serverSentence(res.body)));
+        } else {
+          show("err", message(T.notSent, T.notSentRest, HI.notSent));
+        }
+        busy = false; send.disabled = false; send.textContent = T.button;
+      }).catch(function () {
+        clearTimeout(timer);
+        show("err", message(T.notSent, T.notSentRest, HI.notSent));
+        busy = false; send.disabled = false; send.textContent = T.button;
+      });
+    });
+  }
+
+  // ---- the QR card (organiser only) --------------------------------------
+  var qrm = $("#qrm");
+  if (!qrm) { return; }
+  var opener = $("#openqr"), canvas = $("#qrc");
+
+  function wrap(ctx, s, x, y, max, lh) {
+    var words = s.split(" "), line = "", lines = [];
+    words.forEach(function (w) {
+      var t = line ? line + " " + w : w;
+      if (ctx.measureText(t).width > max && line) { lines.push(line); line = w; } else { line = t; }
+    });
+    if (line) { lines.push(line); }
+    lines.forEach(function (l, i) { ctx.fillText(l, x, y + i * lh); });
+    return y + lines.length * lh;
+  }
+  function draw() {
+    var ctx = canvas.getContext("2d"), W = canvas.width, rows = JSON.parse(T.qr), n = rows.length;
+    var font = '-apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", sans-serif';
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, canvas.height);
+    ctx.fillStyle = "#111"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.font = "700 48px " + font; var y = wrap(ctx, T.title, W / 2, 56, W - 96, 58);
+    ctx.font = "30px " + font; ctx.fillStyle = "#444";
+    if (T.organiser) { y = wrap(ctx, T.organiser, W / 2, y + 8, W - 96, 38); }
+    var size = 520, cell = Math.floor(size / (n + 8)), side = cell * (n + 8), x0 = (W - side) / 2, y0 = y + 24;
+    ctx.fillStyle = "#fff"; ctx.fillRect(x0, y0, side, side); ctx.fillStyle = "#000";
+    rows.forEach(function (row, r) {
+      for (var c = 0; c < row.length; c++) { if (row[c] === "1") { ctx.fillRect(x0 + (c + 4) * cell, y0 + (r + 4) * cell, cell, cell); } }
+    });
+    y = y0 + side + 24; ctx.fillStyle = "#111";
+    ctx.font = "600 36px " + font; y = wrap(ctx, T.scan, W / 2, y, W - 96, 44);
+    ctx.font = "34px " + font; y = wrap(ctx, HI.scan, W / 2, y + 4, W - 96, 44);
+    y += 16; ctx.fillRect(48, y, W - 96, 4);
+    ctx.font = "700 36px " + font; y = wrap(ctx, T.pay + " · " + HI.pay, W / 2, y + 16, W - 96, 46);
+    ctx.fillRect(48, y + 12, W - 96, 4);
+    ctx.font = "26px " + font; ctx.fillStyle = "#333"; wrap(ctx, T.address, W / 2, y + 40, W - 96, 32);
+  }
+  function close() { qrm.hidden = true; opener.focus(); }
+  opener.addEventListener("click", function () { qrm.hidden = false; draw(); $("#qrclose").focus(); });
+  $("#qrclose").addEventListener("click", close);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !qrm.hidden) { close(); } });
+  $("#qrpng").addEventListener("click", function () {
+    canvas.toBlob(function (blob) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "qr-" + T.route + ".png";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }, "image/png");
+  });
+})();
+</script>
+</body>
+</html>

@@ -136,9 +136,14 @@ def _keep_expiry(hashed, window):
 	counted for ever - a form or a phone refused for good once it fills (slice
 	082, D2). Give such a key its window back. A key that already has an expiry
 	is left alone, so every limit behaves as before."""
-	key = frappe.cache.make_key(f"rl:{frappe.form_dict.cmd}:{hashed}:{window}")
-	if frappe.cache.ttl(key) == -1:
-		frappe.cache.expire(key, window)
+	try:
+		key = frappe.cache.make_key(f"rl:{frappe.form_dict.cmd}:{hashed}:{window}")
+		if frappe.cache.ttl(key) == -1:
+			frappe.cache.expire(key, window)
+	except Exception:
+		# The same choice as _seconds_left: a repair of the counter must never
+		# turn an answered request into a server error.
+		pass
 
 
 def _seconds_left(hashed, window):

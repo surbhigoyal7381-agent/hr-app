@@ -443,6 +443,8 @@ doc_events = {
         # Slice 082 (PRIV-5): an erased event lead leaves no Deleted Document,
         # Version or Comment copy. Does nothing for a lead without an event stamp.
         "after_delete": "alvoraa_portal.event_form.after_lead_delete",
+        # ... and its assignment notices go first, or Frappe refuses the delete.
+        "on_trash": "alvoraa_portal.event_form.clear_lead_notices",
     },
     # Slice 082 (SEC-6): no Guest row on User, Employee or CRM Lead - CRM's form
     # builder offers one click that would publish the staff list on a poster link.
@@ -468,6 +470,8 @@ doc_events = {
     # CRM's "delete linked" unlinks and then deletes.
     "FCRM Note": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
     "CRM Call Log": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
+    # ... and the assignment notice, whose text holds the person's name.
+    "CRM Notification": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
     # Slice 057 (B): a message forwarded by a listed salesperson goes to AI lead
     # intake (a queued job, only after Meta's signature is checked). A site-config
     # read and nothing more for any other message.

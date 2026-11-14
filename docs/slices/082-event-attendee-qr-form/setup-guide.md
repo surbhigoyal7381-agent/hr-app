@@ -133,8 +133,11 @@ plain sort. Assign each 1 and 2 to a sales person with CRM's own **Assign to**.
   on, for example *Shops, descending*.
 
 **Deleting old entries.** Six months after an event, open its leads (filter **Event form** =
-that form, **News OK** *not ticked*), select them and Delete. Do one event at a time: very
-large deletions run in the background and can stop part-way.
+that form, **News OK** *not ticked*), select them and press Delete. **CRM then asks what to do with the linked items: choose
+"Delete N items", not "Unlink & Delete N items"**, so the leads' notes, tasks, call logs and
+assignment notices go with them. "Unlink & Delete" leaves those behind, unlinked, with the
+person's details in them.
+Do one event at a time: very large deletions run in the background and can stop part-way.
 
 A saved view is a convenience, not a lock. Who can see leads is decided by CRM's roles:
 Sales Managers see all leads; a Sales User sees only leads they own or are assigned.
@@ -145,7 +148,10 @@ Sales Managers see all leads; a Sales User sees only leads they own or are assig
 
 - **"Stop sending me news."** Open their lead and untick **News OK**. CRM records who and when.
   Only email people whose lead has News OK ticked.
-- **"Delete my details."** Delete their lead. Its history copies are removed with it.
+- **"Delete my details."** Delete their lead from CRM. When CRM asks about linked items,
+  **choose "Delete N items", not "Unlink & Delete"**. The lead, its notes, tasks, call logs and
+  assignment notices, and the system's history copies of all of them, are then removed. With
+  "Unlink & Delete", the notes and tasks stay behind with the person's details in them.
 - **"What did you collect?"** Open their lead; everything they gave is on it.
 
 Do not tick News OK for anyone yourself. Only the person can say yes.

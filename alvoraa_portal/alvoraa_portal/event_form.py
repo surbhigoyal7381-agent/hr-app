@@ -19,9 +19,10 @@ What this module does NOT do:
 Bypasses (data-doors.md), both listed in 00/03:
   1. The guest insert, `ignore_permissions=True`. Counted in
      `TestSec16IgnorePermissionsCeiling.CEILINGS` at 1.
-  2. `_erase_copies`: `frappe.db.delete` of the Deleted Document, Version and
-     Comment rows of an event lead someone with delete right has just deleted.
-     Takes no user input.
+  2. `_erase_copies`, `_erase_record_copies` and `clear_lead_notices`: `frappe.db.delete` of the
+     Deleted Document, Version, Comment and CRM Notification rows of an event lead
+     (and of its notes, tasks and call logs) that someone with delete right has
+     just deleted. Takes no user input.
 """
 
 import functools
@@ -81,7 +82,10 @@ DATA_MAX = 140
 TEXT_MAX = 2000
 
 # Never writable by a guest, whatever a form says.
-NEVER = {"lead_owner", "status", "owner", "name", "naming_series", "_assign", "docstatus", EVENT_FORM}
+NEVER = {"lead_owner", "status", "owner", "name", "naming_series", "_assign", "docstatus", EVENT_FORM,
+         # set by CRM itself (conversion to a deal, Facebook lead sync); CRM's own
+         # builder never offers them either (crm.api.form.DENIED_FIELDNAMES)
+         "converted", "facebook_lead_id"}
 
 # CRM fills these itself (status from CRM Lead.validate_status; naming_series from
 # its default), so a form need not ask for them.
@@ -90,8 +94,8 @@ SYSTEM_FILLED = {"status", "naming_series"}
 # PRIV-2: a seatbelt for honest mistakes, not a guarantee. "pan" only as a whole
 # word, so "Company" and "Japan" do not close a form. Security owns the list (O-6).
 _SENSITIVE = re.compile(
-	r"aadhaar|aadhar|(?<![a-z])pan(?![a-z])|passport|voter|bank|ifsc|account no|health|medical"
-	r"|disease|disability|religion|caste|sexual|आधार|धर्म|जाति|स्वास्थ्य"
+	r"aadhaar|aadhar|(?<![a-z])pan(?![a-z])|passport|voter|bank|ifsc|account no|account number|health|medical"
+	r"|disease|disability|religion|religious|caste|sexual|आधार|धर्म|जाति|स्वास्थ्य"
 )
 
 ORGANISER_ROLES = {"Sales Manager", "System Manager"}
@@ -367,20 +371,38 @@ def _erase_copies(name: str) -> None:
 	frappe.db.delete("Comment", {"reference_doctype": LEAD, "reference_name": name})
 
 
+def clear_lead_notices(doc, method=None):
+	"""CRM Lead on_trash (PRIV-5): an event lead's assignment notices go first.
+
+	A notice names the person and links to the lead. CRM's "delete linked" skips
+	it when the deleting Sales Manager cannot write it (it belongs to the person
+	assigned), and Frappe then refuses to delete the lead at all because the
+	notice still links to it - so an erasure request silently fails. on_trash runs
+	before Frappe's link check, inside the same transaction: if the delete fails
+	for any other reason, this is rolled back with it.
+	"""
+	if not doc.get(EVENT_FORM):
+		return
+	frappe.db.delete("CRM Notification", {"reference_doctype": LEAD, "reference_name": doc.name})
+	frappe.db.delete("CRM Notification", {"notification_type_doctype": LEAD, "notification_type_doc": doc.name})
+
+
 def forget_unlinked_record(doc, method=None):
-	"""FCRM Note / CRM Task / CRM Call Log on_update (PRIV-5, D1).
+	"""FCRM Note / CRM Task / CRM Call Log / CRM Notification on_update (PRIV-5, D1).
 
 	CRM's own delete (crm.api.doc.delete_bulk_docs with "delete linked") first
 	clears the record's link to the lead, saves it, then deletes it. Frappe keeps a
 	Deleted Document copy - text included - and by then the copy no longer names
 	the lead. So the moment a record is unlinked from an EVENT lead is the last
 	moment we can tell; if the record is gone by the commit, its copies go too.
-	A record only unlinked, not deleted, is left alone.
+	A record only unlinked, not deleted, is left alone. CRM Notification names
+	its record in `reference_name`; the others in `reference_docname`.
 	"""
+	field = "reference_name" if doc.doctype == "CRM Notification" else "reference_docname"
 	before = doc.get_doc_before_save()
-	if not before or before.get("reference_doctype") != LEAD or doc.get("reference_docname"):
+	if not before or before.get("reference_doctype") != LEAD or doc.get(field):
 		return
-	lead = before.get("reference_docname")
+	lead = before.get(field)
 	if not lead or not frappe.db.get_value(LEAD, lead, EVENT_FORM):
 		return
 	doctype, name = doc.doctype, doc.name

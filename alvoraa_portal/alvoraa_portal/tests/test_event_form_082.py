@@ -179,8 +179,9 @@ class Pins(EventFormCase):
 		hooks = frappe.get_hooks()
 		self.assertIn({"from_route": "/event-form/<route>", "to_route": "event-form"}, hooks.website_route_rules)
 		self.assertIn("alvoraa_portal.event_form.after_lead_delete", hooks.doc_events[ef.LEAD]["after_delete"])
+		self.assertIn("alvoraa_portal.event_form.clear_lead_notices", hooks.doc_events[ef.LEAD]["on_trash"])
 		self.assertIn("alvoraa_portal.event_form.refuse_guest_perm", hooks.doc_events["Custom DocPerm"]["validate"])
-		for doctype in ("FCRM Note", "CRM Task", "CRM Call Log"):
+		for doctype in ("FCRM Note", "CRM Task", "CRM Call Log", "CRM Notification"):
 			self.assertIn("alvoraa_portal.event_form.forget_unlinked_record", hooks.doc_events[doctype]["on_update"])
 		self.assertIn("alvoraa_portal.event_form.ensure_fields", hooks.after_migrate)
 		self.assertIn("alvoraa_portal.event_form.ensure_fields", hooks.after_install)
@@ -377,6 +378,20 @@ class WhatOpens(EventFormCase):
 		frappe.set_user("Administrator")
 		make_form(f"{TAG}-company", company)
 		self.assertIsNone(ef.form_state(f"{TAG}-company")["problem"])
+
+	def test_082_security_review_more_sensitive_words_and_system_fields_close_the_form(self):
+		for label in ("Account number for refunds", "Religious community"):
+			rows = [dict(r) for r in ROWS]
+			rows[2]["label"] = label
+			self.assertEqual(self.closed(f"{TAG}-word", rows), ("sensitive", label), label)
+		meta = frappe.get_meta(ef.LEAD)
+		for fieldname in ("converted", "facebook_lead_id"):
+			if not meta.has_field(fieldname):
+				continue
+			df = meta.get_field(fieldname)
+			problem, _label = self.closed(f"{TAG}-sys", [*ROWS, {"fieldname": fieldname, "label": "X",
+			                                                     "fieldtype": df.fieldtype}])
+			self.assertEqual(problem, "type", fieldname)
 
 	def test_082_new_rule_every_required_crm_field_must_be_on_the_form(self):
 		no_name = [r for r in ROWS if r["fieldname"] != "first_name"]
@@ -1061,8 +1076,14 @@ class PrivacyRecords(EventFormCase):
 		self.assertIn(NOTICE, data)
 
 	def test_082_priv5_erasing_an_event_lead_the_crm_way_also_erases_its_notes_and_tasks(self):
-		self.send()
+		self.send(dict(GOOD, first_name="Qz-person Erase"))
 		name = self.newest()
+		# Assigning the lead makes CRM send an assignment notice naming the person.
+		from frappe.desk.form.assign_to import add
+		frappe.local.request = None
+		add({"doctype": ef.LEAD, "name": name, "assign_to": [SALES]})
+		self.assertTrue(frappe.db.exists("CRM Notification", {"reference_doctype": ef.LEAD, "reference_name": name}),
+		                "assigning the lead made no CRM Notification to erase")
 		frappe.get_doc({"doctype": "FCRM Note", "title": "Call", "content": "Qz-note wants a demo",
 		                "reference_doctype": ef.LEAD, "reference_docname": name}).insert()
 		frappe.get_doc({"doctype": "CRM Task", "title": "Qz-task call back",
@@ -1078,11 +1099,39 @@ class PrivacyRecords(EventFormCase):
 		self.assertFalse(frappe.db.exists(ef.LEAD, name))
 		for doctype in ("FCRM Note", "CRM Task"):
 			self.assertFalse(frappe.db.exists(doctype, {"reference_docname": name}), doctype)
+		self.assertFalse(frappe.db.exists("CRM Notification", {"reference_name": name}))
 		copies = frappe.get_all("Deleted Document", filters={"data": ["like", "%Qz-%"]}, pluck="deleted_doctype")
-		self.assertEqual(copies, [], "a copy of the erased lead's notes or tasks survives")
+		self.assertEqual(copies, [], "a copy of the erased lead's notes, tasks or notices survives")
+
+	def test_082_priv5_erasing_an_event_lead_the_crm_way_also_erases_its_call_logs(self):
+		self.send()
+		name = self.newest()
+		frappe.get_doc({"doctype": "CRM Call Log", "id": f"{TAG}-qz-call-{frappe.generate_hash(length=6)}",
+		                "from": "+919822041012", "to": "+911140000000", "type": "Outgoing",
+		                "status": "Completed",
+		                "reference_doctype": ef.LEAD, "reference_docname": name}).insert()
+		frappe.db.commit()
+		self.addCleanup(self.drop_call_copies)
+		from crm.api.doc import delete_bulk_docs
+		frappe.set_user(MANAGER)
+		frappe.local.request = None
+		delete_bulk_docs(ef.LEAD, json.dumps([name]), delete_linked=True)
+		frappe.db.commit()
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("CRM Call Log", {"reference_docname": name}))
+		self.assertEqual(frappe.get_all("Deleted Document", filters={"deleted_doctype": "CRM Call Log",
+		                                                             "deleted_name": ["like", f"{TAG}-qz-call-%"]}), [])
+
+	@staticmethod
+	def drop_call_copies() -> None:
+		frappe.db.delete("CRM Call Log", {"id": ["like", f"{TAG}-qz-call-%"]})
+		frappe.db.delete("Deleted Document", {"deleted_doctype": "CRM Call Log",
+		                                      "deleted_name": ["like", f"{TAG}-qz-call-%"]})
+		frappe.db.commit()
 
 	@staticmethod
 	def drop_copies() -> None:
+		frappe.db.delete("CRM Notification", {"message": ["like", "%Qz-%"]})
 		frappe.db.delete("FCRM Note", {"content": ["like", "%Qz-note%"]})
 		frappe.db.delete("CRM Task", {"title": ["like", "Qz-task%"]})
 		frappe.db.delete("Deleted Document", {"data": ["like", "%Qz-%"]})

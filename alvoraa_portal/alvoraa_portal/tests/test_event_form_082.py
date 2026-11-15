@@ -470,6 +470,7 @@ class ThePage(EventFormCase):
 		frappe.db.commit()
 		draft = self.page(f"{TAG}-boxdraft", user=MANAGER)
 		self.assertIn("This form is a draft.", draft)
+		self.assertIn("Settings → Forms", draft)
 		self.assertNotIn("Download QR card", draft)
 		broken = self.page(f"{TAG}-boxlink", user=MANAGER)
 		self.assertIn("“Lead source” (it picks from a list of your staff)", broken)

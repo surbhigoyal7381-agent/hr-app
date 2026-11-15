@@ -76,7 +76,7 @@ button.submit:disabled{opacity:.6}
   <div class="orgbar" id="orgbar">
     <b>{{ _("You are signed in as an organiser.") }}</b> {{ _("Attendees do not see this box.") }}<br>
     {% if box.problem == "draft" %}
-      {{ _("This form is a draft. Publish it in CRM before printing a QR — a QR for a draft opens a page attendees cannot use.") }}
+      {{ _("This form is a draft. To publish it, open CRM, click your name at the top left, then Settings → Forms, and turn on Publish for this form. The Published tick in Desk does not open this page. Do not print a QR until then — a QR for a draft opens a page attendees cannot use.") }}
     {% elif box.problem == "consent" %}
       <b>{{ _("This form cannot open for attendees yet.") }}</b> {{ _("The “I agree” question is missing, or has no notice under it. Add the “Consent: this event” and “News OK” questions in CRM, and write the notice in the description of “I agree”. Then open this page again. Until then attendees see “This form is not taking answers”.") }}
     {% elif box.problem == "required" %}

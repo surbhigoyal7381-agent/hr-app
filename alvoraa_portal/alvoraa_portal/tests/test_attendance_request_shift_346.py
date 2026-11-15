@@ -209,3 +209,22 @@ class NoShiftAssignmentAnywhere(FrappeTestCase):
 		}).insert(ignore_permissions=True).submit()
 		doc = self.request(emp, date)
 		self.assertFalse(doc.shift, "a blank shift was copied off the day")
+
+	def test_an_empty_string_shift_counts_as_no_shift(self):
+		"""NULL and '' are both blank, and only one of them is obvious.
+
+		`("is", "set")` compiles to `shift != ''`, which excludes NULL as well -
+		but that is a property of SQL's NULL comparison rather than something
+		the filter says out loud, and a Link field can hold either. Production
+		rows were not inspected for which, so both are pinned here instead of
+		assumed.
+		"""
+		emp = self.person("Emptystr346")
+		date = self.d()
+		name = frappe.get_doc({
+			"doctype": "Attendance", "employee": emp, "attendance_date": date,
+			"status": "Absent", "company": self.company,
+		}).insert(ignore_permissions=True).name
+		frappe.db.set_value("Attendance", name, "shift", "", update_modified=False)
+		doc = self.request(emp, date)
+		self.assertFalse(doc.shift, "an empty-string shift was copied off the day")

@@ -1524,6 +1524,26 @@ class TestTheRoleCannotBeHandedOut(_Base):
 		user.save()
 		self.assertEqual(0, frappe.db.get_value("User", doc.user, "enabled"))
 
+	def test_the_setup_wizard_first_admin_is_made_without_it(self):
+		"""ALV-345. Frappe's wizard gives the first admin EVERY role, this one
+		included; refusing it stopped every new tenant's company setup. It is
+		dropped quietly - and only inside the wizard."""
+		email = "s345.first.admin@example.com"
+		self.addCleanup(lambda: frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+		                if frappe.db.exists("User", email) else None)
+		user = frappe.new_doc("User")
+		user.update({"email": email, "first_name": "First admin"})
+		user.append_roles("System Manager", joiner_invite.JOINER_ROLE)
+		user.flags.no_welcome_mail = True
+		frappe.flags.in_setup_wizard = True
+		try:
+			user.insert(ignore_permissions=True)
+		finally:
+			frappe.flags.in_setup_wizard = False
+		roles = frappe.get_roles(email)
+		self.assertIn("System Manager", roles)
+		self.assertNotIn(joiner_invite.JOINER_ROLE, roles)
+
 	def test_the_role_says_what_it_is_for(self):
 		"""AC-4. So that the next person reading a role list does not tick it out
 		of curiosity, which is exactly how the incident started."""

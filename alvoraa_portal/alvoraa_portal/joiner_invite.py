@@ -341,6 +341,12 @@ def keep_the_joiner_role_to_the_invite(doc, method=None) -> None:
 		return
 	if doc.flags.get(INVITE_FLAG):
 		return
+	if frappe.flags.in_setup_wizard:
+		# Frappe's setup wizard gives the first admin EVERY role, this one
+		# included. Refusing it stopped every new tenant's company setup
+		# (ALV-345). Nobody chose it, so it is dropped, not refused.
+		doc.set("roles", [r for r in doc.get("roles") if cstr(r.role) != JOINER_ROLE])
+		return
 	if not doc.is_new() and frappe.db.exists("Has Role", {
 			"parent": doc.name, "parenttype": "User", "role": JOINER_ROLE}):
 		return

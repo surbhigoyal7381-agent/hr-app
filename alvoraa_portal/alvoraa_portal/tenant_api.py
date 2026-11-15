@@ -658,17 +658,12 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
 
     _bench_run(f"--site {site_name} clear-cache")
 
-    # Rebuild the Module Profile so the desk shows only what was bought, and
-    # re-save its users: Frappe copies block_modules on SAVE, so a profile that
-    # changed afterwards does nothing until the users are saved again.
-    if modules is not None:
-        r = _bench_run(f"--site {site_name} execute alvoraa_portal.module_access.sync_site")
-        if r.returncode != 0:
-            # Not fatal: the plan is recorded, the desk just still shows too much.
-            frappe.log_error(
-                title=f"module_access sync failed for {site_name}",
-                message=r.stderr,
-            )
+    # The Module Profile is rebuilt in the BACKGROUND, never inside this request
+    # (ALV-344). It re-saves every user, which took 153 s on a 407-user tenant;
+    # run here under a 30 s limit it timed out, the request failed with a 500,
+    # and the app install below was never queued - the plan said CRM, the site
+    # had no CRM. When apps are being installed the install job runs the sync
+    # itself, AFTER the installs, so the new apps' menus are gated too.
 
     # Queue background install for any newly-added apps not yet on the site
     if modules is not None:
@@ -717,6 +712,7 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                 install_whatsapp=needs_whatsapp,
                 install_lms=needs_lms,
                 install_helpdesk=needs_helpdesk,
+                sync_access=True,
             )
             return {
                 "status": "installing",
@@ -724,7 +720,35 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                 "message": "Configuration saved. Installing new module apps in the background." + notes,
             }
 
+        frappe.enqueue(
+            "alvoraa_portal.tenant_api._sync_access",
+            queue="long",
+            timeout=1200,
+            job_name=f"sync_access_{site_name}",
+            site_name=site_name,
+        )
+        return {"status": "ok",
+                "message": "Tenant configuration updated. Menus update in the background "
+                           "within a few minutes." + notes}
+
     return {"status": "ok", "message": "Tenant configuration updated." + notes}
+
+
+def _sync_access(site_name):
+    """Background job: rebuild a tenant's Module Profile and re-save its users.
+
+    Never fatal: the plan is already recorded, the desk just shows too much
+    until this succeeds. Returns a line for a job log."""
+    try:
+        r = _bench_run(f"--site {site_name} execute alvoraa_portal.module_access.sync_site",
+                       timeout=900)
+    except subprocess.TimeoutExpired:
+        r = None
+    if r is None or r.returncode != 0:
+        frappe.log_error(title=f"module_access sync failed for {site_name}",
+                         message="timed out after 900 s" if r is None else (r.stderr or ""))
+        return f"[{now_datetime()}] [WARN] Menus NOT updated - see Error Log.\n"
+    return f"[{now_datetime()}] Menus updated.\n"
 
 
 @frappe.whitelist()
@@ -991,7 +1015,12 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                 jobs[pjob_id]["host_name"] = f"http://{site_name}"
             _write_jobs(jobs)
 
-            _update("Done", log + f"\n[{now_datetime()}] ✅ Provisioning complete.\n", finished=True)
+            # A failed company setup used to end with the same green tick as a
+            # clean run (ALV-345: tft.alvoraa.co had no company and no CRM).
+            end = ("✅ Provisioning complete." if "[WARN]" not in log else
+                   "⚠️ Provisioning finished WITH WARNINGS - read every [WARN] above "
+                   "before handing this tenant over.")
+            _update("Done", log + f"\n[{now_datetime()}] {end}\n", finished=True)
         else:
             _update("Failed", log + f"\n[{now_datetime()}] ❌ Script exited with code {result.returncode}.\n", finished=True)
 
@@ -1147,8 +1176,11 @@ def _install_crm_after_wizard(site_name):
 def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False,
                          install_india_compliance=False, install_crm=False,
                          install_whatsapp=False, install_lms=False,
-                         install_helpdesk=False):
-    """Background job: install additional Frappe apps on an existing site."""
+                         install_helpdesk=False, sync_access=False):
+    """Background job: install additional Frappe apps on an existing site.
+
+    `sync_access` rebuilds the Module Profile after the installs, whether they
+    worked or not, because the plan has already changed (ALV-344)."""
     def _update(status, log_append="", finished=False):
         jobs = _read_jobs()
         if pjob_id in jobs:
@@ -1259,10 +1291,14 @@ def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals
                     + ("applied.\n" if r.returncode == 0
                        else "could NOT be applied - check Helpdesk Settings by hand.\n"))
 
+        if sync_access:
+            _update("Provisioning", _sync_access(site_name))
         _bench_run(f"--site {site_name} clear-cache")
         _update("Done", f"[{now_datetime()}] ✅ Module installation complete.\n", finished=True)
 
     except Exception as exc:
+        if sync_access:
+            _update("Provisioning", _sync_access(site_name))
         _update("Failed", f"[{now_datetime()}] ❌ {exc}\n", finished=True)
 
 

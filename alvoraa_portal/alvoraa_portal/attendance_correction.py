@@ -245,62 +245,6 @@ def after_migrate():
 	return True
 
 
-# ── the shift a correction is for ────────────────────────────────────────────
-
-def take_the_shift_from_the_day(doc, method=None):
-	"""ALV-346. **Without this, no attendance correction can ever be approved.**
-
-	Approving a request runs Frappe HR's `create_or_update_attendance`, which
-	asks two questions with DIFFERENT rules about the shift:
-
-	* *"Is there a row to update?"* - `get_attendance_doc` matches the shift
-	  EXACTLY, so a blank request shift only matches a blank attendance shift.
-	* *"May I insert a new row?"* - `get_duplicate_attendance_record` applies no
-	  shift filter at all when the new document has no shift, so ANY row for
-	  that employee and date counts as a clash.
-
-	A blank request shift against a filled attendance shift therefore finds
-	nothing to update, tries to insert, and is refused as a duplicate. Nobody
-	can approve it - not HR, not the manager, not the Desk.
-
-	**And the request's shift is blank by design at a tenant like DTC.**
-	`validate_shifts` reads `tabShift Assignment` only. DTC has **zero** of
-	those rows and runs on `Employee.default_shift` instead, on 479 of 481
-	people - so every correction request there is blank and every approval
-	deadlocks. Measured on production, 15 Nov 2026.
-
-	**Why the day's own shift and not `Employee.default_shift`.** The obvious
-	fix is the dangerous one. On DTC **4,283 of 25,055** attendance rows in 90
-	days carry a shift that is NOT the employee's default - about one in six.
-	For those days a default-filled request matches no row AND trips no
-	duplicate check, so Frappe inserts a SECOND attendance row for the same
-	day. There are zero duplicate days today; that fix would start making them,
-	and two rows for one day is a payroll fault, not a screen fault.
-
-	The shift on the row being corrected always takes the update path, and it
-	is the truer answer anyway: it is the shift that day actually had.
-
-	Only fills a BLANK. A shift somebody chose is never overwritten, and with
-	no attendance row for the period nothing is set - `validate_shifts` then
-	behaves exactly as it does today.
-	"""
-	if doc.get("shift") or not doc.get("employee"):
-		return
-	if not (doc.get("from_date") and doc.get("to_date")):
-		return
-	# The earliest day in the request that HAS a shift. One request carries one
-	# shift, so a multi-day request spanning two shifts takes the first - no
-	# worse than the blank it replaces, and the days that do not match simply
-	# insert as they would now.
-	doc.shift = frappe.db.get_value(
-		"Attendance",
-		{"employee": doc.employee,
-		 "attendance_date": ("between", [doc.from_date, doc.to_date]),
-		 "docstatus": ("<", 2),
-		 "shift": ("is", "set")},
-		"shift", order_by="attendance_date asc")
-
-
 # ── keeping the state true when the Desk is used ─────────────────────────────
 
 def on_submit(doc, method=None):

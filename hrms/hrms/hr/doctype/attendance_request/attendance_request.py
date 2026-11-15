@@ -269,15 +269,48 @@ class AttendanceRequest(Document):
 		)
 
 	def get_attendance_doc(self, attendance_date: str) -> str | None:
-		attendance = frappe.db.exists(
-			"Attendance",
-			{
-				"employee": self.employee,
-				"attendance_date": attendance_date,
-				"docstatus": ("!=", 2),
-				"shift": self.shift,
-			},
-		)
+		# ── Alvoraa, ALV-346 ────────────────────────────────────────────────
+		# **Without the `if`, no attendance correction can be approved at a
+		# tenant that does not use Shift Assignment.**
+		#
+		# This method and `Attendance.get_duplicate_attendance_record` ask two
+		# halves of one question and used to disagree about a BLANK shift:
+		#
+		#   * here, `"shift": None` means "only a row that also has no shift";
+		#   * there, a blank shift means "no shift filter at all - any row for
+		#     this employee and date is a clash".
+		#
+		# So a blank request against a day that HAS a shift found nothing to
+		# update, fell through to the insert below, and was refused as a
+		# duplicate. Nobody could approve it - not HR, not the manager, not the
+		# Desk.
+		#
+		# And the request's shift is blank by design at such a tenant:
+		# `validate_shifts` reads `tabShift Assignment` only. DTC has ZERO of
+		# those rows and runs on `Employee.default_shift`, 479 of 481 people.
+		# Measured on production, 15 Nov 2026. A 100% failure rate.
+		#
+		# Making the blank mean the same thing in both places is the whole fix.
+		# A request that names a shift still matches that shift exactly, so
+		# nothing changes for a tenant that uses assignments.
+		#
+		# **Why here and not a hook in our own app.** The first attempt filled
+		# the blank from the day's own Attendance row, in `alvoraa_portal`. It
+		# fixed one day and broke a range: a two-day request across two shifts
+		# carries one shift, so the second day matched no row, tripped no
+		# duplicate check, and Frappe inserted a SECOND submitted Attendance
+		# for it - Present on a shift the person never worked, beside Absent on
+		# the one they did. Reproduced on the bench, 15 Nov 2026. Guessing a
+		# shift cannot be made safe for a range; making the two checks agree
+		# needs no guess at all and corrects each day in place.
+		filters = {
+			"employee": self.employee,
+			"attendance_date": attendance_date,
+			"docstatus": ("!=", 2),
+		}
+		if self.shift:
+			filters["shift"] = self.shift
+		attendance = frappe.db.exists("Attendance", filters)
 		return frappe.get_doc("Attendance", attendance) if attendance else None
 
 	def get_attendance_status(self, attendance_date: str) -> str:

@@ -175,10 +175,6 @@ doc_events = {
     # document, not the portal endpoint, because the Desk is the other half of
     # where these get decided.
     "Attendance Request": {
-        # ALV-346: a blank shift here deadlocks Frappe HR against itself and no
-        # correction can ever be approved. BEFORE validate, so Frappe HR's own
-        # checks see the shift rather than running against the blank.
-        "before_validate": "alvoraa_portal.attendance_correction.take_the_shift_from_the_day",
         "on_submit": "alvoraa_portal.attendance_correction.on_submit",
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)

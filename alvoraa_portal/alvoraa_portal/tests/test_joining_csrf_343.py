@@ -72,6 +72,18 @@ class TheJoiningPageCanReachItsServer(FrappeTestCase):
 	def setUp(self):
 		super().setUp()
 		frappe.set_user("Administrator")
+		# **`frappe.set_user` blanks the session, and that silently disarms this
+		# whole file.** It does `local.session.data = _dict()` - an EMPTY dict,
+		# which is FALSY - and `add_csrf_token`'s guard is
+		# `if frappe.local.session and getattr(..., "data", None)`. So after any
+		# `set_user` Frappe skips the substitution altogether and every test
+		# here fails on a page whose markup is perfectly correct.
+		#
+		# A real signed-in joiner always has a token on the session, so putting
+		# one back is restoring the normal case, not arranging a pass. Without
+		# this line the first run of these tests blamed the fix for the
+		# harness's own doing.
+		frappe.local.session.data.csrf_token = frappe.generate_hash()
 
 	def test_the_page_carries_a_real_csrf_token(self):
 		"""The fix, where it has to work: a token with a value in it.

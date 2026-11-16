@@ -80,6 +80,8 @@ website_route_rules = [
     # The field app. Short and typeable, because a driver is given this address
     # verbally or on a slip of paper, not as a link.
     {"from_route": "/checkin",         "to_route": "field-checkin"},
+    # Slice 082: the attendee's phone page for one CRM event form (the QR opens it).
+    {"from_route": "/event-form/<route>", "to_route": "event-form"},
 ]
 
 # ── Page parts for the employee portal (slice 034, OPS-31) ──────────
@@ -438,6 +440,16 @@ doc_events = {
             # 4 Oct: a changed name or company reaches the "Lead / Deal" column on its tasks.
             "alvoraa_portal.crm_steps.refresh_task_labels",
         ],
+        # Slice 082 (PRIV-5): an erased event lead leaves no Deleted Document,
+        # Version or Comment copy. Does nothing for a lead without an event stamp.
+        "after_delete": "alvoraa_portal.event_form.after_lead_delete",
+        # ... and its assignment notices go first, or Frappe refuses the delete.
+        "on_trash": "alvoraa_portal.event_form.clear_lead_notices",
+    },
+    # Slice 082 (SEC-6): no Guest row on User, Employee or CRM Lead - CRM's form
+    # builder offers one click that would publish the staff list on a poster link.
+    "Custom DocPerm": {
+        "validate": "alvoraa_portal.event_form.refuse_guest_perm",
     },
     "CRM Deal": {
         "on_update": [
@@ -450,7 +462,16 @@ doc_events = {
     # hand. One read of the lead or deal, only when the task is new or re-pointed.
     "CRM Task": {
         "validate": "alvoraa_portal.crm_steps.set_task_label",
+        # Slice 082 (PRIV-5): a task unlinked from an event lead and deleted in
+        # the same request leaves no Deleted Document or Version copy.
+        "on_update": "alvoraa_portal.event_form.forget_unlinked_record",
     },
+    # Slice 082 (PRIV-5): the same for the event lead's notes and call logs, which
+    # CRM's "delete linked" unlinks and then deletes.
+    "FCRM Note": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
+    "CRM Call Log": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
+    # ... and the assignment notice, whose text holds the person's name.
+    "CRM Notification": {"on_update": "alvoraa_portal.event_form.forget_unlinked_record"},
     # Slice 057 (B): a message forwarded by a listed salesperson goes to AI lead
     # intake (a queued job, only after Meta's signature is checked). A site-config
     # read and nothing more for any other message.
@@ -697,10 +718,16 @@ after_migrate = [
     # never runs twice, so without this line no existing tenant would get it.
     # Safe to run every migrate.
     "alvoraa_portal.joiner_invite.make_role",
+    # Slice 082: the five event-form fields on CRM Lead. A no-op without CRM.
+    "alvoraa_portal.event_form.ensure_fields",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
-after_app_install = ["alvoraa_portal.crm_steps.on_app_install"]
+# Slice 082: and the five event-form fields on CRM Lead.
+after_app_install = [
+    "alvoraa_portal.crm_steps.on_app_install",
+    "alvoraa_portal.event_form.on_app_install",
+]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
 # tenant has no review columns at all, and every correction fails on "Unknown
@@ -774,6 +801,9 @@ after_install = [
     "alvoraa_portal.announcements.make_role",
     # Slice 076 Part C: same three fields as after_migrate.
     "alvoraa_portal.home_people.after_migrate",
+    # Slice 082: the event-form fields, for a site that had CRM before this app.
+    # A no-op without CRM; after_app_install covers CRM arriving later.
+    "alvoraa_portal.event_form.ensure_fields",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

@@ -97,6 +97,11 @@ CODES = {
 	# changed - by anyone, by any path - is signed out, never blocked. The app
 	# forgets its secret and opens the sign-in screen.
 	"PASSWORD_CHANGED_SIGN_IN_AGAIN": (401, ()),
+	# Slice 082, the public event form. FIELD_INVALID names the question's
+	# label (the organiser's own words), never the value typed. FORM_CLOSED is
+	# one answer for closed, draft, unsafe and never-existed.
+	"FIELD_INVALID":       (422, ("label",)),
+	"FORM_CLOSED":         (404, ()),
 }
 
 

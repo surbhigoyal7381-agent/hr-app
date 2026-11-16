@@ -101,3 +101,21 @@ jobs:
             echo "::error::Runbook: docs/slices/026-worker-health/07-devops-inputs.md"
           fi
           exit $rc
+
+      # Slice 082 (OPS-27, OPS-38, AC-73): people turned away from an event form.
+      # Its own step, after the worker check and run even when that fails, so one
+      # answer never hides the other. Read-only, like the step above. Fails at 30
+      # refusals of one form in the last hour, counting nginx's 503s on the save
+      # call as well as our own. See scripts/check_event_refusals.sh.
+      - name: Event form refusals
+        if: always()
+        run: |
+          set -uo pipefail
+          rc=0
+          bash scripts/check_event_refusals.sh compose  || rc=1
+          bash scripts/check_event_refusals.sh devstack || rc=1
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::An event form is turning people away. Read the FAIL lines above. Nothing has been changed."
+            echo "::error::What to do: docs/slices/082-event-attendee-qr-form/03-implementation-notes.md (OPS-27)"
+          fi
+          exit $rc

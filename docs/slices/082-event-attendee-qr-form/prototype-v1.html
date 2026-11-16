@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>082 Event attendee QR form - prototype v1</title>
+<style>
+/* ---------- Review scaffolding: Alvoraa design-system tokens (design_system.html) ---------- */
+:root{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+.rv{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.rv b{font-size:13px}
+.rv .grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rv .lbl{font-size:12px;color:var(--text3);margin-right:2px}
+.rv button{font:inherit;font-size:13px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:999px;padding:6px 12px;min-height:32px;cursor:pointer}
+.rv button[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:#fff}
+.note{font-size:12px;color:var(--text2);background:var(--amber-lt);border:1px dashed var(--amber);border-radius:var(--r-sm);padding:8px 10px;margin:10px 0;max-width:720px}
+.note b{color:var(--amber)}
+.sample{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--amber);background:var(--amber-lt);border:1px solid var(--amber);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:middle;line-height:16px}
+.stage{padding:20px 16px 60px;display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;justify-content:center}
+.side{max-width:330px;font-size:13px;color:var(--text2);line-height:1.5}
+.side h3{font-size:14px;color:var(--text);margin:0 0 6px}
+.side ul{padding-left:18px;margin:6px 0}
+.dec{color:var(--red);font-weight:600}
+[hidden]{display:none!important}
+
+/* ---------- Screen 1: CRM public form page (CRM's own tokens, crm_form.html) + slice-082 phone floors ---------- */
+.phone{border:10px solid #222;border-radius:28px;background:#222;box-shadow:0 12px 32px rgba(0,0,0,.18)}
+.phone .scr{height:760px;overflow-y:auto;border-radius:18px}
+.cf{--ink-strong:oklch(0.168 0 0);--ink:oklch(0.205 0 0);--muted:oklch(0.45 0 0);--faint:oklch(0.62 0 0);--cborder:oklch(0.88 0 0);--border-focus:oklch(0.6 0 0);--cbg:oklch(0.964 0 0);--card:oklch(1 0 0);--field:oklch(0.964 0 0);--accent:oklch(0.205 0 0);--danger:oklch(0.507 0.165 25.286);--danger-bg:oklch(0.978 0.011 17.34);--amberbg:oklch(0.967 0.045 91.733);--success-bg:oklch(0.965 0.03 155.987);--success-ink:oklch(0.45 0.118 155.358);
+  font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--cbg);color:var(--ink);min-height:100%;padding:12px 12px 32px;-webkit-font-smoothing:antialiased}
+.cf .card{background:var(--card);border:1px solid var(--cborder);border-radius:14px;padding:20px 16px}
+.cf .title{font-size:20px;font-weight:600;color:var(--ink-strong);margin:0 0 10px;line-height:1.3}
+.cf .subtitle{font-size:15px;color:var(--muted);margin:0 0 20px;line-height:1.5;white-space:pre-wrap}
+.cf .field{margin-bottom:18px}
+.cf label.fl,.cf legend{display:block;font-size:15px;color:var(--ink);margin-bottom:6px;line-height:1.35;padding:0}
+.cf .req{color:var(--danger);margin-left:2px}
+.cf input[type=text],.cf input[type=tel],.cf input[type=email],.cf textarea,.cf select{width:100%;font:inherit;font-size:16px;line-height:1.4;color:var(--ink);background:var(--field);border:1px solid var(--cborder);border-radius:8px;padding:11px 12px;min-height:48px}
+.cf textarea{min-height:88px;resize:vertical}
+.cf :focus-visible{outline:3px solid oklch(0.205 0 0 / .35);outline-offset:2px}
+.cf .has-error{border-color:var(--danger)!important;border-width:2px!important}
+.cf .desc{font-size:14px;color:var(--muted);line-height:1.5;white-space:pre-wrap;margin:2px 0 0 36px}
+.cf .ferr{display:none;font-size:14px;color:var(--danger);margin-top:6px;font-weight:600}
+.cf .field.bad .ferr{display:block}
+.cf fieldset{border:0;margin:0 0 18px;padding:0}
+.cf .opt{display:flex;align-items:center;gap:12px;min-height:48px;padding:6px 12px;border:1px solid var(--cborder);border-radius:8px;margin-bottom:6px;background:var(--field);font-size:16px;cursor:pointer}
+.cf .opt input{width:22px;height:22px;margin:0;accent-color:var(--accent);flex:none}
+.cf .opt:has(input:checked){border-color:var(--ink);border-width:2px;background:var(--card)}
+.cf .opt .hi{color:var(--muted)}
+.cf .check{display:flex;align-items:flex-start;gap:12px;min-height:48px;padding:10px 0;cursor:pointer;font-size:15px;line-height:1.4}
+.cf .check input{width:24px;height:24px;margin:0;flex:none;accent-color:var(--accent)}
+.cf .form-error{display:none;font-size:15px;line-height:1.45;border-radius:8px;padding:12px;margin:4px 0 12px;background:var(--danger-bg);color:var(--danger)}
+.cf .form-error.wait{background:var(--amberbg);color:var(--ink-strong)}
+.cf .form-error.on{display:block}
+.cf .form-error .hi{display:block;margin-top:4px}
+.cf button.submit{width:100%;min-height:48px;font:inherit;font-size:16px;font-weight:600;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+.cf button.submit:disabled{opacity:.6}
+.cf .success{text-align:center;padding:24px 4px 12px}
+.cf .ring{width:56px;height:56px;border-radius:999px;margin:0 auto 16px;background:var(--success-bg);color:var(--success-ink);display:flex;align-items:center;justify-content:center;font-size:28px}
+.cf .success h2{font-size:19px;color:var(--ink-strong);margin:0 0 8px;line-height:1.4}
+.cf .success p{font-size:15px;color:var(--muted);margin:0;line-height:1.5}
+.cf .orgbar{background:var(--amberbg);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:14px;line-height:1.45;color:var(--ink-strong)}
+.cf .orgbar button{margin-top:8px;min-height:44px;font:inherit;font-size:15px;font-weight:600;border:1px solid var(--ink);background:var(--card);color:var(--ink);border-radius:8px;padding:0 14px;cursor:pointer}
+
+/* ---------- Screens 2-3: Frappe CRM desk (Frappe UI look) ---------- */
+.desk{width:1240px;max-width:100%;background:#fff;border:1px solid #e2e2e2;border-radius:10px;overflow:hidden;font-family:"Inter",-apple-system,"Segoe UI",Roboto,sans-serif;color:#171717;box-shadow:0 4px 12px rgba(0,0,0,.06)}
+.desk .row{display:flex;min-height:640px}
+.desk .sb{width:210px;background:#f8f8f8;border-right:1px solid #ececec;padding:12px 8px;font-size:14px}
+.desk .sb .it{padding:7px 10px;border-radius:6px;color:#525252;margin-bottom:2px}
+.desk .sb .it.on{background:#fff;color:#171717;box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:500}
+.desk .sb .hd{font-size:12px;color:#7c7c7c;padding:12px 10px 4px}
+.desk .main{flex:1;min-width:0;display:flex;flex-direction:column}
+.desk .top{display:flex;align-items:center;gap:10px;border-bottom:1px solid #ececec;padding:10px 16px;font-size:14px;flex-wrap:wrap}
+.desk .top .crumb{color:#7c7c7c}
+.desk .btn{font:inherit;font-size:14px;border:1px solid #e2e2e2;background:#fff;color:#171717;border-radius:7px;padding:5px 12px;min-height:32px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.desk .btn.dark{background:#171717;color:#fff;border-color:#171717}
+.desk .btn:focus-visible{outline:2px solid #5B4B8A;outline-offset:2px}
+.desk .sw{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#404040}
+.desk .sw i{width:28px;height:16px;border-radius:999px;background:#171717;position:relative;display:inline-block}
+.desk .sw i::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:999px;background:#fff}
+.desk .sw.off i{background:#d4d4d4}.desk .sw.off i::after{right:auto;left:2px}
+.desk .split{display:flex;flex:1;min-height:0}
+.desk .canvas{flex:1;background:#f6f6f6;padding:24px;overflow:auto}
+.desk .canvas .fc{background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:20px;max-width:560px;margin:0 auto}
+.desk .canvas .ft{font-size:20px;font-weight:600;border:1px dashed transparent;padding:2px 4px;margin-bottom:6px}
+.desk .canvas .ft.hl{border-color:#5B4B8A;background:#f4f2fa}
+.desk .canvas .fd{font-size:13px;color:#525252;white-space:pre-wrap;margin-bottom:14px;padding:2px 4px}
+.desk .canvas .fld{border:1px solid #ececec;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.desk .canvas .fld span{color:#7c7c7c}
+.desk .panel{width:360px;border-left:1px solid #ececec;padding:16px;font-size:14px;overflow:auto}
+.desk .panel h4{margin:0 0 2px;font-size:14px}
+.desk .panel .pd{color:#7c7c7c;font-size:13px;margin:0 0 10px}
+.desk .panel .kv{margin-bottom:10px}
+.desk .panel .kv div:first-child{font-size:12px;color:#7c7c7c;margin-bottom:4px}
+.desk .panel .inp{border:1px solid #e2e2e2;background:#f6f6f6;border-radius:7px;padding:6px 9px;font-size:13px;word-break:break-all}
+.desk .panel hr{border:0;border-top:1px solid #ececec;margin:16px 0}
+.desk .new{outline:2px solid #5B4B8A;outline-offset:3px;border-radius:6px}
+.desk .tag{font-size:11px;color:#5B4B8A;font-weight:600}
+.desk .vt{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #ececec;flex-wrap:wrap}
+.desk .vt .vn{font-size:16px;font-weight:600}
+.desk .chip{font-size:13px;border:1px solid #e2e2e2;background:#f8f8f8;border-radius:7px;padding:4px 10px}
+.desk table{width:100%;border-collapse:collapse;font-size:14px}
+.desk th{text-align:left;font-weight:500;color:#7c7c7c;font-size:13px;padding:8px 12px;border-bottom:1px solid #ececec;white-space:nowrap}
+.desk td{padding:9px 12px;border-bottom:1px solid #f1f1f1;vertical-align:top}
+.desk td.cm{max-width:330px;color:#404040}
+.desk .rt{display:inline-flex;align-items:center;gap:6px;font-size:13px;border-radius:6px;padding:2px 8px;white-space:nowrap;border:1px solid #e2e2e2}
+.desk .rt.low{background:#fdecea;border-color:#f3b8b2;color:#8a1c14;font-weight:600}
+.desk .rt.low::before{content:"!";font-weight:700}
+.desk .foot{padding:10px 16px;color:#7c7c7c;font-size:13px;border-top:1px solid #ececec}
+.desk .grp td{font-weight:600;background:#fafafa}
+
+/* QR card (printed) */
+.modalbg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:18px;max-width:560px;width:100%;max-height:96vh;overflow:auto;font-family:"Inter",-apple-system,"Segoe UI",sans-serif}
+.modal h3{margin:0 0 6px;font-size:16px}
+.qrcard{border:1px solid #d4d4d4;border-radius:6px;padding:22px;text-align:center;margin:12px auto;width:360px;max-width:100%;background:#fff;color:#111}
+.qrcard .ev{font-size:20px;font-weight:700;margin-bottom:4px}
+.qrcard .by{font-size:13px;color:#444;margin-bottom:12px}
+.qrcard canvas{width:220px;height:220px;image-rendering:pixelated}
+.qrcard .ask{font-size:16px;font-weight:600;margin:12px 0 2px}
+.qrcard .askhi{font-size:15px;margin-bottom:12px}
+.qrcard .pay{font-size:15px;font-weight:700;border-top:2px solid #111;border-bottom:2px solid #111;padding:6px 0;margin:8px 0}
+.qrcard .url{font-size:12px;color:#333;word-break:break-all;margin-top:8px}
+</style>
+</head>
+<body>
+
+<div class="rv" role="region" aria-label="Review controls (not part of the product)">
+  <b>082 · prototype v1 <span class="sample">All data is Sample</span></b>
+  <div class="grp"><span class="lbl">Screen</span>
+    <button data-scr="att" aria-pressed="true">1 · Attendee (phone)</button>
+    <button data-scr="org" aria-pressed="false">2 · Organiser (CRM)</button>
+    <button data-scr="mgr" aria-pressed="false">3 · Manager (CRM)</button>
+  </div>
+  <div class="grp" data-for="att"><span class="lbl">Start at</span>
+    <button data-st="form" aria-pressed="true">Form</button>
+    <button data-st="closed" aria-pressed="false">Closed / unknown link</button>
+    <button data-st="thanks" aria-pressed="false">Thank you</button>
+  </div>
+  <div class="grp" data-for="att"><span class="lbl">Next Send will</span>
+    <button data-res="ok" aria-pressed="true">Save</button>
+    <button data-res="net" aria-pressed="false">Fail: no signal</button>
+    <button data-res="busy" aria-pressed="false">Fail: too many at once</button>
+    <button data-res="gone" aria-pressed="false">Fail: form closed meanwhile</button>
+  </div>
+  <div class="grp" data-for="att"><span class="lbl">⚠ D2 too many</span>
+    <button data-busy="A" aria-pressed="true">A · press again (rec.)</button>
+    <button data-busy="B" aria-pressed="false">B · one automatic retry</button>
+  </div>
+  <div class="grp" data-for="att"><span class="lbl">⚠ D3 rating</span>
+    <button data-rate="radio" aria-pressed="true">Five rows (rec.)</button>
+    <button data-rate="select" aria-pressed="false">Stock dropdown</button>
+  </div>
+  <div class="grp" data-for="att"><span class="lbl">Width</span>
+    <button data-w="360" aria-pressed="false">360</button>
+    <button data-w="390" aria-pressed="true">390</button>
+  </div>
+  <div class="grp" data-for="org"><span class="lbl">⚠ D1 QR button</span>
+    <button data-qr="B" aria-pressed="true">B · on the form page (rec.)</button>
+    <button data-qr="A" aria-pressed="false">A · in CRM's builder</button>
+  </div>
+  <div class="grp" data-for="mgr"><span class="lbl">View</span>
+    <button data-mv="one" aria-pressed="true">One event, lowest first</button>
+    <button data-mv="all" aria-pressed="false">All events, by form</button>
+  </div>
+</div>
+
+<!-- ======================= SCREEN 1: ATTENDEE ======================= -->
+<section class="stage" id="s-att">
+  <div class="phone" id="phone" style="width:410px"><div class="scr" id="scr"></div></div>
+  <div class="side">
+    <h3>Attendee, own phone, in the hall</h3>
+    <p>Scan → this one page → Send → Thank you. Labels are typed by the organiser in two languages; the fixed words (errors, “Needed”, the closed page) are ours, in English and Hindi <span class="dec">(⚠ D4)</span>.</p>
+    <ul>
+      <li>Fields 16 px, every target ≥ 48 px, Send full width. <b>No Discard.</b></li>
+      <li>On any failure the answers stay on the page and the message sits <b>directly above Send</b>, where the thumb is.</li>
+      <li>A missing answer says “Needed” in words beside the field, not only a red border.</li>
+      <li>Rating and comment are optional. Name, mobile and “I agree” are needed.</li>
+      <li>Thank you shows no echo of what was typed.</li>
+    </ul>
+    <p>Hindi is a machine draft, <b>for a native reviewer</b>.</p>
+  </div>
+</section>
+
+<!-- ======================= SCREEN 2: ORGANISER ======================= -->
+<section class="stage" id="s-org" hidden>
+  <div style="width:100%;max-width:1240px">
+    <div class="note"><b>Note for review, not a screen.</b> The event is set by the form's <b>title</b>: “Pune Dealer Meet, 14 Nov”. Every lead from this form gets it stamped automatically in a new “Event form” field. The organiser sets nothing else. Only a <b>Sales Manager</b> (or System Manager) can build a form and print its QR — that is CRM's own rule (<code>crm/api/form.py</code> <code>_check_manager</code>). Door staff need no login.</div>
+    <div id="orgA" hidden>
+      <div class="desk"><div class="row">
+        <div class="sb"><div class="it">Leads</div><div class="it">Deals</div><div class="it">Contacts</div><div class="hd">Settings</div><div class="it on">Forms</div></div>
+        <div class="main">
+          <div class="top"><span class="crumb">Forms /</span><b>Pune Dealer Meet, 14 Nov</b><span class="sample">Sample</span><span style="flex:1"></span><span class="sw"><i></i>Publish</span><button class="btn">Preview</button><button class="btn dark">Save</button></div>
+          <div class="split">
+            <div class="canvas"><div class="fc">
+              <div class="ft hl">Pune Dealer Meet, 14 Nov</div>
+              <div class="fd">Collected by Sharma Events for Pune Dealer Meet. Kept for 6 months after the event…</div>
+              <div class="fld">Your name / आपका नाम <span>Full name · needed</span></div>
+              <div class="fld">Mobile number / मोबाइल नंबर <span>Mobile no · needed</span></div>
+              <div class="fld">Email (optional) / ईमेल (वैकल्पिक) <span>Email</span></div>
+              <div class="fld">How was the event? <span>Event rating · new</span></div>
+              <div class="fld">Anything you want to tell us? <span>Event comment · new</span></div>
+              <div class="fld">I agree that Sharma Events keeps… <span>Consent: this event · new · needed</span></div>
+              <div class="fld">Send me news of future events <span>Consent: news · new</span></div>
+            </div></div>
+            <div class="panel">
+              <h4>Form details</h4><p class="pd">Basic settings for this form.</p>
+              <div class="kv"><div>Route</div><div class="inp">pune-dealer-meet-14-nov</div></div>
+              <div class="kv"><div>Submit button label</div><div class="inp">Send my details / जानकारी भेजें</div></div>
+              <div class="kv"><div>Success message</div><div class="inp">Thank you. Your details are saved for Pune Dealer Meet, 14 Nov. / धन्यवाद। आपकी जानकारी Pune Dealer Meet, 14 Nov के लिए सहेज ली गई है।</div></div>
+              <hr>
+              <h4>Link</h4><p class="pd">Send people straight to the hosted form.</p>
+              <div class="kv"><div class="inp">https://sharmaevents.alvoraa.co/crm-form/pune-dealer-meet-14-nov</div></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn">Copy link</button><button class="btn">Open</button>
+                <button class="btn dark new" data-openqr>Download QR card</button></div>
+              <p class="tag" style="margin:8px 0 0">New in slice 082 (option A). Needs a change inside CRM's own screens.</p>
+              <hr>
+              <h4>Embed</h4><p class="pd">Drop the form into your own website.</p>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div id="orgB" style="display:flex;gap:28px;flex-wrap:wrap;justify-content:center">
+      <div class="phone" style="width:410px"><div class="scr" style="height:620px"><div class="cf">
+        <div class="orgbar" role="region" aria-label="For the organiser">
+          <b>You are signed in as an organiser.</b> Attendees do not see this box.<br>
+          This form's address: sharmaevents.alvoraa.co/crm-form/pune-dealer-meet-14-nov
+          <br><button data-openqr>Download QR card</button>
+        </div>
+        <div class="card"><h1 class="title">Pune Dealer Meet, 14 Nov</h1><p class="subtitle">Takes about one minute. · लगभग एक मिनट लगेगा।</p><p style="color:#777;font-size:14px">(the form continues as on screen 1)</p></div>
+      </div></div></div>
+      <div class="side">
+        <h3>Option B (recommended): the button lives on the form itself</h3>
+        <p>In CRM the Sales Manager presses <b>Open</b> beside the form's link (already there). The form opens with this box at the top, <b>only when signed in as a Sales Manager or System Manager</b> — the same rule CRM already uses for its draft preview.</p>
+        <p>Why: it changes no CRM screen, so nothing to carry through CRM upgrades. It also makes the organiser look at the real form before printing (“test from your phone”).</p>
+        <p><b>If the form is not published</b>, the box says instead: “This form is a draft. Publish it in CRM before printing a QR — a QR for a draft opens a page attendees cannot use.” and has <b>no</b> button.</p>
+        <p><span class="dec">⚠ D1</span> A or B. Engineer to confirm B is possible without editing CRM.</p>
+        <button class="btn" data-openqr style="font:inherit;min-height:44px;padding:0 14px;border:1px solid #999;border-radius:8px;background:#fff;cursor:pointer">See the printed card</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SCREEN 3: MANAGER ======================= -->
+<section class="stage" id="s-mgr" hidden>
+  <div style="width:100%;max-width:1240px">
+    <div class="note"><b>Note for review, not a screen.</b> This is a <b>saved CRM view</b> (configuration, no code): filter, sort and columns, pinned in the sidebar. It shows other people's details. <b>The view is not the protection</b>: CRM Lead's own permission rules decide who can read these rows (Sales Manager reads all; Sales User only leads assigned to them; Employee-only logins nothing). Data-door tests in the spec.</div>
+    <div class="desk"><div class="row">
+      <div class="sb"><div class="it">Leads</div><div class="hd">Pinned views</div><div class="it on" id="pinOne">Pune Dealer Meet – lowest first</div><div class="it" id="pinAll">Events – entries per form</div><div class="it">Deals</div><div class="it">Contacts</div></div>
+      <div class="main" id="mgrMain"></div>
+    </div></div>
+    <div class="side" style="max-width:720px;margin-top:14px">
+      <p><b>Why the rating reads “1 · Very poor”.</b> CRM sorts a choice field by its text. A number at the front makes “lowest first” a plain ascending sort. Without it, “Good” would sort before “OK”.</p>
+      <p><b>Why “Rating is set”.</b> Blank ratings sort to the top in an ascending sort, so the people who did not rate would push the unhappy ones off the first screen. Entries with no rating are counted in the second view.</p>
+      <p><b>“News OK”</b> is the only column that says who may get marketing (conflict C3). A blank means: do not email them about other events.</p>
+    </div>
+  </div>
+</section>
+
+<div class="modalbg" id="qrm" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qrh">
+    <h3 id="qrh">QR card for Pune Dealer Meet, 14 Nov</h3>
+    <p style="font-size:13px;color:#555;margin:0">Downloads as one picture (PNG), ready to print at A6 or larger. The code holds this tenant's own address and never expires.</p>
+    <div class="qrcard">
+      <div class="ev">Pune Dealer Meet, 14 Nov</div>
+      <div class="by">Sharma Events <span class="sample">Sample</span></div>
+      <canvas id="qrc" width="29" height="29" aria-label="Sample QR picture, not scannable"></canvas>
+      <div class="ask">Scan to leave your details and feedback</div>
+      <div class="askhi">अपनी जानकारी और राय देने के लिए स्कैन करें</div>
+      <div class="pay">This is not a payment. · यह भुगतान नहीं है।</div>
+      <div class="url">sharmaevents.alvoraa.co/crm-form/pune-dealer-meet-14-nov</div>
+    </div>
+    <p style="font-size:12px;color:#777;margin:0 0 10px">Prototype picture is not a real QR code.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="qrclose" style="font:inherit;min-height:40px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer">Close</button><button style="font:inherit;min-height:40px;padding:0 14px;border:0;border-radius:8px;background:#171717;color:#fff;cursor:pointer">Download PNG</button></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var S={scr:"att",st:"form",res:"ok",busy:"A",rate:"radio",w:390,qr:"B",mv:"one",timer:null};
+  var $=function(s,r){return (r||document).querySelector(s)};
+  var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  var esc=function(t){return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]})};
+
+  var T={
+    title:"Pune Dealer Meet, 14 Nov",
+    intro:"Takes about one minute. · लगभग एक मिनट लगेगा।",
+    notice:"Collected by Sharma Events for Pune Dealer Meet. We keep your details for 6 months after the event. If you tick “Send me news”, we keep your contact until you ask us to stop. To see or remove your details: privacy@sharmaevents.example. For people aged 18 or over.\n\nSharma Events यह जानकारी Pune Dealer Meet के लिए ले रहा है। कार्यक्रम के 6 महीने बाद तक रखी जाएगी। “आगे की जानकारी” पर टिक करने पर, जब तक आप मना न करें। देखने या हटवाने के लिए: privacy@sharmaevents.example। केवल 18 वर्ष या उससे अधिक के लोगों के लिए।",
+    submit:"Send my details / जानकारी भेजें",
+    sending:"Sending… / भेजा जा रहा है…",
+    thanks:"Thank you. Your details are saved for Pune Dealer Meet, 14 Nov.",
+    thanksHi:"धन्यवाद। आपकी जानकारी Pune Dealer Meet, 14 Nov के लिए सहेज ली गई है।"
+  };
+  var RATES=["5 · Very good · बहुत अच्छा","4 · Good · अच्छा","3 · OK · ठीक-ठाक","2 · Poor · खराब","1 · Very poor · बहुत खराब"];
+  var DRAFT={};
+
+  function formHTML(){
+    var rate;
+    if(S.rate==="radio"){
+      rate='<fieldset class="field" id="f-rating"><legend>How was the event? (optional)<br>कार्यक्रम कैसा रहा? (वैकल्पिक)</legend>'+
+        RATES.map(function(r,i){var p=r.split(" · ");return '<label class="opt"><input type="radio" name="rating" value="'+esc(r)+'"'+(DRAFT.rating===r?" checked":"")+'><span>'+esc(p[0]+" · "+p[1])+' <span class="hi">· '+esc(p[2])+'</span></span></label>'}).join("")+'</fieldset>';
+    } else {
+      rate='<div class="field" id="f-rating"><label class="fl" for="rating">How was the event? (optional)<br>कार्यक्रम कैसा रहा? (वैकल्पिक)</label><select id="rating" name="rating"><option value="">Select…</option>'+RATES.map(function(r){return '<option'+(DRAFT.rating===r?" selected":"")+'>'+esc(r)+'</option>'}).join("")+'</select></div>';
+    }
+    function txt(id,lab,type,req,extra){return '<div class="field" id="f-'+id+'"><label class="fl" for="'+id+'">'+lab+(req?'<span class="req" aria-hidden="true">*</span>':'')+'</label><input type="'+type+'" id="'+id+'" name="'+id+'" '+(extra||"")+' value="'+esc(DRAFT[id]||"")+'"'+(req?' aria-required="true"':'')+' aria-describedby="e-'+id+'"><div class="ferr" id="e-'+id+'">Needed · ज़रूरी</div></div>'}
+    return '<div class="card"><h1 class="title">'+esc(T.title)+' <span class="sample">Sample</span></h1><p class="subtitle">'+esc(T.intro)+'</p>'+
+      '<form id="wf" novalidate>'+
+      txt("name","Your name / आपका नाम","text",1,'autocomplete="name"')+
+      txt("mobile","Mobile number / मोबाइल नंबर","tel",1,'inputmode="tel" autocomplete="tel"')+
+      txt("email","Email (optional) / ईमेल (वैकल्पिक)","email",0,'autocomplete="email"')+
+      rate+
+      '<div class="field"><label class="fl" for="comment">Anything you want to tell us? (optional)<br>कुछ और बताना चाहें? (वैकल्पिक)</label><textarea id="comment" name="comment">'+esc(DRAFT.comment||"")+'</textarea></div>'+
+      '<div class="field" id="f-agree"><label class="check"><input type="checkbox" id="agree"'+(DRAFT.agree?" checked":"")+' aria-required="true" aria-describedby="e-agree d-agree"><span>I agree that Sharma Events keeps these details to follow up on this event.<span class="req" aria-hidden="true">*</span><br>मैं सहमत हूँ कि Sharma Events इस कार्यक्रम के बारे में संपर्क के लिए ये जानकारी रखे।</span></label><div class="ferr" id="e-agree">Needed · ज़रूरी</div><div class="desc" id="d-agree">'+esc(T.notice)+'</div></div>'+
+      '<div class="field"><label class="check"><input type="checkbox" id="news"'+(DRAFT.news?" checked":"")+'><span>Send me news of future events. (optional)<br>मुझे आगे के कार्यक्रमों की जानकारी भेजें। (वैकल्पिक)</span></label></div>'+
+      '<div class="form-error" id="ferr" role="alert" tabindex="-1"></div>'+
+      '<button type="submit" class="submit" id="send">'+esc(T.submit)+'</button>'+
+      '</form></div>';
+  }
+  function closedHTML(){
+    return '<div class="card"><div class="success"><div class="ring" style="background:var(--cbg);color:var(--ink)" aria-hidden="true">–</div>'+
+      '<h2>This form is not taking answers</h2><p>It may have closed after the event. If you are at the event, please ask at the organiser\'s desk.</p>'+
+      '<p style="margin-top:14px">यह फ़ॉर्म अभी उत्तर नहीं ले रहा है। हो सकता है कार्यक्रम के बाद बंद हो गया हो। अगर आप कार्यक्रम में हैं, तो आयोजक की डेस्क पर पूछें।</p></div></div>';
+  }
+  function thanksHTML(){
+    return '<div class="card"><div class="success" role="status"><div class="ring" aria-hidden="true">✓</div><h2>'+esc(T.thanks)+'</h2><p>'+esc(T.thanksHi)+'</p><p style="margin-top:14px">You can close this page. · आप यह पेज बंद कर सकते हैं।</p></div></div>';
+  }
+
+  function readDraft(){
+    var f=$("#wf");if(!f)return;
+    DRAFT.name=$("#name").value;DRAFT.mobile=$("#mobile").value;DRAFT.email=$("#email").value;DRAFT.comment=$("#comment").value;
+    DRAFT.agree=$("#agree").checked;DRAFT.news=$("#news").checked;
+    var r=S.rate==="radio"?$('input[name=rating]:checked'):$("#rating");DRAFT.rating=r?r.value:"";
+  }
+  function showMsg(html,cls){var b=$("#ferr");b.className="form-error on"+(cls?" "+cls:"");b.innerHTML=html;b.focus();b.scrollIntoView({block:"center"});}
+
+  function renderAtt(){
+    clearInterval(S.timer);
+    var scr=$("#scr");$("#phone").style.width=(S.w+20)+"px";
+    scr.innerHTML='<div class="cf">'+(S.st==="closed"?closedHTML():S.st==="thanks"?thanksHTML():formHTML())+'</div>';
+    var f=$("#wf");if(!f)return;
+    f.addEventListener("submit",function(e){
+      e.preventDefault();readDraft();
+      $$(".field.bad",f).forEach(function(x){x.classList.remove("bad")});$$(".has-error",f).forEach(function(x){x.classList.remove("has-error")});
+      var miss=[];
+      if(!DRAFT.name.trim())miss.push(["name","Your name"]);
+      if(!DRAFT.mobile.trim())miss.push(["mobile","Mobile number"]);
+      if(!DRAFT.agree)miss.push(["agree","I agree"]);
+      if(miss.length){
+        miss.forEach(function(m){$("#f-"+m[0]).classList.add("bad");var el=$("#"+m[0]);el.classList.add("has-error");el.setAttribute("aria-invalid","true")});
+        showMsg("Please fill these in: "+miss.map(function(m){return m[1]}).join(", ")+'.<span class="hi">कृपया ये भरें — ऊपर “ज़रूरी” लिखे खाने।</span>');
+        return;
+      }
+      var btn=$("#send");btn.disabled=true;btn.textContent=T.sending;$("#ferr").className="form-error";
+      setTimeout(function(){
+        btn.disabled=false;btn.textContent=T.submit;
+        if(S.res==="ok"){S.st="thanks";DRAFT={};renderAtt();return;}
+        if(S.res==="net"){showMsg('<b>Not sent.</b> Your answers are still here. Check your signal, then press Send again.<span class="hi">नहीं भेजा गया। आपके उत्तर यहीं हैं। नेटवर्क देखें, फिर दोबारा “भेजें” दबाएँ।</span>');return;}
+        if(S.res==="gone"){showMsg('<b>This form has stopped taking answers</b>, so your details were not saved. Please give them at the organiser\'s desk.<span class="hi">यह फ़ॉर्म अब उत्तर नहीं ले रहा, इसलिए आपकी जानकारी सहेजी नहीं गई। कृपया आयोजक की डेस्क पर दें।</span>');btn.hidden=true;return;}
+        if(S.busy==="A"){showMsg('<b>Many people are sending at the same moment.</b> Your answers are still here. Wait 10 seconds, then press Send again.<span class="hi">इस समय बहुत लोग एक साथ भेज रहे हैं। आपके उत्तर यहीं हैं। 10 सेकंड रुकें, फिर दोबारा “भेजें” दबाएँ।</span>',"wait");return;}
+        var n=10;btn.disabled=true;
+        var paint=function(){showMsg('<b>Many people are sending at the same moment.</b> Sending again in '+n+' s. Keep this page open.<span class="hi">बहुत लोग एक साथ भेज रहे हैं। '+n+' सेकंड में फिर भेजेंगे। यह पेज खुला रखें।</span>',"wait");btn.textContent="Waiting… / रुकिए…";};
+        paint();
+        S.timer=setInterval(function(){n--;if(n>0){paint();return;}clearInterval(S.timer);S.res="ok";press("res","ok");S.st="thanks";DRAFT={};renderAtt();},1000);
+      },900);
+    });
+  }
+
+  // ---------- manager ----------
+  var ROWS=[ // Sample
+    ["Rakesh Kulkarni","1 · Very poor · बहुत खराब","Could not hear the speaker from the back half of the hall.","98220 41012","","14 Nov, 6:41 pm"],
+    ["Anita Deshpande","1 · Very poor · बहुत खराब","Lunch ran out before our table was called.","97640 18840","Yes","14 Nov, 6:44 pm"],
+    ["Imran Shaikh","2 · Poor · खराब","Too long. The scheme details were not in the slides.","90110 52377","","14 Nov, 6:39 pm"],
+    ["Sunita Pawar","2 · Poor · खराब","—","99230 67105","Yes","14 Nov, 6:52 pm"],
+    ["Vikram Jadhav","3 · OK · ठीक-ठाक","Good product, venue was far.","98810 23463","Yes","14 Nov, 6:40 pm"],
+    ["Meera Joshi","3 · OK · ठीक-ठाक","—","93250 90118","","14 Nov, 6:43 pm"],
+    ["Harpreet Gill","4 · Good · अच्छा","Please send the price list.","98140 77291","Yes","14 Nov, 6:38 pm"],
+    ["Prakash Naik","4 · Good · अच्छा","—","70200 31826","","14 Nov, 6:47 pm"],
+    ["Farah Siddiqui","5 · Very good · बहुत अच्छा","Best dealer meet this year.","88050 64454","Yes","14 Nov, 6:41 pm"]
+  ];
+  function renderMgr(){
+    $("#pinOne").className="it"+(S.mv==="one"?" on":"");$("#pinAll").className="it"+(S.mv==="all"?" on":"");
+    var m=$("#mgrMain");
+    if(S.mv==="one"){
+      m.innerHTML='<div class="vt"><span class="vn">Pune Dealer Meet – lowest first</span><span class="sample">Sample</span><span style="flex:1"></span><button class="btn">Export</button></div>'+
+        '<div class="vt" style="padding-top:8px;padding-bottom:8px"><span class="chip">Event form: Pune Dealer Meet, 14 Nov</span><span class="chip">Event rating: is set</span><span class="chip">Sort: Event rating ↑, then Created on ↑</span></div>'+
+        '<table><thead><tr><th scope="col">Name</th><th scope="col">Event rating</th><th scope="col">Event comment</th><th scope="col">Mobile</th><th scope="col">News OK</th><th scope="col">Created on</th><th scope="col">Assigned to</th></tr></thead><tbody>'+
+        ROWS.map(function(r){var low=/^[12]/.test(r[1]);return '<tr><td>'+esc(r[0])+'</td><td><span class="rt'+(low?" low":"")+'">'+esc(r[1])+'</span></td><td class="cm">'+esc(r[2])+'</td><td>'+esc(r[3])+'</td><td>'+(r[4]?"Yes":"")+'</td><td>'+esc(r[5])+'</td><td style="color:#7c7c7c">Not assigned</td></tr>'}).join("")+
+        '</tbody></table><div class="foot">9 of 214 rated entries <span class="sample">Sample</span></div>';
+    } else {
+      m.innerHTML='<div class="vt"><span class="vn">Events – entries per form</span><span class="sample">Sample</span></div>'+
+        '<div class="vt" style="padding-top:8px;padding-bottom:8px"><span class="chip">Event form: is set</span><span class="chip">Group by: Event form</span><span class="chip">Sort: Created on ↓</span></div>'+
+        '<table><thead><tr><th scope="col">Event form</th><th scope="col">Entries</th></tr></thead><tbody>'+
+        [["Pune Dealer Meet, 14 Nov","287"],["Nashik Retailer Day, 2 Nov","142"],["Mumbai Launch, 18 Oct","361"]].map(function(g){return '<tr class="grp"><td>'+g[0]+'</td><td>'+g[1]+'</td></tr>'}).join("")+
+        '</tbody></table><div class="foot">CRM group-by shows a count per group. It cannot show an average rating; that would be new code, and the brief does not ask for it.</div>';
+    }
+  }
+
+  // ---------- QR (fake pattern, labelled) ----------
+  function drawQR(){
+    var c=$("#qrc"),x=c.getContext("2d"),n=29,seed=7;x.fillStyle="#fff";x.fillRect(0,0,n,n);x.fillStyle="#000";
+    var rnd=function(){seed=(seed*16807)%2147483647;return seed/2147483647};
+    for(var i=0;i<n;i++)for(var j=0;j<n;j++)if(rnd()>.55)x.fillRect(i,j,1,1);
+    [[0,0],[n-7,0],[0,n-7]].forEach(function(p){x.fillStyle="#fff";x.fillRect(p[0]-1<0?0:p[0]-1,p[1]-1<0?0:p[1]-1,9,9);x.fillStyle="#000";x.fillRect(p[0],p[1],7,7);x.fillStyle="#fff";x.fillRect(p[0]+1,p[1]+1,5,5);x.fillStyle="#000";x.fillRect(p[0]+2,p[1]+2,3,3);});
+  }
+
+  function press(key,val){$$('[data-'+key+']').forEach(function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-"+key)===String(val)))})}
+  function show(){
+    ["att","org","mgr"].forEach(function(k){$("#s-"+k).hidden=S.scr!==k});
+    $$("[data-for]").forEach(function(g){g.hidden=g.getAttribute("data-for")!==S.scr});
+    $("#orgA").hidden=S.qr!=="A";$("#orgB").style.display=S.qr==="B"?"flex":"none";
+    if(S.scr==="att")renderAtt();if(S.scr==="mgr")renderMgr();
+  }
+  document.addEventListener("click",function(e){
+    var b=e.target.closest("button");if(!b)return;
+    var map={scr:"scr",st:"st",res:"res",busy:"busy",rate:"rate",w:"w",qr:"qr",mv:"mv"};
+    for(var k in map){if(b.hasAttribute("data-"+k)){if(S.scr==="att")readDraft();var v=b.getAttribute("data-"+k);S[map[k]]=k==="w"?+v:v;press(k,v);show();return;}}
+    if(b.hasAttribute("data-openqr")){$("#qrm").hidden=false;drawQR();$("#qrclose").focus();}
+    if(b.id==="qrclose"){$("#qrm").hidden=true;}
+  });
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")$("#qrm").hidden=true;});
+  show();
+})();
+</script>
+</body>
+</html>

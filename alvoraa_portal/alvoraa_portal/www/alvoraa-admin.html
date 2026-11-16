@@ -1927,7 +1927,12 @@ html, body {
       if (res.status === 400 && (msg || data.message || '').indexOf('Invalid Request') !== -1) {
         throw new Error('Your session has expired. Reload the page (Ctrl+Shift+R) and try again - nothing was saved.');
       }
-      throw new Error(msg || data.message || res.statusText);
+      // Over HTTP/2 statusText is always empty, so a server crash used to
+      // reach the page as an empty error and show only "Failed to save
+      // changes." (ALV-344). Say what happened and what to check.
+      throw new Error(msg || data.message || res.statusText ||
+        ('The server stopped with error ' + res.status + '. Part of the change may ' +
+         'already be saved - reload the page and check before trying again.'));
     }
     return data.message;
   }

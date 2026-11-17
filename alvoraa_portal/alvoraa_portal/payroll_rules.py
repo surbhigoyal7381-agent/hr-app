@@ -652,6 +652,28 @@ def evaluate_day(
 			"The day is measured from that time, not paid in full."
 			.format(int(confirmed_out) // 60, int(confirmed_out) % 60))
 
+	if punch_count >= 3 and punch_count % 2 == 1:
+		# ALV-351, Surbhi, 17 Nov 2026. Three or five punches means one is
+		# missing, exactly as one punch does: punches come in pairs, and the
+		# last one has no partner. DTC's own software pairs them the same way.
+		# Counting first to last would pay a day whose real end nobody knows.
+		#
+		# The confirmation is the same one a one-punch day takes: it supplies
+		# the time the employee left. The count stays odd, so no break is
+		# measured - which punch is missing is still unknown.
+		if confirmed_out is None:
+			v.held = True
+			v.reasons.append(
+				"Held: {0} punches, an odd number, so one is missing and there is "
+				"no way to tell when the employee left. Neither paid nor deducted "
+				"until somebody confirms the time.".format(punch_count))
+			return v
+		last_out = confirmed_out
+		v.reasons.append(
+			"A punch is missing; check-out confirmed afterwards as {0:02d}:{1:02d}. "
+			"The day is measured from the first punch to that time."
+			.format(int(confirmed_out) // 60, int(confirmed_out) % 60))
+
 	late = ""
 	if first_in is None or last_out is None:
 		if marked_absent:

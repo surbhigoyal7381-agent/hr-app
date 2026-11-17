@@ -1186,6 +1186,17 @@ class AManagersWholeTeamOnOnePage(CorrectionCase):
 		self.assertEqual(row["flag"], "no_clock_out")
 		self.assertEqual(row["punches"], 1)
 
+	def test_alv351_three_punches_read_as_no_clock_out(self):
+		"""ALV-351. Three punches leave the last one without a partner; the pay
+		engine holds the day, so the manager is asked for the leaving time."""
+		day = self.d(3)
+		self.day(self.a, day, 0, status="Present", in_time=day + " 11:35:00")
+		self.punch(self.a, day + " 11:35:00", "IN")
+		self.punch(self.a, day + " 15:36:00", "OUT")
+		self.punch(self.a, day + " 22:23:00", "IN")
+		row = [r for r in self.team()["rows"] if r["employee"] == self.a and r["date"] == day][0]
+		self.assertEqual(row["flag"], "no_clock_out")
+
 	def test_a_double_read_arrival_on_a_present_day_still_needs_a_look(self):
 		"""ALV-338 review. With no hour thresholds (13 Nov rule) a reader's double
 		scan of one arrival makes a Present row the pay engine HOLDS. Counted raw

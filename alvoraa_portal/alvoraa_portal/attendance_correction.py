@@ -1839,9 +1839,11 @@ def _flag(row, punches, shift):
 	# With no hour thresholds (13 Nov rule) a double-read arrival is a Present row
 	# the engine HOLDS; counted raw it would read as a finished two-punch day and
 	# leave the held pay with nobody prompted to confirm the time.
-	if len(punch_minutes([get_datetime(p.time) for p in punches])) == 1:
+	if len(punch_minutes([get_datetime(p.time) for p in punches])) % 2 == 1:
 		# ATT-06. One punch is not a short day, it is an unfinished one, and it
-		# is the single commonest thing a manager is asked about.
+		# is the single commonest thing a manager is asked about. ALV-351: three
+		# or five punches are unfinished too - the pay engine holds them the
+		# same way - so they ask for the same leaving time.
 		return "no_clock_out"
 	if status == "Absent":
 		if not punches:

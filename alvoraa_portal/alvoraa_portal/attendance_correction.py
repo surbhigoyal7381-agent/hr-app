@@ -304,14 +304,36 @@ def _may_review():
 	return bool(frappe.has_permission(REQUEST, "submit"))
 
 
+def _scope_conditions():
+	"""The Employee conditions that say whom this HR caller looks after, or
+	None when there is nothing to narrow by.
+
+	**ONE DEFINITION FOR THE THREE SURFACES THAT ASK IT.** `_subject` asks
+	before it will name an employee, `decide` before it will judge their
+	request, and the picker before it will offer them. ALV-349: the picker
+	used to ask nothing of its own, so it offered a group HR person 106 people
+	and the month view refused 72 of them. Read the reasons for both
+	conditions in `_refuse_outside_scope` below.
+	"""
+	from hrms.alvoraa_hr_core.access import (permitted_branches, permitted_companies,
+	                                         permitted_employee_filters)
+
+	if permitted_companies():
+		# As a list, never merged into a dict with a `name` key: see
+		# `employee_in_scope` for why a dict would let a scope-less user in.
+		return [[field, cond[0], cond[1]]
+		        for field, cond in permitted_employee_filters().items()]
+	branches = permitted_branches()
+	if branches is not None:
+		return [["branch", "in", branches]]
+	return None
+
+
 def _refuse_outside_scope(employee, endpoint, name=None):
 	"""Refuse, and log it, when this employee is outside what the caller looks after.
 
-	**ONE DEFINITION FOR THE TWO SURFACES THAT ASK IT.** `_subject` asks before
-	it will name an employee, and `decide` asks before it will judge their
-	request. They were drifting apart the moment there were two of them, which
-	is the whole lesson of ALV-259: the picker was fenced and the endpoint
-	beside it was not.
+	The rule itself is `_scope_conditions`, shared with the picker so the two
+	cannot disagree (ALV-259, ALV-349).
 
 	**Why this is asked AS WELL AS Frappe's own permission check.** Frappe can
 	only narrow by User Permissions, and on every tenant we run the HR logins
@@ -330,17 +352,11 @@ def _refuse_outside_scope(employee, endpoint, name=None):
 	Logged as SEC-17, the code `attendance_analytics` already uses for "you can
 	only see your own branches" - the same question, one module over.
 	"""
-	from hrms.alvoraa_hr_core.access import (employee_in_scope, permitted_branches,
-	                                         permitted_companies, refuse)
+	from hrms.alvoraa_hr_core.access import refuse
 
-	outside = None
-	if permitted_companies():
-		outside = not employee_in_scope(employee)
-	else:
-		branches = permitted_branches()
-		if branches is not None:
-			outside = frappe.db.get_value("Employee", employee, "branch") not in branches
-	if outside:
+	conditions = _scope_conditions()
+	if conditions is not None and not frappe.db.exists(
+			"Employee", conditions + [["name", "=", employee]]):
 		refuse(_("That employee is outside the companies and branches you look "
 		         "after."), "SEC-17", endpoint, REQUEST, name)
 
@@ -414,7 +430,10 @@ def whose_months_i_can_open(search=None, limit=25):
 	named = ({"employee_name": ("like", "%" + term + "%"),
 	          "name": ("like", "%" + term + "%")} if term else None)
 	if _may_review():
-		rows = frappe.get_list("Employee", filters={"status": "Active"},
+		# ALV-349: the same fence the month view refuses by, so nobody is
+		# offered a person the page will then refuse to open.
+		filters = [["status", "=", "Active"]] + (_scope_conditions() or [])
+		rows = frappe.get_list("Employee", filters=filters,
 		                       or_filters=named,
 		                       fields=["name", "employee_name", "designation", "department"],
 		                       order_by="employee_name asc",

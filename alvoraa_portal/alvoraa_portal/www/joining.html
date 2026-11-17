@@ -361,11 +361,20 @@ var LABELS = {
     if (a.length < 2) return a[0] || "";
     return a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
   }
+  /* ALV-343. Two branches went from here, and both were fiction.
+
+     The cookie branch read a `csrf_token` cookie. **Nothing in frappe, erpnext
+     or hrms ever writes one** - the only cookies set are `sid`, `system_user`,
+     `full_name`, `user_id`, `user_image` and `user_lang`.
+
+     The `"fetch"` fallback made up a token that could never match. That reads
+     like a safety net and is the opposite: a made-up token and no token fail
+     the same check in the same place, so it bought nothing and hid the real
+     state. It is not made to throw, either - that would kill the page.
+
+     `get_csrf_token()` in `joining.py` now guarantees the real one. */
   function csrf() {
-    return (window.frappe && window.frappe.csrf_token) ||
-      (document.cookie.split(";").map(function (c) { return c.trim(); })
-        .filter(function (c) { return c.indexOf("csrf_token=") === 0; })[0] || "")
-        .split("=")[1] || "fetch";
+    return (window.frappe && window.frappe.csrf_token) || "";
   }
 
   /* No token, no key, no secret of any kind in this call - the SESSION is the

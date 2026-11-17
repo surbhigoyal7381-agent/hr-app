@@ -37,6 +37,7 @@ be free again.
 """
 
 import frappe
+from frappe.sessions import get_csrf_token
 
 from alvoraa_portal.tenant_context import get_branding
 
@@ -50,6 +51,25 @@ def get_context(context):
 		# breaks if the hint is lost.
 		frappe.local.flags.redirect_location = "/alvoraa-login?for=joining"
 		raise frappe.Redirect
+
+	# ALV-343. **Without this the page has no CSRF protection at all**, and
+	# putting a token in the markup only made it LOOK protected.
+	#
+	# `validate_csrf_token` (`frappe/auth.py:87`) reads
+	# `or not (saved_token := frappe.session.data.csrf_token)` and **returns
+	# early when the session has no token** - the POST is then accepted whatever
+	# header it carries. A token is only ever minted by `get_csrf_token()`, and
+	# a joiner is pinned to this one page by `auth.lock_to_the_joining_page`, so
+	# nothing else was ever going to mint one for them.
+	#
+	# That also explains who saw "Invalid Request": only somebody whose session
+	# ALREADY had a token - HR or an admin opening the link from a Desk or ESS
+	# session. A plain joiner was never refused, because the check never ran.
+	#
+	# `hrms_employee.py:21`, `hrms_employee_next.py:72` and `event_form.py:39`
+	# all do exactly this, for exactly this reason. An existing token is reused,
+	# never replaced, so other open tabs keep working.
+	get_csrf_token()
 
 	context.no_cache = 1
 	context.no_header = 1

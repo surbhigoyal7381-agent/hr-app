@@ -44,6 +44,14 @@ INJECTED = re.compile(r'frappe\.csrf_token\s*=\s*"([^"]*)"')
 DECLARED = "window.frappe = window.frappe || {}"
 
 
+def csrf_body(html):
+	"""Just the body of `csrf()`, so a comment about the old code cannot pass
+	for the old code. The first version of this test matched the word "fetch"
+	anywhere on the page and failed on the comment explaining its removal."""
+	start = html.index("function csrf()")
+	return html[start:html.index("}", start) + 1]
+
+
 def render(path=PAGE):
 	"""The page as the website renderer builds it, post-processing included.
 
@@ -122,17 +130,50 @@ class TheJoiningPageCanReachItsServer(FrappeTestCase):
 			"the CSRF token is assigned before window.frappe exists, so the "
 			"script throws and the token never reaches the page")
 
-	def test_the_page_does_not_fall_back_to_a_made_up_token(self):
-		"""The `"fetch"` fallback is a tombstone, never a working path.
+	def test_a_session_with_no_token_gets_one(self):
+		"""**The half of the bug the markup could not fix.**
 
-		It is kept because a page with no token at all is harder to read than
-		one that fails the check, but if it is ever REACHED the page is broken.
-		This asserts the real token is present so the fallback cannot be what
-		runs - the fallback itself stays untested on purpose.
+		`validate_csrf_token` (`frappe/auth.py:87`) reads
+		`or not (saved_token := frappe.session.data.csrf_token)` and **returns
+		early when the session has no token**, accepting the POST whatever
+		header it carries. A joiner is pinned to this one page, so nothing
+		else ever minted one for them: this page had no CSRF protection at
+		all, and the marker alone only made it LOOK protected - it substituted
+		the literal string `"None"`.
+
+		`get_csrf_token()` in `get_context` is what makes the protection real.
+		Every other test here starts from a session that already has a token,
+		so this is the only one that can fail if that call is removed.
 		"""
+		frappe.local.session.data.csrf_token = None
 		html = render()
-		self.assertIn(DECLARED, html)
-		self.assertTrue(INJECTED.search(html))
+		found = INJECTED.search(html)
+		self.assertTrue(found, "no CSRF token on the page")
+		self.assertNotIn(
+			found.group(1), ("", "None"),
+			"the page renders a placeholder instead of a token, so Frappe "
+			"accepts every POST to this page unchecked")
+		self.assertEqual(
+			found.group(1), frappe.local.session.data.csrf_token,
+			"a token was minted but not the one the session now carries")
+
+	def test_the_page_makes_up_no_token_of_its_own(self):
+		"""Both fallbacks in `csrf()` were fiction, and both are gone.
+
+		The cookie branch read a `csrf_token` cookie that nothing in frappe,
+		erpnext or hrms ever writes. The `"fetch"` fallback sent a token that
+		could never match - which reads like a safety net and is the opposite,
+		because a made-up token and no token fail the same check in the same
+		place.
+		"""
+		body = csrf_body(render())
+		self.assertNotIn(
+			'"fetch"', body,
+			"csrf() still falls back to a made-up token")
+		self.assertNotIn(
+			"cookie", body,
+			"csrf() still reads a cookie that nothing ever sets")
+		self.assertIn("window.frappe", body, "csrf() no longer reads the token")
 
 	def test_an_ending_and_a_fault_do_not_share_a_code(self):
 		"""ALV-343's second half, pinned in the markup.

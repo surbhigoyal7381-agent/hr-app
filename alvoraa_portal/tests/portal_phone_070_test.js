@@ -315,7 +315,45 @@ const serverSays = (m) => JSON.stringify([JSON.stringify({message: m})]);
   has(box.textContent, "Still could not reach the office.", "AC-20: the second failure says Still");
   window.failBox(box, {kind: "server"}, () => {});
   has(box.textContent, "Something went wrong at the office.", "AC-19: 5xx heading");
-  has(box.textContent, "Tap Try again in a minute. If it keeps happening, tell HR.", "AC-19: 5xx line");
+  has(box.textContent, "Tap Try again in a minute. If it keeps happening, tell HR it happened at ", "AC-19 / ALV-350: 5xx line, with the time");
+  (/at \d\d:\d\d\./.test(box.textContent) ? ok : bad)("ALV-350: the time is HH:MM");
+
+  // ── ALV-350: a refusal says the server's reason and what to do next ──
+  // Through gpFetch: a 403 PermissionError (Prasad, 16 Nov 2026).
+  ROUTES.month = {status: 403, body: {exc_type: "PermissionError", exc: "Traceback (most recent call last): secret_table",
+    _server_messages: serverSays("That employee is outside the companies and branches you look after.")}};
+  let gpE = null;
+  await window.gpFetch("alvoraa_portal.attendance_correction.month", {employee: "E9"}).catch(e => { gpE = e; });
+  const deny = doc.createElement("div"); doc.body.appendChild(deny);
+  window.failBox(deny, gpE, () => {});
+  has(deny.textContent, "That employee is outside the companies and branches you look after.", "ALV-350: the server's reason is the heading");
+  has(deny.textContent, "If you need it, ask HR.", "ALV-350: an employee is sent to HR");
+  hasNot(deny.textContent, "Something went wrong", "ALV-350: not the generic words");
+  hasNot(deny.textContent, "secret_table", "SEC-4: never the traceback");
+  eq(deny.querySelector(".fail button"), null, "ALV-350: no Try again on a refusal that cannot change");
+  // HR is never told to tell HR.
+  window._roles.is_hr = true;
+  window.failBox(deny, gpE, () => {});
+  has(deny.textContent, "If you need it, ask your administrator.", "ALV-350: HR is sent to their administrator");
+  window.failBox(deny, {kind: "server"}, () => {});
+  hasNot(deny.textContent, "tell HR", "ALV-350: HR is not told to tell HR");
+  window._roles.is_hr = false;
+  // A bare 403 with no words is still "not allowed".
+  window.failBox(deny, {kind: "refused", status: 403}, () => {});
+  has(deny.textContent, "You do not have access to this.", "ALV-350: a wordless 403 still says what it is");
+  eq(deny.querySelector(".fail button"), null, "ALV-350: and offers no Try again");
+  // Through api(): a validation refusal keeps its words AND Try again.
+  ROUTES.get_hr_analytics = {status: 417, body: {exc_type: "ValidationError", _server_messages: serverSays("The last day cannot be before the first day.")}};
+  let apiE = null;
+  window.api("get_hr_analytics", {}, () => {}, (e) => { apiE = e; });
+  await until(() => apiE !== null);
+  window.failBox(deny, apiE, () => {});
+  has(deny.textContent, "The last day cannot be before the first day.", "ALV-350: an api() refusal shows the server's reason");
+  has(deny.textContent, "If this looks wrong, ask HR.", "ALV-350: and where to go");
+  eq(!!deny.querySelector(".fail button"), true, "ALV-350: a fixable refusal keeps Try again");
+  // A 5xx still never shows the server's words.
+  window.failBox(deny, {kind: "server", _server_messages: serverSays("internal detail")}, () => {});
+  hasNot(deny.textContent, "internal detail", "SEC-4: a 5xx never shows its words");
 
   // ── OPS-S4: answers that come at 16 s, one read and one write, at the real limit ──
   console.log("  ...  waiting 18 s for the slow answers (OPS-S4)");

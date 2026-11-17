@@ -62,7 +62,9 @@ function api(fn, args, cb, ecb) {
       setTimeout(function () {
         if (answered) return;
         var body = (d && typeof d === "object" && !d.readyState) ? d : {};
-        fail(Object.assign({}, body, {kind: callKind(body, xhr && xhr.status)}));
+        /* ALV-350: the status too, so a bare 403 reads as "not allowed". */
+        fail(Object.assign({}, body, {kind: callKind(body, xhr && xhr.status),
+                                      status: (xhr && xhr.status) || 0}));
       }, 0);
     },
   });
@@ -98,6 +100,35 @@ function sayMayHaveGone(r, button) {
    api() load reaches the loader's own success path and paints over the box;
    for a gpFetch load, `onLate` gets the data instead. `head` replaces the
    first heading (the leave-type list). A <select> gets the box after it. */
+/* ALV-350: the server's own sentence for a refusal, or "".
+
+   Two shapes reach failBox. A gpFetch error is an Error whose message gpErr
+   already filled with the server's words (`server` true) - never a traceback
+   (SEC-4). An api() error is Frappe's answer itself, so the sentence is read
+   out of `_server_messages` here, the same way gpErr reads it. A 5xx never
+   gives its words: they can carry internal detail. */
+function refusalWords(err) {
+  if (!err || err.kind !== "refused") return "";
+  if (err.server && err.message) return String(err.message);
+  var msg = "";
+  try { msg = JSON.parse(JSON.parse(err._server_messages)[0]).message; } catch (e) {}
+  if (!msg) { try { msg = JSON.parse(err._server_messages)[0]; } catch (e) {} }
+  return typeof msg === "string" ? msg.replace(/<[^>]*>/g, "").trim() : "";
+}
+
+/* ALV-350: a refusal Try again can never change - "you may not see this",
+   or the thing is not there. Frappe names it in `exc_type`; a bare 403 with
+   no type is the same answer. */
+function isDenied(err) {
+  if (!err || err.kind !== "refused") return false;
+  return /PermissionError|DoesNotExistError/.test(err.exc_type || "") || err.status === 403;
+}
+
+/* ALV-350: who to go to. Telling HR to "tell HR" sent them to themselves. */
+function whoToAsk() {
+  return (window._roles && window._roles.is_hr) ? drT("your administrator") : drT("HR");
+}
+
 function failBox(el, err, retry, onLate, head) {
   if (typeof el === "string") el = document.getElementById(el);
   if (!el) return;
@@ -106,17 +137,36 @@ function failBox(el, err, retry, onLate, head) {
   el._failRetried = false;
   if (el._loadingHtml === undefined) el._loadingHtml = el.innerHTML;
   var sick = kind === "server" || kind === "refused";
-  var h = head || (sick ? "Something went wrong at the office."
-                        : (again ? "Still could not reach the office." : "We could not reach the office."));
-  var p = sick ? "Tap Try again in a minute. If it keeps happening, tell HR."
-               : kind === "timeout" ? "The office did not answer in 15 seconds. Tap Try again."
-               : "Check your signal, then tap Try again.";
+  head = head ? drT(head) : "";
+  var said = refusalWords(err);
+  var denied = isDenied(err);
+  var who = whoToAsk();
+  var now = new Date();
+  var at = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+  var h, p;
+  if (denied) {
+    /* The reason, then where to go. No Try again: the answer will not change. */
+    h = head || said || drT("You do not have access to this.");
+    p = (head && said ? said + " " : "") + drT("If you need it, ask {0}.", [who]);
+  } else if (said) {
+    /* Something the server can name - a date, a setting. Its words, and Try again. */
+    h = head || said;
+    p = (head ? said + " " : "") + drT("If this looks wrong, ask {0}.", [who]);
+  } else if (sick) {
+    /* A fault with no words we may show. The time lets HR find it in the log. */
+    h = head || drT("Something went wrong at the office.");
+    p = drT("Tap Try again in a minute. If it keeps happening, tell {0} it happened at {1}.", [who, at]);
+  } else {
+    h = head || (again ? drT("Still could not reach the office.") : drT("We could not reach the office."));
+    p = kind === "timeout" ? drT("The office did not answer in 15 seconds. Tap Try again.")
+                           : drT("Check your signal, then tap Try again.");
+  }
   var box = document.createElement("div");
   box.className = "fail";
   box.setAttribute("role", "alert");
-  box.innerHTML = "<h3>" + esc(drT(h)) + "</h3><p>" + esc(drT(p)) + "</p>"
-    + '<button type="button" class="btn btn-outline">' + esc(drT("Try again")) + "</button>";
-  box.querySelector("button").addEventListener("click", function () {
+  box.innerHTML = "<h3>" + esc(h) + "</h3><p>" + esc(p) + "</p>"
+    + (denied ? "" : '<button type="button" class="btn btn-outline">' + esc(drT("Try again")) + "</button>");
+  if (!denied) box.querySelector("button").addEventListener("click", function () {
     if (el.tagName === "SELECT") { if (box.parentNode) box.parentNode.removeChild(box); }
     else el.innerHTML = el._loadingHtml;
     el._failRetried = true;
@@ -5573,7 +5623,15 @@ async function acLoad() {
     await show(await acApi("month", {year: acState.year, month: acState.month,
                                      employee: acState.employee}));
   } catch (e) {
-    document.getElementById("ac-bar").innerHTML = "";
+    /* ALV-350: a refused person must not take the picker away with them -
+       that left HR with no way to choose somebody else, or go back to their
+       own month. Go back to whoever was last shown, and keep the bar. */
+    if (isDenied(e) && acState.data) {
+      acState.employee = acState.data.is_self ? null : acState.data.employee;
+      acBar();
+    } else {
+      document.getElementById("ac-bar").innerHTML = "";
+    }
     /* Slice 070: the box, Try again, and a late answer that paints the month
        by itself (AC-17 to AC-21). */
     failBox(body, e, acLoad, function (d) { show(d).catch(function () {}); });
@@ -15915,6 +15973,10 @@ function deleteDrawerNote(noteId, empId) {
     var e = new Error(msg || callWords(kind));
     e.kind = kind;
     e.server = !!msg;
+    /* ALV-350: so failBox can tell "not allowed" (no Try again) from a fault.
+       The exception's NAME only - never `exc`, the traceback (SEC-4). */
+    e.exc_type = (r && r.exc_type) || "";
+    e.status = status || 0;
     return e;
   }
 

@@ -46,12 +46,18 @@ VERDICT = [
 	                "until somebody confirms when they left."},
 	{"fieldname": "alvoraa_held_confirmed", "fieldtype": "Check",
 	 "label": "Out Time Confirmed", "insert_after": "alvoraa_held",
-	 "allow_on_submit": 1, "depends_on": "eval:doc.alvoraa_held",
+	 "allow_on_submit": 1,
+	 # ALV-351: also on a missing-punch day the engine has not judged (rule set
+	 # saved but off) - payroll_rules_apply.attendance_onload sets the flag.
+	 "depends_on": "eval:doc.alvoraa_held || (doc.__onload && doc.__onload.alvoraa_missing_punch)",
 	 "description": "Tick this only when you are standing behind the time "
 	                "below. Until it is ticked the day stays held."},
 	{"fieldname": "alvoraa_confirmed_out_time", "fieldtype": "Time",
 	 "label": "Confirmed Out Time", "insert_after": "alvoraa_held_confirmed",
-	 "allow_on_submit": 1, "depends_on": "eval:doc.alvoraa_held",
+	 "allow_on_submit": 1,
+	 # ALV-351: also on a missing-punch day the engine has not judged (rule set
+	 # saved but off) - payroll_rules_apply.attendance_onload sets the flag.
+	 "depends_on": "eval:doc.alvoraa_held || (doc.__onload && doc.__onload.alvoraa_missing_punch)",
 	 "mandatory_depends_on": "eval:doc.alvoraa_held_confirmed",
 	 "description": "The time the employee actually left, as confirmed by "
 	                "their manager."},

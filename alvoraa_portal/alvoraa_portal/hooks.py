@@ -159,6 +159,8 @@ doc_events = {
     },
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+        # ALV-351: shows HR the held-day confirm fields on a missing-punch day.
+        "onload": "alvoraa_portal.payroll_rules_apply.attendance_onload",
     },
     # ── Objectives must sit under a Key Result Area, when HR requires it ───
     # Enforced on the document, not only in the portal form: the rule is about

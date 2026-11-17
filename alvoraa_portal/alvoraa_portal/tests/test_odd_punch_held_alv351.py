@@ -73,6 +73,66 @@ class OddCountIsHeld(unittest.TestCase):
 		self.assertGreater(odd.total_quarters, 0)
 
 
+class HalfDays(unittest.TestCase):
+	"""Surbhi, 17 Nov 2026: hold a half day only when no half-day leave is
+	behind it. Frappe HR marks an approved half-day leave as status "Half Day"
+	with the leave linked; a "Half Day" with no leave is a short day."""
+
+	def test_alv351_a_half_day_leave_with_three_punches_is_measured_not_held(self):
+		v = day([hm(10, 30), hm(13, 0), hm(15, 30)], half_day_leave=True)
+		self.assertFalse(v.held)
+		self.assertTrue(v.half_leave)
+
+	def test_alv351_a_half_day_with_no_leave_and_three_punches_is_held(self):
+		v = day([hm(10, 30), hm(13, 0), hm(15, 30)], half_day_leave=False)
+		self.assertTrue(v.held)
+
+
+class Doc(dict):
+	"""Just enough of an Attendance document for the onload hook."""
+	__getattr__ = dict.get
+
+	def set_onload(self, key, value):
+		self.setdefault("__onload", {})[key] = value
+
+
+class FormShowsTheConfirmFields(unittest.TestCase):
+	"""Choice A: HR sees the confirm fields on a missing-punch day even while
+	the rule set is switched off."""
+
+	def run_onload(self, doc, has_rule_set=True, count=3):
+		import alvoraa_portal.payroll_rules_apply as apply
+		with patch.object(apply.frappe.db, "exists", return_value=has_rule_set), \
+				patch.object(apply, "_punches", return_value=(None, None, count, [])):
+			apply.attendance_onload(doc)
+		return (doc.get("__onload") or {}).get("alvoraa_missing_punch")
+
+	def present(self, **kw):
+		d = Doc(docstatus=1, status="Present", company="Co", employee="E",
+		        attendance_date="2026-11-01")
+		d.update(kw)
+		return d
+
+	def test_alv351_an_odd_day_with_a_rule_set_shows_them(self):
+		self.assertEqual(self.run_onload(self.present()), 1)
+		self.assertEqual(self.run_onload(self.present(), count=1), 1)
+
+	def test_alv351_an_even_day_does_not(self):
+		self.assertIsNone(self.run_onload(self.present(), count=2))
+
+	def test_alv351_a_company_with_no_rule_set_does_not(self):
+		self.assertIsNone(self.run_onload(self.present(), has_rule_set=False))
+
+	def test_alv351_leave_and_half_day_leave_do_not(self):
+		self.assertIsNone(self.run_onload(self.present(status="On Leave")))
+		self.assertIsNone(self.run_onload(
+			self.present(status="Half Day", leave_application="HR-LAP-1")))
+		self.assertEqual(self.run_onload(self.present(status="Half Day")), 1)
+
+	def test_alv351_a_draft_does_not(self):
+		self.assertIsNone(self.run_onload(self.present(docstatus=0)))
+
+
 class MonthSummaryReadsTheConfirmation(unittest.TestCase):
 	def test_alv351_the_month_summary_asks_for_both_confirm_fields(self):
 		"""The report, the slip and the leave card all go through month_summary.

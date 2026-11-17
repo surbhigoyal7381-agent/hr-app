@@ -6,6 +6,38 @@ These instructions are mandatory in every session. They override default behavio
 
 ---
 
+## 0. Verify before you say it
+
+**Say only what you have checked. Name the check. Label everything else.** This comes
+before every other rule here, because a confident wrong answer closes a question that
+silence would have left open — and it becomes a wrong decision before anybody notices.
+
+The full rule, with the seven habits that enforce it and the real failures behind each
+one, is `.claude/context/verify-before-you-say-it.md`. It binds every session and every
+agent. In short:
+
+1. **Never type an identifier you have not read in the source this session** — a
+   fieldname, settings key, DocType, path, branch, container or site. A plausible wrong
+   name fails silently and hands back an empty result that reads like an answer.
+2. **An empty result is not a finding.** "Not found" means either it is not there or you
+   looked in the wrong place. Rule out the second before reporting the first.
+3. **Name what you read** — checkout, worktree, branch SHA, site, container. This
+   repository has over 140 worktrees and the shared checkout is often months stale.
+4. **Scope words are claims.** *every · all · never · only · always · none* each need a
+   count or an enumeration. Otherwise write the smaller true sentence.
+5. **A green test is not evidence until it has failed for the right reason.** Break it,
+   watch that test fail, restore it. Commit first.
+6. **Read what a thing actually is before you touch it** — bind mount, symlink, shared
+   checkout, somebody else's branch.
+7. **Label every claim: proven · inferred · not checked.** "Not checked" is a complete
+   and respectable answer.
+
+When you turn out to have been wrong: say the earlier claim and the correction, in that
+order, in the first line. Then fix the ticket, the memory file and the context file, so
+the wrong version cannot be quoted back later.
+
+---
+
 ## 1. Branch discipline
 
 - **Work lands on `dev`, and only `dev` is pushed.** Develop on a short-lived slice branch in your own worktree (`.claude/worktrees/<slice-id>`), then bring it into `dev` without overwriting anyone — rebase, then `git merge --ff-only`. Do not commit to `main` without explicit instruction.
@@ -149,6 +181,8 @@ approves work, and none deploys.
 
 Shared context they all read, in `.claude/context/`:
 
+- `verify-before-you-say-it.md` — §0 above in full: the seven habits, the real failures
+  behind each one, and the read-back questions before any report goes out
 - `change-process.md` — §2 above, expanded so every agent applies it the same way
 - `frappe-conventions.md` — §1, §3, §4 and §5 above, expanded
 - `product-context.md` — who we serve, build status, competitive frame

@@ -425,6 +425,14 @@ jobs:
 
       - name: MariaDB settings required by Frappe
         run: |
+          # From 17 Nov 2026 the runner's MariaDB client requires an encrypted
+          # connection by default, and the throwaway mariadb:10.8 service above
+          # offers none: "ERROR 2026 (HY000): TLS/SSL error: SSL is required,
+          # but the server does not support it" - the job died here before a
+          # single test ran. The [client] group covers every later client call
+          # too (bench new-site loads its schema through the same client).
+          # Test database only; no live site is reached from here.
+          printf '[client]\nskip-ssl\n' > ~/.my.cnf
           mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL character_set_server='utf8mb4'"
           mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL collation_server='utf8mb4_unicode_ci'"
 

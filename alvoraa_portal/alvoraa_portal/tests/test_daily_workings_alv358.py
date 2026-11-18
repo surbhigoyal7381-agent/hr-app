@@ -172,10 +172,23 @@ class TestTheDays(DailyCase):
 			frappe.set_user("Administrator")
 
 
+def _take_out(doctype, name, table):
+	"""Remove the report's link first, so the test proves after_migrate PUTS it
+	back - not merely that an earlier run left it there."""
+	doc = frappe.get_doc(doctype, name)
+	rows = [r for r in doc.get(table) if r.link_to != REPORT]
+	if len(rows) != len(doc.get(table)):
+		doc.set(table, rows)
+		doc.flags.ignore_permissions = True
+		doc.save()
+		frappe.db.commit()
+
+
 class TestTheMenu(FrappeTestCase):
 	def test_it_sits_after_monthly_attendance_sheet_once(self):
 		if not frappe.db.exists("Workspace", "Shift & Attendance"):
 			self.skipTest("no Shift & Attendance workspace on this site")
+		_take_out("Workspace", "Shift & Attendance", "links")
 		payroll_menu.after_migrate()
 		payroll_menu.after_migrate()
 		w = frappe.get_doc("Workspace", "Shift & Attendance")
@@ -187,6 +200,7 @@ class TestTheMenu(FrappeTestCase):
 	def test_the_sidebar_has_it_once(self):
 		if not frappe.db.exists("Workspace Sidebar", "Shift & Attendance"):
 			self.skipTest("no Shift & Attendance sidebar on this site")
+		_take_out("Workspace Sidebar", "Shift & Attendance", "items")
 		payroll_menu.after_migrate()
 		payroll_menu.after_migrate()
 		items = [i.link_to for i in frappe.get_doc("Workspace Sidebar", "Shift & Attendance").items]

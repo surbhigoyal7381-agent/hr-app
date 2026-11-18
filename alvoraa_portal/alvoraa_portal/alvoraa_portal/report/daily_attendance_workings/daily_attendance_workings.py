@@ -18,16 +18,26 @@ off (`_rules_for_reading`), and it writes nothing.
 Two settled points (Surbhi, 18 Nov 2026):
   * a day with a punch missing shows HELD, as the rules hold it - not the four
     quarters DTC's own software charges;
-  * Fine is the grooming red deduction. It shows on the month's total row
-    only: grooming marks are read for the fine and nowhere else (slice 066,
-    PRIV-5, fenced by test_ac73), so this report never reads the marks or
-    their dates. The total comes from month_summary, like the slip's.
+  * Fine is the grooming red deduction. The month's total comes from
+    month_summary, like the slip's.
+
+Fine day by day (Surbhi, 19 Nov 2026; security check SEC-A..C, PRIV-A):
+grooming marks are read for the fine and nowhere else (slice 066, PRIV-5).
+This report shows the same fine per day, so it reads the marks - only:
+  * while grooming is switched on (grooming.is_on), as the slip does;
+  * for HR in scope (grooming.hr_scope) - never a System Manager alone or a
+    leaver's login; everyone else sees the month total only;
+  * through get_list, so the mark's own permission rule applies again;
+  * this one person, this month, the DATE only - no reason, no marker.
+The report must stay out of prepared-report mode: a prepared result is a
+saved file other report users could open, past this per-viewer gate.
 """
 
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, date_diff, flt, get_first_day, get_last_day, getdate
 
+import alvoraa_portal.grooming as grooming
 from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings.salary_components_and_workings import (
 	_may_read_days_of,
 	_rules_for_reading,
@@ -77,16 +87,17 @@ def execute(filters=None):
 	summary = month_summary(employee, emp.company, from_date, to_date,
 	                        rule_set=rule_set, ctx=ctx)
 	holidays = _holidays(emp, from_date, to_date)
+	fines, fines_hidden = _fine_days(employee, rows, from_date, to_date, summary)
 
 	data = []
 	for i in range(date_diff(to_date, from_date) + 1):
 		day = add_days(from_date, i)
-		data.append(_day(str(day), emp, rows.get(str(day)), ctx, holidays))
+		data.append(_day(str(day), emp, rows.get(str(day)), ctx, holidays, fines))
 	data.append(_totals(data, summary))
-	return _columns(), data, _message(summary, live, ctx, data)
+	return _columns(), data, _message(summary, live, ctx, data, fines_hidden)
 
 
-def _day(d, emp, att, ctx, holidays):
+def _day(d, emp, att, ctx, holidays, fines):
 	shift_name = (att.shift if att else None) or emp.default_shift
 	shift = ctx["shifts"].get(shift_name)
 	length = (shift[1] - shift[0]) if shift and shift[1] > shift[0] else None
@@ -107,6 +118,8 @@ def _day(d, emp, att, ctx, holidays):
 	# which gap was a break: it is not measured, exactly as the engine does.
 	if count >= 2 and count % 2 == 0:
 		row["break_minutes"] = int(round(minutes_on_break(gaps, first, last)))
+	# Set before any early return: HR may mark any open day, rowless or not.
+	row["fine"] = fines.get(d)
 
 	if emp.date_of_joining and d < str(emp.date_of_joining):
 		row.update(status="", remarks=_("Not yet joined"))
@@ -119,6 +132,8 @@ def _day(d, emp, att, ctx, holidays):
 			row.update(status="Holiday", remarks=holidays[d])
 		else:
 			row.update(status="", remarks=_("No attendance record for this day"))
+		if row["fine"]:
+			row["remarks"] = (row["remarks"] + ". " + _("Grooming red.")).lstrip(". ")
 		return row
 
 	v = judge(att, ctx)
@@ -150,6 +165,8 @@ def _day(d, emp, att, ctx, holidays):
 	row["red"] = (v.reds or None) if not v.absent else None
 	row["green"] = (v.greens or None) if not v.absent else None
 	reasons = list(v.reasons)
+	if fines.get(d):
+		reasons.append(_("Grooming red."))
 	if count >= 3 and count % 2 == 1:
 		reasons.append(_("Break not measured: an odd number of punches."))
 	row["remarks"] = " ".join(reasons)
@@ -179,6 +196,35 @@ def _totals(days, s):
 	}
 
 
+def _fine_days(employee, rows, from_date, to_date, s):
+	"""({date: amount}, hidden) - the days a grooming red was charged.
+
+	The slip's own rule (payroll_slip.month_summary): distinct days, never on
+	a full-day leave or absence, at most s.grooming_days of them - here the
+	earliest. The amounts are the month's charge handed out day by day at the
+	mark rate, so they always add up to the total, and when the legal cap cut
+	the month no day shows more than was really charged.
+	"""
+	if not grooming.is_on() or not s.grooming_days:
+		return {}, False
+	if employee not in grooming.hr_scope(frappe.session.user, [employee]):
+		return {}, True
+	not_charged = {d for d, r in rows.items() if r.status in ("On Leave", "Absent")}
+	days = sorted({str(d) for d in frappe.get_list(
+		grooming.MARK,
+		filters={"employee": employee, "docstatus": 1,
+		         "mark_date": ("between", [from_date, to_date])},
+		pluck="mark_date", limit_page_length=0)} - not_charged)[:s.grooming_days]
+	left, out = flt(s.grooming_deduction, 2), {}
+	for d in days:
+		amount = min(flt(s.mark_rate, 2), left)
+		if amount <= 0:
+			break
+		out[d] = amount
+		left = flt(left - amount, 2)
+	return out, False
+
+
 def _holidays(emp, from_date, to_date):
 	"""Date -> description, from the list Frappe itself would use on that day:
 	the shift's list when the shift names one, else the person's own."""
@@ -201,7 +247,7 @@ def _clock(minutes):
 	return "%02d:%02d" % (m // 60, m % 60)
 
 
-def _message(s, live, ctx=None, days=()):
+def _message(s, live, ctx=None, days=(), fines_hidden=False):
 	bits = []
 	if any(r.get("is_special") for r in days):
 		bits.append(_("<b>*</b> Special day: a deduction on this day counts {0} times for staff "
@@ -213,9 +259,12 @@ def _message(s, live, ctx=None, days=()):
 	bits.append(_("Every day is judged exactly as the salary working judges it. A day with "
 	              "a punch missing is <b>Held</b>: neither paid nor deducted until HR "
 	              "confirms the time."))
-	bits.append(_("Fine (grooming reds) is shown for the month only, on the total row."))
+	if fines_hidden:
+		bits.append(_("Fine (grooming reds) is shown day by day only to HR who may see this "
+		              "person's grooming reds. You see the month's total only."))
 	if s.grooming_capped:
-		bits.append(_("The grooming fines were capped by the legal limit."))
+		bits.append(_("The grooming fines were capped by the legal limit, so the last "
+		              "day's fine is less than the full rate, or nothing."))
 	return "<br>".join(bits)
 
 

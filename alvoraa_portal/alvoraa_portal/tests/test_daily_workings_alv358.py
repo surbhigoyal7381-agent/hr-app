@@ -16,10 +16,13 @@ import io
 import json
 import os
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate, nowdate
 
+import alvoraa_portal.grooming as grooming
 from alvoraa_portal import payroll_menu
 from alvoraa_portal.alvoraa_portal.report.daily_attendance_workings import (
 	daily_attendance_workings as report,
@@ -306,6 +309,132 @@ class TestTheDays(DailyCase):
 				self.run_it()
 		finally:
 			frappe.set_user("Administrator")
+
+
+class TestTheFineDayByDay(DailyCase):
+	"""Surbhi, 19 Nov 2026: the grooming fine day by day, to HR in scope only.
+
+	The month's figures come from month_summary, which needs a whole grade and
+	rate set-up to price a mark; that pricing is the slip's and is tested there.
+	Here a fixed summary (three days at 100) stands in for it, and what is
+	tested is what this report owns: who sees the days, which days, and that
+	they add up to the month's charge.
+	"""
+
+	def mark(self, i):
+		d = add_days(self.start, i)
+		doc = frappe.get_doc({"doctype": grooming.MARK, "employee": self.emp, "mark_date": d,
+		                      "reason": "Not in uniform", "marked_as": "HR"})
+		doc.name = frappe.generate_hash(length=10)
+		doc.docstatus = 1
+		doc.db_insert()
+		return str(d)
+
+	def run_with(self, days=3, rate=100, total=300, capped=0, on=True, user=None):
+		real = report.month_summary
+
+		def fixed(*a, **kw):
+			s = real(*a, **kw)
+			s.grooming_days, s.mark_rate, s.grooming_deduction = days, rate, total
+			s.grooming_capped = capped
+			return s
+
+		if user:
+			frappe.set_user(user)
+		try:
+			with patch.object(report, "month_summary", fixed), \
+			     patch.object(grooming, "is_on", return_value=on):
+				_cols, rows, msg = self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+		return {r["date"]: r for r in rows if not r.get("is_total")}, rows[-1], msg
+
+	def user(self, email, role, employee_status=None):
+		if not frappe.db.exists("User", email):
+			u = frappe.get_doc({"doctype": "User", "email": email, "first_name": "Fine",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles(role)
+		if employee_status:
+			e = frappe.get_doc({"doctype": "Employee", "first_name": "Fine Viewer",
+			                    "company": base.COMPANY, "date_of_birth": "1990-01-01",
+			                    "date_of_joining": str(self.start), "gender": base._gender(),
+			                    "status": employee_status, "user_id": email,
+			                    "relieving_date": str(self.start) if employee_status == "Left" else None})
+			e.flags.ignore_permissions = True
+			e.flags.ignore_mandatory = True
+			e.insert()
+		return email
+
+	def test_hr_in_scope_sees_each_charged_day_and_they_add_up(self):
+		for i in (1, 4, 6, 8):
+			self.day(i, ("10:00:00", "18:00:00"))
+		self.day(5, (), status="Absent")
+		charged = [self.mark(i) for i in (1, 4, 6)]
+		absent = self.mark(5)                       # never charged on an absence
+		self.mark(8)                                # a fourth day: past the month's three
+		days, total, _msg = self.run_with()
+		self.assertEqual({d: r["fine"] for d, r in days.items() if r.get("fine")},
+		                 {d: 100 for d in charged})
+		self.assertFalse(days[absent].get("fine"))
+		self.assertEqual(sum(r.get("fine") or 0 for r in days.values()), total["fine"])
+		self.assertIn("Grooming red.", days[charged[0]]["remarks"])
+		# PRIV-A: the date and the amount only - never the reason or the marker.
+		self.assertNotIn("uniform", json.dumps(days, default=str))
+
+	def test_a_mark_on_a_day_with_no_attendance_row_still_shows(self):
+		d = self.mark(2)
+		days, _total, _msg = self.run_with(days=1, total=100)
+		self.assertEqual(days[d]["fine"], 100)
+
+	def test_when_the_cap_cut_the_month_no_day_shows_more_than_was_charged(self):
+		for i in (1, 2, 3):
+			self.day(i, ("10:00:00", "18:00:00"))
+			self.mark(i)
+		days, total, msg = self.run_with(total=150, capped=1)
+		fines = [days[str(add_days(self.start, i))].get("fine") or 0 for i in (1, 2, 3)]
+		self.assertEqual(fines, [100, 50, 0])
+		self.assertEqual(sum(fines), total["fine"])
+		self.assertIn("capped", msg)
+
+	def test_with_grooming_off_no_mark_is_read(self):
+		self.day(1, ("10:00:00", "18:00:00"))
+		self.mark(1)
+		read = []
+		real = frappe.get_list
+
+		def spy(doctype, *a, **kw):
+			read.append(doctype)
+			return real(doctype, *a, **kw)
+
+		with patch.object(frappe, "get_list", spy):
+			days, _total, _msg = self.run_with(on=False)
+		self.assertNotIn(grooming.MARK, read)
+		self.assertFalse(any(r.get("fine") for r in days.values()))
+
+	def test_a_system_manager_alone_cannot_open_the_report_at_all(self):
+		"""Stricter than "total only": without an HR role there is no Employee
+		read, so the report refuses before any fine is worked out."""
+		self.day(1, ("10:00:00", "18:00:00"))
+		self.mark(1)
+		who = self.user("alv358.sysmgr@example.com", "System Manager")
+		with self.assertRaises(frappe.PermissionError):
+			self.run_with(days=1, total=100, user=who)
+
+	def test_a_leavers_hr_login_sees_the_month_total_only(self):
+		self.day(1, ("10:00:00", "18:00:00"))
+		self.mark(1)
+		who = self.user("alv358.leaver.hr@example.com", "HR Manager", employee_status="Left")
+		days, _total, msg = self.run_with(days=1, total=100, user=who)
+		self.assertFalse(any(r.get("fine") for r in days.values()))
+		self.assertIn("only to HR", msg)
+
+	def test_the_report_never_runs_as_a_saved_prepared_report(self):
+		"""SEC-B: a prepared result is a file other report users could open."""
+		self.assertFalse(frappe.db.get_value("Report", REPORT, "prepared_report"))
+		with open(os.path.join(os.path.dirname(report.__file__),
+		                       "daily_attendance_workings.json")) as f:
+			self.assertFalse(json.load(f)["prepared_report"])
 
 
 def _take_out(doctype, name, table):

@@ -515,6 +515,9 @@ ranking, any AI feature, any export other than HR's register. No branch or compa
 §4: no scorecard). If grooming ever fed an appraisal, it would become a performance record and counsel's
 6-month rule would bind it - that is a separate decision.
 *Test:* SEC-12 (b), the occurrence test.
+*19 Nov 2026 (Surbhi, ALV-358):* the Daily Attendance Workings report shows the fine per day to HR in
+scope (`grooming.hr_scope`), date and amount only. Same purpose - the fine - in more detail, not a new use.
+The report's folder is named in the test_ac73 fence.
 
 **PRIV-6 · HR sees marks per marker every month, including HR's own.**
 Configuration only: two saved Report Builder views on Grooming Mark, scoped by SEC-4's hook - (1) by

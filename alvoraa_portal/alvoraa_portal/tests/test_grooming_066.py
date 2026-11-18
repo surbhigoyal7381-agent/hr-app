@@ -920,7 +920,10 @@ class TestHRViews(Case):
 ALLOWED = re.compile(r"(^|/)(grooming\.py|payroll_slip\.py|hooks\.py|tests/.*|"
                      r"alvoraa_portal/doctype/grooming_(mark|review)/.*|"
                      r"alvoraa_portal/report/(grooming_review_pending|marks_per_marker_per_month|"
-                     r"asked_to_look_at_not_yet_answered|people_with_grooming_reds_this_month)/.*)$")
+                     r"asked_to_look_at_not_yet_answered|people_with_grooming_reds_this_month|"
+                     # The fine day by day, to HR in scope only (Surbhi, 19 Nov 2026;
+                     # ALV-358). Same purpose - the fine - in more detail.
+                     r"daily_attendance_workings)/.*)$")
 
 
 class TestPurposeFence(FrappeTestCase):

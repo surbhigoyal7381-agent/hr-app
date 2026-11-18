@@ -10,9 +10,15 @@ knowledge** — including yours.
 
 ## What is shared, and why it bites
 
+**The machine is a Mac (zsh) as of 18 Nov 2026.** Paths are
+`/Users/mac/hr-app` and `/Users/mac/hrlocal-data`. Container names did not
+change. Older notes carry `C:/Surbhi-Git/...` and PowerShell quoting; translate
+them rather than running them as written.
+
+
 | Shared thing | What goes wrong | Seen |
 |---|---|---|
-| The main checkout `C:/Surbhi-Git/hr-app` | Every session's unsaved edits sit in the same folder. `git add -A`, `git stash`, `git checkout .` or `git reset --hard` there takes or destroys someone else's work. | 2026-09-11: another session's unfinished CLAUDE.md section, and its `field_checkin.py` and `hooks.py` edits, showed up in this session's `git status` and nearly went into its commit |
+| The main checkout `/Users/mac/hr-app` | Every session's unsaved edits sit in the same folder. `git add -A`, `git stash`, `git checkout .` or `git reset --hard` there takes or destroys someone else's work. | 2026-09-11: another session's unfinished CLAUDE.md section, and its `field_checkin.py` and `hooks.py` edits, showed up in this session's `git status` and nearly went into its commit |
 | The local bench `hrlocal-bench` | It runs code from the main checkout only (`alvoraa_portal/`, `hrms/`, `alvoraa_goals/` are mounted). Whatever is in that folder is what everyone is testing. | 2026-09-08: a hand-copied `subscription.py` mixed two sessions' work, and tests failed in a way that looked like a bug |
 | `test_site` and `ppj.localhost` | Two test runs at once deadlock the database and fail for no real reason. | 2026-09-10: three suites run together gave false failures that were first reported as real |
 | `origin/dev` | Pushes you did not see change the files under you. A quick second push cancels the first push's CI run. | 2026-09-07 and 2026-09-08: two sessions edited the same file; 2026-09-13: three commits never got their own CI run |
@@ -116,7 +122,7 @@ the bench to run them.
 
    ```bash
    git rebase dev                                        # in the worktree: on top of local dev
-   git -C C:/Surbhi-Git/hr-app merge --ff-only slice/<slice-id>
+   git -C /Users/mac/hr-app merge --ff-only slice/<slice-id>
    ```
 
    `--ff-only` makes no merge commit and refuses if `dev` moved in the meantime; rebase

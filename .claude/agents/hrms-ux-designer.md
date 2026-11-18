@@ -356,7 +356,7 @@ There is no design check without one.** A markdown description is not enough for
 user to give feedback on.
 
 - Save the prototype outside the repo, because it holds real tenant data:
-  `C:/Surbhi-Git/hrlocal-data/prototypes/<slice-id>/prototype-v<n>.html`.
+  `/Users/mac/hrlocal-data/prototypes/<slice-id>/prototype-v<n>.html`.
 - **Publish it for review.** If you have the Artifact tool, publish it and put the link
   in `01b`. If you do not, say so at the top of your handoff note — the session that ran
   you publishes it and gives the user the link.
@@ -386,7 +386,7 @@ personas in scope and the ones you are deliberately leaving out.
   `/api/method/login`; move between portal panels with `switchPanel(name)`. Capture at
   least one real person per persona in scope, at **1440 × 900** and **390 × 844**.
 - Screenshots contain tenant data. Save them under
-  `C:/Surbhi-Git/hrlocal-data/ux-review/<YYYY-MM-DD>/`, **never in the repo.**
+  `/Users/mac/hrlocal-data/ux-review/<YYYY-MM-DD>/`, **never in the repo.**
 - **Measure, do not eyeball:** page width beyond the screen, tap targets under 44px,
   field text under 16px, text under 12px, console and server errors.
 - **Check facts in the data before calling something a UI bug.** A read-only console

@@ -42,7 +42,13 @@ the wrong version cannot be quoted back later.
 
 - **Work lands on `dev`, and only `dev` is pushed.** Develop on a short-lived slice branch in your own worktree (`.claude/worktrees/<slice-id>`), then bring it into `dev` without overwriting anyone — rebase, then `git merge --ff-only`. Do not commit to `main` without explicit instruction.
 - Before any git operation, confirm which branch and which folder you are in.
-- **Several sessions share the main checkout `C:/Surbhi-Git/hr-app` and the local bench.** Never run `git stash`, `git reset --hard`, `git checkout .`, `git restore .`, `git clean`, `git add -A`, `git add .` or `git commit -a` there — they take or destroy other sessions' unsaved work. Stage by path. The full rules are in `.claude/context/parallel-work.md`. (Rule given 2026-09-14.)
+- **The development machine is a Mac (zsh).** The checkout is `/Users/mac/hr-app`; data
+  that must stay out of the repo lives in `/Users/mac/hrlocal-data`. Write Mac commands,
+  not PowerShell: forward slashes, `~` for home, single quotes, heredocs for long text.
+  The Docker container names are unchanged (`hrlocal-bench`, `hrlocal-mariadb`, ...).
+  Before 18 Nov 2026 this was a Windows PC at `C:/Surbhi-Git/hr-app`, so older notes and
+  scripts may still carry Windows paths and PowerShell quoting — translate them.
+- **Several sessions share the main checkout `/Users/mac/hr-app` and the local bench.** Never run `git stash`, `git reset --hard`, `git checkout .`, `git restore .`, `git clean`, `git add -A`, `git add .` or `git commit -a` there — they take or destroy other sessions' unsaved work. Stage by path. The full rules are in `.claude/context/parallel-work.md`. (Rule given 2026-09-14.)
 - `main` is reserved for deliberate production releases only.
 - **Work moves through three stages, and each step forward needs the user to say so explicitly.** (Rule given 2026-09-11.)
   1. **Local** — develop and test on the local instance (the Docker bench `hrlocal-bench`). Commit locally if useful, but **do not push**.

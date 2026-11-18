@@ -7,7 +7,7 @@ oblige. **This file says what to build so those obligations are true, demonstrab
 hard to regress.**
 
 > **How to read the Status column.** I could not read the code at
-> `C:\Surbhi-Git\hr-app`, so **every status is `?` — unknown until verified.** The
+> `/Users/mac/hr-app`, so **every status is `?` — unknown until verified.** The
 > first job for whoever gets repo access is to turn each `?` into `Built`, `Partial`
 > or `Missing`. Do not schedule any of this until that pass is done: half of it may
 > already exist, and building it twice is the expensive mistake.

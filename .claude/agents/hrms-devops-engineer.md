@@ -227,11 +227,13 @@ Each of these cost real time in this repo. Check them, and add new ones as they 
     production gate is a human starting the deploy, nothing else. Do not write a plan
     that assumes an approval prompt exists; check the environment's protection rules
     and say what they really are.
-19. **Git Bash on Windows mangles `ref:path` arguments and leading-slash API paths**
-    (`gh api /user/...`, `docker run -v /tmp/...`). The first version of the nginx gate
-    passed a deliberately broken config because nothing was actually mounted. **A zero
-    from a failed command looks exactly like a zero from a clean file** — confirm the
-    command ran before you believe its result.
+19. **Confirm a command ran before you believe its result.** **A zero from a failed
+    command looks exactly like a zero from a clean file.** The first version of the nginx
+    gate passed a deliberately broken config, because nothing was actually mounted — the
+    old Windows Git Bash setup mangled the `ref:path` argument and the leading-slash
+    paths (`gh api /user/...`, `docker run -v /tmp/...`). The dev machine is a **Mac
+    (zsh)** since 18 Nov 2026, so that particular mangling is gone, but the rule is not:
+    check the command ran, do not read its exit code alone.
 20. **Production pulls an image only during a deploy** — there is no `pull_policy` in
     the compose files. So a rollback is "redeploy the previous tag with migrations off",
     and you must know whether that tag exists **in the package you are pulling from**.

@@ -57,7 +57,7 @@ import secrets
 import frappe
 import hrms.alvoraa_org_structure.settings as org_settings
 from frappe import _
-from frappe.utils import add_to_date, cint, cstr, now
+from frappe.utils import add_to_date, cint, cstr, now, today
 
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_joiner_submission.alvoraa_joiner_submission import (
 	JOINER_FIELDS,
@@ -66,6 +66,7 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_joiner_submission.alvoraa_joi
 from alvoraa_portal.field_app_limits import HR_KEY, _limited
 
 DOCTYPE = "Alvoraa Joiner Submission"
+ACCESS_LOG = "Alvoraa Photo Access Log"
 HR_ROLES = ("HR Manager", "System Manager")
 ENDPOINT = "joiner_invite"
 
@@ -656,33 +657,53 @@ def export_submission(submission=None):
 
 
 def log_an_export(submission, masked):
-	"""One line per export, and **whether it was masked** (counsel 9).
+	"""Record one export of a joiner's details, and **whether it was masked**
+	(counsel's ruling 9).
+
+	**The control is the row in `Alvoraa Photo Access Log`, not the log line.**
+	The row is durable, HR and System Manager can read it, and it has no purge
+	job. It says who, when, which submission (`reference_name`) and, in the
+	`source` option, masked or not. `employee` stays empty: a joiner has no
+	Employee. Never a field value, never a file.
 
 	A named function with one job, so a fourth export cannot be added without
-	one: `test_joiner_079` runs a table test over every export endpoint in these
-	modules and asserts exactly one line per call. Never a field value, never a
-	file.
+	one: `test_joiner_079` runs a table test over every export endpoint and
+	asserts exactly one row and one line per call.
 
-	**This line does not reach a file at any tenant today, and that is not
-	something the level can fix.** `frappe/utils/logger.py:12` sets the default
-	level to `WARNING` on a dev server and **`ERROR` everywhere else**;
-	`DEV_SERVER` is unset in our images and **no site in this product sets
-	`log_level`** - both read on 1 Nov 2026. So `info` is dropped, and so is
-	`warning`. The only level that survives is `error`, and an export is not an
-	error.
-
-	So it stays `info`, which is the honest level for an audit trace, and
-	**counsel's ruling 9 is not discharged by this code alone**: it needs
-	`log_level: "INFO"` in the bench's own configuration. That is a DevOps change
-	and a **blocker for switching the form on at a tenant with real joiners**,
-	recorded in `03-implementation-notes.md` beside ALV-215. The same finding
-	silences 078's invite line and the retention counts, which is
-	`joiner_housekeeping`'s own docstring promising something that does not
-	happen.
+	The `info` line below is a developer trace and nothing more. It reaches no
+	file at any tenant: `frappe/utils/logger.py:12` sets the default level to
+	`WARNING` on a dev server and `ERROR` elsewhere. **Setting `log_level` does
+	not fix that**: nothing in the installed frappe or bench reads `log_level`
+	from `site_config.json` or `common_site_config.json`, so there is no
+	supported setting for it. And the file would be the wrong place anyway,
+	because `RotatingFileHandler` keeps about 2 MB and then overwrites the oldest
+	records. Do not re-derive that fix. The row is the fix.
 	"""
 	frappe.logger("alvoraa").info(
 		f"joiner submission exported: {submission} by {frappe.session.user} "
 		f"at {now()}, masked={bool(masked)}")
+	_record_joiner_event(
+		"Joiner export (masked)" if masked else "Joiner export (not masked)",
+		submission)
+
+
+def _record_joiner_event(source, submission):
+	"""Write the durable row for an export or a purge. The same shape as
+	`employee_documents_read`'s writer: never let the record stop somebody
+	doing their job, so a failure is logged and swallowed."""
+	try:
+		frappe.get_doc({
+			"doctype": ACCESS_LOG,
+			"reference_name": submission,
+			"source": source,
+			"viewed_by": frappe.session.user,
+			"viewed_at": now(),
+			"viewed_on_date": today(),
+		}).insert(ignore_permissions=True)
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(f"Could not record {source} on {submission}",
+		                 "Joiner access log")
 
 
 @frappe.whitelist(methods=["POST"])
@@ -699,4 +720,5 @@ def purge_submission(submission=None):
 	done = erase(doc.name, why="HR purged it on request", force=True)
 	frappe.logger("alvoraa").info(
 		f"joiner submission purged: {doc.name} by {frappe.session.user} at {now()}")
+	_record_joiner_event("Joiner purge", doc.name)
 	return {"erased": bool(done)}

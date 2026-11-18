@@ -7886,6 +7886,11 @@ var OCS_API = "alvoraa_portal.people_settings.";
 var OCS_PROFILE_KEY = "alvoraa_positions_profile_fields";
 var OCS_DOCS_KEY = "alvoraa_positions_document_types";
 var OCS_MY_KEY = "alvoraa_my_profile_fields";
+/* ALV-353. The joiner's OWN document tick, and the compulsory list inside it.
+   OCS_DOCS_KEY above is the STAFF tick (whose employee documents are readable on
+   a profile) and is not this one. */
+var OCS_JOINER_DOCS_KEY = "alvoraa_joiner_document_types";
+var OCS_JOINER_DOCS_NEED_KEY = "alvoraa_joiner_required_documents";
 /* Slice 079. Four keys, and `required` is a separate key per surface because it
    means two different things: on the joiner's form it blocks the send, on My
    Profile it only asks again. One shared key would make a detail compulsory on
@@ -7963,6 +7968,22 @@ function ocsWords(kind) {
               + "the file itself — {0} people today ({1}).", [people, roles]),
       c1: drT("Shown"), c2: "", tie: "",
       preview: drT("Show me what a reader sees")
+    };
+  }
+  if (kind === "joinerdocs") {
+    return {
+      title: drT("Documents a new joiner is asked to upload"),
+      lead: drT("These are the documents the joining form asks a new starter to "
+              + "send a photograph of before their first day. A joiner is asked "
+              + "for no document at all until you tick it here. This does not "
+              + "change whose documents staff can open on a profile."),
+      c1: drT("Asked for"), c2: drT("Must answer for"),
+      tie: drT("A document you tick under {0} shows the joiner a {1} beside it, "
+             + "and they cannot send the form until they have sent a photograph "
+             + "or said they will bring it on their first day.",
+             ["<b>" + esc(drT("Must answer for")) + "</b>",
+              '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>"]),
+      preview: drT("Show me the form a joiner fills in")
     };
   }
   if (kind === "my") {
@@ -8121,6 +8142,7 @@ function ocsPaint() {
      perfectly good answer, and it is the shipped default. */
   var asked = d.joiner_fields || [];
   var reqd = d.joiner_required_fields || [];
+  var jdocs = d.joiner_document_types || [];
   var notReady = d.joiner_not_ready || [];
   /* ALV-304. Which of the values is still unset, BY KEY. The labels beside it
      are what HR reads; the keys are how this card can tell "the employer chose
@@ -8162,6 +8184,14 @@ function ocsPaint() {
         : '<p class="gp-hint">' + esc(drT(
             "Nothing. A joiner is asked for no details at all until you tick "
             + "something here.")) + "</p>")
+    + (jdocs.length
+        ? '<p class="gp-hint">' + esc(drT("Documents a joiner is asked to upload:")) + "</p>"
+          + ocsChips(jdocs.map(function (t) {
+              return t.name + (t.known ? "" : " \u00b7 " + drT("no longer exists"));
+            }))
+        : '<p class="gp-hint">' + esc(drT(
+            "No documents. A joiner is asked to upload nothing until you tick "
+          + "something here.")) + "</p>")
     + '<p class="gp-hint">' + esc(
         (d.joiner_required_documents || []).length
           ? drT("{0} document type(s) must be answered for: {1}. A photograph or "
@@ -8216,6 +8246,8 @@ function ocsPaint() {
     + "</span></span></label>"
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joiner">'
     + esc(drT("Add or remove details")) + "</button>"
+    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joinerdocs">'
+    + esc(drT("Add or remove documents")) + "</button>"
     /* Once everything is set the amber block goes, and with it the button
        inside it - which would leave the notice text unchangeable for ever. So
        when there is no amber block the button stands in the action row instead.
@@ -8235,9 +8267,9 @@ function ocsPick(kind) {
   var d = OCS.data || {};
   OCS.kind = kind;
   OCS.opener = document.activeElement;
-  if (kind === "docs" && !OCS.types) {
+  if ((kind === "docs" || kind === "joinerdocs") && !OCS.types) {
     gpFetch(OCS_API + "get_document_type_choices", {}).then(function (t) {
-      OCS.types = t; ocsPick("docs");
+      OCS.types = t; ocsPick(kind);
     }, function (e) { toast((e && e.message) || drT("Could not load that. Try again."), "err"); });
     return;
   }
@@ -8246,6 +8278,7 @@ function ocsPick(kind) {
   (kind === "docs" ? (d.document_types || []).map(function (t) { return t.name; })
    : kind === "my" ? (d.my_profile_fields || [])
    : kind === "joiner" ? (d.joiner_fields || [])
+   : kind === "joinerdocs" ? (d.joiner_document_types || []).map(function (t) { return t.name; })
    : (d.profile_fields || [])).forEach(function (v) { OCS.pick[v] = 1; });
   /* The SECOND tick, which only exists on a ticked row (078 §17.2, and the
      prototype draws it inside the picker rather than as a second dialog).
@@ -8253,6 +8286,7 @@ function ocsPick(kind) {
      joiner's send and only asks again on My Profile - which is why they are two
      settings and not one. */
   (kind === "joiner" ? (d.joiner_required_fields || [])
+   : kind === "joinerdocs" ? (d.joiner_required_documents || [])
    : kind === "my" ? (d.my_profile_required_fields || [])
    : []).forEach(function (v) { OCS.need[v] = 1; });
   ocsDialog();
@@ -8291,7 +8325,7 @@ function ocsRow(value, name, sub, chip, w) {
 function ocsRows() {
   var d = OCS.data || {};
   var w = ocsWords(OCS.kind);
-  if (OCS.kind === "docs") {
+  if (OCS.kind === "docs" || OCS.kind === "joinerdocs") {
     var types = (OCS.types && OCS.types.types) || [];
     var byCat = {}, order = [];
     types.forEach(function (t) {
@@ -8390,7 +8424,7 @@ function ocsSummary() {
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
   var people = (OCS.data || {}).audience_count || 0;
   var sensCats = (OCS.types && OCS.types.sensitive_categories) || [];
-  var sens = OCS.kind === "docs"
+  var sens = (OCS.kind === "docs" || OCS.kind === "joinerdocs")
     ? chosen.filter(function (n) {
         var t = ((OCS.types && OCS.types.types) || []).filter(function (x) { return x.name === n; })[0];
         return t && sensCats.indexOf(t.category) >= 0;
@@ -8412,6 +8446,11 @@ function ocsSummary() {
           ? drT("Save — {0} they may change, {1} we keep asking for",
                 [chosen.length, needCount])
           : drT("Save — an employee may change nothing"))
+      : OCS.kind === "joinerdocs"
+        ? (chosen.length
+            ? drT("Save — {0} documents asked for, {1} must be answered for",
+                  [chosen.length, needCount])
+            : drT("Save — ask a joiner for no documents"))
       : OCS.kind === "joiner"
         ? (chosen.length
             ? drT("Save — {0} asked for, {1} must be filled in",
@@ -8421,7 +8460,20 @@ function ocsSummary() {
             ? drT("Save — {0} details, seen by {1} people", [chosen.length, people])
             : drT("Save — show a name and a job role only"));
   /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
-  hmEl("ocs-sum").innerHTML = sens.length
+  hmEl("ocs-sum").innerHTML = sens.length && OCS.kind === "joinerdocs"
+    /* Not the Positions sentence: the joiner tick does not change who can open
+       an employee's documents, and saying it did would be the old coupling in
+       words. */
+    ? '<span class="ocs-warn">' + esc(
+        (sens.length === 1
+          ? drT("1 of these is an identity, statutory, verification, employment "
+              + "or address document.")
+          : drT("{0} of these are identity, statutory, verification, employment "
+              + "or address documents.", [sens.length]))
+        + " "
+        + drT("A joiner will be asked to send a photograph of each. This does "
+            + "not change who can open a current employee's documents.")) + "</span>"
+    : sens.length
     ? '<span class="ocs-warn">' + esc(
         (sens.length === 1
           ? drT("1 of these is an identity, statutory, verification, employment "
@@ -8456,9 +8508,11 @@ function ocsClose() {
 
 function ocsSave() {
   var key = OCS.kind === "docs" ? OCS_DOCS_KEY
+          : OCS.kind === "joinerdocs" ? OCS_JOINER_DOCS_KEY
           : OCS.kind === "my" ? OCS_MY_KEY
           : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
   var needKey = OCS.kind === "joiner" ? OCS_JOINER_NEED_KEY
+              : OCS.kind === "joinerdocs" ? OCS_JOINER_DOCS_NEED_KEY
               : OCS.kind === "my" ? OCS_MY_NEED_KEY : null;
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
   /* Only a ticked row can be compulsory, so the required list is pruned here as
@@ -8483,7 +8537,9 @@ function ocsSave() {
     ocsLoad();
     toast(key === OCS_DOCS_KEY
       ? drT("Saved. {0} document types are now shown on the Positions page.", [n])
-      : drT("Saved."), "ok");
+      : key === OCS_JOINER_DOCS_KEY
+        ? drT("Saved. A joiner is now asked for {0} documents.", [n])
+        : drT("Saved."), "ok");
   }, function (e) {
     btn.disabled = false;
     toast(mayHaveGone(e)
@@ -8510,6 +8566,15 @@ function ocsPreview() {
       ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
         + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
       : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>";
+  } else if (OCS.kind === "joinerdocs") {
+    body = chosen.length
+      ? "<p>" + esc(drT("A joiner would be asked to send a photograph of:")) + "</p><ul>"
+        + chosen.map(function (n) {
+            return "<li>" + esc(n)
+              + (OCS.need[n] ? '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>" : "")
+              + "</li>";
+          }).join("") + "</ul>"
+      : "<p>" + esc(drT("A joiner would not be asked for any document.")) + "</p>";
   } else if (OCS.kind === "joiner") {
     /* A facsimile of the joiner's own first screen, IN THE JOINER'S OWN WORDS.
        Nobody "reads" a joining form, so neither the button nor this sheet calls
@@ -8719,6 +8784,7 @@ document.addEventListener("click", function (e) {
   else if (what === "pick-docs") ocsPick("docs");
   else if (what === "pick-my") ocsPick("my");
   else if (what === "pick-joiner") ocsPick("joiner");
+  else if (what === "pick-joinerdocs") ocsPick("joinerdocs");
   else if (what === "cancel") ocsClose();
   else if (what === "ok") ocsSave();
   else if (what === "told") ocsTold();

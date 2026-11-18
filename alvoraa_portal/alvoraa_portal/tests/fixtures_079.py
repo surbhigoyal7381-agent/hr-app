@@ -58,6 +58,7 @@ def switch_the_form_off():
 	for key in list(TENANT) + ["alvoraa_joiner_fields",
 	                           "alvoraa_joiner_required_fields",
 	                           "alvoraa_joiner_required_documents",
+	                           "alvoraa_joiner_document_types",
 	                           "alvoraa_my_profile_required_fields"]:
 		frappe.db.set_default(key, "")
 	frappe.db.commit()
@@ -66,9 +67,9 @@ def switch_the_form_off():
 def a_document_type(required=False):
 	"""One ticked document type, optionally compulsory.
 
-	It is ticked through `alvoraa_positions_document_types`, which is the one
-	list `ticked_types()` reads - the joiner's form offers what the organisation
-	already chose to collect, so a type nobody chose is never asked for.
+	It is ticked through `alvoraa_joiner_document_types`, the joiner's own list
+	(ALV-353) - a type nobody chose for joiners is never asked for. The staff
+	list, `alvoraa_positions_document_types`, is deliberately left alone.
 	"""
 	if not frappe.db.exists(DOC_TYPE, DOC_NAME):
 		frappe.get_doc({
@@ -78,7 +79,7 @@ def a_document_type(required=False):
 			"collect_from": "Employee",
 			"description": "Invented for the 079 tests. Not an identity document.",
 		}).insert(ignore_permissions=True)
-	frappe.db.set_default("alvoraa_positions_document_types", DOC_NAME)
+	frappe.db.set_default("alvoraa_joiner_document_types", DOC_NAME)
 	frappe.db.set_default("alvoraa_joiner_required_documents",
 	                      DOC_NAME if required else "")
 	frappe.db.commit()

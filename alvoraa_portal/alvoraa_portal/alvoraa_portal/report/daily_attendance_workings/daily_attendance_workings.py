@@ -83,14 +83,19 @@ def execute(filters=None):
 		day = add_days(from_date, i)
 		data.append(_day(str(day), emp, rows.get(str(day)), ctx, holidays))
 	data.append(_totals(data, summary))
-	return _columns(), data, _message(summary, live)
+	return _columns(), data, _message(summary, live, ctx, data)
 
 
 def _day(d, emp, att, ctx, holidays):
 	shift_name = (att.shift if att else None) or emp.default_shift
 	shift = ctx["shifts"].get(shift_name)
 	length = (shift[1] - shift[0]) if shift and shift[1] > shift[0] else None
-	row = {"date": d, "shift": shift_name, "shift_minutes": length}
+	# The weekday, so a weekend reads at a glance, and "*" on a special day:
+	# a date on the rule set's special-day list, where a deduction is
+	# multiplied for staff whose deductions double (Surbhi, 19 Nov 2026).
+	special = getdate(d) in ctx["special_days"]
+	row = {"date": d, "day": getdate(d).strftime("%a") + (" *" if special else ""),
+	       "is_special": 1 if special else 0, "shift": shift_name, "shift_minutes": length}
 
 	first, last, count, gaps = _punches(emp.name, d)
 	if count:
@@ -196,8 +201,12 @@ def _clock(minutes):
 	return "%02d:%02d" % (m // 60, m % 60)
 
 
-def _message(s, live):
+def _message(s, live, ctx=None, days=()):
 	bits = []
+	if any(r.get("is_special") for r in days):
+		bits.append(_("<b>*</b> Special day: a deduction on this day counts {0} times for staff "
+		              "whose deductions double. The Remarks say when it was.").format(
+			ctx["multiplier"]))
 	if not live:
 		bits.append(_("<b>These rules are not switched on.</b> The figures below are what "
 		              "they WOULD produce; nothing has been charged."))
@@ -219,6 +228,7 @@ def _columns():
 
 	return [
 		c("date", "Date", 100, "Date"),
+		c("day", "Day", 60),
 		c("in_time", "In", 70),
 		c("out_time", "Out", 70),
 		c("minutes", "Minutes", 85, "Int"),

@@ -40,6 +40,9 @@ frappe.query_reports["Daily Attendance Workings"] = {
 		if (column.fieldname === "status" && (data.status === "A" || data.status === "Held")) {
 			value = "<b>" + value + "</b>";
 		}
+		if (column.fieldname === "day" && data.is_special) {
+			value = "<b>" + value + "</b>";
+		}
 		if (column.fieldname === "red" && data.red > 0) {
 			value = "<span style='color:var(--red,#b00)'>" + value + "</span>";
 		}

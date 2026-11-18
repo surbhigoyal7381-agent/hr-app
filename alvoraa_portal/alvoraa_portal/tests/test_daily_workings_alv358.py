@@ -193,6 +193,30 @@ class TestTheDays(DailyCase):
 		self.assertEqual(total["green"], s.greens)
 		self.assertEqual(sum(r.get("quarters") or 0 for r in rows[:-1]), s.total_quarters)
 
+	def test_a_special_day_carries_an_asterisk_and_every_day_its_weekday(self):
+		special = add_days(self.start, 4)
+		name = "ALV-358 special days"
+		if not frappe.db.exists("Holiday List", name):
+			frappe.get_doc({"doctype": "Holiday List", "holiday_list_name": name,
+			                "from_date": add_months(self.start, -12),
+			                "to_date": add_months(self.start, 12),
+			                "holidays": [{"holiday_date": special, "description": "Festival"}]}
+			               ).insert(ignore_permissions=True)
+		rs = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": base.COMPANY})
+		before = frappe.db.get_value("Alvoraa Payroll Rule Set", rs, "special_day_holiday_list")
+		frappe.db.set_value("Alvoraa Payroll Rule Set", rs, "special_day_holiday_list", name)
+		try:
+			_cols, rows, msg = self.run_it()
+		finally:
+			frappe.db.set_value("Alvoraa Payroll Rule Set", rs, "special_day_holiday_list", before)
+		days = {r["date"]: r for r in rows if not r.get("is_total")}
+		self.assertEqual(days[str(special)]["day"], getdate(special).strftime("%a") + " *")
+		self.assertEqual([d for d, r in days.items() if r["day"].endswith("*")], [str(special)])
+		self.assertIn("Special day", msg)
+		_cols, rows, msg = self.run_it()
+		self.assertNotIn("*", "".join(r.get("day") or "" for r in rows))
+		self.assertNotIn("Special day", msg)
+
 	def test_running_it_writes_nothing(self):
 		self.day(0, ("10:20:00", "17:30:00"))
 		before = (frappe.db.count("Attendance"), frappe.db.count("Employee Checkin"),

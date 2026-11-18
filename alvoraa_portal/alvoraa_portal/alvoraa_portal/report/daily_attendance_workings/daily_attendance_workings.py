@@ -18,14 +18,16 @@ off (`_rules_for_reading`), and it writes nothing.
 Two settled points (Surbhi, 18 Nov 2026):
   * a day with a punch missing shows HELD, as the rules hold it - not the four
     quarters DTC's own software charges;
-  * Fine is the grooming red deduction for the day.
+  * Fine is the grooming red deduction. It shows on the month's total row
+    only: grooming marks are read for the fine and nowhere else (slice 066,
+    PRIV-5, fenced by test_ac73), so this report never reads the marks or
+    their dates. The total comes from month_summary, like the slip's.
 """
 
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, date_diff, flt, get_first_day, get_last_day, getdate
 
-import alvoraa_portal.grooming as grooming
 from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings.salary_components_and_workings import (
 	_may_read_days_of,
 	_rules_for_reading,
@@ -75,17 +77,16 @@ def execute(filters=None):
 	summary = month_summary(employee, emp.company, from_date, to_date,
 	                        rule_set=rule_set, ctx=ctx)
 	holidays = _holidays(emp, from_date, to_date)
-	fines = _fine_days(employee, rows, from_date, to_date, summary)
 
 	data = []
 	for i in range(date_diff(to_date, from_date) + 1):
 		day = add_days(from_date, i)
-		data.append(_day(str(day), emp, rows.get(str(day)), ctx, holidays, fines))
+		data.append(_day(str(day), emp, rows.get(str(day)), ctx, holidays))
 	data.append(_totals(data, summary))
 	return _columns(), data, _message(summary, live)
 
 
-def _day(d, emp, att, ctx, holidays, fines):
+def _day(d, emp, att, ctx, holidays):
 	shift_name = (att.shift if att else None) or emp.default_shift
 	shift = ctx["shifts"].get(shift_name)
 	length = (shift[1] - shift[0]) if shift and shift[1] > shift[0] else None
@@ -143,10 +144,7 @@ def _day(d, emp, att, ctx, holidays, fines):
 	# so the day does not show one either - or the column would not add up.
 	row["red"] = (v.reds or None) if not v.absent else None
 	row["green"] = (v.greens or None) if not v.absent else None
-	row["fine"] = fines.get(d)
 	reasons = list(v.reasons)
-	if fines.get(d):
-		reasons.append(_("Grooming red."))
 	if count >= 3 and count % 2 == 1:
 		reasons.append(_("Break not measured: an odd number of punches."))
 	row["remarks"] = " ".join(reasons)
@@ -174,24 +172,6 @@ def _totals(days, s):
 			flt(s.quarter_days, 2), s.reds, min(s.reds, s.free_reds), s.deductible_reds,
 			flt(s.paid_days, 2)),
 	}
-
-
-def _fine_days(employee, rows, from_date, to_date, s):
-	"""The days a grooming red was charged, at the person's mark rate.
-
-	The same rule month_summary applies: distinct days, never on a full-day
-	leave or absence, at most grooming.MONTH_MAX in the month - here the
-	earliest ones. Nothing when grooming is off or the person earns no marks.
-	"""
-	if not s.grooming_days or not grooming.is_on():
-		return {}
-	not_charged = {d for d, r in rows.items() if r.status in ("On Leave", "Absent")}
-	days = sorted({str(d) for d in frappe.get_all(
-		"Grooming Mark",
-		filters={"employee": employee, "docstatus": 1,
-		         "mark_date": ("between", [from_date, to_date])},
-		pluck="mark_date")} - not_charged)[:s.grooming_days]
-	return {d: flt(s.mark_rate, 2) for d in days}
 
 
 def _holidays(emp, from_date, to_date):
@@ -224,9 +204,9 @@ def _message(s, live):
 	bits.append(_("Every day is judged exactly as the salary working judges it. A day with "
 	              "a punch missing is <b>Held</b>: neither paid nor deducted until HR "
 	              "confirms the time."))
+	bits.append(_("Fine (grooming reds) is shown for the month only, on the total row."))
 	if s.grooming_capped:
-		bits.append(_("The grooming fines were capped by the legal limit, so the month's "
-		              "Fine is less than the days added up."))
+		bits.append(_("The grooming fines were capped by the legal limit."))
 	return "<br>".join(bits)
 
 

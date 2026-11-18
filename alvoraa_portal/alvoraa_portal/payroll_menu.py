@@ -145,7 +145,16 @@ def _ensure_sidebar(sidebar, section, after, report):
 	for i, item in enumerate(s.items):
 		item.idx = i + 1
 	s.flags.ignore_permissions = True
-	s.save()
+	# A standard sidebar saved on a developer-mode bench writes its JSON back
+	# into the app's source (WorkspaceSidebar.export_sidebar), and that file is
+	# tracked in this repo - a migrate would quietly edit Frappe HR's copy.
+	# Frappe skips that export while in_import, which is what this is.
+	was = frappe.flags.in_import
+	frappe.flags.in_import = True
+	try:
+		s.save()
+	finally:
+		frappe.flags.in_import = was
 	frappe.db.commit()
 	frappe.clear_cache()
 

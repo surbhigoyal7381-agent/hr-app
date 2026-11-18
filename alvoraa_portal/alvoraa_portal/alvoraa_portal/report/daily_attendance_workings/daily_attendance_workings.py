@@ -27,8 +27,10 @@ from frappe.utils import add_days, cint, date_diff, flt, get_first_day, get_last
 
 import alvoraa_portal.grooming as grooming
 from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings.salary_components_and_workings import (
+	_may_read_days_of,
 	_rules_for_reading,
 )
+from alvoraa_portal.payroll_rules import minutes_on_break
 from alvoraa_portal.payroll_rules_apply import LEAVE_FIELDS, _punches, judge, prepare
 from alvoraa_portal.payroll_slip import month_summary
 
@@ -47,7 +49,7 @@ def execute(filters=None):
 	emp = frappe.get_list("Employee", filters={"name": employee},
 	                      fields=["name", "employee_name", "company", "default_shift",
 	                              "date_of_joining", "relieving_date"], limit_page_length=1)
-	if not emp:
+	if not emp or not _may_read_days_of(employee):
 		frappe.throw(_("You cannot see this employee's attendance."), frappe.PermissionError)
 	emp = emp[0]
 
@@ -89,10 +91,16 @@ def _day(d, emp, att, ctx, holidays, fines):
 	length = (shift[1] - shift[0]) if shift and shift[1] > shift[0] else None
 	row = {"date": d, "shift": shift_name, "shift_minutes": length}
 
-	first, last, count, _gaps = _punches(emp.name, d)
+	first, last, count, gaps = _punches(emp.name, d)
 	if count:
 		row["in_time"] = _clock(first)
 		row["out_time"] = _clock(last) if count > 1 else None
+	# Break: the time out between the first and the last punch - the gaps
+	# between punch 2 and 3, 4 and 5 (the same break_gaps the engine and the
+	# portal use). With an odd count one punch is missing, so nobody can say
+	# which gap was a break: it is not measured, exactly as the engine does.
+	if count >= 2 and count % 2 == 0:
+		row["break_minutes"] = int(round(minutes_on_break(gaps, first, last)))
 
 	if emp.date_of_joining and d < str(emp.date_of_joining):
 		row.update(status="", remarks=_("Not yet joined"))
@@ -120,20 +128,27 @@ def _day(d, emp, att, ctx, holidays, fines):
 	else:
 		status = "P"
 	row["status"] = status
-	if length and not (v.held or v.on_leave) and not v.absent:
-		minutes = int(round(flt(v.attendance_percent) * length / 100.0))
+	# On a half-day leave the engine judges the OTHER half only, against half
+	# the shift (_judge_other_half), so its percent is a share of half the shift.
+	expected = (length / 2.0 if v.half_leave else length) if length else None
+	if expected and not (v.held or v.on_leave) and not v.absent:
+		minutes = int(round(flt(v.attendance_percent) * expected / 100.0))
 		row["minutes"] = minutes
-		row["difference"] = minutes - length
-	elif v.absent and length:
+		row["difference"] = minutes - int(round(expected))
+	elif v.absent and expected:
 		row["minutes"] = 0
-		row["difference"] = -length
+		row["difference"] = -int(round(expected))
 	row["quarters"] = v.total_quarters or None
-	row["red"] = v.reds or None
-	row["green"] = v.greens or None
+	# The month never counts a red or green on an absent day (summarise_month),
+	# so the day does not show one either - or the column would not add up.
+	row["red"] = (v.reds or None) if not v.absent else None
+	row["green"] = (v.greens or None) if not v.absent else None
 	row["fine"] = fines.get(d)
 	reasons = list(v.reasons)
 	if fines.get(d):
 		reasons.append(_("Grooming red."))
+	if count >= 3 and count % 2 == 1:
+		reasons.append(_("Break not measured: an odd number of punches."))
 	row["remarks"] = " ".join(reasons)
 	return row
 
@@ -148,6 +163,7 @@ def _totals(days, s):
 			flt(s.days_on_leave, 2)),
 		"minutes": sum(r.get("minutes") or 0 for r in days),
 		"difference": sum(r.get("difference") or 0 for r in days),
+		"break_minutes": sum(r.get("break_minutes") or 0 for r in days),
 		"quarters": s.total_quarters,
 		"red": s.reds,
 		"green": s.greens,
@@ -227,6 +243,7 @@ def _columns():
 		c("out_time", "Out", 70),
 		c("minutes", "Minutes", 85, "Int"),
 		c("difference", "(-/+) Min", 85, "Int"),
+		c("break_minutes", "Break (min)", 90, "Int"),
 		c("status", "Status", 90),
 		c("quarters", "Quarters", 80, "Int"),
 		c("red", "Red", 60, "Int"),

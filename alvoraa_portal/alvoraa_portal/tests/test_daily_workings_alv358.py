@@ -126,6 +126,52 @@ class TestTheDays(DailyCase):
 		self.assertEqual(row["difference"], row["minutes"] - 480)
 		self.assertTrue(row["remarks"])
 
+	def test_break_is_the_time_out_between_first_and_last_punch(self):
+		d = self.day(4, ("10:00:00", "13:00:00", "13:40:00", "18:00:00"))
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		self.assertEqual(row["break_minutes"], 40)
+		self.assertEqual(rows[-1]["break_minutes"], 40)
+
+	def test_break_is_not_measured_on_an_odd_number_of_punches(self):
+		d = self.day(5, ("10:00:00", "13:00:00", "13:40:00"))
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		self.assertIsNone(row.get("break_minutes"))
+		self.assertIn("Break not measured", row["remarks"])
+
+	def test_the_salary_working_also_hides_people_scoped_away_through_attendance(self):
+		"""ALV-359: the live monthly report had the same gap."""
+		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
+			salary_components_and_workings as salary,
+		)
+		other = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Salary Scope", "company": base.COMPANY,
+			"date_of_birth": "1990-01-01", "date_of_joining": str(self.start),
+			"gender": base._gender(), "status": "Active"})
+		other.flags.ignore_permissions = True
+		other.insert()
+		self.day(0, ("10:00:00", "18:00:00"))
+		user = "alv358.salary.hr@example.com"
+		if not frappe.db.exists("User", user):
+			u = frappe.get_doc({"doctype": "User", "email": user, "first_name": "Salary",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles("HR User")
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
+		                "for_value": other.name, "apply_to_all_doctypes": 0,
+		                "applicable_for": "Attendance"}).insert(ignore_permissions=True)
+		args = {"company": base.COMPANY, "from_date": str(self.start),
+		        "to_date": str(get_last_day(self.start))}
+		as_admin = salary.execute(args)[1]
+		self.assertIn(self.emp, [r["employee"] for r in as_admin])
+		frappe.set_user(user)
+		try:
+			rows = salary.execute(args)[1]
+		finally:
+			frappe.set_user("Administrator")
+		self.assertNotIn(self.emp, [r["employee"] for r in rows])
+
 	def test_one_punch_shows_held_with_no_minutes(self):
 		d = self.day(1, ("10:05:00",))
 		_cols, rows, _msg = self.run_it()
@@ -158,6 +204,72 @@ class TestTheDays(DailyCase):
 	def test_it_refuses_without_an_employee(self):
 		with self.assertRaises(frappe.ValidationError):
 			report.execute({"month": MONTHS[0], "year": 2026})
+
+	def test_a_half_day_leave_counts_against_half_the_shift(self):
+		"""The engine judges the other half against half the shift; the minutes
+		must be a share of that half, not of the whole 480."""
+		d = self.day(3, ("10:00:00", "14:00:00"), status="Half Day")
+		frappe.db.set_value("Attendance", {"employee": self.emp, "attendance_date": d},
+		                    {"leave_application": "ALV358-TEST-LEAVE", "leave_type": "Casual Leave"},
+		                    update_modified=False)
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		self.assertEqual(row["minutes"], 240)
+		self.assertEqual(row["difference"], 0)
+		self.assertEqual(row["status"], "P (half leave)")
+
+	def test_an_hr_user_scoped_to_somebody_else_is_refused(self):
+		"""The report's own refusal, not Frappe's: an HR User whose User
+		Permission names another employee gets an empty list and a refusal."""
+		other = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Somebody Else", "company": base.COMPANY,
+			"date_of_birth": "1990-01-01", "date_of_joining": str(self.start),
+			"gender": base._gender(), "status": "Active"})
+		other.flags.ignore_permissions = True
+		other.insert()
+		user = "alv358.scoped.hr@example.com"
+		if not frappe.db.exists("User", user):
+			u = frappe.get_doc({"doctype": "User", "email": user, "first_name": "Scoped",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles("HR User")
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
+		                "for_value": other.name, "apply_to_all_doctypes": 1}
+		               ).insert(ignore_permissions=True)
+		frappe.set_user(user)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_an_hr_user_scoped_only_through_attendance_is_refused(self):
+		"""DTC's pattern: the User Permission applies to Attendance only. The
+		Employee list still shows the person, so only the report's own check
+		stands between this user and somebody else's days."""
+		other = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Attendance Scope", "company": base.COMPANY,
+			"date_of_birth": "1990-01-01", "date_of_joining": str(self.start),
+			"gender": base._gender(), "status": "Active"})
+		other.flags.ignore_permissions = True
+		other.insert()
+		user = "alv358.attendance.hr@example.com"
+		if not frappe.db.exists("User", user):
+			u = frappe.get_doc({"doctype": "User", "email": user, "first_name": "Attendance",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles("HR User")
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
+		                "for_value": other.name, "apply_to_all_doctypes": 0,
+		                "applicable_for": "Attendance"}).insert(ignore_permissions=True)
+		frappe.set_user(user)
+		try:
+			self.assertTrue(frappe.get_list("Employee", filters={"name": self.emp}),
+			                "the Employee list must still show the person, or this test proves nothing")
+			with self.assertRaises(frappe.PermissionError):
+				self.run_it()
+		finally:
+			frappe.set_user("Administrator")
 
 	def test_a_user_who_cannot_read_the_employee_is_refused(self):
 		user = "alv358.nobody@example.com"
@@ -211,6 +323,18 @@ class TestTheMenu(FrappeTestCase):
 	def test_the_salary_working_link_is_still_placed(self):
 		if not frappe.db.exists("Workspace", "Payroll"):
 			self.skipTest("no Payroll workspace on this site")
+		salary = "Salary Components and Workings"
+		w = frappe.get_doc("Workspace", "Payroll")
+		w.set("links", [l for l in w.links if l.link_to != salary])
+		w.set("shortcuts", [s for s in (w.shortcuts or []) if s.link_to != salary])
+		w.flags.ignore_permissions = True
+		w.save()
+		frappe.db.commit()
+		payroll_menu.after_migrate()
 		payroll_menu.after_migrate()
 		w = frappe.get_doc("Workspace", "Payroll")
-		self.assertEqual([l.link_to for l in w.links].count("Salary Components and Workings"), 1)
+		links = [l.link_to for l in w.links]
+		self.assertEqual(links.count(salary), 1)
+		if "Salary Register" in links:
+			self.assertEqual(links.index(salary), links.index("Salary Register") + 1)
+		self.assertEqual([s.link_to for s in w.shortcuts].count(salary), 1)

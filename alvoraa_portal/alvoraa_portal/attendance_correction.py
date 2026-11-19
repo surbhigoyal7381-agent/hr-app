@@ -1507,24 +1507,6 @@ def own_day_state(from_date, to_date, earliest, joined):
 	return "old"
 
 
-def _own_refusal(earliest, basis, joined, state):
-	"""The sentence for a refused own-day request: dates and fixed words only."""
-	day = lambda d: frappe.utils.formatdate(d, "EEE d MMM")
-	if state == "range":
-		return _("Your joining day, {0}, can be asked about on its own: set To to the same "
-		         "day. Days after it that are older than {1} are HR's to fix: tell HR "
-		         "which days and why.").format(day(joined), day(earliest))
-	text = " ".join([
-		_("This day is older than your organisation lets you raise yourself."),
-		_("The oldest day you can raise yourself is {0}, counted in {1}.").format(
-			day(earliest), basis),
-		_("HR can still fix it: tell HR which day it was and why."),
-	])
-	if joined and getdate(joined) < getdate(earliest):
-		text += " " + _("The one exception is your joining day, {0}.").format(day(joined))
-	return text
-
-
 def refuse_own_day_outside_window(doc, method=None):
 	"""Attendance Request `validate`: keep a person's OWN day inside the window.
 
@@ -1550,8 +1532,23 @@ def refuse_own_day_outside_window(doc, method=None):
 	earliest, basis = employee_filing_from(doc.employee)
 	joined = frappe.db.get_value("Employee", doc.employee, "date_of_joining")
 	state = own_day_state(doc.from_date, doc.to_date, earliest, joined)
-	if state not in ("open", "joining"):
-		frappe.throw(_own_refusal(earliest, basis, joined, state))
+	if state in ("open", "joining"):
+		return
+	# Dates and fixed words only: nothing about the person goes in a sentence.
+	day = lambda d: frappe.utils.formatdate(d, "EEE d MMM")
+	if state == "range":
+		frappe.throw(_("Your joining day, {0}, can be asked about on its own: set To to "
+		               "the same day. Days after it that are older than {1} are HR's to "
+		               "fix: tell HR which days and why.").format(day(joined), day(earliest)))
+	text = " ".join([
+		_("This day is older than your organisation lets you raise yourself."),
+		_("The oldest day you can raise yourself is {0}, counted in {1}.").format(
+			day(earliest), basis),
+		_("HR can still fix it: tell HR which day it was and why."),
+	])
+	if joined and getdate(joined) < getdate(earliest):
+		text += " " + _("The one exception is your joining day, {0}.").format(day(joined))
+	frappe.throw(text)
 
 
 def _refuse_outside_filing_window(employee, from_date):

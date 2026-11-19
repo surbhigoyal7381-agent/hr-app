@@ -6277,19 +6277,14 @@ function acNiceDay(iso) {
 }
 
 /* Slice 084: the words for a person's OWN day the organisation does not let
-   them raise, and for a range that starts on their joining day. Built only
-   from the server's dates and basis - never from a number of days. */
+   them raise. Built only from the server's dates and basis - never from a
+   number of days. */
 function ownOldText(from, basis, joined) {
   var s = drT("This day is older than your organisation lets you raise yourself.") + " "
     + drT("The oldest day you can raise yourself is {0}, counted in {1}.", [acNiceDay(from), basis]) + " "
     + drT("HR can still fix it: tell HR which day it was and why.");
   if (joined) s += " " + drT("The one exception is your joining day, {0}.", [acNiceDay(joined)]);
   return s;
-}
-
-function ownRangeText(from, joined) {
-  return drT("Your joining day, {0}, can be asked about on its own: set To to the same day. Days after it that are older than {1} are HR's to fix: tell HR which days and why.",
-             [acNiceDay(joined), acNiceDay(from)]);
 }
 
 function acForm(x) {
@@ -12304,8 +12299,10 @@ function arWindowCheck() {
     m.textContent = drT("Your joining day: you can always ask about this day.");
     m.style.color = "var(--green)";
   } else {
-    m.textContent = joiningDay ? ownRangeText(w.from, w.joined_on)
-                               : ownOldText(w.from, w.basis, w.joined_on);
+    m.textContent = joiningDay
+      ? drT("Your joining day, {0}, can be asked about on its own: set To to the same day. Days after it that are older than {1} are HR's to fix: tell HR which days and why.",
+            [acNiceDay(w.joined_on), acNiceDay(w.from)])
+      : ownOldText(w.from, w.basis, w.joined_on);
     m.style.color = "var(--danger,var(--red))";
     f.style.borderColor = "var(--danger,var(--red))";
   }

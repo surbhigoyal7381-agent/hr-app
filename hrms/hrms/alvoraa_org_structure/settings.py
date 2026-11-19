@@ -609,7 +609,10 @@ def _log_access_change(endpoint, key, rule=DEFAULT_RULE):
 	import json
 
 	try:
-		frappe.logger("security").warning(json.dumps({
+		# ALV-391: through the helper, or the line is written at a level the
+		# logger throws away. See hrms.alvoraa_hr_core.access.security_logger.
+		from hrms.alvoraa_hr_core.access import security_logger
+		security_logger().warning(json.dumps({
 			"event": "changed",
 			"at": str(frappe.utils.now_datetime()),
 			"user": frappe.session.user,

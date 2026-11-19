@@ -993,7 +993,10 @@ def audit_other_text(doc):
 	if doc.reason != OTHER:
 		return
 	try:
-		frappe.logger("security").info(json.dumps({
+		# ALV-391: through the helper, or the line is written at a level the
+		# logger throws away. See hrms.alvoraa_hr_core.access.security_logger.
+		from hrms.alvoraa_hr_core.access import security_logger
+		security_logger().info(json.dumps({
 			"event": "grooming_other_text", "at": str(now_datetime()), "user": frappe.session.user,
 			"doctype": MARK, "name": doc.name, "employee": doc.employee,
 			"length": len(doc.other_reason or "")}))

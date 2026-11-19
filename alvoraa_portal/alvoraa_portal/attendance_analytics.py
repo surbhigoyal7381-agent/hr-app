@@ -88,7 +88,10 @@ def _org_roles():
 	if ignored:
 		# Role names only. Whoever stored them is found in the setting itself.
 		try:
-			frappe.logger("security").warning(json.dumps(
+			# ALV-391: through the helper, or the line is written at a level the
+			# logger throws away. See hrms.alvoraa_hr_core.access.security_logger.
+			from hrms.alvoraa_hr_core.access import security_logger
+			security_logger().warning(json.dumps(
 				{"event": "org_roles_ignored", "rule": "SEC-19", "roles": sorted(ignored)}))
 		except Exception:
 			pass

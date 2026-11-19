@@ -41,7 +41,8 @@ Order matters. Do not skip a read-back.
 7. **Switch on for Grace** (hold odd-punch days). The card's Save button shows how many days this month would be held. Write the number down.
 8. **The November backfill, Grace only.** Run from the bench folder with the bench's own python, never piped into the console:
    - Dry run (the default): `env/bin/python <repo>/scripts/alv392_held_backfill_grace.py --site grace.alvoraa.co --undo-file <a path OUTSIDE the repo>`. It prints a count. It must agree with step 7's number (within the days marked since). Read both.
-   - Real run: the same command with `--apply`. It writes the undo list before each chunk of 50 and commits per chunk. It refuses any other site and any day outside 1 to 30 November 2026.
+   - The dry run saves its count beside the undo file (`<undo file>.dryrun`). The real run needs it, and **stops if the live count is different** (AC-63): run the dry run again and read both numbers.
+   - Real run: the same command with `--apply` and the SAME undo file. It writes the whole id list to the undo file before changing anything (AC-58), then holds in chunks of 50, committing per chunk. It skips any day inside a submitted salary slip (AC-62). It refuses any other site and any day outside 1 to 30 November 2026.
    - Read back: the count of Held rows for November at Grace equals the count it printed. Keep the undo file safe; copy it off the server.
    - Draft slips re-price when next saved. HR re-saves them, or the next slip run does.
 9. **Look at the first two daily runs.** Count Error Log entries that mention "Held" (not released, not refreshed) since the release. Check the queue workers by `rq:workers` registration and heartbeat, not by `docker ps` (OPS-21).

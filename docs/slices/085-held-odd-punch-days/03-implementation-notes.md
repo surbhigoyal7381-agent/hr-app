@@ -180,3 +180,11 @@ One run, one module at a time, on my own stack, 17 neighbour modules (attendance
 ## 12 · Subtract pass
 
 Read my own diff asking what can go. Removed while building: a second query for the punch count (the hold reuses `_punches`), a base class for the doors, a permlevel, a separate time-stamp field. **Kept and could still go if asked:** the third release field `alvoraa_release_on` (`modified` also carries it).
+
+
+## 13 · Fix round 1 (tester, 19 Nov)
+
+- **P1 fixed.** The real sync accounts hold Biometric Sync plus HR roles, so `is_machine_account()` (which wants the role and nothing else) was false for them and a late machine punch never released a day. `held_day.release_on_machine_punch` now asks `field_app_access.files_as_machine`: the sync role held and no Employee record, whatever other roles. `is_machine_account` itself is **unchanged on purpose** (punch-time and geofence rules read it; widening it would change what they do for these accounts). A human HR user without the sync role never releases (test, with the old function the tester's HR shapes fail). Never judged by `device_id`.
+- **Backfill (AC-62, 63, 58).** Skips days in a submitted slip; the real run stops if the live count differs from the dry run's (count saved beside the undo file); the whole id list is written before any change. `run()` has a test-only `_in_test_site` argument so dry run, real run and undo run end to end on a test site; the command line cannot set it and every site other than Grace is still refused (tested).
+- **AC-16 and AC-18 on real slips** (`ReleaseAndTheSlip`): an HR release re-prices that employee's draft slip (+1 payment day); after the slip is submitted nothing changes and `decide` returns `slip_final`. Both fail when the code is removed.
+- **Monthly Attendance Sheet:** the stock hrms module's 18 tests run once the two `_Test Fiscal Year` rows are inserted by SQL (the known bootstrap clash) and pass with the Held change; my own `test_the_monthly_attendance_sheet_opens_with_a_held_row` also covers the ninth colour.

@@ -244,6 +244,24 @@ Each of these cost real time in this repo. Check them, and add new ones as they 
     about 7 minutes wasted on every deploy and every rollback (6 min 54 s on dev,
     7 min 09 s on production, read from the run logs on 22 September).
 
+23. **Build cache and untagged images are free to delete. Tagged images and stopped
+    containers are not.** `docker builder prune` and `docker image prune` only remove
+    things that rebuild themselves - on 19 November 2026 they returned 13.6 GB on the
+    Mac and cost nothing but a slower next build. **`docker image prune -a` is a
+    different command**: it deletes every image no container points at. A tag ending
+    `-local` was built on this machine and **cannot be downloaded again**. Deleting a
+    stopped container throws away a site that took hand steps to create. Before any
+    prune, read `docker system df` and list what would go; say the figure you expect to
+    reclaim and check it afterwards, because shared layers mean the estimate and the
+    result differ - 4 GB of untagged images returned 2.96 GB.
+24. **Containers cost memory, not disk; builds cost disk, not memory.** Measured on the
+    Mac, 19 November 2026: Docker has 7.75 GB of 16 GB, a slice stack (bench, database,
+    redis) runs at about 975 MB, and all 32 containers on disk came to 523 MB. So eight
+    stacks exhaust the machine while barely touching the disk, and the disk is eaten by
+    build cache and orphaned images instead. Diagnose the right one: `docker stats` for
+    memory, `docker system df` for disk. The clean-up rules agents follow are in
+    `.claude/context/parallel-work.md` section 9 - **never stop another session's
+    container without asking it first, and silence is not permission.**
 ## Write the way this repo writes
 
 `CLAUDE.md` §6 applies. Plain English, short sentences, answer first, bad news first and

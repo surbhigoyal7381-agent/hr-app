@@ -112,3 +112,75 @@ class RealSlip(FrappeTestCase):
 			                 [str(add_days(START, 1)), str(add_days(START, 2))])
 			self.assertEqual(hr_api._payslip_payload(
 				frappe._dict(self.last_slip.as_dict(), earnings=[], deductions=[]))["held_dates"][:0], [])
+
+
+class ReleaseAndTheSlip(RealSlip):
+	"""AC-16 and AC-18 on real slips: a release re-prices a DRAFT slip, and leaves a
+	SUBMITTED one alone while HR is told to use Additional Salary."""
+
+	def _hr(self):
+		email = "hr%d.slip085@example.com" % RealSlip._slot
+		u = frappe.get_doc({"doctype": "User", "email": email, "first_name": "HrSlip%d" % RealSlip._slot,
+		                    "send_welcome_email": 0}).insert(ignore_permissions=True)
+		u.add_roles("HR Manager")
+		_insert({"doctype": "Employee", "first_name": "HrSlip%d" % RealSlip._slot, "last_name": "A085",
+		         "company": COMPANY, "status": "Active", "user_id": email,
+		         "gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+		         "date_of_birth": "1990-01-01", "date_of_joining": add_days(START, -200),
+		         "create_user_permission": 0})
+		return email
+
+	def _held_day_and_request(self, emp):
+		"""Day 2 is a Held day with one punch; a request carries 18:00 Out for it."""
+		day = add_days(START, 2)
+		self._present(emp, add_days(START, 1))
+		att = self._present(emp, day)
+		frappe.get_doc({"doctype": "Employee Checkin", "employee": emp, "log_type": "IN",
+		                "time": "%s 10:00:00" % day}).insert(ignore_permissions=True)
+		frappe.db.set_value("Attendance", att, "status", "Held")
+		req = frappe.get_doc({"doctype": "Attendance Request", "employee": emp, "from_date": str(day),
+		                      "to_date": str(day), "reason": "Forgot to Punch Out",
+		                      "alvoraa_missing_time": "18:00:00", "alvoraa_missing_log": "OUT",
+		                      "alvoraa_review_status": "Waiting"}).insert(ignore_permissions=True)
+		return att, req.name
+
+	def _approve(self, req, user):
+		frappe.set_user(user)
+		try:
+			frappe.get_doc("Attendance Request", req).submit()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_ac16_a_release_re_prices_that_employees_draft_slip(self):
+		frappe.db.set_single_value("Payroll Settings", "consider_unmarked_attendance_as", "Absent")
+		emp = self._employee()
+		att, req = self._held_day_and_request(emp)
+		slip = _insert({"doctype": "Salary Slip", "employee": emp, "company": COMPANY,
+		                "start_date": START, "end_date": END, "posting_date": END,
+		                "payroll_frequency": "Monthly", "currency": "INR"})
+		before = slip.payment_days
+		self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Held")
+		self._approve(req, self._hr())
+		self.assertEqual(frappe.db.get_value("Attendance", att, "alvoraa_release_how"), "HR decision")
+		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "payment_days") - before, 1)
+
+	def test_ac18_after_the_slip_is_submitted_nothing_changes_and_hr_is_told(self):
+		from alvoraa_portal import attendance_correction as ac
+		frappe.db.set_single_value("Payroll Settings", "consider_unmarked_attendance_as", "Absent")
+		emp = self._employee()
+		att, req = self._held_day_and_request(emp)
+		slip = _insert({"doctype": "Salary Slip", "employee": emp, "company": COMPANY,
+		                "start_date": START, "end_date": END, "posting_date": END,
+		                "payroll_frequency": "Monthly", "currency": "INR"})
+		before = slip.payment_days
+		frappe.db.set_value("Salary Slip", slip.name, "docstatus", 1)  # final, as the fixtures do
+		hr = self._hr()
+		frappe.flags.held_slip = None
+		frappe.set_user(hr)
+		try:
+			out = ac.decide(req, approve=1)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(out["slip_final"])
+		self.assertEqual(frappe.db.get_value("Attendance", att, "alvoraa_release_how"), "HR decision")
+		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "payment_days"), before)

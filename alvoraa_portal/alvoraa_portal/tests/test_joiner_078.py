@@ -523,7 +523,7 @@ class TestRetention(_Base):
 		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_backstop_days"], 90)
 		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_warn_days"], 75)
 		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_link_days"], 7)
-		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 30)
+		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 45)
 
 	def test_the_not_hired_window_is_range_checked_to_counsels_range(self):
 		frappe.set_user(self.sm_user)

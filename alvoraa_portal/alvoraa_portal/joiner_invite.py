@@ -690,7 +690,13 @@ def log_an_export(submission, masked):
 def _record_joiner_event(source, submission):
 	"""Write the durable row for an export or a purge. The same shape as
 	`employee_documents_read`'s writer: never let the record stop somebody
-	doing their job, so a failure is logged and swallowed."""
+	doing their job, so a failure is logged and swallowed.
+
+	No per-day dedupe, on purpose: the sibling writers skip a repeat view by the
+	same person on the same day, but every export or purge here is its own event
+	that counsel may ask about. Do not "align" it with them."""
+	if not frappe.db.exists("DocType", ACCESS_LOG):
+		return
 	try:
 		frappe.get_doc({
 			"doctype": ACCESS_LOG,
@@ -702,8 +708,13 @@ def _record_joiner_event(source, submission):
 		}).insert(ignore_permissions=True)
 		frappe.db.commit()
 	except Exception:
-		frappe.log_error(f"Could not record {source} on {submission}",
-		                 "Joiner access log")
+		# Title only: with a second argument `log_error` takes it as the
+		# traceback and drops the real one. Alone, it captures the live one.
+		# `clear_messages`: on a site not yet migrated the Select check adds a
+		# message the browser would show, and HR would read that an erasure
+		# that DID happen had failed.
+		frappe.clear_messages()
+		frappe.log_error(f"Joiner access log: could not record {source} on {submission}")
 
 
 @frappe.whitelist(methods=["POST"])

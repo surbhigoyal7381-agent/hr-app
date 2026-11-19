@@ -7983,7 +7983,7 @@ function ocsWords(kind) {
              + "or said they will bring it on their first day.",
              ["<b>" + esc(drT("Must answer for")) + "</b>",
               '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>"]),
-      preview: drT("Show me the form a joiner fills in")
+      preview: drT("Show me which documents a joiner is asked for")
     };
   }
   if (kind === "my") {
@@ -8524,9 +8524,12 @@ function ocsSave() {
   btn.disabled = true;
   gpFetch(OCS_API + "set_people_setting", { key: key, value: chosen.join(",") },
           { lostAnswerHandled: true }).then(function () {
-    /* ASKED first, then REQUIRED, and the order matters: the setter refuses a
-       name that is compulsory but not being asked for, so sending them the
-       other way round would refuse a legitimate save. */
+    /* ASKED first, then REQUIRED, and the order matters: for the two field
+       keys the setter refuses a name that is compulsory but not being asked
+       for (`_REQUIRED_WITHIN`), so sending them the other way round would
+       refuse a legitimate save. The compulsory DOCUMENTS key has no such
+       check: the reader's intersection (`_joiner_required_documents`) is what
+       makes that one safe. */
     if (!needKey) return null;
     return gpFetch(OCS_API + "set_people_setting",
                    { key: needKey, value: needed.join(",") },

@@ -540,13 +540,18 @@ class TestTheForm(_Base):
 		self.assertTrue(card["joiner_document_types"][0]["known"])
 		self.assertEqual(card["joiner_required_documents"], [fx.DOC_NAME])
 		self.assertEqual(card["document_types"], [])
-		self.assertIn(fx.DOC_NAME, card["joiner_sensitive"])  # category Employment
 		people_settings.set_people_setting(
 			key="alvoraa_joiner_document_types", value=[fx.DOC_NAME, "S079 Deleted type"])
 		card = people_settings.get_people_settings()
 		self.assertEqual(
 			[(d["name"], d["known"]) for d in card["joiner_document_types"]],
 			[(fx.DOC_NAME, True), ("S079 Deleted type", False)])
+		# A compulsory name whose type has been deleted is not reported as
+		# compulsory: the form never asks for it (its get_value returns None).
+		frappe.db.set_default("alvoraa_joiner_required_documents",
+		                      fx.DOC_NAME + ",S079 Deleted type")
+		card = people_settings.get_people_settings()
+		self.assertEqual(card["joiner_required_documents"], [fx.DOC_NAME])
 		# Untick it: it can no longer be compulsory either.
 		people_settings.set_people_setting(key="alvoraa_joiner_document_types", value=[])
 		self.assertEqual(people_settings.get_people_settings()["joiner_required_documents"], [])
@@ -809,6 +814,15 @@ class TestExport(_Base):
 		self.assertTrue(frappe.db.exists("Alvoraa Photo Access Log", {
 			"reference_name": doc.name, "source": "Joiner export (not masked)"}))
 
+	def test_the_synced_doctype_carries_the_joiner_sources(self):
+		"""ALV-353. Fails on a site that has not been migrated: the writer swallows
+		the Select refusal, so without this the audit row would be lost with only
+		an Error Log entry to show for it."""
+		options = frappe.get_meta("Alvoraa Photo Access Log").get_field("source").options
+		for source in ("Joiner export (masked)", "Joiner export (not masked)",
+		               "Joiner purge"):
+			self.assertIn(source, options.split("\n"))
+
 	def test_a_purge_writes_one_row(self):
 		"""ALV-353. An erasure is as much an event counsel will ask about as an
 		export, and the submission's own rows are gone afterwards."""
@@ -823,9 +837,10 @@ class TestExport(_Base):
 		self.assertEqual(len(rows), 1, rows)
 		self.assertEqual(rows[0].viewed_by, self.hr)
 
-	def test_a_failed_log_write_never_stops_the_export(self):
+	def test_the_audit_writer_swallows_its_own_failure(self):
 		"""ALV-353. Same rule as the other writers: the record must not stop
-		somebody doing their job."""
+		somebody doing their job. It calls the writer directly, so it proves the
+		writer never raises, not that an export survives."""
 		from unittest import mock
 
 		doc, _out = self._sign_in()
@@ -1200,7 +1215,7 @@ class TestMyProfileAndTheSettings(_Base):
 		            "alvoraa_joiner_notice_text"):
 			with self.subTest(key=key):
 				self.assertEqual(org_settings.DEFAULTS[key], "")
-		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 30)
+		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 45)
 		frappe.db.set_default("alvoraa_joiner_fields", "")
 		frappe.db.set_default("alvoraa_joiner_required_fields", "")
 		frappe.db.commit()

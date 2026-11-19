@@ -7,7 +7,7 @@ Surbhi's four defaults of 31 October.
 
 | Case | Rule | Setting, default |
 |---|---|---|
-| **Their identity documents** | **A second clock, and counsel's ruling 4 is why it exists.** A photograph of an identity card goes much sooner than a candidate record: 30 to 60 days against 180 to 365. It deletes the `File` rows only, bytes included, and leaves every typed field alone - **including on a row nobody ever actioned**, counted from when it arrived, or an ignored submission would keep an identity document until the 90-day backstop took the whole row | `alvoraa_joiner_document_days`, **30**, range 30-60 |
+| **Their identity documents** | **A second clock, and counsel's ruling 4 is why it exists.** A photograph of an identity card goes much sooner than a candidate record: 30 to 60 days against 180 to 365. It deletes the `File` rows only, bytes included, and leaves every typed field alone - **including on a row nobody ever actioned**, counted from when it arrived, or an ignored submission would keep an identity document until the 90-day backstop took the whole row | `alvoraa_joiner_document_days`, **45**, range 30-60 |
 | They became an employee | the details are already their personnel record, so the copy is redundant. Erased on the next run - **unless the row still holds the files the person uploaded, in which case it is skipped** (slice 082: nothing moves those files to the `Employee` yet, so erasing them would destroy the only copy). Their files stay on the document clock above | — |
 | They did not join (Cancelled or Expired) | **not erased the moment HR gives up on them** - counsel reversed that, because the employer has its own candidate record-keeping duties. A window from when the invite closed | `alvoraa_joiner_not_hired_days`, **180**, range 180-365 |
 | Nobody ever actioned it | erased anyway, from when it arrived, **whatever state it is in** - because the 18 September 2026 policy prohibits indefinite retention in so many words | `alvoraa_joiner_backstop_days`, **90** |
@@ -212,7 +212,7 @@ def _delete_the_documents_sooner():
 	No stamp field is needed to stop it running twice. The second run finds no
 	files, deletes nothing, and says nothing.
 	"""
-	days = _days("alvoraa_joiner_document_days", 30)
+	days = _days("alvoraa_joiner_document_days", 45)
 	cutoff = add_to_date(now(), days=-days)
 	done = 0
 	for filters in ({"status": ("in", TERMINAL), "closed_on": ("<", cutoff)},

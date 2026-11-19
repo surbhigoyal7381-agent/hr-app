@@ -138,9 +138,7 @@ def get_people_settings():
 		# details (decision 6b).
 		"joiner_choices": list(people_fields.MY_PROFILE_WRITE_FIELDS),
 		"joiner_document_types": joiner_chosen_docs,
-		"joiner_sensitive": [d["name"] for d in joiner_chosen_docs
-		                     if d.get("category") in SENSITIVE_CATEGORIES],
-		"joiner_required_documents": _joiner_required_documents(),
+		"joiner_required_documents": _joiner_required_documents(joiner_chosen_docs),
 		"document_days": org_settings.get(DOCUMENT_DAYS_KEY),
 		"notice_text": frappe.db.get_default(NOTICE_KEY) or "",
 		"hr_contact_phone": frappe.db.get_default(HR_PHONE_KEY) or "",
@@ -161,17 +159,17 @@ def get_people_settings():
 	}
 
 
-def _joiner_required_documents():
-	"""The compulsory document types, intersected with the ones ticked for joiners.
+def _joiner_required_documents(chosen):
+	"""The compulsory document types, cut to the ones ticked for joiners that
+	still exist (`chosen` is `_chosen_docs(JOINER_TICKED_DOCS_KEY)`).
 
-	Marking a type compulsory can never ADD a type to the joiner's form. The
-	ticked list is the joiner's own (`JOINER_TICKED_DOCS_KEY`), not the staff one.
+	Marking a type compulsory can never ADD a type to the joiner's form, and a
+	deleted type is not reported as compulsory when the form never asks for it.
 	"""
-	def _names(key):
-		return {v.strip() for v in str(frappe.db.get_default(key) or "").split(",")
-		        if v.strip()}
-
-	return sorted(_names(JOINER_DOCS_KEY) & _names(JOINER_TICKED_DOCS_KEY))
+	wanted = {v.strip() for v in
+	          str(frappe.db.get_default(JOINER_DOCS_KEY) or "").split(",")
+	          if v.strip()}
+	return sorted(wanted & {d["name"] for d in chosen if d["known"]})
 
 
 @frappe.whitelist()

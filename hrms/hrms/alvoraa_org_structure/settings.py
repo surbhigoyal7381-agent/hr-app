@@ -211,10 +211,10 @@ DEFAULTS = {
 	# its attachments, so the shell that answers "who invited somebody on 3
 	# November" is untouched.
 	#
-	# 30 is the cautious end and is the default. There is no value that means
+	# 45 is the default (Surbhi, 16 Nov 2026). There is no value that means
 	# "for ever" and the setter refuses a blank, a 0 and anything outside the
 	# range.
-	"alvoraa_joiner_document_days": 30,
+	"alvoraa_joiner_document_days": 45,
 
 	# ── the employer's own notice (counsel 6, ruling 1) ─────────────────────
 	#

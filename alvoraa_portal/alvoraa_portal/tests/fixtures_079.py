@@ -167,6 +167,13 @@ def clear_the_rows():
 		if user and frappe.db.exists("User", user):
 			frappe.delete_doc("User", user, force=True, ignore_permissions=True,
 			                  delete_permanently=True)
+	# An account can outlive its row (a test that failed half way), and
+	# `_already_a_login` matches on the mobile number, so one orphan makes every
+	# later `make_sign_in` in the run refuse. Sweep them by their shape.
+	for user in frappe.get_all("User", filters={"name": ("like", "joiner-%@joiner.invalid")},
+	                           pluck="name", ignore_permissions=True):
+		frappe.delete_doc("User", user, force=True, ignore_permissions=True,
+		                  delete_permanently=True)
 	frappe.db.commit()
 
 

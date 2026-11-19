@@ -71,6 +71,23 @@ class TestStoreHrManagerCannotWriteOrgSettings(FrappeTestCase):
 		self.assertEqual(logged.call_args.args[0], "030-D4")
 		self.assertEqual(frappe.db.get_default(KEY) or "0", self.before)
 
+	def test_a_store_hr_manager_cannot_save_the_employee_window_either(self):
+		"""Slice 084: the employee's own-day window is organisation-wide too, so
+		a store's HR person may read it and may not move it."""
+		from alvoraa_portal.attendance_correction import EMPLOYEE_FILING_WINDOW_KEY
+
+		saved = frappe.db.get_default(EMPLOYEE_FILING_WINDOW_KEY)
+		frappe.set_user(self.store_manager)
+		try:
+			with patch("hrms.alvoraa_hr_core.access.log_refusal") as logged:
+				with self.assertRaises(frappe.PermissionError):
+					hr_api.set_org_setting(EMPLOYEE_FILING_WINDOW_KEY, "3")
+			self.assertEqual(logged.call_args.args[0], "030-D4")
+			self.assertEqual(frappe.db.get_default(EMPLOYEE_FILING_WINDOW_KEY), saved)
+			hr_api.get_org_setting(EMPLOYEE_FILING_WINDOW_KEY)    # reading stays open
+		finally:
+			frappe.set_user("Administrator")
+
 	def test_a_store_hr_manager_may_still_read_the_setting(self):
 		frappe.set_user(self.store_manager)
 		self.assertEqual(hr_api.get_org_setting(KEY) or "0", self.before)

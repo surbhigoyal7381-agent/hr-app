@@ -5894,12 +5894,13 @@ function acPaint() {
     {n: tt.present, l: "Days present"},
     {n: tt.hours_worked + "h", l: "Hours worked"},
     {n: tt.short_days, l: "Days short", warn: tt.short_days > 0},
-    {n: tt.missing_punches, l: "Missing punches", warn: tt.missing_punches > 0},
+    acHeldOn(d) ? {n: tt.held, l: "Held days", held: true, warn: tt.held > 0}
+                : {n: tt.missing_punches, l: "Missing punches", warn: tt.missing_punches > 0},
     {n: tt.late_days, l: "Late arrivals", warn: tt.late_days > 0},
     {n: tt.leave, l: "On leave"}
   ];
-  var html = gmReview() + '<div class="ac-tiles">' + tiles.map(function (x) {
-    return '<div class="ac-tile' + (x.warn ? " warn" : "") + '">'
+  var html = gmReview() + acHeldBanner(d) + '<div class="ac-tiles">' + tiles.map(function (x) {
+    return '<div class="ac-tile' + (x.warn ? " warn" : "") + (x.held && x.warn ? " held" : "") + '">'
       + '<div class="n">' + gpEsc(x.n) + '</div><div class="l">' + gpEsc(x.l) + "</div></div>";
   }).join("") + gmTile() + "</div>";
 
@@ -5957,12 +5958,15 @@ function acRow(x) {
   else if (x.leave_type) label = '<span class="ac-tag">' + gpEsc(x.leave_type) + "</span>";
   else if (x.state === "future") label = '<span class="ac-tag">To come</span>';
   else if (!x.attendance) label = '<span class="ac-tag">No record</span>';
+  else if (x.held) label = '<span class="ac-tag held">&#9888; Held</span>'
+    + (x.request && x.request.state === "waiting" ? '<span class="ac-tag wait">Sent to HR</span>' : "");
   else label = '<span class="ac-tag' + (x.status === "Absent" ? " warn" : "") + '">'
-    + gpEsc(x.status) + "</span>";
+    + gpEsc(x.status) + "</span>"
+    + (x.released ? '<span class="ac-tag ok">&#10003; Was held, pay restored</span>' : "");
 
-  if (x.missing_punch) label += '<span class="ac-tag warn">Missing punch</span>';
+  if (x.missing_punch && !acHeldOn(acState.data)) label += '<span class="ac-tag warn">Missing punch</span>';
   label += gmTag(x);
-  if (x.request) label += '<span class="ac-tag' + (x.request.state === "approved" ? " ok" : "")
+  if (x.request && !(x.held && x.request.state === "waiting")) label += '<span class="ac-tag' + (x.request.state === "approved" ? " ok" : "")
     + '">' + gpEsc(acSay(x.request.state)) + "</span>";
 
   var arrival = "—";
@@ -5980,7 +5984,10 @@ function acRow(x) {
      cells are hidden on a phone. An openable day is a real button, so it can
      be reached and opened from the keyboard; its click reaches the row. */
   var line2 = [];
-  if (x.attendance) {
+  if (x.held) {
+    line2.push(gpEsc(x.held_punches + (x.held_punches === 1 ? " punch" : " punches")));
+    (x.punches || []).forEach(function (m) { line2.push(gpEsc(m.at)); });
+  } else if (x.attendance) {
     if (x.in_time) line2.push(gpEsc(drT("In {0}", [x.in_time])));
     if (x.out_time) line2.push(gpEsc(drT("Out {0}", [x.out_time])));
     if (x.hours !== null && x.hours !== undefined) line2.push(gpEsc(drT("{0}h worked", [x.hours])));
@@ -6171,7 +6178,7 @@ function acDetail(x) {
       + "— only the totals on the attendance record.</p>";
   }
 
-  if (x.missing_punch) {
+  if (x.missing_punch && !acHeldOn(d)) {
     html += '<p class="ac-help"><b>One punch never registered.</b> That is the '
       + "commonest reason a day looks short, and it is what the correction "
       + "below is for.</p>";
@@ -6194,9 +6201,14 @@ function acDetail(x) {
       + "</section>";
   }
   html += gmBox(x);
+  html += acHeldBox(x, d);
 
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
+  } else if (x.held && d.can_request) {
+    /* A held day is never outside the filing window: a day somebody worked
+       must not be lost for ever (slice 085, US-18). */
+    html += acHeldForm(x, d);
   } else if (d.is_self && x.own_window === "outside") {
     /* Slice 084: the person's OWN day, older than the employee window. The
        server worked the flag out with the same call its guard uses, so this
@@ -6286,6 +6298,103 @@ function ownOldText(from, basis, joined) {
   if (joined) s += " " + drT("The one exception is your joining day, {0}.", [acNiceDay(joined)]);
   return s;
 }
+
+/* ── Held days (slice 085, ALV-392) ───────────────────────────────────
+   A day with an odd number of punches is Held: not paid until HR has looked.
+   Shown when the company has the hold on, or while any day is still held. */
+function acHeldOn(d) {
+  return !!(d && (d.hold_on || (d.totals && d.totals.held > 0)));
+}
+
+function acHeldBanner(d) {
+  if (!acHeldOn(d)) return "";
+  var h = d.totals.held;
+  if (!h) return '<div class="ac-banner ok">&#10003; No held days. Every day this month is paid.</div>';
+  return '<div class="ac-banner held">&#9888; ' + h + (h === 1 ? " day is " : " days are ") + "Held. "
+    + (d.is_self ? "Not paid until fixed. Tap a held day and send the missing time to HR."
+                 : gpEsc(d.employee_name) + "'s held days are not paid until fixed. You can send a time to HR for them.")
+    + "</div>";
+}
+
+function acHeldBox(x, d) {
+  var html = "";
+  if (x.held) {
+    var one = x.held_punches === 1;
+    html += '<div class="ac-heldbox"><h3>&#9888; Held. '
+      + (one ? "One punch on this day." : x.held_punches + " punches on this day.") + "</h3>"
+      + '<div class="ac-punches">' + (x.punches || []).map(function (m) {
+          return '<span class="ac-punch">' + gpEsc(m.at) + "</span>"; }).join("") + "</div>"
+      + "<p><b>Not paid until fixed.</b> "
+      + (one ? "" : "One punch is missing, so nobody can tell which time is right. ")
+      + "HR looks at held days at the end of the month, before pay.</p>";
+    var r = x.request;
+    if (r && r.state === "waiting") {
+      html += "<p>Sent to HR at " + gpEsc(String(r.creation || "").slice(11, 16))
+        + (x.held_sent_by_you ? " by you" : "") + ". The day stays Held and is not paid until HR decides."
+        + (d.is_self ? " You will see the answer here." : "")
+        + (r.missing_time ? " Time given: " + gpEsc(r.missing_time) : "") + "</p>";
+    }
+    html += "</div>";
+  } else if (x.released) {
+    var q = x.released;
+    html += '<div class="ac-okbox"><h3>&#10003; Held, now ' + gpEsc(x.status) + ". Pay restored.</h3>"
+      + "<p>" + (q.how === "Machine punch"
+          ? "The missing punch arrived from the machine at " + gpEsc(q.time || "") + ", so the day released itself."
+          : "HR approved the time " + gpEsc(q.time || "") + ".")
+      + " This day is paid again."
+      + (x.released_after_final_slip
+          ? " It was released after your salary slip was made final, so the slip was not changed. HR will tell you how it is paid."
+          : " It counts on your salary slip.")
+      + "</p></div>";
+  }
+  return html;
+}
+
+function acHeldForm(x, d) {
+  var one = x.held_punches === 1, who = d.is_self ? "you" : gpEsc(d.employee_name);
+  var ask = one
+    ? (x.held_single_is_out ? "What time did " + who + " arrive?" : "What time did " + who + " leave?")
+    : "What time was the missing punch?";
+  return '<div class="ac-form">'
+    + '<label class="form-label" for="ac-missing-time">' + ask + "</label>"
+    + '<input type="time" id="ac-missing-time" required>'
+    + (one ? "" : '<label class="form-label" for="ac-missing-log">It was a</label>'
+        + '<select id="ac-missing-log"><option value="OUT">Out</option><option value="IN">In</option></select>')
+    + '<p class="ac-help">That is all we need. HR sees your punches and this time, and decides. '
+    + "Nothing else to fill in.</p>"
+    + '<div class="ac-acts"><button class="btn btn-primary" onclick="acHeldSubmit(&quot;' + x.date + '&quot;,'
+    + (one ? (x.held_single_is_out ? 1 : 0) + "" : "null") + ')">'
+    + (d.is_self ? "Send to HR" : "Send to HR for " + gpEsc((d.employee_name || "").split(" ")[0])) + "</button></div></div>";
+}
+
+/* The payload is the day, the time and In/Out, and nothing else: no reason and
+   no explanation are collected for a held day (PRIV-2). */
+window.acHeldSubmit = async function (date, singleIsOut) {
+  var t = (document.getElementById("ac-missing-time") || {}).value;
+  var logEl = document.getElementById("ac-missing-log");
+  var log = logEl ? logEl.value : (singleIsOut ? "IN" : "OUT");
+  if (!t) { toast("Enter the time first.", "err"); return; }
+  if (acSending) return;
+  var other = (acState.data && acState.data.is_self === false)
+    ? (acState.employee || (acState.data && acState.data.employee)) : null;
+  acSending = true;
+  showLoad();
+  try {
+    var body = {from_date: date, missing_time: t, missing_log: log};
+    if (other) { body.employee = other; await acApi("raise_for_report", body); }
+    else await acApi("raise_correction", body);
+    hideLoad();
+    toast("Sent to HR.", "ok");
+    acState.open = null;
+    await acLoad();
+  } catch (e) {
+    hideLoad();
+    /* Kept in the box, so nothing typed is lost. */
+    toast(e.message || "Not sent. Try again.", "err");
+  } finally {
+    acSending = false;
+  }
+};
 
 function acForm(x) {
   var opts = (acState.reasons || []).map(function (r) {
@@ -6458,6 +6567,7 @@ async function acReviewQueue() {
         + '<div class="m">' + gpEsc(r.from_date)
         + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
         + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "")
+        + acHeldHrLines(r)
         /* Approve and Decline only when the server says this caller may
            decide it today (`can_decide`, from the same function `decide`
            asks). Otherwise its own sentence says who has it and until when -
@@ -6480,11 +6590,28 @@ async function acReviewQueue() {
         + '<div class="ac-acts">'
         + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
         + (r.can_decide === false ? "" :
-            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">Approve</button>'
-          + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>')
+            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">'
+              + (r.held_preview ? "Approve: day becomes " + gpEsc(r.held_preview.status) : "Approve") + "</button>"
+          + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">'
+              + (r.held_preview ? "Decline: stays Held" : "Decline") + "</button>")
         + "</div></div>";
     }).join("");
   } catch (e) { wrap.style.display = "none"; }
+}
+
+/* A request for a held day: the punches, the missing punch, and what approving
+   will do, worked out by the same function approval runs (Q3). */
+function acHeldHrLines(r) {
+  var h = r.held_preview;
+  if (!r.missing_time || !h) return "";
+  var hrs = Math.floor(h.working_hours), mins = Math.round((h.working_hours - hrs) * 60);
+  var paid = h.status === "Absent" ? " It stays unpaid." : " and is paid on the slip.";
+  return '<div class="note"><span class="ac-tag held">&#9888; Held</span> Punches: '
+    + gpEsc((h.punches || []).join(", ")) + ". The missing punch was " + gpEsc(r.missing_time) + ".</div>"
+    + '<div class="note">If you approve: this day becomes ' + gpEsc(h.status) + ", " + hrs + "h " + mins + "m"
+    + (h.status === "Absent" ? "." + paid : paid) + "</div>"
+    + (h.slip_final ? '<div class="note">This day is in a slip that is already final. The slip will not be changed. '
+        + "To pay this day, add an Additional Salary for it.</div>" : "");
 }
 
 window.acDecide = async function (name, approve) {
@@ -6500,9 +6627,11 @@ window.acDecide = async function (name, approve) {
   }
   showLoad();
   try {
-    await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note});
+    var res = await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note});
     hideLoad();
-    toast(approve ? "Approved — the day has been corrected." : "Declined.", "ok");
+    var said = approve ? "Approved — the day has been corrected." : "Declined.";
+    if (approve && res && res.slip_final) said += " The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it.";
+    toast(said, "ok");
     await acLoad();
   } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
 };
@@ -23611,11 +23740,85 @@ window.pfRatingLabel = function(value, scale) {
       orgLoadOnBehalf(canEdit);
       orgLoadEmployeeWindow();
       orgLoadFilingWindow();
+      orgLoadHeld();
       if (card) card.style.display = "";
     }).catch(function() {
       /* Not HR for this site: the card simply is not there. */
       if (card) card.style.display = "none";
     });
+  };
+
+  /* ── Held days (slice 085, ALV-392) ──
+     The card is drawn only when the server returns a company this caller looks
+     after. Who may change it is the server's rule (a Company validate hook);
+     the disabled controls are a courtesy. The Save button says what saving
+     will do: how many days this month would be held. */
+  var orgHeld = {rows: [], count: null};
+
+  window.orgLoadHeld = function() {
+    var card = document.getElementById("org-held-card");
+    window.gpFetch("alvoraa_portal.held_day.held_settings", {}).then(function(rows) {
+      orgHeld.rows = rows || [];
+      if (!orgHeld.rows.length) { if (card) card.style.display = "none"; return; }
+      var sel = document.getElementById("org-held-company");
+      sel.innerHTML = orgHeld.rows.map(function(r) {
+        return '<option value="' + gpEsc(r.company) + '">' + gpEsc(r.company) + "</option>";
+      }).join("");
+      document.getElementById("org-held-company-field").style.display = orgHeld.rows.length > 1 ? "" : "none";
+      orgHeldPick();
+      card.style.display = "";
+    }).catch(function() { if (card) card.style.display = "none"; });
+  };
+
+  function orgHeldRow() {
+    var name = (document.getElementById("org-held-company") || {}).value;
+    return orgHeld.rows.filter(function(r) { return r.company === name; })[0];
+  }
+
+  window.orgHeldPick = function() {
+    var r = orgHeldRow();
+    if (!r) return;
+    document.getElementById("org-held-on").checked = !!r.hold;
+    document.getElementById("org-held-limit").value = r.limit;
+    document.getElementById("org-held-roles").value = r.roles || "";
+    ["org-held-on", "org-held-limit", "org-held-roles", "org-held-save"].forEach(function(id) {
+      document.getElementById(id).disabled = !r.can_edit;
+    });
+    pfSetHtml("org-held-msg", r.can_edit ? "" : '<span style="color:var(--text3)">' +
+      gpEsc("Only an HR Manager of this company can change these.") + "</span>");
+    orgHeld.count = null;
+    orgHeldCount();
+  };
+
+  /* The live count, an integer from the server, asked only when the switch is
+     ticked and was not on already: it is what saving would newly hold. */
+  window.orgHeldCount = function() {
+    var r = orgHeldRow(), btn = document.getElementById("org-held-save");
+    if (!r || !btn) return;
+    var on = document.getElementById("org-held-on").checked;
+    if (!on || r.hold) { btn.textContent = "Save for " + r.company; return; }
+    btn.textContent = "Save for " + r.company;
+    window.gpFetch("alvoraa_portal.held_day.held_count", {company: r.company}).then(function(n) {
+      btn.textContent = "Save for " + r.company + ": " + n + (n === 1 ? " day" : " days") + " will be held";
+    }).catch(function() { /* the plain label stays */ });
+  };
+
+  window.orgHeldSave = function() {
+    var r = orgHeldRow();
+    if (!r) return;
+    var btn = document.getElementById("org-held-save");
+    btn.disabled = true;
+    window.gpFetch("alvoraa_portal.held_day.save_settings", {
+      company: r.company,
+      hold: document.getElementById("org-held-on").checked ? 1 : 0,
+      limit: document.getElementById("org-held-limit").value || 0,
+      roles: document.getElementById("org-held-roles").value
+    }).then(function(res) {
+      r.hold = res.hold; r.limit = res.limit; r.roles = res.roles;
+      toast("Saved for " + r.company + ".", "ok");
+      orgHeldPick();
+    }).catch(function(e) { toast(e.message || "Could not save that. Check the roles and try again.", "err"); })
+      .then(function() { btn.disabled = !r.can_edit; });
   };
 
   /* ── May a manager ask on behalf, and how far back (slice 060, SEC-9a) ──

@@ -2063,6 +2063,17 @@ body.panel-fullscreen{overflow:hidden}
   background:var(--surface2);letter-spacing:.03em;margin-left:6px}
 .ac-tag.warn{border-color:var(--amber);background:var(--amber-lt);color:var(--amber)}
 .ac-tag.ok{border-color:var(--green);background:var(--green-lt);color:var(--green)}
+/* Slice 085: a Held day. Amber with an icon and the word, never colour alone. */
+.ac-tag.held{border-color:var(--amber);background:var(--amber-lt);color:var(--amber)}
+.ac-tag.wait{border-color:var(--primary);background:var(--primary-lt);color:var(--primary)}
+.ac-tile.held{border-color:var(--amber);background:var(--amber-lt)}
+.ac-banner{border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;font-weight:600}
+.ac-banner.held{border-color:var(--amber);background:var(--amber-lt);color:var(--amber)}
+.ac-banner.ok{border-color:var(--green);background:var(--green-lt);color:var(--green)}
+.ac-heldbox,.ac-okbox{border:1px solid var(--amber);background:var(--amber-lt);border-radius:var(--r-sm);padding:12px;margin-bottom:10px}
+.ac-okbox{border-color:var(--green);background:var(--green-lt)}
+.ac-heldbox h3{margin:0 0 4px;font-size:var(--fs-md,15px);color:var(--amber)}
+.ac-okbox h3{margin:0 0 4px;font-size:var(--fs-md,15px);color:var(--green)}
 
 /* The day detail, and the form for disputing it. Opens under the row it
    belongs to rather than in a modal - the point is to compare it with

@@ -204,7 +204,11 @@ doc_events = {
         ],
         # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
         # half-day leave day at a company with an enabled pay rule set.
-        "before_insert": "alvoraa_portal.leave_rules.prepare_half_day_correction",
+        "before_insert": [
+            "alvoraa_portal.leave_rules.prepare_half_day_correction",
+            # Slice 085: the monthly limit, on every door; held-day requests are outside it.
+            "alvoraa_portal.held_day.enforce_monthly_limit",
+        ],
         # Slice 084: how far back a person may raise their OWN day. On validate,
         # not before_insert, because an employee may edit a draft's dates after
         # creating it - and it must hold on the Desk and the REST API too.
@@ -409,7 +413,11 @@ doc_events = {
     "Company": {
         "after_insert": "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
         "on_update":    "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
-        "validate":     "alvoraa_portal.expense_accounts.validate_expense_claim_payable_account",
+        "validate":     [
+            "alvoraa_portal.expense_accounts.validate_expense_claim_payable_account",
+            # Slice 085 (SEC-6): who may change the held-day settings.
+            "alvoraa_portal.held_day.guard_company_settings",
+        ],
     },
     # The other half of the same gap. A claim needs an expense account on its
     # TYPE as well. ALV-178 fills that, but only when a COMPANY is saved - so a

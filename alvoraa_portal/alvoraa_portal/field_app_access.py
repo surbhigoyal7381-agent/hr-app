@@ -56,6 +56,24 @@ def is_machine_account(user: str | None = None) -> bool:
 	return not frappe.db.exists("Employee", {"user_id": user})
 
 
+def files_as_machine(user: str | None = None) -> bool:
+	"""True when this login is a biometric sync account, whatever other roles it holds.
+
+	Slice 085 (US-5, SEC-5). The real accounts (biometric.sync@dtc, @grace) hold the
+	sync role PLUS HR roles, because taking those away is what made every DTC punch
+	get refused on 2 Nov (ALV-302). So the test is the sync role and no Employee
+	record: a human HR user without the role is never a machine, and a person who
+	has an Employee record is never one. Never judged by `device_id`.
+
+	A separate function on purpose: `is_machine_account` is read by the punch-time
+	and geofence rules, and widening it would change what they do for these accounts.
+	"""
+	user = user or frappe.session.user
+	if SYNC_ROLE not in frappe.get_roles(user):
+		return False
+	return not frappe.db.exists("Employee", {"user_id": user})
+
+
 def check_machine_punch(doc: Document, method: str | None = None) -> None:
 	"""before_insert Employee Checkin. A machine punch keeps the time the machine
 	recorded, and a far-off date is flagged so attendance does not use it (ALV-302).

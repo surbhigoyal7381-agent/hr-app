@@ -447,6 +447,108 @@ class HeldDayCase(FrappeTestCase):
 		self.assertEqual(after.count("alvoraa_portal.held_day.after_migrate"), 2)
 
 
+	# ── who counts as a machine (P1, SEC-5) ──
+
+	def test_files_as_machine_for_every_real_account_shape_and_for_no_human(self):
+		from alvoraa_portal.field_app_access import files_as_machine
+		if not frappe.db.exists("Role", "Biometric Sync"):
+			frappe.get_doc({"doctype": "Role", "role_name": "Biometric Sync"}).insert(ignore_permissions=True)
+		for name, roles, expected in (
+				("sync", ("Biometric Sync",), True),
+				("synchru", ("Biometric Sync", "HR User"), True),
+				("synchrm", ("Biometric Sync", "HR Manager"), True),
+				("hruser", ("HR User",), False),
+				("hrmgr", ("HR Manager", "HR User"), False),
+				("sysmgr", ("System Manager",), False)):
+			self.assertEqual(files_as_machine(self._login(name, roles)), expected, name)
+		# The role on a person who has an Employee record is not a machine.
+		person = self._login("syncperson", ("Biometric Sync", "HR User"))
+		self._employee("Syncperson", person)
+		self.assertFalse(files_as_machine(person))
+
+	def test_a_human_hr_user_without_the_sync_role_cannot_release_with_a_punch(self):
+		att = self._held()
+		for n, roles in enumerate((("HR User",), ("HR Manager", "HR User"))):
+			user = self._login("human%d" % n, roles)  # no Employee record, as an admin login
+			self._punch(self.worker, "18:%d" % (30 + n * 5), log_type="OUT", user=user)
+			self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Held", roles)
+
+	def _backfill_module(self):
+		import importlib.util
+		repo = os.path.abspath(os.path.join(os.path.dirname(__file__), *[".."] * 4))
+		path = os.path.join(repo, "scripts", "alv392_held_backfill_grace.py")
+		if not os.path.exists(path):
+			self.skipTest("the script is not on this checkout's path")
+		spec = importlib.util.spec_from_file_location("held_backfill_e2e", path)
+		mod = importlib.util.module_from_spec(spec)
+		spec.loader.exec_module(mod)
+		return mod
+
+	def _marked_before_switch(self, hhmm="09:00"):
+		self.day = "2026-11-10"
+		self.set_switch(0)
+		emp = self._employee("Bf" + frappe.generate_hash(length=3))
+		self._punch(emp, hhmm)
+		att = self._attendance(emp)
+		att.submit()
+		self.set_switch(1)
+		return att.name
+
+	def test_backfill_end_to_end_dry_run_then_apply_then_undo(self):
+		"""AC-58, 62, 63 through run(), the same path the command line takes."""
+		mod = self._backfill_module()
+		att = self._marked_before_switch()
+		undo_file = tempfile.mktemp(suffix=".jsonl")
+		kw = {"_in_test_site": frappe.local.site}
+		try:
+			with patch.object(frappe.db, "commit"):
+				# AC-63: no real run without a dry run
+				with self.assertRaises(SystemExit) as cm:
+					mod.run(frappe.local.site, undo_file, apply=True, **kw)
+				self.assertIn("dry run first", str(cm.exception))
+				self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Present")
+				dry = mod.run(frappe.local.site, undo_file, **kw)
+				self.assertGreaterEqual(dry["count"], 1)
+				self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Present")  # dry run changes nothing
+				# AC-63: the count moved after the dry run, so the real run stops
+				self._marked_before_switch("09:05")
+				with self.assertRaises(SystemExit) as cm:
+					mod.run(frappe.local.site, undo_file, apply=True, **kw)
+				self.assertIn("Run the dry run again", str(cm.exception))
+				self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Present")
+				# dry run again, then the real run
+				again = mod.run(frappe.local.site, undo_file, **kw)
+				done = mod.run(frappe.local.site, undo_file, apply=True, **kw)
+				self.assertEqual(done["count"], again["count"])
+				self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Held")
+				# AC-58: every changed id is in the undo list
+				with open(undo_file) as f:
+					listed = [json.loads(x)["name"] for x in f if x.strip()]
+				self.assertIn(att, listed)
+				self.assertEqual(len(listed), done["count"])
+				# harmless to re-run: nothing left, and the stale dry-run count stops it
+				with self.assertRaises(SystemExit):
+					mod.run(frappe.local.site, undo_file, apply=True, **kw)
+				mod.run(frappe.local.site, undo_file, undo=True, **kw)
+				self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Present")
+		finally:
+			for f in (undo_file, undo_file + ".dryrun"):
+				if os.path.exists(f):
+					os.unlink(f)
+
+	def test_a_day_in_a_submitted_slip_is_not_held_by_the_backfill(self):
+		mod = self._backfill_module()
+		att = self._marked_before_switch()
+		with patch("alvoraa_portal.held_day.is_in_final_slip", return_value=True):
+			self.assertNotIn(att, [r.name for r in mod.candidates(frappe, [self.company])])
+
+	def test_the_test_hook_still_refuses_every_other_site(self):
+		mod = self._backfill_module()
+		for site in ("dtc.alvoraa.co", "ppj.dev.alvoraa.co", "aahr.alvoraa.co"):
+			with self.assertRaises(SystemExit) as cm:
+				mod.run(site, "/tmp/x.jsonl", _in_test_site=frappe.local.site)
+			self.assertIn("grace.alvoraa.co", str(cm.exception))
+
 	# ── the backfill's own work: candidates, hold, harmless re-run, undo ──
 
 	def test_hold_then_rerun_finds_nothing_then_undo_restores(self):
@@ -474,7 +576,7 @@ class HeldDayCase(FrappeTestCase):
 			self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Held")
 			self.assertNotIn(att.name, [r.name for r in mod.candidates(frappe, [self.company])])
 			with patch.object(frappe.db, "commit"):
-				mod.undo(frappe, undo_file)
+				mod.undo_run(frappe, undo_file)
 			self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Present")
 		finally:
 			if os.path.exists(undo_file):
@@ -514,7 +616,7 @@ class BackfillScript(FrappeTestCase):
 		try:
 			with patch.object(frappe.db, "get_value", return_value="Present"), \
 					patch.object(frappe.db, "set_value") as setv, patch.object(frappe.db, "commit"):
-				mod.undo(frappe, f.name)
+				mod.undo_run(frappe, f.name)
 			setv.assert_not_called()  # already released by a human: left alone
 		finally:
 			os.unlink(f.name)

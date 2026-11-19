@@ -32,6 +32,7 @@ HOLDABLE = ("Present", "Half Day", "Absent")
 
 
 def candidates(frappe, companies):
+	import alvoraa_portal.held_day as held
 	from alvoraa_portal.payroll_rules_apply import _punches
 
 	rows = frappe.get_all(
@@ -41,7 +42,65 @@ def candidates(frappe, companies):
 		         "attendance_request": ("is", "not set"), "leave_application": ("is", "not set")},
 		fields=["name", "employee", "attendance_date", "status", "half_day_status"],
 		order_by="attendance_date asc", limit_page_length=0)
-	return [r for r in rows if _punches(r.employee, r.attendance_date)[2] % 2 == 1]
+	# AC-62: a day inside a SUBMITTED salary slip is skipped. That slip is final;
+	# holding the day now would leave the slip and the record disagreeing.
+	return [r for r in rows
+	        if _punches(r.employee, r.attendance_date)[2] % 2 == 1
+	        and not held.is_in_final_slip(r.employee, r.attendance_date)]
+
+
+def run(site, undo_file, apply=False, undo=False, _in_test_site=None):
+	"""The whole job. `_in_test_site` is for tests only: a test passes its own site
+	name (and an already-open connection) so this path can run end to end. The
+	command line never sets it, and any site that is neither Grace nor that name
+	is refused, so no real site but Grace can be reached."""
+	if site != SITE and site != _in_test_site:
+		sys.exit(f"Refused: this script runs only for {SITE}.")
+	undo_path = os.path.abspath(undo_file)
+	repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+	if undo_path.startswith(repo + os.sep):
+		sys.exit("Refused: keep the undo file outside the repository.")
+
+	import frappe
+
+	if not _in_test_site:
+		frappe.init(site=site)
+		frappe.connect()
+	try:
+		frappe.set_user("Administrator")
+		options = (frappe.get_meta("Attendance").get_field("status").options or "").split("\n")
+		if "Held" not in options:
+			sys.exit("Refused: Attendance has no Held status on this site. Migrate first.")
+
+		if undo:
+			return undo_run(frappe, undo_path)
+
+		companies = frappe.get_all("Company", filters={"alvoraa_hold_odd_punch_days": 1}, pluck="name")
+		if not companies:
+			sys.exit("Refused: no company has the hold switched on. Switch it on first.")
+		todo = candidates(frappe, companies)
+		print(f"{len(todo)} day(s) between {FIRST} and {LAST} would be held, in "
+		      f"{len(companies)} company(ies).")
+		dry_path = undo_path + ".dryrun"
+		if not apply:
+			with open(dry_path, "w") as f:
+				json.dump({"count": len(todo)}, f)
+			print("Dry run: nothing was changed. Add --apply to hold them.")
+			return {"count": len(todo)}
+		# AC-63: the real run is only for the count the dry run showed.
+		if not os.path.exists(dry_path):
+			sys.exit("Refused: run the dry run first, with the same undo file.")
+		with open(dry_path) as f:
+			expected = json.load(f)["count"]
+		if expected != len(todo):
+			sys.exit(f"Refused: the dry run found {expected} day(s) and there are {len(todo)} "
+			         "now. Something changed. Run the dry run again and read both numbers.")
+		hold(frappe, todo, undo_path)
+		print("Done. Draft slips re-price when they are next saved. Undo list: " + undo_path)
+		return {"count": len(todo)}
+	finally:
+		if not _in_test_site:
+			frappe.destroy()
 
 
 def main():
@@ -51,53 +110,20 @@ def main():
 	ap.add_argument("--apply", action="store_true")
 	ap.add_argument("--undo", action="store_true")
 	args = ap.parse_args()
-
-	if args.site != SITE:
-		sys.exit(f"Refused: this script runs only for {SITE}.")
-	undo_path = os.path.abspath(args.undo_file)
-	repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-	if undo_path.startswith(repo + os.sep):
-		sys.exit("Refused: keep the undo file outside the repository.")
-
-	import frappe
-
-	frappe.init(site=SITE)
-	frappe.connect()
-	try:
-		frappe.set_user("Administrator")
-		options = (frappe.get_meta("Attendance").get_field("status").options or "").split("\n")
-		if "Held" not in options:
-			sys.exit("Refused: Attendance has no Held status on this site. Migrate first.")
-
-		if args.undo:
-			return undo(frappe, undo_path)
-
-		companies = frappe.get_all("Company", filters={"alvoraa_hold_odd_punch_days": 1}, pluck="name")
-		if not companies:
-			sys.exit("Refused: no company has the hold switched on. Switch it on first.")
-		todo = candidates(frappe, companies)
-		print(f"{len(todo)} day(s) between {FIRST} and {LAST} would be held, in "
-		      f"{len(companies)} company(ies).")
-		if not args.apply:
-			print("Dry run: nothing was changed. Add --apply to hold them.")
-			return
-		hold(frappe, todo, undo_path)
-		print("Done. Draft slips re-price when they are next saved. Undo list: " + undo_path)
-	finally:
-		frappe.destroy()
+	run(args.site, args.undo_file, apply=args.apply, undo=args.undo)
 
 
 def hold(frappe, todo, undo_path):
+	# AC-58: the WHOLE id list is on disk before any row changes.
+	with open(undo_path, "a") as f:
+		for r in todo:
+			f.write(json.dumps({"name": r.name, "status": r.status,
+			                    "half_day_status": r.half_day_status}) + "\n")
+		f.flush()
+		os.fsync(f.fileno())
 	done = 0
 	for start in range(0, len(todo), CHUNK):
 		chunk = todo[start:start + CHUNK]
-		# The undo list is on disk BEFORE any row in the chunk changes.
-		with open(undo_path, "a") as f:
-			for r in chunk:
-				f.write(json.dumps({"name": r.name, "status": r.status,
-				                    "half_day_status": r.half_day_status}) + "\n")
-			f.flush()
-			os.fsync(f.fileno())
 		for r in chunk:
 			frappe.db.set_value("Attendance", r.name, "status", "Held")
 			# set_value writes no Version row, so the audit trail is this Comment.
@@ -108,7 +134,7 @@ def hold(frappe, todo, undo_path):
 		print(f"held {done} of {len(todo)}")
 
 
-def undo(frappe, undo_path):
+def undo_run(frappe, undo_path):
 	with open(undo_path) as f:
 		entries = [json.loads(line) for line in f if line.strip()]
 	back = 0

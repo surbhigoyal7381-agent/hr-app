@@ -389,8 +389,8 @@ def release_on_machine_punch(doc, method=None):
 	A fault never fails the punch: the sync tool halts a machine's batch on a
 	refusal it does not know."""
 	try:
-		from alvoraa_portal.field_app_access import is_machine_account
-		if not is_machine_account() or doc.skip_auto_attendance:
+		from alvoraa_portal.field_app_access import files_as_machine
+		if not files_as_machine() or doc.skip_auto_attendance:
 			return
 		date = get_datetime(doc.time).date()
 		row = _held_row(doc.employee, date)

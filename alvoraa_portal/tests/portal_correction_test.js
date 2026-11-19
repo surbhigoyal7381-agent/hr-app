@@ -326,6 +326,11 @@ function putForm(reason) {
   (/older than your organisation lets you raise yourself/.test(inline()) && /Mon 12 Oct/.test(inline()))
     ? ok("an old From says so under itself, in words")
     : bad("no inline sentence for an old From: " + inline());
+  const submitNow = () => Array.from(doc.querySelectorAll("#panel-att-req .btn-primary"))
+                               .filter(b => /submitAttendanceRequest/.test(b.getAttribute("onclick") || ""))[0];
+  (submitNow() && !submitNow().disabled)
+    ? ok("Submit is not greyed on a day the server will refuse")
+    : bad("Submit was greyed on an old day");
   pick("2026-10-01", "2026-10-01");
   (inline() === "Your joining day: you can always ask about this day.")
     ? ok("the joining day alone is told it is allowed")

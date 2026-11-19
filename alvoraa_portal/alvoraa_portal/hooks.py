@@ -161,7 +161,11 @@ doc_events = {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
         # Slice 085 (SEC-2): nobody confirms, cancels, deletes or makes their OWN
         # attendance, on any door. See attendance_doors.py.
-        "validate": "alvoraa_portal.attendance_doors.refuse_own_attendance_new",
+        # Slice 085: the doors first, then the hold, which writes Held before the first save.
+        "validate": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_new",
+            "alvoraa_portal.held_day.hold_odd_punch_day",
+        ],
         "before_update_after_submit": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
         "before_cancel": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
         "on_trash": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",

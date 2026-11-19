@@ -137,6 +137,15 @@
             <div class="gp-hint" id="org-att-scoring-help">When on, each appraisal cycle can include attendance with its own weight.</div>
             <div class="gp-hint" id="org-att-scoring-needs"></div>
           </div>
+          <!-- Slice 084: how far back an EMPLOYEE can raise their own day. Not
+               inside the manager box below and never greyed by the manager
+               switch: it answers a different question for different people.
+               Blank means no limit and is the default. -->
+          <div class="gp-field">
+            <label class="gp-label" for="org-employee-window">How far back an employee can ask about their own day</label>
+            <input class="gp-input" id="org-employee-window" type="number" min="0" max="30" step="1" placeholder="No limit" aria-describedby="org-employee-window-help" onchange="orgSaveEmployeeWindow(this)">
+            <div class="gp-hint" id="org-employee-window-help">Leave this empty for no limit. Counted in working days, using the employee's own holiday list. An employee's joining day is always allowed. It does not limit what HR does for other people. Use 0 to let an employee ask about today only. This is one number for every company in this organisation.</div>
+          </div>
           <!-- Slice 060 (SEC-9a), reworked 18 Oct 2026: a switch and its
                sub-setting. The switch says whether a manager may ask on behalf
                of their team at all; the box under it says how far back. The box
@@ -152,7 +161,7 @@
           <div class="gp-field" id="org-filing-window-field" style="margin-left:26px;border-left:2px solid var(--border);padding-left:14px">
             <label class="gp-label" for="org-filing-window">How far back a manager can ask</label>
             <input class="gp-input" id="org-filing-window" type="number" min="0" max="30" step="1" placeholder="No limit" aria-describedby="org-filing-window-help" onchange="orgSaveFilingWindow(this)">
-            <div class="gp-hint" id="org-filing-window-help">Leave this empty for no limit. Counted in working days, using the employee's own holiday list, so weekends and holidays do not use up the time. A manager who asks later than this is told to go to HR instead. <strong>It does not limit HR, and it does not limit an employee asking about their own day</strong> &mdash; HR can still fix any day. Use 0 to let a manager ask about today only.</div>
+            <div class="gp-hint" id="org-filing-window-help">Leave this empty for no limit. Counted in working days, using the employee's own holiday list, so weekends and holidays do not use up the time. A manager who asks later than this is told to go to HR instead. It does not limit HR &mdash; HR can still fix any day. How far back an employee can ask about their own day is the separate setting above. Use 0 to let a manager ask about today only.</div>
           </div>
         </div>
 

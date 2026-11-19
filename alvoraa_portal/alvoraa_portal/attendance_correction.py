@@ -282,7 +282,7 @@ def _employee_for(user):
 	"""
 	return frappe.db.get_value("Employee", {"user_id": user, "status": "Active"},
 	                           ["name", "employee_name", "company", "default_shift",
-	                            "holiday_list"], as_dict=True)
+	                            "holiday_list", "date_of_joining"], as_dict=True)
 
 
 def _me():
@@ -651,18 +651,22 @@ def month(year=None, month=None, employee=None):
 	#     the same call, so the two screens cannot drift apart again.
 	can_request = is_self or bool(
 		asker and me.name in _reports_to(asker.name, deep=False))
-	# The tenant's switch. Never applied to somebody's own day: neither setting
-	# may narrow what a person asks about their own attendance.
+	# The manager switch. It never applies to somebody's own day: it is about
+	# what a MANAGER may do for somebody else. An employee's own day has a
+	# separate setting, `EMPLOYEE_FILING_WINDOW_KEY`, read below.
 	if can_request and not is_self and not manager_on_behalf_on():
 		can_request = False
 
-	# Only a MANAGER filing for somebody else is bound by the window. Their own
-	# month is not - `raise_for_report` says the same, and this must not invent
-	# a limit the guard would not enforce. None, which blank now gives, means
-	# the screen hides nothing.
+	# TWO WINDOWS, ONE KEY IN THE PAYLOAD. A manager filing for somebody else is
+	# bound by the manager window; a person looking at their OWN month is bound
+	# by the employee window. Each is worked out with the call its own guard
+	# enforces with, so the screen never offers a day the server throws on.
+	# None, which blank gives for either, means the screen hides nothing.
 	filing_from, filing_basis = None, None
 	if can_request and not is_self:
 		filing_from, filing_basis = manager_filing_from(me.name)
+	elif is_self:
+		filing_from, filing_basis = employee_filing_from(me.name)
 	out = {
 		"employee": me.name, "employee_name": me.employee_name,
 		"year": year, "month": month, "last_day": last,
@@ -712,10 +716,12 @@ def month(year=None, month=None, employee=None):
 		# allowed to raise request for that day, meaning the form shouldn't
 		# be visible to them."
 		#
-		# One value, not a flag per day: the window is a single boundary, so
-		# the screen compares each date against it. Worked out with the SAME
-		# call the guard uses, for the same reason `can_request` is - a
-		# boundary that disagreed with the guard would just move the dead
+		# One boundary per month, so the screen can compare any date against
+		# it - for a MANAGER that is all it needs. For a person's OWN month the
+		# joining day is an exception to the boundary, so the days it applies
+		# to carry their own flag (`own_window`, added below). Worked out with
+		# the SAME call the guard uses, for the same reason `can_request` is -
+		# a boundary that disagreed with the guard would just move the dead
 		# button rather than remove it.
 		"can_request_from": filing_from,
 		"can_request_basis": filing_basis,
@@ -727,6 +733,21 @@ def month(year=None, month=None, employee=None):
 	}
 	if breaks:
 		out["break_allowance_minutes"] = allowance
+	# Slice 084: which of the person's OWN days the employee window refuses, and
+	# their joining date when it is older than the boundary. Only on their own
+	# month: another person's month is built from a field list with no joining
+	# date, so a manager or skip-level reader has nothing to leak here. A day
+	# the window leaves open carries no key at all.
+	if is_self and filing_from:
+		joined = me.date_of_joining
+		for day in days:
+			state = own_day_state(day["date"], day["date"], filing_from, joined)
+			if state == "old":
+				day["own_window"] = "outside"
+			elif state == "joining":
+				day["own_window"] = "joining"
+		if joined and getdate(joined) < getdate(filing_from):
+			out["joined_on"] = str(joined)
 	# Slice 066: the grooming red on this month, only for a viewer its own read
 	# gate lets in. Anybody else gets no `grooming` key at all, not an empty one.
 	grooming = month_lines(me.name, start, end)
@@ -1377,11 +1398,15 @@ def hr_may_act_from(doc):
 # WHO IT BINDS, AND WHO IT MUST NOT. The window is on the MANAGER's filing path
 # only. HR's own manual route is deliberately not bounded by it, because that
 # route is the way out when a day is older than the window - which is what
-# Surbhi's answer says. An employee raising their OWN day (`raise_correction`)
-# is not bounded by it either: narrowing what somebody may ask about their own
-# attendance was never asked for, and would take away something they have now.
+# Surbhi's answer says. An employee raising their OWN day is not bounded by
+# THIS window: an employee's own day has its own setting,
+# `EMPLOYEE_FILING_WINDOW_KEY` (slice 084, Surbhi, 19 Nov 2026), which neither
+# reads nor changes this one.
 MANAGER_ON_BEHALF_KEY = "alvoraa_manager_on_behalf_enabled"
 MANAGER_FILING_WINDOW_KEY = "alvoraa_manager_filing_window_days"
+# Slice 084: how far back an employee may raise their OWN day. A separate key
+# on purpose - the two settings answer different questions for different people.
+EMPLOYEE_FILING_WINDOW_KEY = "alvoraa_employee_filing_window_days"
 
 
 def manager_on_behalf_on():
@@ -1431,6 +1456,102 @@ def manager_filing_from(employee):
 		return None, None
 	earliest, basis = _working_days_away(employee, nowdate(), days, -1)
 	return str(earliest), basis
+
+
+def employee_filing_window_days():
+	"""How many working days back an employee may raise their OWN day - or None.
+
+	Blank is the default and means NO LIMIT; 0 means today only. Read the same
+	careful way as `manager_filing_window_days`, for the same reason: a stored
+	"0" is falsy, so `get_default(KEY) or DEFAULT` would turn the tightest
+	setting into the unset one. Its own reader and its own key, so setting one
+	window can never move the other.
+	"""
+	raw = frappe.db.get_default(EMPLOYEE_FILING_WINDOW_KEY)
+	if raw is None or str(raw).strip() == "":
+		return None
+	return max(0, cint(raw))
+
+
+def employee_filing_from(employee):
+	"""The oldest day this employee may raise for themselves, or (None, None).
+
+	ONE derivation for the guard, the month and the request history. Returns
+	before any holiday read when no limit is set.
+	"""
+	days = employee_filing_window_days()
+	if days is None:
+		return None, None
+	earliest, basis = _working_days_away(employee, nowdate(), days, -1)
+	return str(earliest), basis
+
+
+def own_day_state(from_date, to_date, earliest, joined):
+	"""What the employee window says about one request or one day.
+
+	"open"    - from the boundary onwards.
+	"joining" - older than the boundary, but it is the joining day and nothing
+	            else: the joining day is always allowed, on its own.
+	"range"   - starts on the joining day and runs on to later days.
+	"old"     - anything else older than the boundary.
+
+	A blank joining date gives no exception. The sheet asks it about a single
+	day (from == to) and the guard about the whole request, so the screen and
+	the refusal cannot disagree.
+	"""
+	from_date, to_date = getdate(from_date), getdate(to_date)
+	if from_date >= getdate(earliest):
+		return "open"
+	if joined and from_date == getdate(joined):
+		return "joining" if to_date == from_date else "range"
+	return "old"
+
+
+def _own_refusal(earliest, basis, joined, state):
+	"""The sentence for a refused own-day request: dates and fixed words only."""
+	day = lambda d: frappe.utils.formatdate(d, "EEE d MMM")
+	if state == "range":
+		return _("Your joining day, {0}, can be asked about on its own: set To to the same "
+		         "day. Days after it that are older than {1} are HR's to fix: tell HR "
+		         "which days and why.").format(day(joined), day(earliest))
+	text = " ".join([
+		_("This day is older than your organisation lets you raise yourself."),
+		_("The oldest day you can raise yourself is {0}, counted in {1}.").format(
+			day(earliest), basis),
+		_("HR can still fix it: tell HR which day it was and why."),
+	])
+	if joined and getdate(joined) < getdate(earliest):
+		text += " " + _("The one exception is your joining day, {0}.").format(day(joined))
+	return text
+
+
+def refuse_own_day_outside_window(doc, method=None):
+	"""Attendance Request `validate`: keep a person's OWN day inside the window.
+
+	On the DOCUMENT, not in the two portal endpoints, so the Desk and the REST
+	API are bound too. It runs on `validate` and not `before_insert` because the
+	Employee role may edit a draft after creating it: raise today, then move
+	`from_date` back six months. It acts on a new record, or one whose dates or
+	employee changed, so HR's submit, cancel and an edit of the explanation pay
+	nothing. Someone else's record is never touched - HR and managers raise for
+	other people by their own routes - and blank means no limit.
+
+	Nothing is logged. A refusal is lawful behaviour, and HR's route stays open.
+	"""
+	if not (doc.is_new() or any(doc.has_value_changed(f)
+	                            for f in ("from_date", "to_date", "employee"))):
+		return
+	if employee_filing_window_days() is None:
+		return
+	from hrms.alvoraa_hr_core.access import is_own_record
+
+	if not is_own_record(doc.employee):
+		return
+	earliest, basis = employee_filing_from(doc.employee)
+	joined = frappe.db.get_value("Employee", doc.employee, "date_of_joining")
+	state = own_day_state(doc.from_date, doc.to_date, earliest, joined)
+	if state not in ("open", "joining"):
+		frappe.throw(_own_refusal(earliest, basis, joined, state))
 
 
 def _refuse_outside_filing_window(employee, from_date):

@@ -184,6 +184,10 @@ doc_events = {
         # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
         # half-day leave day at a company with an enabled pay rule set.
         "before_insert": "alvoraa_portal.leave_rules.prepare_half_day_correction",
+        # Slice 084: how far back a person may raise their OWN day. On validate,
+        # not before_insert, because an employee may edit a draft's dates after
+        # creating it - and it must hold on the Desk and the REST API too.
+        "validate": "alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────

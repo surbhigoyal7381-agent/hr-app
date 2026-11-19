@@ -6197,17 +6197,29 @@ function acDetail(x) {
 
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
-  } else if (d.can_request && acOutsideWindow(x.date, d)) {
-    /* The day is older than this tenant's filing window, so the server would
-       refuse it. Say so instead of offering a form that cannot work: an
-       explained absence is better than a button that dies when pressed. */
+  } else if (d.is_self && x.own_window === "outside") {
+    /* Slice 084: the person's OWN day, older than the employee window. The
+       server worked the flag out with the same call its guard uses, so this
+       is never a form that would be refused. No button: the sentence says who
+       can fix it. */
+    html += '<p class="ac-help" role="status">'
+      + gpEsc(ownOldText(d.can_request_from, acWindowWords(d), d.joined_on)) + "</p>";
+  } else if (d.can_request && !d.is_self && acOutsideWindow(x.date, d)) {
+    /* The day is older than the window a MANAGER may file within, so the server
+       would refuse it. Say so instead of offering a form that cannot work: an
+       explained absence is better than a button that dies when pressed. (Only
+       for somebody else's day - a person's own day has the branch above.) */
     html += '<p class="ac-help">This day is outside the window a manager can '
       + "file within, so it is HR's to correct. The oldest day you can raise "
       + "here is <b>" + gpEsc(acNice(d.can_request_from)) + "</b>"
       + (acWindowWords(d) ? ", counted in " + gpEsc(acWindowWords(d)) : "")
       + ".</p>";
   } else if (d.can_request) {
-    html += acForm(x);
+    html += (d.is_self && x.own_window === "joining"
+        ? '<p class="ac-help ac-join" role="status">'
+          + gpEsc(drT("This is your joining day, so you can always ask about it, however long ago it was.")) + "</p>"
+        : "")
+      + acForm(x);
   } else if (d.is_self === false && d.on_behalf_enabled === false) {
     /* The tenant has switched the on-behalf path off, so saying "their own
        manager can ask" would be untrue - with the switch off, nobody but the
@@ -6229,7 +6241,10 @@ function acDetail(x) {
 
    `can_request_from` is the server's own boundary, worked out with the same
    call `raise_for_report` enforces with. Null means no window binds this
-   caller - their own month, or HR - and then nothing is hidden. */
+   caller and then nothing is hidden. It is also sent for a person's OWN month
+   when the employee window is set (slice 084) - that case is answered by the
+   day's `own_window` flag, not by this comparison, because the joining day is
+   an exception the comparison cannot see. */
 function acOutsideWindow(date, d) {
   return !!(d && d.can_request_from && date && date < d.can_request_from);
 }
@@ -6252,6 +6267,31 @@ function acNice(iso) {
   return (+p[2]) + " " + m[+p[1] - 1] + " " + p[0];
 }
 
+/* "Mon 16 Nov": a three-day window moves over weekends, so a person's own
+   boundary names the weekday. Formats the server's ISO date; works nothing out. */
+function acNiceDay(iso) {
+  var p = isoParts(iso);
+  if (!p) return "";
+  var wd = DAY_NAMES[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()].slice(0, 3);
+  return drT(wd) + " " + p[2] + " " + drT(MON3[p[1] - 1]);
+}
+
+/* Slice 084: the words for a person's OWN day the organisation does not let
+   them raise, and for a range that starts on their joining day. Built only
+   from the server's dates and basis - never from a number of days. */
+function ownOldText(from, basis, joined) {
+  var s = drT("This day is older than your organisation lets you raise yourself.") + " "
+    + drT("The oldest day you can raise yourself is {0}, counted in {1}.", [acNiceDay(from), basis]) + " "
+    + drT("HR can still fix it: tell HR which day it was and why.");
+  if (joined) s += " " + drT("The one exception is your joining day, {0}.", [acNiceDay(joined)]);
+  return s;
+}
+
+function ownRangeText(from, joined) {
+  return drT("Your joining day, {0}, can be asked about on its own: set To to the same day. Days after it that are older than {1} are HR's to fix: tell HR which days and why.",
+             [acNiceDay(joined), acNiceDay(from)]);
+}
+
 function acForm(x) {
   var opts = (acState.reasons || []).map(function (r) {
     return '<option value="' + gpEsc(r.value) + '">' + gpEsc(r.value) + "</option>";
@@ -6269,6 +6309,7 @@ function acForm(x) {
        nothing about it - there is no confirm, because a confirm on an optional
        field is a nudge away from the evidence HR needs. */
     + '<div class="ev-block" id="ac-file"></div>'
+    + '<p class="ac-help" id="ac-refusal" role="alert" style="display:none"></p>'
     + '<div class="ac-acts">'
     + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date
     + '&quot;)">Ask HR to fix this day</button>'
@@ -6346,6 +6387,13 @@ window.acSubmit = async function (date) {
     await acLoad();
   } catch (e) {
     hideLoad();
+    /* Slice 084: a refusal is also written beside the button, with what the
+       person typed left in place, so it can be reread after the toast goes. */
+    var box = document.getElementById("ac-refusal");
+    if (box && e && e.server && e.message) {
+      box.textContent = drT("Nothing was sent.") + " " + e.message;
+      box.style.display = "";
+    }
     toast(e.message || "Could not send that.", "err");
   } finally {
     acSending = false;
@@ -12210,11 +12258,65 @@ function loadAttReqPanel() {
   const td = todayISO();
   document.getElementById("ar-from-date").value = td;
   document.getElementById("ar-to-date").value   = td;
+  ["ar-from-date", "ar-to-date"].forEach(function (id) {
+    document.getElementById(id).onchange = function () { arHideRefusal(); arWindowCheck(); };
+  });
   reloadAttReqHistory();
+}
+
+/* Slice 084: the oldest day this person may raise for themselves, as the
+   server worked it out when the page loaded. Null when no limit is set. If HR
+   changes the number while the page is open the server's refusal names the
+   live date; this note keeps the load-time one (accepted). */
+var arWindow = null;
+
+function arHideRefusal() {
+  var box = document.getElementById("ar-refusal");
+  if (box) { box.style.display = "none"; box.textContent = ""; }
+}
+
+function arWindowNote() {
+  var note = document.getElementById("ar-window-note");
+  if (!note) return;
+  var w = arWindow;
+  if (!w) { note.style.display = "none"; note.textContent = ""; return; }
+  var s = (w.from === localToday()
+      ? drT("You can ask about today only ({0}).", [acNiceDay(w.from)])
+      : drT("You can ask about days from {0} onwards.", [acNiceDay(w.from)]));
+  if (w.joined_on) s += " " + drT("Your joining day, {0}, is always allowed.", [acNiceDay(w.joined_on)]);
+  s += " " + drT("For any other older day, HR can still fix it: tell HR which day and why.");
+  note.textContent = s;
+  note.style.display = "";
+}
+
+/* The From box says, under itself, what the server will say - in words and in
+   colour. It never greys Submit and sets no `min` on the dates: a `min` would
+   grey the one old day that is allowed, the joining day. */
+function arWindowCheck() {
+  var f = document.getElementById("ar-from-date"), t = document.getElementById("ar-to-date");
+  var m = document.getElementById("ar-window-inline");
+  if (!f || !m) return;
+  m.style.display = "none"; m.textContent = ""; f.style.borderColor = "";
+  var w = arWindow;
+  if (!w || !f.value || f.value >= w.from) return;
+  var joiningDay = !!w.joined_on && f.value === w.joined_on;
+  if (joiningDay && (t.value || f.value) === f.value) {
+    m.textContent = drT("Your joining day: you can always ask about this day.");
+    m.style.color = "var(--green)";
+  } else {
+    m.textContent = joiningDay ? ownRangeText(w.from, w.joined_on)
+                               : ownOldText(w.from, w.basis, w.joined_on);
+    m.style.color = "var(--danger,var(--red))";
+    f.style.borderColor = "var(--danger,var(--red))";
+  }
+  m.style.display = "";
 }
 
 function reloadAttReqHistory() {
   api("get_requests_history", {}, function(h) {
+    arWindow = h.att_window || null;
+    arWindowNote();
+    arWindowCheck();
     renderReqHistory("ar-history", h.att_requests, "No attendance requests submitted yet.", function(r) {
       const status = r.docstatus == 1 ? '<span class="badge badge-green">Submitted</span>' : '<span class="badge badge-amber">Draft</span>';
       return '<div class="req-item"><div class="req-icon"><i class=ic-clipboard></i></div><div class="req-body"><div class="req-title">' + (r.reason||"Attendance Request") + '</div><div class="req-meta">' + fmtDate(r.from_date) + ' – ' + fmtDate(r.to_date) + '</div></div><div class="req-status">' + status + '</div></div>';
@@ -12232,11 +12334,24 @@ function submitAttendanceRequest() {
   if (!reason)              { showErr("ar-reason-err"); ok=false; } else hideErr("ar-reason-err");
   if (!ok) return;
   showLoad();
+  arHideRefusal();
   api("submit_attendance_request", {from_date:from, to_date:to, reason:reason, explanation:exp}, function(d) {
     hideLoad(); toast("Attendance request submitted: " + d.name, "ok");
     clearForm(["ar-from-date","ar-to-date","ar-reason","ar-explanation"]);
     loadedPanels.delete("att-req"); reloadAttReqHistory();
-  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit request"), "err"); });
+  }, function(e) {
+    if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; }
+    hideLoad();
+    /* Slice 084: a refusal names the live date and HR's route. Say it beside
+       the button, say nothing was sent, and leave what was typed alone. */
+    var said = refusalWords(e), box = document.getElementById("ar-refusal");
+    if (said && box) {
+      box.textContent = drT("Nothing was sent.") + " " + said + " " + drT("What you typed is still here.");
+      box.style.display = "";
+      document.getElementById("ar-from-date").focus();
+    }
+    toast((e.message||"Failed to submit request"), "err");
+  });
 }
 
 /* ── Leave Encashment panel ──────────────────────── */
@@ -23492,9 +23607,12 @@ window.pfRatingLabel = function(value, scale) {
       });
       var win = document.getElementById("org-filing-window");
       if (win) win.disabled = !canEdit;
+      var empWin = document.getElementById("org-employee-window");
+      if (empWin) empWin.disabled = !canEdit;
       var onBehalf = document.getElementById("org-on-behalf-on");
       if (onBehalf) onBehalf.disabled = !canEdit;
       orgLoadOnBehalf(canEdit);
+      orgLoadEmployeeWindow();
       orgLoadFilingWindow();
       if (card) card.style.display = "";
     }).catch(function() {
@@ -23590,6 +23708,49 @@ window.pfRatingLabel = function(value, scale) {
           gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
       })
       .finally(function() { box.disabled = false; orgLoadFilingWindow(); });
+  };
+
+  /* Slice 084: how far back an EMPLOYEE can ask about their own day. Same
+     shape as the manager's box above and its own key. EMPTY MEANS NO LIMIT
+     and is the default; 0 is today only - never filled in with a number
+     nobody chose. It is not touched by the manager switch. The save line for
+     a limit of 1 or more names no date: it would be worked out on a holiday
+     list the employee may not be on, so it says only what is true for all. */
+  window.orgLoadEmployeeWindow = function() {
+    var box = document.getElementById("org-employee-window");
+    if (!box) return;
+    window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "alvoraa_employee_filing_window_days"})
+      .then(function(v) {
+        var raw = (v === null || v === undefined) ? "" : String(v).trim();
+        var n = parseInt(raw, 10);
+        box.value = (raw === "" || isNaN(n)) ? "" : n;
+      })
+      .catch(function() { /* Not HR: the card is hidden anyway. */ });
+  };
+
+  window.orgSaveEmployeeWindow = function(box) {
+    var raw = String(box.value === null || box.value === undefined ? "" : box.value).trim();
+    var n = parseInt(raw, 10);
+    if (raw !== "" && (isNaN(n) || n < 0 || n > 30)) {
+      pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+        gpEsc(drT("Give a whole number of working days between 0 and 30, or leave it empty for no limit.")) + "</span>");
+      orgLoadEmployeeWindow();
+      return;
+    }
+    box.disabled = true;
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_employee_filing_window_days", value: raw === "" ? "" : String(n)})
+      .then(function(res) {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
+          gpEsc(raw === "" ? drT("Saved. There is no limit: an employee can ask about any past day.")
+                : n === 0 ? drT("Saved. An employee can now ask about today only, {0}. Their joining day is always allowed. HR can still fix any day.", [acNiceDay(res && res.today)])
+                          : drT("Saved. An employee can now ask about the last {0} working days. Their joining day is always allowed. HR can still fix any day.", [n])) +
+          "</span>");
+      })
+      .catch(function(e) {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+          gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
+      })
+      .finally(function() { box.disabled = false; orgLoadEmployeeWindow(); });
   };
 
   window.orgSaveAttendanceSwitch = function(key, box) {

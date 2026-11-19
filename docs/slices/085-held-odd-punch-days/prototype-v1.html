@@ -1,0 +1,193 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>085 Held days - prototype v1</title>
+<style>
+:root{--bg:#F8F6F3;--surface:#fff;--surface2:#F0EDE8;--border:#E4E0D9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;--r:10px;--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Arial,sans-serif}
+:root[data-theme=dark]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-lt:#2A2438;--green:#5FCB9D;--green-lt:#1D3A2C;--red:#F2928B;--red-lt:#40231F;--amber:#E6B35A;--amber-lt:#41301C}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 var(--font)}
+button,input,select{font:inherit;color:inherit}
+/* review bar (scaffolding, own prefix rv-) */
+.rv-bar{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#2D2622;color:#fff;align-items:center}
+.rv-bar b{margin-right:6px}.rv-bar button{background:#4a413b;border:0;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;min-height:32px}
+.rv-bar button.on{background:#A99AD4;color:#1A1815}.rv-sep{width:1px;height:20px;background:#6b625a;margin:0 4px}
+.rv-note{padding:8px 12px;background:var(--amber-lt);color:var(--text);font-size:13px;border-bottom:1px solid var(--border)}
+.stage{display:flex;justify-content:center;padding:16px}
+.app{width:100%;max-width:1040px;background:var(--bg)}
+.app.ph{width:390px;border:10px solid #2D2622;border-radius:28px;overflow:hidden;min-height:720px;background:var(--bg)}
+.top{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+.top h1{font-size:18px;margin:0}.top .sub{color:var(--text2);font-size:13px}
+.pg{padding:16px}.ph .pg{padding:12px}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}.ph .tiles{grid-template-columns:repeat(2,1fr)}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px}
+.tile .n{font-size:22px;font-weight:700}.tile .l{font-size:13px;color:var(--text2)}
+.tile.held{background:var(--amber-lt);border-color:var(--amber)}.tile.held .n,.tile.held .l{color:var(--amber)}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--surface2);color:var(--text2);margin-left:6px;font-weight:600}
+.tag.held{background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber)}
+.tag.ok{background:var(--green-lt);color:var(--green)}.tag.wait{background:var(--primary-lt);color:var(--primary)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px}
+.row{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--border);min-height:48px;width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left;cursor:default}
+.row.pick{cursor:pointer}.row .d{min-width:74px;font-weight:600}.row .m{color:var(--text2);font-size:13px;flex:1}
+.ph .row{flex-wrap:wrap}
+.det{padding:14px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.held-box{border:1px solid var(--amber);background:var(--amber-lt);border-radius:var(--r);padding:12px;margin-bottom:10px}
+.held-box h3{margin:0 0 4px;font-size:15px;color:var(--amber)}.held-box p{margin:4px 0}
+.ok-box{border:1px solid var(--green);background:var(--green-lt);border-radius:var(--r);padding:12px}
+.ok-box h3{margin:0 0 4px;font-size:15px;color:var(--green)}
+.wait-box{border:1px solid var(--primary);background:var(--primary-lt);border-radius:var(--r);padding:12px}
+label{display:block;font-weight:600;margin:8px 0 4px}
+input[type=time],input[type=number],input[type=text],select{min-height:44px;font-size:16px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);width:100%;max-width:260px}
+.btn{min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid var(--primary);background:var(--primary);color:#fff;font-weight:600;cursor:pointer;font-size:16px}
+.btn.sec{background:var(--surface);color:var(--primary)}.btn.bad{background:var(--surface);color:var(--red);border-color:var(--red)}
+.btn:focus-visible,.row:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.ph .btn.main{width:100%}
+.punch{display:inline-block;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-weight:600}
+.help{color:var(--text2);font-size:13px;margin:6px 0}
+.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
+.tbl th,.tbl td{padding:10px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}.tbl th{color:var(--text2)}
+.ph .tbl{display:block;overflow-x:auto}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.chip{min-height:36px;padding:4px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);cursor:pointer}.chip.on{background:var(--primary-lt);border-color:var(--primary);font-weight:600}
+.sw{display:flex;gap:10px;align-items:flex-start}.sw input{width:24px;height:24px;margin-top:2px}
+.tagx{display:inline-block;background:var(--primary-lt);color:var(--primary);padding:4px 10px;border-radius:999px;margin-right:6px;font-weight:600}
+.sample{display:inline-block;font-size:11px;font-weight:700;background:#fff3;border:1px dashed var(--text3);padding:0 6px;border-radius:4px;color:var(--text3);margin-left:6px;text-transform:uppercase}
+.slip{font-family:ui-monospace,Menlo,monospace;font-size:13px}.slip td:last-child{text-align:right}
+.toast{position:sticky;bottom:8px;margin:8px;background:var(--text);color:var(--bg);padding:10px 14px;border-radius:8px}
+.why{border-left:3px solid var(--primary);padding-left:10px;margin:8px 0;color:var(--text2);font-size:13px}
+.hide{display:none}
+.card h2{font-size:15px;margin:0;padding:12px 12px 0}
+.pad{padding:12px}
+</style></head><body>
+<div class="rv-bar" id="rv">
+<b>085 Held days v1</b>
+<button data-s="emp">1 Employee</button><button data-s="mgr">2 Manager</button><button data-s="hr">3 HR decides</button><button data-s="reg">4 Register and slip</button><button data-s="set">5 Settings</button>
+<span class="rv-sep"></span>
+<button id="rv-dev">Phone</button><button id="rv-th">Dark</button><button id="rv-lang">हिं</button><button id="rv-reset">Reset demo</button>
+</div>
+<div class="rv-note"><span class="sample">Sample</span> Every name, time and number here is invented. Review controls are in the dark bar. Click through: employee sends a day (1), the manager files another (2), HR decides both (3), then see the register, slip (4) and the settings (5).</div>
+<div class="stage"><div class="app" id="app"></div></div>
+<script>
+var S={scr:'emp',ph:false,hi:false,open:null,d12:'held',d17:'held',sent12:null,sent17:null,swOn:true,limit:3,confirm:false,reg:'All',toast:''};
+var HI={"Held":"रोका गया","Not paid until fixed.":"जब तक सुधारा नहीं जाता, इस दिन का वेतन नहीं मिलेगा।","What time did you leave?":"आप कितने बजे निकले?","Send to HR":"HR को भेजें"};
+function T(s){return S.hi&&HI[s]?HI[s]:s}
+function $(h){return h}
+var DAYS=[
+ {n:18,w:'Wed',st:'Present',in:'09:04',out:'18:12',h:'9h 08m'},
+ {n:17,w:'Tue',k:'d17',punches:['09:05','13:10','14:00']},
+ {n:16,w:'Mon',st:'Present',in:'09:00',out:'18:03',h:'9h 03m'},
+ {n:15,w:'Sun',off:1},
+ {n:14,w:'Sat',st:'Present',in:'09:10',out:'18:20',h:'9h 10m'},
+ {n:13,w:'Fri',st:'Present',in:'08:58',out:'18:01',h:'9h 03m'},
+ {n:12,w:'Thu',k:'d12',punches:['09:02']},
+ {n:11,w:'Wed',st:'Present',in:'09:25',out:'18:30',h:'9h 05m'}];
+function stateOf(d){return S[d.k]}
+function heldCount(){return (S.d12=='held'?1:0)+(S.d17=='held'?1:0)}
+function tagFor(d){
+ if(d.off)return '<span class="tag">Weekly off</span>';
+ if(!d.k)return '<span class="tag">Present</span>';
+ var s=stateOf(d),sent=S['sent'+d.n];
+ if(s=='held')return '<span class="tag held">&#9888; '+T('Held')+'</span>'+(sent?'<span class="tag wait">Sent to HR</span>':'');
+ return '<span class="tag">Present</span><span class="tag ok">&#10003; Was held, pay restored</span>';
+}
+function meta(d,view){
+ if(d.off)return 'No work expected';
+ if(!d.k)return 'In '+d.in+' · Out '+d.out+' · '+d.h+' worked';
+ var s=stateOf(d);
+ if(s=='held')return d.punches.length+(d.punches.length==1?' punch':' punches')+' · '+d.punches.join(', ');
+ return 'In 09:02 · Out '+(S['sent'+d.n]||'18:30')+' · 9h 28m worked';
+}
+function detail(d,view){
+ var s=stateOf(d),sent=S['sent'+d.n],one=d.punches.length==1,o='';
+ var who=view=='emp'?'You':'Rohit';
+ if(s=='held'&&!sent){
+  o+='<div class="held-box"><h3>&#9888; '+T('Held')+'. '+(one?'One punch on this day.':'Three punches on this day.')+'</h3>'
+   +'<p>'+d.punches.map(function(p){return '<span class="punch">'+p+'</span>'}).join('')+'</p>'
+   +'<p><b>'+T('Not paid until fixed.')+'</b> '+(one?'':'One punch is missing, so nobody can tell which time is right. ')+(view=='emp'?'HR looks at held days at the end of the month, before pay.':'HR looks at held days at the end of the month, before pay.')+'</p></div>';
+  if(view=='emp'||view=='mgr'){
+   o+='<label for="t'+d.n+'">'+(view=='emp'?(one?T('What time did you leave?'):'What time was the missing punch?'):(one?'What time did Rohit leave?':'What time was the missing punch?'))+'</label>';
+   o+='<input id="t'+d.n+'" type="time" value="'+(one?'18:30':'14:30')+'">';
+   if(!one)o+='<label>It was a</label><div class="chips"><button class="chip on" type="button">Out</button><button class="chip" type="button">In</button></div>';
+   o+='<p class="help">That is all we need. HR sees your punches and this time, and decides. Nothing else to fill in.</p>';
+   o+='<button class="btn main" onclick="send('+d.n+',\''+view+'\')">'+(view=='emp'?T('Send to HR'):'Send to HR for Rohit')+'</button>';
+  }else o+='<p class="help">Only Rohit or his own manager can ask HR to fix this day.</p>';
+ } else if(s=='held'&&sent){
+  o+='<div class="wait-box"><b>Sent to HR at '+sent+' by '+(S['by'+d.n]||who)+'.</b><p>The day stays <b>Held</b> and is not paid until HR decides. You will see the answer here.</p><p class="help">Time you gave: 18:30</p></div>';
+ } else {
+  o+='<div class="ok-box"><h3>&#10003; Held, now Present. Pay restored.</h3><p>'+(S['auto'+d.n]?'The missing punch arrived from the machine at 18:41, so the day released itself. ':'HR approved the time 18:30. ')+'This day is paid again and your salary slip is updated.</p></div>';
+ }
+ return o;
+}
+function monthView(view){
+ var h=heldCount(),o='';
+ if(h)o+='<div class="held-box"><h3>&#9888; '+h+(h==1?' day is ':' days are ')+T('Held')+'</h3><p>'+(view=='emp'?'Not paid until fixed. Tap a held day and send the missing time to HR.':'Rohit\'s held days are not paid until fixed. You can send a time to HR for him.')+'</p></div>';
+ else o+='<div class="ok-box"><h3>&#10003; No held days</h3><p>Every day this month is paid.</p></div>';
+ o+='<div class="tiles"><div class="tile"><div class="n">'+(5+(S.d12!='held'?1:0)+(S.d17!='held'?1:0))+'</div><div class="l">Days present</div></div>'
+  +'<div class="tile"><div class="n">52h</div><div class="l">Hours worked</div></div>'
+  +'<div class="tile'+(h?' held':'')+'"><div class="n">'+h+'</div><div class="l">Held days</div></div>'
+  +'<div class="tile"><div class="n">1</div><div class="l">Late arrivals</div></div><div class="tile"><div class="n">0</div><div class="l">On leave</div></div></div>';
+ o+='<div class="card">';
+ DAYS.forEach(function(d){
+  var pick=!!d.k;
+  o+='<button class="row'+(pick?' pick':'')+'" '+(pick?'onclick="tog('+d.n+')" aria-expanded="'+(S.open==d.n)+'"':'tabindex="-1"')+'><span class="d">'+d.n+' Nov <small>'+d.w+'</small></span><span>'+tagFor(d)+'</span><span class="m">'+meta(d,view)+'</span>'+(pick?'<span aria-hidden="true">&rsaquo;</span>':'')+'</button>';
+  if(S.open==d.n&&pick)o+='<div class="det">'+detail(d,view)+'</div>';
+ });
+ o+='</div><p class="help">November 2026. Days that have not happened are left out. A day with one, three or five punches is Held.</p>';
+ return o;
+}
+function tog(n){S.open=S.open==n?null:n;draw()}
+function send(n,view){var t=document.getElementById('t'+n).value;S['sent'+n]=t;S['by'+n]=view=='mgr'?'Neha Kapoor (manager)':'you';S.toast=view=='mgr'?'Sent to HR for Rohit. The day stays Held until HR decides.':'Sent to HR. The day stays Held until HR decides.';draw()}
+function pending(){var r=[];[12,17].forEach(function(n){if(S['d'+n]=='held'&&S['sent'+n])r.push(n)});return r}
+function decide(n,ok){if(ok){S['d'+n]='ok'}else{S['sent'+n]=null;S['by'+n]=null}S.toast=ok?'Approved. 1 day Held, now Present. Rohit\'s slip updated.':'Declined. The day stays Held. Rohit is told why.';draw()}
+function auto12(){if(S.d12=='held'){S.d12='ok';S.auto12=1;S.sent12=S.sent12||'18:41';S.toast='A late machine punch arrived for 12 Nov. The day released itself.';draw()}}
+var scr={
+ emp:function(){return '<div class="top"><div><h1>Attendance</h1><div class="sub">Your record · November 2026</div></div></div><div class="pg">'+monthView('emp')+'<p class="help"><button class="btn sec" onclick="auto12()">Demo: a late machine punch arrives for 12 Nov</button></p></div>'},
+ mgr:function(){return '<div class="top"><div><h1>Attendance</h1><div class="sub">Rohit Sharma <span class="sample">Sample</span> · November 2026 · your direct report</div></div></div><div class="pg"><p class="help">You can see that a day is held and how many punches it has. You cannot see why Rohit was away on any other day.</p>'+monthView('mgr')+'<div class="card pad"><b>If your company has switched the manager route off</b><p class="help">The form is replaced by: "Your organisation does not let a manager ask for somebody else\'s day to be fixed. Rohit can ask about his own day, and HR can fix any day." (existing words, unchanged)</p></div></div>'},
+ hr:function(){
+  var p=pending(),o='<div class="top"><div><h1>Attendance requests</h1><div class="sub">Waiting on HR · '+p.length+'</div></div></div><div class="pg">';
+  if(!p.length)o+='<div class="card pad"><b>Nothing waiting.</b><p class="help">Held days that nobody has asked about are not listed here. Open the register and choose Held to see them.</p></div>';
+  p.forEach(function(n){var one=n==12;
+   o+='<div class="card pad"><b>Rohit Sharma <span class="sample">Sample</span></b> · '+n+' Nov · <span class="tag held">&#9888; Held</span>'
+   +'<p>Punches: '+(one?'<span class="punch">09:02</span>':'<span class="punch">09:05</span><span class="punch">13:10</span><span class="punch">14:00</span>')+'</p>'
+   +'<p>Asked by '+(S['by'+n]||'you').replace('you','Rohit')+': the missing punch was <b>'+S['sent'+n]+'</b> ('+(one?'leaving':'Out')+').</p>'
+   +'<div class="why">Shift 09:30 to 18:00. If you approve: this day becomes <b>Present, 9h 28m</b> and the day is paid on the slip. If the corrected time had been under the half-day line it would become Half day.</div>'
+   +'<button class="btn" onclick="decide('+n+',true)">Approve: day becomes Present</button> <button class="btn bad" onclick="decide('+n+',false)">Decline: stays Held</button></div>';});
+  o+='<p class="help">Same screen and same buttons as today. The only new things are the Held tag and the sentence saying what the day becomes.</p></div>';return o},
+ reg:function(){
+  var rows=[['Rohit Sharma','12 Nov',S.d12=='held'?'Held':'Present','09:02','—'],['Rohit Sharma','17 Nov',S.d17=='held'?'Held':'Present','09:05','14:00'],['Anita Joshi','12 Nov','Present','09:00','18:05'],['Anita Joshi','13 Nov','Held','—','18:10']];
+  var shown=rows.filter(function(r){return S.reg=='All'||r[2]==S.reg});
+  var o='<div class="top"><div><h1>Daily attendance register</h1><div class="sub">Grace Drinks <span class="sample">Sample</span> · November 2026</div></div></div><div class="pg">';
+  o+='<div class="chips" role="group" aria-label="Status">'+['All','Present','Held'].map(function(x){return '<button class="chip'+(S.reg==x?' on':'')+'" onclick="S.reg=\''+x+'\';draw()">'+x+'</button>'}).join('')+'</div>';
+  o+='<table class="tbl"><thead><tr><th>Person</th><th>Day</th><th>Status</th><th>In</th><th>Out</th></tr></thead><tbody>'+shown.map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td>'+(r[2]=='Held'?'<span class="tag held" style="margin:0">&#9888; Held</span>':r[2])+'</td><td>'+r[3]+'</td><td>'+r[4]+'</td></tr>'}).join('')+'</tbody></table>';
+  o+='<p class="help">This is the existing status filter with one new value. No new list, no new screen.</p>';
+  var h=heldCount();
+  o+='<div class="card" style="margin-top:14px"><h2>Salary slip, Rohit Sharma, November <span class="sample">Sample</span></h2><div class="pad"><table class="slip" style="width:100%"><tr><td>Days in the month</td><td>30</td></tr><tr><td>Weekly offs</td><td>4</td></tr><tr><td>Days paid</td><td>'+(24-h)+'</td></tr><tr><td><b>Held days, not paid</b></td><td><b>'+h+'</b></td></tr></table>'
+  +(h?'<div class="held-box" style="margin-top:8px"><b>&#9888; '+h+(h==1?' day is':' days are')+' Held:</b> '+(S.d12=='held'?'12 Nov':'')+(S.d12=='held'&&S.d17=='held'?', ':'')+(S.d17=='held'?'17 Nov':'')+'. Not paid. They are paid when HR releases them, and this slip updates by itself.</div>':'<div class="ok-box" style="margin-top:8px">No held days. Every day is paid.</div>')+'</div></div></div>';
+  return o},
+ set:function(){
+  var on=S.swOn;
+  return '<div class="top"><div><h1>Attendance rules</h1><div class="sub">Company settings · HR Manager only</div></div></div><div class="pg">'
+  +'<div class="card pad"><h2 style="padding:0">Grace Drinks</h2>'
+  +'<div class="sw" style="margin-top:10px"><input type="checkbox" id="sw" '+(on?'checked':'')+' onchange="S.swOn=this.checked;S.confirm=false;draw()"><div><label for="sw" style="margin:0">Hold days with a missing punch</label>'
+  +'<p class="help">Affects: <b>everyone in Grace Drinks.</b> A day with 1, 3 or 5 punches is marked <b>Held</b>. It is not paid until HR releases it, and not marked Absent. A person releases it by sending the missing time. This company only; other companies are not changed.</p></div></div>'
+  +(on?'<div class="why">If you save this now: <b>166 days</b> in November, for <b>31 people</b>, become Held <span class="sample">Sample</span>. October is not touched. HR gets the list of names first.</div>':'<div class="why">If switched off, days already Held stay Held until HR releases them. Nothing is paid or refused behind anyone\'s back.</div>')
+  +'<hr style="border:0;border-top:1px solid var(--border);margin:14px 0">'
+  +'<label for="lim">Requests a person can raise each month</label><input id="lim" type="number" min="0" value="'+S.limit+'" onchange="S.limit=this.value">'
+  +'<p class="help">Affects: <b>every employee in Grace Drinks</b> except the roles below. Leave empty for no limit. <b>Held days never count</b>: nobody is stopped from getting a worked day paid. Late-arrival and wrong-time requests do count.</p>'
+  +'<p class="help">An employee over the limit reads: <i>"You have used your '+S.limit+' requests this month. Held days do not count. For another day, ask HR."</i></p>'
+  +'<b>Exempt from the limit</b><div style="margin:6px 0"><span class="tagx">Sales Executive</span></div><button class="btn sec" type="button">Change roles</button>'
+  +'<hr style="border:0;border-top:1px solid var(--border);margin:14px 0">'
+  +'<button class="btn main" onclick="S.confirm=true;draw()">Save for Grace Drinks'+(on?': 166 days will be held':'')+'</button>'
+  +(S.confirm?'<div class="ok-box" style="margin-top:10px">Saved. This replaces the old hidden rule of 3 requests a month. <span class="help">The old script is switched off in the same release, so two limits never run together.</span></div>':'')
+  +'</div></div>'}
+};
+function draw(){
+ var a=document.getElementById('app');a.className='app'+(S.ph?' ph':'');
+ a.innerHTML=scr[S.scr]()+(S.toast?'<div class="toast" role="status">'+S.toast+'</div>':'');
+ S.toast='';
+ [].forEach.call(document.querySelectorAll('#rv [data-s]'),function(b){b.classList.toggle('on',b.dataset.s==S.scr)});
+ document.getElementById('rv-dev').classList.toggle('on',S.ph);
+}
+[].forEach.call(document.querySelectorAll('#rv [data-s]'),function(b){b.onclick=function(){S.scr=b.dataset.s;S.open=S.scr=='hr'?null:S.open;draw()}});
+document.getElementById('rv-dev').onclick=function(){S.ph=!S.ph;draw()};
+document.getElementById('rv-th').onclick=function(){S.hi=S.hi;var r=document.documentElement;r.dataset.theme=r.dataset.theme=='dark'?'light':'dark'};
+document.getElementById('rv-lang').onclick=function(){S.hi=!S.hi;this.textContent=S.hi?'EN':'हिं';draw()};
+document.getElementById('rv-reset').onclick=function(){S.d12=S.d17='held';S.sent12=S.sent17=null;S.auto12=0;S.open=null;S.confirm=false;draw()};
+draw();
+</script></body></html>

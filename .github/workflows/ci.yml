@@ -336,8 +336,10 @@ jobs:
   # 99 minutes of tests in one line made every push wait ~1h50.
   #   1-4     alvoraa_portal, a quarter each (Frappe's run-parallel-tests)
   #   payroll alvoraa_goals, then the Frappe HR payment and payroll tests
-  #   legacy  TRIAL ONLY - the old single run, kept for one side-by-side run so
-  #           the test counts can be compared. Remove it, and its step, after.
+  # Trial run 44442056289 (19 Nov 2026): the parts ran 4,588 tests against
+  # the old single run's 4,598; the 10 short sat in test groups whose setup
+  # failed on a fresh machine (test_late_minutes_017), fixed with ALV-360.
+  # Slowest part 26 min, against 81 for the single run.
   # Every part runs to the end (fail-fast off) so one run shows every failure.
   # The job named "Python tests" below is the one main's branch protection
   # requires; it passes only when every part passed.
@@ -347,7 +349,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [legacy, "1", "2", "3", "4", payroll]
+        part: ["1", "2", "3", "4", payroll]
     # 120, not 90: on 2026-11-04 slow runners hit the 90-minute limit twice, with no
     # test failed in either run, so neither gave a full result.
     # 90, not 60, because a COLD build clones frappe and erpnext and runs yarn install for both,
@@ -549,13 +551,6 @@ jobs:
           BENCH_APPS_PATH=~/frappe-bench/apps python scripts/check_email_template_overrides.py --check-upstream-shape
 
       # Tenant isolation is enforced entirely by these tests. Blocking.
-      - name: Run tests (the old single run - trial only)
-        if: matrix.part == 'legacy'
-        run: |
-          cd ~/frappe-bench
-          bench --site test_site run-tests --app alvoraa_goals
-          bench --site test_site run-tests --app alvoraa_portal
-
       # Frappe splits the test files into 4 in alphabetical order, weighted by
       # how many tests each holds. It returns exit 1 on a failure only when CI
       # is set, so CI is set here in so many words, not left to the runner.
@@ -582,7 +577,7 @@ jobs:
       # creates calendar-year "_Test Fiscal Year"s, which overlap the April-March
       # years our own tests create on test_site and stop test discovery.
       - name: Frappe HR payment and payroll tests
-        if: matrix.part == 'payroll' || matrix.part == 'legacy'
+        if: matrix.part == 'payroll'
         run: |
           cd ~/frappe-bench
           bench new-site hrms_test_site --force --db-root-password root \

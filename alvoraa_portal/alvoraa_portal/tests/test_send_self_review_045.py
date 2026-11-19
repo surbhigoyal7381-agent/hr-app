@@ -88,6 +88,14 @@ class SendFixture(GrowthFixture):
 			row.name = frappe.generate_hash(length=10)
 			review_items.save_review_record(ext)
 			cls.foreign_row = row.name
+		# The value tests drop one of the company's values, so there must be
+		# some. They used to come from test_growth_045 running first; on a CI
+		# machine of its own this file runs first (ALV-360), so make them here.
+		for i in range(3):
+			name = f"S045 Send Value {i}"
+			if not frappe.db.exists("Company Value", name):
+				frappe.get_doc({"doctype": "Company Value", "value_name": name,
+				                "company": COMPANY, "is_active": 1}).insert(ignore_permissions=True)
 		frappe.db.commit()
 
 	def setUp(self):

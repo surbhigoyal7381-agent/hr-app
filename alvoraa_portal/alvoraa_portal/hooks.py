@@ -148,7 +148,12 @@ doc_events = {
     # its own errors: a slip that cannot be produced is a person who cannot
     # be paid.
     "Salary Slip": {
-        "validate": "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+        "validate": [
+            "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+            # Slice 085: Held is not a status stock Frappe reads, so it would be
+            # paid. Wired AFTER the engine's hook; does nothing for a rule-set company.
+            "alvoraa_portal.held_day.deduct_held_days",
+        ],
         # Slice 067: the notes the validate hook leaves for HR (held days, red
         # and green lines not applied). A new slip is not in the database yet
         # during validate, so a comment on it is refused; it is posted here.

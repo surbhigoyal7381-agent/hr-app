@@ -235,6 +235,9 @@ doc_events = {
         # validate, after Frappe HR has set the punch's shift. Machine punches and
         # punches HR adds are never measured. See branch_geofence.py.
         "validate": "alvoraa_portal.branch_geofence.check_phone_punch",
+        # Slice 085: a late machine punch releases a Held day. Machine account
+        # only; the slip refresh is queued after commit, with ids only.
+        "after_insert": "alvoraa_portal.held_day.release_on_machine_punch",
     },
 
     "Employee": {

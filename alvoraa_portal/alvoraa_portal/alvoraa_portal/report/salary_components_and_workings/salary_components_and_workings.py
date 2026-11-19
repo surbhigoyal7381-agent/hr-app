@@ -22,6 +22,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, get_first_day, get_last_day, nowdate
 
+import hrms.alvoraa_hr_core.access as access
+
 from alvoraa_portal.payroll_rules_apply import prepare, rule_set_for
 from alvoraa_portal.payroll_slip import month_summary
 
@@ -117,6 +119,19 @@ def _days_scope():
 	limits = [{p.doc for p in rows if not p.get("applicable_for") or p.get("applicable_for") == dt}
 	          for dt in ("Employee", "Attendance", "Employee Checkin")]
 	limits = [allowed for allowed in limits if allowed]
+
+	# ALV-385 (Surbhi, 19 Nov 2026): Alvora's own HR scope as well - the rule
+	# grooming, reviews and the portal already use. An HR login with no Company
+	# User Permission and no Employee record of its own is HR for nobody, so it
+	# sees nobody's days here either; Frappe's permissions alone would let it
+	# see everybody. System Manager and Administrator keep everyone. One query.
+	scope = access.permitted_employee_filters()
+	if scope == access.NO_EMPLOYEES:
+		return lambda employee: False
+	if scope != access.ALL_EMPLOYEES:
+		limits.append(set(frappe.get_all(
+			"Employee", filters=[["Employee", k, v[0], v[1]] for k, v in scope.items()],
+			pluck="name", limit_page_length=0)))
 	return lambda employee: all(employee in allowed for allowed in limits)
 
 

@@ -39,6 +39,26 @@ def setUpModule():
 	base.setUpModule()
 
 
+def _with_company(user):
+	"""ALV-385: an HR login with no company is refused outright. Give the test's
+	HR login one, so the test proves the narrower rule it is about - not the
+	missing company."""
+	if not frappe.db.exists("User Permission", {"user": user, "allow": "Company",
+	                                            "for_value": base.COMPANY}):
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Company",
+		                "for_value": base.COMPANY, "apply_to_all_doctypes": 1}
+		               ).insert(ignore_permissions=True)
+
+
+def _hr_login(email, role="HR User"):
+	if not frappe.db.exists("User", email):
+		u = frappe.get_doc({"doctype": "User", "email": email, "first_name": "Scope",
+		                    "send_welcome_email": 0})
+		u.insert(ignore_permissions=True)
+		u.add_roles(role)
+	return email
+
+
 def _month_start():
 	"""Last month: every day of it is in the past, so attendance may be marked."""
 	return get_first_day(add_months(nowdate(), -1))
@@ -154,6 +174,13 @@ class TestTheDays(DailyCase):
 			"gender": base._gender(), "status": "Active"})
 		other.flags.ignore_permissions = True
 		other.insert()
+		# A day on record, or the report leaves them out as "nothing to show".
+		att = frappe.get_doc({"doctype": "Attendance", "employee": other.name,
+		                      "company": base.COMPANY, "attendance_date": self.start,
+		                      "status": "Present", "shift": base.SHIFT})
+		att.flags.ignore_permissions = True
+		att.insert()
+		att.submit()
 		self.day(0, ("10:00:00", "18:00:00"))
 		user = "alv358.salary.hr@example.com"
 		if not frappe.db.exists("User", user):
@@ -161,6 +188,7 @@ class TestTheDays(DailyCase):
 			                    "send_welcome_email": 0})
 			u.insert(ignore_permissions=True)
 			u.add_roles("HR User")
+		_with_company(user)
 		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
 		                "for_value": other.name, "apply_to_all_doctypes": 0,
 		                "applicable_for": "Attendance"}).insert(ignore_permissions=True)
@@ -174,6 +202,43 @@ class TestTheDays(DailyCase):
 		finally:
 			frappe.set_user("Administrator")
 		self.assertNotIn(self.emp, [r["employee"] for r in rows])
+		# ...while the one person the limit names is still there: the refusal is
+		# the Attendance limit, not a login that sees nobody.
+		self.assertIn(other.name, [r["employee"] for r in rows])
+
+	def test_an_hr_login_with_no_company_sees_no_one(self):
+		"""ALV-385 (Surbhi, 19 Nov 2026). No Company User Permission and no
+		Employee record of its own: Alvora's rule gives this login nobody, so
+		neither report shows it anybody - not everybody, as Frappe's own
+		permissions alone would."""
+		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
+			salary_components_and_workings as salary,
+		)
+		self.day(0, ("10:00:00", "18:00:00"))
+		user = _hr_login("alv385.no.company@example.com", "HR Manager")
+		args = {"company": base.COMPANY, "from_date": str(self.start),
+		        "to_date": str(get_last_day(self.start))}
+		frappe.set_user(user)
+		try:
+			self.assertTrue(frappe.get_list("Employee", filters={"name": self.emp}),
+			                "Frappe alone must still let this login read the person, "
+			                "or this test proves nothing")
+			with self.assertRaises(frappe.PermissionError):
+				self.run_it()
+			self.assertEqual([], salary.execute(args)[1])
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_an_hr_login_with_a_company_still_sees_its_company(self):
+		user = _hr_login("alv385.with.company@example.com", "HR Manager")
+		_with_company(user)
+		self.day(0, ("10:00:00", "18:00:00"))
+		frappe.set_user(user)
+		try:
+			_cols, rows, _msg = self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(rows)
 
 	def test_one_punch_shows_held_with_no_minutes(self):
 		d = self.day(1, ("10:05:00",))
@@ -260,6 +325,7 @@ class TestTheDays(DailyCase):
 			                    "send_welcome_email": 0})
 			u.insert(ignore_permissions=True)
 			u.add_roles("HR User")
+		_with_company(user)
 		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
 		                "for_value": other.name, "apply_to_all_doctypes": 1}
 		               ).insert(ignore_permissions=True)
@@ -286,6 +352,7 @@ class TestTheDays(DailyCase):
 			                    "send_welcome_email": 0})
 			u.insert(ignore_permissions=True)
 			u.add_roles("HR User")
+		_with_company(user)
 		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
 		                "for_value": other.name, "apply_to_all_doctypes": 0,
 		                "applicable_for": "Attendance"}).insert(ignore_permissions=True)
@@ -425,6 +492,7 @@ class TestTheFineDayByDay(DailyCase):
 		self.day(1, ("10:00:00", "18:00:00"))
 		self.mark(1)
 		who = self.user("alv358.leaver.hr@example.com", "HR Manager", employee_status="Left")
+		_with_company(who)            # it can open the month; hr_scope still says no
 		days, _total, msg = self.run_with(days=1, total=100, user=who)
 		self.assertFalse(any(r.get("fine") for r in days.values()))
 		self.assertIn("only to HR", msg)

@@ -58,3 +58,55 @@ Operational requirements for the analyst to trace into user stories. OPS-1 to OP
 
 **Run cost:** unchanged from §1: no new container, volume or queue. Backfill is one-off.
 **Subtract pass:** removed a proposed held-days dashboard, a scheduled alert and any DTC backfill tooling (D5). Nothing else.
+
+
+## §4 Strategy (2026-11-19)
+Read: worktree slice/085-held-odd-punch-days at e3918b50; `00-impact-analysis.md` and the Spec gate in `02`; my §1-3; `hooks.py` after_migrate block (lines ~651-676); `.github/workflows/ci.yml` step list; `scripts/check_*` names; `monthly_attendance_sheet.py` lines 24-104; `git diff --stat origin/dev...slice/084-employee-window` (19 files). Facts from Grace (Payroll Settings, Server Script) are the lead session's read of 19 Nov, not mine. **Nothing run on any server. Not checked: any tenant's Custom DocPerm count, job queue, disk, `nginx.conf`.**
+
+**P1 found in the plan: D-3 is not "one line".** Fact (`monthly_attendance_sheet.py:27-36` and `:84-96`): `get_message()` builds the legend by looping over `status_map` and reading `colors[count]`. `colors` has 8 entries and `status_map` has 8. Adding `"Held": "HLD"` makes 9, so **every non-summarised sheet open raises IndexError** (inference from reading the loop; not run). That is the sheet HR prepares payroll from. If D-3 is approved it must be two lines (a ninth colour too) plus a test that opens the report with a Held row.
+
+### Install order
+| Release | Order | Gate before the next step |
+|---|---|---|
+| **R1 safety doors** | (1) Company User Permission for hr@grace (Q1) read back on Grace. (2) Dev deploy, prove landing three ways (pin file, container, file) and one tag on every app container. (3) Test the doors on dev: HR own row, own punch, raiser submit, no-company HR. (4) Main, night window, on her word. | No Held exists, so no data step. Nothing to backfill. |
+| **R2 Held** | (1) Deploy proved. (2) Migrate finished on **all** sites; count sites migrated vs sites that exist. (3) Read back Attendance.status options and the 3 Company fields on each site (OPS-14). (4) Grace: Company values saved and read back. (5) Dry run, undo list, real run in chunks (OPS-15/16/17). (6) Hold switch on for Grace. (7) Disable Grace's limit script last, read back (OPS-20). | Switch stays **off** until the backfill count is read back. Fields ship dark, so R2 can land with no tenant affected. |
+
+### Image and Compose
+Expected change: **none** (Fact: engineer's plan adds no container, queue, volume or dependency; all new code and the vendored-sheet edit ride the existing image). Check at build: `deploy/Dockerfile`, `deploy/compose/*.yml` and `.image*.env` show no diff in the slice PR. **Pinning:** no new app or package, so nothing to pin. `check_version_pins.py` already runs in CI; it needs no change.
+
+### Migration risk
+| ID | Risk | Recommendation | Level | Decision |
+|---|---|---|---|---|
+| OPS-24 | Property Setter + ~10 Custom Fields all land on **every** tenant, not only Grace (DTC included). A migrate that stalls leaves later sites without "Held" (5 Nov, 1,780 queued deletes) | Before R2: read the job queue length; after: count sites migrated. Tenants without the setter must not get a Held write: the hold hook is off by default and the backfill refuses any other site | P1 Recommend | |
+| OPS-25 | **Custom DocPerm trap (5 Nov).** Engineer avoids new permlevel rows (agree, D-5). Custom Fields do not add DocPerm rows, so migrate should not queue deletes; **unproven** | Add one read-only count of Custom DocPerm rows on Grace and DTC before and after the dev migrate; if it moves, stop | P2 Recommend | |
+| OPS-26 | Custom Fields created only in `after_migrate` miss fresh CI and new tenants (seen in `attendance_correction.after_migrate` docstring) | Wire to both `after_migrate` and `after_install`; the CI site must pass a Held insert (OPS-14) | P1 Recommend | |
+| OPS-27 | R1 changes behaviour on every live tenant (D-2: HR loses own-row and own-punch edits) with no switch | Name it in the release note and on dev with a test login; no flag (no-over-engineering) | P2 FYI | |
+
+### CI gates
+Existing and relevant: `check_app_integrity.py` (no doctype redefinition; Held is a Property Setter, fine), `check_scope_traps.py`, `check_api_paths.py`, `check_tracked_keys.py`, `check_nginx_conf.py`, `check_undefined_js.js`. **Add nothing new as a script.** Recommend as *tests in the slice*, not new gates (OPS-28, P2): a hooks pin test per new hook (hot file); fresh-site Held insert; slip test both `payroll_based_on` modes; open Monthly Attendance Sheet with a Held row; machine insert never raises. Each must be shown failing once for the right reason before it is trusted (CLAUDE.md §0.5).
+
+### The 084 overlap
+Fact: `slice/084-employee-window` is 19 files, not on dev; shares `hooks.py`, `attendance_correction.py`, `hr_api.py`, `portal.js`, `org-settings.html`, and `requests.html`. **Agree** with the engineer: R1 first (small hunks in `hooks.py` and ~5 lines at `_scope_conditions`), R2 waits for 084 on dev. Add: R1's `hooks.py` hunk is the Attendance Request `before_submit` list, which 084 also edits (`validate`). Rebase and re-read the block after 084 lands; if 084 reaches `dev` first, R1 rebases, not the reverse. **Who sequences 084 to dev is the user's call** (OPS-29, P2, open).
+
+### Where I agree and disagree with the engineer
+| Point | View | Why |
+|---|---|---|
+| Slip re-save inline on a machine punch | **Disagree, mildly: Recommend enqueue from day one**, `enqueue_after_commit=True`, default queue, no secret in args (ids only) | The punch is a POST from a sync tool that **halts the batch on a refusal it does not know** (engineer's own 5.4). The slip save runs `calculate_net_pay` and three year-to-date helpers: unmeasured, and held inside a request row-locked on the punch. Enqueue is one line and uses the existing worker; it is not a new moving part. Condition: confirm a worker listens on that queue (`rq:workers`, not `docker ps`), and that a failed job writes Error Log. If the engineer measures under ~2 s on the heaviest slip **and** the HR path stays inline, I withdraw this (P2) |
+| Company `validate` hook, not permlevel | **Agree** | A hook works on Desk, REST and import and reads company scope; permlevel needs DocPerm rows per role per tenant, the exact thing that stalled the 5 Nov migrate. Condition: a test where an HR Manager of another company is refused through REST |
+| Administrator exempt from raiser-cannot-submit | **Agree, with a guard** | `refuse_own_decision` already cannot bite Administrator, and 19 test files rely on it. Condition: record that production use of Administrator is a break-glass login and a System Manager user is **not** exempt unless the engineer says so in the code; add one test that a named System Manager raiser is refused. Not checked: whether anyone works as Administrator on tenants |
+| One-line edit to vendored Monthly Attendance Sheet | **Agree it is needed, disagree it is one line** (above) | Edit is two lines and needs the legend colour. Smaller alternative if she declines the fork edit: leave blank cells and tell HR that blank = Held. Weaker: payroll is prepared from this sheet |
+
+### Facts from Grace that change advice
+- `payroll_based_on = Attendance`: the engineer's caveat (D-4) is **closed**; deducting Held in the slip hook matches Absent. `include_holidays_in_total_working_days = 1`, `consider_marked_attendance_on_holidays = 0`: the hook's skip of holiday dates must match stock's (`salary_slip.py:848-852`); test a Held day on a holiday. `consider_unmarked_attendance_as = Absent` agrees with AC-4.
+- Limit script counts `docstatus != 2` and `workflow_state != Rejected` per month of `from_date`; the engineer's new count is "no `alvoraa_missing_time`" per calendar month. **Recommend one test with the same fixtures on both rules**, so the two counts agree before the script is disabled (otherwise a request is refused by one and not the other). Sales Executive exemption lives in the script; **it is not carried to the new field until HR sets the exempt-role value** (Q2): add to the OPS-20 steps.
+
+### Rollback and checks
+Code: redeploy previous tag, migrations off, confirm the tag exists in `alvoraa-app` first (OPS-22 stands). R1 rollback has no data to restore. Prove checks per OPS-17.
+
+**Subtract pass:** I removed a proposed new CI script and a flag for the R1 behaviour change. Removed nothing else.
+
+| Still open | Owner |
+|---|---|
+| OPS-24 to OPS-29 decisions (blank) | Surbhi |
+| D-3 as two lines, or blank-cell fallback | Surbhi |
+| Enqueue vs inline | Engineer to measure; Surbhi decides |

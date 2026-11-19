@@ -151,6 +151,32 @@ class _Base(Wave4Base):
 		              (stamp, stamp, submission))
 		frappe.db.commit()
 
+	def _pin_the_document_clock(self, days):
+		"""Set counsel's document clock for one test, and put it back after.
+
+		Leaning on the default instead is what turned this file red on `dev` on
+		19 November 2026: Surbhi moved the default from 30 to 45 (ALV-353,
+		decided 16 November) and a record aged 40 days stopped being old enough
+		to erase. What these tests are for is that slice 082 leaves the clock
+		alone - **not** what the number on it is, which is counsel's and hers.
+		So pin it here and let the default move freely.
+		"""
+		from frappe import defaults
+
+		key = "alvoraa_joiner_document_days"
+		was = frappe.db.get_default(key)
+		frappe.db.set_default(key, days)
+		frappe.db.commit()
+
+		def put_it_back():
+			if was is None:
+				defaults.clear_default(key=key)
+			else:
+				frappe.db.set_default(key, was)
+			frappe.db.commit()
+
+		self.addCleanup(put_it_back)
+
 
 class TestThePrefill(_Base):
 	def test_it_returns_the_six_details_and_the_name_character_for_character(self):
@@ -594,12 +620,18 @@ class TestTheDocumentsSurviveTheNightlyJob(_Base):
 		self.assertTrue(frappe.db.exists("File", a_file))
 		self.assertFalse(frappe.db.get_value(DOCTYPE, name, "erased_on"))
 
-	def test_the_thirty_day_document_clock_is_untouched(self):
+	def test_the_document_clock_is_untouched(self):
 		"""Counsel's ruling 4, and the honest size of the remaining gap: a hired
-		joiner's documents still go 30 days after hire, on the clock they were
-		already on. This slice neither extends nor shortens it. If this test
-		ever has to change, that is counsel's question, not an engineering one.
+		joiner's documents still go on the document clock they were already on.
+		This slice neither extends nor shortens it. If **that** ever has to
+		change, it is counsel's question, not an engineering one.
+
+		The clock is pinned to 30 here rather than read from the default, so
+		that moving the default - as Surbhi did on 16 November 2026, 30 to 45 -
+		cannot make this test wrong about slice 082. See
+		`_pin_the_document_clock`.
 		"""
+		self._pin_the_document_clock("30")
 		name = self._submission()
 		a_file = self._a_file_on(name)
 		frappe.set_user(self.hr)

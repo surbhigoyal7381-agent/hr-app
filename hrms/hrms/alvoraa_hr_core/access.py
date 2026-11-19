@@ -51,10 +51,20 @@ def security_logger():
 	good. That is enough to see recent misuse. It is not a record you can answer
 	a question about six months later - for that the event needs a row in a
 	DocType, the way joiner exports were given one (ALV-353).
+
+	**Never let this get in the way of the line itself.** Raising the level is a
+	best effort: 24 existing tests replace `frappe.logger` with a stand-in, whose
+	`getEffectiveLevel()` is not a number, so comparing it raises. The first
+	version of this helper let that escape into `log_refusal`, which swallows
+	exceptions - so the refusal was not logged at all and those tests went red
+	on `dev`. The logger is returned whatever happens here.
 	"""
 	logger = frappe.logger("security")
-	if logger.level > logging.INFO:
-		logger.setLevel(logging.INFO)
+	try:
+		if logger.getEffectiveLevel() > logging.INFO:
+			logger.setLevel(logging.INFO)
+	except Exception:
+		pass
 	return logger
 
 

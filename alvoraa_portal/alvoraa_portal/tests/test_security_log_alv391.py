@@ -13,6 +13,7 @@ tests here assert the FILE, which is the only thing that would have failed.
 
 import logging
 import os
+from unittest import mock
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -85,3 +86,32 @@ class TestASecurityLineReachesTheFile(FrappeTestCase):
 			log_refusal(rule="alv391-broken", endpoint="e")   # must not raise
 		finally:
 			security_logger().handlers = real
+
+
+class TestTheHelperNeverGetsInTheWay(FrappeTestCase):
+	"""The regression that took `dev` red on 19 November 2026.
+
+	Twenty-four existing tests capture these lines with
+	`mock.patch("frappe.logger")` and then read
+	`logger.return_value.warning.call_args_list`. The first version of
+	`security_logger` compared the stand-in's `.level` against an int, which
+	raises `TypeError: '>' not supported between instances of 'MagicMock' and
+	'int'`. `log_refusal` swallows exceptions, so the refusal was not logged at
+	all and every one of those tests failed with an empty list.
+
+	Raising the level must stay best-effort. The line matters more than the
+	level.
+	"""
+
+	def test_a_stand_in_logger_still_receives_the_line(self):
+		with mock.patch("frappe.logger") as logger:
+			log_refusal(rule="alv391-regression", endpoint="an_endpoint")
+		calls = logger.return_value.warning.call_args_list
+		self.assertTrue(calls, "the refusal never reached the logger at all")
+		self.assertIn("alv391-regression", calls[0].args[0])
+
+	def test_the_helper_returns_a_logger_even_when_the_level_cannot_be_read(self):
+		with mock.patch("frappe.logger") as logger:
+			got = security_logger()
+		self.assertIs(got, logger.return_value,
+		              "the helper must return the logger whatever happens to the level")

@@ -65,6 +65,10 @@ class DeclineScopeCase(FrappeTestCase):
 		# Service install writes, and the shape dev carries today.
 		self.reviewer = self._login("Dsreviewer%d" % tag, roles=("HR User",))
 		self._permit(self.reviewer, "Employee", self.mine, REQUEST)
+		# Slice 085 (US-13): an HR login with no company looks after nobody, so
+		# the reviewer is given the company. Frappe's own Employee fence is
+		# what these tests are about and it is unchanged.
+		self._permit(self.reviewer, "Company", self.company)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -210,6 +214,7 @@ class DeclineScopeCase(FrappeTestCase):
 		answers yes - which is what every HR login on dev, dtc, grace and aahr
 		gets today (Surbhi, 31 Oct 2026: none hold such a permission)."""
 		free = self._login("Dsfree%d" % DeclineScopeCase._slot, roles=("HR User",))
+		self._permit(free, "Company", self.company)  # slice 085: HR needs a company
 		name = self._request(self.stranger)
 		frappe.set_user(free)
 		try:

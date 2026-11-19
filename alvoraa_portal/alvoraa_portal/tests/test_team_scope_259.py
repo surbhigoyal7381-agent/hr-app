@@ -264,21 +264,22 @@ class TeamScopeCase(FrappeTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_central_hr_may_still_open_anyones_month(self):
-		"""The other half of the condition, and the regression guard for it.
-
-		`test_central_hr_..._sees_everybody` covers the team page's people list
-		only. Without this, a future unconditional guard in `_subject` would
-		pass the whole suite and quietly refuse the tenant admin login every
-		employee on the site.
-		"""
+	def test_central_hr_with_no_company_cannot_open_anyones_month(self):
+		"""CHANGED by slice 085 (ALV-392, US-13, SEC-4). This used to say the
+		opposite: a central HR login with no company and no branch opened every
+		month. That was the fail-open the slice closes - such a login now sees
+		nobody until it holds a Company User Permission (Q1). The team page's
+		people list (`test_central_hr_..._sees_everybody`) is a different
+		surface and is not changed. Control: a System Manager still opens it."""
 		frappe.set_user(self.central_hr)
 		frappe.clear_cache(user=self.central_hr)
 		try:
-			out = ac.month(employee=self.in_theirs)
+			with self.assertRaises(frappe.PermissionError):
+				ac.month(employee=self.in_theirs)
 		finally:
 			frappe.set_user("Administrator")
-		self.assertEqual(out.get("employee"), self.in_theirs)
+		frappe.set_user("Administrator")
+		self.assertEqual(ac.month(employee=self.in_theirs).get("employee"), self.in_theirs)
 
 	def test_what_a_reviewer_with_no_hr_entitlement_sees_today(self):
 		"""Pins today's answer for the one case nobody has decided.

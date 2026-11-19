@@ -174,3 +174,5 @@ Fixture note: the held-slip tests build real draft slips through Salary Slip ins
 ## 8. Left behind
 
 Containers `alv085-bench`, `alv085-bench2`, `alv085-db`, `alv085-redis` untouched. I added `alv085-base` (stopped when I finish) and the detached worktree `.claude/worktrees/085-base-check` at 101fd29b; both can be removed. I changed no repo file except this report. Nothing pushed.
+
+**Defect 1 fixed:** the negative control in `test_alv332_the_refusal_is_real` now writes a manager's report punch, not the acting person's own, so D-2 no longer blocks it before the ALV-332 refusal. Product code and D-2 are unchanged.

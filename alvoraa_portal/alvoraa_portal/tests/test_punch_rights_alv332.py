@@ -138,7 +138,8 @@ class ReadOnlyOutsideHR(PunchCase):
 		If this ever fails, the tests above prove nothing."""
 		with patch.object(field_app_access, "_READ_RIGHTS", ("read", "select", "write", "delete")):
 			self.assertTrue(self.may(self.kavita_mail, "delete", self.rohan))
-			self.assertTrue(self.may(self.rohan_mail, "write", self.rohan))
+			# Not the person's own punch: slice 085 (D-2) refuses that before this rule is reached.
+			self.assertTrue(self.may(self.kavita_mail, "write", self.rohan))
 
 	def test_alv333_a_person_may_still_file_their_own_new_punch(self):
 		doc = frappe.get_doc({"doctype": CHECKIN, "employee": self.rohan, "log_type": "IN",

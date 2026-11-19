@@ -187,13 +187,20 @@ doc_events = {
     # document, not the portal endpoint, because the Desk is the other half of
     # where these get decided.
     "Attendance Request": {
-        "on_submit": "alvoraa_portal.attendance_correction.on_submit",
+        # Slice 085: after stock has written its row, the Held day is released
+        # from the corrected time, by the shift's own thresholds.
+        "on_submit": [
+            "alvoraa_portal.attendance_correction.on_submit",
+            "alvoraa_portal.held_day.release_by_hr",
+        ],
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
+        "validate": "alvoraa_portal.held_day.validate_missing_time",
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
         # Slice 085 (SEC-3): and nobody decides a request they raised.
         "before_submit": [
             "hrms.alvoraa_hr_core.access.refuse_own_submit",
             "alvoraa_portal.attendance_doors.refuse_raiser_submit",
+            "alvoraa_portal.held_day.note_held_day",
         ],
         # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
         # half-day leave day at a company with an enabled pay rule set.

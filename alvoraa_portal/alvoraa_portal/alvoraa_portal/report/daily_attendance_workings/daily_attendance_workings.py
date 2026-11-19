@@ -209,7 +209,7 @@ def _fine_days(employee, rows, from_date, to_date, s):
 		return {}, False
 	if employee not in grooming.hr_scope(frappe.session.user, [employee]):
 		return {}, True
-	not_charged = {d for d, r in rows.items() if r.status in ("On Leave", "Absent")}
+	not_charged = {d for d, r in rows.items() if r.status in ("On Leave", "Absent", "Held")}
 	days = sorted({str(d) for d in frappe.get_list(
 		grooming.MARK,
 		filters={"employee": employee, "docstatus": 1,

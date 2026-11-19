@@ -33,6 +33,9 @@ status_map = {
 	"On Leave": "L",
 	"Holiday": "H",
 	"Weekly Off": "WO",
+	# Slice 085 (ALV-392, D-3): the one edit to this vendored file. A Held day
+	# is not a stock status, so without this entry its cell printed blank.
+	"Held": "HLD",
 }
 
 day_abbr = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -92,6 +95,7 @@ def get_message() -> str:
 		"#3187D8",
 		"#878787",
 		"#878787",
+		"#E5A00D",  # Held (slice 085): one colour per status_map entry, or the loop below raises IndexError
 	]
 
 	count = 0

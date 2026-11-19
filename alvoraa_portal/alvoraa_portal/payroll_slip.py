@@ -161,7 +161,7 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 	# full-day leave or absence (a leave approved after the mark). Half Day is
 	# charged. Only the slip's own employee is read.
 	# With grooming switched off (grooming.is_on) there is no grooming line.
-	not_charged = {str(r.attendance_date) for r in rows if r.status in ("On Leave", "Absent")}
+	not_charged = {str(r.attendance_date) for r in rows if r.status in ("On Leave", "Absent", "Held")}
 	grooming_days = min(len({str(d) for d in frappe.get_all(
 		"Grooming Mark",
 		filters={"employee": employee, "docstatus": 1,

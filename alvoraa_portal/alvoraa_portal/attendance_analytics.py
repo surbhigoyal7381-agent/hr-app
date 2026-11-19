@@ -308,7 +308,7 @@ def _analyse(employees, start, end, tolerance):
 
 	shift_cache = {}
 	default_shift = _default_shift_of(employees)
-	per = {e: {"present": 0, "absent": 0, "leave": 0, "half": 0, "short_days": 0,
+	per = {e: {"present": 0, "absent": 0, "held": 0, "leave": 0, "half": 0, "short_days": 0,
 	           "hours_short": 0.0, "hours_worked": 0.0, "late": 0, "early": 0,
 	           "expected_days": 0, "leave_by_type": {}, "short_dates": []}
 	      for e in employees}
@@ -353,6 +353,10 @@ def _analyse(employees, start, end, tolerance):
 				p["leave_by_type"][r.leave_type] = p["leave_by_type"].get(r.leave_type, 0) + 1
 		elif r.status == "Absent":
 			p["absent"] += 1
+			p["expected_days"] += 1
+		elif r.status == "Held":
+			# Slice 085: an unpaid day waiting for HR. Expected, not absent.
+			p["held"] += 1
 			p["expected_days"] += 1
 
 	return per, by_weekday, by_month

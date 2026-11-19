@@ -863,13 +863,22 @@ class TestExport(_Base):
 		blocked or reported as failed by its own bookkeeping."""
 		from unittest import mock
 
+		def fails_with_a_message(*_a, **_k):
+			# What an un-migrated site does: Frappe's own Select check adds a
+			# message before it raises, and that message would reach HR.
+			frappe.msgprint("Source cannot be that")
+			raise RuntimeError("boom")
+
 		doc, _out = self._sign_in()
 		frappe.set_user(self.hr)
+		frappe.clear_messages()
 		with mock.patch.object(joiner_invite, "_write_joiner_row",
-		                       side_effect=RuntimeError("boom")), \
+		                       side_effect=fails_with_a_message), \
 		     mock.patch("frappe.log_error") as logged:
 			out = joiner_invite.purge_submission(submission=doc.name)
+		leaked = list(frappe.local.message_log)
 		frappe.set_user("Administrator")
+		self.assertEqual(leaked, [], "the browser would tell HR the erasure failed")
 		self.assertTrue(out["erased"])
 		self.assertTrue(frappe.db.get_value(DOCTYPE, doc.name, "erased_on"))
 		self.assertEqual(logged.call_count, 1)

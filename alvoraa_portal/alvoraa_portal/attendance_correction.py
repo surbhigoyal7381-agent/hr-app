@@ -326,6 +326,12 @@ def _scope_conditions():
 	branches = permitted_branches()
 	if branches is not None:
 		return [["branch", "in", branches]]
+	# Slice 085 (SEC-4): an HR login with no company and no branch looks after
+	# nobody. It used to get None here, which reads as "no limit" - everybody.
+	# A caller who is not HR (a Shift Supervisor given the submit right, W1D-14)
+	# keeps the old answer on purpose.
+	if {"HR Manager", "HR User"} & set(frappe.get_roles()):
+		return [["name", "in", []]]
 	return None
 
 

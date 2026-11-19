@@ -159,6 +159,12 @@ doc_events = {
     },
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+        # Slice 085 (SEC-2): nobody confirms, cancels, deletes or makes their OWN
+        # attendance, on any door. See attendance_doors.py.
+        "validate": "alvoraa_portal.attendance_doors.refuse_own_attendance_new",
+        "before_update_after_submit": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+        "before_cancel": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+        "on_trash": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
         # ALV-351: shows HR the held-day confirm fields on a missing-punch day.
         "onload": "alvoraa_portal.payroll_rules_apply.attendance_onload",
     },
@@ -180,7 +186,11 @@ doc_events = {
         "on_submit": "alvoraa_portal.attendance_correction.on_submit",
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
-        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        # Slice 085 (SEC-3): and nobody decides a request they raised.
+        "before_submit": [
+            "hrms.alvoraa_hr_core.access.refuse_own_submit",
+            "alvoraa_portal.attendance_doors.refuse_raiser_submit",
+        ],
         # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
         # half-day leave day at a company with an enabled pay rule set.
         "before_insert": "alvoraa_portal.leave_rules.prepare_half_day_correction",

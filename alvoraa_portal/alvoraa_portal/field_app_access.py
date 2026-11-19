@@ -257,6 +257,10 @@ def checkin_has_permission(doc: Document, user: str | None = None, ptype: str | 
 	None and a create looks the same as a read.
 	"""
 	is_hr, emp = _viewer(user)
+	# Slice 085 (SEC-2): nobody changes or deletes their OWN punch, HR included.
+	# Asked before HR's blanket yes. A new punch of one's own stays allowed.
+	if emp and doc.employee == emp and ptype in ("write", "delete"):
+		return False
 	if is_hr:
 		return True
 	# ALV-302. The machine account files a new punch for anybody, and that is all.

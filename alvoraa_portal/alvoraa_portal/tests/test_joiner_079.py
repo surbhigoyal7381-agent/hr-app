@@ -837,18 +837,41 @@ class TestExport(_Base):
 		self.assertEqual(len(rows), 1, rows)
 		self.assertEqual(rows[0].viewed_by, self.hr)
 
-	def test_the_audit_writer_swallows_its_own_failure(self):
-		"""ALV-353. Same rule as the other writers: the record must not stop
-		somebody doing their job. It calls the writer directly, so it proves the
-		writer never raises, not that an export survives."""
+	def test_a_failed_audit_write_refuses_the_export_and_produces_no_file(self):
+		"""ALV-353, Surbhi 19 Nov 2026: no export through the product without a
+		record. The row is written FIRST, so a failure leaves no file at all and
+		HR is told in plain words."""
 		from unittest import mock
 
 		doc, _out = self._sign_in()
 		frappe.set_user(self.hr)
-		with mock.patch("frappe.get_doc", side_effect=RuntimeError("boom")), \
+		frappe.local.response.pop("filecontent", None)
+		frappe.local.response.pop("type", None)
+		with mock.patch.object(joiner_invite, "_write_joiner_row",
+		                       side_effect=RuntimeError("boom")), \
 		     mock.patch("frappe.log_error") as logged:
-			joiner_invite._record_joiner_event("Joiner purge", doc.name)
+			with self.assertRaises(frappe.ValidationError) as caught:
+				joiner_invite.export_submission(submission=doc.name)
 		frappe.set_user("Administrator")
+		self.assertIn("not produced", str(caught.exception))
+		self.assertNotIn("filecontent", frappe.local.response)
+		self.assertNotEqual(frappe.local.response.get("type"), "download")
+		self.assertEqual(logged.call_count, 1)
+
+	def test_a_failed_audit_write_does_not_stop_a_purge(self):
+		"""ALV-353. The opposite choice, on purpose: an erasure must never be
+		blocked or reported as failed by its own bookkeeping."""
+		from unittest import mock
+
+		doc, _out = self._sign_in()
+		frappe.set_user(self.hr)
+		with mock.patch.object(joiner_invite, "_write_joiner_row",
+		                       side_effect=RuntimeError("boom")), \
+		     mock.patch("frappe.log_error") as logged:
+			out = joiner_invite.purge_submission(submission=doc.name)
+		frappe.set_user("Administrator")
+		self.assertTrue(out["erased"])
+		self.assertTrue(frappe.db.get_value(DOCTYPE, doc.name, "erased_on"))
 		self.assertEqual(logged.call_count, 1)
 
 	def test_there_is_no_bytes_included_export(self):

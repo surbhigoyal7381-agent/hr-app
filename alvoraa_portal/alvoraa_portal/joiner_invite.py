@@ -634,6 +634,8 @@ def export_submission(submission=None):
 	"""
 	_require_hr()
 	doc = frappe.get_doc(DOCTYPE, submission)
+	# Row FIRST: if it cannot be written this refuses and no file is produced.
+	log_an_export(doc.name, masked=True)
 	files = frappe.get_all("File", filters={
 		"attached_to_doctype": DOCTYPE, "attached_to_name": doc.name,
 	}, fields=["file_name", "creation"], limit_page_length=0, ignore_permissions=True)
@@ -653,22 +655,32 @@ def export_submission(submission=None):
 	frappe.local.response.filename = f"what-we-hold-{doc.name}.json"
 	frappe.local.response.filecontent = frappe.as_json(body, indent=2).encode("utf-8")
 	frappe.local.response.type = "download"
-	log_an_export(doc.name, masked=True)
 
 
 def log_an_export(submission, masked):
 	"""Record one export of a joiner's details, and **whether it was masked**
-	(counsel's ruling 9).
+	(counsel's ruling 9). **It refuses the export if it cannot.**
 
 	**The control is the row in `Alvoraa Photo Access Log`, not the log line.**
-	The row is durable, HR and System Manager can read it, and it has no purge
-	job. It says who, when, which submission (`reference_name`) and, in the
+	The row says who, when, which submission (`reference_name`) and, in the
 	`source` option, masked or not. `employee` stays empty: a joiner has no
 	Employee. Never a field value, never a file.
+
+	**Row first, and a failed write stops the export** (Surbhi, 19 Nov 2026):
+	"no export through the product without a record" is true by structure, not
+	by hope. A missing DocType or an un-migrated option list refuses too. This
+	is DELIBERATELY the opposite of `purge_submission`, which swallows a failed
+	write, because an erasure must never be blocked by its own bookkeeping. Do
+	not align the two.
 
 	A named function with one job, so a fourth export cannot be added without
 	one: `test_joiner_079` runs a table test over every export endpoint and
 	asserts exactly one row and one line per call.
+
+	The honest claim is "each export THROUGH THE PRODUCT writes a row naming the
+	user, the time, the record and whether it was masked". A System Manager can
+	still export the list from Desk, which leaves only Frappe's own `Access Log`
+	row with no masked flag; that gap is ticketed, not closed here.
 
 	The `info` line below is a developer trace and nothing more. It reaches no
 	file at any tenant: `frappe/utils/logger.py:12` sets the default level to
@@ -682,39 +694,58 @@ def log_an_export(submission, masked):
 	frappe.logger("alvoraa").info(
 		f"joiner submission exported: {submission} by {frappe.session.user} "
 		f"at {now()}, masked={bool(masked)}")
-	_record_joiner_event(
-		"Joiner export (masked)" if masked else "Joiner export (not masked)",
-		submission)
+	source = "Joiner export (masked)" if masked else "Joiner export (not masked)"
+	try:
+		_write_joiner_row(source, submission)
+	except Exception:
+		# `clear_messages`: drop Frappe's own validation text, so HR reads one
+		# plain sentence. Title only to `log_error`: a second argument would
+		# replace the real traceback.
+		frappe.clear_messages()
+		frappe.log_error(f"Joiner access log: could not record {source} on {submission}")
+		frappe.throw(_("We could not record this export, so it was not produced. "
+		               "Try again, and if it happens again ask your administrator."))
 
 
-def _record_joiner_event(source, submission):
-	"""Write the durable row for an export or a purge. The same shape as
-	`employee_documents_read`'s writer: never let the record stop somebody
-	doing their job, so a failure is logged and swallowed.
+def _write_joiner_row(source, submission):
+	"""The one insert, and it RAISES. The export lets that refuse it; the purge
+	swallows it (see `_record_purge`).
+
+	Rows are kept indefinitely, by Surbhi's decision of 19 Nov 2026, taken knowing
+	counsel's 18 Sep 2026 position against indefinite retention of personal data
+	and that these rows name an HR user. There is NO purge job and no setting for
+	one, on purpose. If that ever changes, the doctype's own `source` description
+	already says how: a `WHERE` on `source`, not a redesign.
 
 	No per-day dedupe, on purpose: the sibling writers skip a repeat view by the
 	same person on the same day, but every export or purge here is its own event
 	that counsel may ask about. Do not "align" it with them."""
+	frappe.get_doc({
+		"doctype": ACCESS_LOG,
+		"reference_name": submission,
+		"source": source,
+		"viewed_by": frappe.session.user,
+		"viewed_at": now(),
+		"viewed_on_date": today(),
+	}).insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _record_purge(submission):
+	"""Row for an erasure. A failure is logged and SWALLOWED, on purpose: the
+	erasure has already happened and must never be blocked or reported as failed
+	by its own bookkeeping. It is independently evidenced on the surviving shell
+	(`erased_on`, `erased_why`). The export does the opposite; do not align them."""
 	if not frappe.db.exists("DocType", ACCESS_LOG):
 		return
 	try:
-		frappe.get_doc({
-			"doctype": ACCESS_LOG,
-			"reference_name": submission,
-			"source": source,
-			"viewed_by": frappe.session.user,
-			"viewed_at": now(),
-			"viewed_on_date": today(),
-		}).insert(ignore_permissions=True)
-		frappe.db.commit()
+		_write_joiner_row("Joiner purge", submission)
 	except Exception:
-		# Title only: with a second argument `log_error` takes it as the
-		# traceback and drops the real one. Alone, it captures the live one.
 		# `clear_messages`: on a site not yet migrated the Select check adds a
 		# message the browser would show, and HR would read that an erasure
 		# that DID happen had failed.
 		frappe.clear_messages()
-		frappe.log_error(f"Joiner access log: could not record {source} on {submission}")
+		frappe.log_error(f"Joiner access log: could not record Joiner purge on {submission}")
 
 
 @frappe.whitelist(methods=["POST"])
@@ -731,5 +762,5 @@ def purge_submission(submission=None):
 	done = erase(doc.name, why="HR purged it on request", force=True)
 	frappe.logger("alvoraa").info(
 		f"joiner submission purged: {doc.name} by {frappe.session.user} at {now()}")
-	_record_joiner_event("Joiner purge", doc.name)
+	_record_purge(doc.name)
 	return {"erased": bool(done)}

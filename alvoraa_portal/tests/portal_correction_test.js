@@ -154,8 +154,7 @@ function putForm(reason) {
   }
 
   // ── My own month: the ordinary endpoint, unchanged ─────────────────
-  // Narrowing what an employee may ask about their OWN attendance would be a
-  // regression, so this half is pinned too.
+  // A person's own day goes to the ordinary endpoint, never the on-behalf one.
   putForm("Marked Absent by Mistake");
   window.acState.employee = null;
   window.acState.data = { employee: ME, employee_name: "Rahul Sharma",
@@ -250,6 +249,48 @@ function putForm(reason) {
   /does not let a manager/.test(switchedOff)
     ? ok("with the setting off the page says so, in plain words")
     : bad("the switched-off page did not explain itself");
+
+  // ── A person's OWN day, under the employee window (slice 084) ──────
+  // The server flags each of the person's own days. The sheet shows a sentence
+  // instead of a form for a day it refuses, a strip and the form for the
+  // joining day, and the form as always for any other day. Nobody reads the
+  // manager's words about their own day.
+  const paintOwn = (flag, extra) => {
+    window.acState.open = null;
+    window.acState.employee = null;
+    window.acState.data = Object.assign(
+      { employee: ME, employee_name: "Rahul Sharma", is_self: true,
+        can_request: true, tolerance_mins: 15, totals: totals,
+        can_request_from: "2026-10-12",
+        can_request_basis: "working days on this person's own holiday list",
+        joined_on: "2026-10-01",
+        days: [Object.assign(day("2026-10-01"), flag ? { own_window: flag } : {})] },
+      extra || {});
+    window.acToggle("2026-10-01");
+    return (doc.getElementById("ac-body") || {}).innerHTML || "";
+  };
+  const own = paintOwn("outside");
+  (!/ac-form/.test(own) && !/Ask HR to fix this day/.test(own))
+    ? ok("an own day the window refuses shows no form and no button")
+    : bad("the form was offered on a day the server would refuse");
+  (/Mon 12 Oct/.test(own) && /older than your organisation lets you raise yourself/.test(own)
+   && /tell HR which day it was and why/.test(own))
+    ? ok("it names the oldest day, in words, and HR's route")
+    : bad("the own-day sentence is missing or wrong: " + own.slice(0, 500));
+  (/The one exception is your joining day, Thu 1 Oct/.test(own))
+    ? ok("and names the joining day as the one exception")
+    : bad("the joining-day exception was not named");
+  !/a manager can file within/.test(own)
+    ? ok("an employee never reads the manager's sentence about their own day")
+    : bad("the manager's wording reached an employee's own day");
+  const joining = paintOwn("joining");
+  (/ac-form/.test(joining) && /This is your joining day, so you can always ask about it/.test(joining))
+    ? ok("the joining day gets its strip and the form")
+    : bad("the joining day did not get the strip and the form");
+  const open = paintOwn(null);
+  (/ac-form/.test(open) && !/joining day/.test(open))
+    ? ok("a day inside the window is drawn exactly as before")
+    : bad("an open day changed");
 
   // ── Whose record: the person picker (19 Oct 2026) ──────────────────
   // Surbhi, on a 403-entry dropdown: "there should be a way to do a text

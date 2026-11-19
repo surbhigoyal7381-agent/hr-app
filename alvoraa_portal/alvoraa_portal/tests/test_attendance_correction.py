@@ -2240,6 +2240,16 @@ class TheEmployeesFilingWindow(CorrectionCase):
 		self.assertNotIn("joined_on", month)
 		self.assertFalse(any("own_window" in d for d in month["days"]))
 		self.assertIsNone(month["can_request_from"])
+		# The manager is the reader who DOES get a boundary - their own - and
+		# must still get nothing of the employee's.
+		boss, boss_email = self.person("Ewboss%d" % CorrectionCase._slot, roles=("Employee",))
+		frappe.db.set_value("Employee", self.emp, "reports_to", boss)
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, "5")
+		month = self.as_me_month(employee=self.emp, email=boss_email)
+		self.assertFalse(month["is_self"])
+		self.assertEqual(month["can_request_from"], self.back(5), "the manager's own boundary")
+		self.assertNotIn("joined_on", month)
+		self.assertFalse(any("own_window" in d for d in month["days"]))
 
 	def test_the_request_page_is_told_the_boundary_and_the_joining_day(self):
 		from alvoraa_portal import hr_api

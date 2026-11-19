@@ -1,0 +1,482 @@
+"""Held days (slice 085, ALV-392).
+
+A day with an odd number of punches (one in and never out) is neither paid nor
+refused until a human has looked. At a company that has switched it on, such a
+day is written as an Attendance row with status **Held**. It is unpaid on the
+slip. It ends in one of two ways: the machine delivers the missing punch late
+(`release_on_machine_punch`), or HR approves a request that carries the missing
+time (`release_by_hr`). Everything here is a `doc_events` hook, a Custom Field
+or a Property Setter: no file in the vendored Frappe HR tree is edited.
+
+The order of the file is the life of a Held day: install, hold, release, slip.
+"""
+
+from datetime import datetime, timedelta
+
+import frappe
+from frappe import _
+from frappe.utils import cint, flt, get_datetime, getdate, now_datetime
+
+HELD = "Held"
+ATTENDANCE = "Attendance"
+REQUEST = "Attendance Request"
+COMPANY = "Company"
+
+SWITCH = "alvoraa_hold_odd_punch_days"
+LIMIT = "alvoraa_monthly_request_limit"
+EXEMPT = "alvoraa_limit_exempt_roles"
+COMPANY_SETTINGS = (SWITCH, LIMIT, EXEMPT)
+
+# The order matters: Held sits last so the existing options keep their places.
+FIELDS = {
+	COMPANY: [
+		{"fieldname": "alvoraa_held_section", "fieldtype": "Section Break",
+		 "label": "Held Days", "insert_after": "default_holiday_list", "collapsible": 1},
+		{"fieldname": SWITCH, "fieldtype": "Check", "default": "0",
+		 "label": "Hold Days With A Missing Punch", "insert_after": "alvoraa_held_section",
+		 "description": "A day with an odd number of punches is held, not paid, until "
+		                "HR looks at it. Days already held stay held if this is switched off."},
+		{"fieldname": LIMIT, "fieldtype": "Int", "default": "0",
+		 "label": "Monthly Request Limit", "insert_after": SWITCH,
+		 "description": "How many attendance requests one employee may raise in a "
+		                "month. 0 means no limit. Held days do not count."},
+		{"fieldname": EXEMPT, "fieldtype": "Small Text",
+		 "label": "Roles Exempt From The Limit", "insert_after": LIMIT,
+		 "description": "Role names, separated by commas."},
+	],
+	ATTENDANCE: [
+		{"fieldname": "alvoraa_release_how", "fieldtype": "Select", "read_only": 1,
+		 "allow_on_submit": 1, "options": "\nHR decision\nMachine punch",
+		 "label": "Released By", "insert_after": "alvoraa_evaluated_on"},
+		{"fieldname": "alvoraa_release_by", "fieldtype": "Data", "read_only": 1,
+		 "allow_on_submit": 1, "label": "Released By (User Or Punch)",
+		 "insert_after": "alvoraa_release_how"},
+		{"fieldname": "alvoraa_release_on", "fieldtype": "Datetime", "read_only": 1,
+		 "allow_on_submit": 1, "label": "Released On", "insert_after": "alvoraa_release_by"},
+	],
+	REQUEST: [
+		{"fieldname": "alvoraa_missing_time", "fieldtype": "Time",
+		 "label": "Missing Punch Time", "insert_after": "explanation"},
+		{"fieldname": "alvoraa_missing_log", "fieldtype": "Select", "options": "\nIN\nOUT",
+		 "label": "Missing Punch Was", "insert_after": "alvoraa_missing_time"},
+	],
+}
+
+
+# ── install ──────────────────────────────────────────────────────────────────
+
+def after_migrate():
+	"""The Held option, and the fields. Wired to after_migrate AND after_install:
+	a site built with `bench install-app` never runs a migrate (OPS-6, OPS-10)."""
+	if not (frappe.db.exists("DocType", ATTENDANCE) and frappe.db.exists("DocType", REQUEST)
+	        and frappe.db.exists("DocType", COMPANY)):
+		return False
+
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	# A Property Setter, not an edit to attendance.json: the fork is vendored and
+	# a JSON edit would clash on every rebase. Widens; never replaces.
+	field = frappe.get_meta(ATTENDANCE).get_field("status")
+	shipped = (field.options or "").split("\n") if field else []
+	if HELD not in shipped:
+		make_property_setter(ATTENDANCE, "status", "options", "\n".join(shipped + [HELD]),
+		                     "Text", validate_fields_for_doctype=False)
+		frappe.clear_cache(doctype=ATTENDANCE)
+
+	create_custom_fields(FIELDS)
+	return True
+
+
+def _switch_on(company):
+	"""The company's switch. Off when the column is missing (a deploy without a
+	migrate) or unreadable: never an error on the path that marks attendance."""
+	try:
+		return bool(cint(frappe.get_cached_value(COMPANY, company, SWITCH)))
+	except Exception:
+		return False
+
+
+# ── who may change the settings (SEC-6) ──────────────────────────────────────
+
+def guard_company_settings(doc, method=None):
+	"""Company validate. Only an HR Manager looking after THIS company, a System
+	Manager or Administrator changes the three settings, on every door (Desk,
+	REST, import). A hook and not a permlevel: it reads company scope, and it
+	needs no Custom DocPerm row on any tenant."""
+	before = doc.get_doc_before_save()
+	changed = [f for f in COMPANY_SETTINGS if _norm(doc.get(f)) != _norm(before.get(f) if before else None)]
+	if changed and not _may_change_settings(doc.name):
+		from hrms.alvoraa_hr_core.access import refuse
+		refuse(_("Only an HR Manager of this company or a System Manager can change the "
+		         "held-day settings."), "SEC-6", "Company save", COMPANY, doc.name)
+	if cint(doc.get(LIMIT)) < 0:
+		frappe.throw(_("The monthly request limit cannot be below 0. Use 0 for no limit."))
+	roles = exempt_roles(doc)
+	missing = [r for r in roles if not frappe.db.exists("Role", r)]
+	if missing:
+		frappe.throw(_("These are not roles on this site: {0}. Check the spelling in "
+		               "\"Roles Exempt From The Limit\".").format(", ".join(missing)))
+
+
+def _norm(value):
+	"""0, None and empty are one value: a field nobody has touched."""
+	return str(value or "").strip() if str(value or "").strip() not in ("0",) else ""
+
+
+def exempt_roles(company_doc_or_value):
+	value = company_doc_or_value.get(EXEMPT) if hasattr(company_doc_or_value, "get") \
+		else company_doc_or_value
+	return [r.strip() for r in (value or "").split(",") if r.strip()]
+
+
+def _may_change_settings(company):
+	user = frappe.session.user
+	roles = set(frappe.get_roles(user))
+	if user == "Administrator" or "System Manager" in roles:
+		return True
+	if "HR Manager" not in roles:
+		return False
+	from hrms.alvoraa_hr_core.access import permitted_companies
+	return company in permitted_companies(user)
+
+
+@frappe.whitelist()
+def held_settings():
+	"""The settings card's rows: only the companies this caller looks after, and
+	whether they may change each (the Company validate hook is the real rule)."""
+	from hrms.alvoraa_hr_core.access import permitted_companies
+	companies = permitted_companies()
+	if not companies:
+		return []
+	rows = frappe.get_all(COMPANY, filters={"name": ("in", companies)},
+	                      fields=["name", SWITCH, LIMIT, EXEMPT], order_by="name asc")
+	return [{"company": r.name, "hold": cint(r.get(SWITCH)), "limit": cint(r.get(LIMIT)),
+	         "roles": r.get(EXEMPT) or "", "can_edit": _may_change_settings(r.name)} for r in rows]
+
+
+@frappe.whitelist()
+def held_count(company):
+	"""How many days this month would be held if the switch were on: a whole
+	number and nothing else (PRIV-1). Refused outside the caller's companies."""
+	from hrms.alvoraa_hr_core.access import permitted_companies, refuse
+	if company not in permitted_companies():
+		refuse(_("That company is outside the companies you look after."), "SEC-4",
+		       "held_day.held_count", COMPANY, company)
+	today = getdate()
+	first = today.replace(day=1)
+	# One query. Raw SQL because the correlated count of a day's punches has no
+	# ORM form. Every value is a bound parameter.
+	return cint(frappe.db.sql(
+		"""select count(*) from `tabAttendance` a
+		   where a.docstatus = 1 and a.company = %(company)s
+		     and a.status in ('Present', 'Absent', 'Half Day') and a.in_time is not null
+		     and a.attendance_date between %(first)s and %(today)s
+		     and mod((select count(*) from `tabEmployee Checkin` c
+		              where c.employee = a.employee and c.skip_auto_attendance = 0
+		                and c.time >= a.attendance_date
+		                and c.time < date_add(a.attendance_date, interval 1 day)), 2) = 1""",
+		{"company": company, "first": first, "today": today})[0][0])
+
+
+@frappe.whitelist()
+def save_settings(company, hold, limit, roles):
+	"""The settings card's Save. The Company validate hook above is the rule;
+	this only turns the card's three values into one save."""
+	from hrms.alvoraa_hr_core.access import permitted_companies, refuse
+	if company not in permitted_companies():
+		refuse(_("That company is outside the companies you look after."), "SEC-4",
+		       "held_day.save_settings", COMPANY, company)
+	doc = frappe.get_doc(COMPANY, company)
+	doc.set(SWITCH, cint(hold))
+	doc.set(LIMIT, cint(limit))
+	doc.set(EXEMPT, ", ".join(exempt_roles(roles or "")))
+	doc.save()
+	return {"hold": cint(doc.get(SWITCH)), "limit": cint(doc.get(LIMIT)),
+	        "roles": doc.get(EXEMPT) or ""}
+
+
+def _has_time(doc):
+	"""A missing time was given. Midnight is a time: a zero timedelta is falsy."""
+	return doc.get("alvoraa_missing_time") not in (None, "")
+
+
+# ── the monthly limit (US-10) ────────────────────────────────────────────────
+
+def enforce_monthly_limit(doc, method=None):
+	"""Attendance Request before_insert, on every door. A request that carries a
+	missing time is for a Held day and neither counts nor is refused here; the
+	validate below refuses a time on a day that is not Held, so the time cannot
+	be used to dodge the limit."""
+	if _has_time(doc):
+		return
+	company = frappe.db.get_value("Employee", doc.employee, "company")
+	try:
+		limit = cint(frappe.get_cached_value(COMPANY, company, LIMIT))
+	except Exception:
+		return
+	if limit <= 0:
+		return
+	user = frappe.db.get_value("Employee", doc.employee, "user_id")
+	exempt = set(exempt_roles(frappe.get_cached_value(COMPANY, company, EXEMPT)))
+	if user and exempt & set(frappe.get_roles(user)):
+		return
+	first = getdate(doc.from_date).replace(day=1)
+	last = first.replace(day=28) + timedelta(days=4)
+	last = last - timedelta(days=last.day)
+	used = frappe.db.count(REQUEST, {
+		"employee": doc.employee, "docstatus": ("!=", 2),
+		"from_date": ("between", [first, last]),
+		"alvoraa_missing_log": ("is", "not set"),
+		"alvoraa_review_status": ("not in", ["Declined"]),
+	})
+	if used >= limit:
+		frappe.throw(_("You have used your {0} requests this month. Held days do not count. "
+		               "For another day, ask HR.").format(limit))
+
+
+def validate_missing_time(doc, method=None):
+	"""Attendance Request validate: a missing time is only for a day that is Held."""
+	if not _has_time(doc):
+		return
+	if not doc.get("alvoraa_missing_log"):
+		frappe.throw(_("Say whether the missing punch was in or out."))
+	if str(doc.from_date) != str(doc.to_date) or not _held_row(doc.employee, doc.from_date):
+		frappe.throw(_("That day is not held, so there is no missing time to send. "
+		               "Open the day again to see what it needs."))
+
+
+# ── the hold (US-3) ──────────────────────────────────────────────────────────
+
+def hold_odd_punch_day(doc, method=None):
+	"""Attendance validate, before the first save, so the row is written once as
+	Held and never created then rewritten (AC-11). Only auto-attendance sets
+	`in_time`, so a hand-marked row and a request-made row are never touched."""
+	if not doc.is_new() or doc.status not in ("Present", "Absent", "Half Day"):
+		return
+	if not doc.in_time or doc.get("attendance_request") or doc.get("leave_application"):
+		return
+	if not _switch_on(doc.company):
+		return
+	from alvoraa_portal.payroll_rules_apply import _punches
+	if _punches(doc.employee, doc.attendance_date)[2] % 2 == 1:
+		doc.status = HELD
+		doc.half_day_status = None
+
+
+# ── releasing ────────────────────────────────────────────────────────────────
+
+def _held_row(employee, date):
+	return frappe.db.get_value(
+		ATTENDANCE, {"employee": employee, "attendance_date": getdate(date),
+		             "docstatus": 1, "status": HELD},
+		["name", "shift", "company"], as_dict=True)
+
+
+def _day_logs(employee, date, shift):
+	return frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": employee, "skip_auto_attendance": 0, "offshift": 0,
+		         "time": ("between", [f"{date} 00:00:00", f"{date} 23:59:59"])},
+		fields=["name", "time", "log_type", "shift_start", "shift_end"],
+		order_by="time asc")
+
+
+def worked_out(row, extra=None):
+	"""(status, working_hours, late, early, in_time, out_time) for a Held row,
+	by the Shift Type's own `get_attendance`: no threshold rule of ours."""
+	shift = frappe.get_cached_doc("Shift Type", row.shift)
+	logs = _day_logs(row.employee, row.attendance_date, row.shift)
+	if extra:
+		when, log_type = extra
+		first = logs[0] if logs else frappe._dict()
+		when = datetime.combine(getdate(row.attendance_date), when) if not isinstance(when, datetime) else when
+		if logs and shift.start_time and shift.end_time and shift.start_time > shift.end_time \
+				and when < get_datetime(logs[0].time):
+			when += timedelta(days=1)  # a night shift: the out time is after midnight
+		logs.append(frappe._dict(time=when, log_type=log_type,
+		                         shift_start=first.get("shift_start"), shift_end=first.get("shift_end")))
+		logs.sort(key=lambda x: get_datetime(x["time"]))
+	for log in logs:
+		log["time"] = get_datetime(log["time"])
+		if not log.get("shift_start"):
+			log["shift_start"] = datetime.combine(getdate(row.attendance_date), _as_time(shift.start_time))
+			log["shift_end"] = log["shift_start"] + timedelta(hours=24)
+		log["shift_start"] = get_datetime(log["shift_start"])
+		log["shift_end"] = get_datetime(log["shift_end"])
+	logs = [frappe._dict(x) for x in logs]
+	absent, half = flt(shift.working_hours_threshold_for_absent), flt(shift.working_hours_threshold_for_half_day)
+	if shift.is_half_holiday(row.employee, row.attendance_date):
+		absent, half = absent / 2, half / 2
+	return shift.get_attendance(logs, absent, half)
+
+
+def _as_time(value):
+	return (datetime.min + value).time() if isinstance(value, timedelta) else value
+
+
+def preview(employee, date, missing_time, missing_log):
+	"""What the day would become on approval, for the HR card (Q3). The same
+	function approval runs, so the card cannot promise something else."""
+	row = _held_row(employee, date)
+	if not row or not row.shift:
+		return None
+	row = frappe._dict(row, employee=employee, attendance_date=getdate(date))
+	status, hours, *_rest = worked_out(row, (frappe.utils.get_time(missing_time), missing_log))
+	return {"status": status, "working_hours": flt(hours, 2),
+	        "punches": [get_datetime(x.time).strftime("%H:%M") for x in _day_logs(employee, date, row.shift)],
+	        "slip_final": is_in_final_slip(employee, date)}
+
+
+def is_in_final_slip(employee, date):
+	return bool(frappe.db.exists("Salary Slip", {"employee": employee, "docstatus": 1,
+	                                             "start_date": ("<=", date), "end_date": (">=", date)}))
+
+
+def _write_release(att_name, row, outcome, how, by):
+	status, hours, late, early, in_time, out_time = outcome
+	values = {"status": status, "working_hours": flt(hours, 3), "late_entry": cint(late),
+	          "early_exit": cint(early), "in_time": in_time, "out_time": out_time,
+	          "half_day_status": "Absent" if status == "Half Day" else None,
+	          "modify_half_day_status": 0,
+	          "alvoraa_release_how": how, "alvoraa_release_by": by,
+	          "alvoraa_release_on": now_datetime()}
+	# set_value skips the Version row, which is why the three release fields exist
+	# (PRIV-3, SEC-7): they carry the who, how and when. The engine's own
+	# `write_verdict` writes the same way.
+	frappe.db.set_value(ATTENDANCE, att_name, values)
+	return status
+
+
+def note_held_day(doc, method=None):
+	"""Attendance Request before_submit. Stock is about to overwrite the row with
+	Present, so remember it was Held, and refuse what cannot be worked out."""
+	row = _held_row(doc.employee, doc.from_date) if str(doc.from_date) == str(doc.to_date) else None
+	if not row:
+		if _has_time(doc):
+			frappe.throw(_("That day is no longer held, so there is nothing to release. "
+			               "Decline this request."))
+		return
+	if not row.shift:
+		frappe.throw(_("This day has no shift, so its hours cannot be worked out. Ask a "
+		               "System Manager to set the shift on the day, then approve again."))
+	if not _has_time(doc):
+		frappe.throw(_("This day is held. The request needs the missing punch time so the "
+		               "hours can be worked out. Ask the employee to send it, or decline."))
+	doc.flags.held_row = row.name
+
+
+def release_by_hr(doc, method=None):
+	"""Attendance Request on_submit, after stock has written its row."""
+	name = doc.flags.get("held_row")
+	if not name:
+		return
+	row = frappe.db.get_value(ATTENDANCE, name, ["name", "employee", "attendance_date", "shift"],
+	                          as_dict=True)
+	outcome = worked_out(row, (frappe.utils.get_time(doc.alvoraa_missing_time), doc.alvoraa_missing_log))
+	_write_release(name, row, outcome, "HR decision", frappe.session.user)
+	# Own try: a slip fault must never undo a release (AC-17, OPS-19).
+	frappe.flags.held_slip = refresh_draft_slip(row.employee, row.attendance_date)
+
+
+def release_on_machine_punch(doc, method=None):
+	"""Employee Checkin after_insert. Cheapest test first, so an ordinary punch
+	costs one role check. Judged by who filed it, never by `device_id` (SEC-5).
+	A fault never fails the punch: the sync tool halts a machine's batch on a
+	refusal it does not know."""
+	try:
+		from alvoraa_portal.field_app_access import is_machine_account
+		if not is_machine_account() or doc.skip_auto_attendance:
+			return
+		date = get_datetime(doc.time).date()
+		row = _held_row(doc.employee, date)
+		if not row or not row.shift:
+			return
+		from alvoraa_portal.payroll_rules_apply import _punches
+		count = _punches(doc.employee, date)[2]
+		if count < 2 or count % 2:
+			return
+		frappe.db.savepoint("held_release")
+		try:
+			full = frappe._dict(row, employee=doc.employee, attendance_date=date)
+			_write_release(row.name, full, worked_out(full), "Machine punch", doc.name)
+			# Link the punch to the day, so the 3-minute job does not take it for an unmarked one.
+			frappe.db.set_value("Employee Checkin", doc.name, "attendance", row.name)
+		except Exception:
+			frappe.db.rollback(save_point="held_release")
+			raise
+		frappe.enqueue("alvoraa_portal.held_day.refresh_slip_job", employee=doc.employee,
+		               date=str(date), enqueue_after_commit=True, queue="short")
+	except Exception:
+		frappe.log_error(title=f"Held day not released by punch {doc.name}",
+		                 message=frappe.get_traceback())
+
+
+def refresh_slip_job(employee, date):
+	refresh_draft_slip(employee, date)
+
+
+# ── the slip ─────────────────────────────────────────────────────────────────
+
+def refresh_draft_slip(employee, date):
+	"""Re-save that ONE employee's draft slip so the day is priced again.
+	Returns "refreshed", "final" (the slip is submitted and was NOT changed),
+	or "none". Its own savepoint and try; an error goes to the Error Log by
+	slip name and the release stands. `ignore_permissions` is deliberate: the
+	caller may be the machine account, which holds no Salary Slip right, and
+	the act is owed by the system."""
+	slip = None
+	try:
+		slip = frappe.db.get_value("Salary Slip", {"employee": employee, "docstatus": 0,
+		                                           "start_date": ("<=", date), "end_date": (">=", date)})
+		if slip:
+			frappe.db.savepoint("held_slip")
+			try:
+				frappe.get_doc("Salary Slip", slip).save(ignore_permissions=True)
+			except Exception:
+				frappe.db.rollback(save_point="held_slip")
+				raise
+			return "refreshed"
+		if is_in_final_slip(employee, date):
+			return "final"
+	except Exception:
+		frappe.log_error(title=f"Slip {slip or employee} not refreshed after a held day",
+		                 message=frappe.get_traceback())
+	return "none"
+
+
+def deduct_held_days(doc, method=None):
+	"""Salary Slip validate, wired AFTER the pay-rule engine's hook. Held is not a
+	status stock Frappe reads, so it would be paid. Frappe works `payment_days`
+	out from scratch on every save, so subtracting here is safe to run twice.
+	Does nothing on a submitted slip or at a company with a pay rule set (that
+	path prices from the engine, which already treats an odd count as held)."""
+	if doc.docstatus != 0 or not doc.employee:
+		return
+	from alvoraa_portal.payroll_rules_apply import rule_set_for
+	if rule_set_for(doc.company):
+		return
+	dates = frappe.get_all(ATTENDANCE, filters={
+		"employee": doc.employee, "docstatus": 1, "status": HELD,
+		"attendance_date": ("between", [doc.start_date, doc.end_date])},
+		pluck="attendance_date")
+	if not dates:
+		return
+	holidays = _holidays(doc.employee, doc.start_date, doc.end_date)
+	days = [d for d in dates if str(d) not in holidays]
+	if not days:
+		return
+	doc.payment_days = max(0, flt(doc.payment_days) - len(days))
+	doc.absent_days = flt(doc.absent_days) + len(days)
+	doc.calculate_net_pay()
+	doc.compute_year_to_date()
+	doc.compute_month_to_date()
+	doc.compute_component_wise_year_to_date()
+
+
+def _holidays(employee, start, end):
+	holiday_list = frappe.db.get_value("Employee", employee, "holiday_list")
+	if not holiday_list:
+		return set()
+	return {str(d) for d in frappe.get_all("Holiday", filters={
+		"parent": holiday_list, "holiday_date": ("between", [start, end])}, pluck="holiday_date")}

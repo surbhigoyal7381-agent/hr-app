@@ -494,3 +494,11 @@ Removed from this spec: a separate story for Hindi; a held-day email (not built)
 - [ ] **Usability test (5 shift staff, 360 px) is not run.** Planned in 01b section 9; before release, not before build
 
 **Result: Ready to build with conditions.** Build can start now on US-1, 2, 3, 11, 12, 13, 14, 15, 16. Four things need Surbhi first: Q3 (below-threshold and no-shift release; blocks AC-14 edge cases and US-4's final form), Q2 (blocks AC-44 only), Q4 (blocks AC-18's wording), and the five "needs her yes" parity rows. Q1 blocks switching on at Grace, not the build.
+
+---
+
+## Spec gate: Surbhi (19 Nov 2026): START THE BUILD, TAKE THE ANALYST'S CUTS
+
+- Cuts accepted: Hindi strings deferred; no second "Sent to HR" tag; exempt roles as a comma list; one hand count for monitoring; Grace's dead slip batch is not fixed here (OPS-19).
+- **Two releases:** the safety doors (US-11 to US-14) first, then Held.
+- Still open, not answered at this gate: the five prototype-parity rows; the OPS decision columns; Q1 (Company User Permission for hr@grace before switch-on); Q3 and Q4.

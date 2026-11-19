@@ -43,7 +43,9 @@ class HeldDayCase(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		HeldDayCase._slot += 1
-		self.tag = "Hd%d" % HeldDayCase._slot
+		# Unique per run: the backfill script commits, and a committed fixture
+		# survives Frappe's rollback.
+		self.tag = "Hd%s%d" % (frappe.generate_hash(length=4), HeldDayCase._slot)
 		self.company = _make_company(COMPANY, "A85C")
 		self.other_company = _make_company(OTHER, "A85O")
 		_holiday_list(self.company)
@@ -355,6 +357,33 @@ class HeldDayCase(FrappeTestCase):
 		self._ordinary_request(self.worker, first)
 		self._ordinary_request(self.worker, add_days(first, 1))
 
+	def test_ac44_the_limit_counts_the_way_graces_script_did(self):
+		"""Grace's script: same from_date month, docstatus != 2, not Rejected,
+		self excluded, three allowed, "Sales Executive" exempt by designation.
+		A cancelled and a declined request do not count; a held-day request does
+		not count; a designation named in the exempt list is never refused."""
+		self.set_switch(1, limit=3)
+		first = add_days(frappe.utils.get_first_day(add_days(nowdate(), -40)), 3)
+		counted = [self._ordinary_request(self.worker, add_days(first, i)) for i in range(2)]
+		cancelled = self._ordinary_request(self.worker, add_days(first, 2))
+		frappe.db.set_value(REQUEST, cancelled.name, "docstatus", 2)
+		declined = self._ordinary_request(self.worker, add_days(first, 3))
+		frappe.db.set_value(REQUEST, declined.name, "alvoraa_review_status", "Declined")
+		self._ordinary_request(self.worker, add_days(first, 4))  # the third that counts
+		with self.assertRaises(frappe.ValidationError):
+			self._ordinary_request(self.worker, add_days(first, 5))
+		# a request in the NEXT month is a different month
+		self._ordinary_request(self.worker, add_days(frappe.utils.get_last_day(first), 2))
+		# designation exemption, as Grace's script had it
+		if not frappe.db.exists("Designation", "Sales Executive"):
+			frappe.get_doc({"doctype": "Designation", "designation_name": "Sales Executive"}
+			               ).insert(ignore_permissions=True)
+		sales = self._employee("Salesexec")
+		frappe.db.set_value("Employee", sales, "designation", "Sales Executive")
+		self.set_switch(1, limit=3, roles="Sales Executive")
+		for i in range(5):
+			self._ordinary_request(sales, add_days(first, i))
+
 	# ── the month sheet (US-6) ─────────────────────────────────────────
 
 	def test_the_month_names_the_held_day_and_sends_no_reason(self):
@@ -413,6 +442,7 @@ class HeldDayCase(FrappeTestCase):
 		self.assertIn("alvoraa_portal.held_day.release_on_machine_punch", events["Employee Checkin"]["after_insert"])
 		self.assertIn("alvoraa_portal.held_day.release_by_hr", events["Attendance Request"]["on_submit"])
 		self.assertIn("alvoraa_portal.held_day.guard_company_settings", events["Company"]["validate"])
+		self.assertIn("public/js/attendance_list_held.js", frappe.get_hooks("doctype_list_js")["Attendance"])
 		after = frappe.get_hooks("after_install") + frappe.get_hooks("after_migrate")
 		self.assertEqual(after.count("alvoraa_portal.held_day.after_migrate"), 2)
 
@@ -439,10 +469,12 @@ class HeldDayCase(FrappeTestCase):
 		self.assertIn(att.name, [r.name for r in rows if r.name == att.name])
 		undo_file = tempfile.mktemp(suffix=".jsonl")
 		try:
-			mod.hold(frappe, [r for r in rows if r.name == att.name], undo_file)
+			with patch.object(frappe.db, "commit"):
+				mod.hold(frappe, [r for r in rows if r.name == att.name], undo_file)
 			self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Held")
 			self.assertNotIn(att.name, [r.name for r in mod.candidates(frappe, [self.company])])
-			mod.undo(frappe, undo_file)
+			with patch.object(frappe.db, "commit"):
+				mod.undo(frappe, undo_file)
 			self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Present")
 		finally:
 			if os.path.exists(undo_file):

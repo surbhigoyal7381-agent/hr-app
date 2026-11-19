@@ -12002,6 +12002,12 @@ function loadSalary() {
           '<span>Paid days <b>' + esc(d.payment_days) + '</b></span>' +
           (d.leave_without_pay ? '<span>Unpaid leave <b>' + esc(d.leave_without_pay) + '</b></span>' : '') +
         '</div>' +
+        /* Slice 085 (AC-6): days that were Held, in words, with the dates. Not "this slip updates by itself": a slip shown here is already final. */
+        ((d.held_dates || []).length
+          ? '<div class="ac-banner held" style="margin-top:12px">&#9888; Held days, not paid: ' + d.held_dates.length +
+            '<div style="font-weight:400;margin-top:4px">' + d.held_dates.map(function (x) { return esc(lpShort(x)); }).join(", ") +
+            '. These days were not paid on this slip. HR decides them. If one is released after this slip, HR will tell you how it is paid.</div></div>'
+          : '') +
         table("Earnings", d.earnings, d.gross_pay, false) +
         table("Deductions", d.deductions, d.total_deduction, true) +
         ytd +

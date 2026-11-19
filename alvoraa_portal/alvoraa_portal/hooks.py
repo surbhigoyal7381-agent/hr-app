@@ -139,6 +139,8 @@ doctype_js = {
 # seen" column on purpose.
 doctype_list_js = {
     "Alvoraa Field Device": "public/js/alvoraa_field_device_list.js",
+    # Slice 085 (AC-8): the Held chip on the Attendance list.
+    "Attendance": "public/js/attendance_list_held.js",
 }
 
 doc_events = {

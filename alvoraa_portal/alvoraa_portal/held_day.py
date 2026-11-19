@@ -41,8 +41,8 @@ FIELDS = {
 		 "description": "How many attendance requests one employee may raise in a "
 		                "month. 0 means no limit. Held days do not count."},
 		{"fieldname": EXEMPT, "fieldtype": "Small Text",
-		 "label": "Roles Exempt From The Limit", "insert_after": LIMIT,
-		 "description": "Role names, separated by commas."},
+		 "label": "Exempt From The Limit", "insert_after": LIMIT,
+		 "description": "Role or designation names, separated by commas."},
 	],
 	ATTENDANCE: [
 		{"fieldname": "alvoraa_release_how", "fieldtype": "Select", "read_only": 1,
@@ -113,10 +113,10 @@ def guard_company_settings(doc, method=None):
 	if cint(doc.get(LIMIT)) < 0:
 		frappe.throw(_("The monthly request limit cannot be below 0. Use 0 for no limit."))
 	roles = exempt_roles(doc)
-	missing = [r for r in roles if not frappe.db.exists("Role", r)]
+	missing = [r for r in roles if not (frappe.db.exists("Role", r) or frappe.db.exists("Designation", r))]
 	if missing:
-		frappe.throw(_("These are not roles on this site: {0}. Check the spelling in "
-		               "\"Roles Exempt From The Limit\".").format(", ".join(missing)))
+		frappe.throw(_("These are not roles or designations on this site: {0}. Check the spelling in "
+		               "\"Exempt From The Limit\".").format(", ".join(missing)))
 
 
 def _norm(value):
@@ -204,7 +204,9 @@ def _has_time(doc):
 # ── the monthly limit (US-10) ────────────────────────────────────────────────
 
 def enforce_monthly_limit(doc, method=None):
-	"""Attendance Request before_insert, on every door. A request that carries a
+	"""Attendance Request before_insert, on every door. Counts as Grace's script
+	did (AC-44): requests whose from_date is in the same month, not cancelled, not
+	Declined (Grace: not Rejected), never this request itself (it has no row yet). A request that carries a
 	missing time is for a Held day and neither counts nor is refused here; the
 	validate below refuses a time on a day that is not Held, so the time cannot
 	be used to dodge the limit."""
@@ -217,9 +219,11 @@ def enforce_monthly_limit(doc, method=None):
 		return
 	if limit <= 0:
 		return
-	user = frappe.db.get_value("Employee", doc.employee, "user_id")
+	# Exempt by designation (Grace's script exempted "Sales Executive" this way)
+	# or by a role the employee's login holds.
+	user, designation = frappe.db.get_value("Employee", doc.employee, ["user_id", "designation"])
 	exempt = set(exempt_roles(frappe.get_cached_value(COMPANY, company, EXEMPT)))
-	if user and exempt & set(frappe.get_roles(user)):
+	if designation in exempt or (user and exempt & set(frappe.get_roles(user))):
 		return
 	first = getdate(doc.from_date).replace(day=1)
 	last = first.replace(day=28) + timedelta(days=4)
@@ -456,14 +460,7 @@ def deduct_held_days(doc, method=None):
 	from alvoraa_portal.payroll_rules_apply import rule_set_for
 	if rule_set_for(doc.company):
 		return
-	dates = frappe.get_all(ATTENDANCE, filters={
-		"employee": doc.employee, "docstatus": 1, "status": HELD,
-		"attendance_date": ("between", [doc.start_date, doc.end_date])},
-		pluck="attendance_date")
-	if not dates:
-		return
-	holidays = _holidays(doc.employee, doc.start_date, doc.end_date)
-	days = [d for d in dates if str(d) not in holidays]
+	days = held_dates(doc.employee, doc.start_date, doc.end_date)
 	if not days:
 		return
 	doc.payment_days = max(0, flt(doc.payment_days) - len(days))
@@ -472,6 +469,19 @@ def deduct_held_days(doc, method=None):
 	doc.compute_year_to_date()
 	doc.compute_month_to_date()
 	doc.compute_component_wise_year_to_date()
+
+
+def held_dates(employee, start, end):
+	"""The Held days in a period that cost pay (a holiday is not a working day).
+	The slip hook and the payslip line read the same list."""
+	dates = frappe.get_all(ATTENDANCE, filters={
+		"employee": employee, "docstatus": 1, "status": HELD,
+		"attendance_date": ("between", [start, end])}, pluck="attendance_date",
+		order_by="attendance_date asc")
+	if not dates:
+		return []
+	holidays = _holidays(employee, start, end)
+	return [d for d in dates if str(d) not in holidays]
 
 
 def _holidays(employee, start, end):

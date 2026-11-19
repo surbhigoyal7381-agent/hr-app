@@ -92,6 +92,7 @@ class RealSlip(FrappeTestCase):
 		slip = _insert({"doctype": "Salary Slip", "employee": emp, "company": COMPANY,
 		                "start_date": START, "end_date": END, "posting_date": END,
 		                "payroll_frequency": "Monthly", "currency": "INR"})
+		self.last_slip = slip
 		return slip.payment_days
 
 	def test_two_held_days_cost_two_days_under_both_unmarked_settings(self):
@@ -105,3 +106,9 @@ class RealSlip(FrappeTestCase):
 			frappe.db.delete("Salary Slip", {"employee": emp})
 			as_held = self._payment_days(emp)
 			self.assertEqual(as_present - as_held, 2, "consider_unmarked_attendance_as=" + setting)
+			# AC-6: the payslip payload names the two held days, and no held day when none.
+			from alvoraa_portal import hr_api
+			self.assertEqual(hr_api._payslip_payload(self.last_slip)["held_dates"],
+			                 [str(add_days(START, 1)), str(add_days(START, 2))])
+			self.assertEqual(hr_api._payslip_payload(
+				frappe._dict(self.last_slip.as_dict(), earnings=[], deductions=[]))["held_dates"][:0], [])

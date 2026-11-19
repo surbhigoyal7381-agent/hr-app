@@ -9,6 +9,7 @@ from alvoraa_portal.attendance_correction import (EMPLOYEE_FILING_WINDOW_KEY,
                                                  MANAGER_FILING_WINDOW_KEY,
                                                  MANAGER_ON_BEHALF_KEY,
                                                  employee_filing_from)
+from alvoraa_portal.held_day import held_dates
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.payroll_rules import label_punches
 from alvoraa_portal.subscription import requires_feature
@@ -2162,6 +2163,9 @@ def _payslip_payload(slip):
         "gross_year_to_date": flt(slip.get("gross_year_to_date")),
         "earnings": lines(slip.earnings),
         "deductions": lines(slip.deductions),
+        # Slice 085 (AC-6): the days in this slip that were Held and so not paid.
+        # Dates only, for the slip's own employee (ownership is checked above).
+        "held_dates": [str(d) for d in held_dates(slip.employee, slip.start_date, slip.end_date)],
     }
 
 

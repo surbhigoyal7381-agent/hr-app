@@ -1165,7 +1165,7 @@ def my_requests(limit=20):
 	return [_shape(r, evidence) for r in rows]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def raise_correction(from_date, to_date=None, reason=None, explanation=None,
                      half_day=0, half_day_date=None, file_id=None,
                      missing_time=None, missing_log=None):
@@ -1248,7 +1248,7 @@ def _held_request_fields(missing_time, missing_log, from_date, to_date):
 	        "alvoraa_missing_time": missing_time, "alvoraa_missing_log": missing_log}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def withdraw(name):
 	"""Take back a request HR has not decided yet.
 
@@ -1926,7 +1926,7 @@ def to_review(limit=50):
 	return rows
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def decide(name, approve, note=None):
 	"""Approve or decline one request.
 
@@ -2338,7 +2338,7 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
                      explanation=None, half_day=0, half_day_date=None,
                      missing_time=None, missing_log=None):

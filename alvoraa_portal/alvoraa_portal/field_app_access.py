@@ -248,20 +248,45 @@ def _line_sql(manager_sql: str) -> str:
 def checkin_query_conditions(user=None):
 	"""Row filter for the Employee Checkin list.
 
-	HR sees everything. A manager sees their own and their direct reports' - or
-	their whole line, where the organisation allows it (ALV-328). An employee
-	sees their own. Anybody with no employee record sees nothing, which is
-	deliberately stricter than "sees everything" - the failure mode of a
-	permission rule should be silence, not disclosure.
+	HR sees the people it may act for (ALV-412): its companies, narrowed to its
+	branches where it has any - `permitted_employee_filters`, the rule the
+	reports use since ALV-385 - and, like anybody, its own punches and its line.
+	A System Manager sees everything. A manager sees their own and their direct
+	reports' - or their whole line, where the organisation allows it (ALV-328).
+	An employee sees their own. Anybody with no employee record and no HR scope
+	sees nothing, which is deliberately stricter than "sees everything" - the
+	failure mode of a permission rule should be silence, not disclosure.
 	"""
 	is_hr, emp = _viewer(user)
-	if is_hr:
+	scope = _hr_read_sql(user) if is_hr else None
+	if scope == "":
 		return ""
-	if not emp:
-		return "1=0"
-	me = frappe.db.escape(emp)
-	return (f"(`tabEmployee Checkin`.employee = {me} "
-	        f"or `tabEmployee Checkin`.employee in ({_line_sql(me)}))")
+	own = None
+	if emp:
+		me = frappe.db.escape(emp)
+		own = (f"`tabEmployee Checkin`.employee = {me} "
+		       f"or `tabEmployee Checkin`.employee in ({_line_sql(me)})")
+	parts = [p for p in (scope, own) if p]
+	return "(" + " or ".join(parts) + ")" if parts else "1=0"
+
+
+def _hr_read_sql(user=None):
+	"""ALV-412. The punches HR may read, as SQL on `tabEmployee Checkin`.
+
+	"" for everybody (System Manager, Administrator), None for nobody (no company,
+	the M-2 lock-out), else `employee in (select ...)` from the same filters the
+	reports use. In the database, never a list of ids read into Python."""
+	import hrms.alvoraa_hr_core.access as access
+
+	filters = access.permitted_employee_filters(user)
+	if filters == access.ALL_EMPLOYEES:
+		return ""
+	if filters == access.NO_EMPLOYEES:
+		return None
+	where = " and ".join(
+		"`{0}` in ({1})".format(field, ", ".join(frappe.db.escape(v) for v in cond[1]) or "''")
+		for field, cond in filters.items())
+	return f"`tabEmployee Checkin`.employee in (select name from `tabEmployee` where {where})"
 
 
 def _punch_refused(rule, doc, user):
@@ -344,8 +369,15 @@ def checkin_has_permission(doc: Document, user: str | None = None, ptype: str | 
 					return False
 			elif is_hr and not _hr_may_touch(doc, employee, user):
 				return False
+	# ALV-412: HR's create, write and delete were scoped above (R4); every other
+	# right - read, select, print, export, share - is scoped here, by the same rule
+	# as the list. Outside it HR reads only what anybody may: its own and its line.
 	if is_hr:
-		return True
+		import hrms.alvoraa_hr_core.access as access
+
+		if ptype in ("create", "write", "delete") or (
+				doc.get("employee") and access.employee_in_scope(doc.employee, user)):
+			return True
 	# ALV-302. The machine account files a new punch for anybody, and that is all.
 	if ptype == "create" and doc.is_new() and is_machine_account(user):
 		return True

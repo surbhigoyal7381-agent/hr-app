@@ -371,9 +371,13 @@ class HeldDayCase(FrappeTestCase):
 		"""One release (decision 1): nothing is held anywhere until the switch is ticked."""
 		self.assertEqual(frappe.db.get_value("Custom Field", {"dt": "Company", "fieldname": held_day.SWITCH},
 		                                     "default"), "0")
-		fresh = _make_company("ALV085 Fresh Company", "A85F")
-		self.assertEqual(frappe.db.get_value("Company", fresh, held_day.SWITCH) or 0, 0)
-		self.assertFalse(held_day._switch_on(fresh))
+		# No company is created here: a new Company would stay on the shared site and
+		# change which company other modules pick first.
+		self.set_switch(0, company=self.other_company)
+		frappe.db.sql("update `tabCompany` set `%s` = default(`%s`) where name = %%s" % (held_day.SWITCH, held_day.SWITCH),
+		              self.other_company)
+		frappe.clear_cache(doctype="Company")
+		self.assertFalse(held_day._switch_on(self.other_company))
 
 	def test_both_attendance_request_validate_hooks_are_kept(self):
 		hooks = frappe.get_hooks("doc_events")["Attendance Request"]["validate"]

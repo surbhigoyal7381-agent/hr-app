@@ -98,3 +98,15 @@ class Backfill(_Fixtures):
 		with patch("alvoraa_portal.held_day.is_in_final_slip", return_value=True):
 			names = [r.name for r in mod.candidates(frappe, [self.h.company])]
 		self.assertNotIn(att, names)
+
+
+class SettingsSaveIsPostOnly(FrappeTestCase):
+	"""ALV-411: saving the held-day settings changes data, so a GET link must
+	never reach it. The portal already sends it as a POST (gpSend with args)."""
+
+	def test_save_settings_accepts_post_only(self):
+		from alvoraa_portal import held_day
+		self.assertIn(held_day.save_settings, frappe.whitelisted)
+		self.assertNotIn(held_day.save_settings, frappe.guest_methods)
+		self.assertEqual(
+			frappe.allowed_http_methods_for_whitelisted_func[held_day.save_settings], ["POST"])

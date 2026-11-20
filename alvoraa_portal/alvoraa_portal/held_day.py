@@ -155,7 +155,7 @@ def held_settings():
 	         "roles": r.get(EXEMPT) or "", "can_edit": _may_change_settings(r.name)} for r in rows]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # ALV-411: a change is never a GET link
 def save_settings(company, hold, limit, roles):
 	"""The settings card's Save. The Company validate hook above is the rule;
 	this only turns the card's three values into one save."""

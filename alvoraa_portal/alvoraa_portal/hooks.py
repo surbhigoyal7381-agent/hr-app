@@ -30,6 +30,11 @@ before_request = [
     # ALV-249: no request may ask Frappe to skip User Permissions or
     # permissions. Every path, "/" with cmd included. See request_guard.py.
     "alvoraa_portal.request_guard.drop_permission_skips",
+    # ALV-394: a joiner types the number or email HR reached them on, which
+    # is on no account anywhere - 079 gives them an opaque login id. This
+    # swaps one for the other before Frappe checks the password. Guest POSTs
+    # to /api/method/login only, and it fails open.
+    "alvoraa_portal.auth.let_the_joiner_type_what_hr_gave_them",
     "alvoraa_portal.auth.lock_until_password_chosen",
     # Slice 079 (079-SEC-3): a new joiner's sign-in opens their joining
     # form and nothing else. The same shape as the line above and the

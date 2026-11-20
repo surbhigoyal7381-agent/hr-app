@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, cstr
 from werkzeug.exceptions import HTTPException
 
 from alvoraa_portal.subscription import has_feature
@@ -17,6 +17,10 @@ _DESK_ROLES = frozenset({
 # controller and the settings layer behind it.
 JOINER_ROLE = "Alvoraa Joiner"
 JOINING_PAGE = "/joining"
+# Where HR's "Signs in with" value lives. Named here for the same reason as
+# the role above: `auth` is on the front door of every request and must not
+# drag the submission controller in behind it.
+JOINER_SUBMISSION = "Alvoraa Joiner Submission"
 
 
 def home_page_for(user):
@@ -649,6 +653,102 @@ def _refuse(path):
         # no doctype, no page, no count.
         raise frappe.PermissionError(_(_ONE_PAGE))
     raise _GoToTheJoiningPage
+
+
+def let_the_joiner_type_what_hr_gave_them():
+    """Frappe `before_request` hook. ALV-394.
+
+    A joiner is told to sign in with the number or email HR reached them on.
+    That value is on no account anywhere: slice 079 gives the joiner an opaque,
+    non-routable login id on purpose (079-SEC-1), and `make_sign_in` copies what
+    HR typed onto `User.mobile_no` **only when it is a telephone number**. So an
+    email invite had nothing for Frappe to match, `find_by_credentials` returned
+    no row, and the page - which turns every refusal it does not recognise into
+    the wrong-password wording - told the joiner to check a password that was
+    never read. Invited by email, nobody could ever get in.
+
+    This swaps what they typed for the login id that exists, before Frappe looks
+    anything up. The opaque id stays opaque; nothing new is returned to the
+    browser.
+
+    **It is not an oracle (US-4).** There is no new endpoint and no new wording.
+    A stranger guessing an address gets the same refusal as before, because the
+    only thing that changes is which row Frappe fails to authenticate against.
+
+    **It makes `allow_login_using_mobile_number` unnecessary for joiners.** That
+    setting is tenant-wide: turning it on let every employee at that tenant sign
+    in with their mobile number too, a side effect accepted by name in 079
+    decision 6b. Mobile invites now work without it.
+
+    **Fails open.** Every failure leaves what was typed alone, so the worst case
+    is the refusal that happens today - never a tenant locked out of its login.
+    """
+    try:
+        request = getattr(frappe.local, "request", None)
+        if request is None or request.method != "POST":
+            return
+        if (request.path or "") != "/api/method/login":
+            return
+
+        form = getattr(frappe.local, "form_dict", None)
+        if not form:
+            return
+        typed = cstr(form.get("usr") or "").strip()
+        if not typed:
+            return
+
+        # A real account: leave it alone. This is also what keeps every member
+        # of staff out of the lookup below - they cost nothing extra, because a
+        # successful sign-in never reaches the next line.
+        if frappe.db.exists("User", typed):
+            return
+
+        hidden = _the_sign_in_hr_made_for(typed)
+        if hidden:
+            form["usr"] = hidden
+    except Exception:
+        # No user detail: this runs on every POST to the login endpoint, and
+        # what was typed may be somebody's real address.
+        _quietly("Joiner sign-in could not be resolved")
+
+
+def _the_sign_in_hr_made_for(typed):
+    """The opaque login id behind what HR wrote in "Signs in with", or None.
+
+    `login_id` is **not unique** on the submission - only `user` is - so one
+    address can appear on more than one row once an invite has been cancelled
+    and another made. The order here is deliberate rather than left to the
+    database:
+
+    1. the newest live invite, so a re-invited joiner reaches their current one;
+    2. failing that, the newest row that still has an account at all, so a
+       sign-in that has ENDED says *"this sign-in has finished its job"* -
+       Frappe answers "User disabled or missing" for a disabled account - rather
+       than blaming the password. That is AC-13's distinction, and before this
+       it could not happen for an email invite at all.
+
+    `ignore_permissions` because the caller is Guest and has no read on the
+    submission. It returns a login id and nothing else: no name, no status, and
+    nothing reaches the browser.
+    """
+    rows = frappe.get_all(
+        JOINER_SUBMISSION,
+        filters={"login_id": typed},
+        fields=["user", "status"],
+        order_by="modified desc",
+        ignore_permissions=True,
+    )
+
+    with_an_account = [r for r in rows if r.get("user")
+                       and frappe.db.exists("User", r["user"])]
+    if not with_an_account:
+        return None
+
+    for row in with_an_account:
+        if row.get("status") != "Cancelled":
+            return row["user"]
+
+    return with_an_account[0]["user"]
 
 
 def _quietly(title):

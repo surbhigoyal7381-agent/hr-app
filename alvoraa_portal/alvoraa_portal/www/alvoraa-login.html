@@ -372,19 +372,15 @@ html, body {
    sign-in button off the screen - which is a silent failure on the one screen
    in this product used by somebody who cannot ring our helpdesk.
 
-   44px on the reveal: mistyping a dashed password is the likeliest real failure
-   in this journey, and the eye icon it replaces is the smallest target on the
-   page. It is full width and it has WORDS on it, because nothing on this screen
-   may depend on an icon.
+   The reveal: 079 added a full-width 44px "Show the password" button here,
+   because mistyping a dashed password is the likeliest real failure in this
+   journey and an eye icon is the smallest target on the page. The eye it was
+   meant to REPLACE was never removed, so the screen carried two controls doing
+   one job. Surbhi chose which to keep on 20 November 2026 (ALV-394): the eye
+   stays, the button goes. The refusal wording points at the eye to match.
 
    No marketing panel, so there is nothing to scroll past. */
 .kx-input { font-size: 16px; }
-.kx-reveal {
-  width: 100%; min-height: 44px; margin: 10px 0 4px;
-  font: inherit; font-size: 15px; font-weight: 600;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--surface); color: inherit; cursor: pointer;
-}
 .kx-joiner-hint { display: block; font-size: 13px; opacity: .75; margin: 2px 0 6px; }
 .kx-cannot { font-size: 14px; }
 .kx-cannot summary { min-height: 44px; display: flex; align-items: center;
@@ -530,9 +526,7 @@ html, body {
           </div>
         </div>
 
-        {%- if joiner %}
-        <button type="button" class="kx-reveal" id="kx-reveal">{{ _("Show the password") }}</button>
-        {%- else %}
+        {%- if not joiner %}
         <div class="kx-forgot">
           <a href="/update-password">Forgot password?</a>
         </div>
@@ -597,7 +591,7 @@ html, body {
      {{ lock_seconds or 0 }} seconds here, not "30 minutes". A joiner told the
      wrong number rings to say the system is broken. */
   const JOINER = {{ "true" if joiner else "false" }};
-  const BADPASS_WORDS = {{ _("That did not work. Check the password against the message — a dash or a letter is easy to miss. Press “Show the password” to see what you have typed. Code for HR: JOIN-BADPASS") | tojson }};
+  const BADPASS_WORDS = {{ _("That did not work. Check the password against the message — a dash or a letter is easy to miss. Press the eye beside the box to see what you have typed. Code for HR: JOIN-BADPASS") | tojson }};
   const LOCKED_WORDS = {{ _("Locked for {0} seconds. The password was wrong too many times, so this sign-in is closed for a moment. That is there to protect your details. Nothing you have already filled in is lost — it is saved with your employer. Code for HR: JOIN-LOCKED").format(lock_seconds or 0) | tojson }};
   const ENDED_WORDS = {{ _("This sign-in has finished its job. Either you have already sent your form, or your employer has closed it. Nothing is wrong, and nothing you sent is lost. If you still need to send something, ring the person who sent you the message. Code for HR: JOIN-ENDED") | tojson }};
 
@@ -806,19 +800,6 @@ html, body {
   [emailEl, passwordEl].forEach(el => {
     el.addEventListener('input', clearError);
   });
-
-  // The reveal, with words on it. It toggles the type and says what it will do
-  // next, so it is never a state somebody has to infer from an icon.
-  const revealEl = $('kx-reveal');
-  if (revealEl) {
-    revealEl.addEventListener('click', function () {
-      const showing = passwordEl.type === 'text';
-      passwordEl.type = showing ? 'password' : 'text';
-      revealEl.textContent = showing
-        ? {{ _("Show the password") | tojson }}
-        : {{ _("Hide the password") | tojson }};
-    });
-  }
 
   // Auto-focus email field
   emailEl.focus();

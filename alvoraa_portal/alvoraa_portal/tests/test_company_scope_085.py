@@ -35,9 +35,12 @@ class _Base(FrappeTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
+	_n = 0
+
 	def _punch_doc(self, employee, saved=False):
+		_Base._n += 1  # a different minute each time: one punch per employee per timestamp
 		doc = frappe.get_doc({"doctype": "Employee Checkin", "employee": employee, "log_type": "IN",
-		                      "time": "%s 09:00:00" % add_days(nowdate(), -4)})
+		                      "time": "%s 09:%02d:00" % (add_days(nowdate(), -4), _Base._n % 60)})
 		if saved:
 			doc.insert(ignore_permissions=True)
 		return doc
@@ -100,7 +103,7 @@ class R2SyncAccounts(_Base):
 		with patch("hrms.alvoraa_hr_core.access.security_logger", return_value=fake):
 			self.assertFalse(faa.checkin_has_permission(self._punch_doc(self.b_worker), user, "create"))
 		self.assertIn('"rule": "R2"', fake.warning.call_args.args[0])
-		self.assertIn(user, json.loads(fake.warning.call_args.args[0])["user"])
+		self.assertEqual(json.loads(fake.warning.call_args.args[0])["endpoint"], "Employee Checkin")
 
 
 class R5ApproveInScope(_Base):

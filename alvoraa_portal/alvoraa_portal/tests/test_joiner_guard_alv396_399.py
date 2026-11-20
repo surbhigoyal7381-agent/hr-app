@@ -209,12 +209,26 @@ class JoinerDuplicateGuard(Wave4Base):
 		                 "the second invite made an account anyway")
 
 	def test_an_email_is_matched_whatever_the_letter_case(self):
-		"""The same address typed with different capitals is the same address."""
-		first, _ = self._invite("s396.case@example.com", "S396 Lower")
+		"""The same address typed with different capitals is the same address.
+
+		**The upper-case form is derived, not written down.** Writing the
+		domain out with a capital letter counts as a hardcoded email address to
+		`test_016_no_bare_email_address_is_hardcoded`, because its allowlist
+		matches the placeholder domain case-sensitively - and it took dev's CI
+		going red to find that out. (The first draft of this very docstring
+		tripped the same gate by quoting the offending form, which is the trap
+		twice over: the prose that explains a rule can break it.) Deriving the
+		shouted form also makes the test stronger, because it varies the case of
+		the domain as well as the mailbox, which is what somebody actually
+		types.
+		"""
+		email = "s396.case@example.com"
+		first, _ = self._invite(email, "S396 Lower")
 		self.assertTrue(self._account_of(first))
+		shouted = email.upper()
+		self.assertNotEqual(shouted, email)
 		frappe.set_user(self.hr)
-		second = fx.a_row(full_name="S396 Upper",
-		                  login_id="S396.Case@Example.com")
+		second = fx.a_row(full_name="S396 Upper", login_id=shouted)
 		with self.assertRaises(frappe.ValidationError):
 			joiner_invite.make_sign_in(submission=second.name)
 		frappe.set_user("Administrator")

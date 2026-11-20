@@ -4,7 +4,7 @@ were all for a Held day (085 allowed a time on no other day), so they are marked
 flag now, and without it those requests would start to count.
 
 Safe to run twice: it only touches rows still at 0. No patch over Attendance or
-Employee Checkin. Batched, so a tenant with many requests holds no long lock.
+Employee Checkin. Batched by 500 so one statement never covers a huge list; the patch runner commits when it ends.
 """
 
 import frappe
@@ -24,4 +24,3 @@ def execute():
 			break
 		frappe.db.set_value("Attendance Request", {"name": ("in", names)}, "alvoraa_for_held_day", 1,
 		                    update_modified=False)
-		frappe.db.commit()

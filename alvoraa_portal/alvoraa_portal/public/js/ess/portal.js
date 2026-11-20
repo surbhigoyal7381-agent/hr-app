@@ -6604,7 +6604,9 @@ async function acReviewQueue() {
         + '<div class="ac-acts">'
         + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
         + (r.can_decide === false ? "" :
-            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">'
+            /* Slice 087: a punch fix is approved on what the card showed, so the token goes back. */
+            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1,&quot;'
+              + gpEsc((r.card && r.card.seen) || "") + '&quot;)">'
               + (r.held_preview ? "Approve: day becomes " + gpEsc(r.held_preview.status) : "Approve") + "</button>"
           + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">'
               + (r.held_preview ? "Decline: stays Held" : "Decline") + "</button>")
@@ -6628,7 +6630,7 @@ function acHeldHrLines(r) {
         + "To pay this day, add an Additional Salary for it.</div>" : "");
 }
 
-window.acDecide = async function (name, approve) {
+window.acDecide = async function (name, approve, seen) {
   var note = "";
   if (!approve) {
     /* A bare refusal tells the employee nothing about what to do next, so
@@ -6641,7 +6643,7 @@ window.acDecide = async function (name, approve) {
   }
   showLoad();
   try {
-    var res = await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note});
+    var res = await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note, seen: seen || ""});
     hideLoad();
     var said = approve ? "Approved — the day has been corrected." : "Declined.";
     if (approve && res && res.slip_final) said += " The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it.";

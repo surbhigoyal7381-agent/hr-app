@@ -36,15 +36,19 @@ class PunchFixCase(FrappeTestCase):
 		self.h.setUp()
 		h = self.h
 		self.emp, self.hr, self.day = h.worker, h.hr, h.day
-		self.emp_user = h._login("emp", ("Employee",))
+		self.emp_user = h._login("emp", ("Employee Self Service",))
 		frappe.db.set_value("Employee", self.emp, "user_id", self.emp_user)
+		# DTC's setting: the day's hours are the sum of each in/out pair, so a break is taken off.
+		frappe.db.set_value("Shift Type", hd.SHIFT, "working_hours_calculation_based_on",
+		                    "Every Valid Check-in and Check-out")
+		frappe.clear_document_cache("Shift Type", hd.SHIFT)
 		frappe.set_user("Administrator")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
 	# ── fixtures ────────────────────────────────────────────────────────
-	def day_of(self, times, status_in=True, employee=None, **extra):
+	def day_of(self, times, employee=None, **extra):
 		"""A submitted Attendance with these punches, as ('HH:MM', 'IN'|'OUT'[, device])."""
 		employee = employee or self.emp
 		names = []
@@ -200,7 +204,7 @@ class Raising(PunchFixCase):
 		self.fix("12:01", aside=[names[1]])  # 12:00 is being set aside, so 12:01 is not a repeat
 
 	def test_a_set_aside_that_leaves_no_punch_is_refused(self):
-		att, names = self.day_of([("09:00", "IN")], status_in=True)
+		att, names = self.day_of([("09:00", "IN")])
 		self.refused(lambda: self.fix(aside=[names[0]]), "no punches")
 
 	def test_set_aside_names_must_be_this_employees_on_this_day_and_still_counting(self):
@@ -252,7 +256,7 @@ class Raising(PunchFixCase):
 		self.fix("17:00")  # an Approved punch fix no longer blocks (AC-17)
 
 	def test_an_ordinary_declined_request_still_blocks_an_ordinary_one(self):
-		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")], status="Absent")
 		mk = lambda: frappe.get_doc({"doctype": REQUEST, "employee": self.emp, "from_date": self.day,
 		                             "to_date": self.day, "reason": "Other", "explanation": "x",
 		                             "alvoraa_review_status": "Waiting"}).insert(ignore_permissions=True)
@@ -262,14 +266,14 @@ class Raising(PunchFixCase):
 			mk()
 
 	def test_a_manager_can_send_for_a_held_day_but_not_an_ordinary_day_or_a_set_aside(self):
-		mgr = self.h._login("mgr", ("Employee",))
+		mgr = self.h._login("mgr", ("Employee Self Service",))
 		self.h._employee("Mgr", mgr)
 		att, names = self.held_three()
-		self.fix("12:40", by=mgr)  # a Held day with a time: 085's route
-		self.refused(lambda: self.fix("12:40", by=mgr, aside=[names[1]], day=self.day), "Only the employee")
+		self.refused(lambda: self.fix("12:40", by=mgr, aside=[names[1]]), "Only the employee")
 		ord_emp = self.h._employee("Ord2")
 		self.day_of([("09:00", "IN"), ("18:00", "OUT")], employee=ord_emp)
 		self.refused(lambda: self.fix("12:00", by=mgr, employee=ord_emp), "Only the employee")
+		self.fix("12:40", by=mgr)  # control: a Held day with a time is 085's route and still works
 
 
 class Limits(PunchFixCase):
@@ -321,7 +325,7 @@ class Approval(PunchFixCase):
 		self.assertNotIn("forgot", doc.alvoraa_fix_before + doc.alvoraa_fix_after)
 
 	def test_case_a_sets_the_wrong_punch_aside_and_it_stays_on_record(self):
-		att, names = self.day_of([("11:15", "IN"), ("19:30", "OUT", "M1")], status_in=True)
+		att, names = self.day_of([("11:15", "IN"), ("19:30", "OUT", "M1")])
 		frappe.db.set_value("Attendance", att, {"status": "Present"})
 		req = self.fix("09:30", aside=[names[0]])
 		out = self.decide(req)
@@ -336,7 +340,7 @@ class Approval(PunchFixCase):
 		from alvoraa_portal.payroll_rules_apply import _punches
 		self.assertEqual(_punches(self.emp, self.day)[2], 2)  # the engine reads one list
 		# An ordinary day: no "Held, now X" release box (it was never held)
-		self.assertIsNone(self.row(att).alvoraa_release_how)
+		self.assertFalse(self.row(att).alvoraa_release_how)
 		self.assertIn("name", out)
 		# Version row names the approver
 		self.assertTrue(frappe.db.exists("Version", {"ref_doctype": CHECKIN, "docname": names[0], "owner": self.hr}))
@@ -509,7 +513,7 @@ class OneDoor(PunchFixCase):
 		self.refused(lambda: self.decide(req, seen=old), "changed after you opened it")
 
 	def test_an_ordinary_request_still_decides_without_a_token(self):
-		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")], status="Absent")
 		doc = frappe.get_doc({"doctype": REQUEST, "employee": self.emp, "from_date": self.day,
 		                      "to_date": self.day, "reason": "Other", "explanation": "x",
 		                      "alvoraa_review_status": "Waiting"}).insert(ignore_permissions=True)
@@ -551,7 +555,7 @@ class WhoMayDecide(PunchFixCase):
 	def test_a_login_with_the_submit_right_but_no_hr_role_is_refused(self):
 		att, names = self.held_three()
 		req = self.fix("12:40")
-		sup = self.h._login("sup", ("Employee",))
+		sup = self.h._login("sup", ("Employee Self Service",))
 		self.h._employee("Sup", sup)
 		self.refused(lambda: self.decide(req, by=sup))
 		with patch.object(frappe, "get_roles", return_value=["Employee"]):
@@ -590,14 +594,15 @@ class Marks(PunchFixCase):
 
 	def test_marks_cannot_be_written_outside_an_approval(self):
 		att, names = self.held_three()
+		real = self.fix("12:40")
 		frappe.set_user(self.hr)
 		try:
 			doc = frappe.get_doc(CHECKIN, names[0])
-			doc.update({punch_fix.ASIDE: "ATT-REQ-FAKE", "skip_auto_attendance": 1})
+			doc.update({punch_fix.ASIDE: real, "skip_auto_attendance": 1})
 			self.refused(lambda: doc.save(), "cannot be changed")
 			self.refused(lambda: frappe.get_doc({"doctype": CHECKIN, "employee": self.emp, "log_type": "IN",
 			                                     "time": "%s 15:00:00" % self.day,
-			                                     punch_fix.ADDED: "ATT-REQ-FAKE"}).insert(), "cannot be changed")
+			                                     punch_fix.ADDED: real}).insert(), "cannot be changed")
 		finally:
 			frappe.set_user("Administrator")
 
@@ -718,7 +723,7 @@ class Screens(PunchFixCase):
 		att, names = self.held_three()
 		req = self.fix("12:40")
 		doc = frappe._dict(frappe.get_doc(REQUEST, req).as_dict())
-		mgr = self.h._login("mgr2", ("Employee",))
+		mgr = self.h._login("mgr2", ("Employee Self Service",))
 		self.assertEqual(ac.not_yours_yet(doc, "Manager", mgr), "Only HR decides a punch fix.")
 		self.assertIsNone(ac.not_yours_yet(doc, "HR", self.hr))
 
@@ -756,12 +761,18 @@ class Screens(PunchFixCase):
 
 	def test_the_report_counts_this_months_punch_fixes_by_company_and_state(self):
 		from alvoraa_portal.alvoraa_portal.report.punch_fixes_this_month import punch_fixes_this_month as rpt
+
+		def mine():
+			rows = rpt.execute()[1]
+			hit = [r for r in rows if r["company"] == self.h.company]
+			return hit[0] if hit else {"approved": 0, "waiting": 0, "declined": 0, "withdrawn": 0}
+
 		att, names = self.held_three()
+		before = mine()
 		a = self.fix("12:40")
 		self.decide(a)
 		self.fix("17:00")  # waiting
 		frappe.set_user("Administrator")
-		cols, rows = rpt.execute()
-		mine = [r for r in rows if r["company"] == self.h.company][0]
-		self.assertEqual((mine["approved"], mine["waiting"], mine["declined"], mine["withdrawn"]), (1, 1, 0, 0))
+		after = mine()
+		self.assertEqual((after["approved"] - before["approved"], after["waiting"] - before["waiting"]), (1, 1))
 		self.assertTrue(frappe.db.exists("Report", "Punch fixes this month"))

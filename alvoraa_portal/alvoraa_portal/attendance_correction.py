@@ -562,19 +562,26 @@ def month(year=None, month=None, employee=None):
 			filters={"employee": me.name,
 			         "time": ("between", [start + " 00:00:00",
 			                              frappe.utils.add_days(end, 1) + " 23:59:59"])},
-			fields=["name", "log_type", "time", "attendance", "device_id", "owner", "shift_start"],
+			fields=["name", "log_type", "time", "attendance", "device_id", "owner", "shift_start"]
+			       + (["alvoraa_fix_added_request", "alvoraa_fix_aside_request"]
+			          if punch_fix.columns_ready() else []),
 			order_by="time asc", limit_page_length=0):
-		by_hand = ((c.device_id and c.device_id == own.get("attendance_device_id"))
+		by_hand = (c.get("alvoraa_fix_added_request")
+		           or (c.device_id and c.device_id == own.get("attendance_device_id"))
 		           or (c.owner not in ("Administrator", own.get("user_id"))
 		               and not (c.owner or "").startswith(MACHINE_OWNERS)))
 		mark = {"log_type": c.log_type, "at": str(c.time)[11:16],
 		        "where": _("added by HR") if by_hand else c.device_id,
 		        "on": str(c.time)[:10]}
+		if c.get("alvoraa_fix_aside_request"):
+			# Slice 087: still shown, in words, but it does not count: no break is drawn from it.
+			mark["set_aside"] = True
+		else:
+			times_by_date.setdefault(shift_day(c), []).append(get_datetime(c.time))
 		if c.attendance:
 			by_attendance.setdefault(c.attendance, []).append(mark)
 		else:
 			punches.setdefault(shift_day(c), []).append(mark)
-		times_by_date.setdefault(shift_day(c), []).append(get_datetime(c.time))
 
 	# `weekly_off` tells a Sunday apart from Diwali (043 AC-1). Both arrive as
 	# Holiday rows on the same list and only this flag says which is which, so
@@ -1147,7 +1154,8 @@ def _shape(row, evidence=None):
 	row["missing_time"] = (frappe.utils.get_time(row["alvoraa_missing_time"]).strftime("%H:%M")
 	                       if row.get("alvoraa_missing_time") else None)
 	row["missing_log"] = row.get("alvoraa_missing_log") or None
-	row["punch_fix"] = bool(row["missing_time"] or (row.pop("alvoraa_set_aside", None) or "").strip())
+	set_aside = (row.pop("alvoraa_set_aside", None) or "").strip()
+	row["punch_fix"] = bool(row["missing_time"] or set_aside)
 	return row
 
 
@@ -2122,9 +2130,9 @@ def _punches_by_day(people_ids, from_date, to_date):
 		return days
 	for p in frappe.get_all(
 			"Employee Checkin",
-			filters={"employee": ("in", people_ids),
+			filters=punch_fix.counting_only({"employee": ("in", people_ids),
 			         "time": ("between", [str(from_date) + " 00:00:00",
-			                              str(to_date) + " 23:59:59"])},
+			                              str(to_date) + " 23:59:59"])}),
 			fields=["employee", "time", "shift_start"], limit_page_length=0):
 		days.setdefault((p.employee, str(p.time)[:10]), []).append(p)
 	return days

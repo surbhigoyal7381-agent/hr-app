@@ -34,6 +34,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, add_months, cint, flt, get_datetime, getdate, nowdate
 
+import alvoraa_portal.punch_fix as punch_fix
 from alvoraa_portal.payroll_rules_apply import breaks_by_day, shift_day
 
 # The tolerance before a day counts as short is an ORGANISATION's decision, not
@@ -652,8 +653,8 @@ def person(employee, date_from=None, date_to=None):
 	times_by_date = {}
 	for c in (frappe.get_list(
 			"Employee Checkin",
-			filters={"employee": employee,
-			         "time": ("between", [f"{start} 00:00:00", f"{add_days(end, 1)} 23:59:59"])},
+			filters=punch_fix.counting_only({"employee": employee,
+			         "time": ("between", [f"{start} 00:00:00", f"{add_days(end, 1)} 23:59:59"])}),
 			fields=["time", "shift_start"], order_by="time asc", limit_page_length=0)
 			if frappe.has_permission("Employee Checkin", "read") else ()):
 		# ALV-402: by working day, so a punch after midnight joins its shift's day.

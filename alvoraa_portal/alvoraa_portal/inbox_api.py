@@ -148,8 +148,10 @@ ROW_KEYS = (
 	# HR surface the design asked for is the day-fix CARD (`acReviewQueue`),
 	# which calls `to_review` directly and is not cut to this list. The Inbox's
 	# own day-fix row is a different screen and is not in the slice.
+	# Slice 087: `punch_fix` is a flag and nothing more (no time, no note, no punch
+	# name). A punch fix is decided on the review card, so the row draws Review.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
-	                      "reason", "context", "action", "can_decide", "waiting_since")),
+	                      "reason", "context", "action", "can_decide", "punch_fix", "waiting_since")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
 	                    "shift_type", "action", "waiting_since")),
 	# A policy is a document, not a person. No employee field at all.
@@ -821,6 +823,7 @@ def _part_attendance_fixes(who):
 	saying whose they are. Count and list are worked out from the same rows,
 	so they cannot disagree.
 	"""
+	import alvoraa_portal.punch_fix as punch_fix
 	from alvoraa_portal.attendance_correction import (
 		REQUEST, _may_review, _with_decide_flag, review_queue_filters,
 	)
@@ -838,7 +841,8 @@ def _part_attendance_fixes(who):
 			rows = frappe.get_list(
 				REQUEST, filters=filters,
 				fields=["name", "employee", "employee_name", "from_date", "to_date",
-				        "reason", "half_day", "creation", "owner"],
+				        "reason", "half_day", "creation", "owner"]
+				       + (["alvoraa_missing_time", "alvoraa_set_aside"] if punch_fix.columns_ready() else []),
 				order_by="creation asc", limit_page_length=0)
 			# For the caller the part was built for, not whoever happens to be
 			# signed in when the count is read.
@@ -861,6 +865,7 @@ def _part_attendance_fixes(who):
 				"context": _("Half day") if r.half_day else None,
 				"action": "attendance_fix",
 				"can_decide": r.can_decide,
+				"punch_fix": punch_fix.is_punch_fix(r),
 				"waiting_since": str(r.creation) if r.creation else None,
 			})
 		return out

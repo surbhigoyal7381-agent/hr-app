@@ -80,6 +80,15 @@ def columns_ready():
 		return False
 
 
+def counting_only(filters):
+	"""Add "not set aside" to a punch query's filters (SEC-8): the readers that turn punches
+	into pay or a flag about pay (month view break, analytics, team days, grooming) leave a
+	set-aside punch out, as the engine does. Unchanged where the column does not exist yet."""
+	if columns_ready():
+		filters[ASIDE] = ("is", "not set")
+	return filters
+
+
 # ── what a punch fix is ──────────────────────────────────────────────────────
 
 def aside_names(doc):

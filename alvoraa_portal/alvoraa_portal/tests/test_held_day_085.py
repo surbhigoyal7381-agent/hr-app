@@ -141,9 +141,14 @@ class HeldDayCase(FrappeTestCase):
 			frappe.set_user("Administrator")
 
 	def _approve(self, name, by):
+		"""Approve the way HR does. Since slice 087 a punch fix is approved only through
+		`decide`, with the token of what the card showed; an ordinary request is as before."""
+		from alvoraa_portal import punch_fix
+		doc = frappe.get_doc(REQUEST, name)
+		seen = punch_fix.seen_token(doc) if punch_fix.is_punch_fix(doc) else None
 		frappe.set_user(by)
 		try:
-			frappe.get_doc(REQUEST, name).submit()
+			ac.decide(name, 1, None, seen)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -217,12 +222,24 @@ class HeldDayCase(FrappeTestCase):
 		self.assertIn("no shift", str(cm.exception))
 		self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Held")
 
-	def test_a_time_for_a_day_that_is_not_held_is_refused(self):
+	def test_a_time_for_a_day_that_is_not_held_is_now_a_punch_fix_not_a_held_day_request(self):
+		"""Slice 087 (condition 2 of the 085 session): a time is allowed on an ordinary
+		day. It is stamped as NOT for a held day, so it counts against the monthly limit."""
 		self._punch(self.worker, "09:00")
 		self._punch(self.worker, "18:00", log_type="OUT")
 		self._attendance(self.worker).submit()
-		with self.assertRaises(frappe.ValidationError):
-			self._request(self.worker)
+		name = self._request(self.worker, "12:00", "OUT")
+		self.assertEqual(frappe.db.get_value(REQUEST, name, "alvoraa_for_held_day"), 0)
+
+	def test_a_held_day_request_is_stamped_held_and_a_released_day_is_refused_at_approval(self):
+		att = self._held()
+		name = self._request(self.worker)
+		self.assertEqual(frappe.db.get_value(REQUEST, name, "alvoraa_for_held_day"), 1)
+		# the machine delivers the missing punch first: the day is no longer held (the F-rule)
+		frappe.db.set_value("Attendance", att.name, "status", "Present")
+		with self.assertRaises(frappe.ValidationError) as cm:
+			self._approve(name, self.hr)
+		self.assertIn("no longer held", str(cm.exception))
 
 	def test_the_request_for_a_held_day_needs_a_time(self):
 		self._held()
@@ -613,7 +630,7 @@ class HeldDayCase(FrappeTestCase):
 		events = frappe.get_hooks("doc_events")
 		self.assertIn("alvoraa_portal.held_day.hold_odd_punch_day", events["Attendance"]["validate"])
 		self.assertIn("alvoraa_portal.held_day.release_on_machine_punch", events["Employee Checkin"]["after_insert"])
-		self.assertIn("alvoraa_portal.held_day.release_by_hr", events["Attendance Request"]["on_submit"])
+		self.assertIn("alvoraa_portal.punch_fix.apply", events["Attendance Request"]["on_submit"])
 		self.assertIn("alvoraa_portal.held_day.guard_company_settings", events["Company"]["validate"])
 		self.assertIn("public/js/attendance_list_held.js", frappe.get_hooks("doctype_list_js")["Attendance"])
 		after = frappe.get_hooks("after_install") + frappe.get_hooks("after_migrate")

@@ -97,6 +97,7 @@
       allClear: __("All clear."),
       failed: __("The waiting list could not load. Try again."),
       approve: __("Approve"),
+      review: __("Review"),
       decline: __("Decline"),
       why: __("Please say why, so the person knows what to do next."),
       /* There is deliberately no "This one has already been decided." here any
@@ -193,7 +194,13 @@
        (`can_decide`). The guard stays so a row it ever marks otherwise gets no
        button the server would refuse. */
     var buttons = "";
-    if (ACTIONS[part.key] && row.can_decide !== false) {
+    if (row.punch_fix && row.can_decide !== false) {
+      /* Slice 087 (SEC-1): a punch fix is approved on the review card, where HR sees what
+         the day would become. No blind Approve from here. */
+      buttons = '<span class="nf-row-acts">'
+        + '<a class="nf-btn nf-btn-small" href="#time/fix">' + esc(SAY.review) + "</a>"
+        + "</span>";
+    } else if (ACTIONS[part.key] && row.can_decide !== false) {
       buttons = '<span class="nf-row-acts">'
         + '<button type="button" class="nf-btn nf-btn-small nf-decide" data-yes="1"'
         + ' data-name="' + esc(row.name) + '">' + esc(SAY.approve) + "</button>"

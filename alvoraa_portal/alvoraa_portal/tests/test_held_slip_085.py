@@ -174,9 +174,12 @@ class ReleaseAndTheSlip(RealSlip):
 		return att, req.name
 
 	def _approve(self, req, user):
+		from alvoraa_portal import attendance_correction as ac
+		from alvoraa_portal import punch_fix
+		seen = punch_fix.seen_token(frappe.get_doc("Attendance Request", req))
 		frappe.set_user(user)
 		try:
-			frappe.get_doc("Attendance Request", req).submit()
+			ac.decide(req, 1, None, seen)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -210,7 +213,8 @@ class ReleaseAndTheSlip(RealSlip):
 		frappe.flags.held_slip = None
 		frappe.set_user(hr)
 		try:
-			out = ac.decide(req, approve=1)
+			from alvoraa_portal import punch_fix
+			out = ac.decide(req, approve=1, seen=punch_fix.seen_token(frappe.get_doc("Attendance Request", req)))
 		finally:
 			frappe.set_user("Administrator")
 		self.assertTrue(out["slip_final"])

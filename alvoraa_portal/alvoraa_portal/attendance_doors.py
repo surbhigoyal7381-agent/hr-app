@@ -52,12 +52,12 @@ def refuse_outside_company(doc, method=None):
 	on the document. A manager's submit is governed by their User Permissions as
 	before (they hold no HR role); Administrator and the scheduler are exempt.
 	A System Manager is every company, through `permitted_companies`."""
-	from hrms.alvoraa_hr_core.access import HR_ROLES, permitted_companies
+	from hrms.alvoraa_hr_core.access import permitted_companies
 
 	user = frappe.session.user
 	if user == "Administrator" or not doc.get("employee"):
 		return
-	if not ({"System Manager"} | set(HR_ROLES)) & set(frappe.get_roles(user)):
+	if not {"HR Manager", "HR User", "System Manager"} & set(frappe.get_roles(user)):
 		return
 	company = frappe.get_cached_value("Employee", doc.employee, "company")
 	if company not in permitted_companies(user):

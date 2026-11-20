@@ -34,12 +34,16 @@ The two tests that matter most here are the ones that say **no**:
 
 **One test here belongs to ALV-394 as much as to these two tickets.** Giving the
 number back means a closed MOBILE invite no longer resolves through Frappe's own
-lookup, so resolution on that path now depends on ALV-394's `before_login` hook.
-That is why this work landed together with it, and
-`test_a_closed_MOBILE_invite_still_resolves_to_its_own_account` is what holds the
-pair together. It pins resolution only - **the AC-17 wording is unreachable for a
-closed invite whatever we do here**, because the password is destroyed at close
-and frappe checks the password before the disabled flag. That is ALV-397.
+lookup, so resolution on that path now rests on ALV-394's `before_login` hook,
+and `test_a_closed_MOBILE_invite_still_resolves_to_its_own_account` pins it.
+
+**It is resolution only, and the release-ordering claim that once sat here was
+wrong.** This work was described - in two ticket comments, a commit message and
+a memory note - as something that must not land before ALV-394, on the grounds
+that a closed mobile invite would otherwise read "Invalid credentials". Measured
+on a bench, a closed invite reads that either way: closing destroys the password
+and frappe tests the password before the disabled flag, so the kinder branch was
+never reachable for a properly closed invite. Nothing a joiner reads changes.
 """
 
 import frappe

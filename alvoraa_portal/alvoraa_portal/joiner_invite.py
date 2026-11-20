@@ -651,21 +651,35 @@ def end_the_sign_in(doc, why):
 		# again. Frappe stores it as NULL rather than "", so any number of
 		# closed accounts coexist under the unique index.
 		#
-		# **Releasing it has a cost, and it is not paid on this branch.**
+		# **Does releasing it cost the joiner a worse message? No - measured.**
 		# Frappe's only login lookup finds a typed number through `mobile_no`
-		# alone (`User.find_by_credentials`). With the number gone the lookup
-		# finds nothing, so `auth.py` answers "Invalid login credentials"
-		# instead of "User disabled or missing" - and the login page turns only
-		# the second into 079's AC-17 wording, "This sign-in has finished its
-		# job". So until the sign-in resolver of ALV-394 lands, a joiner whose
-		# mobile invite was closed is told their password is wrong, which AC-17
-		# says must never happen. ALV-394 resolves submission -> user through
-		# `login_id`, which this write leaves alone, and restores it.
+		# alone (`User.find_by_credentials`), so with the number gone the lookup
+		# finds nothing and `authenticate` answers "Invalid login credentials"
+		# rather than "User disabled or missing". That looked like a regression
+		# and was written up here as one, with a release-ordering constraint
+		# against ALV-394 attached to it. **Both were wrong**, and the measured
+		# answer is that this write changes nothing anybody reads:
 		#
-		# **So this must not land before ALV-394.** The tripwire is
-		# `test_a_closed_mobile_invite_can_still_be_resolved_by_frappe`, which
-		# is marked as a known failure and will fail loudly as an unexpected
-		# PASS the day ALV-394 makes it true.
+		#   closed invite, correct old password, number KEPT
+		#     -> found, is_authenticated=False, enabled=0
+		#     -> "Invalid login credentials"
+		#   closed invite, correct old password, number RELEASED
+		#     -> not found
+		#     -> "Invalid login credentials"
+		#
+		# Identical, because closing also destroys the password and
+		# `authenticate` tests `is_authenticated` BEFORE `enabled`. There never
+		# was a correct password to type, so the "disabled or missing" branch
+		# was unreachable for a properly closed invite with or without this
+		# write. That is ALV-397, and it dissolves the concern rather than
+		# answering it. A live invite is untouched: it keeps its number.
+		#
+		# What remains true, and is smaller than it was claimed to be: the
+		# number is no longer what RESOLVES a closed invite, so that job rests
+		# on ALV-394's `before_login` hook keying on `login_id`.
+		# `test_a_closed_MOBILE_invite_still_resolves_to_its_own_account` pins
+		# it. Resolution is worth keeping - it decides which account an attempt
+		# is attributed to - but it is not what the joiner reads.
 		#
 		# **`username` is unique too and is deliberately left alone.** Frappe
 		# blanks a duplicate itself - `User.validate_username` sets it to ""

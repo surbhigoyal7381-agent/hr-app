@@ -655,8 +655,8 @@ def _refuse(path):
     raise _GoToTheJoiningPage
 
 
-def let_the_joiner_type_what_hr_gave_them():
-    """Frappe `before_request` hook. ALV-394.
+def let_the_joiner_type_what_hr_gave_them(login_manager=None):
+    """Frappe `before_login` hook. ALV-394.
 
     A joiner is told to sign in with the number or email HR reached them on.
     That value is on no account anywhere: slice 079 gives the joiner an opaque,
@@ -671,6 +671,22 @@ def let_the_joiner_type_what_hr_gave_them():
     anything up. The opaque id stays opaque; nothing new is returned to the
     browser.
 
+    **`before_login`, and NOT `before_request`.** The first shape of this fix
+    was a `before_request` hook and it never ran: `frappe/app.py:242` builds
+    `HTTPRequest()`, which constructs a `LoginManager`, which signs the person
+    in and raises - all **before** the `before_request` loop two lines below at
+    :244. Sixteen tests passed against a hook that was never reached, because
+    they called it by hand with a fake request instead of driving a real one.
+    `run_trigger("before_login")` is the first line of `LoginManager.login()`
+    (`frappe/auth.py:147`), eight lines ahead of `authenticate()`, which reads
+    `frappe.form_dict.usr` (`:261`) once `get_cached_user_pass()` comes back
+    empty - and it does, unless two-factor is mid-flight.
+
+    Two things fall out of being here rather than there. Nothing runs on an
+    ordinary request at any tenant any more. And `cmd=login` on "/" - the other
+    way into `login()` (`frappe/auth.py:130`) - is covered, which a path check
+    would have missed.
+
     **It is not an oracle (US-4).** There is no new endpoint and no new wording.
     A stranger guessing an address gets the same refusal as before, because the
     only thing that changes is which row Frappe fails to authenticate against.
@@ -682,14 +698,11 @@ def let_the_joiner_type_what_hr_gave_them():
 
     **Fails open.** Every failure leaves what was typed alone, so the worst case
     is the refusal that happens today - never a tenant locked out of its login.
+
+    `login_manager` is passed by `run_trigger` and is not used; the parameter is
+    there because `on_login` below takes it the same way.
     """
     try:
-        request = getattr(frappe.local, "request", None)
-        if request is None or request.method != "POST":
-            return
-        if (request.path or "") != "/api/method/login":
-            return
-
         form = getattr(frappe.local, "form_dict", None)
         if not form:
             return
@@ -707,8 +720,7 @@ def let_the_joiner_type_what_hr_gave_them():
         if hidden:
             form["usr"] = hidden
     except Exception:
-        # No user detail: this runs on every POST to the login endpoint, and
-        # what was typed may be somebody's real address.
+        # No user detail: what was typed may be somebody's real address.
         _quietly("Joiner sign-in could not be resolved")
 
 
@@ -720,12 +732,19 @@ def _the_sign_in_hr_made_for(typed):
     and another made. The order here is deliberate rather than left to the
     database:
 
-    1. the newest live invite, so a re-invited joiner reaches their current one;
-    2. failing that, the newest row that still has an account at all, so a
-       sign-in that has ENDED says *"this sign-in has finished its job"* -
-       Frappe answers "User disabled or missing" for a disabled account - rather
-       than blaming the password. That is AC-13's distinction, and before this
-       it could not happen for an email invite at all.
+    1. the newest row whose account is still **enabled**, so a re-invited joiner
+       reaches the one that works;
+    2. failing that, the newest row that has an account at all, so an ended
+       sign-in resolves to something rather than to nothing.
+
+    **Enabled, not `status != "Cancelled"`.** That was the first shape and it
+    was wrong: `joiner_housekeeping.expire_the_dead_sign_ins` calls `doc.save`,
+    which bumps `modified`, so the nightly job can make a DEAD row the newest
+    one. A joiner re-invited after an expiry would then be sent to the expired
+    account and told their password was wrong - the very failure this fix
+    exists to remove. The five statuses are Invited, Submitted, Made an
+    employee, Expired and Cancelled, and none of them answers "does this
+    sign-in still work". `User.enabled` does.
 
     `ignore_permissions` because the caller is Guest and has no read on the
     submission. It returns a login id and nothing else: no name, no status, and
@@ -739,16 +758,22 @@ def _the_sign_in_hr_made_for(typed):
         ignore_permissions=True,
     )
 
-    with_an_account = [r for r in rows if r.get("user")
-                       and frappe.db.exists("User", r["user"])]
+    with_an_account = []
+    for row in rows:
+        enabled = frappe.db.get_value("User", row.get("user"), "enabled") \
+            if row.get("user") else None
+        if enabled is None:
+            continue
+        with_an_account.append((row, cint(enabled)))
+
     if not with_an_account:
         return None
 
-    for row in with_an_account:
-        if row.get("status") != "Cancelled":
+    for row, enabled in with_an_account:
+        if enabled:
             return row["user"]
 
-    return with_an_account[0]["user"]
+    return with_an_account[0][0]["user"]
 
 
 def _quietly(title):

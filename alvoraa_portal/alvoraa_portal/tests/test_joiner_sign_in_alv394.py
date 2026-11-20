@@ -18,10 +18,17 @@ address instead".
 (`fixtures_079.a_row`, `login_id="+91 98100 10079"`). The email path had no
 test at all, so a green suite said nothing about it.
 
-**What these tests do not do.** They stop at Frappe's own credential check
-rather than driving a real HTTP request, so they prove the resolution and the
-password together but not the web layer around them. The browser side is
-`portal_joiner_sign_in_test.js`.
+**The first version of this file was green on a hook that never ran**, and that
+is the reason `TestARealRequest` exists. The fix began life as a `before_request`
+hook. `frappe/app.py:242` builds `HTTPRequest()`, which signs the person in and
+raises, **two lines before** the `before_request` loop at :244 - so on the one
+path the hook was written for, it was never reached. Every test below called the
+function by hand with a fake request, so all sixteen passed against a no-op.
+
+So one test here drives a real request through `frappe.app.application`, and it
+is worth more than the other fifteen: it is the only one that can tell a working
+feature from a working function. The rest check the behaviour of the function
+once it is reached, which is a different and smaller question.
 """
 
 import os
@@ -90,18 +97,15 @@ class _Base(Wave4Base):
 		frappe.set_user("Administrator")
 		return frappe.get_doc(DOCTYPE, row.name), reply["password"]
 
-	def _typed_at_the_sign_in(self, typed, method="POST",
-	                          path="/api/method/login"):
-		"""What the browser sends, put where Frappe itself reads it.
+	def _typed_at_the_sign_in(self, typed):
+		"""The function alone, called the way `run_trigger` calls it.
 
-		`make_form_dict` fills `form_dict` (frappe/app.py:239) BEFORE the
-		`before_request` hooks run (:244), and `LoginManager.authenticate`
-		reads `form_dict.usr` (frappe/auth.py:261). So this is the same seam
-		the real request passes through.
+		**This is not proof that a sign-in works** - see the module docstring.
+		It proves what the function does once Frappe reaches it, and nothing
+		about whether Frappe reaches it. `TestARealRequest` answers that.
 		"""
-		frappe.local.request = frappe._dict(method=method, path=path)
 		frappe.local.form_dict = frappe._dict(usr=typed, pwd="unread here")
-		auth.let_the_joiner_type_what_hr_gave_them()
+		auth.let_the_joiner_type_what_hr_gave_them(login_manager=None)
 		return frappe.local.form_dict.get("usr")
 
 	def _the_password_is_accepted(self, login_id, password):
@@ -177,16 +181,17 @@ class TestItLeavesEveryOtherSignInAlone(_Base):
 		self._invited(AN_EMAIL)
 		self.assertEqual(self._typed_at_the_sign_in(self.hr), self.hr)
 
-	def test_nothing_happens_on_a_GET(self):
-		self._invited(AN_EMAIL)
-		self.assertEqual(
-			self._typed_at_the_sign_in(AN_EMAIL, method="GET"), AN_EMAIL)
-
-	def test_nothing_happens_on_another_path(self):
-		self._invited(AN_EMAIL)
-		self.assertEqual(
-			self._typed_at_the_sign_in(AN_EMAIL, path="/api/method/frappe.ping"),
-			AN_EMAIL)
+	def test_an_ordinary_request_never_reaches_it_at_all(self):
+		"""`before_login` fires from `LoginManager.login()` and nowhere else
+		(frappe/auth.py:147), so there is no path guard to test - there is no
+		other path. The earlier shape of this fix had method and path checks
+		because it sat on `before_request`, where every request in the product
+		went past it. Those are gone, and so is that cost.
+		"""
+		self.assertIn("alvoraa_portal.auth.let_the_joiner_type_what_hr_gave_them",
+		              frappe.get_hooks("before_login"))
+		self.assertNotIn("alvoraa_portal.auth.let_the_joiner_type_what_hr_gave_them",
+		                 frappe.get_hooks("before_request"))
 
 	def test_an_empty_username_is_left_alone(self):
 		self.assertEqual(self._typed_at_the_sign_in(""), "")
@@ -255,6 +260,63 @@ class TestItFailsOpen(_Base):
 			self.assertEqual(self._typed_at_the_sign_in(AN_EMAIL), AN_EMAIL)
 		finally:
 			auth._the_sign_in_hr_made_for = was
+
+
+# ── the only test that can tell a feature from a function ──────────────────
+
+class TestARealRequest(_Base):
+	"""Drives `frappe.app.application` itself, the whole way through.
+
+	Everything else in this file calls the hook by hand. This one does not know
+	the hook exists: it posts what the browser posts and reads the status code.
+	It is the test that would have caught the `before_request` mistake, and the
+	only one here that goes near `frappe/app.py`.
+	"""
+
+	def _post_a_sign_in(self, usr, pwd):
+		"""A real POST to /api/method/login. Returns the status code.
+
+		The request runs `frappe.init` and `frappe.destroy` of its own, which
+		tears down the connection this test is holding - so the context is
+		rebuilt afterwards or every later assertion runs on a dead handle.
+		"""
+		from werkzeug.test import Client
+
+		from frappe.app import application
+
+		site = frappe.local.site
+		frappe.db.commit()
+		try:
+			return Client(application).post(
+				"/api/method/login",
+				json={"usr": usr, "pwd": pwd},
+				headers={"Host": site},
+			).status_code
+		finally:
+			frappe.destroy()
+			frappe.init(site=site)
+			frappe.connect()
+			frappe.set_user("Administrator")
+
+	def test_a_joiner_invited_by_email_really_signs_in(self):
+		"""The reported fault, end to end.
+
+		Before the move to `before_login` this is 401 however green the rest of
+		the file is, because the hook never ran.
+		"""
+		_doc, password = self._invited(AN_EMAIL)
+		self.assertEqual(self._post_a_sign_in(AN_EMAIL, password), 200)
+
+	def test_the_wrong_password_is_still_refused_over_HTTP(self):
+		self._invited(AN_EMAIL)
+		self.assertEqual(
+			self._post_a_sign_in(AN_EMAIL, "not-the-password-99"), 401)
+
+	def test_an_address_nobody_was_invited_on_is_refused_over_HTTP(self):
+		self._invited(AN_EMAIL)
+		self.assertEqual(
+			self._post_a_sign_in("s394.nobody@example.com", "anything-at-all"),
+			401)
 
 
 # ── the screen (ALV-394, second half) ──────────────────────────────────────

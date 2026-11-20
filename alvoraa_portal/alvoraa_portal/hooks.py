@@ -14,6 +14,15 @@ required_apps = ["frappe/erpnext"]
 # leaves what an employee sees exactly as it was.
 app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
 
+# ── ALV-394: what the joiner types is not what their account is called ───
+# 079 gives a joiner an opaque login id, so the number or email HR reached
+# them on matches nothing. This swaps one for the other.
+#
+# `before_login`, not `before_request`: the login happens inside
+# `HTTPRequest()` (frappe/app.py:242), which is TWO LINES BEFORE the
+# before_request loop (:244). A hook there never runs on a sign-in at all.
+before_login = ["alvoraa_portal.auth.let_the_joiner_type_what_hr_gave_them"]
+
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = ["alvoraa_portal.auth.on_login",
             # ALV-249 D-3: a login linked by a direct database write, or whose
@@ -30,11 +39,6 @@ before_request = [
     # ALV-249: no request may ask Frappe to skip User Permissions or
     # permissions. Every path, "/" with cmd included. See request_guard.py.
     "alvoraa_portal.request_guard.drop_permission_skips",
-    # ALV-394: a joiner types the number or email HR reached them on, which
-    # is on no account anywhere - 079 gives them an opaque login id. This
-    # swaps one for the other before Frappe checks the password. Guest POSTs
-    # to /api/method/login only, and it fails open.
-    "alvoraa_portal.auth.let_the_joiner_type_what_hr_gave_them",
     "alvoraa_portal.auth.lock_until_password_chosen",
     # Slice 079 (079-SEC-3): a new joiner's sign-in opens their joining
     # form and nothing else. The same shape as the line above and the

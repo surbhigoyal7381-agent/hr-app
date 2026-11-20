@@ -166,6 +166,8 @@ doc_events = {
     },
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+        # Slice 085 (R5): approving is scoped to the HR login's companies, on every door.
+        "before_submit": "alvoraa_portal.attendance_doors.refuse_outside_company",
         # Slice 085 (SEC-2): nobody confirms, cancels, deletes or makes their OWN
         # attendance, on any door. See attendance_doors.py.
         # Slice 085: the doors first, then the hold, which writes Held before the first save.
@@ -211,6 +213,7 @@ doc_events = {
         "before_submit": [
             "hrms.alvoraa_hr_core.access.refuse_own_submit",
             "alvoraa_portal.attendance_doors.refuse_raiser_submit",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
             "alvoraa_portal.held_day.note_held_day",
         ],
         # Slice 063, OD-1 remedy (iv): a half-day correction can reach a

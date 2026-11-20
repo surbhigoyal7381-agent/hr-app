@@ -203,13 +203,27 @@ def _has_time(doc):
 
 # ── the monthly limit (US-10) ────────────────────────────────────────────────
 
+def _filed_by_hr(filer, employee_user):
+	"""A request HR files for somebody. Told apart by who filed it: not the
+	employee's own login, and a login holding HR Manager, HR User or System
+	Manager (or Administrator). A manager's request on behalf holds none of those,
+	so it counts, like the employee's own. An HR person who is also that
+	employee's manager counts as HR here: the roles cannot tell the two hats apart."""
+	if filer == employee_user:
+		return False
+	return filer == "Administrator" or bool(
+		{"HR Manager", "HR User", "System Manager"} & set(frappe.get_roles(filer)))
+
+
 def enforce_monthly_limit(doc, method=None):
 	"""Attendance Request before_insert, on every door. Counts as Grace's script
 	did (AC-44): requests whose from_date is in the same month, not cancelled, not
-	Declined (Grace: not Rejected), never this request itself (it has no row yet). A request that carries a
-	missing time is for a Held day and neither counts nor is refused here; the
-	validate below refuses a time on a day that is not Held, so the time cannot
-	be used to dodge the limit."""
+	Declined (Grace: not Rejected), never this request itself (it has no row yet).
+	A request that carries a missing time is for a Held day and neither counts
+	nor is refused here; the validate below refuses a time on a day that is not
+	Held, so the time cannot be used to dodge the limit. A request HR files is
+	never refused and never counted: only the employee's own and a manager's on
+	behalf are (the filer is the request's owner)."""
 	if _has_time(doc):
 		return
 	company = frappe.db.get_value("Employee", doc.employee, "company")
@@ -222,21 +236,25 @@ def enforce_monthly_limit(doc, method=None):
 	# Exempt by designation (Grace's script exempted "Sales Executive" this way)
 	# or by a role the employee's login holds.
 	user, designation = frappe.db.get_value("Employee", doc.employee, ["user_id", "designation"])
+	if _filed_by_hr(frappe.session.user, user):
+		return
 	exempt = set(exempt_roles(frappe.get_cached_value(COMPANY, company, EXEMPT)))
 	if designation in exempt or (user and exempt & set(frappe.get_roles(user))):
 		return
 	first = getdate(doc.from_date).replace(day=1)
 	last = first.replace(day=28) + timedelta(days=4)
 	last = last - timedelta(days=last.day)
-	used = frappe.db.count(REQUEST, {
+	rows = frappe.get_all(REQUEST, filters={
 		"employee": doc.employee, "docstatus": ("!=", 2),
 		"from_date": ("between", [first, last]),
 		"alvoraa_missing_log": ("is", "not set"),
 		"alvoraa_review_status": ("not in", ["Declined"]),
-	})
+	}, pluck="owner")
+	used = sum(1 for o in rows if not _filed_by_hr(o, user))
 	if used >= limit:
 		frappe.throw(_("You have used your {0} requests this month. Held days do not count. "
-		               "For another day, ask HR.").format(limit))
+		               "For another day, ask HR to file it for you: a request HR files "
+		               "does not count against your limit.").format(limit))
 
 
 def validate_missing_time(doc, method=None):

@@ -367,6 +367,14 @@ class HeldDayCase(FrappeTestCase):
 		finally:
 			frappe.db.set_default(ac.EMPLOYEE_FILING_WINDOW_KEY, saved or "")
 
+	def test_the_hold_switch_defaults_to_off_for_every_company(self):
+		"""One release (decision 1): nothing is held anywhere until the switch is ticked."""
+		self.assertEqual(frappe.db.get_value("Custom Field", {"dt": "Company", "fieldname": held_day.SWITCH},
+		                                     "default"), "0")
+		fresh = _make_company("ALV085 Fresh Company", "A85F")
+		self.assertEqual(frappe.db.get_value("Company", fresh, held_day.SWITCH) or 0, 0)
+		self.assertFalse(held_day._switch_on(fresh))
+
 	def test_both_attendance_request_validate_hooks_are_kept(self):
 		hooks = frappe.get_hooks("doc_events")["Attendance Request"]["validate"]
 		for h in ("alvoraa_portal.held_day.validate_missing_time",
@@ -415,10 +423,48 @@ class HeldDayCase(FrappeTestCase):
 
 	# ── US-10: the monthly limit ───────────────────────────────────────
 
-	def _ordinary_request(self, employee, day):
-		return frappe.get_doc({"doctype": REQUEST, "employee": employee, "from_date": day,
-		                       "to_date": day, "reason": "Marked Absent by Mistake",
-		                       "alvoraa_review_status": "Waiting"}).insert(ignore_permissions=True)
+	def _login_of(self, employee):
+		"""The employee's own login, made once. The limit counts the employee's own
+		requests, so these are filed as that login, not as Administrator (who is
+		treated as HR and never counted)."""
+		user = frappe.db.get_value("Employee", employee, "user_id")
+		if not user:
+			user = self._login("own" + frappe.generate_hash(length=5), ("Employee",))
+			frappe.db.set_value("Employee", employee, "user_id", user)
+		return user
+
+	def _ordinary_request(self, employee, day, by=None):
+		frappe.set_user(by or self._login_of(employee))
+		try:
+			return frappe.get_doc({"doctype": REQUEST, "employee": employee, "from_date": day,
+			                       "to_date": day, "reason": "Marked Absent by Mistake",
+			                       "alvoraa_review_status": "Waiting"}).insert(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_r_hr_filed_requests_are_never_refused_and_never_counted(self):
+		"""Decision 2: HR filing for an employee is outside the limit. The employee's own
+		requests and a manager's on-behalf ones count."""
+		self.set_switch(1, limit=2)
+		first = add_days(frappe.utils.get_first_day(add_days(nowdate(), -40)), 3)
+		self._ordinary_request(self.worker, first)
+		self._ordinary_request(self.worker, add_days(first, 1))
+		with self.assertRaises(frappe.ValidationError):  # the employee is at the limit
+			self._ordinary_request(self.worker, add_days(first, 2))
+		for n in range(3):  # HR files three more: none refused
+			self._ordinary_request(self.worker, add_days(first, 2 + n), by=self.hr)
+		# and the HR ones did not count: a manager on behalf (no HR role) is the 3rd that counts
+		mgr = self._login("mgr", ("Employee",))
+		with self.assertRaises(frappe.ValidationError):
+			self._ordinary_request(self.worker, add_days(first, 6), by=mgr)
+		# control: another employee with only HR-filed requests so far still has both own slots
+		other = self._employee("Hrfiled")
+		for n in range(3):
+			self._ordinary_request(other, add_days(first, n), by=self.hr)
+		self._ordinary_request(other, add_days(first, 4))
+		self._ordinary_request(other, add_days(first, 5))
+		with self.assertRaises(frappe.ValidationError):
+			self._ordinary_request(other, add_days(first, 6))
 
 	def test_the_fourth_ordinary_request_is_refused_and_a_held_one_is_not(self):
 		self.set_switch(1, limit=3)

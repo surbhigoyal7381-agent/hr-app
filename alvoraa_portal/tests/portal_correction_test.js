@@ -42,6 +42,8 @@ const OUTSIDER = "Nehal Verma";
 const calls = [];
 const REVIEW_ROWS = [];
 let ATT_WINDOW = null;        // what get_requests_history says about the employee window
+let LOSE_RAISE = false;       // the answer to raise_correction never arrives (slice 085, AC-30)
+let REFUSE_RAISE = null;      // a sentence the server refuses raise_correction with
 let REFUSE_REQUEST = null;    // a sentence the server refuses submit_attendance_request with
 function reply(url, body) {
   const m = /attendance_correction\.(\w+)|hr_api\.(\w+)/.exec(url) || [];
@@ -90,7 +92,14 @@ const dom = new JSDOM(html, {
   runScripts: "dangerously", pretendToBeVisual: true,
   url: "http://grace.localhost/hrms-employee",
   beforeParse(w) {
-    w.fetch = (url, opts) => Promise.resolve({
+    w.fetch = (url, opts) => LOSE_RAISE && /raise_correction/.test(String(url))
+      ? Promise.reject(new Error("net"))
+      : REFUSE_RAISE && /raise_correction/.test(String(url))
+      ? Promise.resolve({ ok: false, status: 417,
+          json: () => Promise.resolve({ exc_type: "ValidationError",
+            _server_messages: JSON.stringify([JSON.stringify({ message: REFUSE_RAISE })]) }),
+          text: () => Promise.resolve("") })
+      : Promise.resolve({
       ok: true, status: 200,
       json: () => Promise.resolve({ message: reply(String(url), opts && opts.body) }),
       text: () => Promise.resolve(""),
@@ -559,6 +568,62 @@ function putForm(reason) {
   (doc.querySelector("#ac-body").textContent.indexOf("To come") < 0)
     ? ok("no day still to come is drawn")
     : bad("a future day is still on screen");
+
+  // ── Held day, slice 085: the screen gaps ─────────────────────────────
+  const toasts = () => [...doc.querySelectorAll("#toast-wrap .toast")].map(t => t.textContent);
+  const putTime = () => {
+    const h = doc.createElement("div");
+    h.innerHTML = '<input id="ac-missing-time" value="18:30">';
+    doc.body.appendChild(h);
+  };
+  window.acState.employee = null;
+  window.acState.data = { employee: ME, employee_name: "Rahul Sharma", is_self: true,
+                          can_request: true, days: [] };
+
+  // AC-30, a lost answer: it may have gone through, so the server is asked first
+  // and no second request is sent.
+  putTime();
+  LOSE_RAISE = true;
+  calls.length = 0;
+  doc.querySelector("#toast-wrap").innerHTML = "";
+  window.acHeldSubmit("2026-10-14", 1);
+  await settle(300);
+  LOSE_RAISE = false;
+  toasts().some(t => /may have gone through/i.test(t))
+    ? ok("a lost answer says it may have gone through")
+    : bad("a lost answer did not say so: " + JSON.stringify(toasts()));
+  calls.filter(c => c.fn === "month").length >= 1
+    ? ok("a lost answer asks the server before offering a second send")
+    : bad("the server was not asked after a lost answer");
+  calls.filter(c => c.fn === "raise_correction").length === 0
+    ? ok("a lost answer is not sent twice")
+    : bad("a lost answer was re-sent");
+
+  // AC-30, a refusal: the server's words, then "Not sent. Your time is saved on this phone."
+  putTime();
+  REFUSE_RAISE = "You have used your 3 requests this month.";
+  doc.querySelector("#toast-wrap").innerHTML = "";
+  window.acHeldSubmit("2026-10-14", 1);
+  await settle(300);
+  REFUSE_RAISE = null;
+  toasts().some(t => /Not sent\. Your time is saved on this phone\. Try again\./.test(t))
+    ? ok("a refused send says the time is saved on this phone")
+    : bad("a refused send said: " + JSON.stringify(toasts()));
+
+  // The row of a held day carries one tag, not a second "Sent to HR" one.
+  window.acState.data = { employee: ME, employee_name: "Rahul Sharma", is_self: true,
+    year: 2026, month: 10, tolerance_mins: 15, hold_on: 1,
+    days: [{ date: "2026-10-14", weekday: "Wednesday", state: "past", attendance: "ATT-1", status: "Held", held: true,
+             held_punches: 1, punches: [{ at: "09:00" }],
+             request: { state: "waiting", creation: "2026-10-15 10:00:00" } }],
+    totals: { present: 0, hours_worked: 0, short_days: 0, missing_punches: 0, late_days: 0,
+              leave: 0, held: 1 } };
+  window.acPaint();
+  const rowText = doc.querySelector("#ac-body").textContent;
+  /Held/.test(rowText) ? ok("the held day is drawn") : bad("the held day is not on screen");
+  doc.querySelector("#ac-body .ac-tag.wait") === null
+    ? ok("no second Sent to HR tag on the row")
+    : bad("the Sent to HR tag is still on the row");
 
   console.log(`### correction DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

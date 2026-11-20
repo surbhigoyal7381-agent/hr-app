@@ -176,3 +176,48 @@ Fixture note: the held-slip tests build real draft slips through Salary Slip ins
 Containers `alv085-bench`, `alv085-bench2`, `alv085-db`, `alv085-redis` untouched. I added `alv085-base` (stopped when I finish) and the detached worktree `.claude/worktrees/085-base-check` at 101fd29b; both can be removed. I changed no repo file except this report. Nothing pushed.
 
 **Defect 1 fixed:** the negative control in `test_alv332_the_refusal_is_real` now writes a manager's report punch, not the acting person's own, so D-2 no longer blocks it before the ALV-332 refusal. Product code and D-2 are unchanged.
+
+---
+
+# Round 3 (20 Nov 2026): the last engineer commit, and the two "site state" failures
+
+Code: `alv085-bench2` mounts worktree `085-fix-tmp` (clean), moved to branch `tmp/085-fix` at 148cb639. The slice branch has since been rebased; its code tree equals 148cb639 (diff is docs and `scripts/check_positions_tree.js` only). Site: `test_site` on bench2 (apps frappe, erpnext, hrms, alvoraa_portal; no alvoraa_goals). Run one module at a time. All numbers are from runs I did today.
+
+## Counts (Ran it)
+
+| Module | Result |
+|---|---|
+| test_held_day_085 | 42 OK |
+| test_held_gaps_085 | 6 OK |
+| test_held_p1_machine_accounts_085 | 3 OK |
+| test_held_slip_085 | 1 OK + 5 OK (two summaries) |
+| test_attendance_doors_085 | 16 OK |
+| test_company_scope_085 | 6 OK |
+| test_employee_window_084_independent | 18 OK |
+| test_attendance_correction (the other 084 module) | 148 OK + 19 OK (two summaries) |
+| test_punch_rights_alv332 | 17 OK (the round-2 defect 1 is fixed) |
+| test_decline_scope, test_withdraw_after_decline, test_team_scope_259 | 11, 6, 12 OK (decline_scope: see below) |
+| hrms Monthly Attendance Sheet | 18 OK (see below) |
+| JS DOM tests (node, host) | `portal_correction_test.js` 63 passed 0 failed (was 40; this is the file the engineer added to). 22 other `*_test.js` files in `alvoraa_portal/tests` pass; `check_undefined_js.js` and `check_portal_handlers.js` clean |
+
+Two modules first FAILED in the batch run: `test_decline_scope` (3 errors) and Monthly Attendance Sheet (1 error). Cause: six orphan `Expense Claim Account` rows (Company "ALV085 Fresh Company", account `Expense Claims - A85F`, created 19 Nov 20:18) left on the site by an early version of a test that made that Company and then deleted it; every later save of an Expense Claim Type threw `LinkValidationError`. I deleted those six rows, re-ran both: 11 OK and 18 OK. Site state, not 085 code (the commit that removed the Company is 00351713). Proven by before/after.
+
+JS: `portal_positions_test.js` fails "065: nor any end date of a plan" and needs jsdom; `portal_redesign_test.js` and `portal_tree_test.js` crash (jsdom missing, undefined path). I ran positions on the merge-base copy: the same FAIL 065. Redesign and tree could not run in my base copy (no jsdom); they are the discarded portal redesign. Not 085: inferred, not proven for redesign and tree.
+
+## The two failures: `test_alv266_only_hr_renames_an_employee` and `test_alv149_named_account_is_renamed_on_the_control_plane`
+
+**Site state, not 085. Proven.**
+
+- Cause: bench2's Redis queue `default` held **550 jobs** with no worker to drain it, which is exactly Frappe's limit (500 plus 50 per site). `rename_doc` enqueues a search rebuild; `_check_queue_size` then refuses, and while building the error it asks for permission on "System Health Report", which raises `PermissionError` for a non-admin user. That is the HR-manager rename failing at line 394 of the alv266 test. The alv149 test sees the rename fail and reports `failed == ['Email Account (From name)']`.
+- Why bench1 and the base were fine: bench1's `redis_queue` is `redis://alv085-redis:6379` (db 0); bench2's is `.../2`. Every rename in every earlier run piled one more job onto bench2's queue.
+- Break test: before, both failed on bench2 (alv266 1 error of 23; alv149 1 failure of 19). I emptied that one queue (550 to 0) and re-ran the same modules on bench2: **23 OK and 19 OK (3 skipped)**. Also both pass on bench1 at the same code (23 OK, 19 OK, 3 skipped).
+- Not a 085 problem, and the same would hit origin/dev acc89592 on that queue. I did not repeat it at acc89592 (inference from the mechanism).
+- Fix for the stack: empty the queue before a run, or run a worker. Owner: devops. Tests are unchanged.
+
+## Screen ACs still untested (Not checked in a browser)
+
+The alv085 stack runs no web server, so I again did not open the day sheet, HR card, settings card or the Attendance list chip, and did not compare them with the prototype. The DOM test (63 checks) draws the held day, one tag, the lost-answer path and the refusal text against a fake page; that is not the real screen. Still no proof at all: ACs 29, 30, 31, 38 and the button wording of 34 and 37. ACs 8, 24 to 27 have DOM or server checks only (Partial). Also unchanged from round 2: AC-12, 22, 23, 39, 56, 68, 69 have no test.
+
+## Round 3 verdict
+
+The 085 modules, the 084 modules, punch rights, company scope and the Monthly Attendance Sheet all pass on 148cb639 once the two site leftovers are cleared. The round-2 FAIL reason (defect 1) is closed. Open: defect 2 (the 24 order-dependent gate tests; the full suite was not re-run this round), defect 3 (screens), and the queue and orphan-row clean-up above. Nothing pushed, nothing deployed. bench2's queue and the six rows were changed by me, on that throwaway site only.

@@ -251,3 +251,60 @@ Nothing big. The slice stays on rungs 2 and 4, with no new DocType, no new app a
 - Grace's Shift Type thresholds.
 
 **Subtract pass:** I dropped a draft point that the AC-69 exemption could be abused. `validate_missing_time` runs first and refuses a time on a day that is not Held.
+
+# Round 3, 20 Nov 2026: SHIP WITH FIXES
+
+**Verdict: SHIP WITH FIXES. The code fixes hold, and I found no code blocker. What is left is runbook text: one pre-push check (S-1) has no query, and one (OPS-35) tells the operator to add rows with no way to know which companies. All the live-tenant counts are still unrun.**
+
+**Where I looked:** this worktree, branch `slice/085-held-odd-punch-days` at d1300bc3, level with `origin/dev` (fetched; nothing incoming). I read the diff `3b488799..HEAD`, `03` §17, `08` §7, `ci.yml` and the stock leave code. alv085-bench2 mounts `085-fix-tmp` at 8bd77bf9, the same code as HEAD (HEAD only adds notes). **I re-ran one suite:** Redis db 2 emptied, then `test_company_scope_085` gave **20 tests, OK** (matches §17). I re-ran nothing else.
+
+## Round 2 findings
+
+| Finding | State | Evidence |
+|---|---|---|
+| S-2 leave approval | **Closed: the premise was wrong.** Proven by reading the code | `leave_application.py:371` sets `flags.ignore_validate`. `document.py` `run_before_save_methods` returns before `before_submit`. So R5 never sees a new leave Attendance. |
+| S-3 rows that apply | **Closed.** Proven by reading the code and a run | `field_app_access.py` `_machine_may_file` counts only rows for all doctypes or for Employee Checkin. The S-3 test passed in my run. |
+| P3 wording | **Closed.** Read | `portal.js:23826` no longer claims a script was switched off. |
+| P4 `held_count` | **Closed.** Read | Endpoint and its assertions deleted. The settings-save refusal is kept. |
+
+## New findings
+
+- **R3-1 (P2). Runbook §7 cannot be run as written.**
+  - S-1 is prose with no query. Use `alvoraa_reviewed_by` on submitted Attendance Requests, and the approver on approved Leave Applications from the last 60 days, joined to `Employee.company`. Compare that with each login's Company rows.
+  - OPS-35 says "Add the row" and "Expect at least 1 row". It gives no way to find which companies a machine punches for. §17 says that no rows is an accepted trade-off. If someone adds a row narrower than the real set, punches are refused and the sync batch stops.
+  - **Fix:** before any row is added, run a count of `Employee.company` over the last 30 days of `tabEmployee Checkin` where `owner` is the account. Also state plainly that adding rows is optional and is a separate, approved write.
+- **R3-2 (P3). S-2 is still described wrongly in two places.** These are `attendance_doors.py:52-53` (the docstring) and the S-1 line in runbook §7. Both say a leave approval meets R5.
+  - There is one real narrow case, and it is new in this round. When a leave covers a holiday that already has a submitted Attendance, stock code cancels that Attendance with no `ignore_validate` (`leave_application.py:333-335`). Its `before_cancel` now runs R5.
+  - Effect: only an HR approver outside the company's scope is refused, which means the S-1 group. This is inferred from the code; I did not run it.
+- **R3-3 (P3). OPS-36 misses HR logins whose Employee record is not Active.** `permitted_companies` reads only Active records (`access.py:259`). Such a login passes the query, then gets no companies after release. **Fix:** add `and e.status = 'Active'`.
+- **Nit.** The test comment "locally it sits four folders above this file" is true only because bench2 mounts `scripts/` at the bench root.
+
+## The questions asked
+
+- **CI backfill path: correct, inferred, not proven in CI.**
+  - The test job's `actions/checkout@v4` has no `path:` (`ci.yml:391-393`), so the repo root is `$GITHUB_WORKSPACE`.
+  - `scripts/alv392_held_backfill_grace.py` is in that root.
+  - The same job already runs `$GITHUB_WORKSPACE/scripts/...` (`ci.yml:481, 541, 550`).
+  - `bench run-parallel-tests` inherits the step's environment, and the job does not run inside a `container:`.
+- **`access.py`: safe.** Proven by reading the code and grep.
+  - `checked_user` is optional, and the default is the old behaviour.
+  - There are 3 non-test callers. `refuse()` and `leave_rules.py:216` are unchanged. Only `field_app_access.py:270` passes a user.
+  - The log key set is unchanged. Nothing changes for any tenant, or for what CXO, HR or Employee can see or do.
+  - The only effect: in R2 and R4 lines, `user` is now the login being checked, which is normally the session user anyway.
+- **Biometric sync on release day (DTC 8 machines, Grace 2): no regression while the accounts have no Company rows.** Proven by reading the code.
+  - `_machine_may_file` returns True when it finds no rows.
+  - Grace's account still holds HR roles and passes on `is_hr`. DTC's account reaches the ALV-302 create branch as before.
+  - Cost: one or two extra small reads per punch (the own-record lookup for an HR-role account).
+  - The row counts themselves are **not checked**.
+- **HR approvals.** R5 now also covers cancelling and amending Attendance, and cancelling and amending Attendance Requests.
+  - Only HR-role logins without System Manager, acting outside their permitted companies, are refused. That is the same S-1 group as before.
+  - Managers (no HR role), Administrator and System Manager are not affected (`attendance_doors.py:59-62`).
+
+## Not checked
+
+- Any live-tenant count (§7 is all unrun).
+- CI itself.
+- Any suite other than `test_company_scope_085`.
+- The screens in a browser.
+
+**Subtract pass:** I removed a draft point about the monthly limit refusing a manager's edit of a draft. Declining uses `db_set`, and an HR editor returns early, so I could not write a real failure scenario.

@@ -294,10 +294,13 @@ class HeldDayCase(FrappeTestCase):
 		att = self._held()
 		self._punch(self.worker, "18:30", log_type="OUT")  # filed as Administrator
 		self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Held")
-		# control: a real sync account still releases it
+		# control: a real sync account still releases a held day (another person: this
+		# one now has two punches, so one more would make it odd again)
+		other = self._employee("Fm2")
+		att2 = self._held(other)
 		with patch("frappe.enqueue"):
-			self._punch(self.worker, "18:40", log_type="OUT", user=self._machine())
-		self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Present")
+			self._punch(other, "18:40", log_type="OUT", user=self._machine())
+		self.assertEqual(frappe.db.get_value("Attendance", att2.name, "status"), "Present")
 
 	def test_f3_a_multi_day_request_cannot_turn_a_held_day_into_present(self):
 		att = self._held()

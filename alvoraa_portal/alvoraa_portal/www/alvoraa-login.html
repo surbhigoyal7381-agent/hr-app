@@ -782,7 +782,7 @@ html, body {
                                        resume after N seconds"
 
      `end_the_sign_in` DESTROYS the password when access ends
-     (`joiner_invite.py:594`). With nothing stored, `find_by_credentials` sets
+     (`end_the_sign_in`'s `delete_all_passwords_for`). With nothing stored, `find_by_credentials` sets
      `is_authenticated = False` (`user.py:849-855`) and `authenticate` tests
      THAT before `enabled` (`frappe/auth.py:282-288`). So a closed account
      answers "Invalid login credentials", and the second line above was never

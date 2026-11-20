@@ -228,7 +228,7 @@ either way.
 
 **⚠ D4's answer came back NO, on 20 Nov 2026 (ALV-397), and this screen was never once
 shown on any tenant.** `end_the_sign_in` destroys the password
-(`joiner_invite.py:594`), so a closed account fails on "not authenticated" before Frappe
+(`end_the_sign_in`'s `delete_all_passwords_for`), so a closed account fails on "not authenticated" before Frappe
 ever checks "disabled" (`frappe/auth.py:282-288`). The page only ever saw
 `"Invalid login credentials"` — which means **the one thing this section said must never
 happen is exactly what happened, every time, from the day the slice shipped.** The

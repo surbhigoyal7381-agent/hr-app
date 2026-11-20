@@ -200,7 +200,16 @@ class TestItLeavesEveryOtherSignInAlone(_Base):
 
 # ── a sign-in that has ENDED says so (AC-13) ───────────────────────────────
 
-class TestAnEndedSignInSaysSo(_Base):
+class TestAnEndedSignInStillResolves(_Base):
+	"""Renamed from `TestAnEndedSignInSaysSo` on 20 Nov 2026 (ALV-397).
+
+	The old name claimed the joiner is TOLD their sign-in has ended.
+	Nothing tells them that: the ended wording is unreachable for a
+	properly closed invite, because the password is destroyed first. The
+	class proves resolution and only resolution, so the name now says so.
+	The docstring inside was corrected first and the name was missed,
+	which is how an overclaim survives a correction."""
+
 	def test_it_resolves_to_the_disabled_account_not_to_nothing(self):
 		"""Resolve to the account that exists, not to nothing.
 
@@ -208,7 +217,7 @@ class TestAnEndedSignInSaysSo(_Base):
 		Frappe answers "User disabled or missing" for a disabled account and
 		the page turns that into "this sign-in has finished its job". The
 		first half is true only when there is a password to check. There is
-		not: `end_the_sign_in` destroys it (`joiner_invite.py:594`), so
+		not: `end_the_sign_in` destroys it (`end_the_sign_in`'s `delete_all_passwords_for`), so
 		`find_by_credentials` marks the login unauthenticated (`user.py:849`)
 		and `authenticate` tests THAT before `enabled` (`auth.py:282-288`).
 		The refusal is always "Invalid login credentials". ALV-397.
@@ -606,7 +615,7 @@ class TestTheLoginPageHasOneReveal(_Base):
 		"""ALV-397, and the two things that can fail invisibly here.
 
 		**Honest about both**, because the server cannot tell them apart: the
-		password is destroyed on close (`joiner_invite.py:594`), so Frappe
+		password is destroyed on close (`end_the_sign_in`'s `delete_all_passwords_for`), so Frappe
 		always answers "Invalid login credentials" and never reaches the
 		disabled branch. AC-17's gate on "the correct password" cannot exist.
 

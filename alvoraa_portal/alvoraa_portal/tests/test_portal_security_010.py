@@ -947,7 +947,31 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# releases an account when its roles change. **ZERO**, and pinned here so
 		# that a bypass in the one file every single request passes through has
 		# to be argued for in this dict first.
-		("alvoraa_portal", "auth.py"): 0,
+		#
+		# ALV-394: ZERO to ONE, and this is that argument. The `before_login`
+		# hook reads `Alvoraa Joiner Submission.login_id` to turn what HR gave
+		# the joiner into the opaque login id their account actually carries.
+		# The caller is **Guest** - there is no session yet, by definition, so
+		# there is no permission to check and nothing to scope the read to.
+		#
+		# What makes it narrow enough to allow:
+		#   * two fields, `user` and `status`, on an exact match of a value the
+		#     visitor typed themselves. No name, no contact detail, no document.
+		#   * nothing reaches the browser. The return value is used to rewrite
+		#     `form_dict["usr"]` and is never rendered or returned, so this
+		#     cannot answer "is this address invited" any more than the old
+		#     refusal already did (079-SEC-1, US-4: not an oracle).
+		#   * it is not even reached unless what was typed is NOT an existing
+		#     `User`, so no member of staff signing in ever touches it.
+		#   * on more than one match it refuses and logs, rather than choosing.
+		#
+		# **The honest alternative was worse.** A raw `frappe.db.sql` or
+		# `frappe.qb` read bypasses permissions just the same and does not
+		# contain the word, so it would pass this gate while giving up the one
+		# thing the gate is for: a bypass you can find by grepping. This dict
+		# exists to make bypasses argued, not hidden. One, stated, beats one
+		# disguised.
+		("alvoraa_portal", "auth.py"): 1,
 		# joiner_public.py: FIVE to THREE, and this is the file 079-SEC-7 was
 		# written about. Four of the five existed only because the caller was
 		# **Guest** and held no permission on anything; with a session and a

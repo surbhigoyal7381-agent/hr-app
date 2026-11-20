@@ -21,6 +21,13 @@ JOINING_PAGE = "/joining"
 # the role above: `auth` is on the front door of every request and must not
 # drag the submission controller in behind it.
 JOINER_SUBMISSION = "Alvoraa Joiner Submission"
+# The three statuses that mean this invite is over. Named here rather than
+# imported from the submission controller for the reason above - and kept in
+# step with `TERMINAL` in
+# `alvoraa_portal/doctype/alvoraa_joiner_submission/alvoraa_joiner_submission.py`,
+# which is the definition. The five statuses are Invited, Submitted, Made an
+# employee, Expired and Cancelled.
+JOINER_TERMINAL = frozenset({"Made an employee", "Expired", "Cancelled"})
 
 
 def home_page_for(user):
@@ -732,19 +739,36 @@ def _the_sign_in_hr_made_for(typed):
     and another made. The order here is deliberate rather than left to the
     database:
 
-    1. the newest row whose account is still **enabled**, so a re-invited joiner
-       reaches the one that works;
-    2. failing that, the newest row that has an account at all, so an ended
-       sign-in resolves to something rather than to nothing.
+    1. exactly one **live** row - its account enabled AND its status not one of
+       the three in `JOINER_TERMINAL` - so a re-invited joiner reaches the one
+       that works;
+    2. more than one live row - nothing, and a security-log line. Choosing
+       between two working accounts would sign the joiner into somebody
+       else's record;
+    3. no live row - the newest **closed** account, so an ended sign-in
+       resolves to something rather than to nothing and the joiner is told
+       their sign-in is over rather than that they typed it wrong;
+    4. terminal rows whose accounts are all still OPEN - nothing, and a
+       security-log line. Handing one back would sign a cancelled joiner in.
 
-    **Enabled, not `status != "Cancelled"`.** That was the first shape and it
-    was wrong: `joiner_housekeeping.expire_the_dead_sign_ins` calls `doc.save`,
-    which bumps `modified`, so the nightly job can make a DEAD row the newest
-    one. A joiner re-invited after an expiry would then be sent to the expired
-    account and told their password was wrong - the very failure this fix
-    exists to remove. The five statuses are Invited, Submitted, Made an
-    employee, Expired and Cancelled, and none of them answers "does this
-    sign-in still work". `User.enabled` does.
+    Steps 2 and 4 both go through `_refuse_and_log`.
+
+    **Why it takes both the account and the status.** Status alone was the first
+    shape and it was wrong: `joiner_housekeeping.expire_the_dead_sign_ins`
+    calls `doc.save`, which bumps `modified`, so the nightly job can make a
+    DEAD row the newest one. A joiner re-invited after an expiry would then be
+    sent to the expired account and told their password was wrong - the very
+    failure this fix exists to remove.
+
+    `User.enabled` alone was the second shape, and that was wrong too, caught
+    by `test_the_live_invite_wins_over_a_cancelled_one`. **Cancelling an invite
+    does not necessarily disable its account** - only `end_the_sign_in` does
+    that, and the status can be set without it - so an ordinary
+    cancel-then-reinvite left two enabled accounts on one address and step 2
+    refused a sign-in that was never ambiguous.
+
+    So: the account says whether the sign-in still works, the status says
+    whether anyone still means it to, and a row has to pass both.
 
     `ignore_permissions` because the caller is Guest and has no read on the
     submission. It returns a login id and nothing else: no name, no status, and
@@ -769,11 +793,99 @@ def _the_sign_in_hr_made_for(typed):
     if not with_an_account:
         return None
 
-    for row, enabled in with_an_account:
-        if enabled:
-            return row["user"]
+    # **Live means both things, and it took a regression to learn that.**
+    # Keying on `User.enabled` alone refused a case that is not ambiguous: an
+    # invite can be cancelled by a path that does not disable its account - the
+    # status is set directly, and only `end_the_sign_in` disables the User - so
+    # a plain cancel-then-reinvite left two ENABLED accounts and this branch
+    # turned a working sign-in into a refusal. Status alone is no good either,
+    # for the `modified` reason in the docstring above. It has to be both.
+    live = [row for row, enabled in with_an_account
+            if enabled and cstr(row.get("status")) not in JOINER_TERMINAL]
 
-    return with_an_account[0][0]["user"]
+    # **Two working accounts on one address: refuse, do not choose.** Neither
+    # this fix nor ALV-396's guard can clean up data that predates them, and a
+    # tenant invited on the same address twice before either landed has two
+    # enabled accounts for one `login_id`. Picking the newest would sign the
+    # joiner into SOMEBODY ELSE'S record - the worst outcome available here, and
+    # the hardest to notice, because both parties see a screen that works.
+    #
+    # Returning None leaves what was typed alone, so Frappe refuses exactly as
+    # it does today. The joiner is no worse off than before this fix existed,
+    # and HR gets a line in the security log instead of nobody getting anything.
+    #
+    # Once ALV-396 is in, this branch should be unreachable for NEW invites: the
+    # guard refuses a second invite while the first is live and has a sign-in.
+    # If it fires on fresh data, that guard has a hole.
+    if len(live) > 1:
+        _refuse_and_log(
+            "joiner_sign_in_matched_more_than_one_live_account", live)
+        return None
+
+    if live:
+        return live[0]["user"]
+
+    # No live row, so fall back to the ended sign-in. That is on purpose: Frappe
+    # answers "User disabled or missing" for a closed account, which the page
+    # turns into "this sign-in has finished its job" (079 decision 4a), instead
+    # of sending the joiner back to try a password that was never the problem.
+    #
+    # **Only ever an account that is genuinely CLOSED**, which is why this reads
+    # `enabled` again rather than reusing the row's status.
+    closed = [row for row, enabled in with_an_account if not enabled]
+    if closed:
+        return closed[0]["user"]
+
+    # Left over: every row is terminal and yet its account is still OPEN.
+    #
+    # That is the silent close failure. `joiner_invite.end_the_sign_in` catches
+    # every exception, writes an Error Log and returns False, and `on_update`
+    # discards the answer
+    # (`alvoraa_portal/doctype/alvoraa_joiner_submission/
+    #   alvoraa_joiner_submission.py:99`) - so the save succeeds, HR's screen
+    # reads Cancelled, and the login still works.
+    #
+    # **Resolving one of these would sign a cancelled joiner in.** Before
+    # ALV-394 nothing mapped an emailed address to that account, so the fault
+    # sat there unreachable; this hook is exactly what would turn it into a
+    # working door. Refusing leaves it shut and puts a line where HR can find
+    # it. The underlying fault is its own ticket, not this one's to fix.
+    _refuse_and_log(
+        "joiner_sign_in_closed_invite_still_has_an_open_account",
+        [row for row, _enabled in with_an_account])
+    return None
+
+
+def _refuse_and_log(event, rows):
+    """Record a refusal to resolve, and never get in its way.
+
+    **No personal data in the line** (079-PRIV-7). What the joiner typed is
+    somebody's real email address or mobile number, so it is not written here;
+    the login ids are, because 079 makes those opaque and non-routable by
+    design, and they are what HR needs in order to find the two rows.
+
+    `security_logger` rather than `frappe.logger("security")`: the plain logger
+    sits at ERROR in every one of our images, so a `.warning` line is thrown
+    away silently. That was ALV-391, and it had made every security line this
+    product ever wrote disappear. The helper turns this one logger down to INFO.
+
+    Wrapped, and then `_quietly` as well, because a sign-in must never fail on
+    its own audit trail - and because the Error Log row is the copy that
+    survives the security log's 2 MB of rotation.
+    """
+    try:
+        import json
+
+        from hrms.alvoraa_hr_core.access import security_logger
+        security_logger().warning(json.dumps({
+            "event": event,
+            "at": str(frappe.utils.now_datetime()),
+            "count": len(rows),
+            "accounts": sorted(cstr(row.get("user")) for row in rows),
+        }))
+    except Exception:
+        pass
+    _quietly("Joiner sign-in matched more than one live account")
 
 
 def _quietly(title):

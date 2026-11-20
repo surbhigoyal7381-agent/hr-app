@@ -31,6 +31,7 @@ feature from a working function. The rest check the behaviour of the function
 once it is reached, which is a different and smaller question.
 """
 
+import importlib
 import os
 
 import frappe
@@ -239,6 +240,243 @@ class TestOneAddressOnTwoRows(_Base):
 		self.assertNotEqual(old.user, new.user)
 		self.assertEqual(self._typed_at_the_sign_in(AN_EMAIL), new.user)
 		self.assertTrue(self._the_password_is_accepted(AN_EMAIL, password))
+
+
+# ── two LIVE rows on one address: refuse, do not choose ────────────────────
+
+class TestTwoLiveSignInsAreRefused(_Base):
+	"""Data that predates both this fix and ALV-396's guard.
+
+	ALV-396 stops a second invite being made while the first is live and
+	already has a sign-in. It cannot clean up a tenant where that already
+	happened. On such a row `login_id` matches two **enabled** accounts, and
+	the resolver's "prefer enabled" branch would have a choice to make.
+
+	It must not make it. Picking either one signs the joiner into somebody
+	else's record, and both parties then see a screen that works, which is why
+	this would go unnoticed. Refusing leaves them exactly where this fix found
+	them - told their password is wrong - which is bad, and is not the same
+	kind of bad.
+	"""
+
+	def _two_live_rows_on_one_address(self):
+		"""The legacy shape, built the only way the guard allows.
+
+		The second invite is made while the first is Cancelled, because
+		`_already_a_login` would otherwise refuse it - correctly. The first row
+		and its account are then put back to live, which is what the old data
+		looks like: two rows, two enabled accounts, one address.
+		"""
+		old, old_password = self._invited(AN_EMAIL, full_name="S394 Old Live")
+		frappe.db.set_value(DOCTYPE, old.name, "status", "Cancelled",
+		                    update_modified=False)
+		frappe.db.commit()
+
+		new, new_password = self._invited(AN_EMAIL, full_name="S394 New Live")
+
+		frappe.db.set_value(DOCTYPE, old.name, "status", "Invited",
+		                    update_modified=False)
+		frappe.db.set_value("User", old.user, "enabled", 1,
+		                    update_modified=False)
+		frappe.db.commit()
+
+		self.assertNotEqual(old.user, new.user)
+		for who in (old.user, new.user):
+			self.assertTrue(frappe.db.get_value("User", who, "enabled"),
+			                f"{who} should be enabled for this test to mean "
+			                f"anything")
+		return old, old_password, new, new_password
+
+	def test_what_was_typed_is_left_alone(self):
+		"""The refusal, where it matters: no rewrite, so no wrong record."""
+		old, _old_pw, new, _new_pw = self._two_live_rows_on_one_address()
+
+		resolved = self._typed_at_the_sign_in(AN_EMAIL)
+
+		self.assertEqual(
+			resolved, AN_EMAIL,
+			"the hook chose one of two live accounts instead of refusing")
+		self.assertNotIn(resolved, (old.user, new.user))
+
+	def test_neither_password_gets_anybody_in(self):
+		"""Not just unrewritten - genuinely refused.
+
+		`AN_EMAIL` is on no `User`, so authentication fails on the address
+		itself. This is the assertion that would catch a future "helpful"
+		fallback that tries each candidate in turn.
+		"""
+		_old, old_password, _new, new_password = \
+			self._two_live_rows_on_one_address()
+
+		for password in (old_password, new_password):
+			self.assertFalse(
+				self._the_password_is_accepted(AN_EMAIL, password),
+				"a live-but-ambiguous address let somebody in")
+
+	def test_hr_is_told_in_the_security_log(self):
+		"""The joiner cannot report this usefully, so HR has to find it.
+
+		`.warning` through `security_logger`, not `frappe.logger("security")`:
+		the plain logger sits at ERROR in our images and would throw the line
+		away in silence. That was ALV-391, and it is why this asserts the LINE
+		and not merely that something was called.
+
+		**No personal data in it** (079-PRIV-7). What the joiner typed is a real
+		email address or mobile number and must not be written; the login ids
+		may be, because 079 makes them opaque on purpose, and they are what HR
+		needs to find the two rows.
+		"""
+		import json as _json
+
+		access = importlib.import_module("hrms.alvoraa_hr_core.access")
+
+		old, _old_pw, new, _new_pw = self._two_live_rows_on_one_address()
+
+		written = []
+
+		class _Recorder:
+			def warning(self, line):
+				written.append(line)
+
+		real = access.security_logger
+		access.security_logger = lambda: _Recorder()
+		try:
+			self._typed_at_the_sign_in(AN_EMAIL)
+		finally:
+			access.security_logger = real
+
+		self.assertEqual(len(written), 1, written)
+		line = _json.loads(written[0])
+		self.assertEqual(
+			line["event"],
+			"joiner_sign_in_matched_more_than_one_live_account")
+		self.assertEqual(line["count"], 2)
+		self.assertEqual(sorted(line["accounts"]), sorted([old.user, new.user]))
+		self.assertNotIn(AN_EMAIL, written[0],
+		                 "the joiner's own address was written to the log")
+
+	def test_the_sign_in_survives_a_broken_log(self):
+		"""A sign-in must never fail on its own audit trail.
+
+		It still refuses - that is the point of the branch - but it refuses by
+		returning, not by raising into Frappe's login.
+		"""
+		access = importlib.import_module("hrms.alvoraa_hr_core.access")
+
+		self._two_live_rows_on_one_address()
+
+		def boom():
+			raise RuntimeError("the log is gone")
+
+		real = access.security_logger
+		access.security_logger = boom
+		try:
+			resolved = self._typed_at_the_sign_in(AN_EMAIL)
+		finally:
+			access.security_logger = real
+
+		self.assertEqual(resolved, AN_EMAIL)
+
+# ── a cancelled invite whose account never closed ──────────────────────────
+
+class TestAClosedInviteWithAnOpenAccount(_Base):
+	"""The silent close failure, and why this hook must not resolve it.
+
+	`joiner_invite.end_the_sign_in` catches every exception, writes an Error
+	Log and returns False. `on_update` calls it and **discards the answer**
+	(`alvoraa_joiner_submission.py:99`). So if the write to the `User` row
+	fails, the save still succeeds: the invite reads Cancelled, HR's screen
+	says Cancelled, and the login still works.
+
+	The fallback in `_the_sign_in_hr_made_for` exists to resolve an ENDED
+	sign-in to its old account, so Frappe says "disabled or missing" and the
+	page says "this sign-in has finished its job". Hand it an account that is
+	still OPEN and Frappe authenticates it instead - **a cancelled joiner signs
+	in.**
+
+	Before ALV-394 nothing mapped an emailed address to that account, so the
+	fault sat there unreachable. This hook is what would make it a door. The
+	fault itself is somebody else's ticket; keeping this hook out of it is
+	this file's job.
+	"""
+
+	def _cancelled_but_still_open(self):
+		"""Exactly what a failed close leaves behind: terminal row, live login."""
+		doc, password = self._invited(AN_EMAIL)
+		frappe.db.set_value(DOCTYPE, doc.name, "status", "Cancelled",
+		                    update_modified=False)
+		frappe.db.set_value("User", doc.user, "enabled", 1,
+		                    update_modified=False)
+		frappe.db.commit()
+
+		self.assertTrue(frappe.db.get_value("User", doc.user, "enabled"),
+		                "the account must be OPEN for this test to mean "
+		                "anything")
+		return doc, password
+
+	def test_the_cancelled_joiner_is_not_let_in(self):
+		"""The assertion that matters: the right password still does not work."""
+		doc, password = self._cancelled_but_still_open()
+
+		self.assertEqual(
+			self._typed_at_the_sign_in(AN_EMAIL), AN_EMAIL,
+			"the hook resolved a cancelled invite to an account that still "
+			"works, so the joiner signs in after being cancelled")
+		self.assertFalse(
+			self._the_password_is_accepted(AN_EMAIL, password),
+			"a cancelled joiner signed in with their old password")
+		# The account really would have let them in - so the refusal above is
+		# this hook's doing and not Frappe's.
+		self.assertTrue(
+			User.find_by_credentials(doc.user, password).get("is_authenticated"),
+			"the account was already shut, so this test proves nothing")
+
+	def test_hr_is_told_in_the_security_log(self):
+		"""Nobody else can see this. The joiner is told their password is
+		wrong, which is true-ish and useless, and HR's screen already says
+		Cancelled. The log line is the only place the contradiction surfaces."""
+		import json as _json
+
+		access = importlib.import_module("hrms.alvoraa_hr_core.access")
+
+		doc, _password = self._cancelled_but_still_open()
+
+		written = []
+
+		class _Recorder:
+			def warning(self, line):
+				written.append(line)
+
+		real = access.security_logger
+		access.security_logger = lambda: _Recorder()
+		try:
+			self._typed_at_the_sign_in(AN_EMAIL)
+		finally:
+			access.security_logger = real
+
+		self.assertEqual(len(written), 1, written)
+		line = _json.loads(written[0])
+		self.assertEqual(
+			line["event"],
+			"joiner_sign_in_closed_invite_still_has_an_open_account")
+		self.assertIn(doc.user, line["accounts"])
+		self.assertNotIn(AN_EMAIL, written[0],
+		                 "the joiner's own address was written to the log")
+
+	def test_a_properly_closed_invite_still_resolves(self):
+		"""The branch this must not break.
+
+		A sign-in ended the normal way has a DISABLED account, and resolving to
+		it is what gets the joiner "your sign-in has finished" instead of
+		"wrong password". Refusing everything terminal would have thrown that
+		away to fix the case above.
+		"""
+		doc, _ = self._invited(AN_EMAIL)
+		joiner_invite.end_the_sign_in(doc, "test")
+		frappe.db.commit()
+
+		self.assertEqual(self._typed_at_the_sign_in(AN_EMAIL), doc.user)
+		self.assertFalse(frappe.db.get_value("User", doc.user, "enabled"))
 
 
 # ── it can never lock a tenant out of its own login ────────────────────────

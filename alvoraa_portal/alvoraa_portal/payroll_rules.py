@@ -435,6 +435,12 @@ def leave_credits_for_month(days_present, period_days, credit_per_period,
 	return min(earned, cap) if cap > 0 else earned
 
 
+def round_percent(percent) -> float:
+	"""A day's percentage as the band lookup reads it: one decimal, .05 upwards
+	(ALV-401). The portal's ladder uses this too, so the two cannot disagree."""
+	return math.floor(float(percent) * 10 + 0.5) / 10
+
+
 def find_slab(slabs, percent):
 	"""The one row covering this percentage.
 
@@ -452,7 +458,7 @@ def find_slab(slabs, percent):
 	98.9, which is the no-red band. Only the lookup rounds; callers keep the
 	exact figure. Not Python's round(), which sends some .x5 values down.
 	"""
-	percent = math.floor(float(percent) * 10 + 0.5) / 10
+	percent = round_percent(percent)
 	ordered = sorted(slabs, key=lambda r: float(r.percent_from))
 	for row in ordered:
 		lo, hi = float(row.percent_from), float(row.percent_to)

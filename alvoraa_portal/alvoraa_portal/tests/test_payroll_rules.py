@@ -117,6 +117,17 @@ class TestSlabRounding(unittest.TestCase):
 		self.assertEqual(v.reds, 0)
 		self.assertEqual(v.slab_quarters, 0)
 
+	def test_point_05_goes_up_not_to_the_nearest_even(self):
+		"""Python's round() would send some .x5 values down; the rule is up."""
+		self.assertFalse(find_slab(DTC_SLABS, 98.85).raises_red)
+
+	def test_the_other_half_of_a_half_day_leave_rounds_too(self):
+		"""_judge_other_half looks the band up through find_slab as well:
+		296 min 40 s of a 300-minute half is 98.89%, so no red."""
+		v = judge(half_day_leave=True, first_in=hm(15, 30), last_out=hm(20, 26) + 40 / 60.0)
+		self.assertTrue(v.half_leave)
+		self.assertEqual(v.reds, 0)
+
 
 class TestDuplicatePunches(unittest.TestCase):
 	"""A reader that scans twice in a second has not recorded a day of work."""

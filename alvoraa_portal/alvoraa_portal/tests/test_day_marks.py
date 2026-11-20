@@ -590,3 +590,51 @@ class ATenantWithNoQuarters(MarksCase):
 
 	def test_somebody_with_no_shift_still_gets_nothing(self):
 		self.assertIsNone(marks_today(self.emp, self.row, None, [], DAY))
+
+
+class TheLadderAgreesWithThePayslipALV401(FrappeTestCase):
+	"""ALV-401 (Surbhi, 20 Nov 2026). The engine rounds a day's percentage to one
+	decimal before choosing its band, so each rung must start at the first whole
+	minute that rounds into that band. Rounding the boundary to the NEAREST
+	minute told a 600-minute shift that minute 593 was safe; 593/600 = 98.83%,
+	which the payslip reads as 98.8, and charges a red."""
+
+	DTC = [  # percent_from, percent_to, quarters_off, raises_red
+		(0, 20, 4, 0), (20, 24, 3, 1), (24, 25, 3, 0), (25, 40, 3, 0),
+		(40, 44, 2, 1), (44, 50, 2, 0), (50, 65, 2, 0), (65, 68, 1, 1),
+		(68, 75, 1, 0), (75, 90, 1, 0), (90, 98.9, 0, 1), (98.9, 100, 0, 0)]
+
+	def test_every_rung_starts_on_the_first_minute_the_payslip_agrees_with(self):
+		from alvoraa_portal.day_marks import _ladder
+		from alvoraa_portal.payroll_rules import round_percent
+
+		slabs = [frappe._dict(percent_from=a, percent_to=b, quarters_off=q, raises_red=r)
+		         for a, b, q, r in self.DTC]
+		red_to = {3: 24, 2: 44, 1: 68, 0: 98.9}
+
+		def minute(clock):
+			h, m = clock.split(":")
+			return int(h) * 60 + int(m)
+
+		def first_minute(m, length, edge):
+			return (round_percent(m / length * 100) >= edge
+			        and (m == 0 or round_percent((m - 1) / length * 100) < edge))
+
+		for length in range(120, 721):
+			out = _ladder({"slabs": slabs}, 0, length, 0, False)
+			for s in out["steps"]:
+				with self.subTest(length=length, quarters=s["quarters"]):
+					self.assertTrue(first_minute(minute(s["leave_after"]), length,
+					                             s["percent_from"]))
+					if s["red_from"]:
+						self.assertTrue(first_minute(minute(s["red_to"]), length,
+						                             red_to[s["quarters"]]))
+
+	def test_the_600_minute_case_that_was_wrong(self):
+		from alvoraa_portal.day_marks import _ladder
+
+		slabs = [frappe._dict(percent_from=a, percent_to=b, quarters_off=q, raises_red=r)
+		         for a, b, q, r in self.DTC]
+		out = _ladder({"slabs": slabs}, 0, 600, 0, False)
+		red = {s["quarters"]: s for s in out["steps"]}[0]
+		self.assertEqual(red["red_to"], "09:54")   # 594 minutes, not 593

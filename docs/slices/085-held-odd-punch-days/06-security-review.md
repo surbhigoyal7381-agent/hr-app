@@ -136,3 +136,81 @@ Removed from this review:
 - the backfill not re-pricing draft slips (a pay question for the technofunctional reviewer, not a security one).
 
 No new gate, tool or requirement is proposed beyond F6's one ceiling line.
+
+---
+
+# Re-review, 20 Nov 2026 (fix round 2)
+
+**Code read:** `git diff 15c716f6..148cb639`, worktree `.claude/worktrees/085-held-odd-punch-days`, HEAD 148cb639 (clean). **Run on:** container `alv085-bench` (it mounts this worktree), site `test_site`. Read-only Python with `frappe.init`, every write rolled back, nothing committed. I did not run any suite. **Conflict of interest, again:** I wrote `01c`. A second reader should check the P1 below.
+
+## R.0 · Verdict
+
+**Not ready. One new P1. No P0.**
+
+**P1 (dangerous debt, escalate now). The punch write check looks at the punch as it will be saved, not as it is stored.** The `employee` field on Employee Checkin can be edited (stock `employee_checkin.json`: no `set_only_once`, no `read_only`; no Property Setter in the repo). Frappe checks `write` on the changed document (`frappe/model/document.py:584`, `check_permission("write", "save")` after `doc.update(data)` in `api/v1.py:57-58`). So `checkin_has_permission` (`field_app_access.py:315` and `:326-331`) judges the new employee. Two results:
+- **R4 is not closed for write.** *An HR User whose only company is G066 Co opens punch EMP-CKIN-11-2026-000001 (ALV085 Company) by name, sets `employee` to a G066 Co person and saves.* `checkin_has_permission(..., "write")` and `frappe.has_permission` both returned **True** (verified by running, as `anil@g066.test`). Unchanged, the same punch returned False. The other company's employee loses a punch, which can turn their day Held or cost pay. Reads are not narrowed, so the punch can be found.
+- **SEC-2 is open again for one move.** An HR person with an Employee record can move one of their OWN punches to a colleague. Before marking, a three-punch day (it would be Held) becomes a two-punch Present day. **Inference** from the same mechanism. There was no HR user with their own punches on `test_site`, so I could not run it.
+- **Smallest fix:** in the same hook, for `write`, run the own-record test and the company test on **both** the stored employee (`frappe.db.get_value("Employee Checkin", doc.name, "employee")`) and the new one. A test must move a punch across, each way, and expect a refusal. The other option is `set_only_once` by Property Setter, which is configuration. It is the cheaper fix, but it also stops HR putting a punch right when it was filed against the wrong person, so that is a product call (`hrms-business-analyst`).
+
+## R.1 · The fix items
+
+| Item | State | Mechanism (file:line) | Proof |
+|---|---|---|---|
+| F1 HR cannot insert own punch | **Closed** for create | `field_app_access.py:321-322`: HR holding an Employee record, own employee, `create`, refused | `test_f1_...` (notes §14, break-proven per the engineer). Verified in code. The F7 leaver gap remains (`_viewer` looks for Active only, `:207`) |
+| F2 Administrator is not the machine | **Closed** | `field_app_access.py:74-77`: Administrator returns False, and a real `Has Role` row for `Biometric Sync` is required | `test_f2_...`. Verified in code |
+| F3 multi-day request covering a Held day | **Closed** | `held_day.py:384-389` refuses a request without a time whose dates cover a submitted Held row. A request with a time already needs a one-day Held row (`:376-380`) | `test_f3_...`. Verified in code |
+| R2 sync account limited to its Company rows | **Partial** | `field_app_access.py:274-285`, **create only**. No rows means unscoped (`:281-282`) | `test_a_scoped_sync_account_...`. **Verified by running:** a temporary row made `create` for another company False, and an `R2` line was written |
+| R4 HR create/write/delete within permitted_companies | **Not met for write** (P1 above). Create and delete met | `field_app_access.py:288-296`, `:326-331` | Create was refused for another company, and so was write of the punch as stored. **Both verified by running, with R4 lines written** |
+| R5 approve/submit company-scoped on every door | **Met for submit**. Cancel and update-after-submit are not scoped (as the engineer says) | `attendance_doors.py:46-67`, on `before_submit` for Attendance (`hooks.py:170`) and Attendance Request (`:216`). Company is read from the Employee record, not the document | `test_company_scope_085` R5 tests. **Verified by running:** PermissionError, and an `R5` line written for `anil@g066.test` |
+
+**The refusals reach `security.log`: verified by running.** `logs/security.log` and `sites/test_site/logs/security.log` went from 0 to 889 bytes: two R4 lines, one R5 line, one R2 line, as JSON with ids only. **One flaw (Minor, P4):** `log_refusal` records `frappe.session.user`, not the `user` that `checkin_has_permission` was asked about. My R4 and R2 lines say `Administrator`. On a real REST or Desk call the two are the same (inference). The 085 tests still patch `security_logger`, so no test reads the file.
+
+## R.2 · Every SEC and PRIV item now
+
+| Req | State | Change since the first review |
+|---|---|---|
+| SEC-1 | **Met** | F3 closed. B-1 (a submitted slip keeps the hold) is the reviewer's item; I did not re-check it |
+| SEC-2 | **Partial** | F1 closed. The own-punch **move** (P1) is new. **Minor P3:** Attendance `before_submit` has no own-record check (`hooks.py:170`). An HR person can edit and submit a **draft** Attendance of their own that someone else created. This needs a second person to make the draft, and `hold_odd_punch_day` still runs at validate. Doors checked: Attendance insert, save, submit, update-after-submit, cancel and delete; Attendance Request submit; Employee Checkin create, write and delete. Desk, REST and import all meet the same hooks |
+| SEC-3 | **Met** | unchanged |
+| SEC-4 | **Met for portal and submit** | R5 now covers Desk and REST submit. Cancel is still scoped only by Frappe User Permissions. Those apply here, because both doctypes carry `company`, but only for HR logins that have Company rows. HR logins that fall back to their Employee company get no Frappe scoping on cancel |
+| SEC-5 | **Met** | F2 closed |
+| SEC-6 | **Met** | unchanged. F5 is still open (Minor) |
+| SEC-7 | **Met** | The run id and the operator are now in every row's Comment (`scripts/alv392_held_backfill_grace.py:114-117, 151`). The `--operator` value is typed by whoever runs it, not checked |
+| PRIV-1 | **Met** | The F6 ceiling for `held_day.py` is still not in `test_portal_security_010.py` (that one is mine) |
+| PRIV-2 | **Met** | Logging verified by running (above) |
+| PRIV-3 | **Met** | F3 closed |
+
+Still open from the first review: F4 (the limit is still `before_insert`, `hooks.py:224`), F5, F6, F7. All Minor.
+
+## R.3 · R2 with no rows: my judgement
+
+- **Failing open here is acceptable only as a named, dated trade-off.** Refusing a sync account that has no rows would stop punches on every tenant at release, as on 2 Nov (ALV-302). That is an outage, not a leak, and the slice adds no new exposure. The account could already file for anyone before 085.
+- **What R2 does not do, said plainly:**
+  1. On a tenant with one company, the rows change nothing.
+  2. The real sync accounts hold HR roles (notes §13). For them, write and delete skip the R4 check (`:327` runs before `:330`) and fall through to HR's yes (`:332-333`). Anyone with the key can still change or delete any punch in any company.
+  3. The key itself is the exposure. Key rotation and an IP allow-list remain the real fix (own ticket, not checked whether it exists).
+- **The operator step must be:** per tenant, before the push, list the logins holding `Biometric Sync` and count each one's Company User Permission rows. Add one row per company the account serves, with `apply_to_all_doctypes` **off**. Read the rows back and write the counts in the release record. Then prove the refusal on **dev**, not production: a punch for another company, then read `security.log` for the `R2` line. On a single-company tenant, write "R2 adds nothing here" in the release record. Runbook line 79 asks for a test punch but does not say where, and does not ask for the counts.
+
+## R.4 · Worries (no full scenario yet)
+
+- R5 raises PermissionError, and stock `mark_attendance_and_link_log` catches only ValidationError (`employee_checkin.py:280`). An HR login that presses "Mark Attendance" on a Shift Type used by two companies may stop partway. The same applies to approving a leave for someone outside the login's companies. That is a question of the service staying up, not a leak.
+- Cancelling an approved held-day request still removes the released row (first review). With R5 not on cancel, an HR login can do this for another company (it works where SEC-4 says it does).
+
+## R.5 · Residual risk, needing Surbhi's named acceptance with a date
+
+| # | Risk | Label | Accepted? |
+|---|---|---|---|
+| P1 | Punch write judged on the new employee: cross-company move (R4) and own-punch move (SEC-2) | **dangerous debt, fix before release** | No. I recommend fixing, not accepting |
+| R2a | A sync account with no Company rows stays unscoped until the operator adds them | intentional trade-off | No |
+| R2b | Sync accounts holding HR roles may write and delete any punch in any company; the key is the exposure | temporary debt (key rotation and allow-list ticket) | No |
+| R5a | Cancel and update-after-submit of Attendance and Attendance Request are not company-scoped for HR logins without Company rows | temporary debt. The fix is two hook lines that reuse `refuse_outside_company` | No |
+| R1 | Wage-law basis for holding pay | intentional trade-off (her 19 Nov decision) | As before |
+
+## R.6 · Not checked
+
+- The P1 own-punch move, by running (there is no such user on `test_site`).
+- Tenant Custom DocPerm and Property Setters on Employee Checkin.
+- Whether the key-rotation ticket exists.
+- Production `security.log`.
+
+**Subtract pass:** I dropped a finding that the R4 log line's `name` is empty on a create (true, harmless) and a note on the `held_count` endpoint nobody uses (not a security matter). No new gate or requirement is proposed.

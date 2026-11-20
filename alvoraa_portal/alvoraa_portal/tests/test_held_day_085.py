@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, nowdate
+from frappe.utils import add_days, getdate, nowdate
 
 from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal import held_day
@@ -477,6 +477,28 @@ class HeldDayCase(FrappeTestCase):
 		self._ordinary_request(other, add_days(first, 5))
 		with self.assertRaises(frappe.ValidationError):
 			self._ordinary_request(other, add_days(first, 6))
+
+	def test_f4_a_held_day_draft_edited_into_an_ordinary_request_is_counted(self):
+		"""The held-day draft carries a time, so it is outside the limit when made. Edited
+		into an ordinary request, it is counted at the next save, not only at insert."""
+		self.set_switch(1, limit=1)
+		user = self._login_of(self.worker)
+		self._held()
+		name = self._request(self.worker, by=user)  # a draft with a time: not counted
+		near = add_days(self.day, 1)
+		if getdate(near).month != getdate(self.day).month:
+			near = add_days(self.day, -1)
+		self._ordinary_request(self.worker, near)  # the one allowed request this month
+		frappe.set_user(user)
+		try:
+			doc = frappe.get_doc(REQUEST, name)
+			doc.alvoraa_missing_time = None
+			doc.alvoraa_missing_log = None
+			with self.assertRaises(frappe.ValidationError) as cm:
+				doc.save(ignore_permissions=True)
+			self.assertIn("Held days do not count", str(cm.exception))
+		finally:
+			frappe.set_user("Administrator")
 
 	def test_the_fourth_ordinary_request_is_refused_and_a_held_one_is_not(self):
 		self.set_switch(1, limit=3)

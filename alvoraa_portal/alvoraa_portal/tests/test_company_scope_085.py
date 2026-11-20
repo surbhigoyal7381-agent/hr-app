@@ -195,6 +195,11 @@ class PunchMovedAcrossCompanies(_Base):
 	def test_a_leaver_with_an_hr_login_is_still_refused_their_own_punch(self):
 		"""F7: the own-record refusals do not depend on the Employee being Active."""
 		own = self._punch_doc(self.h.hr_emp, saved=True)
+		# a Company row keeps the company rule (R4) satisfied, so only the own-record rule can refuse
+		frappe.get_doc({"doctype": "User Permission", "user": self.h.hr, "allow": "Company",
+		                "for_value": self.h.company}).insert(ignore_permissions=True)
+		frappe.clear_cache()
+		self.assertTrue(faa.checkin_has_permission(self._punch_doc(self.a_worker, True), self.h.hr, "write"))
 		frappe.db.set_value("Employee", self.h.hr_emp, "status", "Left")
 		self.assertFalse(faa.checkin_has_permission(own, self.h.hr, "write"))
 		self.assertFalse(faa.checkin_has_permission(self._punch_doc(self.h.hr_emp), self.h.hr, "create"))

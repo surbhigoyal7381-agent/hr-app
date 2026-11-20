@@ -942,7 +942,26 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# delete (HR and System Manager read only), so the insert needs the
 		# bypass by design. It runs after _require_hr() and stores a submission
 		# name, never a value.
-		("alvoraa_portal", "joiner_invite.py"): 4,
+		#
+		# ALV-396: FOUR to FIVE, decided by Surbhi 20 Nov 2026. The
+		# duplicate-guard read above is now TWO reads of the same question,
+		# because asking it of `User` alone could not answer it. An email
+		# invite is written to no `User` column - `make_sign_in` fills
+		# `mobile_no` only for a number - so two live invites could share one
+		# address, the second took the account, and the first joiner was told
+		# their correct password was wrong for ever with nothing reaching HR.
+		# The second read asks the submission row, on `login_id`.
+		#
+		# It needs the bypass for the SAME reason already recorded for the
+		# first: the guard has to see rows the caller may not. An HR Manager's
+		# own query is narrowed by any User Permission the tenant has set -
+		# DTC sets several - and a narrowed query finds nothing, so the guard
+		# would pass silently and let HR create the duplicate it exists to
+		# prevent. Failing open here means two people on one credential.
+		#
+		# It returns a boolean and never a name, status or row to the caller,
+		# and it runs after `_require_hr()`, like the other four.
+		("alvoraa_portal", "joiner_invite.py"): 5,
 		# ALV-319: auth.py holds the joiner gate and the cache-forget that
 		# releases an account when its roles change. **ZERO**, and pinned here so
 		# that a bypass in the one file every single request passes through has

@@ -10,9 +10,15 @@ knowledge** — including yours.
 
 ## What is shared, and why it bites
 
+**The machine is a Mac (zsh) as of 18 Nov 2026.** Paths are
+`/Users/mac/hr-app` and `/Users/mac/hrlocal-data`. Container names did not
+change. Older notes carry `C:/Surbhi-Git/...` and PowerShell quoting; translate
+them rather than running them as written.
+
+
 | Shared thing | What goes wrong | Seen |
 |---|---|---|
-| The main checkout `C:/Surbhi-Git/hr-app` | Every session's unsaved edits sit in the same folder. `git add -A`, `git stash`, `git checkout .` or `git reset --hard` there takes or destroys someone else's work. | 2026-09-11: another session's unfinished CLAUDE.md section, and its `field_checkin.py` and `hooks.py` edits, showed up in this session's `git status` and nearly went into its commit |
+| The main checkout `/Users/mac/hr-app` | Every session's unsaved edits sit in the same folder. `git add -A`, `git stash`, `git checkout .` or `git reset --hard` there takes or destroys someone else's work. | 2026-09-11: another session's unfinished CLAUDE.md section, and its `field_checkin.py` and `hooks.py` edits, showed up in this session's `git status` and nearly went into its commit |
 | The local bench `hrlocal-bench` | It runs code from the main checkout only (`alvoraa_portal/`, `hrms/`, `alvoraa_goals/` are mounted). Whatever is in that folder is what everyone is testing. | 2026-09-08: a hand-copied `subscription.py` mixed two sessions' work, and tests failed in a way that looked like a bug |
 | `test_site` and `ppj.localhost` | Two test runs at once deadlock the database and fail for no real reason. | 2026-09-10: three suites run together gave false failures that were first reported as real |
 | `origin/dev` | Pushes you did not see change the files under you. A quick second push cancels the first push's CI run. | 2026-09-07 and 2026-09-08: two sessions edited the same file; 2026-09-13: three commits never got their own CI run |
@@ -116,7 +122,7 @@ the bench to run them.
 
    ```bash
    git rebase dev                                        # in the worktree: on top of local dev
-   git -C C:/Surbhi-Git/hr-app merge --ff-only slice/<slice-id>
+   git -C /Users/mac/hr-app merge --ff-only slice/<slice-id>
    ```
 
    `--ff-only` makes no merge commit and refuses if `dev` moved in the meantime; rebase
@@ -211,6 +217,46 @@ Pushing still needs the user's explicit word (`CLAUDE.md` §1). When it comes:
    `git worktree remove .claude/worktrees/<slice-id>` and `git branch -d slice/<slice-id>`.
    `git branch -d` refuses to delete a branch whose commits are not in `dev` — if it
    refuses, the work was not shipped. Stop and tell the user; never force it with `-D`.
+7. **Stop your containers the moment your slice's CI goes green.** Not when you finish
+   for the day, and not when the work reaches `main` - when CI passes, because that is
+   the moment you no longer need the stack to reproduce a failure. `docker stop` keeps
+   everything; `docker start <name>` brings it back in seconds with its site and data
+   intact. On 19 November 2026, **seven of the sixteen running containers belonged to
+   slices that were already on `dev` and green.**
+
+## 9. Your own containers
+
+A slice that cannot be tested on the shared bench gets its own stack (section 4, point
+6). It is yours, and it is only free while you are using it.
+
+**What a stack actually costs.** Measured on 19 November 2026 with `docker stats`:
+
+| | |
+|---|---|
+| Docker's share of this Mac | 7.75 GB of 16 GB |
+| One stack - bench + database + redis | about 975 MB |
+
+So **about eight stacks and the machine is out of memory.** Containers barely touch the
+disk - all 32 of them together came to 523 MB - and an image is stored once however many
+stacks run it, so the 11.2 GB app image is not multiplied. **Extra stacks cost memory.
+Leftover builds cost disk.** They are two different problems.
+
+1. **Name every container after your slice** - `alv085-bench`, `alv085-db`,
+   `alv085-redis`. Somebody tidying up has only `docker ps` to go on. A name that does
+   not say whose it is will either be left running for weeks or stopped underneath you.
+2. **Give your stack its own redis.** Never point it at `hrlocal-redis-cache` to save
+   memory. **The hook cache lives in redis and is rebuilt by whichever code ran last**
+   (section 4, point 6) - share it and your run and the shared bench's run quietly
+   corrupt each other. A redis of your own costs about 21 MB. Slice 083's stack was
+   wired to the shared redis by mistake and could have disturbed other sessions' tests.
+3. **Never stop, remove or prune a container that is not yours.** Ask the session that
+   owns it and wait for its answer. On 19 November three sessions were asked; two
+   released their stacks and the third needed its for another twenty minutes, because
+   its CI was still running and it would have had to rebuild the site by hand.
+4. **Silence is not permission.** An idle session only reads its messages when it next
+   does something. If nobody answers, leave the containers alone and tell the user.
+5. **Leave the worktree alone when you stop the containers.** They are separate things.
+   A slice that has not reached `main` still wants its branch and its history.
 
 ## When to stop and ask
 

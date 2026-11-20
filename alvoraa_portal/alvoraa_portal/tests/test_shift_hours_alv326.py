@@ -68,7 +68,7 @@ INVENTED_DAYS = [
 	("on time, 75%: band quarter", "08:30-18:30", "Present", "08:30 16:00", 1, 0, 0),
 	("35-minute break: free", "08:30-18:30", "Present", "08:30 12:30 13:05 18:30", 0, 0, 0),
 	("60-minute break: 20 over, 96.7%, red", "08:30-18:30", "Present", "08:30 12:30 13:30 18:30", 0, 1, 0),
-	("odd punch count: no break deducted", "08:30-18:30", "Present", "08:30 12:30 18:30", 0, 0, 0),
+	("odd punch count: held (ALV-351), nothing charged", "08:30-18:30", "Present", "08:30 12:30 18:30", 0, 0, 0),
 	("2 hours early: morning green", "08:30-18:30", "Present", "06:20 18:30", 0, 0, 1),
 	("an hour late out: night green", "08:30-18:30", "Present", "08:30 19:45", 0, 0, 1),
 	("absent, no punches", "10:00-18:30", "Absent", "", 4, 0, 0),
@@ -143,7 +143,10 @@ class Breaks(unittest.TestCase):
 		self.assertEqual(v.attendance_percent, 100.0)
 
 	def test_alv326_an_odd_punch_count_deducts_no_break_and_says_why(self):
-		v = day("09:00-19:00", "09:00 12:00 19:00")
+		"""ALV-351: an odd count is held until the out time is confirmed. Once
+		it is, the day is measured and still no break is deducted."""
+		v = day("09:00-19:00", "09:00 12:00 19:00", confirmed_out=mins("19:00"))
+		self.assertFalse(v.held)
 		self.assertEqual(v.attendance_percent, 100.0)
 		self.assertIn("breaks could not be measured", " ".join(v.reasons))
 

@@ -198,6 +198,8 @@ image*? Our reading is that an instruction is weaker than a control, and we
 would rather be told so now than after a card lands. Added to the 1 Nov letter.
 **ALV-215 still gates switch-on.**
 
+**CORRECTION (ALV-353, 19 Nov 2026): setting `log_level` does NOT work. Nothing in the installed frappe or bench reads it from any site or bench config file, and a rotating file keeps only about 2 MB. Each export or purge through the product now writes a row in `Alvoraa Photo Access Log`; a System Manager can still export from Desk, so do not say "every export is logged".**
+
 **Export logging is deferred, not solved.** Surbhi, 2 Nov: *"ok we can pick it
 up later."* The consequence, once: **counsel's ruling 9 is not met.** `log_level`
 is unset, Frappe defaults to ERROR outside a dev server, and all 16

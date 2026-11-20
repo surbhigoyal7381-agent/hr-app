@@ -108,7 +108,11 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 		"Attendance",
 		filters={"docstatus": 1, "employee": employee,
 		         "attendance_date": ("between", [from_date, to_date])},
-		fields=["name", "employee", "attendance_date", "status", "shift", "company"]
+		# ALV-351: the two confirm fields too, or `judge` never sees HR's
+		# confirmed leaving time and a held day stays held on the report and
+		# the slip for ever. Reprocess already reads them.
+		fields=["name", "employee", "attendance_date", "status", "shift", "company",
+		        "alvoraa_held_confirmed", "alvoraa_confirmed_out_time"]
 		+ list(LEAVE_FIELDS),
 		order_by="attendance_date asc", limit_page_length=0)
 	verdicts = [judge(r, ctx) for r in rows]

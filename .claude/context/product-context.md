@@ -7,7 +7,7 @@ Read by every agent on this team before it does anything.
 > AllAboutHR project documents — `alvora-brief.md` (v1, Aug 2026),
 > `objectives-kpi-srs.md` and `objectives-kpi-backlog.md` (v2.0, 24 Aug 2026), and the
 > competitive-intel pack (docs 00–25, Jul 2026). **It was NOT built by reading the
-> code at `C:\Surbhi-Git\hr-app`** — folder access was not granted during the session
+> code at `/Users/mac/hr-app`** — folder access was not granted during the session
 > that wrote it. Every claim about what the code does is marked
 > `[UNVERIFIED — read the repo]`. The first agent with repo access should confirm or
 > correct those lines and bump the version. Until then, treat this as a good brief,

@@ -51,7 +51,23 @@ def _company():
 	created their own companies. Ordering by creation picks the one installed
 	with the site, every time and in any test order.
 	"""
-	return frappe.get_all("Company", pluck="name", order_by="creation asc", limit=1)[0]
+	first = frappe.get_all("Company", pluck="name", order_by="creation asc", limit=1)
+	if first:
+		return first[0]
+	# A fresh site has none until some test makes one. When this file runs
+	# first - as it does on its own CI machine (ALV-360) - make it here.
+	from alvoraa_goals.tests.utils import ensure_company
+	return ensure_company()
+
+
+def _gender():
+	"""Whatever this site calls a gender, or one made here. A fresh site has
+	none, and "Male" does not exist until somebody loads it (ALV-360)."""
+	existing = frappe.db.get_value("Gender", {}, "name")
+	if existing:
+		return existing
+	return frappe.get_doc({"doctype": "Gender", "gender": "Other"}
+	                      ).insert(ignore_permissions=True).name
 
 
 def _week_in_this_fiscal_year():
@@ -147,7 +163,7 @@ class LateCase(FrappeTestCase):
 		e = frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": _gender(),
 			"status": "Active", "default_shift": shift, "user_id": email,
 			"holiday_list": self.holidays,
 		}).insert(ignore_permissions=True)
@@ -331,7 +347,7 @@ class _MoneyBase(FrappeTestCase):
 		e = frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1990-01-01", "date_of_joining": joined,
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": _gender(),
 			"status": "Active", "default_shift": SHIFT, "holiday_list": self.holidays,
 		}).insert(ignore_permissions=True)
 		frappe.get_doc({
@@ -777,7 +793,7 @@ class TheTeamList(_MoneyBase):
 			"doctype": "Employee", "first_name": first, "employee_name": first,
 			"company": self.company, "date_of_birth": "1990-01-01",
 			"date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": _gender(),
 			"status": "Active", "default_shift": shift, "user_id": email,
 			"holiday_list": self.holidays, "reports_to": manager,
 		}).insert(ignore_permissions=True)

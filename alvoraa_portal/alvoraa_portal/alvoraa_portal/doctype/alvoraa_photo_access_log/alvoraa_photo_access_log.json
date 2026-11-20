@@ -67,13 +67,13 @@
   {
    "fieldname": "source",
    "fieldtype": "Select",
-   "options": "Check-in photo\nEmployee document\nExpense bill\nDay-fix evidence",
+   "options": "Check-in photo\nEmployee document\nExpense bill\nDay-fix evidence\nJoiner export (masked)\nJoiner export (not masked)\nJoiner purge",
    "label": "What was opened",
    "default": "Check-in photo",
    "read_only": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "Four kinds of looking in one table. Existing rows keep the default, which is correct - every row written before slice 078 was a check-in photo view. If their retention ever differs, the job filters on this: a WHERE clause, not a redesign."
+   "description": "Seven kinds of looking in one table (the last three are a joiner submission being exported or erased, with the submission name in the reference). Existing rows keep the default, which is correct - every row written before slice 078 was a check-in photo view. If their retention ever differs, the job filters on this: a WHERE clause, not a redesign."
   },
   {
    "fieldname": "column_break_a",

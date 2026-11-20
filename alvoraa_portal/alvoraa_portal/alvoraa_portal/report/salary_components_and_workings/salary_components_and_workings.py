@@ -22,6 +22,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, get_first_day, get_last_day, nowdate
 
+import hrms.alvoraa_hr_core.access as access
+
 from alvoraa_portal.payroll_rules_apply import prepare, rule_set_for
 from alvoraa_portal.payroll_slip import month_summary
 
@@ -89,6 +91,50 @@ def _rules_for_reading(company):
 	return frappe.get_cached_doc("Alvoraa Payroll Rule Set", name), False
 
 
+def _may_read_days_of(employee):
+	"""Whether the user may read this person's Attendance and punches.
+
+	Reading the Employee is not enough (ALV-359). DTC scopes some HR users with
+	User Permissions that apply only to Attendance or Employee Checkin (Surbhi,
+	18 Nov 2026): those rows do not narrow the Employee list, but they do hide
+	the person's days in Frappe's own Attendance list. This report and Daily
+	Attendance Workings both show figures built from those days, so both apply
+	them the way Frappe does - a row with no applicable_for, or one naming the
+	doctype, restricts that doctype to the employees it lists.
+	"""
+	return _days_scope()(employee)
+
+
+def _days_scope():
+	"""The test above, worked out once for the user: a function of one employee.
+
+	Built once per report run, so a company of 470 people costs two permission
+	checks and one cached read, not two per person.
+	"""
+	from frappe.core.doctype.user_permission.user_permission import get_user_permissions
+
+	if not all(frappe.has_permission(dt, "read") for dt in ("Attendance", "Employee Checkin")):
+		return lambda employee: False
+	rows = get_user_permissions().get("Employee") or []
+	limits = [{p.doc for p in rows if not p.get("applicable_for") or p.get("applicable_for") == dt}
+	          for dt in ("Employee", "Attendance", "Employee Checkin")]
+	limits = [allowed for allowed in limits if allowed]
+
+	# ALV-385 (Surbhi, 19 Nov 2026): Alvora's own HR scope as well - the rule
+	# grooming, reviews and the portal already use. An HR login with no Company
+	# User Permission and no Employee record of its own is HR for nobody, so it
+	# sees nobody's days here either; Frappe's permissions alone would let it
+	# see everybody. System Manager and Administrator keep everyone. One query.
+	scope = access.permitted_employee_filters()
+	if scope == access.NO_EMPLOYEES:
+		return lambda employee: False
+	if scope != access.ALL_EMPLOYEES:
+		limits.append(set(frappe.get_all(
+			"Employee", filters=[["Employee", k, v[0], v[1]] for k, v in scope.items()],
+			pluck="name", limit_page_length=0)))
+	return lambda employee: all(employee in allowed for allowed in limits)
+
+
 def _employees(company, filters, to_date):
 	"""Active employees, with the three fields the rules are keyed on.
 
@@ -129,7 +175,10 @@ def _employees(company, filters, to_date):
 			bases[a.employee] = a.base          # last one wins: the newest
 	for r in rows:
 		r.base = bases.get(r.name, 0)
-	return rows
+	# ALV-359: the Employee list ignores User Permissions that apply only to
+	# Attendance or Employee Checkin, and every figure here is built from those.
+	may_read = _days_scope()
+	return [r for r in rows if may_read(r.name)]
 
 
 def _row(emp, s):

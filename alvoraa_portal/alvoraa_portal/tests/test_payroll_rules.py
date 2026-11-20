@@ -310,6 +310,53 @@ class TestHeldDays(unittest.TestCase):
 		v = judge(first_in=hm(10, 30), last_out=None, punch_count=1)
 		self.assertTrue(v.held)
 
+	# ── ALV-351, Surbhi 17 Nov 2026: an odd punch count is a missing punch ────
+
+	def test_alv351_three_punches_are_held_not_counted_first_to_last(self):
+		"""Samiron Mondol, 1 Nov 2026, shift 11:00-20:30: 11:35 in, 15:36 out,
+		22:23 in with no out. Held: no quarters, no reds, no greens."""
+		v = judge(shift_start=hm(11), shift_end=hm(20, 30), first_in=hm(11, 35),
+		          last_out=hm(22, 23), punch_count=3, night_green_eligible=True)
+		self.assertTrue(v.held)
+		self.assertEqual((v.total_quarters, v.reds, v.greens), (0, 0, 0))
+		self.assertIn("3 punches, an odd number", " ".join(v.reasons))
+
+	def test_alv351_five_punches_are_held_too(self):
+		v = judge(first_in=hm(10, 30), last_out=hm(20, 30), punch_count=5)
+		self.assertTrue(v.held)
+
+	def test_alv351_even_counts_are_judged_as_before(self):
+		for n in (2, 4, 6):
+			with self.subTest(punches=n):
+				v = judge(first_in=hm(10, 30), last_out=hm(20, 30), punch_count=n)
+				self.assertFalse(v.held)
+				self.assertEqual(v.attendance_percent, 100.0)
+
+	def test_alv351_a_confirmed_time_releases_a_three_punch_day(self):
+		"""HR confirms Samiron left at 20:30: measured 11:35 to 20:30, the
+		22:23 punch is not used, so no night green."""
+		v = judge(shift_start=hm(11), shift_end=hm(20, 30), first_in=hm(11, 35),
+		          last_out=hm(22, 23), punch_count=3, night_green_eligible=True,
+		          confirmed_out=hm(20, 30))
+		self.assertFalse(v.held)
+		self.assertTrue(v.late_arrival)
+		self.assertFalse(v.early_departure)
+		self.assertEqual(v.greens, 0)
+		self.assertIn("confirmed afterwards as 20:30", " ".join(v.reasons))
+
+	def test_alv351_a_confirmed_three_punch_day_matches_a_two_punch_day(self):
+		"""Same first punch, same out time: the same charge either way."""
+		two = judge(first_in=hm(10, 45), last_out=hm(17, 42))
+		three = judge(first_in=hm(10, 45), last_out=hm(21, 0), punch_count=3,
+		              confirmed_out=hm(17, 42))
+		self.assertEqual((two.total_quarters, two.reds), (three.total_quarters, three.reds))
+
+	def test_alv351_an_approved_leave_day_with_three_punches_is_leave(self):
+		v = judge(first_in=hm(10, 30), last_out=hm(20, 30), punch_count=3,
+		          marked_on_leave=True)
+		self.assertTrue(v.on_leave)
+		self.assertFalse(v.held)
+
 	def test_an_approved_leave_day_is_not_held(self):
 		"""It has no punches and is not marked absent, so without its own case
 		it falls into the held branch - and waits for a manager to confirm a

@@ -41,10 +41,15 @@ const OUTSIDER = "Nehal Verma";
 
 const calls = [];
 const REVIEW_ROWS = [];
+let ATT_WINDOW = null;        // what get_requests_history says about the employee window
+let REFUSE_REQUEST = null;    // a sentence the server refuses submit_attendance_request with
 function reply(url, body) {
   const m = /attendance_correction\.(\w+)|hr_api\.(\w+)/.exec(url) || [];
   const fn = m[1] || m[2] || "";
   calls.push({ fn, body });
+  if (fn === "get_requests_history")
+    return Object.assign({ shift_requests: [], encashments: [], att_requests: [], advances: [] },
+                         ATT_WINDOW ? { att_window: ATT_WINDOW } : {});
   if (fn === "reasons")
     return [{ value: "Marked Absent by Mistake", help: "The day shows as absent.",
               becomes: "Present" }];
@@ -92,6 +97,12 @@ const dom = new JSDOM(html, {
     });
     const call = (o) => {
       const out = reply(String(o.method || ""), JSON.stringify(o.args || {}));
+      if (REFUSE_REQUEST && /submit_attendance_request$/.test(String(o.method || ""))) {
+        setTimeout(() => { o.callback && o.callback({
+          exc: "frappe.exceptions.ValidationError", exc_type: "ValidationError",
+          _server_messages: JSON.stringify([JSON.stringify({ message: REFUSE_REQUEST })]) }); }, 0);
+        return Promise.resolve({});
+      }
       setTimeout(() => { o.callback && o.callback({ message: out }); }, 0);
       return Promise.resolve({ message: out });
     };
@@ -154,8 +165,7 @@ function putForm(reason) {
   }
 
   // ── My own month: the ordinary endpoint, unchanged ─────────────────
-  // Narrowing what an employee may ask about their OWN attendance would be a
-  // regression, so this half is pinned too.
+  // A person's own day goes to the ordinary endpoint, never the on-behalf one.
   putForm("Marked Absent by Mistake");
   window.acState.employee = null;
   window.acState.data = { employee: ME, employee_name: "Rahul Sharma",
@@ -250,6 +260,117 @@ function putForm(reason) {
   /does not let a manager/.test(switchedOff)
     ? ok("with the setting off the page says so, in plain words")
     : bad("the switched-off page did not explain itself");
+
+  // ── A person's OWN day, under the employee window (slice 084) ──────
+  // The server flags each of the person's own days. The sheet shows a sentence
+  // instead of a form for a day it refuses, a strip and the form for the
+  // joining day, and the form as always for any other day. Nobody reads the
+  // manager's words about their own day.
+  const paintOwn = (flag, extra) => {
+    window.acState.open = null;
+    window.acState.employee = null;
+    window.acState.data = Object.assign(
+      { employee: ME, employee_name: "Rahul Sharma", is_self: true,
+        can_request: true, tolerance_mins: 15, totals: totals,
+        can_request_from: "2026-10-12",
+        can_request_basis: "working days on this person's own holiday list",
+        joined_on: "2026-10-01",
+        days: [Object.assign(day("2026-10-01"), flag ? { own_window: flag } : {})] },
+      extra || {});
+    window.acToggle("2026-10-01");
+    return (doc.getElementById("ac-body") || {}).innerHTML || "";
+  };
+  const own = paintOwn("outside");
+  (!/ac-form/.test(own) && !/Ask HR to fix this day/.test(own))
+    ? ok("an own day the window refuses shows no form and no button")
+    : bad("the form was offered on a day the server would refuse");
+  (/Mon 12 Oct/.test(own) && /older than your organisation lets you raise yourself/.test(own)
+   && /tell HR which day it was and why/.test(own))
+    ? ok("it names the oldest day, in words, and HR's route")
+    : bad("the own-day sentence is missing or wrong: " + own.slice(0, 500));
+  (/The one exception is your joining day, Thu 1 Oct/.test(own))
+    ? ok("and names the joining day as the one exception")
+    : bad("the joining-day exception was not named");
+  !/a manager can file within/.test(own)
+    ? ok("an employee never reads the manager's sentence about their own day")
+    : bad("the manager's wording reached an employee's own day");
+  const joining = paintOwn("joining");
+  (/ac-form/.test(joining) && /This is your joining day, so you can always ask about it/.test(joining))
+    ? ok("the joining day gets its strip and the form")
+    : bad("the joining day did not get the strip and the form");
+  const open = paintOwn(null);
+  (/ac-form/.test(open) && !/joining day/.test(open))
+    ? ok("a day inside the window is drawn exactly as before")
+    : bad("an open day changed");
+
+  // ── The Attendance Request page (slice 084) ────────────────────────
+  // The note under the title, the words under From, no `min`, Submit never
+  // greyed, and a refusal beside the button with what was typed left alone.
+  ATT_WINDOW = { from: "2026-10-12", basis: "working days on this person's own holiday list",
+                 joined_on: "2026-10-01" };
+  window.loadAttReqPanel();
+  await settle(300);
+  const note = (doc.getElementById("ar-window-note") || {}).textContent || "";
+  (/You can ask about days from Mon 12 Oct onwards\./.test(note)
+   && /Your joining day, Thu 1 Oct, is always allowed\./.test(note)
+   && /tell HR which day and why/.test(note))
+    ? ok("the page says the oldest day before anything is typed")
+    : bad("the note under the title is missing or wrong: " + note);
+  const from = doc.getElementById("ar-from-date"), to = doc.getElementById("ar-to-date");
+  const inline = () => (doc.getElementById("ar-window-inline") || {}).textContent || "";
+  const pick = (a, b) => {
+    from.value = a; to.value = b;
+    from.dispatchEvent(new window.Event("change", { bubbles: true }));
+  };
+  pick("2026-10-05", "2026-10-05");
+  (/older than your organisation lets you raise yourself/.test(inline()) && /Mon 12 Oct/.test(inline()))
+    ? ok("an old From says so under itself, in words")
+    : bad("no inline sentence for an old From: " + inline());
+  const submitNow = () => Array.from(doc.querySelectorAll("#panel-att-req .btn-primary"))
+                               .filter(b => /submitAttendanceRequest/.test(b.getAttribute("onclick") || ""))[0];
+  (submitNow() && !submitNow().disabled)
+    ? ok("Submit is not greyed on a day the server will refuse")
+    : bad("Submit was greyed on an old day");
+  pick("2026-10-01", "2026-10-01");
+  (inline() === "Your joining day: you can always ask about this day.")
+    ? ok("the joining day alone is told it is allowed")
+    : bad("joining day inline wrong: " + inline());
+  pick("2026-10-01", "2026-10-14");
+  (/can be asked about on its own: set To to the same day/.test(inline()))
+    ? ok("the joining day with a longer range is told to set To to the same day")
+    : bad("range inline wrong: " + inline());
+  pick("2026-10-14", "2026-10-14");
+  (inline() === "") ? ok("a day inside the window says nothing")
+                    : bad("an open day was given a sentence: " + inline());
+  (!from.hasAttribute("min") && !to.hasAttribute("min"))
+    ? ok("neither date has a min, which would grey the one old day that is allowed")
+    : bad("a date input carries a min");
+  const submit = Array.from(doc.querySelectorAll("#panel-att-req .btn-primary"))
+                      .filter(b => /submitAttendanceRequest/.test(b.getAttribute("onclick") || ""))[0];
+  (submit && !submit.disabled) ? ok("Submit is never greyed")
+                               : bad("Submit is missing or disabled");
+
+  REFUSE_REQUEST = "This day is older than your organisation lets you raise yourself. The oldest day you can raise yourself is Mon 12 Oct.";
+  pick("2026-10-05", "2026-10-05");
+  doc.getElementById("ar-reason").innerHTML = '<option value="On Duty" selected>On Duty</option>';
+  doc.getElementById("ar-explanation").value = "I was on a site visit.";
+  calls.length = 0;
+  window.submitAttendanceRequest();
+  await settle(300);
+  const refusal = doc.getElementById("ar-refusal");
+  (calls.some(c => c.fn === "submit_attendance_request"))
+    ? ok("Submit sends the request, whatever the page thinks of the date")
+    : bad("Submit did not send: the server must be the one to refuse");
+  (refusal && refusal.style.display !== "none" && refusal.getAttribute("role") === "alert"
+   && /^Nothing was sent\. This day is older/.test(refusal.textContent)
+   && /What you typed is still here\.$/.test(refusal.textContent))
+    ? ok("the refusal is beside the button, says nothing was sent, and is an alert")
+    : bad("the refusal box is missing or wrong: " + (refusal && refusal.textContent));
+  (doc.getElementById("ar-explanation").value === "I was on a site visit." && from.value === "2026-10-05")
+    ? ok("what was typed is left alone")
+    : bad("the form lost what was typed");
+  REFUSE_REQUEST = null;
+  ATT_WINDOW = null;
 
   // ── Whose record: the person picker (19 Oct 2026) ──────────────────
   // Surbhi, on a 403-entry dropdown: "there should be a way to do a text

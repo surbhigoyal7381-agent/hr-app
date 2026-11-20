@@ -1186,6 +1186,17 @@ class AManagersWholeTeamOnOnePage(CorrectionCase):
 		self.assertEqual(row["flag"], "no_clock_out")
 		self.assertEqual(row["punches"], 1)
 
+	def test_alv351_three_punches_read_as_no_clock_out(self):
+		"""ALV-351. Three punches leave the last one without a partner; the pay
+		engine holds the day, so the manager is asked for the leaving time."""
+		day = self.d(3)
+		self.day(self.a, day, 0, status="Present", in_time=day + " 11:35:00")
+		self.punch(self.a, day + " 11:35:00", "IN")
+		self.punch(self.a, day + " 15:36:00", "OUT")
+		self.punch(self.a, day + " 22:23:00", "IN")
+		row = [r for r in self.team()["rows"] if r["employee"] == self.a and r["date"] == day][0]
+		self.assertEqual(row["flag"], "no_clock_out")
+
 	def test_a_double_read_arrival_on_a_present_day_still_needs_a_look(self):
 		"""ALV-338 review. With no hour thresholds (13 Nov rule) a reader's double
 		scan of one arrival makes a Present row the pay engine HOLDS. Counted raw
@@ -1623,9 +1634,10 @@ class TheManagersFilingWindow(CorrectionCase):
 			self.file_for(self.back(1))
 		self.assertIn("today", str(caught.exception))
 
-	def test_an_employees_own_old_day_is_not_touched_by_the_window(self):
-		"""The window bounds a MANAGER filing for somebody else. Narrowing what
-		a person may ask about their own attendance was never asked for."""
+	def test_an_employees_own_old_day_is_not_touched_by_the_manager_window(self):
+		"""The MANAGER window bounds a manager filing for somebody else, and
+		nobody's own day. An employee's own day has its own, separate setting
+		(`TheEmployeesFilingWindow`)."""
 		frappe.set_user(self.report_email)
 		try:
 			out = ac.raise_correction(self.d(1), reason="On Duty")
@@ -1687,9 +1699,10 @@ class TheManagersFilingWindow(CorrectionCase):
 		self.assertTrue(out["can_request"])
 		self.assertTrue(out["on_behalf_enabled"])
 
-	def test_neither_setting_narrows_an_employees_own_day(self):
-		"""Neither setting may take away what somebody asks about their own
-		attendance."""
+	def test_the_manager_settings_leave_an_employees_own_day_alone(self):
+		"""Neither MANAGER setting - the switch or its window - may touch what
+		somebody asks about their own attendance. That is the employee window's
+		job, and it is blank here."""
 		self.switch(False)
 		self.window(0)
 		frappe.set_user(self.report_email)
@@ -1821,3 +1834,500 @@ class TheManagersFilingWindow(CorrectionCase):
 						hr_api.set_org_setting(ac.MANAGER_ON_BEHALF_KEY, bad)
 		finally:
 			frappe.set_user("Administrator")
+
+
+class TheEmployeesFilingWindow(CorrectionCase):
+	"""Slice 084: how far back a person may raise their OWN day.
+
+	One setting, `EMPLOYEE_FILING_WINDOW_KEY`, in working days on the person's
+	own holiday list. Blank is no limit and the default; 0 is today only.
+
+	Every day is counted back from today and the shared holiday list is cleared
+	near today, so a window of N reaches exactly N calendar days back and the
+	arithmetic does not depend on the weekday the suite runs on. Every case
+	has a non-blank setting and an employee whose joining date is OLDER than
+	the boundary unless it says otherwise, or a test of "refused" would pass on
+	a fixture the guard never looked at.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		from unittest.mock import patch
+
+		# `submit_attendance_request` and `set_org_setting` commit. A commit
+		# here would take this test's people out of the rollback.
+		self._commit = patch("frappe.db.commit")
+		self._commit.start()
+		tag = CorrectionCase._slot
+		self.emp, self.email = self.person("Ewin%d" % tag, roles=("Employee",))
+		self._saved = frappe.db.get_default(ac.EMPLOYEE_FILING_WINDOW_KEY)
+		self._saved_mgr = frappe.db.get_default(ac.MANAGER_FILING_WINDOW_KEY)
+		frappe.db.delete("Holiday", {"parent": self.holidays,
+		                             "holiday_date": [">=", add_days(nowdate(), -40)]})
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_default(ac.EMPLOYEE_FILING_WINDOW_KEY, self._saved or "")
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, self._saved_mgr or "")
+		self._commit.stop()
+		super().tearDown()
+
+	def window(self, days):
+		frappe.db.set_default(ac.EMPLOYEE_FILING_WINDOW_KEY, str(days))
+
+	def back(self, i):
+		return add_days(nowdate(), -i)
+
+	def joined(self, date):
+		frappe.db.set_value("Employee", self.emp, "date_of_joining", date)
+
+	def count(self):
+		return frappe.db.count(ac.REQUEST, {"employee": self.emp})
+
+	def by(self, route, from_date, to_date=None, email=None, employee=None):
+		"""Raise a request by one of the three ways in, as the employee."""
+		from alvoraa_portal import hr_api
+
+		to_date = to_date or from_date
+		frappe.set_user(email or self.email)
+		try:
+			if route == "a":
+				return ac.raise_correction(from_date, to_date, reason="On Duty")
+			if route == "b":
+				return hr_api.submit_attendance_request(from_date, to_date, "On Duty")
+			return frappe.get_doc({
+				"doctype": ac.REQUEST, "employee": employee or self.emp,
+				"company": self.company, "from_date": from_date, "to_date": to_date,
+				"reason": "On Duty", "alvoraa_review_status": "Waiting",
+			}).insert()
+		finally:
+			frappe.set_user("Administrator")
+
+	def refused(self, route, from_date, to_date=None, **kw):
+		before = self.count()
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.by(route, from_date, to_date, **kw)
+		self.assertEqual(self.count(), before, "a refused request leaves no row")
+		return str(caught.exception)
+
+	def say(self, date):
+		return frappe.utils.formatdate(date, "EEE d MMM")
+
+	# ── the setting ───────────────────────────────────────────────────
+
+	def test_the_readers_keep_blank_and_zero_apart(self):
+		frappe.db.set_default(ac.EMPLOYEE_FILING_WINDOW_KEY, "")
+		self.assertIsNone(ac.employee_filing_window_days())
+		self.assertEqual(ac.employee_filing_from(self.emp), (None, None))
+		self.window(0)
+		self.assertEqual(ac.employee_filing_window_days(), 0,
+		                 "a stored zero is today only, not the unset answer")
+		self.assertEqual(ac.employee_filing_from(self.emp)[0], nowdate())
+
+	def test_the_two_windows_never_read_each_other(self):
+		self.window(3)
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, "")
+		self.assertIsNone(ac.manager_filing_window_days())
+		self.assertEqual(ac.employee_filing_window_days(), 3)
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, "0")
+		self.assertEqual(ac.employee_filing_window_days(), 3)
+
+	def test_hr_can_set_a_number_and_can_clear_it_again(self):
+		"""The blank-value trap: leave the one line in `set_org_setting` as it
+		was and HR could set a limit and never remove it."""
+		from alvoraa_portal import hr_api
+
+		hr = self.person("Ewhr%d" % CorrectionCase._slot, roles=("HR Manager",))[1]
+		frappe.set_user(hr)
+		try:
+			for v in ("0", "3", "30"):
+				hr_api.set_org_setting(ac.EMPLOYEE_FILING_WINDOW_KEY, v)
+				self.assertEqual(frappe.db.get_default(ac.EMPLOYEE_FILING_WINDOW_KEY), v)
+				self.assertEqual(ac.employee_filing_window_days(), int(v))
+			hr_api.set_org_setting(ac.EMPLOYEE_FILING_WINDOW_KEY, "3")
+			for bad in ("31", "-1", "3 ", "abc", "999", "1.5"):
+				with self.assertRaises(frappe.PermissionError, msg=bad):
+					hr_api.set_org_setting(ac.EMPLOYEE_FILING_WINDOW_KEY, bad)
+			self.assertEqual(frappe.db.get_default(ac.EMPLOYEE_FILING_WINDOW_KEY), "3")
+			self.assertEqual(hr_api.set_org_setting(ac.EMPLOYEE_FILING_WINDOW_KEY, ""),
+			                 {"ok": True})
+			self.assertIsNone(ac.employee_filing_window_days())
+			self.assertEqual(hr_api.set_org_setting(ac.EMPLOYEE_FILING_WINDOW_KEY, "0"),
+			                 {"ok": True, "today": nowdate()},
+			                 "the save line for 0 names today, from the server")
+		finally:
+			frappe.set_user("Administrator")
+		# And once cleared, the employee can raise an old day again.
+		frappe.db.set_default(ac.EMPLOYEE_FILING_WINDOW_KEY, "")
+		for i, route in enumerate("abc"):
+			self.assertTrue(self.by(route, self.back(40 + i * 3)))
+
+	def test_a_plain_employee_cannot_save_or_read_the_setting(self):
+		from alvoraa_portal import hr_api
+
+		frappe.set_user(self.email)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				hr_api.set_org_setting(ac.EMPLOYEE_FILING_WINDOW_KEY, "3")
+			with self.assertRaises(frappe.PermissionError):
+				hr_api.get_org_setting(ac.EMPLOYEE_FILING_WINDOW_KEY)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertIsNone(ac.employee_filing_window_days())
+
+	# ── the guard, by each way in ─────────────────────────────────────
+
+	def test_blank_changes_nothing_on_any_route(self):
+		self.assertIsNone(ac.employee_filing_window_days())
+		for i, route in enumerate("abc"):
+			self.assertTrue(self.by(route, self.back(60 + i * 3)))
+
+	def test_every_route_refuses_an_old_day_and_names_the_date_and_hr(self):
+		self.window(3)
+		boundary = self.back(3)
+		for i, route in enumerate("abc"):
+			said = self.refused(route, self.back(20 + i * 3))
+			self.assertIn("older than your organisation lets you raise yourself", said)
+			self.assertIn(self.say(boundary), said, route)
+			self.assertIn("working days on this person's own holiday list", said)
+			self.assertIn("tell HR which day it was and why", said)
+
+	def test_a_refusal_is_dates_and_fixed_words_and_is_not_logged(self):
+		"""PRIV-2, PRIV-4: nothing about the person in the sentence, and no
+		record that a refusal happened."""
+		from unittest.mock import patch
+
+		self.window(3)
+		name = frappe.db.get_value("Employee", self.emp, "employee_name")
+		with patch("hrms.alvoraa_hr_core.access.log_refusal") as log_refusal, \
+		     patch("frappe.log_error") as log_error:
+			said = [self.refused(r, self.back(20)) for r in "abc"]
+		for text in said:
+			self.assertNotIn(self.emp, text)
+			self.assertNotIn(name, text)
+			self.assertNotIn(self.holidays, text)
+			self.assertNotIn(self.company, text)
+		log_refusal.assert_not_called()
+		log_error.assert_not_called()
+
+	def test_the_boundary_day_is_allowed_and_the_day_before_is_not(self):
+		self.window(3)
+		for i, route in enumerate("abc"):
+			boundary = self.back(3 + i * 40)   # a different day each time: no overlap
+			self.window(3 + i * 40)
+			self.assertTrue(self.by(route, boundary))
+			self.refused(route, add_days(boundary, -1))
+
+	def test_a_range_that_starts_too_early_is_refused_whole(self):
+		self.window(3)
+		for route in "abc":
+			said = self.refused(route, self.back(10), nowdate())
+			self.assertIn(self.say(self.back(3)), said)
+
+	def test_zero_means_today_only(self):
+		self.window(0)
+		said = self.refused("a", self.back(1))
+		self.assertIn(self.say(nowdate()), said)
+		self.assertTrue(self.by("a", nowdate()))
+
+	def test_a_holiday_pushes_the_boundary_further_back(self):
+		"""One counter, the manager's. A day the employee's list shuts does not
+		use the window up."""
+		self.window(3)
+		self.refused("a", self.back(4))
+		hl = frappe.get_doc("Holiday List", self.holidays)
+		hl.append("holidays", {"holiday_date": self.back(1), "description": "Closed"})
+		hl.save(ignore_permissions=True)
+		self.assertEqual(ac.employee_filing_from(self.emp)[0], self.back(4))
+		self.assertTrue(self.by("a", self.back(4)))
+
+	def test_no_holiday_list_counts_calendar_days_and_says_so(self):
+		from unittest.mock import patch
+
+		self.window(5)
+		with patch.object(ac, "holiday_list_for", return_value=None):
+			earliest, basis = ac.employee_filing_from(self.emp)
+		self.assertEqual(earliest, self.back(5))
+		self.assertIn("calendar days", basis)
+
+	def test_a_future_end_is_not_limited(self):
+		self.window(3)
+		self.assertTrue(self.by("a", self.back(1), add_days(nowdate(), 5)))
+
+	# ── editing a draft's dates, and the employee field ───────────────
+
+	def test_moving_a_draft_back_is_refused_and_the_old_dates_stay(self):
+		"""The Employee role may write a draft. Raise today, then move it six
+		months back: only a hook on `validate` stops that."""
+		self.window(3)
+		out = self.by("a", nowdate())
+		frappe.set_user(self.email)
+		try:
+			doc = frappe.get_doc(ac.REQUEST, out["name"])
+			doc.from_date = self.back(180)
+			with self.assertRaises(frappe.ValidationError):
+				doc.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(str(frappe.db.get_value(ac.REQUEST, out["name"], "from_date")),
+		                 nowdate())
+
+	def test_putting_your_own_name_on_somebody_elses_old_draft_is_refused(self):
+		"""The hook also fires when `employee` changes, or an old-dated draft
+		could be taken over by editing that one field."""
+		self.window(3)
+		other, _email = self.person("Ewoth%d" % CorrectionCase._slot, roles=("Employee",))
+		old = frappe.get_doc({
+			"doctype": ac.REQUEST, "employee": other, "company": self.company,
+			"from_date": self.back(30), "to_date": self.back(30),
+			"reason": "On Duty", "alvoraa_review_status": "Waiting"}).insert()
+		frappe.set_user(self.email)
+		try:
+			doc = frappe.get_doc(ac.REQUEST, old.name)
+			doc.employee = self.emp
+			with self.assertRaises(frappe.ValidationError):
+				doc.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(ac.REQUEST, old.name, "employee"), other)
+
+	def test_editing_only_the_explanation_of_an_old_draft_still_works(self):
+		"""A draft raised under a wider window, then HR tightens it. The person
+		may still fix a typo, and HR may still decide it."""
+		out = self.by("a", self.back(30))
+		self.window(3)
+		frappe.set_user(self.email)
+		try:
+			doc = frappe.get_doc(ac.REQUEST, out["name"])
+			doc.explanation = "Corrected a typo"
+			doc.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(ac.REQUEST, out["name"], "explanation"),
+		                 "Corrected a typo")
+
+	# ── the joining day ───────────────────────────────────────────────
+
+	def test_the_joining_day_is_allowed_on_its_own_and_only_that(self):
+		self.window(3)
+		self.joined(self.back(10))
+		for route in "abc":
+			frappe.db.delete(ac.REQUEST, {"employee": self.emp})
+			self.assertTrue(self.by(route, self.back(10)), route)
+		frappe.db.delete(ac.REQUEST, {"employee": self.emp})   # else Frappe's overlap check answers first
+		for route in "abc":
+			said = self.refused(route, self.back(10), nowdate())
+			self.assertIn("Your joining day, %s, can be asked about on its own" %
+			              self.say(self.back(10)), said)
+			self.assertIn("older than %s" % self.say(self.back(3)), said)
+			said = self.refused(route, self.back(9))
+			self.assertIn("older than your organisation lets you raise yourself", said)
+			self.assertIn("The one exception is your joining day, %s." %
+			              self.say(self.back(10)), said)
+
+	def test_a_blank_joining_date_gives_no_exception_and_does_not_crash(self):
+		self.window(3)
+		self.joined(None)
+		for route in "abc":
+			said = self.refused(route, self.back(10))
+			self.assertNotIn("joining", said)
+		month = self.as_me_month()
+		self.assertNotIn("joined_on", month)
+		self.assertTrue(any(d.get("own_window") == "outside" for d in month["days"]))
+
+	def test_whatever_the_caller_sends_the_joining_date_comes_from_the_employee(self):
+		"""The endpoints take no joining date, and a made-up one is ignored."""
+		self.window(3)
+		self.joined(self.back(10))
+		frappe.set_user(self.email)
+		try:
+			with self.assertRaises(TypeError):
+				ac.raise_correction(self.back(9), reason="On Duty", date_of_joining=self.back(9))
+		finally:
+			frappe.set_user("Administrator")
+		self.refused("a", self.back(9))
+
+	def test_a_leaver_is_refused_before_the_window_is_asked(self):
+		self.window(3)
+		frappe.db.set_value("Employee", self.emp, "status", "Left")
+		frappe.set_user(self.email)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				ac.raise_correction(self.back(1), reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(self.count(), 0)
+
+	# ── who is bound, and who is not ──────────────────────────────────
+
+	def test_hr_is_bound_on_their_own_day_and_free_for_everybody_elses(self):
+		self.window(3)
+		hr, hr_email = self.person("Ewhrb%d" % CorrectionCase._slot,
+		                           roles=("HR Manager", "Employee"))
+		before = frappe.db.count(ac.REQUEST, {"employee": hr})
+		for route in "ac":
+			with self.assertRaises(frappe.ValidationError):
+				self.by(route, self.back(20), email=hr_email, employee=hr)
+		self.assertEqual(frappe.db.count(ac.REQUEST, {"employee": hr}), before)
+		# HR raising for ANOTHER person, a year back, by the Desk route.
+		frappe.set_user(hr_email)
+		try:
+			doc = frappe.get_doc({
+				"doctype": ac.REQUEST, "employee": self.emp, "company": self.company,
+				"from_date": self.back(300), "to_date": self.back(300),
+				"reason": "On Duty", "alvoraa_review_status": "Waiting"}).insert()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(doc.employee, self.emp)
+
+	def test_the_manager_window_does_not_bind_the_employee_and_vice_versa(self):
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, "0")
+		self.window(3)
+		self.assertTrue(self.by("a", self.back(3)), "the manager's 0 is not mine")
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, "")
+		self.assertIsNone(ac.manager_filing_window_days())
+
+	def test_the_hook_is_registered_on_validate(self):
+		"""The pin: the guard lives on `validate`, so a drafted request's dates
+		are checked when they change. A hook on `before_insert` alone is how
+		the draft-edit hole would reopen."""
+		hooks = frappe.get_hooks("doc_events")["Attendance Request"]
+		self.assertIn("alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
+		              hooks["validate"])
+		self.assertNotIn("alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
+		                 hooks.get("before_insert"))
+
+	# ── what the screens are told ─────────────────────────────────────
+
+	def as_me_month(self, employee=None, email=None):
+		today = frappe.utils.getdate(nowdate())
+		frappe.set_user(email or self.email)
+		try:
+			return ac.month(year=today.year, month=today.month, employee=employee)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_my_month_carries_the_boundary_a_flag_per_old_day_and_my_joining_day(self):
+		self.window(3)
+		self.joined(self.back(10))
+		month = self.as_me_month()
+		self.assertEqual(month["can_request_from"], self.back(3))
+		self.assertIn("working days", month["can_request_basis"])
+		self.assertEqual(month["joined_on"], self.back(10))
+		by_date = {d["date"]: d.get("own_window") for d in month["days"]}
+		old = [d for d in by_date if d < self.back(3)]
+		if not old:
+			self.skipTest("the first of the month is inside the window today")
+		for d in old:
+			self.assertEqual(by_date[d], "joining" if d == self.back(10) else "outside", d)
+		for d in by_date:
+			if d >= self.back(3):
+				self.assertIsNone(by_date[d], "an open day carries no key")
+
+	def test_with_no_limit_my_month_carries_nothing_new(self):
+		month = self.as_me_month()
+		self.assertIsNone(month["can_request_from"])
+		self.assertNotIn("joined_on", month)
+		self.assertFalse(any("own_window" in d for d in month["days"]))
+
+	def test_somebody_reading_my_month_gets_no_joining_date_and_no_flags(self):
+		"""PRIV-3. HR reads a person's month, a manager reads a report's: the
+		joining date and the employee boundary are for the person themselves."""
+		self.window(3)
+		self.joined(self.back(10))
+		month = self.as_me_month(employee=self.emp, email="Administrator")
+		self.assertFalse(month["is_self"])
+		self.assertNotIn("joined_on", month)
+		self.assertFalse(any("own_window" in d for d in month["days"]))
+		self.assertIsNone(month["can_request_from"])
+		# The manager is the reader who DOES get a boundary - their own - and
+		# must still get nothing of the employee's.
+		boss, boss_email = self.person("Ewboss%d" % CorrectionCase._slot, roles=("Employee",))
+		frappe.db.set_value("Employee", self.emp, "reports_to", boss)
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, "5")
+		month = self.as_me_month(employee=self.emp, email=boss_email)
+		self.assertFalse(month["is_self"])
+		self.assertEqual(month["can_request_from"], self.back(5), "the manager's own boundary")
+		self.assertNotIn("joined_on", month)
+		self.assertFalse(any("own_window" in d for d in month["days"]))
+
+	def test_the_request_page_is_told_the_boundary_and_the_joining_day(self):
+		from alvoraa_portal import hr_api
+
+		def history():
+			frappe.set_user(self.email)
+			try:
+				return hr_api.get_requests_history()
+			finally:
+				frappe.set_user("Administrator")
+
+		self.assertNotIn("att_window", history(), "no limit, no block")
+		self.window(3)
+		self.joined(self.back(10))
+		w = history()["att_window"]
+		self.assertEqual(w["from"], self.back(3))
+		self.assertEqual(w["joined_on"], self.back(10))
+		self.assertIn("working days", w["basis"])
+		self.joined(self.back(2))
+		self.assertNotIn("joined_on", history()["att_window"],
+		                 "a joining day inside the window is no exception")
+
+	def test_the_screens_and_the_refusal_name_the_same_day(self):
+		"""One function: the month's boundary, the history's boundary and the
+		date inside the refusal are the same day."""
+		from alvoraa_portal import hr_api
+
+		self.window(3)
+		frappe.set_user(self.email)
+		try:
+			hist = hr_api.get_requests_history()["att_window"]["from"]
+		finally:
+			frappe.set_user("Administrator")
+		month = self.as_me_month()["can_request_from"]
+		self.assertEqual(hist, month)
+		for route in "abc":
+			self.assertIn(self.say(month), self.refused(route, self.back(20)))
+
+	def test_blank_costs_no_holiday_or_employee_read_and_a_long_list_costs_no_more(self):
+		"""OPS-1, OPS-2, OPS-7. Blank returns before any holiday or employee
+		read; a limit costs the same statements for a long holiday list as for
+		a short one."""
+		from alvoraa_portal.tests.test_scale_flatness_044 import _Spy
+
+		blank = frappe.new_doc(ac.REQUEST)
+		blank.update({"employee": self.emp, "from_date": self.back(30),
+		              "to_date": self.back(30)})
+		with _Spy() as spy:
+			ac.refuse_own_day_outside_window(blank)
+		self.assertFalse([q for q in spy.statements if "tabHoliday" in q or "tabEmployee" in q],
+		                 "no limit: no holiday and no employee read")
+
+		self.window(3)
+
+		def month_statements():
+			self.as_me_month()                       # warm
+			with _Spy() as spy:
+				self.as_me_month()
+			return len(spy.statements)
+
+		short = month_statements()
+		hl = frappe.get_doc("Holiday List", self.holidays)
+		for i in range(300):         # distinct days: Frappe refuses a date twice
+			hl.append("holidays", {"holiday_date": add_days(nowdate(), 20 + i),
+			                       "description": "Future closure"})
+		hl.save(ignore_permissions=True)
+		self.assertEqual(month_statements(), short,
+		                 "a month costs the same with 300 more holiday rows")
+
+	def test_the_boundary_is_not_in_the_portal_context(self):
+		"""OPS-9: `get_portal_context` is cached and open to guests."""
+		from alvoraa_portal import hr_api
+
+		self.window(3)
+		frappe.set_user(self.email)
+		try:
+			ctx = hr_api.get_portal_context()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertNotIn(ac.EMPLOYEE_FILING_WINDOW_KEY, str(ctx))
+		self.assertNotIn(self.back(3), str(ctx))

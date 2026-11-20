@@ -50,6 +50,9 @@ JOINER_FIELDS_KEY = "alvoraa_joiner_fields"
 JOINER_REQUIRED_KEY = "alvoraa_joiner_required_fields"
 MY_REQUIRED_KEY = "alvoraa_my_profile_required_fields"
 JOINER_DOCS_KEY = "alvoraa_joiner_required_documents"
+# ALV-353. The joiner's own tick of document types. DOCS_KEY above is the STAFF
+# one (whose existing documents are readable on a profile) and is not this.
+JOINER_TICKED_DOCS_KEY = "alvoraa_joiner_document_types"
 DOCUMENT_DAYS_KEY = "alvoraa_joiner_document_days"
 NOTICE_KEY = "alvoraa_joiner_notice_text"
 # The employer's own contact. Read by every joiner screen since 078 and written
@@ -84,6 +87,7 @@ def get_people_settings():
 	_require_system_manager("people_settings.get_people_settings")
 
 	chosen_docs = _chosen_docs()
+	joiner_chosen_docs = _chosen_docs(JOINER_TICKED_DOCS_KEY)
 	audience = position_readers()
 	joiner_asked, joiner_required = people_fields.asked_and_required(
 		JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY)
@@ -133,7 +137,8 @@ def get_people_settings():
 		# those would give an employee self-service write on their own bank
 		# details (decision 6b).
 		"joiner_choices": list(people_fields.MY_PROFILE_WRITE_FIELDS),
-		"joiner_required_documents": _joiner_required_documents(),
+		"joiner_document_types": joiner_chosen_docs,
+		"joiner_required_documents": _joiner_required_documents(joiner_chosen_docs),
 		"document_days": org_settings.get(DOCUMENT_DAYS_KEY),
 		"notice_text": frappe.db.get_default(NOTICE_KEY) or "",
 		"hr_contact_phone": frappe.db.get_default(HR_PHONE_KEY) or "",
@@ -154,21 +159,17 @@ def get_people_settings():
 	}
 
 
-def _joiner_required_documents():
-	"""The compulsory document types, intersected with the ones actually ticked.
+def _joiner_required_documents(chosen):
+	"""The compulsory document types, cut to the ones ticked for joiners that
+	still exist (`chosen` is `_chosen_docs(JOINER_TICKED_DOCS_KEY)`).
 
-	Marking a type compulsory can never ADD a type to the joiner's form.
+	Marking a type compulsory can never ADD a type to the joiner's form, and a
+	deleted type is not reported as compulsory when the form never asks for it.
 	"""
-	from alvoraa_portal.employee_documents_read import ticked_types
-
 	wanted = {v.strip() for v in
 	          str(frappe.db.get_default(JOINER_DOCS_KEY) or "").split(",")
 	          if v.strip()}
-	try:
-		offered = set(ticked_types())
-	except Exception:
-		offered = set()
-	return sorted(wanted & offered)
+	return sorted(wanted & {d["name"] for d in chosen if d["known"]})
 
 
 @frappe.whitelist()
@@ -216,14 +217,14 @@ def _how_many_given(names):
 		return {}
 
 
-def _chosen_docs():
-	"""The ticked types, by NAME and with their real category - not a count.
+def _chosen_docs(key=DOCS_KEY):
+	"""The ticked types under `key`, by NAME and with their real category - not a count.
 
 	A name whose type has since been deleted is reported as unknown rather than
 	dropped silently, so the card can say so instead of quietly shrinking
 	(E17). The endpoint that serves a file refuses it either way.
 	"""
-	raw = frappe.db.get_default(DOCS_KEY) or ""
+	raw = frappe.db.get_default(key) or ""
 	wanted = [v.strip() for v in str(raw).split(",") if v.strip()]
 	if not wanted:
 		return []
@@ -298,8 +299,8 @@ def set_people_setting(key=None, value=None):
 	if key not in (PROFILE_KEY, DOCS_KEY, MY_KEY, LINK_KEY, EMAIL_PHOTO_KEY,
 	               NOT_HIRED_KEY, BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY,
 	               JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY, MY_REQUIRED_KEY,
-	               JOINER_DOCS_KEY, DOCUMENT_DAYS_KEY, NOTICE_KEY,
-	               HR_PHONE_KEY, HR_EMAIL_KEY):
+	               JOINER_DOCS_KEY, JOINER_TICKED_DOCS_KEY, DOCUMENT_DAYS_KEY,
+	               NOTICE_KEY, HR_PHONE_KEY, HR_EMAIL_KEY):
 		from hrms.alvoraa_hr_core.access import refuse
 
 		refuse(_("That setting cannot be changed here."), "078-SEC-5",
@@ -320,7 +321,7 @@ def _last_changed():
 		                            BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY,
 		                            JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY,
 		                            MY_REQUIRED_KEY, JOINER_DOCS_KEY,
-		                            DOCUMENT_DAYS_KEY, NOTICE_KEY])},
+		                            JOINER_TICKED_DOCS_KEY, DOCUMENT_DAYS_KEY, NOTICE_KEY])},
 		fields=["owner", "creation"], order_by="creation desc", limit=1)
 	if not rows:
 		return {"by": "", "on": ""}

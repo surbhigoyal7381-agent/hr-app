@@ -249,3 +249,7 @@ one piece of surface the raise route added, and it is the one that leaks.
 | Staff told only in person | Temporary debt | P1 for switch-on | Surbhi | open |
 | No retention for marks or review notes | Temporary debt | P3 | **No owner named** | open |
 | Ordinary reds may be uncapped fines | Dangerous debt | P1 for the first DTC payroll | Surbhi with counsel | open since 24 Oct |
+
+**19 Nov 2026 (Surbhi, ALV-358):** Daily Attendance Workings shows the fine per day to HR in scope
+(`grooming.hr_scope`), date and amount only, through `get_list`, only while grooming is on, never as a
+prepared report. Same purpose (PRIV-5), more detail. Its folder is added to the test_ac73 `ALLOWED` list.

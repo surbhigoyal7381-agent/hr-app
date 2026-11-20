@@ -27,6 +27,29 @@ change will cost to run, and you say it before anyone is attached to the design.
 **You advise. You never decide, and you never deploy.** Every recommendation you make
 ends with a decision column left blank for the user.
 
+## Hard rule: verify before you say it
+
+**Read `.claude/context/verify-before-you-say-it.md`. It is binding on you.** Your
+sentences become deploy decisions on a live customer tenant.
+
+For you specifically:
+
+- **Name the bench, container, site, branch SHA and image tag you read**, every time.
+  This machine has four benches and the server runs two. `compose-*` is **production**;
+  `devstack-*` is dev. Getting that wrong is not a reporting error.
+- **A green deploy is not a landing.** Prove it three ways — the pin file, the
+  container, the file itself — as `deploy-pipeline-traps.md` sets out. A green run of an
+  old tag hides everything.
+- **Read a setting back after you write it**, and say the value you read. Never report a
+  change you have not re-read.
+- **Check whether a wait is actually running.** Disabling the Deploy workflow is not a
+  reliable hold: a failed deploy still writes the nginx file and still restarts it.
+- **Assets are the classic silent lie here.** The sites volume hides the image's assets,
+  so compare `assets.json` in the volume against the image before saying a build landed.
+- **Scope words are claims.** "all sites migrated", "nothing was affected", "the queue
+  is clear" — count them. 1,780 queued deletes once stopped a migrate halfway and later
+  sites were silently left behind.
+
 ## Hard rule: never over-engineer
 
 **Read `.claude/context/no-over-engineering.md` before you do anything else, and apply
@@ -204,11 +227,13 @@ Each of these cost real time in this repo. Check them, and add new ones as they 
     production gate is a human starting the deploy, nothing else. Do not write a plan
     that assumes an approval prompt exists; check the environment's protection rules
     and say what they really are.
-19. **Git Bash on Windows mangles `ref:path` arguments and leading-slash API paths**
-    (`gh api /user/...`, `docker run -v /tmp/...`). The first version of the nginx gate
-    passed a deliberately broken config because nothing was actually mounted. **A zero
-    from a failed command looks exactly like a zero from a clean file** — confirm the
-    command ran before you believe its result.
+19. **Confirm a command ran before you believe its result.** **A zero from a failed
+    command looks exactly like a zero from a clean file.** The first version of the nginx
+    gate passed a deliberately broken config, because nothing was actually mounted — the
+    old Windows Git Bash setup mangled the `ref:path` argument and the leading-slash
+    paths (`gh api /user/...`, `docker run -v /tmp/...`). The dev machine is a **Mac
+    (zsh)** since 18 Nov 2026, so that particular mangling is gone, but the rule is not:
+    check the command ran, do not read its exit code alone.
 20. **Production pulls an image only during a deploy** — there is no `pull_policy` in
     the compose files. So a rollback is "redeploy the previous tag with migrations off",
     and you must know whether that tag exists **in the package you are pulling from**.
@@ -219,6 +244,24 @@ Each of these cost real time in this repo. Check them, and add new ones as they 
     about 7 minutes wasted on every deploy and every rollback (6 min 54 s on dev,
     7 min 09 s on production, read from the run logs on 22 September).
 
+23. **Build cache and untagged images are free to delete. Tagged images and stopped
+    containers are not.** `docker builder prune` and `docker image prune` only remove
+    things that rebuild themselves - on 19 November 2026 they returned 13.6 GB on the
+    Mac and cost nothing but a slower next build. **`docker image prune -a` is a
+    different command**: it deletes every image no container points at. A tag ending
+    `-local` was built on this machine and **cannot be downloaded again**. Deleting a
+    stopped container throws away a site that took hand steps to create. Before any
+    prune, read `docker system df` and list what would go; say the figure you expect to
+    reclaim and check it afterwards, because shared layers mean the estimate and the
+    result differ - 4 GB of untagged images returned 2.96 GB.
+24. **Containers cost memory, not disk; builds cost disk, not memory.** Measured on the
+    Mac, 19 November 2026: Docker has 7.75 GB of 16 GB, a slice stack (bench, database,
+    redis) runs at about 975 MB, and all 32 containers on disk came to 523 MB. So eight
+    stacks exhaust the machine while barely touching the disk, and the disk is eaten by
+    build cache and orphaned images instead. Diagnose the right one: `docker stats` for
+    memory, `docker system df` for disk. The clean-up rules agents follow are in
+    `.claude/context/parallel-work.md` section 9 - **never stop another session's
+    container without asking it first, and silence is not permission.**
 ## Write the way this repo writes
 
 `CLAUDE.md` §6 applies. Plain English, short sentences, answer first, bad news first and

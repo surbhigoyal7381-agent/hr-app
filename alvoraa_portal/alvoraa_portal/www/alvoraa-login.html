@@ -606,7 +606,20 @@ html, body {
   const form       = $('kx-login-form');
 
   // ── Year ────────────────────────────────────────────────────
-  $('kx-year').textContent = new Date().getFullYear();
+  // ALV-384. **Guarded, and it must stay guarded.** `kx-year` lives in the
+  // `kx-brand` panel, which the "if not joiner" block above leaves out for a
+  // joiner. (Do not write that condition as a real Jinja tag in a comment here
+  // - Jinja reads this file as a template, comment or not, and an unclosed tag
+  // breaks the whole page. That mistake was made writing this fix.) An
+  // unguarded assignment here threw `TypeError: Cannot set properties of null`
+  // on every joiner sign-in, and because this sits ABOVE the submit handler,
+  // nothing below it ever bound: the button did nothing, sent no request and
+  // showed no error, so no joiner could reach their form at all. Staff were
+  // unaffected, which is why it went unseen.
+  //
+  // Every other element this script touches is already guarded the same way.
+  const yearEl = $('kx-year');
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // ── Load tenant branding ────────────────────────────────────
   async function loadTenantConfig() {

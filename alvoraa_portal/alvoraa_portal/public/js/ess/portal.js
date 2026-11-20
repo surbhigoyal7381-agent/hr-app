@@ -62,7 +62,9 @@ function api(fn, args, cb, ecb) {
       setTimeout(function () {
         if (answered) return;
         var body = (d && typeof d === "object" && !d.readyState) ? d : {};
-        fail(Object.assign({}, body, {kind: callKind(body, xhr && xhr.status)}));
+        /* ALV-350: the status too, so a bare 403 reads as "not allowed". */
+        fail(Object.assign({}, body, {kind: callKind(body, xhr && xhr.status),
+                                      status: (xhr && xhr.status) || 0}));
       }, 0);
     },
   });
@@ -98,6 +100,35 @@ function sayMayHaveGone(r, button) {
    api() load reaches the loader's own success path and paints over the box;
    for a gpFetch load, `onLate` gets the data instead. `head` replaces the
    first heading (the leave-type list). A <select> gets the box after it. */
+/* ALV-350: the server's own sentence for a refusal, or "".
+
+   Two shapes reach failBox. A gpFetch error is an Error whose message gpErr
+   already filled with the server's words (`server` true) - never a traceback
+   (SEC-4). An api() error is Frappe's answer itself, so the sentence is read
+   out of `_server_messages` here, the same way gpErr reads it. A 5xx never
+   gives its words: they can carry internal detail. */
+function refusalWords(err) {
+  if (!err || err.kind !== "refused") return "";
+  if (err.server && err.message) return String(err.message);
+  var msg = "";
+  try { msg = JSON.parse(JSON.parse(err._server_messages)[0]).message; } catch (e) {}
+  if (!msg) { try { msg = JSON.parse(err._server_messages)[0]; } catch (e) {} }
+  return typeof msg === "string" ? msg.replace(/<[^>]*>/g, "").trim() : "";
+}
+
+/* ALV-350: a refusal Try again can never change - "you may not see this",
+   or the thing is not there. Frappe names it in `exc_type`; a bare 403 with
+   no type is the same answer. */
+function isDenied(err) {
+  if (!err || err.kind !== "refused") return false;
+  return /PermissionError|DoesNotExistError/.test(err.exc_type || "") || err.status === 403;
+}
+
+/* ALV-350: who to go to. Telling HR to "tell HR" sent them to themselves. */
+function whoToAsk() {
+  return (window._roles && window._roles.is_hr) ? drT("your administrator") : drT("HR");
+}
+
 function failBox(el, err, retry, onLate, head) {
   if (typeof el === "string") el = document.getElementById(el);
   if (!el) return;
@@ -106,17 +137,36 @@ function failBox(el, err, retry, onLate, head) {
   el._failRetried = false;
   if (el._loadingHtml === undefined) el._loadingHtml = el.innerHTML;
   var sick = kind === "server" || kind === "refused";
-  var h = head || (sick ? "Something went wrong at the office."
-                        : (again ? "Still could not reach the office." : "We could not reach the office."));
-  var p = sick ? "Tap Try again in a minute. If it keeps happening, tell HR."
-               : kind === "timeout" ? "The office did not answer in 15 seconds. Tap Try again."
-               : "Check your signal, then tap Try again.";
+  head = head ? drT(head) : "";
+  var said = refusalWords(err);
+  var denied = isDenied(err);
+  var who = whoToAsk();
+  var now = new Date();
+  var at = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+  var h, p;
+  if (denied) {
+    /* The reason, then where to go. No Try again: the answer will not change. */
+    h = head || said || drT("You do not have access to this.");
+    p = (head && said ? said + " " : "") + drT("If you need it, ask {0}.", [who]);
+  } else if (said) {
+    /* Something the server can name - a date, a setting. Its words, and Try again. */
+    h = head || said;
+    p = (head ? said + " " : "") + drT("If this looks wrong, ask {0}.", [who]);
+  } else if (sick) {
+    /* A fault with no words we may show. The time lets HR find it in the log. */
+    h = head || drT("Something went wrong at the office.");
+    p = drT("Tap Try again in a minute. If it keeps happening, tell {0} it happened at {1}.", [who, at]);
+  } else {
+    h = head || (again ? drT("Still could not reach the office.") : drT("We could not reach the office."));
+    p = kind === "timeout" ? drT("The office did not answer in 15 seconds. Tap Try again.")
+                           : drT("Check your signal, then tap Try again.");
+  }
   var box = document.createElement("div");
   box.className = "fail";
   box.setAttribute("role", "alert");
-  box.innerHTML = "<h3>" + esc(drT(h)) + "</h3><p>" + esc(drT(p)) + "</p>"
-    + '<button type="button" class="btn btn-outline">' + esc(drT("Try again")) + "</button>";
-  box.querySelector("button").addEventListener("click", function () {
+  box.innerHTML = "<h3>" + esc(h) + "</h3><p>" + esc(p) + "</p>"
+    + (denied ? "" : '<button type="button" class="btn btn-outline">' + esc(drT("Try again")) + "</button>");
+  if (!denied) box.querySelector("button").addEventListener("click", function () {
     if (el.tagName === "SELECT") { if (box.parentNode) box.parentNode.removeChild(box); }
     else el.innerHTML = el._loadingHtml;
     el._failRetried = true;
@@ -5573,7 +5623,15 @@ async function acLoad() {
     await show(await acApi("month", {year: acState.year, month: acState.month,
                                      employee: acState.employee}));
   } catch (e) {
-    document.getElementById("ac-bar").innerHTML = "";
+    /* ALV-350: a refused person must not take the picker away with them -
+       that left HR with no way to choose somebody else, or go back to their
+       own month. Go back to whoever was last shown, and keep the bar. */
+    if (isDenied(e) && acState.data) {
+      acState.employee = acState.data.is_self ? null : acState.data.employee;
+      acBar();
+    } else {
+      document.getElementById("ac-bar").innerHTML = "";
+    }
     /* Slice 070: the box, Try again, and a late answer that paints the month
        by itself (AC-17 to AC-21). */
     failBox(body, e, acLoad, function (d) { show(d).catch(function () {}); });
@@ -6139,17 +6197,29 @@ function acDetail(x) {
 
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
-  } else if (d.can_request && acOutsideWindow(x.date, d)) {
-    /* The day is older than this tenant's filing window, so the server would
-       refuse it. Say so instead of offering a form that cannot work: an
-       explained absence is better than a button that dies when pressed. */
+  } else if (d.is_self && x.own_window === "outside") {
+    /* Slice 084: the person's OWN day, older than the employee window. The
+       server worked the flag out with the same call its guard uses, so this
+       is never a form that would be refused. No button: the sentence says who
+       can fix it. */
+    html += '<p class="ac-help" role="status">'
+      + gpEsc(ownOldText(d.can_request_from, acWindowWords(d), d.joined_on)) + "</p>";
+  } else if (d.can_request && !d.is_self && acOutsideWindow(x.date, d)) {
+    /* The day is older than the window a MANAGER may file within, so the server
+       would refuse it. Say so instead of offering a form that cannot work: an
+       explained absence is better than a button that dies when pressed. (Only
+       for somebody else's day - a person's own day has the branch above.) */
     html += '<p class="ac-help">This day is outside the window a manager can '
       + "file within, so it is HR's to correct. The oldest day you can raise "
       + "here is <b>" + gpEsc(acNice(d.can_request_from)) + "</b>"
       + (acWindowWords(d) ? ", counted in " + gpEsc(acWindowWords(d)) : "")
       + ".</p>";
   } else if (d.can_request) {
-    html += acForm(x);
+    html += (d.is_self && x.own_window === "joining"
+        ? '<p class="ac-help ac-join" role="status">'
+          + gpEsc(drT("This is your joining day, so you can always ask about it, however long ago it was.")) + "</p>"
+        : "")
+      + acForm(x);
   } else if (d.is_self === false && d.on_behalf_enabled === false) {
     /* The tenant has switched the on-behalf path off, so saying "their own
        manager can ask" would be untrue - with the switch off, nobody but the
@@ -6171,7 +6241,10 @@ function acDetail(x) {
 
    `can_request_from` is the server's own boundary, worked out with the same
    call `raise_for_report` enforces with. Null means no window binds this
-   caller - their own month, or HR - and then nothing is hidden. */
+   caller and then nothing is hidden. It is also sent for a person's OWN month
+   when the employee window is set (slice 084) - that case is answered by the
+   day's `own_window` flag, not by this comparison, because the joining day is
+   an exception the comparison cannot see. */
 function acOutsideWindow(date, d) {
   return !!(d && d.can_request_from && date && date < d.can_request_from);
 }
@@ -6194,6 +6267,26 @@ function acNice(iso) {
   return (+p[2]) + " " + m[+p[1] - 1] + " " + p[0];
 }
 
+/* "Mon 16 Nov": a three-day window moves over weekends, so a person's own
+   boundary names the weekday. Formats the server's ISO date; works nothing out. */
+function acNiceDay(iso) {
+  var p = isoParts(iso);
+  if (!p) return "";
+  var wd = DAY_NAMES[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()].slice(0, 3);
+  return drT(wd) + " " + p[2] + " " + drT(MON3[p[1] - 1]);
+}
+
+/* Slice 084: the words for a person's OWN day the organisation does not let
+   them raise. Built only from the server's dates and basis - never from a
+   number of days. */
+function ownOldText(from, basis, joined) {
+  var s = drT("This day is older than your organisation lets you raise yourself.") + " "
+    + drT("The oldest day you can raise yourself is {0}, counted in {1}.", [acNiceDay(from), basis]) + " "
+    + drT("HR can still fix it: tell HR which day it was and why.");
+  if (joined) s += " " + drT("The one exception is your joining day, {0}.", [acNiceDay(joined)]);
+  return s;
+}
+
 function acForm(x) {
   var opts = (acState.reasons || []).map(function (r) {
     return '<option value="' + gpEsc(r.value) + '">' + gpEsc(r.value) + "</option>";
@@ -6211,6 +6304,7 @@ function acForm(x) {
        nothing about it - there is no confirm, because a confirm on an optional
        field is a nudge away from the evidence HR needs. */
     + '<div class="ev-block" id="ac-file"></div>'
+    + '<p class="ac-help" id="ac-refusal" role="alert" style="display:none"></p>'
     + '<div class="ac-acts">'
     + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date
     + '&quot;)">Ask HR to fix this day</button>'
@@ -6288,6 +6382,13 @@ window.acSubmit = async function (date) {
     await acLoad();
   } catch (e) {
     hideLoad();
+    /* Slice 084: a refusal is also written beside the button, with what the
+       person typed left in place, so it can be reread after the toast goes. */
+    var box = document.getElementById("ac-refusal");
+    if (box && e && e.server && e.message) {
+      box.textContent = drT("Nothing was sent.") + " " + e.message;
+      box.style.display = "";
+    }
     toast(e.message || "Could not send that.", "err");
   } finally {
     acSending = false;
@@ -7828,6 +7929,11 @@ var OCS_API = "alvoraa_portal.people_settings.";
 var OCS_PROFILE_KEY = "alvoraa_positions_profile_fields";
 var OCS_DOCS_KEY = "alvoraa_positions_document_types";
 var OCS_MY_KEY = "alvoraa_my_profile_fields";
+/* ALV-353. The joiner's OWN document tick, and the compulsory list inside it.
+   OCS_DOCS_KEY above is the STAFF tick (whose employee documents are readable on
+   a profile) and is not this one. */
+var OCS_JOINER_DOCS_KEY = "alvoraa_joiner_document_types";
+var OCS_JOINER_DOCS_NEED_KEY = "alvoraa_joiner_required_documents";
 /* Slice 079. Four keys, and `required` is a separate key per surface because it
    means two different things: on the joiner's form it blocks the send, on My
    Profile it only asks again. One shared key would make a detail compulsory on
@@ -7905,6 +8011,22 @@ function ocsWords(kind) {
               + "the file itself — {0} people today ({1}).", [people, roles]),
       c1: drT("Shown"), c2: "", tie: "",
       preview: drT("Show me what a reader sees")
+    };
+  }
+  if (kind === "joinerdocs") {
+    return {
+      title: drT("Documents a new joiner is asked to upload"),
+      lead: drT("These are the documents the joining form asks a new starter to "
+              + "send a photograph of before their first day. A joiner is asked "
+              + "for no document at all until you tick it here. This does not "
+              + "change whose documents staff can open on a profile."),
+      c1: drT("Asked for"), c2: drT("Must answer for"),
+      tie: drT("A document you tick under {0} shows the joiner a {1} beside it, "
+             + "and they cannot send the form until they have sent a photograph "
+             + "or said they will bring it on their first day.",
+             ["<b>" + esc(drT("Must answer for")) + "</b>",
+              '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>"]),
+      preview: drT("Show me which documents a joiner is asked for")
     };
   }
   if (kind === "my") {
@@ -8063,6 +8185,7 @@ function ocsPaint() {
      perfectly good answer, and it is the shipped default. */
   var asked = d.joiner_fields || [];
   var reqd = d.joiner_required_fields || [];
+  var jdocs = d.joiner_document_types || [];
   var notReady = d.joiner_not_ready || [];
   /* ALV-304. Which of the values is still unset, BY KEY. The labels beside it
      are what HR reads; the keys are how this card can tell "the employer chose
@@ -8104,6 +8227,14 @@ function ocsPaint() {
         : '<p class="gp-hint">' + esc(drT(
             "Nothing. A joiner is asked for no details at all until you tick "
             + "something here.")) + "</p>")
+    + (jdocs.length
+        ? '<p class="gp-hint">' + esc(drT("Documents a joiner is asked to upload:")) + "</p>"
+          + ocsChips(jdocs.map(function (t) {
+              return t.name + (t.known ? "" : " \u00b7 " + drT("no longer exists"));
+            }))
+        : '<p class="gp-hint">' + esc(drT(
+            "No documents. A joiner is asked to upload nothing until you tick "
+          + "something here.")) + "</p>")
     + '<p class="gp-hint">' + esc(
         (d.joiner_required_documents || []).length
           ? drT("{0} document type(s) must be answered for: {1}. A photograph or "
@@ -8158,6 +8289,8 @@ function ocsPaint() {
     + "</span></span></label>"
     + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joiner">'
     + esc(drT("Add or remove details")) + "</button>"
+    + '<button type="button" class="btn btn-outline ocs-b" data-ocs="pick-joinerdocs">'
+    + esc(drT("Add or remove documents")) + "</button>"
     /* Once everything is set the amber block goes, and with it the button
        inside it - which would leave the notice text unchangeable for ever. So
        when there is no amber block the button stands in the action row instead.
@@ -8177,9 +8310,9 @@ function ocsPick(kind) {
   var d = OCS.data || {};
   OCS.kind = kind;
   OCS.opener = document.activeElement;
-  if (kind === "docs" && !OCS.types) {
+  if ((kind === "docs" || kind === "joinerdocs") && !OCS.types) {
     gpFetch(OCS_API + "get_document_type_choices", {}).then(function (t) {
-      OCS.types = t; ocsPick("docs");
+      OCS.types = t; ocsPick(kind);
     }, function (e) { toast((e && e.message) || drT("Could not load that. Try again."), "err"); });
     return;
   }
@@ -8188,6 +8321,7 @@ function ocsPick(kind) {
   (kind === "docs" ? (d.document_types || []).map(function (t) { return t.name; })
    : kind === "my" ? (d.my_profile_fields || [])
    : kind === "joiner" ? (d.joiner_fields || [])
+   : kind === "joinerdocs" ? (d.joiner_document_types || []).map(function (t) { return t.name; })
    : (d.profile_fields || [])).forEach(function (v) { OCS.pick[v] = 1; });
   /* The SECOND tick, which only exists on a ticked row (078 §17.2, and the
      prototype draws it inside the picker rather than as a second dialog).
@@ -8195,6 +8329,7 @@ function ocsPick(kind) {
      joiner's send and only asks again on My Profile - which is why they are two
      settings and not one. */
   (kind === "joiner" ? (d.joiner_required_fields || [])
+   : kind === "joinerdocs" ? (d.joiner_required_documents || [])
    : kind === "my" ? (d.my_profile_required_fields || [])
    : []).forEach(function (v) { OCS.need[v] = 1; });
   ocsDialog();
@@ -8233,7 +8368,7 @@ function ocsRow(value, name, sub, chip, w) {
 function ocsRows() {
   var d = OCS.data || {};
   var w = ocsWords(OCS.kind);
-  if (OCS.kind === "docs") {
+  if (OCS.kind === "docs" || OCS.kind === "joinerdocs") {
     var types = (OCS.types && OCS.types.types) || [];
     var byCat = {}, order = [];
     types.forEach(function (t) {
@@ -8332,7 +8467,7 @@ function ocsSummary() {
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
   var people = (OCS.data || {}).audience_count || 0;
   var sensCats = (OCS.types && OCS.types.sensitive_categories) || [];
-  var sens = OCS.kind === "docs"
+  var sens = (OCS.kind === "docs" || OCS.kind === "joinerdocs")
     ? chosen.filter(function (n) {
         var t = ((OCS.types && OCS.types.types) || []).filter(function (x) { return x.name === n; })[0];
         return t && sensCats.indexOf(t.category) >= 0;
@@ -8354,6 +8489,11 @@ function ocsSummary() {
           ? drT("Save — {0} they may change, {1} we keep asking for",
                 [chosen.length, needCount])
           : drT("Save — an employee may change nothing"))
+      : OCS.kind === "joinerdocs"
+        ? (chosen.length
+            ? drT("Save — {0} documents asked for, {1} must be answered for",
+                  [chosen.length, needCount])
+            : drT("Save — ask a joiner for no documents"))
       : OCS.kind === "joiner"
         ? (chosen.length
             ? drT("Save — {0} asked for, {1} must be filled in",
@@ -8363,7 +8503,20 @@ function ocsSummary() {
             ? drT("Save — {0} details, seen by {1} people", [chosen.length, people])
             : drT("Save — show a name and a job role only"));
   /* A SENTENCE, in amber, not a red row: colour is never the only signal. */
-  hmEl("ocs-sum").innerHTML = sens.length
+  hmEl("ocs-sum").innerHTML = sens.length && OCS.kind === "joinerdocs"
+    /* Not the Positions sentence: the joiner tick does not change who can open
+       an employee's documents, and saying it did would be the old coupling in
+       words. */
+    ? '<span class="ocs-warn">' + esc(
+        (sens.length === 1
+          ? drT("1 of these is an identity, statutory, verification, employment "
+              + "or address document.")
+          : drT("{0} of these are identity, statutory, verification, employment "
+              + "or address documents.", [sens.length]))
+        + " "
+        + drT("A joiner will be asked to send a photograph of each. This does "
+            + "not change who can open a current employee's documents.")) + "</span>"
+    : sens.length
     ? '<span class="ocs-warn">' + esc(
         (sens.length === 1
           ? drT("1 of these is an identity, statutory, verification, employment "
@@ -8398,9 +8551,11 @@ function ocsClose() {
 
 function ocsSave() {
   var key = OCS.kind === "docs" ? OCS_DOCS_KEY
+          : OCS.kind === "joinerdocs" ? OCS_JOINER_DOCS_KEY
           : OCS.kind === "my" ? OCS_MY_KEY
           : OCS.kind === "joiner" ? OCS_JOINER_KEY : OCS_PROFILE_KEY;
   var needKey = OCS.kind === "joiner" ? OCS_JOINER_NEED_KEY
+              : OCS.kind === "joinerdocs" ? OCS_JOINER_DOCS_NEED_KEY
               : OCS.kind === "my" ? OCS_MY_NEED_KEY : null;
   var chosen = Object.keys(OCS.pick).filter(function (k) { return OCS.pick[k]; });
   /* Only a ticked row can be compulsory, so the required list is pruned here as
@@ -8412,9 +8567,12 @@ function ocsSave() {
   btn.disabled = true;
   gpFetch(OCS_API + "set_people_setting", { key: key, value: chosen.join(",") },
           { lostAnswerHandled: true }).then(function () {
-    /* ASKED first, then REQUIRED, and the order matters: the setter refuses a
-       name that is compulsory but not being asked for, so sending them the
-       other way round would refuse a legitimate save. */
+    /* ASKED first, then REQUIRED, and the order matters: for the two field
+       keys the setter refuses a name that is compulsory but not being asked
+       for (`_REQUIRED_WITHIN`), so sending them the other way round would
+       refuse a legitimate save. The compulsory DOCUMENTS key has no such
+       check: the reader's intersection (`_joiner_required_documents`) is what
+       makes that one safe. */
     if (!needKey) return null;
     return gpFetch(OCS_API + "set_people_setting",
                    { key: needKey, value: needed.join(",") },
@@ -8425,7 +8583,9 @@ function ocsSave() {
     ocsLoad();
     toast(key === OCS_DOCS_KEY
       ? drT("Saved. {0} document types are now shown on the Positions page.", [n])
-      : drT("Saved."), "ok");
+      : key === OCS_JOINER_DOCS_KEY
+        ? drT("Saved. A joiner is now asked for {0} documents.", [n])
+        : drT("Saved."), "ok");
   }, function (e) {
     btn.disabled = false;
     toast(mayHaveGone(e)
@@ -8452,6 +8612,15 @@ function ocsPreview() {
       ? '<p>' + esc(drT("A reader would see these rows, each with a View link:")) + "</p><ul>"
         + chosen.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>"
       : "<p>" + esc(drT("A reader would see no documents section at all.")) + "</p>";
+  } else if (OCS.kind === "joinerdocs") {
+    body = chosen.length
+      ? "<p>" + esc(drT("A joiner would be asked to send a photograph of:")) + "</p><ul>"
+        + chosen.map(function (n) {
+            return "<li>" + esc(n)
+              + (OCS.need[n] ? '<span class="oc2-chip">' + esc(drT("Needed")) + "</span>" : "")
+              + "</li>";
+          }).join("") + "</ul>"
+      : "<p>" + esc(drT("A joiner would not be asked for any document.")) + "</p>";
   } else if (OCS.kind === "joiner") {
     /* A facsimile of the joiner's own first screen, IN THE JOINER'S OWN WORDS.
        Nobody "reads" a joining form, so neither the button nor this sheet calls
@@ -8661,6 +8830,7 @@ document.addEventListener("click", function (e) {
   else if (what === "pick-docs") ocsPick("docs");
   else if (what === "pick-my") ocsPick("my");
   else if (what === "pick-joiner") ocsPick("joiner");
+  else if (what === "pick-joinerdocs") ocsPick("joinerdocs");
   else if (what === "cancel") ocsClose();
   else if (what === "ok") ocsSave();
   else if (what === "told") ocsTold();
@@ -12083,11 +12253,67 @@ function loadAttReqPanel() {
   const td = todayISO();
   document.getElementById("ar-from-date").value = td;
   document.getElementById("ar-to-date").value   = td;
+  ["ar-from-date", "ar-to-date"].forEach(function (id) {
+    document.getElementById(id).onchange = function () { arHideRefusal(); arWindowCheck(); };
+  });
   reloadAttReqHistory();
+}
+
+/* Slice 084: the oldest day this person may raise for themselves, as the
+   server worked it out when the page loaded. Null when no limit is set. If HR
+   changes the number while the page is open the server's refusal names the
+   live date; this note keeps the load-time one (accepted). */
+var arWindow = null;
+
+function arHideRefusal() {
+  var box = document.getElementById("ar-refusal");
+  if (box) { box.style.display = "none"; box.textContent = ""; }
+}
+
+function arWindowNote() {
+  var note = document.getElementById("ar-window-note");
+  if (!note) return;
+  var w = arWindow;
+  if (!w) { note.style.display = "none"; note.textContent = ""; return; }
+  var s = (w.from === localToday()
+      ? drT("You can ask about today only ({0}).", [acNiceDay(w.from)])
+      : drT("You can ask about days from {0} onwards.", [acNiceDay(w.from)]));
+  if (w.joined_on) s += " " + drT("Your joining day, {0}, is always allowed.", [acNiceDay(w.joined_on)]);
+  s += " " + drT("For any other older day, HR can still fix it: tell HR which day and why.");
+  note.textContent = s;
+  note.style.display = "";
+}
+
+/* The From box says, under itself, what the server will say - in words and in
+   colour. It never greys Submit and sets no `min` on the dates: a `min` would
+   grey the one old day that is allowed, the joining day. */
+function arWindowCheck() {
+  var f = document.getElementById("ar-from-date"), t = document.getElementById("ar-to-date");
+  var m = document.getElementById("ar-window-inline");
+  if (!f || !m) return;
+  m.style.display = "none"; m.textContent = ""; f.style.borderColor = "";
+  var w = arWindow;
+  if (!w || !f.value || f.value >= w.from) return;
+  var joiningDay = !!w.joined_on && f.value === w.joined_on;
+  if (joiningDay && (t.value || f.value) === f.value) {
+    m.textContent = drT("Your joining day: you can always ask about this day.");
+    m.style.color = "var(--green)";
+  } else {
+    m.textContent = joiningDay
+      ? drT("Your joining day, {0}, can be asked about on its own: set To to the same day. Days after it that are older than {1} are HR's to fix: tell HR which days and why.",
+            [acNiceDay(w.joined_on), acNiceDay(w.from)])
+      : ownOldText(w.from, w.basis, w.joined_on);
+    m.style.color = "var(--danger,var(--red))";
+    f.style.borderColor = "var(--danger,var(--red))";
+  }
+  m.style.display = "";
 }
 
 function reloadAttReqHistory() {
   api("get_requests_history", {}, function(h) {
+    arWindow = h.att_window || null;
+    arWindowNote();
+    arWindowCheck();
     renderReqHistory("ar-history", h.att_requests, "No attendance requests submitted yet.", function(r) {
       const status = r.docstatus == 1 ? '<span class="badge badge-green">Submitted</span>' : '<span class="badge badge-amber">Draft</span>';
       return '<div class="req-item"><div class="req-icon"><i class=ic-clipboard></i></div><div class="req-body"><div class="req-title">' + (r.reason||"Attendance Request") + '</div><div class="req-meta">' + fmtDate(r.from_date) + ' – ' + fmtDate(r.to_date) + '</div></div><div class="req-status">' + status + '</div></div>';
@@ -12105,11 +12331,24 @@ function submitAttendanceRequest() {
   if (!reason)              { showErr("ar-reason-err"); ok=false; } else hideErr("ar-reason-err");
   if (!ok) return;
   showLoad();
+  arHideRefusal();
   api("submit_attendance_request", {from_date:from, to_date:to, reason:reason, explanation:exp}, function(d) {
     hideLoad(); toast("Attendance request submitted: " + d.name, "ok");
     clearForm(["ar-from-date","ar-to-date","ar-reason","ar-explanation"]);
     loadedPanels.delete("att-req"); reloadAttReqHistory();
-  }, function(e) { if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; } hideLoad(); toast((e.message||"Failed to submit request"), "err"); });
+  }, function(e) {
+    if (mayHaveGone(e)) { hideLoad(); sayMayHaveGone(e); return; }
+    hideLoad();
+    /* Slice 084: a refusal names the live date and HR's route. Say it beside
+       the button, say nothing was sent, and leave what was typed alone. */
+    var said = refusalWords(e), box = document.getElementById("ar-refusal");
+    if (said && box) {
+      box.textContent = drT("Nothing was sent.") + " " + said + " " + drT("What you typed is still here.");
+      box.style.display = "";
+      document.getElementById("ar-from-date").focus();
+    }
+    toast((e.message||"Failed to submit request"), "err");
+  });
 }
 
 /* ── Leave Encashment panel ──────────────────────── */
@@ -15915,6 +16154,10 @@ function deleteDrawerNote(noteId, empId) {
     var e = new Error(msg || callWords(kind));
     e.kind = kind;
     e.server = !!msg;
+    /* ALV-350: so failBox can tell "not allowed" (no Try again) from a fault.
+       The exception's NAME only - never `exc`, the traceback (SEC-4). */
+    e.exc_type = (r && r.exc_type) || "";
+    e.status = status || 0;
     return e;
   }
 
@@ -23361,9 +23604,12 @@ window.pfRatingLabel = function(value, scale) {
       });
       var win = document.getElementById("org-filing-window");
       if (win) win.disabled = !canEdit;
+      var empWin = document.getElementById("org-employee-window");
+      if (empWin) empWin.disabled = !canEdit;
       var onBehalf = document.getElementById("org-on-behalf-on");
       if (onBehalf) onBehalf.disabled = !canEdit;
       orgLoadOnBehalf(canEdit);
+      orgLoadEmployeeWindow();
       orgLoadFilingWindow();
       if (card) card.style.display = "";
     }).catch(function() {
@@ -23459,6 +23705,49 @@ window.pfRatingLabel = function(value, scale) {
           gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
       })
       .finally(function() { box.disabled = false; orgLoadFilingWindow(); });
+  };
+
+  /* Slice 084: how far back an EMPLOYEE can ask about their own day. Same
+     shape as the manager's box above and its own key. EMPTY MEANS NO LIMIT
+     and is the default; 0 is today only - never filled in with a number
+     nobody chose. It is not touched by the manager switch. The save line for
+     a limit of 1 or more names no date: it would be worked out on a holiday
+     list the employee may not be on, so it says only what is true for all. */
+  window.orgLoadEmployeeWindow = function() {
+    var box = document.getElementById("org-employee-window");
+    if (!box) return;
+    window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "alvoraa_employee_filing_window_days"})
+      .then(function(v) {
+        var raw = (v === null || v === undefined) ? "" : String(v).trim();
+        var n = parseInt(raw, 10);
+        box.value = (raw === "" || isNaN(n)) ? "" : n;
+      })
+      .catch(function() { /* Not HR: the card is hidden anyway. */ });
+  };
+
+  window.orgSaveEmployeeWindow = function(box) {
+    var raw = String(box.value === null || box.value === undefined ? "" : box.value).trim();
+    var n = parseInt(raw, 10);
+    if (raw !== "" && (isNaN(n) || n < 0 || n > 30)) {
+      pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+        gpEsc(drT("Give a whole number of working days between 0 and 30, or leave it empty for no limit.")) + "</span>");
+      orgLoadEmployeeWindow();
+      return;
+    }
+    box.disabled = true;
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_employee_filing_window_days", value: raw === "" ? "" : String(n)})
+      .then(function(res) {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
+          gpEsc(raw === "" ? drT("Saved. There is no limit: an employee can ask about any past day.")
+                : n === 0 ? drT("Saved. An employee can now ask about today only, {0}. Their joining day is always allowed. HR can still fix any day.", [acNiceDay(res && res.today)])
+                          : drT("Saved. An employee can now ask about the last {0} working days. Their joining day is always allowed. HR can still fix any day.", [n])) +
+          "</span>");
+      })
+      .catch(function(e) {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+          gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
+      })
+      .finally(function() { box.disabled = false; orgLoadEmployeeWindow(); });
   };
 
   window.orgSaveAttendanceSwitch = function(key, box) {

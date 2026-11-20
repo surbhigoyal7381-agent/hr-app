@@ -559,6 +559,40 @@ def evaluate_attendance(attendance_name):
 	return verdict
 
 
+def attendance_onload(doc, method=None):
+	"""doc_events hook. Tells the Attendance form when a day is missing a punch.
+
+	ALV-351, Surbhi 17 Nov 2026 (choice A). The two fields HR uses to release a
+	held day ("Out Time Confirmed", "Confirmed Out Time") used to appear only
+	once the engine had written `alvoraa_held` - which it does only with the
+	rule set switched ON. DTC's set is saved but OFF, and its salary workings
+	report holds these days all the same, so HR was shown a held day and given
+	nothing to release it with.
+
+	So the form is told directly: an odd punch count, on a company that HAS a
+	rule set (on or off). Nothing is written - this is what the form shows.
+	Companies without a rule set never see the fields, exactly as before.
+	Read-only and wrapped, like the submit hook: it must never stop a form
+	from opening.
+	"""
+	try:
+		if doc.docstatus != 1 or doc.status == "On Leave":
+			return
+		# A half-day LEAVE day is never held (Surbhi, 17 Nov): its worked half is
+		# measured as it stands, so there is nothing to confirm.
+		if doc.status == "Half Day" and doc.get("leave_application"):
+			return
+		if not frappe.db.exists("Alvoraa Payroll Rule Set", {"company": doc.company}):
+			return
+		count = _punches(doc.employee, getdate(doc.attendance_date))[2]
+		if count % 2 == 1:
+			doc.set_onload("alvoraa_missing_punch", 1)
+	except Exception:
+		frappe.log_error(
+			title="Could not check punches for {0}".format(doc.name),
+			message=frappe.get_traceback())
+
+
 def on_attendance_submit(doc, method=None):
 	"""doc_events hook. Judges the day as it is submitted.
 

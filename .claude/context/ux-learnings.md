@@ -7,7 +7,7 @@ The rules for adding, promoting and retiring entries are in
 
 **Status ladder:** `heard` → `applied` → `confirmed` → `principle` · or `retired`.
 Nothing here holds personal data, passwords or screenshots. Evidence lives in
-`C:/Surbhi-Git/hrlocal-data/ux-review/`, outside the repo.
+`/Users/mac/hrlocal-data/ux-review/`, outside the repo.
 
 ---
 

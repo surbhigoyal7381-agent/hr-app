@@ -3571,7 +3571,10 @@ def export_cycle_kpis_csv(cycle):
             written += 1
 
     try:
-        frappe.logger("security").info(json.dumps({
+        # ALV-391: through the helper, or the line is written at a level the
+        # logger throws away. See hrms.alvoraa_hr_core.access.security_logger.
+        from hrms.alvoraa_hr_core.access import security_logger
+        security_logger().info(json.dumps({
             "event": "export", "at": str(frappe.utils.now_datetime()), "user": frappe.session.user,
             "endpoint": "export_cycle_kpis_csv", "doctype": "Appraisal Cycle", "name": cycle,
             "reviews": len(reviews), "rows": written,
@@ -5572,7 +5575,10 @@ def save_review_settings(freeze_point, lock_release_days, removal_mode):
     frappe.db.commit()
     import json
 
-    frappe.logger("security").info(json.dumps({
+    # ALV-391: through the helper, or the line is written at a level the
+    # logger throws away. See hrms.alvoraa_hr_core.access.security_logger.
+    from hrms.alvoraa_hr_core.access import security_logger
+    security_logger().info(json.dumps({
         "event": "review_settings_saved", "at": str(frappe.utils.now_datetime()), "user": frappe.session.user,
         "endpoint": "performance_api.save_review_settings", "doctype": "HR Settings"}))
     return _review_settings_payload()

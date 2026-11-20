@@ -934,7 +934,13 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# query is narrowed to their own row and the guard passes silently every
 		# time; and the File listing behind Export, which reads names and dates
 		# and no bytes. Each runs after _require_hr().
-		("alvoraa_portal", "joiner_invite.py"): 3,
+		#
+		# ALV-353: THREE to FOUR. The audit row for an export or a purge, on
+		# `Alvoraa Photo Access Log`, where no role holds create, write or
+		# delete (HR and System Manager read only), so the insert needs the
+		# bypass by design. It runs after _require_hr() and stores a submission
+		# name, never a value.
+		("alvoraa_portal", "joiner_invite.py"): 4,
 		# ALV-319: auth.py holds the joiner gate and the cache-forget that
 		# releases an account when its roles change. **ZERO**, and pinned here so
 		# that a bypass in the one file every single request passes through has

@@ -78,6 +78,7 @@ _OUR_KEYS = (
 	"alvoraa_joiner_fields",
 	"alvoraa_joiner_required_fields",
 	"alvoraa_joiner_required_documents",
+	"alvoraa_joiner_document_types",
 	"alvoraa_joiner_notice_text",
 	"alvoraa_joiner_document_days",
 	"alvoraa_my_profile_required_fields",
@@ -522,7 +523,7 @@ class TestRetention(_Base):
 		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_backstop_days"], 90)
 		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_warn_days"], 75)
 		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_link_days"], 7)
-		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 30)
+		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 45)
 
 	def test_the_not_hired_window_is_range_checked_to_counsels_range(self):
 		frappe.set_user(self.sm_user)
@@ -832,6 +833,7 @@ class TestAnEmptySubmission(_Base):
 		"""
 		ticked, _un = fx.document_types()
 		fx.set_lists(document_types=[ticked])
+		frappe.db.set_default("alvoraa_joiner_document_types", ticked)
 		frappe.db.commit()
 		submission = self._sign_in()
 		self._as_the_joiner(submission)
@@ -1084,6 +1086,7 @@ class TestTheUploads(_Base):
 	def _ticked(self):
 		ticked, _un = fx.document_types()
 		fx.set_lists(document_types=[ticked])
+		frappe.db.set_default("alvoraa_joiner_document_types", ticked)
 		return ticked
 
 	def test_an_exe_renamed_as_a_pdf_is_refused_on_its_bytes(self):

@@ -70,11 +70,13 @@ DOCTYPE = "Alvoraa Joiner Submission"
 ASKED_KEY = "alvoraa_joiner_fields"
 REQUIRED_KEY = "alvoraa_joiner_required_fields"
 REQUIRED_DOCS_KEY = "alvoraa_joiner_required_documents"
-# The ONE list of document types this organisation collects at all. The
-# joiner's form offers what the organisation already chose, so a type
-# nobody chose is never asked for - and the compulsory list is intersected
-# with it, so marking a type compulsory can never ADD one to the form.
-TICKED_DOCS_KEY = "alvoraa_positions_document_types"
+# The list of document types a JOINER is asked to upload. It is the joiner's
+# own tick (ALV-353) and is NOT the staff one, `alvoraa_positions_document_types`,
+# which decides whose existing documents are readable on the staff profile.
+# Ticking a type here must not widen who can read current employees' files.
+# The compulsory list is intersected with this one, so marking a type
+# compulsory can never ADD one to the form.
+TICKED_DOCS_KEY = "alvoraa_joiner_document_types"
 
 # JPEG, PNG and PDF. Nothing else, and checked on MAGIC BYTES - not the
 # extension, not the browser's content type. An `.exe` renamed `.pdf` is
@@ -191,9 +193,9 @@ def _fields_for_the_page(doc):
 def _document_types():
 	"""The ticked types, by name, with which of them must be answered for.
 
-	The same list the Positions page shows, read from the same setting, so a
-	type nobody chose is never asked for. The required list is intersected with
-	it, so marking a type compulsory can never add a type to the form.
+	Read from the joiner's own tick (`TICKED_DOCS_KEY`), so a type nobody chose
+	for joiners is never asked for. The required list is intersected with it, so
+	marking a type compulsory can never add a type to the form.
 	"""
 	must = {v.strip() for v in
 	        cstr(frappe.db.get_default(REQUIRED_DOCS_KEY) or "").split(",")

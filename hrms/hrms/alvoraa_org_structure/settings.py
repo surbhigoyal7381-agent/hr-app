@@ -190,8 +190,15 @@ DEFAULTS = {
 	"alvoraa_joiner_required_fields": "",
 	"alvoraa_my_profile_required_fields": "",
 
-	# Document TYPES the joiner must answer for. A subset of the types already
-	# ticked for the Positions page, intersected at the reader as well.
+	# Document TYPES the joiner is asked to upload (ALV-353). The joiner's own
+	# tick: it is NOT `alvoraa_positions_document_types`, so ticking "Aadhaar
+	# card" so joiners can send one does not also make every current employee's
+	# Aadhaar card readable on the staff profile. Empty asks for no documents,
+	# which is a legitimate configuration.
+	"alvoraa_joiner_document_types": "",
+
+	# Document TYPES the joiner must answer for. A subset of the joiner's
+	# ticked types above, intersected at the reader as well.
 	"alvoraa_joiner_required_documents": "",
 
 	# ── counsel's SECOND clock (ruling 4) ───────────────────────────────────
@@ -204,10 +211,10 @@ DEFAULTS = {
 	# its attachments, so the shell that answers "who invited somebody on 3
 	# November" is untouched.
 	#
-	# 30 is the cautious end and is the default. There is no value that means
+	# 45 is the default (Surbhi, 16 Nov 2026). There is no value that means
 	# "for ever" and the setter refuses a blank, a 0 and anything outside the
 	# range.
-	"alvoraa_joiner_document_days": 30,
+	"alvoraa_joiner_document_days": 45,
 
 	# ── the employer's own notice (counsel 6, ruling 1) ─────────────────────
 	#
@@ -277,6 +284,7 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_joiner_fields",
 	"alvoraa_joiner_required_fields",
 	"alvoraa_my_profile_required_fields",
+	"alvoraa_joiner_document_types",
 	"alvoraa_joiner_required_documents",
 	"alvoraa_joiner_document_days",
 	"alvoraa_joiner_notice_text",
@@ -299,6 +307,7 @@ RULE_FOR_KEY = {
 	"alvoraa_joiner_fields": "079-SEC-1",
 	"alvoraa_joiner_required_fields": "079-SEC-1",
 	"alvoraa_my_profile_required_fields": "079-SEC-1",
+	"alvoraa_joiner_document_types": "079-SEC-1",
 	"alvoraa_joiner_required_documents": "079-SEC-1",
 	"alvoraa_joiner_document_days": "079-PRIV-1",
 	"alvoraa_joiner_notice_text": "079-PRIV-3",
@@ -367,6 +376,8 @@ LABELS = {
 		"A subset of the line above. On the joiner's form, required stops the form being sent."),
 	"alvoraa_my_profile_required_fields": ("Details you keep asking an employee for",
 		"Marked Needed on their own page every visit. It never stops them saving - blocking would lock somebody out of correcting their own phone number."),
+	"alvoraa_joiner_document_types": ("Documents a new joiner is asked to upload",
+		"Ships empty, so no document is asked of anybody until you tick it. This does not change whose documents staff can open on a profile."),
 	"alvoraa_joiner_required_documents": ("Documents a joiner must answer for",
 		"They can send a photograph, or say they will bring it on their first day. Both are answers."),
 	"alvoraa_joiner_document_days": ("How long we keep a photograph of an identity card",
@@ -598,7 +609,10 @@ def _log_access_change(endpoint, key, rule=DEFAULT_RULE):
 	import json
 
 	try:
-		frappe.logger("security").warning(json.dumps({
+		# ALV-391: through the helper, or the line is written at a level the
+		# logger throws away. See hrms.alvoraa_hr_core.access.security_logger.
+		from hrms.alvoraa_hr_core.access import security_logger
+		security_logger().warning(json.dumps({
 			"event": "changed",
 			"at": str(frappe.utils.now_datetime()),
 			"user": frappe.session.user,

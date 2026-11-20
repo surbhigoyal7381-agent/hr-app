@@ -91,6 +91,32 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
   padding-top:14px;margin-top:8px}
 @media(min-width:560px){.row3{grid-template-columns:1fr 1fr 1fr}.btn{width:auto}}
 </style>
+
+<!--
+  ALV-343. **Without these two lines every POST from this page is refused and
+  the joiner is told their sign-in has ended.**
+
+  Frappe hands a page its CSRF token by string-replacing the literal comment
+  below, which normally arrives from `frappe/templates/base.html`
+  (`website/page_renderers/base_template_page.py:18`). This page is standalone
+  on purpose - OPS-44, inline-only assets, no external host - so it never
+  extends that base and the marker was simply absent. `TemplatePage.render`
+  still CALLS `add_csrf_token`; the replace just had nothing to replace.
+
+  `csrf()` below then fell through all three of its options - no
+  `window.frappe`, and Frappe sets no `csrf_token` cookie - to its literal
+  `"fetch"` fallback, which never matches. `frappe/auth.py:97` answered
+  "Invalid Request", and `begin()`'s catch-all painted that as JOIN-ENDED.
+
+  The declaration comes FIRST because the injected script assigns
+  `frappe.csrf_token` and would throw on an undefined `frappe`. Both sit in
+  the head so they run before the page's own script at the foot of the body.
+
+  Every other portal page gets this free by extending `templates/web.html`.
+  This one is the exception, so it says so here.
+-->
+<script>window.frappe = window.frappe || {};</script>
+<!-- csrf_token -->
 </head>
 <body>
 <div class="wrap">
@@ -122,6 +148,26 @@ footer{font-size:13px;color:var(--soft);border-top:1px solid var(--line);
     <p id="gone-why">{{ _("Either you have already sent your form, or your employer has closed it. Nothing is wrong, and nothing you sent is lost.") }}</p>
     <p><b>{{ _("What to do") }}:</b> {{ _("if you still need to send something, ring the person who sent you the message.") }}</p>
     <p class="soft">{{ _("Code for HR") }}: <span style="font-family:monospace">JOIN-ENDED</span></p>
+  </div>
+
+  <!-- ALV-343. **Everything that is NOT an ending.** Until this card existed,
+       `begin()` painted every failure as JOIN-ENDED - so a CSRF refusal, a
+       tenant that had not set its notice text, and a genuinely closed invite
+       all told the joiner the same thing and sent HR the same code.
+
+       That is worse than an unhelpful error: it is a confident wrong answer.
+       It tells somebody their sign-in is finished when it is not, and it sends
+       HR looking at the invite when the fault is in the site.
+
+       An ending is a 403 from `_gone()`, and nothing else is. This card says
+       plainly that the fault is ours, keeps the joiner's own next step the
+       same - ring the person who sent the message - and carries its own code
+       so HR can tell the two apart down a telephone. -->
+  <div id="oops" class="card hide" role="alert">
+    <h1>{{ _("Something here is not working") }}</h1>
+    <p id="oops-why">{{ _("Your sign-in is fine. This page could not reach the system.") }}</p>
+    <p><b>{{ _("What to do") }}:</b> {{ _("try again in a few minutes. If it still will not open, ring the person who sent you the message — nothing you sent is lost.") }}</p>
+    <p class="soft">{{ _("Code for HR") }}: <span style="font-family:monospace">JOIN-BROKEN</span></p>
   </div>
 
   <!-- THE NOTICE COMES FIRST, before the first input in the DOM - not under a
@@ -295,7 +341,7 @@ var LABELS = {
 
   function $(id) { return document.getElementById(id); }
   function show(id) {
-    ["loading", "gone", "j0", "j1", "j2", "j3", "j4", "j5"].forEach(function (s) {
+    ["loading", "gone", "oops", "j0", "j1", "j2", "j3", "j4", "j5"].forEach(function (s) {
       $(s).classList.toggle("hide", s !== id);
     });
   }
@@ -315,11 +361,20 @@ var LABELS = {
     if (a.length < 2) return a[0] || "";
     return a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
   }
+  /* ALV-343. Two branches went from here, and both were fiction.
+
+     The cookie branch read a `csrf_token` cookie. **Nothing in frappe, erpnext
+     or hrms ever writes one** - the only cookies set are `sid`, `system_user`,
+     `full_name`, `user_id`, `user_image` and `user_lang`.
+
+     The `"fetch"` fallback made up a token that could never match. That reads
+     like a safety net and is the opposite: a made-up token and no token fail
+     the same check in the same place, so it bought nothing and hid the real
+     state. It is not made to throw, either - that would kill the page.
+
+     `get_csrf_token()` in `joining.py` now guarantees the real one. */
   function csrf() {
-    return (window.frappe && window.frappe.csrf_token) ||
-      (document.cookie.split(";").map(function (c) { return c.trim(); })
-        .filter(function (c) { return c.indexOf("csrf_token=") === 0; })[0] || "")
-        .split("=")[1] || "fetch";
+    return (window.frappe && window.frappe.csrf_token) || "";
   }
 
   /* No token, no key, no secret of any kind in this call - the SESSION is the
@@ -377,9 +432,19 @@ var LABELS = {
       if (d.submitted) { drawSent(); return; }
       drawWelcome();
     }, function (err) {
-      if (err && err.message) $("gone-why").textContent = err.message;
       $("rights").classList.add("hide");
-      show("gone");
+      /* ALV-343. **An ending is a 403, and nothing else is.** `_gone()` throws
+         `frappe.PermissionError`, which Frappe answers 403; a CSRF refusal is
+         400 and a "this form is not ready yet" is 417. Painting all three as
+         JOIN-ENDED told the joiner their sign-in had finished when it had not,
+         and sent HR to look at the invite when the fault was in the site.
+
+         The server's own words are still shown either way - a refusal the
+         server wrote is the most useful thing on the screen, and it is what
+         gave this bug away. Only the headline and the code for HR differ. */
+      var panel = (err && err.refused) ? "gone" : "oops";
+      if (err && err.message) $(panel + "-why").textContent = err.message;
+      show(panel);
     });
   }
 

@@ -18,11 +18,54 @@ endpoint, which document, which rule. Never a field value, a name or a reason.
 """
 
 import json
+import logging
 
 import frappe
 from frappe import _
 
 HR_ROLES = frozenset({"HR Manager", "HR User"})
+
+
+def security_logger():
+	"""The "security" logger, turned up loud enough to actually write (ALV-391).
+
+	**Every security line this product has ever written has been thrown away.**
+	Frappe sets a logger's level once, from `frappe.log_level or
+	default_log_level` (`frappe/utils/logger.py`), and that default is ERROR
+	unless `DEV_SERVER` is set - which it is not, in any of our images. The
+	seven places that write here use `.warning` or `.info`, both below ERROR.
+	Measured on live dev, 19 Nov 2026: `logs/security.log` was **0 bytes**.
+
+	So `log_refusal` below, the hub behind every `refuse()` in both apps, has
+	never recorded a single refusal. SEC-17 was true in the code and false in
+	fact, and the tests never caught it because they patch `log_refusal` and
+	assert the CALL, not the line.
+
+	`frappe.logger()` takes no level argument and caches the logger in
+	`frappe.loggers`, so the level is set here, after the fact, on this one
+	logger. Nothing else is touched: `frappe.log_level` is global and raising it
+	would turn up every logger in the process.
+
+	**What this does NOT give you.** The handler rotates at 100 KB with 20
+	backups, so roughly 2 MB of history and then the oldest lines are gone for
+	good. That is enough to see recent misuse. It is not a record you can answer
+	a question about six months later - for that the event needs a row in a
+	DocType, the way joiner exports were given one (ALV-353).
+
+	**Never let this get in the way of the line itself.** Raising the level is a
+	best effort: 24 existing tests replace `frappe.logger` with a stand-in, whose
+	`getEffectiveLevel()` is not a number, so comparing it raises. The first
+	version of this helper let that escape into `log_refusal`, which swallows
+	exceptions - so the refusal was not logged at all and those tests went red
+	on `dev`. The logger is returned whatever happens here.
+	"""
+	logger = frappe.logger("security")
+	try:
+		if logger.getEffectiveLevel() > logging.INFO:
+			logger.setLevel(logging.INFO)
+	except Exception:
+		pass
+	return logger
 
 
 def log_refusal(rule, endpoint, doctype=None, name=None):
@@ -31,7 +74,7 @@ def log_refusal(rule, endpoint, doctype=None, name=None):
 	Document names and user ids only. Logging must never stop the refusal itself.
 	"""
 	try:
-		frappe.logger("security").warning(
+		security_logger().warning(
 			json.dumps(
 				{
 					"event": "refused",

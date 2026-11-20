@@ -1,0 +1,561 @@
+"""Daily Attendance Workings (ALV-358): one person's month, a day per row.
+
+The report owns no arithmetic - each day is `judge`, the total row is
+`month_summary` - so what is tested is what it owns:
+
+  Frappe can find it, and only HR roles may open it;
+  one row per day of the month, plus the total row;
+  each day says what the engine says, and the totals are the slip's totals;
+  a day with one punch shows Held (Surbhi, 18 Nov 2026);
+  somebody who may not read the employee is refused;
+  it writes nothing;
+  the link sits under Shift & Attendance -> Reports, once, after a re-run.
+"""
+
+import io
+import json
+import os
+
+from unittest.mock import patch
+
+import frappe
+from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate, nowdate
+
+import alvoraa_portal.grooming as grooming
+from alvoraa_portal import payroll_menu
+from alvoraa_portal.alvoraa_portal.report.daily_attendance_workings import (
+	daily_attendance_workings as report,
+)
+from alvoraa_portal.payroll_rules_apply import judge, prepare
+from alvoraa_portal.payroll_slip import month_summary
+from alvoraa_portal.tests import test_salary_report as base
+
+REPORT = "Daily Attendance Workings"
+MONTHS = report.MONTHS
+
+
+def setUpModule():
+	base.setUpModule()
+
+
+def _with_company(user):
+	"""ALV-385: an HR login with no company is refused outright. Give the test's
+	HR login one, so the test proves the narrower rule it is about - not the
+	missing company."""
+	if not frappe.db.exists("User Permission", {"user": user, "allow": "Company",
+	                                            "for_value": base.COMPANY}):
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Company",
+		                "for_value": base.COMPANY, "apply_to_all_doctypes": 1}
+		               ).insert(ignore_permissions=True)
+
+
+def _hr_login(email, role="HR User"):
+	if not frappe.db.exists("User", email):
+		u = frappe.get_doc({"doctype": "User", "email": email, "first_name": "Scope",
+		                    "send_welcome_email": 0})
+		u.insert(ignore_permissions=True)
+		u.add_roles(role)
+	return email
+
+
+def _month_start():
+	"""Last month: every day of it is in the past, so attendance may be marked."""
+	return get_first_day(add_months(nowdate(), -1))
+
+
+class DailyCase(FrappeTestCase):
+	def setUp(self):
+		self.start = _month_start()
+		doc = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Daily Subject", "company": base.COMPANY,
+			"date_of_birth": "1990-01-01", "date_of_joining": str(self.start),
+			"gender": base._gender(), "status": "Active", "default_shift": base.SHIFT,
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		self.emp = doc.name
+
+	def day(self, i, times, status="Present"):
+		d = add_days(self.start, i)
+		att = frappe.get_doc({"doctype": "Attendance", "employee": self.emp,
+		                      "company": base.COMPANY, "attendance_date": d,
+		                      "status": status, "shift": base.SHIFT})
+		att.flags.ignore_permissions = True
+		att.insert()
+		att.submit()
+		for t in times:
+			c = frappe.get_doc({"doctype": "Employee Checkin", "employee": self.emp,
+			                    "time": "%s %s" % (d, t), "shift": base.SHIFT})
+			c.flags.ignore_permissions = True
+			c.insert()
+		return str(d)
+
+	def run_it(self, **kw):
+		args = {"employee": self.emp, "month": MONTHS[self.start.month - 1],
+		        "year": self.start.year}
+		args.update(kw)
+		cols, rows, msg = report.execute(args)
+		return cols, rows, msg
+
+
+class TestFrappeCanFindIt(FrappeTestCase):
+	JSON = os.path.join(
+		os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+		"alvoraa_portal", "report", "daily_attendance_workings",
+		"daily_attendance_workings.json")
+
+	def setUp(self):
+		with io.open(self.JSON, encoding="utf-8") as fh:
+			self.spec = json.load(fh)
+
+	def test_folder_and_name_agree(self):
+		self.assertEqual(os.path.basename(os.path.dirname(self.JSON)), frappe.scrub(self.spec["name"]))
+
+	def test_the_dotted_path_resolves(self):
+		dotted = "alvoraa_portal.%s.report.%s.%s.execute" % (
+			frappe.scrub(self.spec["module"]), frappe.scrub(self.spec["name"]),
+			frappe.scrub(self.spec["name"]))
+		self.assertTrue(callable(frappe.get_attr(dotted)))
+
+	def test_only_hr_roles_may_open_it(self):
+		roles = {r["role"] for r in self.spec.get("roles", [])}
+		self.assertEqual(roles, {"HR Manager", "HR User", "System Manager"})
+
+
+class TestTheDays(DailyCase):
+	def test_a_row_for_every_day_and_a_total_row(self):
+		cols, rows, _msg = self.run_it()
+		days = (get_last_day(self.start) - getdate(self.start)).days + 1
+		self.assertEqual(len(rows), days + 1)
+		self.assertTrue(rows[-1].get("is_total"))
+		for c in cols:
+			self.assertTrue(c.get("fieldname") and c.get("label"), c)
+
+	def test_a_day_says_what_the_engine_says(self):
+		d = self.day(0, ("10:20:00", "17:30:00"))
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		rs = frappe.get_doc("Alvoraa Payroll Rule Set", {"company": base.COMPANY})
+		att = frappe.get_all("Attendance", filters={"employee": self.emp, "attendance_date": d,
+		                     "docstatus": 1}, fields=["*"])[0]
+		v = judge(att, prepare(rs, d, d, employee=self.emp))
+		self.assertEqual(row["status"], "P")
+		self.assertEqual((row["in_time"], row["out_time"]), ("10:20", "17:30"))
+		self.assertEqual(row["quarters"] or 0, v.total_quarters)
+		self.assertEqual(row["red"] or 0, v.reds)
+		self.assertEqual(row["green"] or 0, v.greens)
+		self.assertEqual(row["shift_minutes"], 480)
+		self.assertEqual(row["difference"], row["minutes"] - 480)
+		self.assertTrue(row["remarks"])
+
+	def test_break_is_the_time_out_between_first_and_last_punch(self):
+		d = self.day(4, ("10:00:00", "13:00:00", "13:40:00", "18:00:00"))
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		self.assertEqual(row["break_minutes"], 40)
+		self.assertEqual(rows[-1]["break_minutes"], 40)
+
+	def test_break_is_not_measured_on_an_odd_number_of_punches(self):
+		d = self.day(5, ("10:00:00", "13:00:00", "13:40:00"))
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		self.assertIsNone(row.get("break_minutes"))
+		self.assertIn("Break not measured", row["remarks"])
+
+	def test_the_salary_working_also_hides_people_scoped_away_through_attendance(self):
+		"""ALV-359: the live monthly report had the same gap."""
+		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
+			salary_components_and_workings as salary,
+		)
+		other = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Salary Scope", "company": base.COMPANY,
+			"date_of_birth": "1990-01-01", "date_of_joining": str(self.start),
+			"gender": base._gender(), "status": "Active"})
+		other.flags.ignore_permissions = True
+		other.insert()
+		# A day on record, or the report leaves them out as "nothing to show".
+		att = frappe.get_doc({"doctype": "Attendance", "employee": other.name,
+		                      "company": base.COMPANY, "attendance_date": self.start,
+		                      "status": "Present", "shift": base.SHIFT})
+		att.flags.ignore_permissions = True
+		att.insert()
+		att.submit()
+		self.day(0, ("10:00:00", "18:00:00"))
+		user = "alv358.salary.hr@example.com"
+		if not frappe.db.exists("User", user):
+			u = frappe.get_doc({"doctype": "User", "email": user, "first_name": "Salary",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles("HR User")
+		_with_company(user)
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
+		                "for_value": other.name, "apply_to_all_doctypes": 0,
+		                "applicable_for": "Attendance"}).insert(ignore_permissions=True)
+		args = {"company": base.COMPANY, "from_date": str(self.start),
+		        "to_date": str(get_last_day(self.start))}
+		as_admin = salary.execute(args)[1]
+		self.assertIn(self.emp, [r["employee"] for r in as_admin])
+		frappe.set_user(user)
+		try:
+			rows = salary.execute(args)[1]
+		finally:
+			frappe.set_user("Administrator")
+		self.assertNotIn(self.emp, [r["employee"] for r in rows])
+		# ...while the one person the limit names is still there: the refusal is
+		# the Attendance limit, not a login that sees nobody.
+		self.assertIn(other.name, [r["employee"] for r in rows])
+
+	def test_an_hr_login_with_no_company_sees_no_one(self):
+		"""ALV-385 (Surbhi, 19 Nov 2026). No Company User Permission and no
+		Employee record of its own: Alvora's rule gives this login nobody, so
+		neither report shows it anybody - not everybody, as Frappe's own
+		permissions alone would."""
+		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
+			salary_components_and_workings as salary,
+		)
+		self.day(0, ("10:00:00", "18:00:00"))
+		user = _hr_login("alv385.no.company@example.com", "HR Manager")
+		args = {"company": base.COMPANY, "from_date": str(self.start),
+		        "to_date": str(get_last_day(self.start))}
+		frappe.set_user(user)
+		try:
+			self.assertTrue(frappe.get_list("Employee", filters={"name": self.emp}),
+			                "Frappe alone must still let this login read the person, "
+			                "or this test proves nothing")
+			with self.assertRaises(frappe.PermissionError):
+				self.run_it()
+			self.assertEqual([], salary.execute(args)[1])
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_an_hr_login_with_a_company_still_sees_its_company(self):
+		user = _hr_login("alv385.with.company@example.com", "HR Manager")
+		_with_company(user)
+		self.day(0, ("10:00:00", "18:00:00"))
+		frappe.set_user(user)
+		try:
+			_cols, rows, _msg = self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(rows)
+
+	def test_one_punch_shows_held_with_no_minutes(self):
+		d = self.day(1, ("10:05:00",))
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		self.assertEqual(row["status"], "Held")
+		self.assertIsNone(row.get("minutes"))
+		self.assertIsNone(row.get("out_time"))
+
+	def test_the_totals_are_the_slips_totals(self):
+		self.day(0, ("10:20:00", "17:30:00"))
+		self.day(1, ("10:00:00", "18:00:00"))
+		self.day(2, ("11:30:00", "15:00:00"))
+		_cols, rows, _msg = self.run_it()
+		total = rows[-1]
+		rs = frappe.get_doc("Alvoraa Payroll Rule Set", {"company": base.COMPANY})
+		s = month_summary(self.emp, base.COMPANY, self.start, get_last_day(self.start), rule_set=rs)
+		self.assertEqual(total["quarters"], s.total_quarters)
+		self.assertEqual(total["red"], s.reds)
+		self.assertEqual(total["green"], s.greens)
+		self.assertEqual(sum(r.get("quarters") or 0 for r in rows[:-1]), s.total_quarters)
+
+	def test_a_special_day_carries_an_asterisk_and_every_day_its_weekday(self):
+		special = add_days(self.start, 4)
+		name = "ALV-358 special days"
+		if not frappe.db.exists("Holiday List", name):
+			frappe.get_doc({"doctype": "Holiday List", "holiday_list_name": name,
+			                "from_date": add_months(self.start, -12),
+			                "to_date": add_months(self.start, 12),
+			                "holidays": [{"holiday_date": special, "description": "Festival"}]}
+			               ).insert(ignore_permissions=True)
+		rs = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": base.COMPANY})
+		before = frappe.db.get_value("Alvoraa Payroll Rule Set", rs, "special_day_holiday_list")
+		frappe.db.set_value("Alvoraa Payroll Rule Set", rs, "special_day_holiday_list", name)
+		try:
+			_cols, rows, msg = self.run_it()
+		finally:
+			frappe.db.set_value("Alvoraa Payroll Rule Set", rs, "special_day_holiday_list", before)
+		days = {r["date"]: r for r in rows if not r.get("is_total")}
+		self.assertEqual(days[str(special)]["day"], getdate(special).strftime("%a") + " *")
+		self.assertEqual([d for d, r in days.items() if r["day"].endswith("*")], [str(special)])
+		self.assertIn("Special day", msg)
+		_cols, rows, msg = self.run_it()
+		self.assertNotIn("*", "".join(r.get("day") or "" for r in rows))
+		self.assertNotIn("Special day", msg)
+
+	def test_running_it_writes_nothing(self):
+		self.day(0, ("10:20:00", "17:30:00"))
+		before = (frappe.db.count("Attendance"), frappe.db.count("Employee Checkin"),
+		          frappe.db.count("Additional Salary"))
+		self.run_it()
+		self.assertEqual((frappe.db.count("Attendance"), frappe.db.count("Employee Checkin"),
+		                  frappe.db.count("Additional Salary")), before)
+
+	def test_it_refuses_without_an_employee(self):
+		with self.assertRaises(frappe.ValidationError):
+			report.execute({"month": MONTHS[0], "year": 2026})
+
+	def test_a_half_day_leave_counts_against_half_the_shift(self):
+		"""The engine judges the other half against half the shift; the minutes
+		must be a share of that half, not of the whole 480."""
+		d = self.day(3, ("10:00:00", "14:00:00"), status="Half Day")
+		frappe.db.set_value("Attendance", {"employee": self.emp, "attendance_date": d},
+		                    {"leave_application": "ALV358-TEST-LEAVE", "leave_type": "Casual Leave"},
+		                    update_modified=False)
+		_cols, rows, _msg = self.run_it()
+		row = next(r for r in rows if r.get("date") == d)
+		self.assertEqual(row["minutes"], 240)
+		self.assertEqual(row["difference"], 0)
+		self.assertEqual(row["status"], "P (half leave)")
+
+	def test_an_hr_user_scoped_to_somebody_else_is_refused(self):
+		"""The report's own refusal, not Frappe's: an HR User whose User
+		Permission names another employee gets an empty list and a refusal."""
+		other = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Somebody Else", "company": base.COMPANY,
+			"date_of_birth": "1990-01-01", "date_of_joining": str(self.start),
+			"gender": base._gender(), "status": "Active"})
+		other.flags.ignore_permissions = True
+		other.insert()
+		user = "alv358.scoped.hr@example.com"
+		if not frappe.db.exists("User", user):
+			u = frappe.get_doc({"doctype": "User", "email": user, "first_name": "Scoped",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles("HR User")
+		_with_company(user)
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
+		                "for_value": other.name, "apply_to_all_doctypes": 1}
+		               ).insert(ignore_permissions=True)
+		frappe.set_user(user)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_an_hr_user_scoped_only_through_attendance_is_refused(self):
+		"""DTC's pattern: the User Permission applies to Attendance only. The
+		Employee list still shows the person, so only the report's own check
+		stands between this user and somebody else's days."""
+		other = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Attendance Scope", "company": base.COMPANY,
+			"date_of_birth": "1990-01-01", "date_of_joining": str(self.start),
+			"gender": base._gender(), "status": "Active"})
+		other.flags.ignore_permissions = True
+		other.insert()
+		user = "alv358.attendance.hr@example.com"
+		if not frappe.db.exists("User", user):
+			u = frappe.get_doc({"doctype": "User", "email": user, "first_name": "Attendance",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles("HR User")
+		_with_company(user)
+		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Employee",
+		                "for_value": other.name, "apply_to_all_doctypes": 0,
+		                "applicable_for": "Attendance"}).insert(ignore_permissions=True)
+		frappe.set_user(user)
+		try:
+			self.assertTrue(frappe.get_list("Employee", filters={"name": self.emp}),
+			                "the Employee list must still show the person, or this test proves nothing")
+			with self.assertRaises(frappe.PermissionError):
+				self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_user_who_cannot_read_the_employee_is_refused(self):
+		user = "alv358.nobody@example.com"
+		if not frappe.db.exists("User", user):
+			frappe.get_doc({"doctype": "User", "email": user, "first_name": "Nobody",
+			                "send_welcome_email": 0}).insert(ignore_permissions=True)
+		frappe.set_user(user)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+
+
+class TestTheFineDayByDay(DailyCase):
+	"""Surbhi, 19 Nov 2026: the grooming fine day by day, to HR in scope only.
+
+	The month's figures come from month_summary, which needs a whole grade and
+	rate set-up to price a mark; that pricing is the slip's and is tested there.
+	Here a fixed summary (three days at 100) stands in for it, and what is
+	tested is what this report owns: who sees the days, which days, and that
+	they add up to the month's charge.
+	"""
+
+	def mark(self, i):
+		d = add_days(self.start, i)
+		doc = frappe.get_doc({"doctype": grooming.MARK, "employee": self.emp, "mark_date": d,
+		                      "reason": "Not in uniform", "marked_as": "HR"})
+		doc.name = frappe.generate_hash(length=10)
+		doc.docstatus = 1
+		doc.db_insert()
+		return str(d)
+
+	def run_with(self, days=3, rate=100, total=300, capped=0, on=True, user=None):
+		real = report.month_summary
+
+		def fixed(*a, **kw):
+			s = real(*a, **kw)
+			s.grooming_days, s.mark_rate, s.grooming_deduction = days, rate, total
+			s.grooming_capped = capped
+			return s
+
+		if user:
+			frappe.set_user(user)
+		try:
+			with patch.object(report, "month_summary", fixed), \
+			     patch.object(grooming, "is_on", return_value=on):
+				_cols, rows, msg = self.run_it()
+		finally:
+			frappe.set_user("Administrator")
+		return {r["date"]: r for r in rows if not r.get("is_total")}, rows[-1], msg
+
+	def user(self, email, role, employee_status=None):
+		if not frappe.db.exists("User", email):
+			u = frappe.get_doc({"doctype": "User", "email": email, "first_name": "Fine",
+			                    "send_welcome_email": 0})
+			u.insert(ignore_permissions=True)
+			u.add_roles(role)
+		if employee_status:
+			e = frappe.get_doc({"doctype": "Employee", "first_name": "Fine Viewer",
+			                    "company": base.COMPANY, "date_of_birth": "1990-01-01",
+			                    "date_of_joining": str(self.start), "gender": base._gender(),
+			                    "status": employee_status, "user_id": email,
+			                    "relieving_date": str(self.start) if employee_status == "Left" else None})
+			e.flags.ignore_permissions = True
+			e.flags.ignore_mandatory = True
+			e.insert()
+		return email
+
+	def test_hr_in_scope_sees_each_charged_day_and_they_add_up(self):
+		for i in (1, 4, 6, 8):
+			self.day(i, ("10:00:00", "18:00:00"))
+		self.day(5, (), status="Absent")
+		charged = [self.mark(i) for i in (1, 4, 6)]
+		absent = self.mark(5)                       # never charged on an absence
+		self.mark(8)                                # a fourth day: past the month's three
+		days, total, _msg = self.run_with()
+		self.assertEqual({d: r["fine"] for d, r in days.items() if r.get("fine")},
+		                 {d: 100 for d in charged})
+		self.assertFalse(days[absent].get("fine"))
+		self.assertEqual(sum(r.get("fine") or 0 for r in days.values()), total["fine"])
+		self.assertIn("Grooming red.", days[charged[0]]["remarks"])
+		# PRIV-A: the date and the amount only - never the reason or the marker.
+		self.assertNotIn("uniform", json.dumps(days, default=str))
+
+	def test_a_mark_on_a_day_with_no_attendance_row_still_shows(self):
+		d = self.mark(2)
+		days, _total, _msg = self.run_with(days=1, total=100)
+		self.assertEqual(days[d]["fine"], 100)
+
+	def test_when_the_cap_cut_the_month_no_day_shows_more_than_was_charged(self):
+		for i in (1, 2, 3):
+			self.day(i, ("10:00:00", "18:00:00"))
+			self.mark(i)
+		days, total, msg = self.run_with(total=150, capped=1)
+		fines = [days[str(add_days(self.start, i))].get("fine") or 0 for i in (1, 2, 3)]
+		self.assertEqual(fines, [100, 50, 0])
+		self.assertEqual(sum(fines), total["fine"])
+		self.assertIn("capped", msg)
+
+	def test_with_grooming_off_no_mark_is_read(self):
+		self.day(1, ("10:00:00", "18:00:00"))
+		self.mark(1)
+		read = []
+		real = frappe.get_list
+
+		def spy(doctype, *a, **kw):
+			read.append(doctype)
+			return real(doctype, *a, **kw)
+
+		with patch.object(frappe, "get_list", spy):
+			days, _total, _msg = self.run_with(on=False)
+		self.assertNotIn(grooming.MARK, read)
+		self.assertFalse(any(r.get("fine") for r in days.values()))
+
+	def test_a_system_manager_alone_cannot_open_the_report_at_all(self):
+		"""Stricter than "total only": without an HR role there is no Employee
+		read, so the report refuses before any fine is worked out."""
+		self.day(1, ("10:00:00", "18:00:00"))
+		self.mark(1)
+		who = self.user("alv358.sysmgr@example.com", "System Manager")
+		with self.assertRaises(frappe.PermissionError):
+			self.run_with(days=1, total=100, user=who)
+
+	def test_a_leavers_hr_login_sees_the_month_total_only(self):
+		self.day(1, ("10:00:00", "18:00:00"))
+		self.mark(1)
+		who = self.user("alv358.leaver.hr@example.com", "HR Manager", employee_status="Left")
+		_with_company(who)            # it can open the month; hr_scope still says no
+		days, _total, msg = self.run_with(days=1, total=100, user=who)
+		self.assertFalse(any(r.get("fine") for r in days.values()))
+		self.assertIn("only to HR", msg)
+
+	def test_the_report_never_runs_as_a_saved_prepared_report(self):
+		"""SEC-B: a prepared result is a file other report users could open."""
+		self.assertFalse(frappe.db.get_value("Report", REPORT, "prepared_report"))
+		with open(os.path.join(os.path.dirname(report.__file__),
+		                       "daily_attendance_workings.json")) as f:
+			self.assertFalse(json.load(f)["prepared_report"])
+
+
+def _take_out(doctype, name, table):
+	"""Remove the report's link first, so the test proves after_migrate PUTS it
+	back - not merely that an earlier run left it there."""
+	doc = frappe.get_doc(doctype, name)
+	rows = [r for r in doc.get(table) if r.link_to != REPORT]
+	if len(rows) != len(doc.get(table)):
+		doc.set(table, rows)
+		doc.flags.ignore_permissions = True
+		doc.save()
+		frappe.db.commit()
+
+
+class TestTheMenu(FrappeTestCase):
+	def test_it_sits_after_monthly_attendance_sheet_once(self):
+		if not frappe.db.exists("Workspace", "Shift & Attendance"):
+			self.skipTest("no Shift & Attendance workspace on this site")
+		_take_out("Workspace", "Shift & Attendance", "links")
+		payroll_menu.after_migrate()
+		payroll_menu.after_migrate()
+		w = frappe.get_doc("Workspace", "Shift & Attendance")
+		links = [l.link_to for l in w.links]
+		self.assertEqual(links.count(REPORT), 1)
+		if "Monthly Attendance Sheet" in links:
+			self.assertEqual(links.index(REPORT), links.index("Monthly Attendance Sheet") + 1)
+
+	def test_the_sidebar_has_it_once(self):
+		if not frappe.db.exists("Workspace Sidebar", "Shift & Attendance"):
+			self.skipTest("no Shift & Attendance sidebar on this site")
+		_take_out("Workspace Sidebar", "Shift & Attendance", "items")
+		payroll_menu.after_migrate()
+		payroll_menu.after_migrate()
+		items = [i.link_to for i in frappe.get_doc("Workspace Sidebar", "Shift & Attendance").items]
+		self.assertEqual(items.count(REPORT), 1)
+		if "Monthly Attendance Sheet" in items:
+			self.assertEqual(items.index(REPORT), items.index("Monthly Attendance Sheet") + 1)
+
+	def test_the_salary_working_link_is_still_placed(self):
+		if not frappe.db.exists("Workspace", "Payroll"):
+			self.skipTest("no Payroll workspace on this site")
+		salary = "Salary Components and Workings"
+		w = frappe.get_doc("Workspace", "Payroll")
+		w.set("links", [l for l in w.links if l.link_to != salary])
+		w.set("shortcuts", [s for s in (w.shortcuts or []) if s.link_to != salary])
+		w.flags.ignore_permissions = True
+		w.save()
+		frappe.db.commit()
+		payroll_menu.after_migrate()
+		payroll_menu.after_migrate()
+		w = frappe.get_doc("Workspace", "Payroll")
+		links = [l.link_to for l in w.links]
+		self.assertEqual(links.count(salary), 1)
+		if "Salary Register" in links:
+			self.assertEqual(links.index(salary), links.index("Salary Register") + 1)
+		self.assertEqual([s.link_to for s in w.shortcuts].count(salary), 1)

@@ -501,6 +501,66 @@ class TestTheForm(_Base):
 		frappe.set_user("Administrator")
 		self.assertEqual([d["name"] for d in page["documents"]], [fx.DOC_NAME])
 
+	def test_the_joiner_tick_is_not_the_staff_tick(self):
+		"""ALV-353. Ticking a type for joiners must not widen whose existing
+		documents staff can read, and the staff tick must not ask a joiner for
+		anything. Both directions, because the fault was one key doing both."""
+		from alvoraa_portal import employee_documents_read as edr
+
+		fx.a_document_type()
+		# Start from a clean staff tick: a fixture elsewhere may have left one.
+		frappe.db.set_default("alvoraa_positions_document_types", "")
+		frappe.db.commit()
+		self.assertEqual(edr.ticked_types(), [])
+		doc, _out = self._sign_in()
+		self._as_the_joiner(doc)
+		self.assertEqual([d["name"] for d in joiner_public.open_invite()["documents"]],
+		                 [fx.DOC_NAME])
+		frappe.set_user("Administrator")
+		# And the other way round: staff tick set, joiner tick empty.
+		frappe.db.set_default("alvoraa_joiner_document_types", "")
+		frappe.db.set_default("alvoraa_positions_document_types", fx.DOC_NAME)
+		frappe.db.commit()
+		self._as_the_joiner(doc)
+		page = joiner_public.open_invite()
+		frappe.set_user("Administrator")
+		frappe.db.set_default("alvoraa_positions_document_types", "")
+		frappe.db.commit()
+		self.assertEqual(page["documents"], [])
+
+	def test_the_settings_card_reports_and_saves_the_joiner_tick(self):
+		"""ALV-353. The card reads the new key, a name with no type behind it is
+		reported as unknown, the compulsory list is cut to the joiner tick (never
+		the staff one), and only a System Manager may save it."""
+		fx.a_document_type(required=True)
+		frappe.db.set_default("alvoraa_positions_document_types", "")
+		frappe.set_user(self.sm)
+		card = people_settings.get_people_settings()
+		self.assertEqual([d["name"] for d in card["joiner_document_types"]], [fx.DOC_NAME])
+		self.assertTrue(card["joiner_document_types"][0]["known"])
+		self.assertEqual(card["joiner_required_documents"], [fx.DOC_NAME])
+		self.assertEqual(card["document_types"], [])
+		people_settings.set_people_setting(
+			key="alvoraa_joiner_document_types", value=[fx.DOC_NAME, "S079 Deleted type"])
+		card = people_settings.get_people_settings()
+		self.assertEqual(
+			[(d["name"], d["known"]) for d in card["joiner_document_types"]],
+			[(fx.DOC_NAME, True), ("S079 Deleted type", False)])
+		# A compulsory name whose type has been deleted is not reported as
+		# compulsory: the form never asks for it (its get_value returns None).
+		frappe.db.set_default("alvoraa_joiner_required_documents",
+		                      fx.DOC_NAME + ",S079 Deleted type")
+		card = people_settings.get_people_settings()
+		self.assertEqual(card["joiner_required_documents"], [fx.DOC_NAME])
+		# Untick it: it can no longer be compulsory either.
+		people_settings.set_people_setting(key="alvoraa_joiner_document_types", value=[])
+		self.assertEqual(people_settings.get_people_settings()["joiner_required_documents"], [])
+		frappe.set_user(self.hr)
+		with self.assertRaises(Exception):
+			people_settings.set_people_setting(
+				key="alvoraa_joiner_document_types", value=[fx.DOC_NAME])
+		frappe.set_user("Administrator")
+
 	def test_send_is_refused_until_what_hr_marked_is_answered(self):
 		"""AC-38, AC-39. **A refusal costs the joiner nothing**: nothing is sent,
 		nothing is burned, they stay signed in.
@@ -732,6 +792,96 @@ class TestExport(_Base):
 		self.assertEqual(len(lines), 1, stream.getvalue())
 		self.assertIn("masked=True", lines[0])
 		self.assertNotIn(doc.full_name, lines[0])
+		# ALV-353. The line above reaches no file at any tenant, so the control
+		# is the durable row. Exactly one, naming who and which submission, and
+		# saying masked in its `source`. No field value, no employee.
+		rows = frappe.get_all(
+			"Alvoraa Photo Access Log", ignore_permissions=True,
+			filters={"reference_name": doc.name, "source": ("like", "Joiner export%")},
+			fields=["source", "viewed_by", "employee", "document_type", "employee_name"])
+		self.assertEqual(len(rows), 1, rows)
+		self.assertEqual(rows[0].source, "Joiner export (masked)")
+		self.assertEqual(rows[0].viewed_by, self.hr)
+		self.assertFalse(rows[0].employee or rows[0].document_type or rows[0].employee_name)
+
+	def test_an_unmasked_export_says_so_in_its_row(self):
+		"""ALV-353. The `masked=False` branch has no endpoint today, so call the
+		named function directly: a future unmasked export must be told apart."""
+		doc, _out = self._sign_in()
+		frappe.set_user(self.hr)
+		joiner_invite.log_an_export(doc.name, masked=False)
+		frappe.set_user("Administrator")
+		self.assertTrue(frappe.db.exists("Alvoraa Photo Access Log", {
+			"reference_name": doc.name, "source": "Joiner export (not masked)"}))
+
+	def test_the_synced_doctype_carries_the_joiner_sources(self):
+		"""ALV-353. Fails on a site that has not been migrated: the writer swallows
+		the Select refusal, so without this the audit row would be lost with only
+		an Error Log entry to show for it."""
+		options = frappe.get_meta("Alvoraa Photo Access Log").get_field("source").options
+		for source in ("Joiner export (masked)", "Joiner export (not masked)",
+		               "Joiner purge"):
+			self.assertIn(source, options.split("\n"))
+
+	def test_a_purge_writes_one_row(self):
+		"""ALV-353. An erasure is as much an event counsel will ask about as an
+		export, and the submission's own rows are gone afterwards."""
+		doc, _out = self._sign_in()
+		frappe.set_user(self.hr)
+		joiner_invite.purge_submission(submission=doc.name)
+		frappe.set_user("Administrator")
+		rows = frappe.get_all("Alvoraa Photo Access Log", ignore_permissions=True,
+		                      filters={"reference_name": doc.name,
+		                               "source": "Joiner purge"},
+		                      fields=["viewed_by"])
+		self.assertEqual(len(rows), 1, rows)
+		self.assertEqual(rows[0].viewed_by, self.hr)
+
+	def test_a_failed_audit_write_refuses_the_export_and_produces_no_file(self):
+		"""ALV-353, Surbhi 19 Nov 2026: no export through the product without a
+		record. The row is written FIRST, so a failure leaves no file at all and
+		HR is told in plain words."""
+		from unittest import mock
+
+		doc, _out = self._sign_in()
+		frappe.set_user(self.hr)
+		frappe.local.response.pop("filecontent", None)
+		frappe.local.response.pop("type", None)
+		with mock.patch.object(joiner_invite, "_write_joiner_row",
+		                       side_effect=RuntimeError("boom")), \
+		     mock.patch("frappe.log_error") as logged:
+			with self.assertRaises(frappe.ValidationError) as caught:
+				joiner_invite.export_submission(submission=doc.name)
+		frappe.set_user("Administrator")
+		self.assertIn("not produced", str(caught.exception))
+		self.assertNotIn("filecontent", frappe.local.response)
+		self.assertNotEqual(frappe.local.response.get("type"), "download")
+		self.assertEqual(logged.call_count, 1)
+
+	def test_a_failed_audit_write_does_not_stop_a_purge(self):
+		"""ALV-353. The opposite choice, on purpose: an erasure must never be
+		blocked or reported as failed by its own bookkeeping."""
+		from unittest import mock
+
+		def fails_with_a_message(*_a, **_k):
+			# What an un-migrated site does: Frappe's own Select check adds a
+			# message before it raises, and that message would reach HR.
+			frappe.msgprint("Source cannot be that")
+			raise RuntimeError("boom")
+
+		doc, _out = self._sign_in()
+		frappe.set_user(self.hr)
+		frappe.clear_messages()
+		with mock.patch.object(joiner_invite, "_write_joiner_row",
+		                       side_effect=fails_with_a_message), \
+		     mock.patch("frappe.log_error") as logged:
+			out = joiner_invite.purge_submission(submission=doc.name)
+		leaked = list(frappe.local.message_log)
+		frappe.set_user("Administrator")
+		self.assertEqual(leaked, [], "the browser would tell HR the erasure failed")
+		self.assertTrue(out["erased"])
+		self.assertTrue(frappe.db.get_value(DOCTYPE, doc.name, "erased_on"))
+		self.assertEqual(logged.call_count, 1)
 
 	def test_there_is_no_bytes_included_export(self):
 		"""AC-83. Dropped in the spec's §3: HR sends the files from the row,
@@ -1093,10 +1243,11 @@ class TestMyProfileAndTheSettings(_Base):
 		something."""
 		for key in ("alvoraa_joiner_fields", "alvoraa_joiner_required_fields",
 		            "alvoraa_my_profile_required_fields",
-		            "alvoraa_joiner_required_documents", "alvoraa_joiner_notice_text"):
+		            "alvoraa_joiner_required_documents", "alvoraa_joiner_document_types",
+		            "alvoraa_joiner_notice_text"):
 			with self.subTest(key=key):
 				self.assertEqual(org_settings.DEFAULTS[key], "")
-		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 30)
+		self.assertEqual(org_settings.DEFAULTS["alvoraa_joiner_document_days"], 45)
 		frappe.db.set_default("alvoraa_joiner_fields", "")
 		frappe.db.set_default("alvoraa_joiner_required_fields", "")
 		frappe.db.commit()
@@ -1113,7 +1264,7 @@ class TestMyProfileAndTheSettings(_Base):
 		frappe.set_user(self.hr)
 		for key in ("alvoraa_joiner_fields", "alvoraa_joiner_required_fields",
 		            "alvoraa_my_profile_required_fields",
-		            "alvoraa_joiner_required_documents",
+		            "alvoraa_joiner_required_documents", "alvoraa_joiner_document_types",
 		            "alvoraa_joiner_document_days", "alvoraa_joiner_notice_text"):
 			with self.subTest(key=key):
 				self.assertIn(key, org_settings.ACCESS_GRANTING)

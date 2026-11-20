@@ -5,8 +5,10 @@ import frappe
 from frappe import _
 
 from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY, _may_see_organisation
-from alvoraa_portal.attendance_correction import (MANAGER_FILING_WINDOW_KEY,
-                                                 MANAGER_ON_BEHALF_KEY)
+from alvoraa_portal.attendance_correction import (EMPLOYEE_FILING_WINDOW_KEY,
+                                                 MANAGER_FILING_WINDOW_KEY,
+                                                 MANAGER_ON_BEHALF_KEY,
+                                                 employee_filing_from)
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.payroll_rules import label_punches
 from alvoraa_portal.subscription import requires_feature
@@ -3040,12 +3042,22 @@ def get_requests_history():
     except Exception:
         advances = []
 
-    return {
+    out = {
         "shift_requests": shift_requests,
         "encashments": encashments,
         "att_requests": att_requests,
         "advances": advances,
     }
+    # Slice 084: the oldest day this person may raise for themselves, so the
+    # Attendance Request page can say so before they type. Present only when
+    # the organisation has set a limit. The joining date is the person's own,
+    # sent only when it is older than the boundary (it is then an exception).
+    earliest, basis = employee_filing_from(emp.name)
+    if earliest:
+        out["att_window"] = {"from": earliest, "basis": basis}
+        if emp.date_of_joining and getdate(emp.date_of_joining) < getdate(earliest):
+            out["att_window"]["joined_on"] = str(emp.date_of_joining)
+    return out
 
 
 # ── Goals & Performance ───────────────────────────────────────────────────────
@@ -3325,6 +3337,10 @@ ALLOWED_ORG_SETTINGS = {
     # whose pay has run; past that it is HR's own route, which this window never
     # binds. Blank means no limit and is the default; 0 means today only.
     MANAGER_FILING_WINDOW_KEY: range(0, 31),
+    # Slice 084: how many working days back an EMPLOYEE may raise their own day.
+    # Its own key - it neither reads nor moves the manager's. Blank means no
+    # limit (the default); 0 means today only.
+    EMPLOYEE_FILING_WINDOW_KEY: range(0, 31),
     org_features.LATE_RULES_SWITCH: ("0", "1"),
     org_features.ATTENDANCE_SCORING_SWITCH: ("0", "1"),
 }
@@ -3387,12 +3403,13 @@ def set_org_setting(key, value):
         _refuse_org_setting("hr_api.set_org_setting")
     value = str(value) if value is not None else ""
     allowed = ALLOWED_ORG_SETTINGS[key]
-    # BLANK IS A REAL ANSWER FOR THE FILING WINDOW, and it is its default: no
-    # limit (Surbhi, 18 Oct 2026). Stored as an empty string, which
-    # `manager_filing_window_days` reads as None and keeps apart from a stored
+    # BLANK IS A REAL ANSWER FOR BOTH FILING WINDOWS, and it is their default: no
+    # limit (Surbhi, 18 Oct 2026; the employee's own, 19 Nov 2026). Stored as an
+    # empty string, which the two readers (`manager_filing_window_days`,
+    # `employee_filing_window_days`) read as None and keep apart from a stored
     # "0" - the two now mean opposite things. No other numeric setting takes a
-    # blank, so this is spelt out for the one key rather than loosened for all.
-    if key == MANAGER_FILING_WINDOW_KEY and value == "":
+    # blank, so this is spelt out for these two keys rather than loosened for all.
+    if key in (MANAGER_FILING_WINDOW_KEY, EMPLOYEE_FILING_WINDOW_KEY) and value == "":
         pass
     elif isinstance(allowed, range):
         # Whole minutes, no sign, no spaces, and inside the range. Anything else
@@ -3418,6 +3435,9 @@ def set_org_setting(key, value):
             )
     frappe.db.set_default(key, value)
     frappe.db.commit()
+    if key == EMPLOYEE_FILING_WINDOW_KEY and value == "0":
+        # The save line names the day, and the browser does not work dates out.
+        return {"ok": True, "today": today()}
     return {"ok": True}
 
 

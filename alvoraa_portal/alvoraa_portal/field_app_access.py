@@ -283,6 +283,8 @@ def _hr_read_sql(user=None):
 		return ""
 	if filters == access.NO_EMPLOYEES:
 		return None
+	if any(not isinstance(cond, (list, tuple)) or cond[0] != "in" for cond in filters.values()):
+		return None  # only "in" is translated here; anything else fails closed
 	where = " and ".join(
 		"`{0}` in ({1})".format(field, ", ".join(frappe.db.escape(v) for v in cond[1]) or "''")
 		for field, cond in filters.items())

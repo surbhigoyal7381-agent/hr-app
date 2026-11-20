@@ -65,7 +65,8 @@ class ALV412HrReadsInScope(FrappeTestCase):
 		self.assertTrue(faa.checkin_has_permission(self.a_punch, self.h.hr, "read"))
 		self.assertFalse(faa.checkin_has_permission(self.b_punch, self.h.hr, "read"))
 
-	def test_a_company_user_permission_widens_reading_too(self):
+	def test_a_company_user_permission_sets_which_company_hr_reads(self):
+		"""A Company User Permission replaces the own-company fallback; it does not add to it."""
 		other = self.h._login("hrread", ("HR Manager",))
 		self.h._employee("Hrread", other)  # company A by the Employee record
 		self.assertEqual(self._listed(other), {self.a_punch.name})
@@ -83,3 +84,54 @@ class ALV412HrReadsInScope(FrappeTestCase):
 		boss = self.h._login("bossread", ("System Manager",))
 		self.assertEqual(self._listed(boss), {self.a_punch.name, self.b_punch.name})
 		self.assertTrue(faa.checkin_has_permission(self.b_punch, boss, "read"))
+
+	def _branch(self, name):
+		if not frappe.db.exists("Branch", name):
+			frappe.get_doc({"doctype": "Branch", "branch": name}).insert(ignore_permissions=True)
+		return name
+
+	def test_store_hr_reads_only_its_branch(self):
+		"""A store's HR person: their company, narrowed to their branch. No branch is outside it."""
+		inside, outside = self._branch("ALV412 Store In"), self._branch("ALV412 Store Out")
+		store_hr = self.h._login("hrstore", ("HR Manager",))
+		self.h._employee("Hrstore", store_hr)  # company A
+		frappe.get_doc({"doctype": "User Permission", "user": store_hr, "allow": "Branch",
+		                "for_value": inside, "apply_to_all_doctypes": 0}).insert(ignore_permissions=True)
+		frappe.clear_cache()
+		people = {}
+		for key, branch in (("in", inside), ("out", outside), ("none", None)):
+			emp = self.h._employee("Br" + key)
+			if branch:
+				frappe.db.set_value("Employee", emp, "branch", branch)
+			people[key] = self._punch(emp)
+		names = [p.name for p in people.values()]
+		frappe.set_user(store_hr)
+		try:
+			listed = set(frappe.get_list("Employee Checkin", pluck="name", filters={"name": ["in", names]}))
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(listed, {people["in"].name})
+		self.assertTrue(faa.checkin_has_permission(people["in"], store_hr, "read"))
+		self.assertFalse(faa.checkin_has_permission(people["out"], store_hr, "read"))
+		self.assertFalse(faa.checkin_has_permission(people["none"], store_hr, "read"))
+
+	def test_hr_still_reads_its_own_punch_outside_its_scope(self):
+		elsewhere = self.h._login("hrelse", ("HR Manager",))
+		own = self.h._employee("Hrelse", elsewhere)  # their record is in company A
+		frappe.get_doc({"doctype": "User Permission", "user": elsewhere, "allow": "Company",
+		                "for_value": self.h.other_company}).insert(ignore_permissions=True)  # acts for B
+		frappe.clear_cache()
+		mine = self._punch(own)
+		frappe.set_user(elsewhere)
+		try:
+			listed = set(frappe.get_list("Employee Checkin", pluck="name", filters={"name": mine.name}))
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(listed, {mine.name})
+		self.assertTrue(faa.checkin_has_permission(mine, elsewhere, "read"))
+
+	def test_print_export_and_share_follow_the_same_scope(self):
+		for ptype in ("print", "export", "share", "email", "select"):
+			with self.subTest(ptype=ptype):
+				self.assertTrue(faa.checkin_has_permission(self.a_punch, self.h.hr, ptype))
+				self.assertFalse(faa.checkin_has_permission(self.b_punch, self.h.hr, ptype))

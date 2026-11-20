@@ -417,16 +417,17 @@ class WhatLeavingNowWouldCost(MarksCase):
 		twice while leaving at 15:00 costs once."""
 		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}
 		self.assertEqual(steps[2]["red_from"], "14:28")
-		self.assertEqual(steps[2]["red_to"], "14:52")
+		# The last red minute: 264 of 600 is 44.0%, already out of the red band.
+		self.assertEqual(steps[2]["red_to"], "14:51")
 
 	def test_the_top_rung_carries_its_own_red_window(self):
 		"""90-98.9% takes no quarters but does raise a red, so a full day's pay
 		with a mark against it is reachable - and has to be said."""
 		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}
 		self.assertEqual(steps[0]["red_from"], "19:28")
-		# 20:22, not 20:21 (ALV-401): 593 of 600 minutes is 98.83%, which the
-		# payslip reads as 98.8 - still a red. 594 minutes is the first that is not.
-		self.assertEqual(steps[0]["red_to"], "20:22")
+		# red_to is the last red minute. 593 of 600 is 98.83%, read as 98.8 on the
+		# payslip - still a red; 594 (20:22) is the first that is not (ALV-401).
+		self.assertEqual(steps[0]["red_to"], "20:21")
 
 	def test_a_rung_with_no_red_band_says_so_rather_than_guessing(self):
 		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}
@@ -629,7 +630,8 @@ class TheLadderAgreesWithThePayslipALV401(FrappeTestCase):
 					self.assertTrue(first_minute(minute(s["leave_after"]), length,
 					                             s["percent_from"]))
 					if s["red_from"]:
-						self.assertTrue(first_minute(minute(s["red_to"]), length,
+						# red_to is the last red minute, so the next one is the first safe one.
+						self.assertTrue(first_minute(minute(s["red_to"]) + 1, length,
 						                             red_to[s["quarters"]]))
 
 	def test_the_600_minute_case_that_was_wrong(self):
@@ -639,4 +641,4 @@ class TheLadderAgreesWithThePayslipALV401(FrappeTestCase):
 		         for a, b, q, r in self.DTC]
 		out = _ladder({"slabs": slabs}, 0, 600, 0, False)
 		red = {s["quarters"]: s for s in out["steps"]}[0]
-		self.assertEqual(red["red_to"], "09:54")   # 594 minutes, not 593
+		self.assertEqual(red["red_to"], "09:53")   # last red minute: 593 (98.8%); 594 is safe

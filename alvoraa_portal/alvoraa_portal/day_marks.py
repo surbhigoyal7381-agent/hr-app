@@ -296,7 +296,9 @@ def _ladder(rule_set, start, end, anchor, in_late_window, late="", break_over=0,
 		red_from = None if rung["red_from"] is None else at(rung["red_from"])
 		if red_from is not None and red_from <= last_red:
 			step["red_from"] = _clock(red_from)
-			step["red_to"] = _clock(min(last_red, at(rung["red_to"])))
+			# red_to is the LAST red minute: portal.js tests now <= red_to and
+			# prints "Leaving red_from-red_to also costs a red mark".
+			step["red_to"] = _clock(min(last_red, at(rung["red_to"]) - 1))
 		steps.append(step)
 
 	return {

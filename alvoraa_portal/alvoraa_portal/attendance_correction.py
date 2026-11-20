@@ -1594,6 +1594,11 @@ def refuse_own_day_outside_window(doc, method=None):
 		return
 	if employee_filing_window_days() is None:
 		return
+	# Slice 085 (AC-69): a held-day request carries the missing time; a day somebody
+	# worked is never shut out by the window. `validate_missing_time` runs first in
+	# the hook list and refuses a time on a day that is not Held.
+	if doc.get("alvoraa_missing_time") not in (None, ""):
+		return
 	from hrms.alvoraa_hr_core.access import is_own_record
 
 	if not is_own_record(doc.employee):

@@ -69,7 +69,10 @@ def files_as_machine(user: str | None = None) -> bool:
 	and geofence rules, and widening it would change what they do for these accounts.
 	"""
 	user = user or frappe.session.user
-	if SYNC_ROLE not in frappe.get_roles(user):
+	# Administrator is handed every role by Frappe, so a person working as
+	# Administrator would pass as the machine (review F2). Ask for a real row.
+	if user == "Administrator" or not frappe.db.exists(
+			"Has Role", {"parent": user, "parenttype": "User", "role": SYNC_ROLE}):
 		return False
 	return not frappe.db.exists("Employee", {"user_id": user})
 
@@ -276,8 +279,14 @@ def checkin_has_permission(doc: Document, user: str | None = None, ptype: str | 
 	"""
 	is_hr, emp = _viewer(user)
 	# Slice 085 (SEC-2): nobody changes or deletes their OWN punch, HR included.
-	# Asked before HR's blanket yes. A new punch of one's own stays allowed.
+	# Asked before HR's blanket yes. A new punch of one's own is refused for HR below.
 	if emp and doc.employee == emp and ptype in ("write", "delete"):
+		return False
+	# And HR does not add a punch to their own record: HR may choose `time` (permlevel 1),
+	# so that is a back-dated punch nobody else sees (review F1). The phone and portal
+	# punches insert with ignore_permissions and are not affected. Only the machine
+	# account files punches as itself, and it has no Employee record, so `emp` is empty.
+	if is_hr and emp and doc.employee == emp and ptype == "create":
 		return False
 	if is_hr:
 		return True

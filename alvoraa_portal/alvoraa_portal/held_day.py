@@ -360,6 +360,15 @@ def note_held_day(doc, method=None):
 		if _has_time(doc):
 			frappe.throw(_("That day is no longer held, so there is nothing to release. "
 			               "Decline this request."))
+		# A request for several days would make a Held day Present with no hours worked
+		# out and no release record (review F3). The one door is a request for that
+		# one day, carrying the missing time.
+		if frappe.db.exists(ATTENDANCE, {
+				"employee": doc.employee, "docstatus": 1, "status": HELD,
+				"attendance_date": ("between", [doc.from_date, doc.to_date])}):
+			frappe.throw(_("This request covers a held day. A held day is released only by a "
+			               "request for that one day with the missing punch time. Decline this "
+			               "request and ask for the held day on its own."))
 		return
 	if not row.shift:
 		frappe.throw(_("This day has no shift, so its hours cannot be worked out. Ask a "
@@ -453,9 +462,13 @@ def deduct_held_days(doc, method=None):
 	"""Salary Slip validate, wired AFTER the pay-rule engine's hook. Held is not a
 	status stock Frappe reads, so it would be paid. Frappe works `payment_days`
 	out from scratch on every save, so subtracting here is safe to run twice.
-	Does nothing on a submitted slip or at a company with a pay rule set (that
-	path prices from the engine, which already treats an odd count as held)."""
-	if doc.docstatus != 0 or not doc.employee:
+	It also runs on SUBMIT: Frappe validates again after setting docstatus to 1
+	and recounts every day as paid, so skipping it there paid the Held days
+	(review B-1). Validate does not run on a slip that is already final, so a
+	day released after that never changes it (Q4). Does nothing on a cancelled
+	slip or at a company with a pay rule set (that path prices from the engine,
+	which already treats an odd count as held)."""
+	if doc.docstatus == 2 or not doc.employee:
 		return
 	from alvoraa_portal.payroll_rules_apply import rule_set_for
 	if rule_set_for(doc.company):
@@ -485,8 +498,14 @@ def held_dates(employee, start, end):
 
 
 def _holidays(employee, start, end):
-	holiday_list = frappe.db.get_value("Employee", employee, "holiday_list")
+	"""The days the slip itself leaves out of the working days: the same two
+	calls `SalarySlip.get_holidays_for_employee` makes (the employee's Holiday
+	List Assignment, then the employee, then the company), so a Held day on a
+	weekly off is not taken off twice (review M-3)."""
+	from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
+	from hrms.utils.holiday_list import get_holiday_dates_between
+
+	holiday_list = get_holiday_list_for_employee(employee, False)
 	if not holiday_list:
 		return set()
-	return {str(d) for d in frappe.get_all("Holiday", filters={
-		"parent": holiday_list, "holiday_date": ("between", [start, end])}, pluck="holiday_date")}
+	return {str(d) for d in get_holiday_dates_between(holiday_list, start, end)}

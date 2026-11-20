@@ -143,10 +143,21 @@ class SafetyDoors(FrappeTestCase):
 		own = self._punch(self.hr_emp)
 		self.assertTrue(faa.checkin_has_permission(own, self.hr, "read"))
 
-	def test_hr_can_still_make_a_new_punch_of_their_own(self):
+	def test_f1_hr_cannot_add_a_back_dated_punch_to_their_own_record(self):
+		"""Review F1: HR may choose `time`, so a new punch of one's own is refused,
+		through the hook and through a real insert with permissions on."""
 		new = frappe.get_doc({"doctype": "Employee Checkin", "employee": self.hr_emp,
-		                      "time": nowdate() + " 09:00:00", "log_type": "IN"})
-		self.assertTrue(faa.checkin_has_permission(new, self.hr, "create"))
+		                      "time": add_days(nowdate(), -3) + " 18:30:00", "log_type": "OUT"})
+		self.assertFalse(faa.checkin_has_permission(new, self.hr, "create"))
+		with self.assertRaises(frappe.PermissionError):
+			self._as(self.hr, lambda: frappe.get_doc(new.as_dict()).insert())
+		self.assertFalse(frappe.db.exists("Employee Checkin", {"employee": self.hr_emp}))
+		# control: the same act for a colleague is still HR's
+		other = frappe.get_doc({"doctype": "Employee Checkin", "employee": self.worker,
+		                        "time": add_days(nowdate(), -3) + " 18:30:00", "log_type": "OUT"})
+		self.assertTrue(faa.checkin_has_permission(other, self.hr, "create"))
+		self._as(self.hr, lambda: frappe.get_doc(other.as_dict()).insert())
+		self.assertTrue(frappe.db.exists("Employee Checkin", {"employee": self.worker}))
 
 	# ── SEC-3: the raiser ──────────────────────────────────────────────────
 

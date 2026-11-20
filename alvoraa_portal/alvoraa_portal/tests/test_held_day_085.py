@@ -273,7 +273,7 @@ class HeldDayCase(FrappeTestCase):
 		held_day.deduct_held_days(doc)
 		self.assertEqual((doc.payment_days, doc.absent_days), (29.0, 1.0))
 		self.assertIn("calculate_net_pay", doc.calls)
-		doc.docstatus = 1  # a submitted slip is never touched
+		doc.docstatus = 2  # a cancelled slip is never touched
 		held_day.deduct_held_days(doc)
 		self.assertEqual(doc.payment_days, 29.0)
 
@@ -285,6 +285,90 @@ class HeldDayCase(FrappeTestCase):
 	def test_a_submitted_slip_is_not_refreshed_and_says_so(self):
 		with patch("alvoraa_portal.held_day.is_in_final_slip", return_value=True):
 			self.assertEqual(held_day.refresh_draft_slip(self.worker, self.day), "final")
+
+	# ── review fix round 1 ─────────────────────────────────────────────
+
+	def test_f2_administrator_is_not_the_machine_and_does_not_release_a_day(self):
+		from alvoraa_portal.field_app_access import files_as_machine
+		self.assertFalse(files_as_machine("Administrator"))
+		att = self._held()
+		self._punch(self.worker, "18:30", log_type="OUT")  # filed as Administrator
+		self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Held")
+		# control: a real sync account still releases it
+		with patch("frappe.enqueue"):
+			self._punch(self.worker, "18:40", log_type="OUT", user=self._machine())
+		self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Present")
+
+	def test_f3_a_multi_day_request_cannot_turn_a_held_day_into_present(self):
+		att = self._held()
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc({"doctype": REQUEST, "employee": self.worker,
+		                      "from_date": add_days(self.day, -1), "to_date": self.day,
+		                      "reason": "On Duty", "alvoraa_review_status": "Waiting"
+		                      }).insert(ignore_permissions=True)
+		with self.assertRaises(frappe.ValidationError) as cm:
+			self._approve(doc.name, self.hr)
+		self.assertIn("covers a held day", str(cm.exception))
+		self.assertEqual(frappe.db.get_value("Attendance", att.name, "status"), "Held")
+		# control: the same two days with no held day in them are approved as before
+		other = self._employee("Plain")
+		clean = frappe.get_doc({"doctype": REQUEST, "employee": other,
+		                        "from_date": add_days(self.day, -1), "to_date": self.day,
+		                        "reason": "On Duty", "alvoraa_review_status": "Waiting"
+		                        }).insert(ignore_permissions=True)
+		self._approve(clean.name, self.hr)
+		self.assertEqual(frappe.db.get_value(REQUEST, clean.name, "docstatus"), 1)
+
+	def test_m3_a_held_day_on_the_assigned_lists_holiday_costs_no_second_day(self):
+		"""The employee's own field is empty and a Holiday List Assignment holds the
+		list: the slip leaves that day out already, so the hook must too."""
+		self._held()
+		frappe.db.set_value("Employee", self.worker, "holiday_list", None)
+		listname = "ALV085 M3 holidays"
+		if not frappe.db.exists("Holiday List", listname):
+			frappe.get_doc({"doctype": "Holiday List", "holiday_list_name": listname,
+			                "from_date": add_days(self.day, -400), "to_date": add_days(self.day, 400),
+			                "holidays": [{"holiday_date": self.day, "description": "M3"}]}
+			               ).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Holiday List Assignment", "applicable_for": "Employee",
+		                "assigned_to": self.worker, "holiday_list": listname,
+		                "from_date": add_days(self.day, -300)}).insert(ignore_permissions=True).submit()
+		self.assertEqual(held_day.held_dates(self.worker, add_days(self.day, -3), add_days(self.day, 3)), [])
+		# control: with no assignment on that date the day does cost
+		other = self._employee("M3b")
+		self._punch(other, "09:00")
+		self._attendance(other).submit()
+		self.assertEqual(len(held_day.held_dates(other, add_days(self.day, -3), add_days(self.day, 3))), 1)
+
+	def test_ac69_084s_own_day_window_does_not_refuse_a_held_day_request(self):
+		user = self._login("emp084", ("Employee",))
+		emp = self._employee("Emp084", user)
+		self._punch(emp, "09:00")
+		self._attendance(emp).submit()
+		saved = frappe.db.get_default(ac.EMPLOYEE_FILING_WINDOW_KEY)
+		frappe.db.set_default(ac.EMPLOYEE_FILING_WINDOW_KEY, "0")  # today only
+		try:
+			frappe.set_user(user)
+			try:
+				frappe.get_doc({"doctype": REQUEST, "employee": emp, "from_date": self.day,
+				                "to_date": self.day, "reason": "Forgot to Punch Out",
+				                "alvoraa_missing_time": "18:30", "alvoraa_missing_log": "OUT",
+				                "alvoraa_review_status": "Waiting"}).insert()
+				# control: an ordinary request for the same old day IS refused by 084
+				with self.assertRaises(frappe.ValidationError):
+					frappe.get_doc({"doctype": REQUEST, "employee": emp, "from_date": self.day,
+					                "to_date": self.day, "reason": "On Duty",
+					                "alvoraa_review_status": "Waiting"}).insert()
+			finally:
+				frappe.set_user("Administrator")
+		finally:
+			frappe.db.set_default(ac.EMPLOYEE_FILING_WINDOW_KEY, saved or "")
+
+	def test_both_attendance_request_validate_hooks_are_kept(self):
+		hooks = frappe.get_hooks("doc_events")["Attendance Request"]["validate"]
+		for h in ("alvoraa_portal.held_day.validate_missing_time",
+		          "alvoraa_portal.attendance_correction.refuse_own_day_outside_window"):
+			self.assertIn(h, hooks)
 
 	# ── US-14 / SEC-6: who may change the settings ─────────────────────
 
@@ -517,10 +601,26 @@ class HeldDayCase(FrappeTestCase):
 				self.assertIn("Run the dry run again", str(cm.exception))
 				self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Present")
 				# dry run again, then the real run
-				again = mod.run(frappe.local.site, undo_file, **kw)
-				done = mod.run(frappe.local.site, undo_file, apply=True, **kw)
+				import contextlib
+				import io
+				out = io.StringIO()
+				with contextlib.redirect_stdout(out):
+					again = mod.run(frappe.local.site, undo_file, **kw)
+				# AC-63: the printed split, one punch against three or more, and the old status
+				self.assertRegex(out.getvalue(), r"one punch: \d+, three or more punches: \d+\. "
+				                 r"Was Absent: \d+, Present: \d+, Half Day: \d+\.")
+				out = io.StringIO()
+				with contextlib.redirect_stdout(out):
+					done = mod.run(frappe.local.site, undo_file, apply=True, operator="Test Operator", **kw)
 				self.assertEqual(done["count"], again["count"])
 				self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Held")
+				# AC-59: the audit Comment names the run and the person
+				run_id = out.getvalue().split("Run id ")[1].split(",")[0]
+				self.assertEqual(len(run_id), 8)
+				note = frappe.db.get_value("Comment", {"reference_doctype": "Attendance",
+				                                      "reference_name": att, "comment_type": "Info"}, "content")
+				self.assertIn(run_id, note)
+				self.assertIn("Test Operator", note)
 				# AC-58: every changed id is in the undo list
 				with open(undo_file) as f:
 					listed = [json.loads(x)["name"] for x in f if x.strip()]

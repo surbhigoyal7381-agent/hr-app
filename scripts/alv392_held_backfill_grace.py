@@ -21,6 +21,7 @@ and row names only: no employee name, no time, no reason.
 """
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -44,12 +45,25 @@ def candidates(frappe, companies):
 		order_by="attendance_date asc", limit_page_length=0)
 	# AC-62: a day inside a SUBMITTED salary slip is skipped. That slip is final;
 	# holding the day now would leave the slip and the record disagreeing.
-	return [r for r in rows
-	        if _punches(r.employee, r.attendance_date)[2] % 2 == 1
-	        and not held.is_in_final_slip(r.employee, r.attendance_date)]
+	out = []
+	for r in rows:
+		r.punches = _punches(r.employee, r.attendance_date)[2]
+		if r.punches % 2 == 1 and not held.is_in_final_slip(r.employee, r.attendance_date):
+			out.append(r)
+	return out
 
 
-def run(site, undo_file, apply=False, undo=False, _in_test_site=None):
+def split_line(todo):
+	"""AC-63's kill criterion reads these two splits: one punch against three or
+	five, and what the day was marked before. Counts only."""
+	count = lambda f: sum(1 for r in todo if f(r))
+	return (f"one punch: {count(lambda r: r.punches == 1)}, three or more punches: "
+	        f"{count(lambda r: r.punches > 1)}. Was Absent: {count(lambda r: r.status == 'Absent')}, "
+	        f"Present: {count(lambda r: r.status == 'Present')}, "
+	        f"Half Day: {count(lambda r: r.status == 'Half Day')}.")
+
+
+def run(site, undo_file, apply=False, undo=False, _in_test_site=None, operator=None):
 	"""The whole job. `_in_test_site` is for tests only: a test passes its own site
 	name (and an already-open connection) so this path can run end to end. The
 	command line never sets it, and any site that is neither Grace nor that name
@@ -81,6 +95,7 @@ def run(site, undo_file, apply=False, undo=False, _in_test_site=None):
 		todo = candidates(frappe, companies)
 		print(f"{len(todo)} day(s) between {FIRST} and {LAST} would be held, in "
 		      f"{len(companies)} company(ies).")
+		print(split_line(todo))
 		dry_path = undo_path + ".dryrun"
 		if not apply:
 			with open(dry_path, "w") as f:
@@ -95,7 +110,11 @@ def run(site, undo_file, apply=False, undo=False, _in_test_site=None):
 		if expected != len(todo):
 			sys.exit(f"Refused: the dry run found {expected} day(s) and there are {len(todo)} "
 			         "now. Something changed. Run the dry run again and read both numbers.")
-		hold(frappe, todo, undo_path)
+		# AC-59: who ran it and which run, on every row's Comment (the session is Administrator).
+		run_id = frappe.generate_hash(length=8)
+		who = operator or getpass.getuser()
+		print(f"Run id {run_id}, operator {who}.")
+		hold(frappe, todo, undo_path, run_id, who)
 		print("Done. Draft slips re-price when they are next saved. Undo list: " + undo_path)
 		return {"count": len(todo)}
 	finally:
@@ -109,11 +128,12 @@ def main():
 	ap.add_argument("--undo-file", required=True)
 	ap.add_argument("--apply", action="store_true")
 	ap.add_argument("--undo", action="store_true")
+	ap.add_argument("--operator", help="who is running it; defaults to the login name on this computer")
 	args = ap.parse_args()
-	run(args.site, args.undo_file, apply=args.apply, undo=args.undo)
+	run(args.site, args.undo_file, apply=args.apply, undo=args.undo, operator=args.operator)
 
 
-def hold(frappe, todo, undo_path):
+def hold(frappe, todo, undo_path, run_id="", who=""):
 	# AC-58: the WHOLE id list is on disk before any row changes.
 	with open(undo_path, "a") as f:
 		for r in todo:
@@ -128,7 +148,8 @@ def hold(frappe, todo, undo_path):
 			frappe.db.set_value("Attendance", r.name, "status", "Held")
 			# set_value writes no Version row, so the audit trail is this Comment.
 			frappe.get_doc("Attendance", r.name).add_comment(
-				"Info", f"Held by the November backfill (ALV-392). It was {r.status}.")
+				"Info", f"Held by the November backfill (ALV-392), run {run_id} by {who}. "
+				f"It was {r.status}.")
 		frappe.db.commit()
 		done += len(chunk)
 		print(f"held {done} of {len(todo)}")

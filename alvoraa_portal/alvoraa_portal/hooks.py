@@ -201,7 +201,11 @@ doc_events = {
             "alvoraa_portal.held_day.release_by_hr",
         ],
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
-        "validate": "alvoraa_portal.held_day.validate_missing_time",
+        # Both validates are kept: 085's missing-time rule and 084's own-day window.
+        "validate": [
+            "alvoraa_portal.held_day.validate_missing_time",
+            "alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
+        ],
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
         # Slice 085 (SEC-3): and nobody decides a request they raised.
         "before_submit": [
@@ -216,10 +220,6 @@ doc_events = {
             # Slice 085: the monthly limit, on every door; held-day requests are outside it.
             "alvoraa_portal.held_day.enforce_monthly_limit",
         ],
-        # Slice 084: how far back a person may raise their OWN day. On validate,
-        # not before_insert, because an employee may edit a draft's dates after
-        # creating it - and it must hold on the Desk and the REST API too.
-        "validate": "alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────

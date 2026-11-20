@@ -114,6 +114,35 @@ class RealSlip(FrappeTestCase):
 				frappe._dict(self.last_slip.as_dict(), earnings=[], deductions=[]))["held_dates"][:0], [])
 
 
+class SubmitKeepsTheHold(RealSlip):
+	"""Review B-1: Frappe validates again when a slip is submitted and counts every
+	day as paid. The hold must run in that validate too, or every slip that goes
+	through Payroll Entry pays its Held days."""
+
+	def test_a_real_submit_keeps_payment_days_and_net_pay_from_the_draft(self):
+		frappe.db.set_single_value("Payroll Settings", "consider_unmarked_attendance_as", "Present")
+		emp = self._employee()
+		rows = [self._present(emp, add_days(START, 1)), self._present(emp, add_days(START, 2))]
+		whole = self._payment_days(emp)
+		for r in rows:
+			frappe.db.set_value("Attendance", r, "status", "Held")
+		frappe.db.delete("Salary Slip", {"employee": emp})
+		slip = _insert({"doctype": "Salary Slip", "employee": emp, "company": COMPANY,
+		                "start_date": START, "end_date": END, "posting_date": END,
+		                "payroll_frequency": "Monthly", "currency": "INR"})
+		draft = (slip.payment_days, slip.absent_days, slip.net_pay)
+		self.assertEqual(whole - draft[0], 2)
+		slip = frappe.get_doc("Salary Slip", slip.name)
+		slip.flags.ignore_permissions = True
+		slip.submit()
+		after = frappe.db.get_value("Salary Slip", slip.name,
+		                            ["payment_days", "absent_days", "net_pay", "docstatus"], as_dict=True)
+		self.assertEqual(after.docstatus, 1)
+		self.assertEqual((after.payment_days, after.absent_days, after.net_pay), draft)
+		# The Salary Register reads these two columns of the submitted slip.
+		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "absent_days"), draft[1])
+
+
 class ReleaseAndTheSlip(RealSlip):
 	"""AC-16 and AC-18 on real slips: a release re-prices a DRAFT slip, and leaves a
 	SUBMITTED one alone while HR is told to use Additional Salary."""
@@ -173,7 +202,10 @@ class ReleaseAndTheSlip(RealSlip):
 		                "start_date": START, "end_date": END, "posting_date": END,
 		                "payroll_frequency": "Monthly", "currency": "INR"})
 		before = slip.payment_days
-		frappe.db.set_value("Salary Slip", slip.name, "docstatus", 1)  # final, as the fixtures do
+		slip = frappe.get_doc("Salary Slip", slip.name)
+		slip.flags.ignore_permissions = True
+		slip.submit()  # a real submit, so validate runs (review B-1)
+		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "payment_days"), before)
 		hr = self._hr()
 		frappe.flags.held_slip = None
 		frappe.set_user(hr)

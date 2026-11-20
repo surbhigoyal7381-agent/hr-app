@@ -49,8 +49,10 @@ def refuse_outside_company(doc, method=None):
 	before_submit and before_cancel on Attendance Request (R5). Submitting is
 	approving, and the Desk, REST and imports reach it without the portal's own
 	scope check, so an HR login approves, cancels or amends only for the companies
-	it may act for. A leave approval submits its Attendance in the approver's
-	session, so it meets this too (S-2).
+	it may act for. A leave approval does NOT meet this: stock leave code sets
+	`ignore_validate`, so Frappe skips before_submit there; only the Leave
+	Application's own permissions limit it (S-2, 03 §17). One narrow case does
+	run it: an approved leave over a holiday cancels that day's Attendance.
 	The employee's company is read from the Employee record, never from a field
 	on the document. A manager's submit is governed by their User Permissions as
 	before (they hold no HR role); Administrator and the scheduler are exempt.

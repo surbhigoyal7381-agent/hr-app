@@ -95,7 +95,15 @@ where r.parenttype = 'User' and r.role = 'Biometric Sync'
   and not exists (select 1 from `tabEmployee` e where e.user_id = r.parent)
 group by r.parent;
 ```
-Expect at least 1 row per account, and the companies equal the companies that machine punches for. Add the row with `apply_to_all_doctypes` OFF and `applicable_for` = Employee Checkin (the narrow pattern). Then file ONE test punch per sync account for an employee of its company and read that it saved. Prove the refusal on **dev**, not production: a punch for another company, then the `R2` line in `security.log`. On a one-company tenant write "R2 adds nothing here". On DTC the count of accounts is read, not assumed to be 8.
+First find which companies each sync account really punches for (last 30 days). This assumes the sync tool files punches as its own account, so `owner` is that account. Read one punch to confirm before trusting the result:
+```
+select c.owner as account, e.company, count(*) as punches
+from `tabEmployee Checkin` c join `tabEmployee` e on e.name = c.employee
+where c.time >= now() - interval 30 day
+  and c.owner in (select parent from `tabHas Role` where parenttype = 'User' and role = 'Biometric Sync')
+group by c.owner, e.company;
+```
+**Having no rows is the planned state at release** (03 §17). This is R2a, and it **waits for Surbhi's named, dated acceptance**. Do not push to main without it. Adding rows is a **separate step after the release, on Surbhi's word**. Each account's rows must cover EVERY company in the query above. A narrower row refuses that machine's punches for the missing company, and the sync tool stops the batch. When that step is approved, add the row with `apply_to_all_doctypes` OFF and `applicable_for` = Employee Checkin (the narrow pattern). Then file ONE test punch per sync account for an employee of its company and read that it saved. Prove the refusal on **dev**, not production: a punch for another company, then the `R2` line in `security.log`. On a one-company tenant write "R2 adds nothing here". On DTC the count of accounts is read, not assumed to be 8.
 
 **S-3 · Stray rows (count, expect 0 or rows that apply).** A row that does not apply to punches is ignored since this fix, but read it anyway:
 ```
@@ -111,13 +119,28 @@ select u.name from `tabUser` u
 join `tabHas Role` r on r.parent = u.name and r.parenttype = 'User' and r.role in ('HR Manager','HR User')
 where u.enabled = 1 and u.name <> 'Administrator'
   and not exists (select 1 from `tabHas Role` s where s.parent = u.name and s.role = 'Biometric Sync')
-  and not exists (select 1 from `tabEmployee` e where e.user_id = u.name and ifnull(e.company,'') <> '')
+  and not exists (select 1 from `tabEmployee` e where e.user_id = u.name and e.status = 'Active' and ifnull(e.company,'') <> '')
   and not exists (select 1 from `tabUser Permission` p where p.user = u.name and p.allow = 'Company')
 group by u.name;
 ```
-Expect 0 rows. Each name returned needs a Company User Permission first.
+Expect 0 rows. Each name returned needs a Company User Permission first. (`permitted_companies` reads only an **Active** Employee record, so an HR login whose own record has left counts as having no company.)
 
-**S-1 · Permitted companies against the companies each login really approves for (per tenant).** For every login holding HR Manager or HR User (and every CXO without System Manager): list its permitted companies (its Company User Permission rows, else the company on its own Employee record) and the companies whose Attendance Requests and Leave Applications it decided in the last 60 days. Any company it decided for that is not in its permitted list needs a Company row first, or that login is refused (R4, R5, and a leave approval, S-2) the morning after. A System Manager sees every company and is not affected.
+**S-1 · Permitted companies against the companies each login really approves for (per tenant).** For every login holding HR Manager or HR User (and every CXO without System Manager): list its permitted companies (its Company User Permission rows, else the company on its own Employee record) and the companies whose Attendance Requests and Leave Applications it decided in the last 60 days. Any company it decided for that is not in its permitted list needs a Company row first. Otherwise, from the morning after, that login is refused when it approves, cancels or amends Attendance and Attendance Requests, or writes punches (R4, R5). A System Manager sees every company and is not affected. **Leave approval is not limited by this** (stock code skips the hook, S-2). The one exception: approving a leave that covers a holiday cancels that day's Attendance, and that cancel is checked.
+
+The companies each login decided for (submitted requests, last 60 days; `modified_by` is the last person to act, which for a submitted request is normally the approver):
+```
+select d.modified_by as login, e.company, count(*) as decided
+from `tabAttendance Request` d join `tabEmployee` e on e.name = d.employee
+where d.docstatus = 1 and d.modified >= now() - interval 60 day
+group by d.modified_by, e.company
+union all
+select d.modified_by, e.company, count(*)
+from `tabAttendance` d join `tabEmployee` e on e.name = d.employee
+where d.docstatus in (1, 2) and d.modified >= now() - interval 60 day
+  and d.modified_by in (select parent from `tabHas Role` where role in ('HR Manager','HR User'))
+group by d.modified_by, e.company;
+```
+Compare each login's companies here with its permitted companies: its Company User Permission rows, else the company on its own **Active** Employee record. Every login and company pair here that is not permitted needs a row before the push.
 
 **OPS-37 · hr@grace is a read-back, not a grant.** The row was granted on 20 Nov 2026 (Surbhi, in that session). Read it back before the push and write the value:
 ```

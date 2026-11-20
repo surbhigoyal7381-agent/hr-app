@@ -424,7 +424,9 @@ class WhatLeavingNowWouldCost(MarksCase):
 		with a mark against it is reachable - and has to be said."""
 		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}
 		self.assertEqual(steps[0]["red_from"], "19:28")
-		self.assertEqual(steps[0]["red_to"], "20:21")
+		# 20:22, not 20:21 (ALV-401): 593 of 600 minutes is 98.83%, which the
+		# payslip reads as 98.8 - still a red. 594 minutes is the first that is not.
+		self.assertEqual(steps[0]["red_to"], "20:22")
 
 	def test_a_rung_with_no_red_band_says_so_rather_than_guessing(self):
 		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}

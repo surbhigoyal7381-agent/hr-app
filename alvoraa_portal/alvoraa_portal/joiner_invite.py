@@ -28,11 +28,18 @@ the largest subtraction in the slice and it is what pays for the gate in
 | **`send_welcome_email = 0`** | Frappe's welcome mail carries a password link, and that does not belong in a stranger's inbox by accident |
 | **No `Employee` row** | No seat, no headcount, no org chart - and no `Attendance`, which is the trap this project has already paid for once at DTC |
 
-**The number the joiner types is `User.mobile_no`**, which Frappe resolves
-through `System Settings.allow_login_using_mobile_number`
-(`frappe/core/doctype/user/user.py:831-843`, read 1 Nov 2026 on v16.33.1). That
-setting is **site-wide**: turning it on lets every employee at that tenant sign
-in with their mobile number too. Surbhi accepted that with the side effect named
+**While the invite is live, the number the joiner types is `User.mobile_no`**,
+which Frappe resolves through `System Settings.allow_login_using_mobile_number`
+(`User.find_by_credentials` - named rather than cited by line, because the line
+had already drifted and a line number in prose stops being checkable the moment
+anybody edits the file). That setting is **site-wide**: turning it on lets every
+employee at that tenant sign in with their mobile number too.
+
+**Once the invite is closed the number is not there any more** (ALV-399 - see
+`end_the_sign_in`), so Frappe's own lookup finds nothing and resolution rests
+entirely on ALV-394's `before_login` hook, which keys on `login_id` on the
+submission row instead. Either way the joiner is then refused, because closing
+also destroys the password; which of the two refusals they read is ALV-397. Surbhi accepted that with the side effect named
 (decision 6b), and **we do not patch it** - `make_sign_in` refuses a mobile login
 id while it is off and says which setting to change.
 

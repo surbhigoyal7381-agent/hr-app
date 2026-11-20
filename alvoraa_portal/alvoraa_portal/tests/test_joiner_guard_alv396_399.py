@@ -34,10 +34,12 @@ The two tests that matter most here are the ones that say **no**:
 
 **One test here belongs to ALV-394 as much as to these two tickets.** Giving the
 number back means a closed MOBILE invite no longer resolves through Frappe's own
-lookup, so the AC-17 wording now depends on ALV-394's `before_login` hook. That
-is why this work landed together with it, and
-`test_a_closed_MOBILE_invite_still_tells_the_joiner_their_sign_in_ended` is what
-holds the pair together.
+lookup, so resolution on that path now depends on ALV-394's `before_login` hook.
+That is why this work landed together with it, and
+`test_a_closed_MOBILE_invite_still_resolves_to_its_own_account` is what holds the
+pair together. It pins resolution only - **the AC-17 wording is unreachable for a
+closed invite whatever we do here**, because the password is destroyed at close
+and frappe checks the password before the disabled flag. That is ALV-397.
 """
 
 import frappe
@@ -368,33 +370,39 @@ class JoinerDuplicateGuard(Wave4Base):
 		frappe.set_user("Administrator")
 		self.assertFalse(frappe.db.get_value(DOCTYPE, second.name, "user"))
 
-	# ── AC-17 on the MOBILE path, which this fix made depend on ALV-394 ─────
+	# ── the MOBILE path, which this fix made depend on ALV-394 ──────────────
 
-	def test_a_closed_MOBILE_invite_still_tells_the_joiner_their_sign_in_ended(self):
-		"""079 AC-17 for the mobile path, which nothing covered.
+	def test_a_closed_MOBILE_invite_still_resolves_to_its_own_account(self):
+		"""Resolution on the mobile path, which nothing covered.
 
-		AC-17: somebody whose access has ended, typing the CORRECT password,
-		must read "This sign-in has finished its job" and **never** "Invalid
-		credentials" (02-functional-spec.md:617).
+		**What this proves, and deliberately no more:** a closed mobile invite
+		still resolves to its own account rather than to nothing.
 
-		**Giving the number back is what puts this test here.** Before, a closed
-		mobile invite worked by accident: Frappe's own lookup finds a typed
-		number through `User.mobile_no`, so it found the disabled account and
-		answered "User disabled or missing", which the login page turns into the
-		AC-17 wording. Release the number and that lookup finds nothing, so the
-		only thing standing between the joiner and "your password is wrong" is
-		ALV-394's `before_login` hook, which resolves what HR typed through
-		`login_id` on the row instead.
+		Giving the number back is what puts this test here. Before, the mobile
+		path worked by accident - Frappe's own lookup finds a typed number
+		through `User.mobile_no`, so a closed account was found because it still
+		carried the number. Release it and that lookup finds nothing, so
+		resolution now rests entirely on ALV-394's `before_login` hook, which
+		keys on `login_id` on the submission row. ALV-394's suite proves that
+		branch for an **email** invite; the mobile path is what this change
+		moved onto it, so pinning it belongs here.
 
-		ALV-394's own suite proves that branch for an **email** invite
-		(`test_it_resolves_to_the_disabled_account_not_to_nothing`). This is the
-		same branch reached by a number, and it is the path my change moved onto
-		it - so it is mine to pin, not theirs.
+		**It does NOT prove 079 AC-17, and AC-17 is not met for this case by
+		anything.** AC-17 promises an ended joiner "This sign-in has finished
+		its job", never "Invalid credentials" - but only for "the CORRECT
+		password", and `end_the_sign_in` destroys the password. So no correct
+		password exists, and `frappe/auth.py` tests `is_authenticated` BEFORE
+		`enabled`: the password check fails first and answers "Invalid login
+		credentials", which never reaches the ENDED wording. The requirement
+		contradicts itself. Found by the ALV-397 session; confirmed here by
+		reading the order in frappe's `authenticate`, because this test used to
+		claim the AC-17 wording in its own name.
 
-		**My first version of this test asserted the wrong thing.** It called
-		`User.find_by_credentials` with the raw number, which is the lookup the
-		hook runs *in front of*, so it could never pass however correct the
-		product was. Driven at the seam ALV-394's tests use, through the hook.
+		**Two earlier versions of this test were wrong, recorded so neither
+		comes back.** The first called `User.find_by_credentials` with the raw
+		number - the lookup the hook runs *in front of* - so it could not pass
+		however correct the product was. The second passed, but its name said it
+		proved the joiner is told their sign-in ended, which no code does.
 		"""
 		from frappe.core.doctype.user.user import User
 
@@ -424,7 +432,7 @@ class JoinerDuplicateGuard(Wave4Base):
 
 		self.assertEqual(resolved, account,
 		                 "the hook did not resolve the number to the closed "
-		                 "account, so the joiner is told their password is wrong")
+		                 "account, so the attempt is not even attributed to it")
 		self.assertEqual(frappe.db.get_value("User", resolved, "enabled"), 0,
 		                 "resolved, but to an account Frappe would let in")
 

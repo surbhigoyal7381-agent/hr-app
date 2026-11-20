@@ -338,6 +338,21 @@ class TestTheLoginPageHasOneReveal(_Base):
 		html = _the_login_page()
 		self.assertIn("kx-pw-toggle", html)
 
+	def test_the_eye_is_a_44px_target(self):
+		"""079's reason for a 44 px reveal outlived the button it asked for.
+
+		The eye was 18 px of SVG with 4 px of padding - a 26 px target on the
+		one screen used by somebody who cannot ring our helpdesk. Surbhi asked
+		for 44 px on 20 November 2026. Asserted here because a touch target is
+		exactly the kind of thing that shrinks again in a tidy-up.
+		"""
+		html = _the_login_page()
+		start = html.index(".kx-pw-toggle {")
+		rule = html[start:html.index("}", start)]
+		self.assertIn("min-width: 44px", rule)
+		self.assertIn("min-height: 44px", rule)
+		self.assertIn("justify-content: center", rule)
+
 	def test_the_refusal_no_longer_names_a_button_that_is_gone(self):
 		html = _the_login_page()
 		self.assertIn("JOIN-BADPASS", html)

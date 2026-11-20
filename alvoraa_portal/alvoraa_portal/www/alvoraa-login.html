@@ -244,18 +244,36 @@ html, body {
 .kx-pw-wrap {
   position: relative;
 }
+/* 44 px, and the icon does not move (ALV-394, 20 Nov 2026).
+
+   079 asked for a 44 px reveal because mistyping a dashed password is the
+   likeliest real failure on the one screen used by somebody who cannot ring
+   our helpdesk. It got that as a separate full-width button, which was removed
+   on 20 Nov - so the argument came back to the eye, and the eye was an 18 px
+   SVG with 4 px of padding: a 26 px target.
+
+   The box is now 44 x 44 and the icon is centred in it. `right` drops from
+   12 px to 3 px precisely so the icon's centre stays where it was: 3 + 22 is
+   the same 25 px from the edge as 12 + 4 + 9. Nothing moves on screen; the
+   part you can hit trebles in area.
+
+   It cannot overflow the field: .kx-input is 11 px padding twice, 16 px text
+   and 1.5 px borders twice - about 44 px - and this is centred on it. */
 .kx-pw-toggle {
   position: absolute;
-  right: 12px;
+  right: 3px;
   top: 50%;
   transform: translateY(-50%);
   background: none;
   border: none;
   cursor: pointer;
   color: var(--text3);
-  padding: 4px;
+  padding: 0;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 .kx-pw-toggle:hover { color: var(--primary); }
 

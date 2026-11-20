@@ -202,13 +202,24 @@ class TestItLeavesEveryOtherSignInAlone(_Base):
 
 class TestAnEndedSignInSaysSo(_Base):
 	def test_it_resolves_to_the_disabled_account_not_to_nothing(self):
-		"""Frappe answers "User disabled or missing" for a disabled account,
-		and the page turns THAT into "this sign-in has finished its job".
+		"""Resolve to the account that exists, not to nothing.
 
-		Resolve to nothing instead and the joiner is told their password is
-		wrong, tries again, and locks themselves out - which is the failure
-		079 decision 4a was written to avoid. For an email invite that could
-		not work at all before this fix.
+		**Correcting what this docstring said on 20 Nov 2026.** It claimed
+		Frappe answers "User disabled or missing" for a disabled account and
+		the page turns that into "this sign-in has finished its job". The
+		first half is true only when there is a password to check. There is
+		not: `end_the_sign_in` destroys it (`joiner_invite.py:594`), so
+		`find_by_credentials` marks the login unauthenticated (`user.py:849`)
+		and `authenticate` tests THAT before `enabled` (`auth.py:282-288`).
+		The refusal is always "Invalid login credentials". ALV-397.
+
+		So this test proves what it asserts - the resolution - and nothing
+		about the wording. The wording is ALV-397's, and 079 AC-17 as written
+		cannot be met at all while the password is destroyed.
+
+		Resolving to nothing would still be worse: the joiner would be told
+		their password is wrong AND no row would exist to explain it. For an
+		email invite none of this worked before ALV-394.
 		"""
 		doc, _ = self._invited(AN_EMAIL)
 		joiner_invite.end_the_sign_in(doc, "test")
@@ -591,7 +602,74 @@ class TestTheLoginPageHasOneReveal(_Base):
 		self.assertIn("min-height: 44px", rule)
 		self.assertIn("justify-content: center", rule)
 
-	def test_the_refusal_no_longer_names_a_button_that_is_gone(self):
+	def test_a_refusal_covers_both_causes_and_resolves_neither(self):
+		"""ALV-397, and the two things that can fail invisibly here.
+
+		**Honest about both**, because the server cannot tell them apart: the
+		password is destroyed on close (`joiner_invite.py:594`), so Frappe
+		always answers "Invalid login credentials" and never reaches the
+		disabled branch. AC-17's gate on "the correct password" cannot exist.
+
+		**Resolving neither** is the privacy control, not an accident. With no
+		password to check, any message that named the real cause would tell a
+		stranger whether an address was invited by this employer - the oracle
+		079 US-4 forbids. So this asserts the words stay conditional.
+		"""
 		html = _the_login_page()
-		self.assertIn("JOIN-BADPASS", html)
-		self.assertIn("Press the eye beside the box", html)
+		start = html.index("const REFUSED_WORDS")
+		words = html[start:html.index("\n", start)]
+
+		# Both causes named, neither asserted.
+		self.assertIn("may be mistyped", words)
+		self.assertIn("may already be finished", words)
+		# The retyping loop decision 4a was written about.
+		self.assertIn("stop", words.lower())
+		self.assertIn("can lock it", words)
+		# Nothing stated as fact about this person, and no employer detail.
+		for leak in ("your invite", "your employer has closed",
+		             "has finished its job"):
+			self.assertNotIn(
+				leak, words,
+				f"{leak!r} states the cause as fact, which turns the refusal "
+				f"into an oracle (079 US-4)")
+
+	def test_the_old_wrong_password_wording_is_gone(self):
+		"""It promised the joiner the password was the problem. It was the
+		only message a closed account could ever reach, so that promise was
+		wrong every time an invite had ended."""
+		html = _the_login_page()
+		self.assertNotIn("JOIN-BADPASS", html)
+		self.assertNotIn("BADPASS_WORDS", html)
+		self.assertIn("JOIN-REFUSED", html)
+
+	def test_the_ended_wording_is_kept_because_it_is_still_reachable(self):
+		"""**Not dead code, and deleting it would be the easy mistake.**
+
+		`end_the_sign_in` sets `enabled = 0` BEFORE it destroys the password,
+		in one try block whose failure is swallowed (ALV-406). If the delete
+		fails after the disable lands, the account is closed with its password
+		intact - and Frappe then really does say "User disabled or missing",
+		where the ended wording is the correct answer.
+		"""
+		html = _the_login_page()
+		self.assertIn("ENDED_WORDS", html)
+		self.assertIn("JOIN-ENDED", html)
+		self.assertIn("disabled or missing", html)
+		# And the lock branch, which never depended on a stored password.
+		self.assertIn("JOIN-LOCKED", html)
+
+	def test_the_refusal_no_longer_names_a_button_that_is_gone(self):
+		"""The reason this test exists is unchanged; the message it checks is
+		not. ALV-394 removed the full-width "Show the password" button, so no
+		refusal may tell a joiner to press it. ALV-397 then replaced the
+		wrong-password wording entirely, which is why this no longer looks for
+		"Press the eye beside the box" - the new words say "The eye beside the
+		box shows what you typed", and the point is that neither names a
+		button."""
+		html = _the_login_page()
+		self.assertIn("JOIN-REFUSED", html)
+		self.assertIn("The eye beside the box", html)
+		for gone in ("Press “Show the password”",
+		             "Press the “Show the password” button",
+		             "Show the password” to see"):
+			self.assertNotIn(gone, html)

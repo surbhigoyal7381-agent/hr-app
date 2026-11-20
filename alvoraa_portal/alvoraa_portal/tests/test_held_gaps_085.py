@@ -62,9 +62,7 @@ class AutoAttendance(_Fixtures):
 
 class Backfill(_Fixtures):
 	def _script(self):
-		repo = os.path.abspath(os.path.join(os.path.dirname(hd.__file__), *[".."] * 4))
-		spec = importlib.util.spec_from_file_location(
-			"held_backfill_gaps", os.path.join(repo, "scripts", "alv392_held_backfill_grace.py"))
+		spec = importlib.util.spec_from_file_location("held_backfill_gaps", hd.backfill_script_path())
 		mod = importlib.util.module_from_spec(spec)
 		spec.loader.exec_module(mod)
 		return mod

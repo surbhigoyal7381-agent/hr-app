@@ -23823,8 +23823,8 @@ window.pfRatingLabel = function(value, scale) {
       r.hold = res.hold; r.limit = res.limit; r.roles = res.roles;
       toast("Saved for " + r.company + ".", "ok");
       orgHeldPick();
-      pfSetHtml("org-held-msg", gpEsc("Saved. This replaces the old hidden rule of 3 requests a month. " +
-        "The old script is switched off in the same release, so two limits never run together."));
+      pfSetHtml("org-held-msg", gpEsc("Saved. If an older script also limits requests, switch it off, " +
+        "so two limits never run together."));
     }).catch(function(e) { toast(e.message || "Could not save that. Check the roles and try again.", "err"); })
       .then(function() { btn.disabled = !r.can_edit; });
   };

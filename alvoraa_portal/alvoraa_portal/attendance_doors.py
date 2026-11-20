@@ -45,9 +45,12 @@ def refuse_raiser_submit(doc, method=None):
 
 
 def refuse_outside_company(doc, method=None):
-	"""before_submit on Attendance and Attendance Request (R5). Submitting is
+	"""before_submit, before_cancel and before_update_after_submit on Attendance, and
+	before_submit and before_cancel on Attendance Request (R5). Submitting is
 	approving, and the Desk, REST and imports reach it without the portal's own
-	scope check, so an HR login approves only for the companies it may act for.
+	scope check, so an HR login approves, cancels or amends only for the companies
+	it may act for. A leave approval submits its Attendance in the approver's
+	session, so it meets this too (S-2).
 	The employee's company is read from the Employee record, never from a field
 	on the document. A manager's submit is governed by their User Permissions as
 	before (they hold no HR role); Administrator and the scheduler are exempt.
@@ -61,6 +64,6 @@ def refuse_outside_company(doc, method=None):
 		return
 	company = frappe.get_cached_value("Employee", doc.employee, "company")
 	if company not in permitted_companies(user):
-		refuse(_("This person works for a company you do not look after, so you cannot approve "
-		         "this. Ask the HR Manager of that company."), "R5",
-		       f"{doc.doctype} submit", doc.doctype, doc.name)
+		refuse(_("This person works for a company you do not look after, so you cannot approve, "
+		         "change or cancel this. Ask the HR Manager of that company."), "R5",
+		       f"{doc.doctype} {method or 'submit'}", doc.doctype, doc.name)

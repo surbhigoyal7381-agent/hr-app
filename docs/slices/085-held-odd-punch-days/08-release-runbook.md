@@ -12,7 +12,7 @@ Plain steps for Surbhi or the operator. Each step says what to read back. A step
 
 **Not checked by me:** the server, the job schedule at Grace (the 06:00 slip job is from a memory note), the free disk, the tag names in the package. Read each one on the day.
 
-## 0 · Before either release
+## 0 · Before the push
 
 1. Window: **00:30 to 05:30 IST** only, on Surbhi's word. Stop at 05:30 whatever is left. Grace's slip job is believed to run at 06:00: read its schedule from the site first and do not overlap it (OPS-18).
 2. **Disk and queue gate** (OPS-23): read free disk on the server and the length of the job queue. Stop if disk is low or the queue is not near empty. A big permission clean-up once filled the queue at DTC (5 Nov).
@@ -21,12 +21,12 @@ Plain steps for Surbhi or the operator. Each step says what to read back. A step
 
 ## 1 · The doors checklist (part of the one release)
 
-**Before the push, per tenant (Q1 and the US-13 side effect):** list every login that holds HR Manager or HR User and has **no Employee record and no Company User Permission**. After Release 1 each of them sees nobody on the attendance month view, the picker and the approve/decline screen. Give each a Company User Permission first. For Grace: `hr@grace.alvoraa.co` (AC-52). Read the permission row back. The count of such logins on dev, DTC, Grace, aahr and PPJ was **not checked** when this was written.
+**Before the push, per tenant (Q1 and the US-13 side effect, OPS-36):** list every login that holds HR Manager or HR User and has **no Employee record and no Company User Permission** (query B in section 7). After this release each of them sees nobody on the attendance month view, the picker and the approve/decline screen. Give each a Company User Permission first. For Grace: `hr@grace.alvoraa.co` (AC-52). Read the permission row back. The count of such logins on dev, DTC, Grace, aahr and PPJ was **not checked** when this was written.
 
 1. Deploy. Prove it landed by three things: the pin file, the running container, and the file itself (not the green tick alone: an old tag can deploy green).
 2. After any `docker cp`, bump `sites/assets/assets.json` in the sites volume and compare the volume copy with the image's (OPS-13). Otherwise phones keep the old script.
 3. Check: an HR login with a company can approve a colleague's correction; the same login cannot approve its own, cannot cancel or delete its own attendance, and cannot change its own punch. A named System Manager who raised a request cannot submit it.
-4. Release 1 has no data to undo.
+4. The doors have no data to undo.
 
 ## 2 · The Held checklist (part of the one release)
 
@@ -59,11 +59,14 @@ HR opens the Attendance list, chooses status Held, and releases or leaves each d
 
 ## 5 · Cache headers (AC-66, OPS-12)
 
-Read in `deploy/nginx.conf`: `Cache-Control "public, immutable"` appears only on `/assets/` (two blocks, production and dev). No block adds a cache header to the whitelisted calls the Held sheet uses. **Not proved:** what Frappe itself sends on those responses. Before Release 2, open the month call in the browser's network tab and read the response headers; none may allow storing.
+Read in `deploy/nginx.conf`: `Cache-Control "public, immutable"` appears only on `/assets/` (two blocks, production and dev). No block adds a cache header to the whitelisted calls the Held sheet uses. **Not proved:** what Frappe itself sends on those responses. Before the push, open the month call in the browser's network tab and read the response headers; none may allow storing.
 
 ## 6 · Read-through checklist for Surbhi (AC-64)
 
-- [ ] HR logins without a company counted per tenant and given one
+- [ ] HR logins without a company counted per tenant and given one (query B, expect 0)
+- [ ] Each HR login's permitted companies compared with the companies it approves for (section 7, S-1)
+- [ ] Sync accounts: rows read back, one test punch per account, stray-row count read (section 7, OPS-35 and S-3)
+- [ ] Migration rehearsed on copies of the Grace and DTC backups (section 7, OPS-38)
 - [ ] Window, disk and queue read; previous tag exists
 - [ ] Deploy proved by pin file, container and file; `assets.json` bumped
 - [ ] Migrate: sites migrated equals sites existing; `Held` and three fields read back
@@ -78,3 +81,49 @@ Read in `deploy/nginx.conf`: `Cache-Control "public, immutable"` appears only on
 - **Company permissions for HR and for sync accounts.** After this release an HR login may add, change or delete punches, and approve attendance, only for the companies it may act for (its Company User Permissions, else the company on its own Employee record, else nothing). Count HR logins with neither, per tenant, and fix them BEFORE the push (same list as the first checklist).
 - **Sync accounts (R2).** A sync account is limited to its companies only once it has Company User Permission rows. Until then it files for everyone, as today, so no tenant repeats the 2 Nov outage. **Operator step per tenant: add one Company User Permission row per sync account for each company it serves, then file one test punch and read the security log for an R2 line when a punch outside the list is tried.**
 - **Monthly limit.** A request HR files for an employee neither counts nor is refused.
+
+## 7 · Checks to run before the push (added 20 Nov 2026; OPS-35 to OPS-38, S-1, S-3)
+
+Read-only queries are run per tenant from the bench folder with `bench --site <site> mariadb`, not piped into `bench console` (13 Nov: piped scripts lose lines). Write each result down in the release record. None of this has been run.
+
+**OPS-35 · Sync accounts and their Company rows (R2).** An account with no row files for everyone, so R2 does nothing until the rows exist.
+```
+select r.parent as account, count(p.name) as company_rows, group_concat(p.for_value) as companies
+from `tabHas Role` r
+left join `tabUser Permission` p on p.user = r.parent and p.allow = 'Company'
+where r.parenttype = 'User' and r.role = 'Biometric Sync'
+  and not exists (select 1 from `tabEmployee` e where e.user_id = r.parent)
+group by r.parent;
+```
+Expect at least 1 row per account, and the companies equal the companies that machine punches for. Add the row with `apply_to_all_doctypes` OFF and `applicable_for` = Employee Checkin (the narrow pattern). Then file ONE test punch per sync account for an employee of its company and read that it saved. Prove the refusal on **dev**, not production: a punch for another company, then the `R2` line in `security.log`. On a one-company tenant write "R2 adds nothing here". On DTC the count of accounts is read, not assumed to be 8.
+
+**S-3 · Stray rows (count, expect 0 or rows that apply).** A row that does not apply to punches is ignored since this fix, but read it anyway:
+```
+select p.user, p.for_value, p.applicable_for, p.apply_to_all_doctypes
+from `tabUser Permission` p join `tabHas Role` r on r.parent = p.user and r.role = 'Biometric Sync'
+where p.allow = 'Company';
+```
+Every row listed either applies to all doctypes or has `applicable_for` = Employee Checkin, and names a company the machine serves. A row for any other doctype does nothing and can be removed.
+
+**OPS-36 · HR logins with no company (M-2 lock-out).**
+```
+select u.name from `tabUser` u
+join `tabHas Role` r on r.parent = u.name and r.parenttype = 'User' and r.role in ('HR Manager','HR User')
+where u.enabled = 1 and u.name <> 'Administrator'
+  and not exists (select 1 from `tabHas Role` s where s.parent = u.name and s.role = 'Biometric Sync')
+  and not exists (select 1 from `tabEmployee` e where e.user_id = u.name and ifnull(e.company,'') <> '')
+  and not exists (select 1 from `tabUser Permission` p where p.user = u.name and p.allow = 'Company')
+group by u.name;
+```
+Expect 0 rows. Each name returned needs a Company User Permission first.
+
+**S-1 · Permitted companies against the companies each login really approves for (per tenant).** For every login holding HR Manager or HR User (and every CXO without System Manager): list its permitted companies (its Company User Permission rows, else the company on its own Employee record) and the companies whose Attendance Requests and Leave Applications it decided in the last 60 days. Any company it decided for that is not in its permitted list needs a Company row first, or that login is refused (R4, R5, and a leave approval, S-2) the morning after. A System Manager sees every company and is not affected.
+
+**OPS-37 · hr@grace is a read-back, not a grant.** The row was granted on 20 Nov 2026 (Surbhi, in that session). Read it back before the push and write the value:
+```
+select user, allow, for_value, applicable_for, apply_to_all_doctypes
+from `tabUser Permission` where user = 'hr@grace.alvoraa.co' and allow = 'Company';
+```
+Expect one row whose `for_value` is Grace's company exactly as the Company record spells it.
+
+**OPS-38 · Migration dry run on copies (once, before main).** In a throwaway stack following `REHEARSAL.md`: restore the latest Grace and DTC backups (write the file names and dates). Record `select count(*) from `tabCustom DocPerm`` and the job-queue length. Run `bench --site <copy> migrate`. Record both again. Read that Attendance `status` options include Held, that the three Company fields exist, and that the hold switch is 0 for every company. Run the backfill's dry run against the Grace copy. **Stop if the Custom DocPerm count or the queue length moves.** Remove the throwaway stack and say so.

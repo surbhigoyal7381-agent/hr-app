@@ -156,30 +156,6 @@ def held_settings():
 
 
 @frappe.whitelist()
-def held_count(company):
-	"""How many days this month would be held if the switch were on: a whole
-	number and nothing else (PRIV-1). Refused outside the caller's companies."""
-	from hrms.alvoraa_hr_core.access import permitted_companies, refuse
-	if company not in permitted_companies():
-		refuse(_("That company is outside the companies you look after."), "SEC-4",
-		       "held_day.held_count", COMPANY, company)
-	today = getdate()
-	first = today.replace(day=1)
-	# One query. Raw SQL because the correlated count of a day's punches has no
-	# ORM form. Every value is a bound parameter.
-	return cint(frappe.db.sql(
-		"""select count(*) from `tabAttendance` a
-		   where a.docstatus = 1 and a.company = %(company)s
-		     and a.status in ('Present', 'Absent', 'Half Day') and a.in_time is not null
-		     and a.attendance_date between %(first)s and %(today)s
-		     and mod((select count(*) from `tabEmployee Checkin` c
-		              where c.employee = a.employee and c.skip_auto_attendance = 0
-		                and c.time >= a.attendance_date
-		                and c.time < date_add(a.attendance_date, interval 1 day)), 2) = 1""",
-		{"company": company, "first": first, "today": today})[0][0])
-
-
-@frappe.whitelist()
 def save_settings(company, hold, limit, roles):
 	"""The settings card's Save. The Company validate hook above is the rule;
 	this only turns the card's three values into one save."""
@@ -216,15 +192,16 @@ def _filed_by_hr(filer, employee_user):
 
 
 def enforce_monthly_limit(doc, method=None):
-	"""Attendance Request before_insert, on every door. Counts as Grace's script
-	did (AC-44): requests whose from_date is in the same month, not cancelled, not
-	Declined (Grace: not Rejected), never this request itself (it has no row yet).
+	"""Attendance Request validate, on every door and on every edit of a draft, so
+	a held-day draft edited into an ordinary request is counted (F4). Counts as
+	Grace's script did (AC-44): requests whose from_date is in the same month, not
+	cancelled, not Declined (Grace: not Rejected), never this request itself.
 	A request that carries a missing time is for a Held day and neither counts
 	nor is refused here; the validate below refuses a time on a day that is not
 	Held, so the time cannot be used to dodge the limit. A request HR files is
 	never refused and never counted: only the employee's own and a manager's on
 	behalf are (the filer is the request's owner)."""
-	if _has_time(doc):
+	if _has_time(doc) or doc.docstatus:
 		return
 	company = frappe.db.get_value("Employee", doc.employee, "company")
 	try:
@@ -244,12 +221,15 @@ def enforce_monthly_limit(doc, method=None):
 	first = getdate(doc.from_date).replace(day=1)
 	last = first.replace(day=28) + timedelta(days=4)
 	last = last - timedelta(days=last.day)
-	rows = frappe.get_all(REQUEST, filters={
+	filters = {
 		"employee": doc.employee, "docstatus": ("!=", 2),
 		"from_date": ("between", [first, last]),
 		"alvoraa_missing_log": ("is", "not set"),
 		"alvoraa_review_status": ("not in", ["Declined"]),
-	}, pluck="owner")
+	}
+	if not doc.is_new():
+		filters["name"] = ("!=", doc.name)
+	rows = frappe.get_all(REQUEST, filters=filters, pluck="owner")
 	used = sum(1 for o in rows if not _filed_by_hr(o, user))
 	if used >= limit:
 		frappe.throw(_("You have used your {0} requests this month. Held days do not count. "

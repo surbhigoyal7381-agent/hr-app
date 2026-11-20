@@ -267,31 +267,35 @@ def checkin_query_conditions(user=None):
 def _punch_refused(rule, doc, user):
 	from hrms.alvoraa_hr_core.access import log_refusal
 
-	log_refusal(rule, "Employee Checkin", doc.doctype, doc.name)
+	log_refusal(rule, "Employee Checkin", doc.doctype, doc.name, user)
 	return False
 
 
-def _machine_may_file(doc, user) -> bool:
-	"""R2. A sync account with Company User Permissions files only for those
-	companies. One with none is unscoped, as before: refusing it would repeat the
-	2 Nov outage (ALV-302) on every tenant the day this ships, so scoping starts
-	when the operator adds the rows. Reuses User Permission; no new doctype."""
-	allowed = set(frappe.get_all("User Permission", filters={"user": user, "allow": "Company"},
-	                             pluck="for_value"))
+def _machine_may_file(doc, employee, user) -> bool:
+	"""R2. A sync account with Company User Permissions touches punches only for
+	those companies: create, change and delete alike. One with none is unscoped,
+	as before: refusing it would repeat the 2 Nov outage (ALV-302) on every tenant
+	the day this ships, so scoping starts when the operator adds the rows. Only
+	rows that apply to Employee Checkin count, as Frappe applies them: for all
+	doctypes, or for this one (S-3). Reuses User Permission; no new doctype."""
+	allowed = set(frappe.get_all(
+		"User Permission", filters={"user": user, "allow": "Company"},
+		or_filters=[["apply_to_all_doctypes", "=", 1], ["applicable_for", "=", doc.doctype]],
+		pluck="for_value"))
 	if not allowed:
 		return True
-	if frappe.get_cached_value("Employee", doc.employee, "company") in allowed:
+	if frappe.get_cached_value("Employee", employee, "company") in allowed:
 		return True
 	return _punch_refused("R2", doc, user)
 
 
-def _hr_may_touch(doc, user) -> bool:
+def _hr_may_touch(doc, employee, user) -> bool:
 	"""R4. `permitted_companies` already holds the two rules the brief names: the
 	Company User Permissions first, then the company on the user's own Employee
 	record, and nothing when there is neither (the M-2 lock-out, on purpose)."""
 	from hrms.alvoraa_hr_core.access import permitted_companies
 
-	if frappe.get_cached_value("Employee", doc.employee, "company") in permitted_companies(user):
+	if frappe.get_cached_value("Employee", employee, "company") in permitted_companies(user):
 		return True
 	return _punch_refused("R4", doc, user)
 
@@ -310,25 +314,36 @@ def checkin_has_permission(doc: Document, user: str | None = None, ptype: str | 
 	None and a create looks the same as a read.
 	"""
 	is_hr, emp = _viewer(user)
-	# Slice 085 (SEC-2): nobody changes or deletes their OWN punch, HR included.
-	# Asked before HR's blanket yes. A new punch of one's own is refused for HR below.
-	if emp and doc.employee == emp and ptype in ("write", "delete"):
+	# A save is judged on the punch as it will be stored, so the employee can be moved
+	# in the same request. Judge the stored employee too (review P1).
+	employees = {doc.get("employee")}
+	if ptype in ("write", "delete") and not doc.is_new():
+		employees.add(frappe.db.get_value("Employee Checkin", doc.name, "employee"))
+	employees.discard(None)
+	# A leaver is not "active", but may still hold an HR login (F7): the own-record
+	# refusals look for the Employee record whatever its status.
+	own = emp or (is_hr and frappe.db.get_value("Employee", {"user_id": user or frappe.session.user}, "name"))
+	# Slice 085 (SEC-2): nobody changes or deletes their OWN punch, HR included, and
+	# nobody moves one to or from their own record. Asked before HR's blanket yes.
+	# A new punch of one's own is refused for HR below.
+	if own and own in employees and ptype in ("write", "delete"):
 		return False
 	# And HR does not add a punch to their own record: HR may choose `time` (permlevel 1),
 	# so that is a back-dated punch nobody else sees (review F1). The phone and portal
 	# punches insert with ignore_permissions and are not affected. Only the machine
 	# account files punches as itself, and it has no Employee record, so `emp` is empty.
-	if is_hr and emp and doc.employee == emp and ptype == "create":
+	if is_hr and own and doc.employee == own and ptype == "create":
 		return False
 	# R2: a sync account that has been given Company permissions files only for those
 	# companies. R4: a human HR login adds, changes and deletes punches only for the
 	# companies it may act for. Both refusals are logged (rule R2 or R4).
-	if ptype in ("create", "write", "delete") and doc.get("employee"):
-		if files_as_machine(user):
-			if ptype == "create" and not _machine_may_file(doc, user):
+	if ptype in ("create", "write", "delete"):
+		for employee in employees:
+			if files_as_machine(user):
+				if not _machine_may_file(doc, employee, user):
+					return False
+			elif is_hr and not _hr_may_touch(doc, employee, user):
 				return False
-		elif is_hr and not _hr_may_touch(doc, user):
-			return False
 	if is_hr:
 		return True
 	# ALV-302. The machine account files a new punch for anybody, and that is all.

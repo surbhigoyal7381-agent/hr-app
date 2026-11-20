@@ -748,6 +748,8 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "notices.py"): 0,
 		# Slice 063 (new file): DTC's leave rules read and notify; none needed.
 		("alvoraa_portal", "leave_rules.py"): 0,
+		# Slice 085: one deliberate bypass, the slip re-save after a release (F6).
+		("alvoraa_portal", "held_day.py"): 1,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
 		# is proven for them too, not only for files already listed.
 		("alvoraa_portal", "org_figures.py"): 0,

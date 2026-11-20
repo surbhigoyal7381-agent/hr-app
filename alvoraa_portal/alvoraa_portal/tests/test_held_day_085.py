@@ -26,6 +26,17 @@ COMPANY = "ALV085 Company"
 OTHER = "ALV085 Other Company"
 
 
+def backfill_script_path():
+	"""Where the backfill script is. CI copies only the apps into the bench, so the
+	repo's scripts/ folder is in GITHUB_WORKSPACE there; locally it sits four folders
+	above this file. A missing file fails the test: it never skips."""
+	repo = os.environ.get("GITHUB_WORKSPACE") or os.path.abspath(
+		os.path.join(os.path.dirname(__file__), *[".."] * 4))
+	path = os.path.join(repo, "scripts", "alv392_held_backfill_grace.py")
+	assert os.path.exists(path), "the backfill script is not at " + path
+	return path
+
+
 def setUpModule():
 	_ac_setup()
 	held_day.after_migrate()
@@ -414,12 +425,9 @@ class HeldDayCase(FrappeTestCase):
 			self._as_save("Administrator", **{held_day.EXEMPT: "Sales Executive, No Such Role"})
 		self.assertIn("No Such Role", str(cm.exception))
 
-	def test_the_count_is_an_integer_and_refused_outside_the_callers_companies(self):
+	def test_saving_settings_is_refused_outside_the_callers_companies(self):
 		frappe.set_user(self.hr)
 		try:
-			self.assertIsInstance(held_day.held_count(self.company), int)
-			with self.assertRaises(frappe.PermissionError):
-				held_day.held_count(self.other_company)
 			with self.assertRaises(frappe.PermissionError):
 				held_day.save_settings(self.other_company, 1, 3, "")
 		finally:
@@ -612,10 +620,7 @@ class HeldDayCase(FrappeTestCase):
 
 	def _backfill_module(self):
 		import importlib.util
-		repo = os.path.abspath(os.path.join(os.path.dirname(__file__), *[".."] * 4))
-		path = os.path.join(repo, "scripts", "alv392_held_backfill_grace.py")
-		if not os.path.exists(path):
-			self.skipTest("the script is not on this checkout's path")
+		path = backfill_script_path()
 		spec = importlib.util.spec_from_file_location("held_backfill_e2e", path)
 		mod = importlib.util.module_from_spec(spec)
 		spec.loader.exec_module(mod)
@@ -706,10 +711,7 @@ class HeldDayCase(FrappeTestCase):
 
 	def test_hold_then_rerun_finds_nothing_then_undo_restores(self):
 		import importlib.util
-		repo = os.path.abspath(os.path.join(os.path.dirname(__file__), *[".."] * 4))
-		path = os.path.join(repo, "scripts", "alv392_held_backfill_grace.py")
-		if not os.path.exists(path):
-			self.skipTest("the script is not on this checkout's path")
+		path = backfill_script_path()
 		spec = importlib.util.spec_from_file_location("held_backfill_run", path)
 		mod = importlib.util.module_from_spec(spec)
 		spec.loader.exec_module(mod)
@@ -741,10 +743,7 @@ class BackfillScript(FrappeTestCase):
 
 	def _load(self):
 		import importlib.util
-		repo = os.path.abspath(os.path.join(os.path.dirname(__file__), *[".."] * 4))
-		path = os.path.join(repo, "scripts", "alv392_held_backfill_grace.py")
-		if not os.path.exists(path):
-			self.skipTest("the script is not on this checkout's path")
+		path = backfill_script_path()
 		spec = importlib.util.spec_from_file_location("held_backfill", path)
 		mod = importlib.util.module_from_spec(spec)
 		spec.loader.exec_module(mod)

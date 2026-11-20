@@ -167,7 +167,11 @@ doc_events = {
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
         # Slice 085 (R5): approving is scoped to the HR login's companies, on every door.
-        "before_submit": "alvoraa_portal.attendance_doors.refuse_outside_company",
+        # An HR login does not submit a draft of its own day either, whoever made it (SEC-2).
+        "before_submit": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+        ],
         # Slice 085 (SEC-2): nobody confirms, cancels, deletes or makes their OWN
         # attendance, on any door. See attendance_doors.py.
         # Slice 085: the doors first, then the hold, which writes Held before the first save.
@@ -175,8 +179,14 @@ doc_events = {
             "alvoraa_portal.attendance_doors.refuse_own_attendance_new",
             "alvoraa_portal.held_day.hold_odd_punch_day",
         ],
-        "before_update_after_submit": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
-        "before_cancel": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+        "before_update_after_submit": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+        ],
+        "before_cancel": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+        ],
         "on_trash": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
         # ALV-351: shows HR the held-day confirm fields on a missing-punch day.
         "onload": "alvoraa_portal.payroll_rules_apply.attendance_onload",
@@ -203,9 +213,15 @@ doc_events = {
             "alvoraa_portal.held_day.release_by_hr",
         ],
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
+        "before_cancel": "alvoraa_portal.attendance_doors.refuse_outside_company",
+        "before_update_after_submit": "alvoraa_portal.attendance_doors.refuse_outside_company",
         # Both validates are kept: 085's missing-time rule and 084's own-day window.
         "validate": [
             "alvoraa_portal.held_day.validate_missing_time",
+            # Slice 085: the monthly limit, on every door and on every draft edit (a
+            # held-day draft edited into an ordinary request is counted); held-day
+            # requests are outside it.
+            "alvoraa_portal.held_day.enforce_monthly_limit",
             "alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
         ],
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
@@ -220,8 +236,6 @@ doc_events = {
         # half-day leave day at a company with an enabled pay rule set.
         "before_insert": [
             "alvoraa_portal.leave_rules.prepare_half_day_correction",
-            # Slice 085: the monthly limit, on every door; held-day requests are outside it.
-            "alvoraa_portal.held_day.enforce_monthly_limit",
         ],
     },
 

@@ -162,3 +162,61 @@ nginx: the diff touches no `deploy/` file (fact, stat shows none), so `nginx -t`
 
 ## 6 · Rollout update, 20 Nov 2026 (coordinator, from Surbhi's decisions)
 **One release, not two.** Rollout item 3 above ("main R1 then R2") is replaced: ONE push of the whole slice to main in the night window, hold switch OFF for every company (the field default is 0, test-pinned), then switched ON for Grace only by the runbook steps. A separate Release 1 cut without `held_day.py` is no longer needed, so OPS-32 and the one-vs-two question are closed. New per-tenant precondition: HR logins with no company get one first (they now also lose punch edits and approvals), and sync accounts get Company User Permission rows to be scoped (runbook, last section).
+
+## §7 Release readiness re-check after the fix round (2026-11-20)
+Read: worktree `.claude/worktrees/085-held-odd-punch-days`, branch slice/085-held-odd-punch-days, HEAD 148cb639; `git fetch origin dev` run today; `08-release-runbook.md` (80 lines); `field_app_access.py` lines 54-77 and 265-345 (R2/R4). Nothing run on any server, nothing pushed. Tenant state, disk, queue and schedules: **I could not check them.** This section replaces the HEAD and the "084 conflicts" line of §5 (HEAD was 208de542 then).
+
+**Verdict: READY to push to dev on the code and plan, with three runbook gaps (OPS-35 to OPS-37) that must be fixed before MAIN, not before dev.** Fact: nothing in the plan blocks a dev push.
+
+**Dev moved again.** Fact: `origin/dev` = acc89592 (today). HEAD already contains 15c716f6; dev is **two commits ahead** of it: f5b84441 (084 test report, reviews, release readiness; docs only) and acc89592 (`scripts/check_positions_tree.js`, 22 new lines; a CI check script). Fact: `git merge-tree --write-tree HEAD origin/dev` exit 0, no conflict list: a fresh rebase is clean. Neither commit touches `hooks.py`, `hr_api.py`, `portal.js` or any file 085 edits (diff names read). **Recommend:** rebase once more just before the push (fetch again; dev moves) and re-run `check_app_integrity.py`; no need to re-run the 085 test modules for these two commits (docs and one JS check script), but `check_positions_tree.js` runs in CI, so wait for CI.
+
+Fit of the runbook to ONE release: sections 1 and 2 read as two checklists in one release (correct), `§0` gates, rollback order (undo list, then old image) and the read-through list are consistent with §6 above. Two stale phrases to tidy (P4): "Before Release 2" (runbook §5) and "After Release 1" (first checklist) should say "before the push" / "after the release".
+
+| ID | Recommendation | Why / cost of ignoring | Level | Decision |
+|---|---|---|---|---|
+| OPS-35 | **Runbook: add the read-back queries for the sync accounts' Company User Permission rows, per tenant** (below). Count rows per account, not just "some exist". File one test punch per account afterwards | Fact (`field_app_access.py:279`): an account with no rows stays unscoped, so R2 does nothing until the rows exist, silently. Inference: a row for the wrong company refuses every punch that account files and repeats the 2 Nov outage (ALV-302) for that machine, with only an R2 line in the security log, which ALV-391 says may not be written | P1 for DTC (8 machines), P2 for Grace | |
+| OPS-36 | **Runbook: replace "count HR logins without a company, not checked" with the query below, and write the counts per tenant before the push.** The 5 tenants named (dev, DTC, Grace, aahr, PPJ) are the ones I could see named; the real list is whatever `bench --site all list-apps` / the sites volume shows | Fact (R4 code): a human HR login with neither a Company User Permission nor an Employee company is refused every punch change and approval (the M-2 lock-out, on purpose). Cost of ignoring: HR cannot correct punches the morning after | P1 | |
+| OPS-37 | **Runbook: hr@grace is a read-back, not a grant.** Replace "Give ... hr@grace" with "granted 20 Nov 2026 (per Surbhi, this session); read the row back before the push and write the value". Add the dry-run block (below). | I could not read Grace's site, so the grant is **unverified by me**. A row granted for the wrong company, or later removed, locks HR out | P2 | |
+| OPS-33 | (unchanged, now concrete) after the rebase `portal.js` differs from the volume's: compare `sites/assets/assets.json` in the sites volume against the image's, and bump it after any `docker cp` | Memory 23 Sep, 28 Oct: volume hides image assets | P2 | |
+| OPS-38 | **Migration dry run on copies: needed, once, before main.** Runbook has no such step (read: no "dry run" of a migrate; its "dry run" is the backfill's). Add it | Property Setter + about 10 Custom Fields land on every site; 5 Nov stall | P1 for main | |
+
+### Read-back queries (read-only; run by the user or with her word; **I have not run any of them**)
+Run per tenant, from the bench folder, as `env/bin/python`-based `frappe.init`/`frappe.db.sql` or `bench --site <site> mariadb`. Not piped into `bench console` (memory 13 Nov: piped scripts lose lines).
+
+**A. Sync accounts, and the rows that scope them (R2).** Which accounts are machines (the sync role, no Employee record), and how many Company rows each has:
+```
+select r.parent as account, count(p.name) as company_rows, group_concat(p.for_value) as companies
+from `tabHas Role` r
+left join `tabUser Permission` p on p.user = r.parent and p.allow = 'Company'
+where r.parenttype = 'User' and r.role = 'Biometric Sync'
+  and not exists (select 1 from `tabEmployee` e where e.user_id = r.parent)
+group by r.parent;
+```
+Expect: **company_rows >= 1 for every account**, and `companies` equals exactly the companies whose staff that machine punches for. A 0 means R2 is not on for that account. **DTC:** the count of accounts returned should match what was set up (8 machines may share one account, `biometric.sync@dtc`, as the code comment says; I do not know; read the count rather than assume 8 rows). **Grace:** expect `biometric.sync@grace.alvoraa.co` with Grace's company; the two machines GRCDARIA1 and GRCSECU1 post through that one account (Unknown: I read that in the brief, not on the site). A user permission row's `applicable_for`/`apply_to_all_doctypes` is not read by R2 (fact, line 279 filters user + allow only). **Recommend the narrow pattern** (one row per doctype that needs it, no `apply_to_all_doctypes`) as on DTC (memory 26 Oct), so the row does not also restrict what the account reads elsewhere. After adding: file one test punch per account for an employee of its company, read that it saved, and read the security log for an R2 line only when a punch for another company is tried (test on dev first; on production only with her word).
+
+**B. Human HR logins with no company (M-2 lock-out count).** Excludes machine accounts (they go through R2, not R4):
+```
+select u.name
+from `tabUser` u
+join `tabHas Role` r on r.parent = u.name and r.parenttype = 'User' and r.role in ('HR Manager','HR User')
+where u.enabled = 1 and u.name <> 'Administrator'
+  and not exists (select 1 from `tabHas Role` s where s.parent = u.name and s.role = 'Biometric Sync')
+  and not exists (select 1 from `tabEmployee` e where e.user_id = u.name and ifnull(e.company,'') <> '')
+  and not exists (select 1 from `tabUser Permission` p where p.user = u.name and p.allow = 'Company')
+group by u.name;
+```
+Expect **0 rows after the fix**; write the count per tenant before the push. Each name returned needs a Company User Permission first. Administrator is excluded (exempt by design). System Manager users without an HR role are not in this list because the R4 branch needs `is_hr`; not checked in code beyond line 296-297.
+
+**C. hr@grace (read-back of the grant).**
+```
+select user, allow, for_value, applicable_for, apply_to_all_doctypes
+from `tabUser Permission` where user = 'hr@grace.alvoraa.co' and allow = 'Company';
+```
+Expect one row, `for_value` = Grace's company name as the Company record spells it. Write the value read. Then, logged in as hr@grace on dev-equivalent or after release on Grace, the team shows on the month view.
+
+### Migration dry run on copies (add to runbook §0)
+**For the user to approve; not run.** Local only, `REHEARSAL.md` route, in a throwaway stack: restore the latest Grace and DTC backups; record `select count(*) from `tabCustom DocPerm`` and the job-queue length; `bench --site <copy> migrate`; record both again; read Attendance.status options include Held and the three Company fields exist; read the hold switch is 0 for every company; run the backfill dry run (default) against the Grace copy. **Stop if the DocPerm count or the queue moves.** Then remove the throwaway stack and say so. A backup you have not restored is not a rehearsal: say which backup file and its date.
+
+### Still open
+OPS-35, 36, 37, 38 (runbook edits are the engineer's file; I did not edit `08`). Earlier OPS-24 to OPS-28 decisions still blank. Unknown: every tenant's counts, disk, queue, the 06:00 Grace job schedule.
+**Subtract pass:** removed a proposed per-machine row check by device id (the account is the unit, and the code never judges by device) and a proposed security-log alert; kept only the three read-only queries. Nothing else.

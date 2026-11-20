@@ -36,8 +36,12 @@ class PunchFixCase(FrappeTestCase):
 		self.h.setUp()
 		h = self.h
 		self.emp, self.hr, self.day = h.worker, h.hr, h.day
-		self.emp_user = h._login("emp", ("Employee Self Service",))
-		frappe.db.set_value("Employee", self.emp, "user_id", self.emp_user)
+		self.emp_user = h._login("emp", ())
+		# Linking the login is what gives it the employee role (ERPNext's own hook), so this is
+		# a save and not a bare set_value.
+		worker = frappe.get_doc("Employee", self.emp)
+		worker.user_id, worker.create_user_permission = self.emp_user, 0
+		worker.save(ignore_permissions=True)
 		# DTC's setting: the day's hours are the sum of each in/out pair, so a break is taken off.
 		frappe.db.set_value("Shift Type", hd.SHIFT, "working_hours_calculation_based_on",
 		                    "Every Valid Check-in and Check-out")
@@ -266,7 +270,7 @@ class Raising(PunchFixCase):
 			mk()
 
 	def test_a_manager_can_send_for_a_held_day_but_not_an_ordinary_day_or_a_set_aside(self):
-		mgr = self.h._login("mgr", ("Employee Self Service",))
+		mgr = self.h._login("mgr", ())
 		self.h._employee("Mgr", mgr)
 		att, names = self.held_three()
 		self.refused(lambda: self.fix("12:40", by=mgr, aside=[names[1]]), "Only the employee")
@@ -343,7 +347,8 @@ class Approval(PunchFixCase):
 		self.assertFalse(self.row(att).alvoraa_release_how)
 		self.assertIn("name", out)
 		# Version row names the approver
-		self.assertTrue(frappe.db.exists("Version", {"ref_doctype": CHECKIN, "docname": names[0], "owner": self.hr}))
+		versions = frappe.get_all("Version", filters={"ref_doctype": CHECKIN, "docname": names[0]}, fields=["owner"])
+		self.assertEqual([v.owner for v in versions], [self.hr])
 
 	def test_only_the_ticked_punches_change(self):
 		att, names = self.held_three()
@@ -555,7 +560,7 @@ class WhoMayDecide(PunchFixCase):
 	def test_a_login_with_the_submit_right_but_no_hr_role_is_refused(self):
 		att, names = self.held_three()
 		req = self.fix("12:40")
-		sup = self.h._login("sup", ("Employee Self Service",))
+		sup = self.h._login("sup", ())
 		self.h._employee("Sup", sup)
 		self.refused(lambda: self.decide(req, by=sup))
 		with patch.object(frappe, "get_roles", return_value=["Employee"]):
@@ -616,7 +621,7 @@ class Marks(PunchFixCase):
 				doc.skip_auto_attendance = 0  # clearing the flag on a set-aside punch
 				self.refused(lambda: doc.save(), "cannot be changed")
 				doc = frappe.get_doc(CHECKIN, added)
-				doc.log_type = "OUT"
+				doc.log_type = "IN"  # the approval stored OUT (12:00 is set aside, so 12:40 follows one punch)
 				self.refused(lambda: doc.save(), "cannot be changed")
 				self.refused(lambda: frappe.delete_doc(CHECKIN, added), "cannot be changed")
 			finally:
@@ -628,7 +633,7 @@ class Marks(PunchFixCase):
 		frappe.set_user("Administrator")
 		with patch.object(frappe, "logger") as lg:
 			doc = frappe.get_doc(CHECKIN, added)
-			doc.log_type = "OUT"
+			doc.log_type = "IN"
 			doc.save()
 		self.assertTrue(any("Administrator" in str(c) for c in lg.return_value.info.call_args_list))
 
@@ -723,7 +728,7 @@ class Screens(PunchFixCase):
 		att, names = self.held_three()
 		req = self.fix("12:40")
 		doc = frappe._dict(frappe.get_doc(REQUEST, req).as_dict())
-		mgr = self.h._login("mgr2", ("Employee Self Service",))
+		mgr = self.h._login("mgr2", ())
 		self.assertEqual(ac.not_yours_yet(doc, "Manager", mgr), "Only HR decides a punch fix.")
 		self.assertIsNone(ac.not_yours_yet(doc, "HR", self.hr))
 

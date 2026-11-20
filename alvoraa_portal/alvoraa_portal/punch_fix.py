@@ -299,6 +299,8 @@ def send(date, time=None, set_aside=None, note=None):
 	if isinstance(time, (list, tuple)) or "," in str(time or ""):
 		frappe.throw(_("One punch per request. If another is missing, send this first and add the next "
 		               "after HR decides."))
+	if isinstance(set_aside, str) and set_aside.strip().startswith("["):
+		set_aside = frappe.parse_json(set_aside)
 	ticked = [n for n in (set_aside if isinstance(set_aside, (list, tuple)) else
 	                      re.split(r"[,\s]+", str(set_aside or ""))) if n]
 	if not time and not ticked:
@@ -319,7 +321,7 @@ def send(date, time=None, set_aside=None, note=None):
 	if time:
 		log_type, _label, _when = derive(me.name, date, time, ticked)
 		doc.reason = "Forgot to Punch Out" if log_type == "OUT" else "Forgot to Punch In"
-	# No ignore_permissions: the Employee role holds create on this DocType.
+	# No permission bypass: the Employee role holds create on this DocType.
 	doc.insert()
 	return ac._shape(doc.as_dict())
 
@@ -328,6 +330,8 @@ def send(date, time=None, set_aside=None, note=None):
 
 def card(row):
 	"""Now and If approved for one waiting punch fix, plus the token to send back."""
+	if not columns_ready():
+		return {}
 	doc = frappe._dict(row)
 	day = day_row(doc.employee, doc.from_date)
 	out = {"blocked": day_state(doc.employee, doc.from_date), "seen": None}
@@ -381,7 +385,8 @@ def before_submit(doc, method=None):
 
 def refuse_cancel(doc, method=None):
 	"""An approved fix is never cancelled: cancelling would not take the punch back."""
-	if is_punch_fix(doc) and doc.docstatus == 1:
+	# before_cancel only runs on a submitted request, and by then docstatus already reads 2.
+	if is_punch_fix(doc):
 		frappe.throw(_("Raise a new request to change this day."))
 
 

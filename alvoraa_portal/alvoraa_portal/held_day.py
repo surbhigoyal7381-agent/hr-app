@@ -5,7 +5,7 @@ refused until a human has looked. At a company that has switched it on, such a
 day is written as an Attendance row with status **Held**. It is unpaid on the
 slip. It ends in one of two ways: the machine delivers the missing punch late
 (`release_on_machine_punch`), or HR approves a request that carries the missing
-time (`release_by_hr`). Everything here is a `doc_events` hook, a Custom Field
+time (slice 087: `punch_fix.apply` adds that punch for real). Everything here is a `doc_events` hook, a Custom Field
 or a Property Setter: no file in the vendored Frappe HR tree is edited.
 
 The order of the file is the life of a Held day: install, hold, release, slip.
@@ -196,12 +196,12 @@ def enforce_monthly_limit(doc, method=None):
 	a held-day draft edited into an ordinary request is counted (F4). Counts as
 	Grace's script did (AC-44): requests whose from_date is in the same month, not
 	cancelled, not Declined (Grace: not Rejected), never this request itself.
-	A request that carries a missing time is for a Held day and neither counts
-	nor is refused here; the validate below refuses a time on a day that is not
-	Held, so the time cannot be used to dodge the limit. A request HR files is
-	never refused and never counted: only the employee's own and a manager's on
-	behalf are (the filer is the request's owner)."""
-	if _has_time(doc) or doc.docstatus:
+	A request raised for a Held day neither counts nor is refused here. That is
+	`alvoraa_for_held_day`, set by the server when the request is created (slice
+	087): a punch fix on an ordinary day carries a time too, and must count. A
+	request HR files is never refused and never counted: only the employee's own
+	and a manager's on behalf are (the filer is the request's owner)."""
+	if doc.get("alvoraa_for_held_day") or doc.docstatus:
 		return
 	company = frappe.db.get_value("Employee", doc.employee, "company")
 	try:
@@ -238,14 +238,11 @@ def enforce_monthly_limit(doc, method=None):
 
 
 def validate_missing_time(doc, method=None):
-	"""Attendance Request validate: a missing time is only for a day that is Held."""
-	if not _has_time(doc):
-		return
-	if not doc.get("alvoraa_missing_log"):
+	"""Attendance Request validate. Since slice 087 a time may be sent for any fixable
+	day (`punch_fix.validate` judges the day and works out In or Out); this keeps only
+	the In/Out rule for a site whose migrate has not run yet."""
+	if _has_time(doc) and not doc.get("alvoraa_missing_log"):
 		frappe.throw(_("Say whether the missing punch was in or out."))
-	if str(doc.from_date) != str(doc.to_date) or not _held_row(doc.employee, doc.from_date):
-		frappe.throw(_("That day is not held, so there is no missing time to send. "
-		               "Open the day again to see what it needs."))
 
 
 # ── the hold (US-3) ──────────────────────────────────────────────────────────
@@ -277,27 +274,40 @@ def _held_row(employee, date):
 		["name", "shift", "company"], as_dict=True)
 
 
-def _day_logs(employee, date, shift):
-	return frappe.get_all(
-		"Employee Checkin",
-		filters={"employee": employee, "skip_auto_attendance": 0, "offshift": 0,
-		         "time": ("between", [f"{date} 00:00:00", f"{date} 23:59:59"])},
-		fields=["name", "time", "log_type", "shift_start", "shift_end"],
-		order_by="time asc")
+def _day_logs(employee, date, shift, aside=()):
+	"""The punches a day is judged from. `aside` are punch names to leave out (slice 087:
+	a punch a pending fix would set aside; once approved it is out through its own
+	`skip_auto_attendance`)."""
+	filters = {"employee": employee, "skip_auto_attendance": 0, "offshift": 0,
+	           "time": ("between", [f"{date} 00:00:00", f"{date} 23:59:59"])}
+	if aside:
+		filters["name"] = ("not in", list(aside))
+	return frappe.get_all("Employee Checkin", filters=filters,
+	                      fields=["name", "time", "log_type", "shift_start", "shift_end"],
+	                      order_by="time asc")
 
 
-def worked_out(row, extra=None):
-	"""(status, working_hours, late, early, in_time, out_time) for a Held row,
-	by the Shift Type's own `get_attendance`: no threshold rule of ours."""
+def extra_when(shift, date, when, first_time=None):
+	"""When an added punch happened: on the day, or after midnight on a night shift
+	whose out time is earlier than the first punch. One rule, for the preview and the insert."""
+	if not isinstance(when, datetime):
+		when = datetime.combine(getdate(date), when)
+	if first_time and shift.get("start_time") and shift.get("end_time") \
+			and shift.start_time > shift.end_time and when < get_datetime(first_time):
+		when += timedelta(days=1)
+	return when
+
+
+def worked_out(row, extra=None, aside=()):
+	"""(status, working_hours, late, early, in_time, out_time) for a day, by the Shift
+	Type's own `get_attendance`: no threshold rule of ours. `extra` is a punch not yet
+	stored, as (time, log_type); `aside` are punch names to leave out."""
 	shift = frappe.get_cached_doc("Shift Type", row.shift)
-	logs = _day_logs(row.employee, row.attendance_date, row.shift)
+	logs = _day_logs(row.employee, row.attendance_date, row.shift, aside)
 	if extra:
 		when, log_type = extra
 		first = logs[0] if logs else frappe._dict()
-		when = datetime.combine(getdate(row.attendance_date), when) if not isinstance(when, datetime) else when
-		if logs and shift.start_time and shift.end_time and shift.start_time > shift.end_time \
-				and when < get_datetime(logs[0].time):
-			when += timedelta(days=1)  # a night shift: the out time is after midnight
+		when = extra_when(shift, row.attendance_date, when, logs[0].time if logs else None)
 		logs.append(frappe._dict(time=when, log_type=log_type,
 		                         shift_start=first.get("shift_start"), shift_end=first.get("shift_end")))
 		logs.sort(key=lambda x: get_datetime(x["time"]))
@@ -319,16 +329,16 @@ def _as_time(value):
 	return (datetime.min + value).time() if isinstance(value, timedelta) else value
 
 
-def preview(employee, date, missing_time, missing_log):
+def preview(employee, date, missing_time, missing_log, aside=()):
 	"""What the day would become on approval, for the HR card (Q3). The same
 	function approval runs, so the card cannot promise something else."""
 	row = _held_row(employee, date)
 	if not row or not row.shift:
 		return None
 	row = frappe._dict(row, employee=employee, attendance_date=getdate(date))
-	status, hours, *_rest = worked_out(row, (frappe.utils.get_time(missing_time), missing_log))
+	status, hours, *_rest = worked_out(row, (frappe.utils.get_time(missing_time), missing_log), aside)
 	return {"status": status, "working_hours": flt(hours, 2),
-	        "punches": [get_datetime(x.time).strftime("%H:%M") for x in _day_logs(employee, date, row.shift)],
+	        "punches": [get_datetime(x.time).strftime("%H:%M") for x in _day_logs(employee, date, row.shift, aside)],
 	        "slip_final": is_in_final_slip(employee, date)}
 
 
@@ -353,13 +363,19 @@ def _write_release(att_name, row, outcome, how, by):
 
 
 def note_held_day(doc, method=None):
-	"""Attendance Request before_submit. Stock is about to overwrite the row with
-	Present, so remember it was Held, and refuse what cannot be worked out."""
-	row = _held_row(doc.employee, doc.from_date) if str(doc.from_date) == str(doc.to_date) else None
-	if not row:
-		if _has_time(doc):
+	"""Attendance Request before_submit. Refuses what cannot be worked out. A punch fix
+	(slice 087) is written by `punch_fix.apply`, which also judges the day; here it
+	is only held to what 085 promised: a request raised for a Held day that has been
+	released since says so, and is declined."""
+	from alvoraa_portal.punch_fix import is_punch_fix
+
+	if is_punch_fix(doc):
+		if doc.get("alvoraa_for_held_day") and not _held_row(doc.employee, doc.from_date):
 			frappe.throw(_("That day is no longer held, so there is nothing to release. "
 			               "Decline this request."))
+		return
+	row = _held_row(doc.employee, doc.from_date) if str(doc.from_date) == str(doc.to_date) else None
+	if not row:
 		# A request for several days would make a Held day Present with no hours worked
 		# out and no release record (review F3). The one door is a request for that
 		# one day, carrying the missing time.
@@ -373,23 +389,8 @@ def note_held_day(doc, method=None):
 	if not row.shift:
 		frappe.throw(_("This day has no shift, so its hours cannot be worked out. Ask a "
 		               "System Manager to set the shift on the day, then approve again."))
-	if not _has_time(doc):
-		frappe.throw(_("This day is held. The request needs the missing punch time so the "
-		               "hours can be worked out. Ask the employee to send it, or decline."))
-	doc.flags.held_row = row.name
-
-
-def release_by_hr(doc, method=None):
-	"""Attendance Request on_submit, after stock has written its row."""
-	name = doc.flags.get("held_row")
-	if not name:
-		return
-	row = frappe.db.get_value(ATTENDANCE, name, ["name", "employee", "attendance_date", "shift"],
-	                          as_dict=True)
-	outcome = worked_out(row, (frappe.utils.get_time(doc.alvoraa_missing_time), doc.alvoraa_missing_log))
-	_write_release(name, row, outcome, "HR decision", frappe.session.user)
-	# Own try: a slip fault must never undo a release (AC-17, OPS-19).
-	frappe.flags.held_slip = refresh_draft_slip(row.employee, row.attendance_date)
+	frappe.throw(_("This day is held. The request needs the missing punch time so the "
+	               "hours can be worked out. Ask the employee to send it, or decline."))
 
 
 def release_on_machine_punch(doc, method=None):

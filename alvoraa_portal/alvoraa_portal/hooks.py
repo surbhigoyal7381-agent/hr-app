@@ -217,15 +217,23 @@ doc_events = {
     "Attendance Request": {
         # Slice 085: after stock has written its row, the Held day is released
         # from the corrected time, by the shift's own thresholds.
+        # Slice 087: `punch_fix.apply` replaces 085's `release_by_hr`: it adds the real
+        # punch, sets the ticked ones aside, judges the day and writes the release.
         "on_submit": [
             "alvoraa_portal.attendance_correction.on_submit",
-            "alvoraa_portal.held_day.release_by_hr",
+            "alvoraa_portal.punch_fix.apply",
         ],
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
-        "before_cancel": "alvoraa_portal.attendance_doors.refuse_outside_company",
+        "before_cancel": [
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+            "alvoraa_portal.punch_fix.refuse_cancel",
+        ],
         "before_update_after_submit": "alvoraa_portal.attendance_doors.refuse_outside_company",
         # Both validates are kept: 085's missing-time rule and 084's own-day window.
         "validate": [
+            # Slice 087: first, so `alvoraa_for_held_day` and the derived In/Out are
+            # set before the limit and the window read them.
+            "alvoraa_portal.punch_fix.validate",
             "alvoraa_portal.held_day.validate_missing_time",
             # Slice 085: the monthly limit, on every door and on every draft edit (a
             # held-day draft edited into an ordinary request is counted); held-day
@@ -239,6 +247,7 @@ doc_events = {
             "hrms.alvoraa_hr_core.access.refuse_own_submit",
             "alvoraa_portal.attendance_doors.refuse_raiser_submit",
             "alvoraa_portal.attendance_doors.refuse_outside_company",
+            "alvoraa_portal.punch_fix.before_submit",
             "alvoraa_portal.held_day.note_held_day",
         ],
         # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
@@ -278,7 +287,12 @@ doc_events = {
         # ALV-338: a person's own punch must be made near their own branch. On
         # validate, after Frappe HR has set the punch's shift. Machine punches and
         # punches HR adds are never measured. See branch_geofence.py.
-        "validate": "alvoraa_portal.branch_geofence.check_phone_punch",
+        "validate": [
+            "alvoraa_portal.branch_geofence.check_phone_punch",
+            # Slice 087: the four marks on a punch are written by an approval only.
+            "alvoraa_portal.punch_fix.guard_marks",
+        ],
+        "on_trash": "alvoraa_portal.punch_fix.guard_marks",
         # Slice 085: a late machine punch releases a Held day. Machine account
         # only; the slip refresh is queued after commit, with ids only.
         "after_insert": "alvoraa_portal.held_day.release_on_machine_punch",
@@ -770,6 +784,7 @@ after_migrate = [
     # Slice 085 (ALV-392): the Held status and the fields behind it. Both lists,
     # because a site built with `bench install-app` never runs a migrate.
     "alvoraa_portal.held_day.after_migrate",
+    "alvoraa_portal.punch_fix.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
@@ -862,6 +877,7 @@ after_install = [
     # Slice 085 (ALV-392): the Held status and the fields behind it. Both lists,
     # because a site built with `bench install-app` never runs a migrate.
     "alvoraa_portal.held_day.after_migrate",
+    "alvoraa_portal.punch_fix.after_migrate",
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
@@ -903,4 +919,6 @@ override_whitelisted_methods = {
 # fix this and `override_doctype_class` is the right mechanism instead.
 override_doctype_class = {
     "CRM Invitation": "alvoraa_portal.overrides.crm_invitation.AlvoraCRMInvitation",
+    # Slice 087: three stock blocks a punch fix cannot get past (see the file).
+    "Attendance Request": "alvoraa_portal.overrides.attendance_request.AlvoraAttendanceRequest",
 }

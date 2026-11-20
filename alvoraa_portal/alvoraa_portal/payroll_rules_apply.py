@@ -392,10 +392,15 @@ def _punches(employee, date):
 	# it made both days odd and held them both. A punch with no shift keeps its
 	# calendar date. So read this day and the next, and keep what is this day's.
 	date = getdate(date)
-	rows = frappe.get_all("Employee Checkin",
-	                      filters={"employee": employee, "time": ("between", [
-		                      "{0} 00:00:00".format(date),
-		                      "{0} 23:59:59".format(add_days(date, 1))])},
+	filters = {"employee": employee, "time": ("between", [
+		"{0} 00:00:00".format(date), "{0} 23:59:59".format(add_days(date, 1))])}
+	# Slice 087: a punch HR has set aside no longer counts. Read on this one field only
+	# (not `skip_auto_attendance`, which also marks repeat scans and filed-away punches),
+	# and only where the column exists, so an image that is deployed before its migrate
+	# judges every day exactly as it did.
+	if frappe.db.has_column("Employee Checkin", "alvoraa_fix_aside_request"):
+		filters["alvoraa_fix_aside_request"] = ("is", "not set")
+	rows = frappe.get_all("Employee Checkin", filters=filters,
 	                      fields=["time", "shift_start"], order_by="time asc")
 	times = [get_datetime(r.time) for r in rows if shift_day(r) == str(date)]
 	if not times:

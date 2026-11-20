@@ -40,6 +40,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, getdate, nowdate
 
+import alvoraa_portal.punch_fix as punch_fix
 from alvoraa_portal.held_day import _switch_on, is_in_final_slip, preview
 from alvoraa_portal.call_cache import close_cache, holiday_list_for, is_open, once, open_cache
 from alvoraa_portal.grooming import month_lines
@@ -1065,6 +1066,10 @@ def request_fields():
 		# Slice 085: the missing time a held-day request carries.
 		if frappe.db.has_column(REQUEST, "alvoraa_missing_time"):
 			fields += ["alvoraa_missing_time", "alvoraa_missing_log"]
+		# Slice 087: which punches a fix would set aside. Read to tell a punch fix from an
+		# ordinary request; `_shape` turns it into one flag and sends no punch name.
+		if frappe.db.has_column(REQUEST, "alvoraa_set_aside"):
+			fields.append("alvoraa_set_aside")
 	except Exception:
 		pass
 	return fields
@@ -1142,6 +1147,7 @@ def _shape(row, evidence=None):
 	row["missing_time"] = (frappe.utils.get_time(row["alvoraa_missing_time"]).strftime("%H:%M")
 	                       if row.get("alvoraa_missing_time") else None)
 	row["missing_log"] = row.get("alvoraa_missing_log") or None
+	row["punch_fix"] = bool(row["missing_time"] or (row.pop("alvoraa_set_aside", None) or "").strip())
 	return row
 
 
@@ -1597,7 +1603,9 @@ def refuse_own_day_outside_window(doc, method=None):
 	# Slice 085 (AC-69): a held-day request carries the missing time; a day somebody
 	# worked is never shut out by the window. `validate_missing_time` runs first in
 	# the hook list and refuses a time on a day that is not Held.
-	if doc.get("alvoraa_missing_time") not in (None, ""):
+	# Slice 087: keyed on the server's own flag, not on "carries a time": a punch fix on an
+	# ordinary day carries a time too and is held to the window.
+	if doc.get("alvoraa_for_held_day"):
 		return
 	from hrms.alvoraa_hr_core.access import is_own_record
 
@@ -1802,6 +1810,11 @@ def not_yours_yet(doc, capacity, user=None):
 	user = user or frappe.session.user
 	if doc.get("owner") and doc.get("owner") == user:
 		return _("You raised this request, so someone else decides it.")
+	# Slice 087: a punch fix is decided by HR only, and HR need not wait for a manager.
+	if doc.get("punch_fix") or punch_fix.is_punch_fix(doc):
+		if not punch_fix.HR_ROLES & set(frappe.get_roles(user)):
+			return _("Only HR decides a punch fix.")
+		return None
 	# **The wait applies only where there is a manager who could act.**
 	#
 	# 045 AC-81, the no-manager clause. The two working days exist to give
@@ -1923,11 +1936,15 @@ def to_review(limit=50):
 		if r.get("missing_time"):
 			r["held_preview"] = preview(r["employee"], r["from_date"], r["missing_time"],
 			                            r["missing_log"])
+		# Slice 087: Now, If approved and the token the approval needs, from the same
+		# function the approval runs. Never cached.
+		if r.get("punch_fix"):
+			r["card"] = punch_fix.card(r)
 	return rows
 
 
 @frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
-def decide(name, approve, note=None):
+def decide(name, approve, note=None, seen=None):
 	"""Approve or decline one request.
 
 	Approving submits it, and the submit is what makes Frappe HR write the
@@ -1938,7 +1955,8 @@ def decide(name, approve, note=None):
 	if not _may_review():
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
 
-	doc = frappe.get_doc(REQUEST, name)
+	# Locked, so two people pressing Approve at once decide it once (slice 087, SEC-7).
+	doc = frappe.get_doc(REQUEST, name, for_update=True)
 	# **TWO QUESTIONS, BECAUSE ONE OF THEM IS NOT ENOUGH (ALV-269).**
 	#
 	# `get_doc` above makes no read check, and `db_set` on the decline path
@@ -2005,6 +2023,11 @@ def decide(name, approve, note=None):
 		stamp["alvoraa_decided_as"] = capacity
 
 	if cint(approve):
+		if punch_fix.is_punch_fix(doc):
+			# The one door (SEC-1): approved on exactly what the card showed, and only here.
+			if not seen or seen != punch_fix.seen_token(doc):
+				frappe.throw(_("This day changed after you opened it. Open it again."))
+			doc.flags.punch_fix_decided = True
 		doc.update(stamp)
 		# submit() runs its own permission check, so _may_review() above is a
 		# clear message rather than the only thing standing in the way.

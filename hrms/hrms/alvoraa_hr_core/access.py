@@ -72,8 +72,8 @@ def log_refusal(rule, endpoint, doctype=None, name=None, checked_user=None):
 	"""One structured line per refusal, so misuse can be found later (SEC-17).
 
 	Document names and user ids only. Logging must never stop the refusal itself.
-	`checked_user` is the login whose rights were asked about, when that is not the
-	session user (a permission hook is asked about a named user).
+	`checked_user` is the login whose rights were asked about, when a permission hook
+	is asked about a named user; it is logged as `user`, so the key set stays fixed.
 	"""
 	try:
 		security_logger().warning(
@@ -81,8 +81,7 @@ def log_refusal(rule, endpoint, doctype=None, name=None, checked_user=None):
 				{
 					"event": "refused",
 					"at": str(frappe.utils.now_datetime()),
-					"user": frappe.session.user,
-					"checked_user": checked_user or frappe.session.user,
+					"user": checked_user or frappe.session.user,
 					"endpoint": endpoint,
 					"doctype": doctype,
 					"name": name,

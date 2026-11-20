@@ -209,8 +209,7 @@ class PunchMovedAcrossCompanies(_Base):
 		with patch("hrms.alvoraa_hr_core.access.security_logger", return_value=fake):
 			self.assertFalse(faa.checkin_has_permission(self._punch_doc(self.b_worker), self.h.hr, "create"))
 		line = json.loads(fake.warning.call_args.args[0])
-		self.assertEqual(line["checked_user"], self.h.hr)
-		self.assertEqual(line["user"], "Administrator")  # the session user, as before
+		self.assertEqual(line["user"], self.h.hr)  # the user checked, not the session user (Administrator)
 
 
 class SyncAccountWriteAndDelete(_Base):

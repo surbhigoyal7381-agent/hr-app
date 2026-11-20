@@ -42,6 +42,27 @@ function stub(name) {
   });
 }
 
+/* ── the clock this file runs on ─────────────────────────────────────────────
+   The print header ends with "Filter: ... on <today>", and that date comes
+   from the real `new Date()` in posPrintHead - the only place the positions
+   code reads the clock. Several checks below forbid a date string on the
+   page, because a plan's end date must not reach a non-reader. Those two
+   facts collided on 20 Nov 2026: the header printed "20 Nov 2026", a fixture
+   plan also ended on 2026-11-20, and the check could not tell which one it
+   had found. The suite went red for a day with nothing wrong in the product,
+   and "30 Nov" in the list-view check was due to do the same thing on
+   30 November.
+
+   So the clock is pinned. 15 Jun 2026 is a date no check mentions, and 06:00
+   UTC is the same calendar day in UTC on CI and in IST here, so the header
+   reads the same in both places. `new Date(x)` and `Date.parse` are
+   untouched - only "what day is it now" is fixed. */
+const FIXED_NOW = Date.parse("2026-06-15T06:00:00Z");
+class PinnedDate extends Date {
+  constructor(...a) { if (a.length === 0) super(FIXED_NOW); else super(...a); }
+  static now() { return FIXED_NOW; }
+}
+
 function makeContext(values) {
   const els = {};
   const el = (id) => (els[id] = els[id] || {
@@ -65,6 +86,7 @@ function makeContext(values) {
 
   const ctx = { console: { log() {}, warn() {}, error() {} } };
   ctx.window = ctx; ctx.globalThis = ctx; ctx.self = ctx; ctx.top = ctx;
+  ctx.Date = PinnedDate;
   for (const g of ["frappe", "localStorage", "sessionStorage", "navigator",
                    "location", "history", "L", "Chart", "html2canvas", "moment"])
     ctx[g] = stub(g);

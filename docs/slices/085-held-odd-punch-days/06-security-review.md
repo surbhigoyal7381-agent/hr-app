@@ -214,3 +214,49 @@ Still open from the first review: F4 (the limit is still `before_insert`, `hooks
 - Production `security.log`.
 
 **Subtract pass:** I dropped a finding that the R4 log line's `name` is empty on a create (true, harmless) and a note on the `held_count` endpoint nobody uses (not a security matter). No new gate or requirement is proposed.
+
+---
+
+# Round 3, 20 Nov 2026 (fix round 3)
+
+**Code read:** `git diff 3b488799..HEAD` (HEAD d1300bc3; code in ce0e69b3, 57cb44b4, 8bd77bf9), worktree `.claude/worktrees/085-held-odd-punch-days`. Frappe source read in `alv085-bench2` (frappe 988e54f). **I ran no test this round**; the counts and break proofs are the engineer's (notes §17). **Conflict of interest, again:** I wrote `01c`.
+
+## 3.0 · Verdict
+
+**Ready from the security side. No P0, no P1.** Four items still need Surbhi's named, dated acceptance (3.3). Two stale sentences should be corrected before the push (P4).
+
+## 3.1 · The open items
+
+| Item | State | Mechanism (verified in code) |
+|---|---|---|
+| P1 punch move, R4 and SEC-2 | **Closed** | `field_app_access.py:319-322` builds the set {new employee, stored employee} for write and delete. The own-record refusal (`:329`) and the company loop (`:341-346`) both run over that set. Tests `PunchMovedAcrossCompanies` (both directions, own punch out, colleague's punch in, a real `save()` refused and the stored value unchanged) |
+| R5 cancel and update-after-submit | **Closed** | `hooks.py`: Attendance `before_cancel` and `before_update_after_submit` lists, Attendance Request `before_cancel` and `before_update_after_submit`, all reuse `refuse_outside_company` |
+| R2 write and delete | **Closed for accounts with rows** | `:341-344` runs the sync-account check for create, write and delete, before HR's yes. No rows is still unscoped (`:285-286`), by design |
+| S-3 | **Closed** | `:283-284`: only rows with `apply_to_all_doctypes = 1` or `applicable_for = Employee Checkin` count, as Frappe applies them |
+| Log user field | **Closed** | `access.py:71, 84`: `user` is the login asked about when one is passed, else the session user. Key set unchanged. Caveat (P4): when the two differ, the asker is not recorded. Nothing in this slice asks on another user's behalf |
+| SEC-2 P3 own-submit | **Closed** | Attendance `before_submit` now runs `refuse_own_attendance_change` first. `is_own_record` reads `Employee.user_id` with no status filter |
+| F4 | **Closed** | `enforce_monthly_limit` on `validate`; skips `docstatus` ≠ 0; excludes itself on edit (`held_day.py:204, 230-231`) |
+| F5, F6 | **Closed** | API-door test; ceiling `held_day.py: 1` in `test_portal_security_010.py:752` |
+| F7 | **Closed** | `:325`: an HR login's own record is looked up whatever its status |
+| `held_count` | **Removed**. No caller left in Python, JS or HTML (grep) | one fewer whitelisted endpoint |
+
+## 3.2 · The three judgements asked for
+
+- **Leave approval and R5 — the engineer is right.** Verified in code: `leave_application.py:372` sets `flags.ignore_validate`, and `frappe/model/document.py:1407-1408` then returns before any `before_submit` hook. The existing-attendance path uses `db_set` (`:351`) and leave cancel uses `frappe.db.set_value(..., "docstatus", 2)` (`:384`): no hooks at all. So R5 and SEC-2 never see leave-made attendance. Leave approval is scoped only by Frappe User Permissions on Leave Application, so **an HR login with no Company rows (falling back to its Employee company) can approve leave in any company.** This was true before 085; the slice does not widen it. Two sentences now say the opposite and should be fixed (P4): the `refuse_outside_company` docstring ("A leave approval ... meets this too (S-2)", `attendance_doors.py:52-53`) and runbook 08 §7 S-1 ("refused (R4, R5, and a leave approval, S-2)").
+- **`access.py` change: safe for every tenant.** A new keyword argument with a default; the old behaviour is unchanged when it is not passed. Repo-wide grep: three callers, only `field_app_access.py:270` passes it. No schema, no config, no key change.
+- **CI key guard: no real credential found.** I scanned every added line in `acc89592..2d9f979c` (40 commits, 5,782 lines) for known key shapes (AWS, GitHub, Slack, Google, OpenAI-style, private keys, JWTs), for key/token/secret/password followed by a value, and for long mixed-case strings. Nothing. The two candidates are not secrets. 01c:235 is two public law-firm URLs. 05-review:25 is a local temp path; its UUID is a Claude Code session folder name, not a token. **Not checked:** which line gitleaks actually matched. The redacted log still prints RuleID, File, Line and Commit. Read those before adding any allow-list entry, and allow that one fingerprint only (`.gitleaksignore`), never a path or a rule.
+
+## 3.3 · Residual risk, needing Surbhi's named acceptance with a date
+
+| # | Risk | Label | Accepted? |
+|---|---|---|---|
+| R2a | A sync account with no Company rows stays unscoped until the operator adds them (runbook OPS-35) | intentional trade-off | No |
+| R2b | Sync accounts hold HR roles; anyone with the key can change or delete any punch in a company the account serves, and in every company when it has no rows | temporary debt; removed by key rotation and an IP allow-list (ticket not checked) | No |
+| S-2 | Leave approval and leave cancel are not company-scoped for HR logins without Company rows (stock code skips the hooks) | temporary debt, older than 085. The cheapest fix is one hook line: `refuse_outside_company` on Leave Application `before_submit` and `before_cancel`. That is a scope call for `hrms-business-analyst` | No |
+| R1 | Wage-law basis for holding pay | intentional trade-off (her 19 Nov decision) | As before |
+
+## 3.4 · Not checked
+
+Test runs (none by me this round); the gitleaks rule and line; tenant Custom DocPerm and Property Setters on Employee Checkin; production `security.log`; whether the key-rotation ticket exists.
+
+**Subtract pass:** I dropped a note that `permitted_companies` counts Company rows for any doctype while R2 now counts only the applicable ones. It is older than this round and changes no result here. I also dropped a rehire edge case (an Active and a Left record for one login). No new requirement or gate is proposed.

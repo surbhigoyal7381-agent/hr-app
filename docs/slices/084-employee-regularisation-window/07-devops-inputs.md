@@ -532,3 +532,205 @@ the `bench version` wait (measured 22 Sep); migrations ON if OPS-21 proves true.
 **Subtract pass (§5):** removed a proposed new CI job for the false-text grep (a review step is enough), a proposed pre-release read of
 every tenant's key (the key cannot exist before the new code), and a "boundary" endpoint fallback (already dropped in §4). Removed nothing else.
 Left behind: nothing. No container, no file but this one, no setting.
+
+---
+
+## §6 Release readiness - 2026-11-19
+
+(The slice-build skill calls this "§5 Release readiness". This file already has a §5 Strategy, so this is **§6**.)
+
+**Read:** worktree `/Users/mac/hr-app/.claude/worktrees/084-employee-window`, branch `slice/084-employee-window`, cut from
+`origin/dev` at `fd658eff`, six commits `b1d57b0a`..`c162374b` (named by the engineer; **I ran no git, so I did not confirm the SHAs**).
+Files read today: `03-implementation-notes.md`, `04-test-report.md`, my §1-§5, `.github/workflows/deploy.yml` (trigger, inputs, plan job,
+backup, refresh-assets, migrate and clear-cache, prune, worker check, rollback text), `deploy/compose/docker-compose.app.yml` (redis block),
+`scripts/refresh_bench_files.sh` (grep). **Not re-read:** `DEPLOYMENT_RUNBOOK.md`, `REHEARSAL.md`. **Nothing was run.** No git, bench, docker,
+gh or deploy command. Nothing changed except this file. Every command below is **quoted, not run**, and **requires Surbhi's approval**.
+
+### Bad news first
+
+1. **The rollback instruction GitHub prints on a failed deploy is the wrong one for this slice.** `deploy.yml` (the "Rollback instructions"
+   step) says "previous tag and `run_migrations: false`". For 084, rolling back with migrations off can leave a cached hook list that names a
+   function the old code does not have, and then **every Attendance Request save fails, HR's too** (engineer proved the mechanism, section 4 of
+   `03`). **Roll back with `run_migrations: true`.** (OPS-31.)
+2. **A green dev deploy proves nothing about the test suite.** The Deploy workflow starts after **"Build Image"**, not after CI
+   (`deploy.yml` `workflow_run: workflows: ["Build Image"]`). Dev gets the code whether CI is red, running or never finished. And the full suite
+   was never run to the end locally (4,433 methods, stopped at ~70 min). **CI is the only proof of the other ~3,400 tests.** (OPS-32.)
+3. **The slice's own log line is not built, and the logger that would carry it drops it.** So there is no log to monitor. Section 5. (OPS-33.)
+4. **OPS-28 (previous production tag proved in `alvoraa-app`) is still unchecked by anyone. P1. The release is not ready until it is.**
+
+### 1. OPS-21 closed: what the deploy does to Redis
+
+| Claim | Label | Source |
+|---|---|---|
+| `deploy.yml` contains no Redis flush of any kind | **Fact** | grep for `flush` over `deploy.yml` and the app compose file: no hit |
+| The only cache clear is `bench --site all clear-cache`, run straight after `bench --site all migrate`, **inside `if [ "$MIGRATE" = "true" ]`** | **Fact** | `deploy.yml` 534-571 |
+| An automatic push deploy always has `migrate=true`; only a hand dispatch can turn it off (`run_migrations` input, default true) | **Fact** | `deploy.yml` 143, 159 |
+| Redis is its own `redis:alpine` service with `--appendonly yes` and a `redis-data` volume, so the cache holds across an app image swap, and across a Redis restart too | **Fact** (compose read). That compose recreates only changed services: **inference** | `docker-compose.app.yml` 164-172 |
+| One Redis serves cache (DB 0) and queue (DB 1) | **Fact** | comment at line 166 |
+
+**Answer:** on a rollback with migrations **off**, nothing touches Redis, so the cached hook list stays. With migrations **on**, `clear-cache`
+refreshes it.
+
+**A smaller window remains even with migrations on (inference from the order of steps, 519-571):** the new containers start (`up -d`), the loop
+waits for `bench version` (about 7 minutes, measured 22 Sep), and only then do maintenance mode, migrate and `clear-cache` run. In that gap,
+**on a rollback**, old code runs against the cached new hook list. Attendance Request saves fail until `clear-cache`. **Forward direction in the
+same gap:** new code, old cached list, so the guard silently does not run. That is harmless at release because the setting is blank.
+Not measured on a real deploy. Recommend: roll back in the night window, when almost nobody files. Nothing to build.
+
+### 2. Rollout, local to dev to main
+
+Each step needs Surbhi's word. I name the proof to write down for each.
+
+| # | Step | Needs approval | Proof to write down |
+|---|---|---|---|
+| L1 | Before asking for dev: in the worktree, fetch `origin/dev`; if it moved, rebase and **read every incoming diff aloud** (CLAUDE.md section 1). The engineer saw `fd658eff` still current | local, already allowed | the SHA fetched and what came in |
+| L2 | `git diff --stat origin/dev` shows nothing under `deploy/`, `Dockerfile`, `.github/`, requirements, `deploy/nginx.conf`, and **no `patches.txt` or DocType `.json`** (that last part is new in this section) | local | empty list for those paths |
+| L3 | `scripts/check_app_integrity.py` before the commit. Engineer: 952 OK | local | the line |
+| L4 | **Decide the untracked file** `test_employee_window_084_independent.py` (18 tests, ~60 s): commit it or delete it. Recommend **commit**: it is the only test of the `frappe.client.insert` route and of fixtures without a Shift Assignment | **Surbhi** | her answer |
+| D1 | Check no CI is running on `dev` now (`gh run list`, read-only), else wait: a second push cancels it. Then `git push origin slice/084-employee-window:dev`. **One push, not several** | **requires Surbhi's approval: push to dev** | the pushed SHA |
+| D2 | Build Image, then the automatic Deploy, from **`main`'s copy of the workflow** (no workflow change in 084, so that trap does not bite). Tag will be `dev-<first 7 of the SHA>` | automatic | the run id and the tag |
+| D3 | **Wait for CI on that exact SHA to finish green.** See section 6 for exactly what counts | **Surbhi reads it** | CI run id, conclusion, test count |
+| D4 | Landing proof, section 4 | read-only on dev, **only when Surbhi asks** | each check's output |
+| D5 | On a dev test tenant: set a number, press Submit on an old day on the Attendance Request page and on the day sheet, clear the box, **read the value back** and write down what came back | **requires Surbhi's approval: dev data change** | the value read |
+| D6 | Prove the previous production tag (OPS-28, section 6 below). Do it **now**, during dev, since it blocks nothing | **requires Surbhi's approval: read-only check** | tag, date |
+| M1 | Surbhi tests on dev. Then her explicit word for main | **requires Surbhi's approval: push to main**, night window 00:30-06:00 IST | |
+| M2 | Fast-forward `main` to the **exact SHA** that passed D3 (memory 12 Nov: a branch name gave the wrong release). Build Image runs again on main and makes `prod-<7 chars>`, a **new build of the same code**, not the dev image | **requires Surbhi's approval** | the SHA and the tag |
+| M3 | Landing proof on the production stack, section 4. Production reads (pin file, containers) need her word each time | **requires Surbhi's approval** | outputs |
+| M4 | Release note (section 3 of §3 / OPS-18, 19, 24): Grace has a second rule, other tenants "not checked", setting blank everywhere, "when a tenant asks for a number, run a read-only count first" | Surbhi reads | |
+
+**Dispatch, if a hand run is ever needed.** The inputs are `environment`, `image_tag`, `image_package` (default `alvoraa-app`) and
+`run_migrations` (default true) (**fact, read in `deploy.yml` 22-49**). Dev: `gh workflow run Deploy --ref dev -f environment=dev -f image_tag=dev-<sha> -f image_package=alvoraa-app -f run_migrations=true`. **Requires Surbhi's approval.** Production uses `--ref main`.
+
+**There is no approval prompt on the production environment** (memory: no required reviewers on the free plan; the file's header comment
+still says one should exist). The gate is a person starting it. Do not write a plan that assumes a prompt.
+
+### 3. Migration dry run on a copy: not needed, and why
+
+- **Why none:** 084 adds no DocType, Custom Field, patch or fixture (engineer, `03` section 1, AC-64; test report read `git show --stat`). **Not
+  checked by me:** I ran no git. L2 above checks it. `bench migrate` therefore has nothing to change; `REHEARSAL.md`'s copy-of-real-data rehearsal exists
+  for patches that rewrite rows, and there are none.
+- **What does run anyway:** the deploy runs `bench --site all migrate` and `clear-cache` on every tenant (`deploy.yml` 570-571), after a pre-deploy
+  backup of all sites (`Backup all sites` step). The **dev deploy is the rehearsal of that exact run**, on dev's tenants.
+- **Two checks that are not about 084 but decide whether migrate really finished** (memory 5 Nov: a queue of 1,780 deletes stopped a migrate halfway and
+  later sites were silently left behind):
+  1. In the run log, count the sites migrated against the sites that exist. **Write both numbers.** "All sites migrated" is a claim.
+  2. Before the production deploy, read the background-job queue length on production (read-only, **needs her word**). Not checked today.
+- **No restore of the backup on rollback.** 084 writes no data of its own. The workflow's text "a migration ran: restore the pre-deploy backup"
+  does **not** apply here and would lose a day of real data. Say so in the note.
+
+### 4. After deploying: what to check, and how to say it landed
+
+Each check below is **read-only** and **requires Surbhi's approval** on a live stack. Take container names from `DEPLOYMENT_RUNBOOK.md`:
+`devstack-*` is dev, `compose-*` is **production**. Never mix them. **Not run by me.**
+
+| # | Check | Pass looks like | Why |
+|---|---|---|---|
+| P1 | **Pin file.** Read `.image.dev.env` (dev) or `.image.env` (production) in `/var/www/html/hr-app/deploy/compose` on the server | names exactly the tag that was built (`dev-<sha>` or `prod-<sha>`) | a green run of an old tag hides everything |
+| P2 | **Containers.** `docker ps` is not enough (lesson 15). List the image of every app container of that stack, then `docker top` on a worker, and run the repo's worker check (the deploy runs `scripts/check_workers.sh` itself) | every app container shows the same tag; the worker check passes | one worker on an old image crashed on a new argument |
+| P3 | **The file itself.** Grep a new sentence from the day-sheet or org-settings hint inside the container's `org-settings.html` and `attendance_correction.py` | found | proves code, not just tag |
+| P4 | **Assets (OPS-15, P1).** Compare `sites/assets/assets.json` in the **volume** with the one in the **image** (`docker run --rm --entrypoint bash <image:tag> -c 'cat .../sites/assets/assets.json'`, path as in memory `sites-volume-assets-stale`). Then fetch `/assets/alvoraa_portal/js/ess/portal.js` from the **served URL** and grep one new string from it (a string from the new own-day note, not an old one) | manifests equal; the served file holds the new string; the `?v=` on the page differs from before | the deploy's "Portal assets must be served" step checks the file **is served, not what is in it** |
+| P5 | **Hook pin, in a live process, not a test.** Do **not** run the test suite on a tenant site (memory: tests overwrite tenant data; use `test_site`). Read `frappe.get_hooks("doc_events")` for `Attendance Request` from inside the production-like container and look for the `validate` entry naming `refuse_own_day_outside_window`. **The engineer should prove the exact one-liner on their stack first**: I did not, and `bench execute` swallows errors (lesson 8). Run it in **every** app container, not one | the entry is there after a deploy; **after a rollback, it is not** | the forward trap: migrations off leaves the guard silently off |
+| P6 | **Blank everywhere.** Open the HR settings screen on the tenant, read the new row, change nothing, say the value shown | blank | no behaviour change at release |
+| P7 | **Dev only, behaviour.** D5 above | an old day refused with a date; today and the joining day accepted; clearing the box lets the old day through again | proves the guard and the fast undo |
+| P8 | Count sites migrated against sites present (section 3) | the two numbers equal | scope claim |
+
+### 5. Rollback
+
+**Rule: stored value first, image second.** The row HR types is in each tenant's database. The image rollback removes the screen that edits it
+(`03` section 4A), so HR cannot clear it afterwards.
+
+**Prerequisite (OPS-28):** the previous production tag, proved to exist in `alvoraa-app`, written in the release note, checked **again on release
+night** before the deploy. Registry tags can be pruned. The server keeps the **two most recent prod tags on disk** (`deploy.yml` ~604-622), so the
+previous tag should still be local after the new one lands: **inference**; if it is, there is no pull. Otherwise it pulls, and that must work.
+
+**A. Planned rollback, new code live, a number is set on some tenant**
+1. Read the hand list of tenants with a number (section 5). Read each tenant's value back (**needs approval on a live tenant**).
+2. HR clears the box on each tenant, on the HR settings screen. **Read the value back and write what came back (blank).**
+3. **Only then** redeploy the previous tag: `gh workflow run Deploy --ref main -f environment=production -f image_tag=<previous prod tag> -f image_package=alvoraa-app -f run_migrations=true` (**requires Surbhi's approval**). **`run_migrations` stays true** (section 1 and OPS-31); the GitHub failure text that says `false` is wrong for 084.
+4. Prove it landed (P1-P4), and prove the **inverse of P5**: the hook entry is **absent** from every app container and an Attendance Request can still be saved by HR (dev: yes; production: look, do not write).
+5. Cost: about 7 minutes lost to the `bench version` wait (**measured 22 Sep**, 6:54 dev and 7:09 production; **not measured for this slice**), plus maintenance mode while migrate runs. Plan a night window.
+
+**B. Emergency, number is set, no time to ask HR:** roll back with `run_migrations: true`, then **tell that tenant's HR in words**: "the limit you set is no longer enforced". Do **not** delete the row (it is HR's data; rolling forward restores the rule with no work). The old code ignores the unknown key.
+
+**C. The fastest undo needs no deploy:** while the new code is live, **HR empties the box**. Blank means no limit and the hook costs 0 statements
+(tested). **Say this first in any incident.** Read it back.
+
+**D. If the guard itself is faulty (it blocks things it should not):** do C first. It stops the guard from refusing anything. Only then decide on a rollback.
+
+**Do not** restore the pre-deploy backup on a rollback of this slice (section 3). **Do not** choose "migrations off" for a rollback or a fix-forward.
+
+### 6. What Surbhi waits for before dev counts as proven
+
+A dev push counts as proven only when **all five** are true, written down with the dev SHA beside them:
+1. **CI finished green for that exact SHA.** Not "started". Not a CI tick from an earlier SHA. If a second push goes in, CI restarts, so **do not push twice** (memory 4 Nov).
+2. **CI's test count is read**, not just the colour. The split run-parallel-tests job is what runs the 4,433 methods; confirm every shard reported.
+3. **Any red is compared with the last dev tick before this slice** (`fd658eff`), not assumed to be ours. Memory 3 Nov: red may be site state. The five modules that errored in `setUpModule` for the test engineer
+   (`test_leave_credit_rows_063`, `test_notices_076`, `test_late_minutes_017`, `test_grooming_066`, `test_daily_workings_alv358`) are the first suspects for **a fresh-site baseline problem, not 084**
+   (**assumption**: only 063 was diagnosed). If CI is red on a **different** module, that is ours until shown otherwise.
+4. Landing proof P1-P4 on dev, and P7.
+5. Dev looked at by a person on a phone width and a keyboard: **not automated** (`04` section 11). No browser, phone or screen reader check has been run by anyone.
+
+**For main**, repeat 1-3 on main's own SHA. There is a precedent for shipping on a deliberately red tick (2 Nov). **Do not repeat it for this slice
+without her explicit word**, since the guard is on a permission-adjacent path and the test report is the only substitute for the full suite.
+
+### 7. Monitoring, and why the security log is not part of it
+
+**Fact (reported by the caller, checked on the live dev site; not checked by me, production refused as unauthorised):** `frappe.logger("security")`
+sits at ERROR, `.warning` is dropped, and `security.log` on dev is **0 bytes**. ALV-391. The engineer also found `access.log_refusal` (SEC-17) writes at `.warning`.
+**Consequences I can state:**
+- **There is no log of a refusal, and no log of who changed the setting.** Nothing to alert on, nothing to read back.
+- **The existing SEC-17 refusal log has possibly never been written on dev, and may not on production.** That is a bigger finding than 084; it belongs to ALV-391.
+- **OPS-30's hand list is no longer a stopgap "until Q6 is answered". Q6 is answered. It is the only record.**
+
+What is available, with no new moving part:
+
+| Signal | What it tells you | Honest limit |
+|---|---|---|
+| **Hand list**: tenant, number, date set, who set it | which tenants to warn on a rollback (case A or B) | a person keeps it. Recommend Surbhi owns it: she already gates the first number through counsel (Gate 3 C1). Update it **in the same minute** the number is set |
+| **Read-back on the setting** (the key named by `EMPLOYEE_FILING_WINDOW_KEY` in `attendance_correction.py`; I did not type the key's value) | the real value now | live tenants need her word; no history of changes |
+| **Error Log doctype**, read by a person for 24 h after the first number is set on a tenant | an unexpected crash in the hook (an `AttributeError` or `TypeError` would be an unhandled error) | **inference**: Frappe normally records an unhandled exception there, and a deliberate refusal (`ValidationError`) is not recorded. Not checked, not alerted |
+| **The deploy's own checks**: worker check, "Portal assets must be served", smoke test | deploy-level breakage | does not see the guard |
+| **Support signal**: an employee says "refused, with no date on screen" | old JS with new guard (P4 failing) | late and by hand |
+| **Query counts** (measured today by the test engineer, tiny data): `month()` 17 / 16.8 ms blank, 19 / 16.7 ms with a limit; `get_requests_history` 5 / 2.8 ms, 7 / 4.5 ms; a refused insert 10.5 ms | the 500 ms API budget is met by a wide margin **at three-row volume only** | not a scale claim. The flatness test shows no growth with 300 more holiday rows |
+
+**Not recommended:** a new alert, a refusal counter or a dashboard. A number set on one tenant does not justify a new moving part. **If Surbhi wants
+a real record, the cheapest fix is ALV-391 option (b):** give the `security` logger its own level in one place, which also repairs SEC-17. That is a
+separate small change, **not before release (the setting ships blank), but before the first number is set on any tenant.** It is her choice.
+
+**Capacity:** nil change. No new container, volume, queue, worker or image dependency. Disk gate before pull stays as is. Month-end load: the hook is
+0 statements for HR's actions and about 4 per employee submit **only when a number is set**.
+
+### 8. What Surbhi must decide
+
+**Before any push to dev:**
+1. **Push to dev** (one push, after CI is not running). Whether to commit the untracked independent test file (L4).
+2. **The inline row versus the prototype's dialog** (parity gap, `03` section 6, test report section 10). Her yes is needed, per the prototype-parity rule.
+3. **Hindi (OPS-26):** confirm "release blank without it; no number on a Hindi-reading tenant until a native reader has done `hi.csv`". Gate 4 currently says release waits.
+4. **Who proves the previous production tag, and when** (OPS-28). My recommendation: she names a session now, read-only, during dev. It needs `read:packages` on the token **[ASSUMPTION]**; the owner in `deploy.yml` is `surbhigoyal7381-agent` (a user account), so the read is `gh api /user/packages/container/alvoraa-app/versions --paginate` run as that user. **Quoted from `deploy.yml` and lesson 19, not run.**
+
+**Before any push to main (in addition):**
+5. **CI green on main's own SHA, read by her** (section 6), and **no repeat of the deliberately-red precedent**.
+6. **The previous production tag, named and proved, twice** (now, and again on release night).
+7. **The night window**, and who is awake for the rollback if P4 or P5 fails.
+8. **Release note wording** (OPS-18, 19, 24): Grace's second rule, other tenants "not checked", blank everywhere, "no number without a read-only count first and counsel's word".
+9. **The ALV-391 choice** (a, b or c): **(b) before the first number is set**, not before release. And **who owns the hand list**.
+10. **The first number is a separate decision**, never a release step: counsel (Gate 3 C1), Hindi (3), DTC manual search (OPS-25), `next-time.js` (OPS-27), Grace's 3-a-month script read (OPS-3, 18).
+
+### §6 rows (Decision column left blank for Surbhi)
+
+| ID | Recommendation | Why | Cost of ignoring it | Level | Decision |
+|---|---|---|---|---|---|
+| OPS-31 | Roll back and fix-forward with `run_migrations: true`; correct the "false" in the deploy's failure text for this release. Closes OPS-21: `deploy.yml` never flushes Redis; only `clear-cache` inside the migrate branch does | cached hook list survives a restart | every Attendance Request save fails after a rollback, HR's too | Recommend, P2 | |
+| OPS-32 | Dev is proven only by CI green on the exact SHA, not by the deploy. One push; read the count and any red against `fd658eff` | Deploy follows Build Image, not CI; the full suite never finished locally | ~3,400 tests nobody ran | Recommend, **P1** | |
+| OPS-33 | Treat the security log as unusable. Keep the hand list as the only record; Surbhi names its owner; fix ALV-391 (b) before the first number | `.warning` is dropped, `security.log` is 0 bytes on dev | nobody knows whom to warn; SEC-17's refusals may never have been written | Recommend, P2 | |
+| OPS-34 | Run P1-P8 after each deploy; prove the hook entry in **every** app container, not a test on a tenant | green deploy of old tag; forward trap leaves the guard off | silent guard-off | Recommend, P2 | |
+| OPS-35 | No migration rehearsal on a copy; the dev deploy is the rehearsal; count sites migrated vs present; do not restore the backup on rollback | no schema, patch or fixture | a pointless rehearsal; or a rollback that restores and loses a day | Recommend, P3 | |
+| OPS-36 | Commit `test_employee_window_084_independent.py` (adds ~60 s to CI) | only test of the REST insert route | one route untested | Consider, P4 | |
+| OPS-28 (restated) | The previous production tag, proved in `alvoraa-app`, **during the dev stage**, by a session Surbhi names, then again on release night | no tag, no rollback | no rollback | Recommend, **P1** | |
+
+**Subtract pass (§6):** I removed a proposed pre-release dry run on a copy of production data (no schema or patch to rehearse), a proposed refusal counter and alert
+(nothing to feed it), and a proposed separate check script for the hook (the engineer's one-liner is enough). I kept the asset and hook checks because each
+is the only proof of a silent failure. Nothing left behind: no container, file or setting; only this file changed.
+
+**Open and mine to close next time:** the exact P5 one-liner (needs the engineer's stack), the container names (runbook), whether the previous prod tag is
+still in the registry (OPS-28). **Not checked at all:** production's `DEV_SERVER` setting, `/api/` access-log retention, and DTC manual wording.

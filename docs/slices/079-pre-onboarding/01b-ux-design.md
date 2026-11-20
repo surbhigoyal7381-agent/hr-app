@@ -163,7 +163,7 @@ appears and the same credentials still work, so nothing breaks if the hint is lo
 | 3 | "Email / Username", placeholder `you@company.com` | **"The phone number or email HR sent the message to"**, no placeholder | Name the thing the person is holding, not the thing our database calls it |
 | 4 | Field text 15.2 px | **16 px** | Under 16 px, iOS zooms on focus and pushes the button off screen |
 | 5 | "Password" | **"Your password"** → *"Three words and two numbers, like `tiger-lamp-74`. Type it exactly as it is written, dashes and all."* | The hint is the format, because the format is unusual |
-| 6 | ~28 px eye icon in the corner | **A full-width 44 px "Show the password" button** under the field | The mistype is the likeliest failure in the journey and the reveal is the smallest target on the page |
+| 6 | ~28 px eye icon in the corner | ~~A full-width 44 px "Show the password" button under the field~~ **Superseded 20 Nov 2026 (ALV-394): the eye stays, the button is removed** | The mistype is the likeliest failure in the journey and the reveal is the smallest target on the page. **What shipped kept BOTH**, so the screen carried two controls doing one job; Surbhi chose the eye. The 44 px argument is unanswered — the eye is a 26 px target — and is tracked, not settled |
 | 7 | "Sign In" | **"Sign in and open my form"** | Says what happens |
 | 8 | "Forgot password?" → emails a link · "Need help?" → `mailto:` | **"I cannot sign in"** → an in-page block ending at the employer's own phone number | **Both of today's escape routes are dead ends for a person with no email address** |
 | 9 | — | A grey footer: *"PP Jewellers asked for these details. Alvora only runs the software they use."* | Counsel's ruling 1 in plain words, at the moment the stranger is deciding whether to trust the page |
@@ -175,7 +175,7 @@ because the code is the only thing a person who reads slowly can still show some
 
 **That did not work** (`JOIN-BADPASS`)
 > **That did not work.** Check the password against Arjun Bhatia's message — a dash or a
-> letter is easy to miss. Press **Show the password** to see what you have typed.
+> letter is easy to miss. Press **the eye beside the box** to see what you have typed.
 > **2 more tries** before this sign-in locks for 30 minutes.
 
 It does not say *which* of the two was wrong — that would tell a stranger whether a given
@@ -710,7 +710,7 @@ office joiner, one person who reads slowly, one on a borrowed phone.
 | Task | Success | What would change the design |
 |---|---|---|
 | You got this text message. Fill in your details | Signs in and reaches the first question **unaided, in under 2 minutes** | 2+ of 5 fail → the password format or the field labels change |
-| (Password pre-mistyped) Something is wrong — fix it | Finds **Show the password** and corrects it | Nobody uses the reveal → it is in the wrong place |
+| (Password pre-mistyped) Something is wrong — fix it | Finds **the eye beside the box** and corrects it | Nobody uses the reveal → it is in the wrong place. **This is the test that would settle the 26 px question** (ALV-394, 20 Nov 2026) |
 | You filled some in yesterday. Carry on | Knows **what was kept** without asking | Cannot say what was kept → the strip or the step words are wrong |
 | You have no Aadhaar card with you | Reaches "I will bring it" or another document **without stopping** | Anyone stalls → the refusal's three ways out are not readable |
 | What happens to this if you do not join? | Can say "they delete it", roughly when, and who to ring | Cannot → the notice is in the wrong place |

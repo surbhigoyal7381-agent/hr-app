@@ -8,7 +8,7 @@ status: WRITTEN, NOT RUN. Nothing here has been executed on any server. Every de
 
 # 085 release runbook (ALV-392)
 
-Plain steps for Surbhi or the operator. Each step says what to read back. A step is not done until the read-back is written down. Two releases: **Release 1** (safety doors) ships alone; **Release 2** (Held) comes after.
+Plain steps for Surbhi or the operator. Each step says what to read back. A step is not done until the read-back is written down. **ONE release** (Surbhi's decision, 20 Nov 2026). The safety doors and Held ship together. The hold switch is OFF for every company, DTC included (the Custom Field default is 0, pinned by a test), and is switched ON for Grace only, after the release, by the steps in section 2. Sections 1 and 2 below are two checklists inside that one release, not two releases.
 
 **Not checked by me:** the server, the job schedule at Grace (the 06:00 slip job is from a memory note), the free disk, the tag names in the package. Read each one on the day.
 
@@ -19,7 +19,7 @@ Plain steps for Surbhi or the operator. Each step says what to read back. A step
 3. Check the previous image tag exists in the `alvoraa-app` package, so rollback is possible (OPS-22).
 4. CI is green on `dev` and nobody else's push is running (a new push cancels the running one).
 
-## 1 · Release 1 (the doors)
+## 1 · The doors checklist (part of the one release)
 
 **Before the push, per tenant (Q1 and the US-13 side effect):** list every login that holds HR Manager or HR User and has **no Employee record and no Company User Permission**. After Release 1 each of them sees nobody on the attendance month view, the picker and the approve/decline screen. Give each a Company User Permission first. For Grace: `hr@grace.alvoraa.co` (AC-52). Read the permission row back. The count of such logins on dev, DTC, Grace, aahr and PPJ was **not checked** when this was written.
 
@@ -28,7 +28,7 @@ Plain steps for Surbhi or the operator. Each step says what to read back. A step
 3. Check: an HR login with a company can approve a colleague's correction; the same login cannot approve its own, cannot cancel or delete its own attendance, and cannot change its own punch. A named System Manager who raised a request cannot submit it.
 4. Release 1 has no data to undo.
 
-## 2 · Release 2 (Held)
+## 2 · The Held checklist (part of the one release)
 
 Order matters. Do not skip a read-back.
 
@@ -53,8 +53,8 @@ HR opens the Attendance list, chooses status Held, and releases or leaves each d
 
 ## 4 · Rollback (AC-65)
 
-- **Release 1:** redeploy the previous image tag with migrations off. Nothing to restore.
-- **Release 2:** **first restore the backfilled rows from the undo file** (`--undo --undo-file <the same file>`; it puts back only rows still Held and leaves any a human released). **Then** redeploy the previous image tag with migrations off. If the old code runs while rows are still Held, those days are paid as normal days. The Property Setter that adds `Held` may stay: an unused status option is harmless. Expect the broken `bench version` wait of about 7 minutes (22 Sep reading, not re-measured).
+- **The doors (if only they must go):** redeploy the previous image tag with migrations off. Nothing to restore.
+- **Held:** **first restore the backfilled rows from the undo file** (`--undo --undo-file <the same file>`; it puts back only rows still Held and leaves any a human released). **Then** redeploy the previous image tag with migrations off. If the old code runs while rows are still Held, those days are paid as normal days. The Property Setter that adds `Held` may stay: an unused status option is harmless. Expect the broken `bench version` wait of about 7 minutes (22 Sep reading, not re-measured).
 - Days that became Held after the backfill (from normal marking) have no undo file. Release them by hand or leave the switch on.
 
 ## 5 · Cache headers (AC-66, OPS-12)
@@ -63,7 +63,7 @@ Read in `deploy/nginx.conf`: `Cache-Control "public, immutable"` appears only on
 
 ## 6 · Read-through checklist for Surbhi (AC-64)
 
-- [ ] Release 1: HR logins without a company counted per tenant and given one
+- [ ] HR logins without a company counted per tenant and given one
 - [ ] Window, disk and queue read; previous tag exists
 - [ ] Deploy proved by pin file, container and file; `assets.json` bumped
 - [ ] Migrate: sites migrated equals sites existing; `Held` and three fields read back
@@ -73,3 +73,8 @@ Read in `deploy/nginx.conf`: `Cache-Control "public, immutable"` appears only on
 - [ ] Dry run count agrees; real run; Held count read back; undo file copied off the server
 - [ ] First two daily runs: Error Log count read
 - [ ] Rollback order understood: undo list first, old image second
+
+## Added 20 Nov 2026 (one release, and three risks closed)
+- **Company permissions for HR and for sync accounts.** After this release an HR login may add, change or delete punches, and approve attendance, only for the companies it may act for (its Company User Permissions, else the company on its own Employee record, else nothing). Count HR logins with neither, per tenant, and fix them BEFORE the push (same list as the first checklist).
+- **Sync accounts (R2).** A sync account is limited to its companies only once it has Company User Permission rows. Until then it files for everyone, as today, so no tenant repeats the 2 Nov outage. **Operator step per tenant: add one Company User Permission row per sync account for each company it serves, then file one test punch and read the security log for an R2 line when a punch outside the list is tried.**
+- **Monthly limit.** A request HR files for an employee neither counts nor is refused.

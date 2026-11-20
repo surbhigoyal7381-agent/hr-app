@@ -159,3 +159,6 @@ nginx: the diff touches no `deploy/` file (fact, stat shows none), so `nginx -t`
 
 **Still open:** OPS-30 (P1, blocks push), OPS-32, OPS-33, one-vs-two releases, OPS-29 now answered by events (084 is on dev). Earlier OPS-24 to OPS-28 decisions remain blank.
 **Subtract pass:** removed a proposed two-branch plan from the default recommendation and a proposed new CI gate for the sheet (the slice test covers it). Nothing else.
+
+## 6 · Rollout update, 20 Nov 2026 (coordinator, from Surbhi's decisions)
+**One release, not two.** Rollout item 3 above ("main R1 then R2") is replaced: ONE push of the whole slice to main in the night window, hold switch OFF for every company (the field default is 0, test-pinned), then switched ON for Grace only by the runbook steps. A separate Release 1 cut without `held_day.py` is no longer needed, so OPS-32 and the one-vs-two question are closed. New per-tenant precondition: HR logins with no company get one first (they now also lose punch edits and approvals), and sync accounts get Company User Permission rows to be scoped (runbook, last section).

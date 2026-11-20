@@ -5958,8 +5958,7 @@ function acRow(x) {
   else if (x.leave_type) label = '<span class="ac-tag">' + gpEsc(x.leave_type) + "</span>";
   else if (x.state === "future") label = '<span class="ac-tag">To come</span>';
   else if (!x.attendance) label = '<span class="ac-tag">No record</span>';
-  else if (x.held) label = '<span class="ac-tag held">&#9888; Held</span>'
-    + (x.request && x.request.state === "waiting" ? '<span class="ac-tag wait">Sent to HR</span>' : "");
+  else if (x.held) label = '<span class="ac-tag held">&#9888; Held</span>';
   else label = '<span class="ac-tag' + (x.status === "Absent" ? " warn" : "") + '">'
     + gpEsc(x.status) + "</span>"
     + (x.released ? '<span class="ac-tag ok">&#10003; Was held, pay restored</span>' : "");
@@ -6389,8 +6388,23 @@ window.acHeldSubmit = async function (date, singleIsOut) {
     await acLoad();
   } catch (e) {
     hideLoad();
+    if (mayHaveGone(e)) {
+      /* AC-30: the answer was lost, so the request may be saved. Ask the office
+         before offering a second send. If it is saved the sheet now says so;
+         if not, the form comes back with the typed time put back in it. */
+      toast("It may have gone through. Checking with the office.", "err");
+      acSending = false;
+      await acLoad();
+      var again = document.getElementById("ac-missing-time");
+      if (again) {
+        again.value = t;
+        var lg = document.getElementById("ac-missing-log");
+        if (lg) lg.value = log;
+      }
+      return;
+    }
     /* Kept in the box, so nothing typed is lost. */
-    toast(e.message || "Not sent. Try again.", "err");
+    toast((e.message ? e.message + " " : "") + "Not sent. Your time is saved on this phone. Try again.", "err");
   } finally {
     acSending = false;
   }
@@ -23757,9 +23771,9 @@ window.pfRatingLabel = function(value, scale) {
   /* ── Held days (slice 085, ALV-392) ──
      The card is drawn only when the server returns a company this caller looks
      after. Who may change it is the server's rule (a Company validate hook);
-     the disabled controls are a courtesy. The Save button says what saving
-     will do: how many days this month would be held. */
-  var orgHeld = {rows: [], count: null};
+     the disabled controls are a courtesy. Switching on holds days marked from
+     then on, never past ones, so the Save button makes no promise about a count. */
+  var orgHeld = {rows: []};
 
   window.orgLoadHeld = function() {
     var card = document.getElementById("org-held-card");
@@ -23792,21 +23806,7 @@ window.pfRatingLabel = function(value, scale) {
     });
     pfSetHtml("org-held-msg", r.can_edit ? "" : '<span style="color:var(--text3)">' +
       gpEsc("Only an HR Manager of this company can change these.") + "</span>");
-    orgHeld.count = null;
-    orgHeldCount();
-  };
-
-  /* The live count, an integer from the server, asked only when the switch is
-     ticked and was not on already: it is what saving would newly hold. */
-  window.orgHeldCount = function() {
-    var r = orgHeldRow(), btn = document.getElementById("org-held-save");
-    if (!r || !btn) return;
-    var on = document.getElementById("org-held-on").checked;
-    if (!on || r.hold) { btn.textContent = "Save for " + r.company; return; }
-    btn.textContent = "Save for " + r.company;
-    window.gpFetch("alvoraa_portal.held_day.held_count", {company: r.company}).then(function(n) {
-      btn.textContent = "Save for " + r.company + ": " + n + (n === 1 ? " day" : " days") + " will be held";
-    }).catch(function() { /* the plain label stays */ });
+    document.getElementById("org-held-save").textContent = "Save for " + r.company;
   };
 
   window.orgHeldSave = function() {
@@ -23823,6 +23823,8 @@ window.pfRatingLabel = function(value, scale) {
       r.hold = res.hold; r.limit = res.limit; r.roles = res.roles;
       toast("Saved for " + r.company + ".", "ok");
       orgHeldPick();
+      pfSetHtml("org-held-msg", gpEsc("Saved. This replaces the old hidden rule of 3 requests a month. " +
+        "The old script is switched off in the same release, so two limits never run together."));
     }).catch(function(e) { toast(e.message || "Could not save that. Check the roles and try again.", "err"); })
       .then(function() { btn.disabled = !r.can_edit; });
   };

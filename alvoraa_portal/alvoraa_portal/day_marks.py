@@ -26,6 +26,8 @@ switch: the presence of the rule set IS the switch, and it is the same one the
 engine reads.
 """
 
+import math
+
 import frappe
 from frappe.utils import flt, getdate, now_datetime
 
@@ -37,6 +39,7 @@ from alvoraa_portal.payroll_rules import (
 	collapse_duplicate_punches,
 	late_charge,
 	minutes_on_break,
+	round_percent,
 )
 from alvoraa_portal.payroll_rules_apply import day_rules_on
 
@@ -266,12 +269,21 @@ def _ladder(rule_set, start, end, anchor, in_late_window, late="", break_over=0,
 			"red_to": flt(r.percent_to) if raises_red else None,
 		})
 
+	def at(percent):
+		"""The first whole minute whose percentage, rounded as the payslip rounds
+		it (ALV-401), reaches `percent`. The nearest minute could be one short:
+		593 of 600 is 98.83%, which the payslip reads as 98.8."""
+		m = max(0, math.ceil((percent - 0.05) / 100.0 * length) - 1)
+		while round_percent(m / length * 100) < percent:
+			m += 1
+		return anchor + break_over + m
+
 	# A second red is for leaving early, so it ends a minute before the shift.
 	# Without shift hours only, nothing is clipped, exactly as before.
 	last_red = (end - 1 if late == "red" else end) if shift_only else float("inf")
 	steps = []
 	for rung in rungs:
-		leave_after = anchor + break_over + rung["percent_from"] / 100.0 * length
+		leave_after = at(rung["percent_from"])
 		if shift_only and leave_after > end:
 			continue
 		step = {
@@ -281,12 +293,10 @@ def _ladder(rule_set, start, end, anchor, in_late_window, late="", break_over=0,
 			"red_from": None,
 			"red_to": None,
 		}
-		red_from = (None if rung["red_from"] is None
-		            else anchor + break_over + rung["red_from"] / 100.0 * length)
+		red_from = None if rung["red_from"] is None else at(rung["red_from"])
 		if red_from is not None and red_from <= last_red:
 			step["red_from"] = _clock(red_from)
-			step["red_to"] = _clock(min(last_red,
-			                            anchor + break_over + rung["red_to"] / 100.0 * length))
+			step["red_to"] = _clock(min(last_red, at(rung["red_to"])))
 		steps.append(step)
 
 	return {

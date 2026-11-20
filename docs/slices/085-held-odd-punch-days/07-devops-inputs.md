@@ -110,3 +110,52 @@ Code: redeploy previous tag, migrations off, confirm the tag exists in `alvoraa-
 | OPS-24 to OPS-29 decisions (blank) | Surbhi |
 | D-3 as two lines, or blank-cell fallback | Surbhi |
 | Enqueue vs inline | Engineer to measure; Surbhi decides |
+
+
+## §5 Release readiness (2026-11-20)
+Read: worktree `.claude/worktrees/085-held-odd-punch-days`, branch slice/085-held-odd-punch-days, HEAD 208de542; base 101fd29b; `origin/dev` fetched today = 15c716f6 (12 commits past the base). Read: the diff stat and the vendored-sheet diff, `08-release-runbook.md`, `04-test-report.md`, `04b-baseline-diff.md`, `deploy.yml` (dispatch inputs, branch to tag map), the backfill script header. **Nothing run on any server, nothing pushed. Production, dev, disk, queue and job schedule: I could not check.**
+
+**Verdict: NOT READY to push to dev. Two P1s, both fixable locally; the rest is sound.**
+
+**P1 found today.** Fact (`git merge-tree` of HEAD against origin/dev): **085 no longer merges cleanly. Slice 084 is on dev and conflicts in `hooks.py`, `hr_api.py` and `portal.js`** (it also touches `attendance_correction.py`, `org-settings.html`; those auto-merged). Everything tested so far was tested against the old base. Rebase on origin/dev, re-read the hooks block, then re-run the 085 modules and the 084 modules together. This also lifts the "R2 waits for 084" hold: R1 and R2 now travel on one rebase, but can still ship as two releases if the user wants the doors alone first.
+
+| ID | Item | Level | Decision |
+|---|---|---|---|
+| OPS-30 | Rebase on origin/dev (15c716f6), resolve the three conflicts, re-run tests and `check_app_integrity.py` after. Do not push until then | P1 | |
+| OPS-31 | **Screens have no proof** (test report: ACs 8, 24-27, 29-31, 34, 37, 38 never seen in a browser). The runbook lets Surbhi test on dev, so that is acceptable, but say so: dev is where the screens are first opened | P2 FYI | |
+| OPS-32 | Runbook says "give hr@grace a Company User Permission" (line 24) and the slice docs only ask the question (01c Q1). **No record that it is granted.** You told me it is; I could not check the site. Add to the runbook: "granted on <date>, row read back", and count other HR logins with no company and no Employee on DTC, aahr, PPJ, dev (runbook says not counted) | P2 | |
+| OPS-33 | `portal.js` is edited by 085 and 084: after the rebase, bump `sites/assets/assets.json` in the volume and compare with the image (dev serves 27 Aug today, per memory) | P2 | |
+| OPS-34 | Test debt, not a blocker: 24 full-run-only failures and ~142 setUpClass errors fail the same on the base (04b, name-set diff; one 085-only, the alv332 test, fixed in 1f83c44f). They hide any 085 regression in goals-app classes. FYI | P3 | |
+
+### Rollout (every step needs her word; none is mine to run)
+1. **Local:** OPS-30 rebase, tests green on the rebased code. Report, stop.
+2. **dev** (on her word, wait for CI first, no second push while it runs). Fact (`deploy.yml`): a push to dev auto-deploys tag `dev-<sha7>` with migrate on. The automatic run uses main's copy of the workflow. Prove the landing three ways (dev pin file `.image.dev.env`, `docker top`/image tag on every app container, the file itself) and compare `assets.json`. Then: Attendance.status options include Held and the 3 Company fields exist on every dev site; Custom DocPerm count on dev before and after. Test the doors (own row, own punch, raiser cannot submit, HR with no company), then Held with the switch on at one dev tenant, a late punch releasing a day, a slip, and **opening the Monthly Attendance Sheet with a Held row** (the vendored edit).
+3. **main R1 then R2**, only 00:30-05:30 IST. If the doors must ship alone, R1 needs its own cut without `held_day.py`; two releases from one rebased branch means R2 is simply the same code with the switch off. **Recommend one release, switch off everywhere** (fields ship dark), then the Grace steps. Fewer deploys is fewer 7-minute waits and fewer night windows. **Consider** two only if she wants the doors in production alone (it needs a separate R1 branch and is more work). Decision: Surbhi.
+
+### Migration dry run on a copy (needed: yes, once)
+Why: R2 adds a Property Setter and about 10 Custom Fields on **every** site; the 5 Nov migrate stalled on queued deletes (Custom DocPerm trap, unproven here). No patch file was added (`patches.txt` untouched, fact: not in the diff); the vendored sheet edit is Python only, no migrate effect.
+How (local, `REHEARSAL.md` route): restore the latest Grace and DTC backups into a throwaway stack, record job-queue length and Custom DocPerm count, run `bench --site <copy> migrate`, record both again, then read the Attendance.status options and the 3 Company fields, and run the backfill dry run against the Grace copy. Stop if either number moves. Not run by me.
+
+### Deploy commands — FOR SURBHI TO APPROVE (quoted, not run)
+- Dev: `git push origin slice/085-held-odd-punch-days:dev` after OPS-30. **FOR SURBHI TO APPROVE.**
+- Main: `git push origin <exact sha>:main` in the window. **FOR SURBHI TO APPROVE.** The workflow maps branch main to tag `prod-<sha7>` and migrates.
+- If the automatic run needs a hand: `gh workflow run Deploy --ref dev -f environment=dev -f image_tag=dev-<sha7> -f run_migrations=true`. **FOR SURBHI TO APPROVE.**
+- Rollback deploy: `gh workflow run Deploy --ref main -f environment=production -f image_tag=<previous prod tag> -f image_package=alvoraa-app -f run_migrations=false`. **FOR SURBHI TO APPROVE.** First confirm the tag is in the `alvoraa-app` package.
+- Backfill (Grace, after steps 1-7 of runbook §2): dry run, then `--apply`, then `--undo`, exactly as the script header gives them, from the bench folder with `env/bin/python`, undo file outside the repo. **Each one FOR SURBHI TO APPROVE separately.** Do not `docker cp`, do not pipe it into `bench console`. The script refuses any site but grace.alvoraa.co and any day outside 1-30 Nov (header, read; not run).
+
+### Post-deploy checks, per tenant (read the value, write it down)
+- **All sites:** sites migrated = sites that exist; one image tag on every app container; Held in the status options; 3 Company fields; hold switch **off** (fields ship dark); Custom DocPerm count unchanged; a normal punch and a machine punch still save.
+- **DTC (switch stays off, no backfill, D5):** count of Held rows = 0 after a day; Monthly Attendance Sheet opens; biometric posts accepted after the deploy pause (about 1 min refused); HR login with a company still approves a colleague's correction.
+- **Grace:** runbook §2 steps 3-9 in order; limit 3 and exempt `Sales Executive` read back; test day before the Server Script is disabled and again after; switch on, card count written down; dry-run count agrees; Held count for November equals the count printed; undo file copied off the server; hr@grace sees the team.
+
+### Rollback (project rule: revert only)
+Matches runbook §4 and I agree with it. Order: **undo list first** (`--undo`, same file), **then** the previous image tag with migrations off. Old code pays Held rows as normal days, so reversing the order silently changes pay. Property Setter and fields may stay. Days held after the backfill have no undo list. Real time is about 7 minutes (22 Sep reading, not re-measured). Revert by a new commit on main, never a force push.
+
+### Monitoring (no new stack)
+Error Log count mentioning Held after the first two daily runs; held-day count per site per day read by hand; `rq:workers` registration and heartbeat, plus `docker top`, not `docker ps` alone. Slip refresh job runs on queue `short` (impl notes): confirm a worker listens on it. Cache headers on the month call: nginx adds none (read), Frappe's own not proved, open the network tab on dev.
+
+### Traps checked against the plan
+nginx: the diff touches no `deploy/` file (fact, stat shows none), so `nginx -t` is not triggered; if that changes, run `scripts/check_nginx_parses.sh` first. Queue/disk gate before the pull (OPS-23, in runbook §0). Window 00:30-05:30 IST and Grace's 06:00 job: schedule still to be read from the site. Grace November backfill is a separate approved step, after the switch and the dry-run agreement.
+
+**Still open:** OPS-30 (P1, blocks push), OPS-32, OPS-33, one-vs-two releases, OPS-29 now answered by events (084 is on dev). Earlier OPS-24 to OPS-28 decisions remain blank.
+**Subtract pass:** removed a proposed two-branch plan from the default recommendation and a proposed new CI gate for the sheet (the slice test covers it). Nothing else.

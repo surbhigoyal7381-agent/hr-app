@@ -97,6 +97,27 @@ class TestSlabLookup(unittest.TestCase):
 		self.assertEqual(find_slab(DTC_SLABS, 98.95).quarters_off, 0)
 
 
+class TestSlabRounding(unittest.TestCase):
+	"""ALV-401 (Surbhi, 20 Nov 2026): a day's percentage is rounded to one decimal,
+	.05 upwards, before its band is chosen - the way DTC reads a percentage."""
+
+	def test_just_under_a_line_rounds_into_the_better_band(self):
+		self.assertFalse(find_slab(DTC_SLABS, 534 / 540 * 100).raises_red)   # 98.89 -> 98.9
+		self.assertEqual(find_slab(DTC_SLABS, 89.95).quarters_off, 0)        # -> 90.0
+
+	def test_further_under_a_line_stays_in_its_band(self):
+		self.assertTrue(find_slab(DTC_SLABS, 98.84).raises_red)              # -> 98.8
+		self.assertEqual(find_slab(DTC_SLABS, 89.94).quarters_off, 1)        # -> 89.9
+
+	def test_a_540_minute_shift_left_6_minutes_early_earns_no_red(self):
+		"""534 of 540 is 98.89%. Unrounded it fell in the 90-98.9% band: a red."""
+		v = judge(shift_start=hm(10, 30), shift_end=hm(19, 30),
+		          first_in=hm(10, 30), last_out=hm(19, 24))
+		self.assertAlmostEqual(v.attendance_percent, 534 / 540 * 100)  # stored exact
+		self.assertEqual(v.reds, 0)
+		self.assertEqual(v.slab_quarters, 0)
+
+
 class TestDuplicatePunches(unittest.TestCase):
 	"""A reader that scans twice in a second has not recorded a day of work."""
 

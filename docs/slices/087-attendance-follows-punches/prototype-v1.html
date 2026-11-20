@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>087 Attendance follows the punches - prototype v1 (all names and times are Sample)</title>
+<style>
+:root,:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);--r:10px;--r-sm:6px;--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.6)}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+button{font:inherit;cursor:pointer}
+/* review scaffolding, not product */
+#demo{position:sticky;top:0;z-index:30;background:var(--surface2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:13px}
+#demo .g{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#demo .g>span{color:var(--text3);font-weight:700;font-size:12px;margin-right:2px}
+#demo button{border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);padding:5px 9px;min-height:32px}
+#demo button[aria-pressed=true]{background:var(--primary);color:#fff;border-color:var(--primary)}
+#demo .sample{background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber);border-radius:var(--r-sm);padding:2px 8px;font-weight:700;font-size:12px}
+#stage{margin:16px auto;background:var(--bg)}
+#stage.desktop{max-width:1040px;padding:0 16px}
+#stage.phone{width:390px;max-width:100%;border:10px solid #2a2a2e;border-radius:30px;background:var(--bg);box-shadow:var(--sh3);overflow:hidden}
+#stage.phone.p360{width:360px}
+.app-h{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;font-weight:700;font-size:18px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.app-h small{font-weight:400;font-size:13px;color:var(--text3)}
+.pad{padding:14px 16px 28px}
+.desktop .pad{padding:18px 0}
+/* components copied from panels.css (ac-*), same names */
+.ac-tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 7px;border-radius:var(--r-sm);border:1px solid var(--border);color:var(--text3);background:var(--surface2);margin-left:6px;vertical-align:1px}
+.ac-tag.ok{border-color:var(--green);background:var(--green-lt);color:var(--green)}
+.ac-tag.held{border-color:var(--amber);background:var(--amber-lt);color:var(--amber)}
+.ac-tag.wait{border-color:var(--primary);background:var(--primary-lt);color:var(--primary)}
+.ac-tag.added{border-color:var(--green);background:var(--green-lt);color:var(--green)}
+.ac-tag.aside{border-color:var(--border2);background:var(--surface2);color:var(--text2)}
+.dayrow{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:52px;padding:8px 12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:var(--r-sm);margin-top:8px}
+.dayrow[aria-expanded=true]{border-color:var(--primary);border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:0}
+.dayrow .d{font-weight:700}.dayrow .s{font-size:13px;color:var(--text2);text-align:right}
+.ac-detail{border:1px solid var(--primary);border-top:0;background:var(--surface);padding:14px 12px;border-radius:0 0 var(--r-sm) var(--r-sm);font-size:14px;color:var(--text2);line-height:1.6}
+.ac-facts{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:10px}
+.ac-facts div{font-size:12px;color:var(--text3);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.ac-facts div span{display:block;font-size:15px;color:var(--text);font-weight:700;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
+.ac-punches{display:flex;flex-direction:column;gap:6px;margin:8px 0 12px}
+.pn{border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 10px;background:var(--surface);font-size:14px;color:var(--text2);font-variant-numeric:tabular-nums}
+.pn b{color:var(--text)}
+.pn.aside{background:var(--surface2)}
+.pn.aside .tm{text-decoration:line-through;text-decoration-thickness:2px}
+.pn.added{border-color:var(--green)}
+.pn .why{display:block;font-size:13px;color:var(--text2);margin-top:2px}
+.ac-heldbox,.ac-okbox,.ac-waitbox,.ac-nobox{border:1px solid var(--amber);background:var(--amber-lt);border-radius:var(--r-sm);padding:12px;margin-bottom:10px}
+.ac-okbox{border-color:var(--green);background:var(--green-lt)}
+.ac-waitbox{border-color:var(--primary);background:var(--primary-lt)}
+.ac-nobox{border-color:var(--border2);background:var(--surface2)}
+.ac-heldbox h3,.ac-okbox h3,.ac-waitbox h3,.ac-nobox h3{margin:0 0 4px;font-size:15px}
+.ac-heldbox h3{color:var(--amber)}.ac-okbox h3{color:var(--green)}.ac-waitbox h3{color:var(--primary)}.ac-nobox h3{color:var(--text)}
+.ac-heldbox p,.ac-okbox p,.ac-waitbox p,.ac-nobox p{margin:4px 0}
+.ac-form{border-top:1px solid var(--border);padding-top:12px;margin-top:4px}
+.ac-form h3{margin:0 0 8px;font-size:16px;color:var(--text)}
+.ac-form fieldset{border:0;padding:0;margin:0 0 12px}
+.ac-form legend,.form-label{font-weight:700;color:var(--text);font-size:14px;padding:0;margin-bottom:6px;display:block}
+.opt{display:flex;gap:10px;align-items:flex-start;min-height:52px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:6px;background:var(--surface);color:var(--text);cursor:pointer}
+.opt:has(input:checked){border-color:var(--primary);background:var(--primary-lt)}
+.opt input{width:22px;height:22px;margin:2px 0 0;flex:none;accent-color:var(--primary)}
+.opt .t{font-weight:600;display:block}.opt .h{font-size:13px;color:var(--text2);display:block}
+.ac-form input[type=time],.ac-form textarea{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);width:100%;max-width:420px;min-height:48px}
+.ac-form textarea{min-height:72px;resize:vertical}
+.ac-help{font-size:13px;color:var(--text3);margin:5px 0 10px;line-height:1.5}
+.err{border:1px solid var(--red);background:var(--red-lt);color:var(--red);border-radius:var(--r-sm);padding:8px 10px;margin:8px 0;font-size:14px;font-weight:600}
+.ac-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.btn{min-height:48px;padding:8px 16px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-weight:600;font-size:15px}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-h)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.phone .ac-acts .btn{flex:1 1 100%}
+.ac-req{border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:10px;background:var(--surface)}
+.ac-req.done{border-left-color:var(--green)}
+.ac-req .h{font-size:15px;font-weight:650;color:var(--text)}
+.ac-req .m{font-size:13px;color:var(--text3);margin-top:2px}
+.ac-req .note{font-size:13px;color:var(--text2);margin-top:6px;border-left:2px solid var(--border);padding-left:9px;line-height:1.5}
+.ac-req .row-punch{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{border:1px solid var(--border);border-radius:var(--r-sm);padding:3px 9px;background:var(--surface);font-size:13px;font-variant-numeric:tabular-nums}
+.chip.added{border-color:var(--green);color:var(--green);font-weight:700}
+.chip.aside{text-decoration:line-through;color:var(--text3);background:var(--surface2)}
+.result{margin:8px 0 0;padding:8px 10px;border-radius:var(--r-sm);background:var(--green-lt);border:1px solid var(--green);color:var(--text);font-size:14px}
+.result.warn{background:var(--amber-lt);border-color:var(--amber)}
+.result.stop{background:var(--surface2);border-color:var(--border2)}
+.hrhead{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#2D2622;color:#fff;padding:10px 16px;border-radius:var(--r);box-shadow:var(--sh3);z-index:60;max-width:92vw;display:none;font-size:14px}
+#toast.err{background:var(--red);}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none;align-items:center;justify-content:center;padding:16px}
+#modal .box{background:var(--surface);color:var(--text);border-radius:var(--r);padding:18px;max-width:460px;width:100%;box-shadow:var(--sh3)}
+#modal textarea{width:100%;font:inherit;font-size:16px;min-height:72px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);padding:8px}
+.sec{font-size:13px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}
+.sr{position:absolute;left:-9999px}
+</style></head><body>
+<div id="demo" role="toolbar" aria-label="Review controls (not part of the product)">
+  <span class="sample">Review controls. Every name, time and rule figure is Sample.</span>
+  <div class="g"><span>Person</span>
+    <button data-p="emp" aria-pressed="true">Employee: Ravi Sample</button>
+    <button data-p="hr1" aria-pressed="false">HR: Anil Sample</button>
+    <button data-p="hr2" aria-pressed="false">HR: Kavita Sample</button></div>
+  <div class="g"><span>Device</span>
+    <button data-d="phone" aria-pressed="true">Phone 390</button>
+    <button data-d="p360" aria-pressed="false">Phone 360</button>
+    <button data-d="desktop" aria-pressed="false">Desktop</button></div>
+  <div class="g"><span>Language</span>
+    <button data-l="en" aria-pressed="true">English</button>
+    <button data-l="hi" aria-pressed="false">हिन्दी (draft)</button></div>
+  <div class="g"><span>Theme</span>
+    <button data-t="light" aria-pressed="true">Light</button>
+    <button data-t="dark" aria-pressed="false">Dark</button></div>
+  <div class="g"><button id="reset">Start again</button></div>
+</div>
+<div id="stage" class="phone"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="box"></div></div>
+<script>
+/* ---------- words: [English, Hindi (machine draft, needs native review)] ---------- */
+var T={
+ title_emp:["My attendance","मेरी उपस्थिति"],title_hr:["Attendance: fixes to decide","उपस्थिति: तय करने वाले सुधार"],
+ shift:["Shift","शिफ्ट"],worked:["Worked","काम किया"],expected:["Expected","अपेक्षित"],late:["Late by","देरी"],
+ punches:["Punches","पंच"],
+ In:["In","अंदर"],Out:["Out","बाहर"],
+ Present:["Present","उपस्थित"],Held:["Held","रोका हुआ"],Leave:["On leave","छुट्टी पर"],
+ paid:["Paid","भुगतान होगा"],notpaid:["Not paid until fixed","ठीक होने तक भुगतान नहीं"],
+ f_title:["Fix a punch on {0}","{0} का पंच ठीक करें"],
+ f_q1:["Which punch is missing?","कौन-सा पंच छूटा है?"],
+ arrival:["Arrival","आगमन"],arrival_h:["When you came in for the day","जब आप दिन में आए"],
+ back:["Back in after a break","ब्रेक के बाद वापसी"],back_h:["When you came back from a break","जब आप ब्रेक से लौटे"],
+ outb:["Out for a break","ब्रेक के लिए बाहर"],outb_h:["When you went out for a break","जब आप ब्रेक के लिए निकले"],
+ leaving:["Leaving","जाना"],leaving_h:["When you left for the day","जब आप दिन में गए"],
+ none:["No punch is missing","कोई पंच छूटा नहीं"],none_h:["Use this if one punch below is wrong","अगर नीचे का कोई पंच गलत है तो यह चुनें"],
+ f_time:["What time was it?","कितने बजे था?"],
+ f_q3:["Is a punch on this day wrong?","क्या इस दिन का कोई पंच गलत है?"],
+ f_q3h:["Tick a punch that should not count. It stays on record, set aside. Tick nothing if all are right.","जो पंच नहीं गिना जाना चाहिए उसे टिक करें। वह रिकॉर्ड में रहेगा, अलग रखा हुआ। सब सही हैं तो कुछ न चुनें।"],
+ portal_ci:["Check In on this portal","इस पोर्टल पर चेक इन"],machine:["Machine","मशीन"],
+ f_note:["Anything HR should know (optional)","HR को कुछ बताना है? (वैकल्पिक)"],
+ f_help:["HR sees your punches, this time and your note, and decides. Nothing changes until HR approves.","HR आपके पंच, यह समय और आपका नोट देखकर तय करेगा। HR के मंज़ूर करने तक कुछ नहीं बदलता।"],
+ send:["Send to HR","HR को भेजें"],cancel:["Cancel","रद्द करें"],
+ other:["It is not about a punch. Something else went wrong","यह पंच का मामला नहीं है। कुछ और गलत हुआ"],
+ e_none:["Choose which punch is missing, or choose “No punch is missing” and tick the wrong one.","बताएं कौन-सा पंच छूटा है, या “कोई पंच छूटा नहीं” चुनकर गलत वाला टिक करें।"],
+ e_time:["Enter the time first.","पहले समय भरें।"],
+ e_wrong:["Tick the punch that is wrong.","जो पंच गलत है उसे टिक करें।"],
+ e_fit_a:["{0} does not fit. Arrival has to come before your first punch of the day ({1}). Check the time, or choose another punch.","{0} सही नहीं बैठता। आगमन दिन के पहले पंच ({1}) से पहले होना चाहिए। समय जाँचें या दूसरा पंच चुनें।"],
+ e_fit_l:["{0} does not fit. Leaving has to come after your last punch of the day ({1}). Check the time, or choose another punch.","{0} सही नहीं बैठता। जाना दिन के आखिरी पंच ({1}) के बाद होना चाहिए। समय जाँचें या दूसरा पंच चुनें।"],
+ e_fit_b:["{0} does not fit. A break has to sit between your first punch ({1}) and your last ({2}). Check the time, or choose another punch.","{0} सही नहीं बैठता। ब्रेक पहले पंच ({1}) और आखिरी पंच ({2}) के बीच होना चाहिए। समय जाँचें या दूसरा पंच चुनें।"],
+ e_dup:["There is already a punch at {0}. Check the time.","{0} पर पहले से पंच है। समय जाँचें।"],
+ sent_t:["Sent to HR at {0}","HR को {0} बजे भेजा गया"],
+ sent_p:["You said: {0} at {1}. The day stays as it is until HR decides. You will see the answer here.","आपने बताया: {1} पर {0}। HR के फ़ैसले तक दिन जैसा है वैसा रहेगा। जवाब यहीं दिखेगा।"],
+ sent_p2:["You said: punch at {0} is wrong. The day stays as it is until HR decides. You will see the answer here.","आपने बताया: {0} का पंच गलत है। HR के फ़ैसले तक दिन जैसा है वैसा रहेगा। जवाब यहीं दिखेगा।"],
+ withdraw:["Withdraw","वापस लें"],
+ toast_sent:["Sent to HR.","HR को भेज दिया।"],
+ held_h:["Held. {0} punches on this day.","रोका हुआ। इस दिन {0} पंच हैं।"],
+ held_p:["One punch is missing, so nobody can tell which time is right. HR looks at held days at the end of the month, before pay.","एक पंच छूटा है, इसलिए सही समय कोई नहीं बता सकता। HR महीने के अंत में, वेतन से पहले, रोके हुए दिन देखता है।"],
+ ok_h:["Fixed by HR. {0}, {1}. Paid.","HR ने ठीक किया। {0}, {1}। भुगतान होगा।"],
+ added_line:["HR added {0} on {1}, from your request.","HR ने {1} को {0} जोड़ा, आपके अनुरोध पर।"],
+ aside_line:["HR set aside {0} on {1}, from your request. It stays on record but no longer counts.","HR ने {1} को {0} अलग रखा, आपके अनुरोध पर। वह रिकॉर्ड में रहता है पर अब गिना नहीं जाता।"],
+ chip_added:["Added by HR","HR ने जोड़ा"],chip_aside:["Set aside","अलग रखा"],
+ aside_why:["Set aside by HR on {0}, from your request.","HR ने {0} को आपके अनुरोध पर अलग रखा।"],
+ your_note:["Your note: {0}","आपका नोट: {0}"],
+ dec_h:["HR did not add this.","HR ने यह नहीं जोड़ा।"],dec_p:["Reason from HR: {0}","HR का कारण: {0}"],
+ r_slip:["This day is on a salary slip that is already final, so its punches cannot be changed here. Tell HR which day it was and what happened. HR can pay the difference with an Additional Salary.","यह दिन ऐसी वेतन पर्ची में है जो अंतिम हो चुकी है, इसलिए यहाँ इसके पंच नहीं बदले जा सकते। HR को बताएं कौन-सा दिन था और क्या हुआ। HR अंतर का भुगतान अतिरिक्त वेतन से कर सकता है।"],
+ r_leave:["This day is covered by approved leave, so punches do not change it. If you worked that day, ask HR to cancel the leave first.","यह दिन मंज़ूर छुट्टी में आता है, इसलिए पंच इसे नहीं बदलते। अगर आपने उस दिन काम किया था, तो पहले HR से छुट्टी रद्द करवाएं।"],
+ r_hand:["HR marked this day by hand on {0}, so punches do not change it. If it is wrong, ask HR to look at it.","HR ने इस दिन को {0} को हाथ से चिह्नित किया था, इसलिए पंच इसे नहीं बदलते। गलत हो तो HR से देखने को कहें।"],
+ r_no:["You cannot send a punch fix for this day","इस दिन के लिए पंच सुधार नहीं भेज सकते"],
+ hr_title:["{0} · Missing punch","{0} · छूटा पंच"],
+ hr_title2:["{0} · Wrong punch","{0} · गलत पंच"],
+ hr_on_record:["Punches on record:","रिकॉर्ड में पंच:"],
+ hr_says:["{0} says: {1} at {2}.","{0} के अनुसार: {1}, {2} पर।"],
+ hr_says2:["{0} says: the punch at {1} is wrong.","{0} के अनुसार: {1} का पंच गलत है।"],
+ hr_note:["Note from {0}: {1}","{0} का नोट: {1}"],
+ hr_asks:["Also asks to set aside {0}.","साथ में {0} को अलग रखने को भी कहा है।"],
+ ap_add:["Approve and add {0}","मंज़ूर करें और {0} जोड़ें"],
+ ap_add_aside:["Approve: add {0}, set aside {1}","मंज़ूर करें: {0} जोड़ें, {1} अलग रखें"],
+ ap_aside:["Approve: set aside {0}","मंज़ूर करें: {0} अलग रखें"],
+ decline:["Decline","अस्वीकार करें"],month:["See their month","उनका महीना देखें"],
+ res_pres:["This day becomes Present, {0}{1}, and is paid.","यह दिन उपस्थित बनेगा, {0}{1}, और भुगतान होगा।"],
+ res_held:["This day stays Held. The punches would still be an odd number ({0}), so it is not paid yet.","यह दिन रोका हुआ ही रहेगा। पंच अब भी विषम संख्या ({0}) में रहेंगे, इसलिए अभी भुगतान नहीं।"],
+ late_m:[", {0} min late",", {0} मिनट देरी"],ontime:["",""],
+ own_h:["This is Kavita's own day, so she cannot approve it.","यह कविता का अपना दिन है, इसलिए वे इसे मंज़ूर नहीं कर सकतीं।"],
+ own_p:["Another HR person will decide it.","कोई दूसरा HR व्यक्ति इसे तय करेगा।"],
+ own_you:["This is your own day, so you cannot approve it. Another HR person will decide it.","यह आपका अपना दिन है, इसलिए आप इसे मंज़ूर नहीं कर सकते। कोई दूसरा HR व्यक्ति इसे तय करेगा।"],
+ slip_hr:["Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary.","यह भेजे जाने के बाद दिन अंतिम वेतन पर्ची में चला गया। इसके पंच नहीं बदले जा सकते। कारण बताकर अस्वीकार करें, या अतिरिक्त वेतन जोड़ें।"],
+ p_h:["Anything to tell the employee? (optional)","कर्मचारी को कुछ बताना है? (वैकल्पिक)"],
+ p_d:["Why is this not being approved? The employee will see this.","यह मंज़ूर क्यों नहीं हो रहा? कर्मचारी यह देखेगा।"],
+ p_add_note:["This adds a punch the machine did not record. It is marked “added by HR” with your name and the request. It is never deleted.","यह वह पंच जोड़ता है जो मशीन ने दर्ज नहीं किया। इस पर “HR ने जोड़ा”, आपका नाम और अनुरोध लिखा रहेगा। इसे कभी मिटाया नहीं जाता।"],
+ p_ok:["Approve","मंज़ूर करें"],p_decline:["Decline","अस्वीकार करें"],p_back:["Go back","वापस जाएं"],
+ toast_ap:["Approved. {0} was added. The day is now {1}.","मंज़ूर हुआ। {0} जोड़ा गया। दिन अब {1} है।"],
+ toast_dec:["Declined. The employee will see your reason.","अस्वीकार किया। कर्मचारी आपका कारण देखेगा।"],
+ need_reason:["A reason is needed so the employee knows what to do next.","कारण ज़रूरी है ताकि कर्मचारी जाने आगे क्या करना है।"],
+ done_h:["Decided","तय हुआ"],queue_empty:["Nothing waiting for you.","आपके लिए कुछ प्रतीक्षा में नहीं।"],
+ hand_tag:["Marked by hand","हाथ से चिह्नित"],slip_tag:["On a final slip","अंतिम पर्ची में"],
+ fix_btn:["Fix a punch","पंच ठीक करें"],
+ sample:["Sample","नमूना"]
+};
+var LANG="en",DEV="phone",WHO="emp",THEME="light",OPEN=null,FORM=null;
+function t(k){var a=T[k]||[k,k];var s=a[LANG==="hi"?1:0];for(var i=1;i<arguments.length;i++)s=s.split("{"+(i-1)+"}").join(arguments[i]);return s}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]})}
+var DAYN={d15:["Sat 15 Nov","शनि 15 नव"],d17:["Mon 17 Nov","सोम 17 नव"],d18:["Tue 18 Nov","मंगल 18 नव"],d19:["Wed 19 Nov","बुध 19 नव"],d20:["Thu 20 Nov","गुरु 20 नव"]};
+function dn(k){return DAYN[k][LANG==="hi"?1:0]}
+var TODAY=LANG==="hi"?"21 नव":"21 Nov";
+function ON(){return LANG==="hi"?"21 नव":"21 Nov"}
+var SHIFT_START="10:30",EXPECTED=540;
+/* ---------- data (Sample) ---------- */
+var S;
+function fresh(){S={
+ d15:{kind:"hand",status:"Present",by:"16 Nov"},d17:{kind:"slip",status:"Present"},d18:{kind:"leave",status:"Leave"},
+ d19:{kind:"fix",stage:"open",p:[{t:"11:15",lt:"IN",src:"portal"},{t:"19:30",lt:"OUT",src:"machine"}]},
+ d20:{kind:"fix",stage:"open",p:[{t:"10:30",src:"machine"},{t:"14:00",src:"machine"},{t:"19:30",src:"machine"}]},
+ hr:{rk:false,rp:false},req:{}};OPEN=null;FORM=null}
+fresh();
+function act(p){return p.filter(function(x){return!x.aside}).sort(function(a,b){return a.t<b.t?-1:1})}
+function mins(h){return(+h.slice(0,2))*60+(+h.slice(3))}
+function hm(m){return Math.floor(m/60)+"h "+(m%60<10?"0":"")+(m%60)+"m"}
+function judge(p){var a=act(p),n=a.length,w=0;for(var i=0;i+1<n;i+=2)w+=mins(a[i+1].t)-mins(a[i].t);
+ var held=n%2===1,late=a.length?Math.max(0,mins(a[0].t)-mins(SHIFT_START)):0;
+ return{n:n,held:held,work:w,late:late,status:held?"Held":"Present"}}
+function role(d,x){var a=act(d.p),i=a.indexOf(x);if(x.aside||i<0)return x.lt||"IN";return i%2===0?"IN":"OUT"}
+function lblIO(d,x){return t(role(d,x)==="IN"?"In":"Out")}
+function resultLine(d,r){var p=JSON.parse(JSON.stringify(d.p));
+ if(r.time)p.push({t:r.time,lt:r.kind==="arrival"||r.kind==="back"?"IN":"OUT",src:"HR"});
+ p.forEach(function(x){if(r.set.indexOf(x.t)>-1)x.aside=true});
+ var j=judge(p);
+ if(j.held)return{cls:"warn",txt:t("res_held",j.n)};
+ return{cls:"",txt:t("res_pres",hm(j.work),j.late>0?t("late_m",j.late):t("ontime"))}}
+function kindIO(k){return k==="arrival"||k==="back"?"IN":"OUT"}
+/* ---------- render ---------- */
+function ioWord(k){return t(kindIO(k)==="IN"?"In":"Out")}
+function render(){var st=document.getElementById("stage");st.className=DEV==="desktop"?"desktop":("phone"+(DEV==="p360"?" p360":""));
+ document.documentElement.setAttribute("data-theme",THEME);document.documentElement.lang=LANG==="hi"?"hi":"en";
+ st.innerHTML=WHO==="emp"?empView():hrView();
+ var f=document.getElementById("ac-time");
+ [].forEach.call(document.querySelectorAll("#demo button[data-p]"),function(b){b.setAttribute("aria-pressed",b.dataset.p===WHO)});
+ [].forEach.call(document.querySelectorAll("#demo button[data-d]"),function(b){b.setAttribute("aria-pressed",b.dataset.d===DEV)});
+ [].forEach.call(document.querySelectorAll("#demo button[data-l]"),function(b){b.setAttribute("aria-pressed",b.dataset.l===LANG)});
+ [].forEach.call(document.querySelectorAll("#demo button[data-t]"),function(b){b.setAttribute("aria-pressed",b.dataset.t===THEME)})}
+function empView(){var h='<div class="app-h"><span>'+t("title_emp")+'<br><small>Ravi Sample · Nov 2026</small></span></div><div class="pad">';
+ ["d20","d19","d18","d17","d15"].forEach(function(k){h+=dayRow(k)});return h+"</div>"}
+function statusOf(k){var d=S[k];if(d.kind==="fix"){var j=judge(d.p);return j.held?t("Held"):t("Present")}return d.kind==="leave"?t("Leave"):t("Present")}
+function dayRow(k){var d=S[k],o=OPEN===k,tag="";
+ if(d.kind==="fix"){var j=judge(d.p);if(j.held)tag='<span class="ac-tag held">&#9888; '+t("Held")+"</span>";
+  else if(d.stage==="approved")tag='<span class="ac-tag ok">&#10003; '+t("Present")+"</span>";else tag=t("Present")}
+ else if(d.kind==="hand")tag=t("Present")+'<span class="ac-tag">'+t("hand_tag")+"</span>";
+ else if(d.kind==="slip")tag=t("Present")+'<span class="ac-tag">'+t("slip_tag")+"</span>";
+ else tag=t("Leave");
+ var w=d.stage==="sent"?'<span class="ac-tag wait">&#9201; HR</span>':"";
+ return'<button class="dayrow" aria-expanded="'+o+'" onclick="toggle(\''+k+'\')"><span class="d">'+dn(k)+'</span><span class="s">'+tag+w+"</span></button>"+(o?sheet(k):"")}
+function toggle(k){OPEN=OPEN===k?null:k;FORM=null;render()}
+function chips(d,k){var a=act(d.p),heldOdd=a.length%2===1&&!d.p.some(function(x){return x.src==="HR"}),h='<div class="ac-punches">';
+ d.p.slice().sort(function(a,b){return a.t<b.t?-1:1}).forEach(function(x){
+  var io=heldOdd&&!x.aside?"":(lblIO(d,x)+" ");
+  var src=x.src==="portal"?" · "+t("portal_ci"):(x.src==="machine"?" · "+t("machine"):"");
+  h+='<div class="pn'+(x.aside?" aside":"")+(x.src==="HR"?" added":"")+'"><span class="tm"><b>'+(io?esc(io):"")+"</b>"+x.t+"</span>"+(x.src==="HR"?"":src)
+   +(x.src==="HR"?' <span class="ac-tag added">&#10003; '+t("chip_added")+"</span>":"")
+   +(x.aside?' <span class="ac-tag aside">'+t("chip_aside")+"</span>"+'<span class="why">'+t("aside_why",d.on||ON())+(d.req&&d.req.note?" "+t("your_note",esc(d.req.note)):"")+"</span>":"")+"</div>"});
+ return h+"</div>"}
+function facts(d,j){return'<div class="ac-facts"><div>'+t("shift")+"<span>10:30 – 19:30</span></div><div>"+t("worked")+"<span>"+(j.held?"—":hm(j.work))+"</span></div><div>"+t("expected")+"<span>9h 00m</span></div>"+(j.late>0?"<div>"+t("late")+"<span>"+j.late+" min</span></div>":"")+"</div>"}
+function sheet(k){var d=S[k],h='<div class="ac-detail">';
+ if(d.kind==="slip")return h+'<div class="ac-nobox" role="status"><h3>'+t("r_no")+"</h3><p>"+t("r_slip")+"</p></div></div>";
+ if(d.kind==="leave")return h+'<div class="ac-nobox" role="status"><h3>'+t("r_no")+"</h3><p>"+t("r_leave")+"</p></div></div>";
+ if(d.kind==="hand")return h+'<div class="ac-nobox" role="status"><h3>'+t("r_no")+"</h3><p>"+t("r_hand",d.by)+"</p></div></div>";
+ var j=judge(d.p);h+=facts(d,j)+chips(d,k);
+ if(d.stage==="approved"){
+  h+='<div class="ac-okbox" role="status"><h3>&#10003; '+t("ok_h",t("Present"),hm(j.work))+"</h3>";
+  d.p.forEach(function(x){if(x.src==="HR")h+="<p>"+t("added_line",x.t+" ("+lblIO(d,x)+")",d.on)+"</p>";});
+  d.p.forEach(function(x){if(x.aside)h+="<p>"+t("aside_line",x.t+" ("+t(x.lt==="IN"?"In":"Out")+")",d.on)+"</p>"});
+  return h+"</div></div>"}
+ if(d.stage==="sent"){var r=d.req;
+  h+='<div class="ac-waitbox" role="status"><h3>&#9201; '+t("sent_t",r.at)+"</h3><p>"+(r.kind?t("sent_p",t(r.kind),r.time):t("sent_p2",r.set[0]))+"</p>"+(r.set.length&&r.kind?"<p>"+t("hr_asks",r.set.join(", "))+"</p>":"")+(r.note?"<p>"+t("your_note",esc(r.note))+"</p>":"")+"</div>"
+   +'<div class="ac-acts"><button class="btn" onclick="withdraw(\''+k+'\')">'+t("withdraw")+"</button></div></div>";return h}
+ if(d.stage==="declined"){h+='<div class="ac-nobox" role="status"><h3>'+t("dec_h")+"</h3><p>"+t("dec_p",esc(d.dnote))+"</p></div>"}
+ if(j.held)h+='<div class="ac-heldbox"><h3>&#9888; '+t("held_h",j.n)+"</h3><p><b>"+t("notpaid")+".</b> "+t("held_p")+"</p></div>";
+ if(FORM&&FORM.k===k)return h+form(k,d)+"</div>";
+ h+='<div class="ac-acts"><button class="btn btn-primary" onclick="openForm(\''+k+'\')">'+t("fix_btn")+"</button></div></div>";
+ return h}
+function openForm(k){FORM={k:k,kind:"",time:"",set:[],note:"",err:""};render();var e=document.getElementById("f-first");if(e)e.focus()}
+function form(k,d){var F=FORM,h='<form class="ac-form" onsubmit="return send(event,\''+k+'\')" novalidate><h3>'+t("f_title",dn(k))+"</h3>";
+ h+="<fieldset><legend>"+t("f_q1")+"</legend>";
+ [["arrival","arrival_h"],["back","back_h"],["outb","outb_h"],["leaving","leaving_h"],["none","none_h"]].forEach(function(o,i){
+  h+='<label class="opt"><input type="radio" name="kind" value="'+o[0]+'"'+(F.kind===o[0]?" checked":"")+(i===0?' id="f-first"':"")+' onchange="pick(this.value)"><span><span class="t">'+t(o[0]==="arrival"?"arrival":o[0]==="back"?"back":o[0]==="outb"?"outb":o[0]==="leaving"?"leaving":"none")+'</span><span class="h">'+t(o[1])+"</span></span></label>"});
+ h+="</fieldset>";
+ if(F.kind&&F.kind!=="none")h+='<div style="margin-bottom:12px"><label class="form-label" for="ac-time">'+t("f_time")+'</label><input type="time" id="ac-time" value="'+F.time+'" oninput="FORM.time=this.value"></div>';
+ h+="<fieldset><legend>"+t("f_q3")+'</legend><p class="ac-help" style="margin-top:0">'+t("f_q3h")+"</p>";
+ act(d.p).forEach(function(x){h+='<label class="opt"><input type="checkbox" value="'+x.t+'"'+(F.set.indexOf(x.t)>-1?" checked":"")+' onchange="tick(this)"><span><span class="t">'+x.t+" "+(d.p.length%2===1?"":lblIO(d,x))+'</span><span class="h">'+(x.src==="portal"?t("portal_ci"):t("machine"))+"</span></span></label>"});
+ h+="</fieldset>";
+ h+='<label class="form-label" for="ac-note">'+t("f_note")+'</label><textarea id="ac-note" oninput="FORM.note=this.value">'+esc(F.note)+"</textarea>";
+ h+='<p class="ac-help">'+t("f_help")+"</p>";
+ h+=(F.err?'<div class="err" role="alert">'+F.err+"</div>":"");
+ h+='<div class="ac-acts"><button class="btn btn-primary" type="submit">'+t("send")+'</button><button class="btn" type="button" onclick="FORM=null;render()">'+t("cancel")+'</button></div>';
+ h+='<p class="ac-help" style="margin-top:12px"><button type="button" class="btn" style="min-height:44px;font-weight:400" onclick="alert(\'Sample: opens today\\u2019s reason form, unchanged.\')">'+t("other")+"</button></p></form>";return h}
+function pick(v){FORM.kind=v;FORM.err="";render();var e=document.getElementById("ac-time");if(e)e.focus()}
+function tick(el){var s=FORM.set,i=s.indexOf(el.value);if(el.checked&&i<0)s.push(el.value);if(!el.checked&&i>-1)s.splice(i,1)}
+function fit(d,F){var a=act(d.p).filter(function(x){return F.set.indexOf(x.t)<0});
+ if(d.p.some(function(x){return x.t===F.time&&!x.aside}))return t("e_dup",F.time);
+ if(!a.length)return"";var f=a[0].t,l=a[a.length-1].t;
+ if(F.kind==="arrival"&&F.time>=f)return t("e_fit_a",F.time,f);
+ if(F.kind==="leaving"&&F.time<=l)return t("e_fit_l",F.time,l);
+ if((F.kind==="back"||F.kind==="outb")&&!(F.time>f&&F.time<l))return t("e_fit_b",F.time,f,l);return""}
+function send(ev,k){ev.preventDefault();var d=S[k],F=FORM;
+ var tm=document.getElementById("ac-time");if(tm)F.time=tm.value;F.note=document.getElementById("ac-note").value;
+ if(!F.kind){F.err=t("e_none")}
+ else if(F.kind==="none"&&!F.set.length){F.err=t("e_wrong")}
+ else if(F.kind!=="none"&&!F.time){F.err=t("e_time")}
+ else if(F.kind!=="none"){F.err=fit(d,F)}else F.err="";
+ if(F.err){render();var e=document.querySelector(".err");if(e)e.scrollIntoView({block:"center"});return false}
+ d.req={kind:F.kind==="none"?"":F.kind,time:F.time,set:F.set.slice(),note:F.note.trim(),at:"09:12"};d.stage="sent";FORM=null;toast(t("toast_sent"));render();return false}
+function withdraw(k){S[k].stage="open";S[k].req=null;render()}
+/* ---------- HR ---------- */
+function hrCards(){var c=[];
+ ["d19","d20"].forEach(function(k){var d=S[k];if(d.stage==="sent")c.push({id:k,who:"Ravi Sample",day:dn(k),d:d,k:k})});
+ return c}
+function hrView(){var me=WHO==="hr2"?"Kavita":"Anil";
+ var h='<div class="app-h"><span>'+t("title_hr")+"<br><small>"+me+" Sample (HR)</small></span></div><div class=\"pad\">";var n=0;
+ hrCards().forEach(function(c){n++;h+=dynCard(c)});
+ [["rk","Kavita Sample",dn("d15").replace(/.*/,LANG==="hi"?"बुध 12 नव":"Wed 12 Nov"),"18:45","Leaving",["10:00","14:10"],"own"],
+  ["rp","Preet Sample",dn("d17"),"09:55","Arrival",["10:05","18:30"],"slip"]].forEach(function(s){
+  if(S.hr[s[0]])return;n++;h+=staticCard(s,me)});
+ Object.keys(S.req).forEach(function(i){});
+ if(!n)h+='<div class="ac-nobox"><p>'+t("queue_empty")+"</p></div>";
+ var done=[];["d19","d20"].forEach(function(k){if(S[k].stage==="approved"||S[k].stage==="declined")done.push(k)});
+ if(done.length){h+='<div class="sec">'+t("done_h")+"</div>";done.forEach(function(k){h+='<div class="ac-req done"><div class="h">Ravi Sample · '+dn(k)+'</div><div class="m">'+(S[k].stage==="approved"?"&#10003; "+t("Present"):t("decline"))+"</div></div>"})}
+ return h+"</div>"}
+function recs(d,r){var h='<div class="row-punch">';d.p.slice().sort(function(a,b){return a.t<b.t?-1:1}).forEach(function(x){h+='<span class="chip'+(r.set.indexOf(x.t)>-1?" aside":"")+'">'+x.t+(r.set.indexOf(x.t)>-1?" ("+t(x.lt==="IN"?"In":"Out")+") ":"")+"</span>"});
+ if(r.time)h+='<span class="chip added">+ '+r.time+" ("+ioWord(r.kind)+")</span>";return h+"</div>"}
+function dynCard(c){var d=c.d,r=d.req,res=resultLine(d,r),addTxt=r.time?r.time+" ("+ioWord(r.kind)+")":"";
+ var asideTxt=r.set.map(function(s){var x=d.p.filter(function(y){return y.t===s})[0];return s+" ("+t(x.lt?(x.lt==="IN"?"In":"Out"):"In")+")"}).join(", ");
+ var lab=r.time&&r.set.length?t("ap_add_aside",addTxt,asideTxt):(r.time?t("ap_add",addTxt):t("ap_aside",asideTxt));
+ var h='<div class="ac-req"><div class="hrhead"><div class="h">'+t(r.time?"hr_title":"hr_title2","Ravi Sample")+'</div><div class="m">'+c.day+"</div></div>";
+ h+='<div class="note">'+t("hr_on_record")+recs(d,{set:[],time:""}).replace(/^<div class="row-punch">/,'<div class="row-punch" style="margin-top:2px">')+"</div>";
+ h+='<div class="note">'+(r.time?t("hr_says","Ravi",t(r.kind),r.time):t("hr_says2","Ravi",r.set[0]))+(r.time&&r.set.length?" "+t("hr_asks",r.set.join(", ")):"")+"</div>";
+ if(r.note)h+='<div class="note">'+t("hr_note","Ravi",esc(r.note))+"</div>";
+ h+='<div class="ac-acts"><button class="btn btn-primary" aria-describedby="res-'+c.id+'" onclick="approve(\''+c.id+'\')">'+lab+'</button><button class="btn" onclick="decline(\''+c.id+'\')">'+t("decline")+'</button><button class="btn" onclick="toast(\'Sample: opens Ravi\\u2019s month\')">'+t("month")+"</button></div>";
+ h+='<div class="result '+res.cls+'" id="res-'+c.id+'">'+res.txt+"</div></div>";return h}
+function staticCard(s,me){var own=s[6]==="own",isMe=own&&me==="Kavita",slip=s[6]==="slip";
+ var h='<div class="ac-req"><div class="hrhead"><div class="h">'+t("hr_title",s[1])+'</div><div class="m">'+s[2]+"</div></div>";
+ h+='<div class="note">'+t("hr_on_record")+'<div class="row-punch" style="margin-top:2px">'+s[5].map(function(x){return'<span class="chip">'+x+"</span>"}).join("")+"</div></div>";
+ h+='<div class="note">'+t("hr_says",s[1].split(" ")[0],t(s[4]==="Leaving"?"leaving":"arrival"),s[3])+"</div>";
+ if(isMe)return h+'<div class="result stop" role="status"><b>'+t("own_you")+"</b></div></div>";
+ if(slip)return h+'<div class="result stop" role="status">'+t("slip_hr")+'</div><div class="ac-acts"><button class="btn" onclick="decline(\'rp\')">'+t("decline")+"</button></div></div>";
+ h+='<div class="ac-acts"><button class="btn btn-primary" onclick="approve(\''+s[0]+'\')">'+t("ap_add",s[3]+" ("+t(s[4]==="Leaving"?"Out":"In")+")")+'</button><button class="btn" onclick="decline(\''+s[0]+'\')">'+t("decline")+"</button></div>"
+  +'<div class="result"><b>'+t("res_pres","8h 15m",t("ontime"))+"</b></div></div>";return h}
+function approve(id){modal("approve",id)}
+function decline(id){modal("decline",id)}
+function modal(kind,id){var m=document.getElementById("modal"),b=m.querySelector(".box");
+ var isApp=kind==="approve";
+ b.innerHTML='<h2 id="mt" style="margin:0 0 8px;font-size:16px">'+(isApp?t("p_h"):t("p_d"))+"</h2>"+(isApp&&S[id]?"<p class='ac-help'>"+t("p_add_note")+"</p>":"")+'<textarea id="mnote" aria-labelledby="mt"></textarea><div id="merr" class="err" role="alert" style="display:none">'+t("need_reason")+'</div><div class="ac-acts"><button class="btn btn-primary" onclick="mok(\''+kind+'\',\''+id+'\')">'+(isApp?t("p_ok"):t("p_decline"))+'</button><button class="btn" onclick="mclose()">'+t("p_back")+"</button></div>";
+ m.style.display="flex";document.getElementById("mnote").focus()}
+function mclose(){document.getElementById("modal").style.display="none"}
+function mok(kind,id){var n=document.getElementById("mnote").value.trim();
+ if(kind==="decline"&&!n){document.getElementById("merr").style.display="";return}
+ mclose();
+ if(S[id]){var d=S[id];
+  if(kind==="approve"){var r=d.req;if(r.time)d.p.push({t:r.time,lt:kindIO(r.kind),src:"HR"});
+   d.p.forEach(function(x){if(r.set.indexOf(x.t)>-1)x.aside=true});d.stage="approved";d.on=ON();toast(t("toast_ap",r.time?r.time:"",t("Present")))}
+  else{d.stage="declined";d.dnote=n;toast(t("toast_dec"))}}
+ else{S.hr[id]=true;toast(kind==="approve"?t("toast_ap","",t("Present")):t("toast_dec"))}
+ render()}
+function toast(m){var e=document.getElementById("toast");e.textContent=m;e.style.display="block";clearTimeout(toast.t);toast.t=setTimeout(function(){e.style.display="none"},3500)}
+document.addEventListener("keydown",function(e){if(e.key==="Escape")mclose()});
+document.getElementById("demo").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;
+ if(b.id==="reset"){fresh();render();return}
+ if(b.dataset.p){WHO=b.dataset.p;if(WHO!=="emp"&&DEV!=="desktop")DEV="desktop";if(WHO==="emp"&&DEV==="desktop")DEV="phone"}if(b.dataset.d){DEV=b.dataset.d}if(b.dataset.l){LANG=b.dataset.l}if(b.dataset.t){THEME=b.dataset.t}render()});
+render();
+</script></body></html>

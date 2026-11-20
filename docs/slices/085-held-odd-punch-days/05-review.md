@@ -189,3 +189,65 @@ Nothing big. The slice stays on rungs 2 and 4, with no new DocType, no new app a
 - the repeat-scan hours, because `punch_dedupe` flags repeat scans as `skip_auto_attendance`;
 - the Company write right, because stock gives HR Manager write on Company;
 - the Employee CTC Break Up report, because it does not read attendance.
+
+---
+
+# Re-review, 20 Nov 2026: SHIP WITH FIXES
+
+**Verdict: SHIP WITH FIXES. Both blockers are closed, and I proved B-1 myself. What is left is three counts nobody has taken on the live tenants. Each one decides whether real HR users or real punches are refused on release day. None of them needs code.**
+
+**Where I looked:** this worktree, branch `slice/085-held-odd-punch-days` at 148cb639. `15c716f6` is an ancestor (proven with `git merge-base --is-ancestor`). I read the fix diff `f95d6faf..148cb639` and the scoping code in full, plus `03` §14-16. The test engineer was running suites on alv085-bench2 (test_held_day_085, then test_attendance_correction). My first probe there hit a lock wait, so I ran the probe on **alv085-bench** instead. That container mounts this worktree at 148cb639 and has its own database (`_0d985145…`, not bench2's `_310633…`). The probe rolls back in `finally`.
+
+## Findings from round one
+
+| Finding | State | Evidence |
+|---|---|---|
+| B-1 submit pays Held days | **Closed. Proven.** | Probe on alv085-bench: draft 29.0, re-saved 29.0, **after a real `submit()`: 29.0 payment days, net 28,064.52, absent 2.0**. Before the fix the same script gave 31 / 30,000 / 0. `held_day.py:489` now skips only `docstatus == 2`. The test `SubmitKeepsTheHold` does a real submit and could fail. |
+| B-2 rebase and AC-69 | **Closed.** Code read, not run by me | `hooks.py`: Attendance Request `validate` is now one list, and `validate_missing_time` runs before 084's window. `attendance_correction.py:1597` returns early on a missing time. A time on a day that is not Held is refused first, so the exemption cannot be abused. |
+| M-1 R1/R2 split | **Closed by decision.** | There is one release now, so commit order no longer matters. |
+| M-2 HR with no company | **Open, P2. Not checked.** | It is wider now: see S-1 below. |
+| M-3 holidays | **Closed.** Code read | `_holidays` makes the same two calls as stock `SalarySlip.get_holidays_for_employee` (`salary_slip.py:748-749`, read in the container), with the same default date (today). |
+| M-4 HR and the monthly limit | **Closed by decision.** Test read | `_filed_by_hr` decides by the filer, at insert and when counting. The test covers the employee, HR and a manager on behalf, with controls. |
+| M-5 screens | **Partly closed.** | The tag is gone, the AC-30 lost-answer path is built, and the count promise is gone. The 63 DOM tests were not re-run by me. **The screens have still not been opened at 360 px.** That still needs a human walk, or Surbhi's acceptance in writing. |
+
+`scripts/check_app_integrity.py` at HEAD: **984 checks, OK** (I ran it; 03 says 978 because that run came before the last commits).
+
+## The new scoping, and release-day risk
+
+- **S-1 (P2). The R4/R5 scope switches on for every tenant on release day, whatever the hold switch says. The runbook's pre-push count misses one group.**
+  - The runbook counts HR logins with *neither* a Company User Permission *nor* an Employee record.
+  - It does not count the other group: an HR login, or a CXO without System Manager, whose Employee record is at company A, who has no Company rows, and who approves today for company B. `permitted_companies` (`access.py:254-258`) gives that login A only.
+  - After release, that login cannot approve B's requests or attendance (R5). It also cannot add, change or delete B's punches (R4).
+  - **Fix:** before the push, on each tenant, list every HR-role login, its `permitted_companies`, and the companies whose requests it decided in the last 60 days. Every gap needs a Company row first.
+  - A CXO who holds System Manager sees every company and is not affected (proven by test and by `access.py:247`).
+- **S-2 (P3, inferred from code). R5 also gates leave approval.**
+  - When a Leave Application is approved, stock code inserts and submits an Attendance in the approver's session (`leave_application.py:373-374`).
+  - So `refuse_outside_company` runs on that submit, and a leave approval with no permitted company fails with "you cannot approve this".
+  - That fits "every door", but leave was never named, and no test covers it.
+  - **Fix:** add this to the runbook note. The S-1 count covers the same people.
+- **S-3 (P2, not checked). Sync accounts.**
+  - DTC's `biometric.sync@` has held only Biometric Sync since 10:41 today (ALV-386). Grace's still holds HR roles.
+  - Both still count as the machine (`files_as_machine` needs the Has Role row, which a role profile writes).
+  - With no Company rows they stay unscoped, so all 10 machines keep posting.
+  - **But** `_machine_may_file` reads *every* Company User Permission row, whatever its `applicable_for`. If either account already has even one Company row, every punch for any other company is refused, and the sync tool stops that machine's batch.
+  - **Fix:** run a read-only count of Company User Permission rows for both sync accounts before the push. Expect 0, or a full list of companies.
+- **Holiday list on the Shift Type: I agree with the engineer.**
+  - Stock `get_holidays_for_employee` does not read `Shift Type.holiday_list`.
+  - The hook's job is to remove exactly the days the slip counts as working days. If it also read the shift's list, a Held day on a shift-only holiday would cost nothing, while a Present day on the same date is paid as a working day.
+  - Where a shift list disagrees with the employee's list (the Ambala Monday case), the fault is in attendance (ALV-354), not in pay.
+- **F1 and F2 regressions:**
+  - Phone and portal punches insert with `ignore_permissions` (`field_checkin.py:691`, `hr_api.py:1856`), so HR punching their own day is not affected.
+  - The sync tool uses stock `add_log_based_on_employee_field` (`doc.insert()` with no flag), so R2 really does apply to it.
+- **P3.**
+  - The save message "This replaces the old hidden rule of 3 requests a month… the old script is switched off in the same release" shows at every company. It is only true at Grace.
+- **P4, delete.**
+  - `held_day.held_count` is a whitelisted endpoint that no screen calls now. Delete it and its test.
+
+## Not checked
+
+- Any live-tenant count (S-1, S-3).
+- Any suite re-run by me. The test engineer's runs were still going.
+- The screens in a browser.
+- Grace's Shift Type thresholds.
+
+**Subtract pass:** I dropped a draft point that the AC-69 exemption could be abused. `validate_missing_time` runs first and refuses a time on a day that is not Held.

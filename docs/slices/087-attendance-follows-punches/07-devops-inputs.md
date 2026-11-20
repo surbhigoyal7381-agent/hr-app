@@ -182,3 +182,82 @@ Read: worktree `087-attendance-follows-punches`, dev `2e31151f`; the design gate
 **Questions for the BA, with my default:** the daily request cap (default 10), and who is told when a day moves onto a final slip after a request is sent (default: the card says so and offers Decline only, as designed).
 
 **Subtract pass:** I removed a separate dashboard, an alert rule and a per-minute rate limit in nginx (one shared nginx, and the portal posts to `/`). **Left behind:** only this appended section; not committed.
+
+---
+
+## §4 Strategy (20 Nov 2026)
+
+Read: worktree `087-attendance-follows-punches`, now at `f92f0347` on `origin/dev` `72a046ec` (the engineer's own figures; I did not re-run `git rev-parse` against origin); `00-impact-analysis.md` in full; `held_day.py` lines 66-90; `hooks.py` `after_migrate` (line 724); `.github/workflows/ci.yml` step names. No server command run, nothing executed. **I did not read the 411/412 branch myself;** I rely on the engineer's reading of it.
+
+### Install and deploy order
+
+Each step is a push to dev on Surbhi's word, then main on her word, in the night window. Nothing below is a command for me to run.
+
+1. **ALV-411/412 first** (`slice/alv411-412-security`). Agree with the engineer. It is small, Tier 1, and it closes GET on the four old endpoints. It is based on `7de630df`, two commits behind: it must be rebased and its CI seen green before 087 is rebased on it. The conflict is in the `decide` decorator lines, which the engineer expects.
+2. **087 PR 1** (server side, the decide and Inbox changes). One dev deploy, then a read-back on dev (below), then wait.
+3. **087 PR 2** (screens). A `portal.js` change: needs the `assets.json` check (OPS-R9) every time.
+4. **Do not push 087 to main until** the DTC-copy dry run is done and read, and counsel's answer on an HR-added punch is in (the brief's open point). Dev can carry the code, switched on, before that: I read the engineer's section 12 that the compliance gate is for main only. That is the product's call, not mine.
+
+**Wait-for-CI rule (4 Nov):** one push at a time; check `gh run list` and let CI finish before the next. PR 1 then PR 2 means two dev deploys; the second must not start while the first deploy or CI is running. **Mid-deploy there is a window** where the new image serves requests before migrate has finished (next section).
+
+### Image and Compose
+
+- **Expected none, and I agree.** No new app, dependency, container, volume, queue, schedule or env value. The diff must show `deploy/Dockerfile`, `deploy/compose/*.yml` and `deploy/nginx.conf` untouched (AC-88 asserts nginx). **Recommend a one-line CI or review check:** `git diff origin/dev --stat -- deploy/` is empty. That keeps the shared nginx lesson cheap.
+- After deploy every app container reports the same image tag, and the stack's own pin file names it (dev: `.image.dev.env`). Proof is the three-way check, not a green run.
+
+### Migration risk
+
+Two parts: 8 new Custom Fields, and one patch over existing 085 requests (`alvoraa_for_held_day`).
+
+- **P1, agree with the engineer's trap 3, with a cost note.** Between image start and migrate finishing, `_punches` runs on every judged day, payslip and attendance save. A missing column fails all of them with "Unknown column". The `frappe.db.has_column` guard is right and matches `_decided_as_is_storable`.
+  - **Cost, inference not measured:** `has_column` goes through Frappe's cached table-column list, so one cheap read per call; but `_punches` has 7 call sites and `daily_attendance_workings` calls it per employee-day, so at 442 people that is thousands of calls in one report. **Recommend:** remember a True answer for the life of the process (it can never go back to False), and re-ask only while it is False. Measure the Salary Workings report before and after on the dry-run copy.
+- **P1, a trap the engineer did not name (inference, please verify on a fresh site):** the 8 Custom Fields are created in `after_migrate` (the pattern in `held_day.py` line 68, and the hook list at `hooks.py` line 724). **Patches normally run before `after_migrate`.** If the `alvoraa_for_held_day` patch writes that column and the field is only made in `after_migrate`, the patch can fail with "Unknown column" on the first migrate of every tenant, or silently do nothing. **Recommend:** the patch calls the field-creation function itself first (it runs by itself twice without harm: `create_custom_fields` updates in place), then updates. Prove it on a fresh site built the way CI builds one, and on a copy that is migrated from before 087, in both cases with the patch row count read back. The same applies to the field the `_punches` filter reads.
+- **Patch size:** batch over 500 rows (the engineer plans it); read the row count on the DTC copy before. It must not enqueue per row (5 Nov: 1,780 queued deletes stopped a migrate and later sites were left behind). Before the first migrate on each stack, read the queue depth.
+- **"All sites migrated" is a claim.** §5 lists sites in the stack and sites migrated, counted, and names any failure.
+- **Rollback of the patch:** none needed. Extra columns are harmless; the flag is only read by 087 code. Previous tag keeps working with the columns present.
+
+### CI gates
+
+Read from `ci.yml` step names: `check_api_paths.py --max 0`, `check_app_integrity.py`, nginx conf check, undefined-JS and portal-handler checks, plus the Python tests. Advice:
+
+1. **Add the engineer's pin test to CI, on a site with all 12 apps** (it asserts `frappe.get_hooks("override_doctype_class")["Attendance Request"]` is exactly our one path). **Check that CI's site really installs all 12 apps;** if CI builds fewer, the test passes while proving less than it says (lesson 19: a pass is not a proof). Make the test print how many apps it saw, and fail if that is not the expected count.
+2. `check_app_integrity.py` on the new module: the subclass inherits the stock class and redefines no doctype (lesson 7). It must stay green; it is the guard against redefinition.
+3. `check_api_paths.py --max 0`: the new endpoints are POST-only and must not add an unlisted path.
+4. The `deploy/` diff-empty check above.
+5. Each "must be seen to fail first" test the engineer lists (race test, marker-string logs test, door tests) should record the red run in `03-implementation-notes.md`. I will ask for it at §5; I cannot check it from here.
+6. Run the suite on the CI-style fresh site, not only ppj.dev (lesson 6).
+
+### Version pinning
+
+- **Fact (engineer, read in a container):** Frappe `v16.33.1` takes `class_overrides[doctype][-1]`, the last app wins, silently, and throws only if the class is not a subclass of stock. **Inference from that:** any later Frappe upgrade, or a new app installed after ours that overrides Attendance Request, would swap our class out with no error, and every punch fix would then fail the stock "status unchanged" check or write wrongly. Nothing in the image would warn.
+- **Recommend:** (a) the pin test above, run in CI **and** at the end of §5's post-deploy checks against dev (read the hook in the running container, not only in CI); (b) the subclass delegates to `super()` for anything that is not a punch fix, so its removal falls back to stock; (c) name Frappe `v16.33.1` and the vendored `hrms` SHA in `03-implementation-notes.md`, so a later upgrade knows to re-read the three overridden methods. **Not checked:** the other six apps' hooks (the engineer's own gap); the pin test closes it, but the dry-run must use the real 12-app image, not a local 6-app bench.
+
+### Where I agree and where I disagree with the engineer
+
+| Point | Engineer | Me |
+|---|---|---|
+| Inline day work and slip refresh; no job or queue | Inline | **Agree.** One day, one click. Move the slip refresh to `short` only if a save measures over ~2 s |
+| Link the punch after insert, not at insert (D7) | Amend AC-37 | **Agree.** Same race protection. The race test must still pass in both orders. Say plainly in the test: if the link is missing for a moment, the job can see the punch, and a lock must hold that moment (the approval holds the day's row `for_update` until the link is written) |
+| Server-first split, PR 1 about 40 of 64 points | One large PR 1, commit order as review order | **Partly disagree.** Agree no screen PR first (it would leave HR unable to approve). **Disagree that one deploy is safe at that size:** PR 1 carries fields, a patch, the engine filter, the one door, the Inbox and the Desk closure in one deploy. If anything is wrong, a rollback is a redeploy of the previous tag (~7 min, not re-measured) and the one door is closed on the previous tag too only if the old code is back. Recommend: commit 1 (fields, filter, dry run) is deployed to dev **alone first** and read for a day, **if Surbhi accepts a third dev deploy**. This conflicts with the "one push at a time" lesson about too many pushes; the trade-off is hers. My default: keep two pushes, but run the dry run script on dev between them as the engineer's commit order already says |
+| Deleting `release_by_hr` | Delete | **Agree**, provided 085's session confirms (the engineer waits for that). Its tests change with it. Rollback note: the previous tag still has the function, so a rollback is clean |
+| Daily cap dropped (Surbhi) | Dropped | **Agree.** My OPS-R2 daily-cap row no longer applies; one open fix per employee-day stays |
+| Dry run is "a belt check" because the field is empty so the filter is the identity | Honest note | **Agree, and good to say.** It proves the engine is unchanged with no set-asides; it does not prove the set-aside path. The second proof is a before/after of one real approved fix on the copy: set one punch aside on a test employee and read the day, the Attendance row and the draft slip agree. Add that to the dry run |
+| `has_column` guard on every `_punches` call | Guard | **Agree** with the process-level True memo above |
+| ALV-411/412 first | First | **Agree** |
+| Manager loses approval (D4) | Needs Surbhi | **Agree it is a decision, not an ops matter.** Ops view only: HR with no company or branch scope sees nobody, so a tenant with HR users unscoped may find nobody can approve. Count, on each tenant before main, how many HR users can approve a punch fix |
+| ALV-291 clears the skip flag (D6) | Ticket, no fix now | **Agree, but with a condition.** ALV-291 is due at DTC after the release (memory notes). If it runs after any fix exists, it silently reinstates a set-aside punch. **Recommend its guard lands before ALV-291 is run at DTC, and that §5 says so in words.** Dangerous debt until then if anyone runs it |
+| 20 files read, "not checked" list | Honest | **Agree.** Items (a) to (d) become §5 pre-checks; (b) Custom DocPerm on Employee Checkin is cheap to read and I will list it |
+
+### New rows
+
+| ID | Recommendation | Why | Cost of ignoring | Level | Decision |
+|---|---|---|---|---|---|
+| OPS-14 | The `alvoraa_for_held_day` patch creates the fields itself before it writes; proved on a fresh site and on a pre-087 copy | `after_migrate` normally runs after patches | First migrate fails or does nothing | P1, Recommend | |
+| OPS-15 | `_punches` guard: remember True per process; measure Salary Workings before and after | Called per employee-day | Thousands of extra column lookups per report | P2, Recommend | |
+| OPS-16 | Pin test runs in CI on a site with all 12 apps, prints the app count, and is re-read on dev's running container | Last override wins silently | Punch fixes fail after an upgrade, no error at install | P1, Recommend | |
+| OPS-17 | `git diff origin/dev -- deploy/` must be empty for 087 | Shared nginx and image lessons | An unintended nginx or image change | P2, Recommend | |
+| OPS-18 | Dry run adds one real before/after fix on the copy (day, row, slip agree) | The empty-field run proves nothing about set-asides | The set-aside path ships unproved | P1, Recommend | |
+| OPS-19 | The ALV-291 guard lands before ALV-291 is run at DTC | It clears the skip flag on set-aside punches | A set-aside punch comes back and pay moves | P1, Recommend | |
+| OPS-20 | Count HR users who can approve (company and branch scope) per tenant before main | HR with no scope sees nobody | Nobody can approve a fix | P2, Recommend | |
+
+**Subtract pass:** I removed nothing from the engineer's plan; I added seven rows, each tied to a read fact or marked inference. I dropped my OPS-R2 daily cap (Surbhi did). **Not checked:** the 411/412 branch itself, the CI site's installed apps, `has_column` internals and the patch/after_migrate order (inference), any timing. **Left behind:** this appended section only; not committed.

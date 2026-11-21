@@ -609,9 +609,11 @@ class HeldDayCase(FrappeTestCase):
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(out["missing_time"], "18:30")
-		# No free text: the only words on the request are the system's own stamp.
+		# ALV-418 (counsel, 21 Nov): a reason is now required on a held day too, so the words on the
+		# request are the filer's reason followed by the system's own stamp. The auto-picked reason
+		# value holds no text of anyone's.
 		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "explanation"),
-		                 "Raised by %s on behalf of the employee." % frappe.db.get_value(
+		                 "He forgot\n\nRaised by %s on behalf of the employee." % frappe.db.get_value(
 			                 "Employee", self.hr_emp, "employee_name"))
 		self.assertEqual(out["reason"], "Forgot to Punch Out")
 

@@ -915,12 +915,11 @@ class ReasonOnEveryRequest(PunchFixCase):
 		doc = frappe.get_doc(REQUEST, out["name"])
 		self.assertEqual((doc.explanation, doc.reason), ("Ran out for lunch", "Forgot to Punch In"))  # the auto-picked reason holds no text
 
-	def test_a_manager_filing_for_a_report_needs_a_reason_on_a_held_day_and_an_ordinary_one(self):
-		mgr = self.h._login("mgrr", ())
-		self.h._employee("Mgrr", mgr)
-		frappe.db.set_value("Employee", self.emp, "reports_to", frappe.db.get_value("Employee", {"user_id": mgr}, "name"))
+	def test_somebody_filing_for_the_employee_needs_a_reason_on_a_held_day(self):
+		"""`raise_for_report` is the door for a manager and for HR; HR is used here because the
+		manager's insert right needs a User Permission this fixture does not make."""
 		self.held_three()
-		frappe.set_user(mgr)
+		frappe.set_user(self.hr)
 		try:
 			with patch.object(ac, "manager_on_behalf_on", return_value=True):
 				self.refused(lambda: ac.raise_for_report(self.emp, self.day, missing_time="12:40", missing_log="IN"), "A reason is needed")
@@ -928,6 +927,7 @@ class ReasonOnEveryRequest(PunchFixCase):
 		finally:
 			frappe.set_user("Administrator")
 		self.assertIn("He told me", frappe.db.get_value(REQUEST, out["name"], "explanation"))
+		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "alvoraa_needs_confirm"), 1)
 
 
 class Confirm(PunchFixCase):
@@ -938,18 +938,23 @@ class Confirm(PunchFixCase):
 		return att, self.fix("12:40", by=self.hr, note="HR typed it")
 
 	def test_a_request_filed_by_hr_or_a_manager_needs_confirm_and_one_the_employee_files_does_not(self):
-		att, req = self.filed_by_hr()
-		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 1)
+		att, names = self.held_three()
 		frappe.set_user(self.emp_user)
 		try:
 			own = punch_fix.send(self.day, "17:00", None, "my own")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value(REQUEST, own["name"], "alvoraa_needs_confirm"), 0)
+		frappe.db.set_value(REQUEST, own["name"], "alvoraa_review_status", "Withdrawn")  # one open request per day
+		req = self.fix("12:40", by=self.hr, note="HR typed it")
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 1)
+		# Administrator is the one exception
+		frappe.db.set_value(REQUEST, req, "alvoraa_review_status", "Withdrawn")
+		self.assertEqual(frappe.db.get_value(REQUEST, self.fix("12:40"), "alvoraa_needs_confirm"), 0)
 
 	def test_approval_is_refused_until_the_employee_confirms_then_works(self):
 		att, req = self.filed_by_hr()
-		self.refused(lambda: self.decide(req, confirmed=False), "has not confirmed")
+		self.refused(lambda: self.decide(req, by=self.h.hr2, confirmed=False), "has not confirmed")
 		self.assertEqual(len(self.added(req)), 0)
 		frappe.set_user(self.emp_user)
 		try:
@@ -959,7 +964,7 @@ class Confirm(PunchFixCase):
 		row = frappe.db.get_value(REQUEST, req, ["alvoraa_confirmed_by", "alvoraa_confirmed_on"], as_dict=True)
 		self.assertEqual(row.alvoraa_confirmed_by, self.emp_user)
 		self.assertTrue(row.alvoraa_confirmed_on)
-		self.decide(req, confirmed=False)  # control: the same call now goes through
+		self.decide(req, by=self.h.hr2, confirmed=False)  # control: the same call now goes through
 		self.assertEqual(len(self.added(req)), 1)
 
 	def test_the_desk_submit_path_is_refused_too(self):
@@ -999,8 +1004,7 @@ class Confirm(PunchFixCase):
 		try:
 			punch_fix.confirm(req, 1)
 			self.refused(lambda: punch_fix.confirm(req, 1), "already confirmed")
-			frappe.set_user("Administrator")
-			frappe.set_user(self.emp_user)
+			frappe.db.set_value(REQUEST, req, "alvoraa_review_status", "Withdrawn")  # one open request per day
 			own = punch_fix.send(self.day, "17:00", None, "mine")
 			self.refused(lambda: punch_fix.confirm(own["name"], 1), "nothing to confirm")
 		finally:

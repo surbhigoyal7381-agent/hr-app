@@ -2079,9 +2079,9 @@ body.panel-fullscreen{overflow:hidden}
    belongs to rather than in a modal - the point is to compare it with
    the days around it. */
 .ac-open{background:var(--surface2)}
-.ac-open td{padding:0;border-bottom:1px solid var(--border)}
-/* The open day sits inside a table cell, and .ac-tbl td is nowrap; without this
-   every sentence in the panel ran off the right edge on a 360 px phone. */
+/* The opened day sits in a cell of `.ac-tbl`, whose cells are nowrap: paragraph text ran off the right edge
+   on a phone. Both the cell (087) and the panel (085, a8e51750) wrap; the table itself keeps its nowrap. */
+.ac-open td{padding:0;border-bottom:1px solid var(--border);white-space:normal}
 .ac-detail{padding:14px 12px;font-size:var(--fs-sm);color:var(--text2);line-height:1.6;white-space:normal}
 .ac-punches{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
 .ac-punch{border:1px solid var(--border);border-radius:var(--r-sm);padding:4px 9px;

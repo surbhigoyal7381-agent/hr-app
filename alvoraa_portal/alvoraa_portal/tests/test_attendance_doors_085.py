@@ -179,6 +179,11 @@ class SafetyDoors(FrappeTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self._submit(self.hr, name)
 		self.assertEqual(frappe.db.get_value(REQUEST, name, "docstatus"), 0)
+		# ALV-419: HR filed it for the worker, so it waits for the worker's Confirm before anyone approves it.
+		with self.assertRaises(frappe.ValidationError):
+			self._submit(self.colleague_hr, name)
+		frappe.db.set_value(REQUEST, name, {"alvoraa_confirmed_by": "Administrator",
+		                                    "alvoraa_confirmed_on": frappe.utils.now_datetime()})
 		self._submit(self.colleague_hr, name)
 		self.assertEqual(frappe.db.get_value(REQUEST, name, "docstatus"), 1)
 

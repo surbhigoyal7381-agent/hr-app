@@ -177,3 +177,98 @@ All file:line references are at `94f22878`. `pf` = `alvoraa_portal/alvoraa_porta
 
 Removed: a restatement of the 01c abuse cases, and a separate "how I read" list (now folded
 into the header).
+
+---
+
+# Re-review, 21 Nov 2026 (`git diff 94f22878..68b4a544`)
+
+**What I read.** I read the code only, from `git show 68b4a544:<path>`. I ran nothing: the
+`alv358-bench` bench is in use for break tests. For test results I relied on the
+coordinator's file `087-fixround1-tests.txt` (in this session's scratchpad), and I did not
+re-run them:
+- `test_punch_fix_087`: 127 of 127 pass.
+- The proof file: 11 of 11.
+- `test_attendance_correction`: 148 of 148.
+- The 9 failures (6 in `held_day_085`, 3 in `held_gaps_085`) are the known backfill-mount ones.
+
+In this section `pf` means `punch_fix.py` at `68b4a544`.
+
+## Bad news first
+
+**F1 is closed for punch fixes. It is still open for ordinary requests (Major, P2).**
+- The new refusal at `pf:309-313` runs only when the request is a punch fix (before or
+  after the edit).
+- **Scenario.** HR person A files an ordinary request for A's own day (for example a half
+  day). Because it is A's own request, `needs_confirm` is 0. A then changes `employee` to Y in
+  the Desk. Nothing refuses the move, and `needs_confirm` stays 0. HR person B approves it.
+- **Result.** An HR-filed change lands on Y's day. Y is never asked to confirm, and Y's slip is
+  never held. This breaks ALV-419 for ordinary requests (AC-112).
+- **What still works.** A request someone else filed and Y confirmed is covered: `employee`
+  is now in `CONFIRMED_CONTENT` (`pf:46`), so moving it clears the Confirm.
+- **Fix.** Drop the `is_punch_fix(...)` condition at `pf:309`, so a move is refused on every
+  request. Add one test for an ordinary request.
+
+## Earlier findings
+
+| Finding | State | Evidence |
+|---|---|---|
+| F1 moving the employee | **Closed for punch fixes, open for ordinary requests (above)** | `pf:309-313`, `pf:46`. Tests: `test_a_confirmed_request_cannot_be_moved…`, `test_an_hr_own_day_fix_cannot_be_moved…`, `test_employee_is_part_of_what_a_confirm_vouches_for` |
+| F2 logs written nowhere | **Closed** | Every `punch_fix` log line now uses `access.security_logger().warning`. That logger is set to INFO (`access.py:62-68`), so these lines are written. Lines `pf:1109` (Administrator), approve, confirm, withdraw, undo, engine. Test: `test_the_punch_fix_log_lines_are_really_written_to_the_security_log` attaches a real handler, not a stand-in |
+| F3 report scope | **Closed** | `punch_fixes_this_month.py:28-33` uses `permitted_employees()` (company, then branch). Test: `test_the_report_counts_only_the_callers_branch` |
+| F4 withdraw on own day | **Closed** | `pf:821` `refuse_own_decision`. Test: `test_withdraw_is_post_only_and_refused_on_the_hr_persons_own_day` |
+| F5 test gaps | **Closed** | POST checks for `withdraw_filed` and `undo_change`. Branch tests for withdraw and before-payroll |
+
+## `undo_change` (`pf:849-880`), rule by rule
+
+| Rule | Result |
+|---|---|
+| POST only | yes (`@frappe.whitelist(methods=["POST"])`, plus a test) |
+| HR role and scope (company, then branch) | yes, `employee_in_scope`. A refusal is logged as SEC-17 |
+| Not on the HR person's own day | yes, `refuse_own_decision`. Test: `test_hr_cannot_undo_a_change_on_their_own_day` |
+| Only a disputed, approved punch fix, and only once | yes |
+| Days that cannot be fixed are refused | yes, `day_state`. The day row is locked |
+| Reason required | yes |
+| Logged | yes, `pf:878`. Ids and status only, **not the reason** |
+| No `ignore_permissions` | yes. The punches are saved as the HR person, so `checkin_has_permission` still applies. Nothing is deleted. The one `ignore_permissions` hit in this diff's files is old, in `held_day.py:466` |
+| Rebuildable a year later | yes: undone by, on and reason are fields on the request, plus Version rows on the punches |
+
+## Fix round 1: is anything new exposed?
+
+None of these widens who can see what:
+- **Arrears hold the next slip.** The refusal still names only that slip's own employee.
+- **"Not right" skips the filing window.** It keys on `alvoraa_replaces`, which only the
+  server sets (a process flag).
+- **Column guards.** Reads only.
+- **`before_payroll` "instead".** It reads only requests that replace rows already in the
+  caller's scope.
+- **The slice 088 register field.** Its handling was removed, so the seam is just the refusing stub.
+
+## Updated table (only the rows that changed)
+
+| Item | Was | Now |
+|---|---|---|
+| SEC-4 own day only | Partial | **Met** for punch fixes. The move refusal covers raise-then-move |
+| SEC-6 marks only by approval | Partial | **Met**. The Administrator line is written (F2) |
+| SEC-7 (086) a Confirm covers what was seen | Partial | **Met**. `employee` is now in `CONFIRMED_CONTENT` |
+| ALV-419 (counsel) | Partial | **Partial**: the ordinary-request move above |
+
+All other SEC and PRIV rows stay as in §1.
+
+## Question for Surbhi
+
+Under the B1 rule she set, an edit by someone else asks for the Confirm again **only when it
+adds a set-aside** (`pf:369-373`). So if HR changes the *time* on an employee's own draft (for
+example 10:30 to 11:30), no Confirm is asked. The test
+`test_b1_…a_time_only_edit_does_not_ask_again` locks that behaviour in.
+
+Counsel's note says "Confirm on HR-started edits". **Should a time edit count as one?**
+That is her call, and it may need counsel. Until she answers, the safe default is to ask the
+employee again on any edit made by someone else.
+
+## Residual risk (proposed. Owner: Surbhi. Nothing is accepted until she says so)
+
+| Risk | Kind | What removes it |
+|---|---|---|
+| An ordinary request moved to another employee | temporary debt | the one-condition fix above |
+| An HR time edit gets no Confirm | open question | Surbhi's answer |
+| A leaver's final slip blocked | open question | counsel. `undo_change` now clears a *disputed* change; an unconfirmed undisputed one still holds |

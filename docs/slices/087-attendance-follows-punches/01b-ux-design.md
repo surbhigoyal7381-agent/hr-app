@@ -308,3 +308,108 @@ Accepted with the recommendations:
 ## Counsel's conditions, 21 Nov 2026 (ALV-418, ALV-419)
 
 **PRIV-2 is reversed by counsel, 21 Nov 2026 (ALV-418).** A reason is required on every request, a Held day included: one required reason box (label keeps the Q3 rule that HR and the manager read it), in the send bar. ALV-419: a request somebody else files for the employee waits for the employee's Confirm / Not right on their day sheet. **New, not in prototype-v2, needs Surbhi's yes.**
+
+
+---
+
+## v3, counsel's conditions (21 Nov 2026, ALV-418 and ALV-419)
+
+**Prototype:** `prototype-v3.html` in this folder (copy at `/Users/mac/hrlocal-data/prototypes/087-attendance-follows-punches/prototype-v3.html`). It is v2 plus these screens only. Buttons "Show 1 to 4" at the top jump to each one. All names, times and reasons are **Sample**. **Not published: I have no publish tool in this run.** The session that ran me publishes it.
+
+**What I read (Fact):** `portal.js` `acPfPaint`, the send bar, `acPfConfirm`, `acPfCard` (this worktree, HEAD `659a1c2d`); `punch_fix.py` `confirm`, `send`, `day_sheet`; `next-home.js` and `home_api._needs`; spec section "Counsel's conditions". **I did not run the build** (the bench is in use). Checked by script at 360 px, 390 px and desktop, English and Hindi: nothing wider than the screen, no tap target under 44 px, no field text under 16 px, nothing under 12 px. Looked at once, light and dark. Hindi is machine-drafted and needs native review.
+
+**Serves:** the employee (phone) and HR. Line manager: unchanged. CXO: nothing. **One-way rule:** the employee gains a veto over what others write into their day. HR loses nothing but a shortcut.
+
+### v3.1 ALV-418: one required reason, in the send bar
+
+- **Words.** Label "Your reason", the word "Required" beside it, then "HR and your manager can read this." (the Q3 rule). Example in the box: "e.g. Forgot to scan after lunch". Error, beside the box, with a red border and focus moved into it: "Write a reason so HR can decide."
+- **Light on a Held day.** One box, one line that grows to three, no category list. The same bar serves a Held day and an ordinary day.
+- **At 360 px** the bar is about 215 px tall: summary line, box, then one row with "Nothing changes until HR approves." and Send to HR. **Risk:** with the keyboard open it covers most of the screen. **Test at build:** 360 px with the keyboard open on a real Android.
+- The add sheet and the set-aside sheet lose their optional note, so the reason lives in one place. The draft text stays on the device until it is sent.
+- The employee's own ordinary request without a time keeps the dropdown reason (decided 21 Nov). Not drawn.
+
+### v3.2 ALV-419: the employee's Confirm
+
+- **Day sheet, top of the day.** Status line: "HR sent this for you. Is it right?" (manager: "Your manager Sunita Rao sent this for you. Is it right?"). Then what was filed: "Add a punch at 14:40 · Back in after a break" (or "Set aside your punch at 11:15"). Then the filer's reason, labelled "Reason from HR". Then "Press Confirm only if this is what happened. After that HR decides. Nothing on your day changes until then." Then **Confirm** (primary) and **Not right**. The timeline below draws the asked-for punch dashed: "Added by HR · waiting for you". No Withdraw: the employee did not file it.
+- **Not right.** The two buttons are replaced by a box "What is not right?" (Required; "HR will read this."), the line "HR will not add it, and your day stays as it is.", and **Back** / **Send to HR**. Empty: "Say what is not right, so HR knows what to fix." (the coded words, kept).
+- **After Confirm.** "You confirmed at 09:40 · Waiting for HR". Toast "Confirmed. HR can now decide it."
+- **After Not right.** "You said this is not right", "HR will not add it, and your day stays as it is.", "Your reason: ...". The day is editable again. Toast "Sent to HR. Nothing was changed."
+- **After HR approves.** "Added by HR on 21 Nov. You confirmed it." (manager: "..., asked for by Sunita Rao. You confirmed it.").
+- **HR card.** Under the header: "Anil Sample (HR) asked to add: Back in after a break at 14:40." and the reason. Then a clock line "Waiting for Ravi to confirm" and "Filed on 21 Nov at 09:12. You can approve it after Ravi presses Confirm in the app. You can still decline it." **Decline only.** After Confirm: a tick line "Ravi confirmed this in the app on 21 Nov, 09:40" and the normal Approve and Decline. If Ravi says Not right, it moves to Decided as "Declined by Ravi" with his reason.
+- **Privacy.** The employee sees the manager's name and "HR" without a name (v1 decision 7 stands). HR sees the filer's name. Nobody else sees any of it.
+
+### v3.3 How the employee finds it (Recommendation)
+
+**Add one row to Home's existing "Needs you" card:** "HR sent a punch fix for Thu 13 Nov. Is it right?" with a **Check** button that opens that day. One row per request.
+- **Why it is needed (Fact, read from code):** the card lists only days with no attendance record (`attendance_gap`), not Held days. No email or push exists (spec G13). A Held day is **unpaid until fixed**, so a request nobody opens costs the employee money and HR a phone call.
+- **Cost:** rung 3, customisation. One more entry from `home_api._needs` and a few lines in `next-home.js`. It reuses the card and the "Fix" button style. No new count, so the "one number" rule (042 D-1) is untouched.
+- **Rejected:** a month-row tag (needs a new field on the month payload and still needs someone to open the month); an Inbox entry (a new count, and a new row kind to keep equal to its list).
+- **Not done by it:** a reminder after N days. That is in "not in this slice".
+
+### v3.4 Parity: every difference from the engineer's coded version
+
+| # | Coded now (`portal.js`, `punch_fix.py`) | v3 | Needs from the server |
+|---|---|---|---|
+| P-1 | Label "Reason (required). HR and your manager can read this." as one line | "Your reason", "Required" beside it, the Q3 sentence as a second small line | none |
+| P-2 | No example | Placeholder "e.g. Forgot to scan after lunch" | none |
+| P-3 | Box of 2 rows | One line, grows to 3 | none |
+| P-4 | Error in a block under the box | Same words, with icon, red border, focus in the box; clears on typing | none |
+| P-5 | Bar order: summary and help, box, error, button | Summary, box, error, then one row: help line left, Send right | none |
+| P-6 | "Your note: ..." on the waiting line | "Your reason: ..." | none |
+| P-7 | 085 held form has the box | Same box and words there (not drawn) | none |
+| P-8 | Block header only; manager shown as "Your manager" | Adds the filed item, the filer's reason, the truth line; manager's **name** | `request.filed_by_name` for a manager (not for HR) |
+| P-9 | "It goes to HR only after you confirm." **This is untrue: HR already sees it, waiting.** | "Press Confirm only if this is what happened. After that HR decides. Nothing on your day changes until then." | none |
+| P-10 | Not right: box appears under the unchanged buttons; button "Send" | Buttons replaced by Back and Send to HR, "Required", the consequence line | none |
+| P-11 | After Confirm: "Sent to HR at <HR's filing time> · Waiting" **and a Withdraw button** | "You confirmed at 09:40 · Waiting for HR", no Withdraw | `request.confirmed_on` (time) |
+| P-12 | After Not right: "HR did not add this. Reason from HR: <the employee's own words>" **(wrong: the employee wrote it)** | "You said this is not right ... Your reason: ..." | `request.declined_by_you` (reviewer is the employee's own user) |
+| P-13 | Approved: "Added by HR ..., from your request." **(untrue for a filed request)** | "Added by HR on 21 Nov. You confirmed it." (manager variant names the manager) | `request.filed_by`, already sent |
+| P-14 | Asked-for punch tag "Asked for · waiting for HR" | "Added by HR · waiting for you" until confirmed | none |
+| P-15 | HR card: "{Employee} says: ..." and the filer's reason quoted as theirs **(untrue; this is evidence)** | "{Filer} (HR/manager) asked to add: ..." | filer name on the card |
+| P-16 | HR waiting sentence at the foot | Clock status line under the header, with when it was filed; Decline only | filed time on the card |
+| P-17 | Nothing after confirm | "Ravi confirmed this in the app on 21 Nov, 09:40" above the buttons | `card.confirmed_on` |
+| P-18 | Not right just disappears into declined | Decided list: "Declined by Ravi" and his reason | none (the note is stored) |
+| P-19 | No Home row | One row in Needs you (v3.3) | `home_api._needs` entry. **Needs Surbhi's yes** |
+
+P-9, P-12, P-13 and P-15 are wrong sentences, not taste: I rate them **P2** (misleading words on a screen that is evidence). The rest are P3.
+
+### v3.5 ⚠ for Surbhi
+
+- **⚠ DECISION 1: the Home row (P-19).** Recommend yes. Without it nothing tells the employee, and a Held day stays unpaid. Owner: Surbhi. Blocks: only P-19; the rest of v3 stands without it.
+- **⚠ DECISION 2 (P1): a request that is not a punch fix, filed for an employee, can never be confirmed.** Read from code, **not run**: the server flags every request not filed by the employee, but `day_sheet` returns only punch-fix requests and Confirm exists only on that sheet. A manager's ordinary request ("Forgot to Punch Out", no time) is flagged, has no Confirm screen, and HR can only decline it. Options: (a) show the same block on the older request card (recommended: one component, shown twice); (b) flag punch fixes only (changes AC-104 and what counsel agreed). Owner: Surbhi, with `hrms-business-analyst` for the spec and counsel if (b). Risk if it waits: manager-filed requests stop working the day this ships.
+- **⚠ 3: the manager's name is shown, HR's is not.** As the brief said, and v1 decision 7 stands for HR. Counsel was still to confirm decision 7.
+
+### v3.6 Subtract pass, and not in this slice
+
+Removed from my own draft: a month-row tag, an Inbox row, a way to take back a Confirm, a minimum length on reasons, a counter, a second note field in the sheets. **Not in this slice (yours to decide):** a reminder after some days; the filing manager seeing "Waiting for Ravi to confirm" on their own list (086 owns that screen); an HR "chase" button.
+
+### v3.7 For the business analyst
+
+Add to AC-103: label words, "Required", the example, the error beside the box. Add to AC-106: the five employee states (to confirm, confirmed, not right, approved after confirm, declined by HR), and that after Confirm there is no Withdraw. Add to AC-107: the filer is named, the line "confirmed this in the app on" shows after Confirm. New: P-12 (declined by the employee is worded as the employee's own), P-15 (the HR card never says the employee said it), and DECISION 2.
+
+
+---
+
+## v4, the employee can correct the time (Surbhi's feedback on v3, 21 Nov 2026)
+
+**Prototype:** `prototype-v4.html` (copy in `/Users/mac/hrlocal-data/prototypes/087-attendance-follows-punches/`). v3 plus this change only. Looked at once, plus a script check at 360 px (English and Hindi): nothing wider than the screen, no target under 44 px, no field text under 16 px. Not published: I have no publish tool. Hindi is machine-drafted.
+
+**What changes.** On "Not right", when a time was filed, a time field sits above the required reason. Its label follows the inferred kind: "What time did you arrive?", "What time were you back?", "What time did you go out?", "What time did you leave?". Tag "Optional"; help "14:40 was sent. Leave this empty if you do not know the time." It uses the add sheet's checks (before, after, between, duplicate, same words) plus one new sentence: "That is the time that was sent. If it is right, go back and press Confirm." A filed set-aside has no time field. The line above the buttons changes as the time is typed: with a time, "HR will not add 14:40. Your own request for 14:15 goes to HR instead, and you do not need to confirm it."; without, the v3 line.
+
+**Behaviour shown.** With a time: the filed request is declined and the employee's OWN request goes in with their time and reason. It needs no Confirm (the employee filed it). Without a time: as v3.
+- **Employee after:** "Sent to HR at 09:40 · Waiting", "This replaces the 14:40 that HR sent. You said it was not right.", "Your reason: ...", the new time drawn dashed, and Withdraw (it is theirs).
+- **HR card:** an ordinary card, "Ravi says: Back in after a break at 14:15." with the reason, and "Replaces the 14:40 that Anil Sample (HR) sent. Ravi said that one was not right." Approve and Decline.
+- **HR Decided:** "Declined by Ravi", his reason, "Ravi sent 14:15 instead."
+
+### Parity (v4 against v3 and the coded build)
+| # | Now | v4 | Needs |
+|---|---|---|---|
+| V4-1 | Not right: reason only | Optional time field above the reason, label by inferred kind | none |
+| V4-2 | no time check | Add-sheet checks + "same as sent" | server runs the same checks as `send` |
+| V4-3 | consequence line fixed | changes with the time | none |
+| V4-4 | Not right only declines | With a time: declines the filed request and creates the employee's own, in ONE transaction (both or neither) | `confirm(name, ok, reason, time=None)` calls the `send` path; link field `alvoraa_replaces` on Attendance Request |
+| V4-5 | HR sees one declined request | HR card says "Replaces the one {filer} sent"; Decided shows both | the link, read at card time |
+| V4-6 | no Withdraw after Not right | Withdraw on the replacement | existing |
+
+**⚠ DECISION (Surbhi).** I kept the proposed "decline and re-file" over the alternative of letting the employee edit the filed request's time. Why: counsel's condition makes the filer's claim and the employee's claim two separate records; editing would blur whose statement it is. Cost: one Link field. **Questions for `hrms-business-analyst`:** (a) does the replacement count against the employee's monthly limit (it should not, since they did not choose to file)? (b) the one-open-request-per-day rule: the decline must come first. Neither checked in code.
+
+**Subtract pass.** Removed: a time field on a set-aside, a third "edit" path, a "reply to HR" thread.

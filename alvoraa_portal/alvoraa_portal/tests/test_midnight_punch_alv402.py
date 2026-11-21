@@ -78,3 +78,25 @@ class _Slab:
 
 	def __getattr__(self, name):
 		return 0
+
+
+class ScreensPutThePunchOnTheSameDay(FrappeTestCase):
+	"""The home screen and the attendance pages group a punch by `shift_day`,
+	the same rule the engine uses, so a screen never shows the 00:00 departure
+	as the first punch of the next morning."""
+
+	def test_shift_day_follows_the_shift_and_falls_back_to_the_calendar(self):
+		from alvoraa_portal.payroll_rules_apply import shift_day
+		self.assertEqual(shift_day(frappe._dict(time="2026-11-07 00:00:42",
+		                                        shift_start="2026-11-06 11:00:00")), "2026-11-06")
+		self.assertEqual(shift_day(frappe._dict(time="2026-11-07 00:00:42", shift_start=None)),
+		                 "2026-11-07")
+
+	def test_the_home_screen_leaves_last_night_s_departure_out_of_today(self):
+		from alvoraa_portal.home_api import _punches_today
+		emp = _employee("Permanent")
+		d1 = getdate(add_days(nowdate(), -12))
+		d2 = add_days(d1, 1)
+		PunchesFollowTheShiftDay._punch(self, emp, "{0} 00:00:42".format(d2), "{0} 11:00:00".format(d1))
+		PunchesFollowTheShiftDay._punch(self, emp, "{0} 10:58:00".format(d2), "{0} 11:00:00".format(d2))
+		self.assertEqual([r["time"][11:16] for r in _punches_today(emp, d2)], ["10:58"])

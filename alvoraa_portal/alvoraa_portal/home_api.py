@@ -232,10 +232,15 @@ def _punches_today(employee, date_):
 
 	# Labelled in order where the reader sent no In/Out (DTC), so the banner's
 	# "checked in" agrees with the check-in button.
+	# ALV-402: a punch just after midnight that ends yesterday's shift is
+	# yesterday's, not the first punch of today.
+	from alvoraa_portal.payroll_rules_apply import shift_day
+
 	return label_punches([{"time": str(r.time), "log_type": r.log_type} for r in frappe.get_all(
 		"Employee Checkin",
 		filters={"employee": employee, "time": [">=", str(date_) + " 00:00:00"]},
-		fields=["log_type", "time"], order_by="time asc", limit_page_length=0)])
+		fields=["log_type", "time", "shift_start"], order_by="time asc", limit_page_length=0)
+		if shift_day(r) == str(getdate(date_))])
 
 
 # ── The attendance-gap rule (042 section 11) ─────────────────────────────────

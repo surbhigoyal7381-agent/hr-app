@@ -252,11 +252,13 @@ def validate_missing_time(doc, method=None):
 
 def hold_odd_punch_day(doc, method=None):
 	"""Attendance validate, before the first save, so the row is written once as
-	Held and never created then rewritten (AC-11). Only auto-attendance sets
-	`in_time`, so a hand-marked row and a request-made row are never touched."""
+	Held and never created then rewritten (AC-11). Only auto-attendance sets a
+	punch time, so a hand-marked row and a request-made row are never touched.
+	Either time counts: a lone OUT punch on a log-type shift has an `out_time`
+	and no `in_time`, and was marked Absent until ALV-404."""
 	if not doc.is_new() or doc.status not in ("Present", "Absent", "Half Day"):
 		return
-	if not doc.in_time or doc.get("attendance_request") or doc.get("leave_application"):
+	if not (doc.in_time or doc.out_time) or doc.get("attendance_request") or doc.get("leave_application"):
 		return
 	if not _switch_on(doc.company):
 		return

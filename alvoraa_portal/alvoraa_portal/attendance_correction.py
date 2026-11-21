@@ -49,7 +49,7 @@ from alvoraa_portal.grooming import month_lines
 # stop agreeing, and this screen disagreeing with the engine about a day is the
 # bug being fixed.
 from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES, punch_minutes
-from alvoraa_portal.payroll_rules_apply import breaks_by_day
+from alvoraa_portal.payroll_rules_apply import breaks_by_day, shift_day
 from alvoraa_portal.shift_standard import STANDARD as _SHIFT_STANDARD
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
@@ -547,8 +547,8 @@ def month(year=None, month=None, employee=None):
 	# one attendance day. Only punches with no link fall back to their own date.
 	punches = {}
 	by_attendance = {}
-	# ALV-328: the same punches by CALENDAR date, for the break. The engine counts
-	# a day's break that way, whatever attendance row a punch is linked to.
+	# ALV-328: the same punches by working day, for the break, as the engine
+	# counts them (ALV-402: a punch after midnight belongs to its shift's day).
 	times_by_date = {}
 	# ALV-210. A punch HR typed in carries the person's own badge number as its
 	# "device" (HR-EMP-00171 on 14 Oct showed "830"), which reads as a machine
@@ -561,7 +561,7 @@ def month(year=None, month=None, employee=None):
 			filters={"employee": me.name,
 			         "time": ("between", [start + " 00:00:00",
 			                              frappe.utils.add_days(end, 1) + " 23:59:59"])},
-			fields=["name", "log_type", "time", "attendance", "device_id", "owner"],
+			fields=["name", "log_type", "time", "attendance", "device_id", "owner", "shift_start"],
 			order_by="time asc", limit_page_length=0):
 		by_hand = ((c.device_id and c.device_id == own.get("attendance_device_id"))
 		           or (c.owner not in ("Administrator", own.get("user_id"))
@@ -572,8 +572,8 @@ def month(year=None, month=None, employee=None):
 		if c.attendance:
 			by_attendance.setdefault(c.attendance, []).append(mark)
 		else:
-			punches.setdefault(str(c.time)[:10], []).append(mark)
-		times_by_date.setdefault(str(c.time)[:10], []).append(get_datetime(c.time))
+			punches.setdefault(shift_day(c), []).append(mark)
+		times_by_date.setdefault(shift_day(c), []).append(get_datetime(c.time))
 
 	# `weekly_off` tells a Sunday apart from Diwali (043 AC-1). Both arrive as
 	# Holiday rows on the same list and only this flag says which is which, so

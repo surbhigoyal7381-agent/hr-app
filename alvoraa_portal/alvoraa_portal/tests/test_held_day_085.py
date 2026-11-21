@@ -181,6 +181,12 @@ class HeldDayCase(FrappeTestCase):
 		self._punch(self.worker, "09:00")
 		self.assertEqual(self._attendance(self.worker, in_time=False).status, "Present")
 
+	def test_alv404_a_lone_out_punch_is_held_not_absent(self):
+		self._punch(self.worker, "18:30", log_type="OUT")
+		att = self._attendance(self.worker, status="Absent", in_time=False,
+		                       out_time="%s 18:30:00" % self.day)
+		self.assertEqual(att.status, "Held")
+
 	def test_a_repeat_scan_does_not_make_two_punches_one_held_day_even(self):
 		self._punch(self.worker, "09:00")
 		self._punch(self.worker, "09:01")  # folded into the first by punch_dedupe

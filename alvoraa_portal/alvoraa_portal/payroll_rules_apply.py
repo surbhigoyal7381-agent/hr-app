@@ -362,6 +362,17 @@ def day_rules_on(employee: str, date, rule_set, shift_grace=None) -> dict:
 	        "break_allowance_minutes": flags["break_allowance_minutes"]}
 
 
+def shift_day(punch):
+	"""The working day a punch belongs to, as "YYYY-MM-DD" (ALV-402).
+
+	The date of its `shift_start` where Frappe matched it to a shift, so leaving
+	at 00:00 after a 20:30 shift end belongs to the day before. A punch with no
+	shift keeps its calendar date. Every reader that groups punches by day uses
+	this, so the engine, the reports and the screens put a punch on one day.
+	"""
+	return str(getdate(punch.get("shift_start") or punch.get("time")))
+
+
 def _punches(employee, date):
 	"""First and last punch of the day, how many there were, and the gaps
 	between them that may be breaks (`break_gaps`).
@@ -386,8 +397,7 @@ def _punches(employee, date):
 		                      "{0} 00:00:00".format(date),
 		                      "{0} 23:59:59".format(add_days(date, 1))])},
 	                      fields=["time", "shift_start"], order_by="time asc")
-	times = [get_datetime(r.time) for r in rows
-	         if getdate(r.shift_start or r.time) == date]
+	times = [get_datetime(r.time) for r in rows if shift_day(r) == str(date)]
 	if not times:
 		return None, None, 0, []
 	# A reader that scans twice in a second has not recorded a working day of
@@ -404,7 +414,7 @@ def breaks_by_day(employee: str, company: str | None, days: dict, times_by_date:
 
 	`days` maps "YYYY-MM-DD" to (status, shift) for the person's submitted
 	Attendance rows; `times_by_date` maps the same dates to that calendar day's
-	punch datetimes, already read by the caller with `get_list` - so a caller
+	punch datetimes (grouped with `shift_day`), already read by the caller with `get_list` - so a caller
 	who may not read this person's punches passes none and gets no break.
 
 	Returns (allowance, {date: values}). Values hold only keys that have one:
@@ -433,7 +443,7 @@ def breaks_by_day(employee: str, company: str | None, days: dict, times_by_date:
 		# shift ending after midnight), and deducts nothing for an approved leave.
 		if status == "On Leave" or not shift or shift[1] <= shift[0]:
 			continue
-		distinct = punch_minutes(times_by_date.get(date) or ())
+		distinct = punch_minutes(times_by_date.get(date) or (), day=getdate(date))
 		if len(distinct) <= 2:
 			continue
 		if len(distinct) % 2:

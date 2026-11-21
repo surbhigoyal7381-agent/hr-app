@@ -473,3 +473,17 @@ Replace AC-105 and AC-107 (approval waits). New criteria: the gate rule (HR file
 - **D-1:** after HR approves a cut, "Not right" is a dispute. HR decides by hand.
 - **D-2:** Withdraw shows only on pending changes.
 - **D-3:** the register photo shows only this person's line where possible. It is HR-only and never exported. Counsel is asked how long to keep it, and whether one photo per page (slice 088) is enough.
+
+## v5 build parity (what 087 built, 21 Nov 2026)
+
+| v5 row | Status |
+|---|---|
+| F-1 HR card: Approve always, quiet line "Needs X's confirmation before pay is locked · Not yet" | built |
+| F-2 block pending or approved; manager addition Not right only | built |
+| F-3 after Confirm the block stays ("You confirmed this at ...") | built |
+| F-4 Not right after approval: new request or dispute; the consequence line says which | built |
+| F-5 **Signed on the register** dialog, the HR button and sentence, the photo, signer/date/photo fields; the "Signed on the register" state lines | **moved to 088** (the HR card shows "Signed on the register" only if a request carries 088's field; the employee sheet shows "You signed for it on the register" the same way) |
+| F-6 list before payroll: card, rows, "Not yet", Withdraw (pending only); slip refusal naming each change | built. The "button tries the slip" is not built |
+| F-7 Salary Workings flag | built as one column |
+| F-8 timeline lines "Added by HR on 21 Nov. Not confirmed by you yet." etc. | built |
+| D-3 hint "This reason is printed on the employee's monthly notice." on every reason box (088) | built, Hindi in `translations/hi.csv` (machine-drafted) |

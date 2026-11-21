@@ -767,3 +767,20 @@ The four screen differences from prototype-v2 were not approved, so the screens 
 - the note in the sheet, not a browser prompt;
 - the real-status toast (N3);
 - the time sentences.
+
+## Counsel's conditions, 21 Nov 2026 (ALV-418, ALV-419)
+
+Counsel replied in writing on 21 Nov (relayed by Surbhi): HR-added punches on the employee's request are valid evidence; DTC (Delhi, Haryana) is cleared once two conditions are met. Surbhi approved both.
+
+1. **ALV-418: a reason on every attendance request, held days included.** **PRIV-2 and decision 3 (no note on a Held day) are reversed by counsel, 21 Nov 2026.**
+   - **AC-101** `punch_fix.send` refuses an empty or blank reason on every day, Held or not ("Say why, so HR can decide. A reason is needed on every request."); it is stored in `explanation`.
+   - **AC-102** The 085 held-day request (`raise_correction` with a missing time) and `raise_for_report` (held and ordinary) refuse an empty reason in the same words. `raise_for_report` asks after its permission and window checks. The auto-picked reason ("Forgot to Punch In/Out") never holds the person's text.
+   - **AC-103** The screens show one required reason box on the Held sheet as well (in the send bar, label keeps the Q3 rule that HR and the manager read it); the 085 held form has it too.
+   - **Not changed (open question for Surbhi):** an employee's own ordinary request (`raise_correction` without a time) still takes the reason from the dropdown, with an explanation only for "Other".
+2. **ALV-419: a request somebody else files waits for the employee's Confirm.**
+   - **AC-104** A request created by anyone but the employee (HR, a manager through `raise_for_report`, or Desk) is marked `alvoraa_needs_confirm = 1` by the server. The employee's own request is not. Administrator is not counted as a person filing for somebody (the one exception). A client value is put back on every save.
+   - **AC-105** Approval is refused until `alvoraa_confirmed_on` is set: in `decide`, in Desk submit and in REST, for every request. Decline stays open to HR.
+   - **AC-106** The employee sees it on their day sheet with Confirm and Not right. Not right needs their reason and declines the request. The confirmation records `alvoraa_confirmed_by` and `alvoraa_confirmed_on`; the decline records the existing reviewed-by, on and note. Only the employee can answer; no `ignore_permissions`; POST only.
+   - **AC-107** The HR card says it is waiting for the employee and offers Decline only.
+   - **Out of scope until counsel answers:** HR marking attendance by hand in the Desk. **Open for Surbhi:** an employee with no login cannot confirm, so a request filed for them waits for ever (fails closed); the Inbox does not show it, only the day sheet; no backfill for requests already waiting.
+   - **Parity: new, needs Surbhi's yes** (not in prototype-v2): the "HR sent this for you. Is it right?" block with Confirm, Not right and a reason box, built from existing 087 styles.

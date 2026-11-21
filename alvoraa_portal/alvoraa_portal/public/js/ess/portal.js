@@ -6393,6 +6393,17 @@ function acPfPaint() {
   if (locked) {
     html += '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This day cannot be fixed here</span></div>'
       + '<p class="pfx-sub">' + gpEsc(d.blocked_text) + "</p>";
+  } else if (waiting && r.needs_confirm) {
+    /* ALV-419 (new, not in prototype-v2): somebody filed this for the employee, who answers first. */
+    html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>'
+      + (r.filed_by === "HR" ? "HR" : "Your manager") + " sent this for you. Is it right?</span></div>"
+      + '<p class="pfx-sub">It goes to HR only after you confirm. Nothing on your day changes until HR approves it.</p>'
+      + '<div class="pfx-acts"><button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + gpEsc(r.name) + '&quot;,1)">Confirm</button>'
+      + '<button type="button" class="btn" onclick="acPfNotRight(&quot;' + gpEsc(r.name) + '&quot;)">Not right</button></div>'
+      + '<div class="pfx-field" id="pfx-nr" hidden><label class="pfx-fl" for="pfx-nr-text">What is not right? HR will read this.</label>'
+      + '<textarea id="pfx-nr-text" rows="2" required aria-required="true"></textarea>'
+      + '<div class="pfx-err" id="pfx-nr-err" role="alert"></div>'
+      + '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + gpEsc(r.name) + '&quot;,0)">Send</button></div>';
   } else if (waiting) {
     html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Sent to HR at ' + gpEsc(r.sent_at) + " &middot; Waiting</span></div>"
       + '<p class="pfx-sub">The day stays as it is until HR decides. You will see the answer here.</p>';
@@ -6453,7 +6464,7 @@ function acPfPaint() {
   });
   html += "</ul>";
   if (r && r.note && (waiting || r.state === "approved")) html += '<p class="pfx-sub">Your note: ' + gpEsc(r.note) + "</p>";
-  if (waiting) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
+  if (waiting && !r.needs_confirm) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
   if (add) html += '<p class="pfx-one">One punch per request. If another is missing, send this first and add the next after HR decides.</p>';
   /* the sticky send bar */
   if (staged && !locked) {
@@ -6463,7 +6474,11 @@ function acPfPaint() {
       var p = (d.punches || []).filter(function (x) { return x.name === n; })[0];
       if (p) parts.push(p.time + " set aside");
     });
+    /* ALV-418 (counsel, 21 Nov): one required reason box, on a Held day too. The Q3 rule stands:
+       the label says HR and the manager read it. */
     html += '<div class="pfx-bar-send"><div class="pfx-sum">' + gpEsc(parts.join(" · ")) + "<small>Nothing changes until HR approves.</small></div>"
+      + '<div class="pfx-field pfx-reason"><label class="pfx-fl" for="pfx-note">Reason (required). HR and your manager can read this.</label>'
+      + '<textarea id="pfx-note" rows="2" required aria-required="true" oninput="acPf.note=this.value">' + gpEsc(acPf.note || "") + "</textarea></div>"
       + '<div class="pfx-err" id="pfx-refusal" role="alert" hidden></div>'
       + '<button type="button" class="btn btn-primary" onclick="acPfSend()">Send to HR</button></div>';
   }
@@ -6488,9 +6503,6 @@ function acPfSheet() {
       + '<input type="time" id="pfx-time" value="' + gpEsc(s.time || "") + '" oninput="acPfTime(this.value)" aria-describedby="pfx-infer pfx-err">'
       + '<p class="pfx-infer" id="pfx-infer" aria-live="polite">' + (s.kind ? "It will be added as: <b>" + gpEsc(s.kind.label) + "</b>." : "") + "</p>"
       + '<div class="pfx-err" id="pfx-err" role="alert">' + (s.err ? gpEsc(s.err) : "") + "</div></div>"
-      /* Q3: the note label says who reads it. PRIV-2: a Held day takes no note, so no box. */
-      + (d.held ? "" : '<div class="pfx-field"><label class="pfx-fl" for="pfx-note">Note (optional). HR and your manager can read this.</label>'
-        + '<textarea id="pfx-note" rows="2">' + gpEsc(acPf.note || "") + "</textarea></div>")
       + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
       + '<button type="button" class="btn btn-primary" onclick="acPfAdd()">Add to request</button></div>';
   } else {
@@ -6550,7 +6562,6 @@ window.acPfTime = function (v) {
 
 window.acPfAdd = function () {
   var s = acPf.sheet, t = (document.getElementById("pfx-time") || {}).value;
-  acPf.note = acPf.data.held ? "" : ((document.getElementById("pfx-note") || {}).value || "");
   s.time = t;
   var err = pfFit(s, t);
   if (!err && (acPf.data.punches || []).some(function (p) { return p.counted && p.time === t; })) {
@@ -6572,7 +6583,13 @@ window.acPfSend = async function () {
   if (acPf.sending) return;
   var box = document.getElementById("pfx-refusal");
   /* Exactly four things leave this page: the day, the time, the punches set aside, the note. */
-  var body = {date: acPf.date, time: acPf.add ? acPf.add.time : "", set_aside: JSON.stringify(acPf.aside), note: acPf.note || ""};
+  var note = ((document.getElementById("pfx-note") || {}).value || acPf.note || "").trim();
+  if (!note) {
+    if (box) { box.textContent = "Write a reason so HR can decide."; box.hidden = false; }
+    var nb = document.getElementById("pfx-note"); if (nb) { nb.classList.add("bad"); nb.focus(); }
+    return;
+  }
+  var body = {date: acPf.date, time: acPf.add ? acPf.add.time : "", set_aside: JSON.stringify(acPf.aside), note: note};
   acPf.sending = true; showLoad();
   try {
     await pfApi("send", body);
@@ -6590,6 +6607,24 @@ window.acPfSend = async function () {
       await acPfLoad(acPf.date);
     }
   } finally { acPf.sending = false; }
+};
+
+window.acPfNotRight = function () {
+  var box = document.getElementById("pfx-nr"); if (box) { box.hidden = false; var t = document.getElementById("pfx-nr-text"); if (t) t.focus(); }
+};
+
+window.acPfConfirm = async function (name, ok) {
+  var why = ((document.getElementById("pfx-nr-text") || {}).value || "").trim();
+  if (!ok && !why) {
+    var e = document.getElementById("pfx-nr-err"); if (e) e.textContent = "Say what is not right, so HR knows what to fix.";
+    return;
+  }
+  showLoad();
+  try {
+    await pfApi("confirm", {name: name, ok: ok ? 1 : 0, reason: why});
+    hideLoad(); toast(ok ? "Confirmed. HR can now decide it." : "Sent back to HR. Nothing was changed.", "ok");
+    await acPfLoad(acPf.date);
+  } catch (err) { hideLoad(); toast(err.message || "Could not send that.", "err"); }
 };
 
 window.acPfWithdraw = async function (name) {
@@ -6688,6 +6723,9 @@ window.acPfCard = function (r) {
   var foot = "";
   if (mine) {
     foot = '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This is your own day, so you cannot approve it. Another HR person will decide it.</span></div>';
+  } else if (c.awaiting_confirm) {
+    foot = '<p class="pfx-sub">Waiting for ' + gpEsc(pfFirst(r)) + " to confirm this in the app. You can approve it after they do. You can still decline it.</p>"
+      + pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
   } else if (blocked) {
     foot = '<p class="pfx-sub">' + gpEsc(blocked === "slip"
       ? "Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary."
@@ -6751,8 +6789,9 @@ function acHeldForm(x, d) {
     + '<input type="time" id="ac-missing-time" required>'
     + (one ? "" : '<label class="form-label" for="ac-missing-log">It was a</label>'
         + '<select id="ac-missing-log"><option value="OUT">Out</option><option value="IN">In</option></select>')
-    + '<p class="ac-help">That is all we need. HR sees your punches and this time, and decides. '
-    + "Nothing else to fill in.</p>"
+    + '<label class="form-label" for="ac-held-reason">Reason (required). HR and your manager can read this.</label>'
+    + '<textarea id="ac-held-reason" rows="2" required aria-required="true"></textarea>'
+    + '<p class="ac-help">HR sees your punches, this time and your reason, and decides.</p>'
     + '<div class="ac-acts"><button class="btn btn-primary" onclick="acHeldSubmit(&quot;' + x.date + '&quot;,'
     + (one ? (x.held_single_is_out ? 1 : 0) + "" : "null") + ')">'
     + (d.is_self ? "Send to HR" : "Send to HR for " + gpEsc((d.employee_name || "").split(" ")[0])) + "</button></div></div>";
@@ -6765,13 +6804,15 @@ window.acHeldSubmit = async function (date, singleIsOut) {
   var logEl = document.getElementById("ac-missing-log");
   var log = logEl ? logEl.value : (singleIsOut ? "IN" : "OUT");
   if (!t) { toast("Enter the time first.", "err"); return; }
+  var why = ((document.getElementById("ac-held-reason") || {}).value || "").trim();
+  if (!why) { toast("Write a reason so HR can decide.", "err"); return; }
   if (acSending) return;
   var other = (acState.data && acState.data.is_self === false)
     ? (acState.employee || (acState.data && acState.data.employee)) : null;
   acSending = true;
   showLoad();
   try {
-    var body = {from_date: date, missing_time: t, missing_log: log};
+    var body = {from_date: date, missing_time: t, missing_log: log, explanation: why};
     if (other) { body.employee = other; await acApi("raise_for_report", body); }
     else await acApi("raise_correction", body);
     hideLoad();

@@ -56,6 +56,13 @@ FIELDS = {
 		 "label": "Day Before The Fix", "insert_after": "alvoraa_for_held_day"},
 		{"fieldname": "alvoraa_fix_after", "fieldtype": "Small Text", "read_only": 1,
 		 "label": "Day After The Fix", "insert_after": "alvoraa_fix_before"},
+		# ALV-419: a request somebody else filed for the employee waits for their Confirm.
+		{"fieldname": "alvoraa_needs_confirm", "fieldtype": "Check", "read_only": 1, "default": "0",
+		 "label": "Needs The Employee's Confirm", "insert_after": "alvoraa_fix_after"},
+		{"fieldname": "alvoraa_confirmed_by", "fieldtype": "Link", "options": "User", "read_only": 1,
+		 "label": "Confirmed By", "insert_after": "alvoraa_needs_confirm"},
+		{"fieldname": "alvoraa_confirmed_on", "fieldtype": "Datetime", "read_only": 1,
+		 "label": "Confirmed On", "insert_after": "alvoraa_confirmed_by"},
 	],
 }
 
@@ -75,7 +82,8 @@ def columns_ready():
 	"""False on a site whose image is newer than its migrate: the readers then behave
 	exactly as before instead of failing with an unknown column."""
 	try:
-		return bool(frappe.db.has_column(CHECKIN, ASIDE) and frappe.db.has_column(REQUEST, "alvoraa_set_aside"))
+		return bool(frappe.db.has_column(CHECKIN, ASIDE) and frappe.db.has_column(REQUEST, "alvoraa_set_aside")
+		            and frappe.db.has_column(REQUEST, "alvoraa_needs_confirm"))
 	except Exception:
 		return False
 
@@ -269,6 +277,7 @@ def validate(doc, method=None):
 	else:
 		doc.alvoraa_for_held_day = 1 if (is_punch_fix(doc) and str(doc.from_date) == str(doc.to_date)
 		                                 and held_day._held_row(doc.employee, doc.from_date)) else 0
+	_own_the_confirm_fields(doc, before)
 	if doc.docstatus or not is_punch_fix(doc):
 		return
 
@@ -292,6 +301,23 @@ def validate(doc, method=None):
 	elif len(counted(doc.employee, doc.from_date, ticked)) == 0:
 		frappe.throw(_("A day cannot be left with no punches. Add a punch too."))
 	# Nothing in a refusal names a person or quotes the note.
+
+
+def _own_the_confirm_fields(doc, before):
+	"""ALV-419. A request filed by anybody but the employee waits for the employee's Confirm. The
+	server decides that when the request is created (Administrator, the break-glass account, is
+	not a person filing for somebody, so it is the one exception) and puts all three fields back
+	to what is stored on every edit, so a client value changes nothing. They are written by
+	`confirm` alone, with no validate, so this does not stand in its way."""
+	if not frappe.db.has_column(REQUEST, "alvoraa_needs_confirm"):
+		return
+	if before is None:
+		login = frappe.db.get_value("Employee", doc.employee, "user_id")
+		doc.alvoraa_needs_confirm = 0 if frappe.session.user in ("Administrator", login) else 1
+		doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
+	else:
+		for f in ("alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on"):
+			doc.set(f, before.get(f))
 
 
 def _check_aside(doc):
@@ -335,9 +361,9 @@ def send(date, time=None, set_aside=None, note=None):
 	                      re.split(r"[,\s]+", str(set_aside or ""))) if n]
 	if not time and not ticked:
 		frappe.throw(_("Enter the time first."))
-	# PRIV-2: no note on a Held day (085's rule, kept by Surbhi on 21 Nov).
-	if (note or "").strip() and held_day._held_row(me.name, date):
-		frappe.throw(_("A held day takes only the time. Leave the note empty."))
+	# ALV-418 (counsel, 21 Nov): a reason on every request, a Held day too. This reverses PRIV-2.
+	if not (note or "").strip():
+		frappe.throw(_("Say why, so HR can decide. A reason is needed on every request."))
 	if time:
 		try:
 			time = frappe.utils.get_time(time).strftime("%H:%M:%S")
@@ -398,13 +424,17 @@ def day_sheet(date):
 			REQUEST, filters={"employee": me.name, "docstatus": ("<", 2), "from_date": getdate(date)},
 			fields=["name", "docstatus", "alvoraa_review_status", "creation", "alvoraa_missing_time",
 			        "alvoraa_missing_log", "alvoraa_set_aside", "explanation", "alvoraa_review_note",
-			        "alvoraa_reviewed_on"], order_by="creation desc", limit_page_length=5):
+			        "alvoraa_reviewed_on", "alvoraa_needs_confirm", "alvoraa_confirmed_on", "owner"],
+			order_by="creation desc", limit_page_length=5):
 		if is_punch_fix(r):
 			state = ac._state(r)
 			out["request"] = {
 				"name": r.name, "state": state, "sent_at": str(r.creation)[11:16],
 				"time": frappe.utils.get_time(r.alvoraa_missing_time).strftime("%H:%M") if held_day._has_time(r) else None,
 				"log_type": r.alvoraa_missing_log, "aside": aside_names(r), "note": r.explanation,
+				# ALV-419: waiting on the employee's own Confirm, and whether HR or a manager filed it.
+				"needs_confirm": bool(cint(r.alvoraa_needs_confirm) and not r.alvoraa_confirmed_on and state == "waiting"),
+				"filed_by": "HR" if held_day._filed_by_hr(r.owner, frappe.session.user) else "manager",
 				"hr_note": r.alvoraa_review_note if state in ("declined", "approved") else None,
 				"decided_on": str(r.alvoraa_reviewed_on)[:10] if r.alvoraa_reviewed_on else None}
 			break
@@ -432,7 +462,8 @@ def card_context(rows):
 	return {
 		"req": {x.name: x for x in frappe.get_all(
 			REQUEST, filters={"name": ("in", names)},
-			fields=["name", "modified", "alvoraa_missing_time", "alvoraa_set_aside"], limit_page_length=0)},
+			fields=["name", "modified", "alvoraa_missing_time", "alvoraa_set_aside", "alvoraa_needs_confirm",
+			        "alvoraa_confirmed_on"], limit_page_length=0)},
 		"emp": {x.name: x for x in frappe.get_all(
 			"Employee", filters={"name": ("in", emps)}, fields=["name", "status", "user_id"], limit_page_length=0)},
 		"att": {(x.employee, str(x.attendance_date)): x for x in frappe.get_all(
@@ -461,7 +492,9 @@ def card(row, ctx=None):
 	day = ctx["att"].get((doc.employee, str(date)))
 	punches = [p for p in ctx["punches"].get(doc.employee, []) if getdate(p.shift_start or p.time) == date]
 	out = {"blocked": day_state(doc.employee, date, day, emp, ctx) if emp else "left", "seen": _token(req.modified, punches),
-	       "own_day": bool(emp and emp.user_id == frappe.session.user)}
+	       "own_day": bool(emp and emp.user_id == frappe.session.user),
+	       # ALV-419: not approvable until the employee has pressed Confirm; Decline stays open.
+	       "awaiting_confirm": bool(cint(req.alvoraa_needs_confirm) and not req.alvoraa_confirmed_on)}
 	if not day:
 		return out
 	ticked = aside_names(req)
@@ -513,6 +546,43 @@ def before_submit(doc, method=None):
 	code = day_state(doc.employee, doc.from_date)
 	if code:
 		frappe.throw(blocked_sentence(code, doc.employee, doc.from_date))
+
+
+def refuse_unconfirmed(doc, method=None):
+	"""Attendance Request before_submit, for EVERY request (ALV-419): one the employee did not file
+	cannot be approved until they have pressed Confirm. Desk, REST and `decide` all pass here."""
+	if cint(doc.get("alvoraa_needs_confirm")) and not doc.get("alvoraa_confirmed_on"):
+		frappe.throw(_("The employee has not confirmed this request yet. You can approve it after they "
+		               "press Confirm in the app. You can still decline it."))
+
+
+@frappe.whitelist(methods=["POST"])
+def confirm(name, ok, reason=None):
+	"""The employee answers a request somebody filed for them: Confirm (ok=1) or Not right (ok=0, with
+	a reason, which declines it). Own request only. Who and when are recorded on the request, as the
+	other audit fields are."""
+	import alvoraa_portal.attendance_correction as ac
+
+	me = ac._me()
+	doc = frappe.get_doc(REQUEST, name, for_update=True)
+	if doc.employee != me.name:
+		access.refuse(_("That request is not about you."), "SEC-4", "punch_fix.confirm", REQUEST, name)
+	if not cint(doc.get("alvoraa_needs_confirm")) or doc.docstatus != 0 \
+			or doc.get("alvoraa_review_status") != "Waiting":
+		frappe.throw(_("There is nothing to confirm on this request."))
+	if doc.get("alvoraa_confirmed_on"):
+		frappe.throw(_("You have already confirmed this one."))
+	user, now = frappe.session.user, now_datetime()
+	if cint(ok):
+		doc.db_set({"alvoraa_confirmed_by": user, "alvoraa_confirmed_on": now})
+	else:
+		if not (reason or "").strip():
+			frappe.throw(_("Say what is not right, so HR knows what to fix."))
+		doc.db_set({"alvoraa_review_status": "Declined", "alvoraa_review_note": reason.strip(),
+		            "alvoraa_reviewed_by": user, "alvoraa_reviewed_on": now})
+	frappe.logger("alvoraa_portal").info("punch_fix confirm request=%s employee=%s user=%s answer=%s",
+	                                     name, me.name, user, "confirmed" if cint(ok) else "not right")
+	return ac._shape(frappe.get_doc(REQUEST, name).as_dict())
 
 
 def refuse_cancel(doc, method=None):

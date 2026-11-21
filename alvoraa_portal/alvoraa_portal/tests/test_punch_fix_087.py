@@ -81,7 +81,17 @@ class PunchFixCase(FrappeTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def decide(self, name, approve=1, by=None, note=None, seen="auto"):
+	def confirm_as_employee(self, name):
+		"""What the employee's Confirm leaves on the request (the real endpoint is tested in `Confirm`)."""
+		frappe.db.set_value(REQUEST, name, {"alvoraa_confirmed_by": "Administrator",
+		                                    "alvoraa_confirmed_on": frappe.utils.now_datetime()})
+
+	def decide(self, name, approve=1, by=None, note=None, seen="auto", confirmed=True):
+		# ALV-419: a request somebody else filed waits for the employee. Most tests are about the
+		# approval itself, so they confirm first; the ones about the wait pass confirmed=False.
+		if approve and confirmed and frappe.db.get_value(REQUEST, name, "alvoraa_needs_confirm") \
+				and not frappe.db.get_value(REQUEST, name, "alvoraa_confirmed_on"):
+			self.confirm_as_employee(name)
 		if seen == "auto":
 			seen = punch_fix.seen_token(frappe.get_doc(REQUEST, name))
 		frappe.set_user(by or self.hr)
@@ -107,11 +117,11 @@ class PunchFixCase(FrappeTestCase):
 
 
 class Install(PunchFixCase):
-	def test_the_eight_fields_exist(self):
+	def test_the_eleven_fields_exist(self):
 		for dt, fields in punch_fix.FIELDS.items():
 			for f in fields:
 				self.assertTrue(frappe.db.exists("Custom Field", {"dt": dt, "fieldname": f["fieldname"]}), f["fieldname"])
-		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 8)
+		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 11)
 
 	def test_after_migrate_runs_twice_and_is_wired_to_install_too(self):
 		self.assertTrue(punch_fix.after_migrate() and punch_fix.after_migrate())
@@ -769,9 +779,10 @@ class Screens(PunchFixCase):
 		att, names = self.held_three()
 		frappe.set_user(self.emp_user)
 		try:
-			self.refused(lambda: punch_fix.send(self.day, "12:40", None, "forgot the lunch scan"), "takes only the time")
+			self.refused(lambda: punch_fix.send(self.day, "12:40", None, None), "A reason is needed")
+			self.refused(lambda: punch_fix.send(self.day, "12:40", None, "   "), "A reason is needed")
 			self.assertEqual(frappe.db.count(REQUEST, {"employee": self.emp}), 0)
-			out = punch_fix.send(self.day, "12:40", None, None)
+			out = punch_fix.send(self.day, "12:40", None, "forgot the lunch scan")
 			self.refused(lambda: punch_fix.send(self.day, "12:40,13:00"), "One punch per request")
 			self.refused(lambda: punch_fix.send(self.day, None, None), "Enter the time first")
 		finally:
@@ -779,13 +790,13 @@ class Screens(PunchFixCase):
 		doc = frappe.get_doc(REQUEST, out["name"])
 		self.assertEqual((doc.employee, doc.alvoraa_review_status, doc.alvoraa_missing_log, doc.alvoraa_for_held_day,
 		                  doc.reason, doc.explanation),
-		                 (self.emp, "Waiting", "IN", 1, "Forgot to Punch In", None))
+		                 (self.emp, "Waiting", "IN", 1, "Forgot to Punch In", "forgot the lunch scan"))
 		self.assertEqual(frappe.db.count(REQUEST, {"employee": self.emp}), 1)
 
 	def test_send_for_a_blocked_day_creates_no_request(self):
 		frappe.set_user(self.emp_user)
 		try:
-			self.refused(lambda: punch_fix.send(self.day, "12:40"), "has not been marked yet")
+			self.refused(lambda: punch_fix.send(self.day, "12:40", None, "forgot"), "has not been marked yet")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.count(REQUEST, {"employee": self.emp}), 0)
@@ -880,15 +891,161 @@ class DaySheet(PunchFixCase):
 		self.assertEqual([p["time"] for p in card["now"]["punches"] if p["ticked"]], ["19:30"])
 
 
-class NoteOnOrdinaryDay(PunchFixCase):
-	def test_a_note_is_taken_on_an_ordinary_day_and_refused_on_a_held_day(self):
+class ReasonOnEveryRequest(PunchFixCase):
+	"""ALV-418 (counsel, 21 Nov): a reason on every request, a Held day too. Reverses PRIV-2."""
+
+	def test_send_needs_a_reason_on_an_ordinary_day_and_on_a_held_day(self):
 		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
 		frappe.set_user(self.emp_user)
 		try:
+			self.refused(lambda: punch_fix.send(self.day, "12:00", None, ""), "A reason is needed")
 			out = punch_fix.send(self.day, "12:00", None, "went to the bank")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "explanation"), "went to the bank")
+
+	def test_a_held_day_takes_a_reason_through_the_085_form_and_refuses_none(self):
+		self.held_three()
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: ac.raise_correction(self.day, missing_time="12:40", missing_log="IN"), "A reason is needed")
+			out = ac.raise_correction(self.day, explanation="Ran out for lunch", missing_time="12:40", missing_log="IN")
+		finally:
+			frappe.set_user("Administrator")
+		doc = frappe.get_doc(REQUEST, out["name"])
+		self.assertEqual((doc.explanation, doc.reason), ("Ran out for lunch", "Forgot to Punch In"))  # the auto-picked reason holds no text
+
+	def test_a_manager_filing_for_a_report_needs_a_reason_on_a_held_day_and_an_ordinary_one(self):
+		mgr = self.h._login("mgrr", ())
+		self.h._employee("Mgrr", mgr)
+		frappe.db.set_value("Employee", self.emp, "reports_to", frappe.db.get_value("Employee", {"user_id": mgr}, "name"))
+		self.held_three()
+		frappe.set_user(mgr)
+		try:
+			with patch.object(ac, "manager_on_behalf_on", return_value=True):
+				self.refused(lambda: ac.raise_for_report(self.emp, self.day, missing_time="12:40", missing_log="IN"), "A reason is needed")
+				out = ac.raise_for_report(self.emp, self.day, explanation="He told me", missing_time="12:40", missing_log="IN")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertIn("He told me", frappe.db.get_value(REQUEST, out["name"], "explanation"))
+
+
+class Confirm(PunchFixCase):
+	"""ALV-419: a request somebody else filed for the employee waits for their Confirm."""
+
+	def filed_by_hr(self):
+		att, names = self.held_three()
+		return att, self.fix("12:40", by=self.hr, note="HR typed it")
+
+	def test_a_request_filed_by_hr_or_a_manager_needs_confirm_and_one_the_employee_files_does_not(self):
+		att, req = self.filed_by_hr()
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 1)
+		frappe.set_user(self.emp_user)
+		try:
+			own = punch_fix.send(self.day, "17:00", None, "my own")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(REQUEST, own["name"], "alvoraa_needs_confirm"), 0)
+
+	def test_approval_is_refused_until_the_employee_confirms_then_works(self):
+		att, req = self.filed_by_hr()
+		self.refused(lambda: self.decide(req, confirmed=False), "has not confirmed")
+		self.assertEqual(len(self.added(req)), 0)
+		frappe.set_user(self.emp_user)
+		try:
+			out = punch_fix.confirm(req, 1)
+		finally:
+			frappe.set_user("Administrator")
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_confirmed_by", "alvoraa_confirmed_on"], as_dict=True)
+		self.assertEqual(row.alvoraa_confirmed_by, self.emp_user)
+		self.assertTrue(row.alvoraa_confirmed_on)
+		self.decide(req, confirmed=False)  # control: the same call now goes through
+		self.assertEqual(len(self.added(req)), 1)
+
+	def test_the_desk_submit_path_is_refused_too(self):
+		att, req = self.filed_by_hr()
+		doc = frappe.get_doc(REQUEST, req)
+		doc.flags.punch_fix_decided = True
+		frappe.set_user(self.h.hr2)
+		try:
+			self.refused(lambda: doc.submit(), "has not confirmed")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_not_right_declines_it_with_the_employees_reason(self):
+		att, req = self.filed_by_hr()
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: punch_fix.confirm(req, 0, " "), "Say what is not right")
+			punch_fix.confirm(req, 0, "I was not there then")
+		finally:
+			frappe.set_user("Administrator")
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_review_status", "alvoraa_review_note", "alvoraa_reviewed_by"], as_dict=True)
+		self.assertEqual((row.alvoraa_review_status, row.alvoraa_review_note, row.alvoraa_reviewed_by),
+		                 ("Declined", "I was not there then", self.emp_user))
+		self.assertEqual(self.row(att).status, "Held")
+
+	def test_only_the_employee_can_confirm_and_not_twice_and_not_their_own_request(self):
+		att, req = self.filed_by_hr()
+		other = self.h._login("peer", ())
+		self.h._employee("Peer2", other)
+		frappe.set_user(other)
+		try:
+			self.refused(lambda: punch_fix.confirm(req, 1), "not about you")
+		finally:
+			frappe.set_user("Administrator")
+		self.refused_as(self.hr, lambda: punch_fix.confirm(req, 1))  # HR cannot confirm for them
+		frappe.set_user(self.emp_user)
+		try:
+			punch_fix.confirm(req, 1)
+			self.refused(lambda: punch_fix.confirm(req, 1), "already confirmed")
+			frappe.set_user("Administrator")
+			frappe.set_user(self.emp_user)
+			own = punch_fix.send(self.day, "17:00", None, "mine")
+			self.refused(lambda: punch_fix.confirm(own["name"], 1), "nothing to confirm")
+		finally:
+			frappe.set_user("Administrator")
+
+	def refused_as(self, user, fn):
+		frappe.set_user(user)
+		try:
+			with self.assertRaises((frappe.ValidationError, frappe.PermissionError)):
+				fn()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_client_cannot_write_the_confirm_fields(self):
+		att, req = self.filed_by_hr()
+		doc = frappe.get_doc(REQUEST, req)
+		doc.alvoraa_confirmed_by, doc.alvoraa_confirmed_on, doc.alvoraa_needs_confirm = self.hr, frappe.utils.now_datetime(), 0
+		doc.save(ignore_permissions=True)
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on"], as_dict=True)
+		self.assertEqual((row.alvoraa_needs_confirm, row.alvoraa_confirmed_by, row.alvoraa_confirmed_on), (1, None, None))
+
+	def test_the_card_and_the_day_sheet_say_the_request_is_waiting_for_the_employee(self):
+		att, req = self.filed_by_hr()
+		frappe.set_user(self.hr)
+		try:
+			card = punch_fix.card(frappe.get_doc(REQUEST, req).as_dict())
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(card["awaiting_confirm"])
+		frappe.set_user(self.emp_user)
+		try:
+			sheet = punch_fix.day_sheet(self.day)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((sheet["request"]["needs_confirm"], sheet["request"]["filed_by"]), (True, "HR"))
+		self.confirm_as_employee(req)
+		frappe.set_user(self.emp_user)
+		try:
+			self.assertFalse(punch_fix.day_sheet(self.day)["request"]["needs_confirm"])
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_confirm_is_post_only_and_the_module_still_has_no_permission_bypass(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func.get(punch_fix.confirm), ["POST"])
+		self.assertNotIn("ignore_permissions", open(os.path.join(PKG, "punch_fix.py")).read())
 
 
 class NightShift(PunchFixCase):

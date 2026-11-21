@@ -201,6 +201,8 @@ The count uses the same folded punches the hold marking used. The release record
 
 ### PRIV-2 · Collect the time only; nothing personal in logs, errors or files
 
+> **PRIV-2 / no reason box: reversed by counsel, 21 Nov 2026 (ALV-418).** A reason is now required on every attendance request, a held day included. Built in slice 087. The rest of this item (nothing personal in logs, errors or files) stands.
+
 - **The form.** The held-day form sends only the date, the missing time and In/Out. There is no reason box (Design gate D1).
 - **Errors and logs.** Refusals and errors name no person the caller cannot already see. Log lines carry ids only (the `log_refusal` pattern).
 - **The notice list.** The list of the 80 people Grace must tell is read by Grace HR in the register (Held filter), not exported or emailed by us.

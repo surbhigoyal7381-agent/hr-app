@@ -220,15 +220,15 @@ class Proof(base.PunchFixCase):
 		att, names = self.held_three()
 		frappe.set_user(self.emp_user)
 		try:
-			add_only = punch_fix.send(date=self.day, time="12:40", set_aside="[]", note="")
+			add_only = punch_fix.send(date=self.day, time="12:40", set_aside="[]", note="forgot")
 		finally:
 			frappe.set_user("Administrator")
 		doc = frappe.get_doc(REQUEST, add_only["name"])
-		self.assertEqual((str(doc.alvoraa_missing_time)[:5], doc.alvoraa_set_aside, doc.explanation), ("12:40", None, None))
+		self.assertEqual((str(doc.alvoraa_missing_time)[:5], doc.alvoraa_set_aside, doc.explanation), ("12:40", None, "forgot"))
 		frappe.delete_doc(REQUEST, doc.name, force=1, ignore_permissions=True)
 		frappe.set_user(self.emp_user)
 		try:
-			aside_only = punch_fix.send(date=self.day, time="", set_aside=json.dumps([names[1]]), note="")
+			aside_only = punch_fix.send(date=self.day, time="", set_aside=json.dumps([names[1]]), note="wrong scan")
 		finally:
 			frappe.set_user("Administrator")
 		doc = frappe.get_doc(REQUEST, aside_only["name"])

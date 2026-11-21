@@ -3422,3 +3422,6 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
 .ac-punch{font-size:12px}
 .pfx-notebox{margin:8px 0 0}
 .pfx-notebox textarea{font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);width:100%;min-height:48px}
+.pfx-reason{flex-basis:100%;margin:0}
+.pfx-reason textarea{font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);width:100%;min-height:48px}
+.pfx-reason textarea.bad{border-color:var(--red);border-width:2px}

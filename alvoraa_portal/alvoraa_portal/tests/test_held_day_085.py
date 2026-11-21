@@ -144,6 +144,11 @@ class HeldDayCase(FrappeTestCase):
 		"""Approve the way HR does. Since slice 087 a punch fix is approved only through
 		`decide`, with the token of what the card showed; an ordinary request is as before."""
 		from alvoraa_portal import punch_fix
+		# ALV-419: a request somebody else filed waits for the employee's Confirm; these tests are
+		# about the release, so the employee has confirmed (the wait itself is tested in 087).
+		if frappe.db.get_value(REQUEST, name, "alvoraa_needs_confirm"):
+			frappe.db.set_value(REQUEST, name, {"alvoraa_confirmed_by": "Administrator",
+			                                    "alvoraa_confirmed_on": frappe.utils.now_datetime()})
 		doc = frappe.get_doc(REQUEST, name)
 		seen = punch_fix.seen_token(doc) if punch_fix.is_punch_fix(doc) else None
 		frappe.set_user(by)
@@ -600,7 +605,7 @@ class HeldDayCase(FrappeTestCase):
 					patch.object(ac, "manager_on_behalf_on", return_value=True), \
 					patch.object(ac, "_may_review", return_value=True):
 				out = ac.raise_for_report(employee=self.worker, from_date=self.day,
-				                          missing_time="18:30", missing_log="OUT")
+				                          missing_time="18:30", missing_log="OUT", explanation="He forgot")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(out["missing_time"], "18:30")

@@ -176,6 +176,9 @@ class ReleaseAndTheSlip(RealSlip):
 	def _approve(self, req, user):
 		from alvoraa_portal import attendance_correction as ac
 		from alvoraa_portal import punch_fix
+		if frappe.db.get_value("Attendance Request", req, "alvoraa_needs_confirm"):  # ALV-419
+			frappe.db.set_value("Attendance Request", req, {"alvoraa_confirmed_by": "Administrator",
+			                                               "alvoraa_confirmed_on": frappe.utils.now_datetime()})
 		seen = punch_fix.seen_token(frappe.get_doc("Attendance Request", req))
 		frappe.set_user(user)
 		try:

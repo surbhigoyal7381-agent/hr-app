@@ -1077,6 +1077,9 @@ def request_fields():
 		# ordinary request; `_shape` turns it into one flag and sends no punch name.
 		if frappe.db.has_column(REQUEST, "alvoraa_set_aside"):
 			fields.append("alvoraa_set_aside")
+		# ALV-419: a request waiting on the employee's Confirm, for the rows that offer Approve.
+		if frappe.db.has_column(REQUEST, "alvoraa_needs_confirm"):
+			fields += ["alvoraa_needs_confirm", "alvoraa_confirmed_on"]
 	except Exception:
 		pass
 	return fields
@@ -1208,7 +1211,11 @@ def raise_correction(from_date, to_date=None, reason=None, explanation=None,
 
 	held = _held_request_fields(missing_time, missing_log, from_date, to_date)
 	if held:
-		reason, explanation = held.pop("reason"), None
+		# ALV-418 (counsel, 21 Nov): a held day needs a reason too. The reason value is still
+		# picked from In or Out; what the person writes goes in the explanation.
+		reason = held.pop("reason")
+		if not (explanation or "").strip():
+			frappe.throw(_("Say why, so HR can decide. A reason is needed on every request."))
 	else:
 		allowed = {r["value"] for r in reasons()}
 		if reason not in allowed:
@@ -2454,7 +2461,7 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 
 	held = _held_request_fields(missing_time, missing_log, from_date, to_date)
 	if held:
-		reason, explanation = held.pop("reason"), None
+		reason = held.pop("reason")
 	else:
 		allowed = {r["value"] for r in reasons()}
 		if reason not in allowed:
@@ -2479,6 +2486,10 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 	if not held:
 		_refuse_outside_filing_window(subject.name, from_date)
 
+	# ALV-418 (counsel, 21 Nov): a reason on every request somebody files for another person, held
+	# days included. Asked after the permission and window checks, so those refusals still come first.
+	if not (explanation or "").strip():
+		frappe.throw(_("Say why, so HR can decide. A reason is needed on every request."))
 	me = _employee_for(frappe.session.user)
 	note = (explanation or "").strip()
 	if me:

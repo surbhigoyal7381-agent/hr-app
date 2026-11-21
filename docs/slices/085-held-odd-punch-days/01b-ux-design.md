@@ -19,7 +19,7 @@ Employee (phone first, shift staff) on a day with a missing punch. Serves: Emplo
 ## 2. The three rules, shown once
 1. **One word: "Held".** Amber chip with an icon and the word. Never red (the day is not wrong, it is waiting). The old "Missing punch" tag and tile are replaced by Held when the switch is on, so one idea never has two names.
 2. **Say the pay effect in the same breath**: "Not paid until fixed."
-3. **Ask only for the missing time.** No reason, no explanation box on a held day.
+3. **Ask only for the missing time.** No reason, no explanation box on a held day. **PRIV-2 / no reason box: reversed by counsel, 21 Nov 2026 (ALV-418).** A reason is now required on every attendance request, a held day included. Built in slice 087.
 
 ## 3. Screens (words are final unless marked)
 **Employee month** (`acPaint`): banner "2 days are Held. Not paid until fixed. Tap a held day and send the missing time to HR." Tile "Held days" (amber) replaces "Missing punches". Row tag "Held"; after sending, a second tag "Sent to HR". When none: "No held days. Every day this month is paid."
@@ -60,7 +60,7 @@ Employee sees their own days. Manager sees "Held" and the punch times of a direc
 | Settings card with two settings | none (site defaults today) | New |
 
 ## ⚠ Decisions
-1. **⚠ DECISION (Surbhi): drop the reason box on a held day.** I recommend yes: the missing time is the evidence. Risk: HR loses a free-text note. Owner: Surbhi.
+1. **⚠ DECISION (Surbhi): drop the reason box on a held day.** (**PRIV-2 / no reason box: reversed by counsel, 21 Nov 2026 (ALV-418).** A reason is now required on every attendance request, a held day included. Built in slice 087.)  I recommend yes: the missing time is the evidence. Risk: HR loses a free-text note. Owner: Surbhi.
 2. **⚠ DECISION (Surbhi, BA): who picks Present or Half day on release.** I drew it automatic from the corrected time against the shift, HR sees the result before approving. Her words say "full or half". If HR must choose, the approve button splits in two. Blocks the spec.
 3. **⚠ DECISION (Surbhi): switch off with held days open.** I drew "they stay Held". The alternative, auto-release to Present, silently pays.
 4. **⚠ DECISION (Surbhi): the date employees are told.** "Before pay" has no date on screen. I did not invent one. A date per company would be a third setting; I recommend no.

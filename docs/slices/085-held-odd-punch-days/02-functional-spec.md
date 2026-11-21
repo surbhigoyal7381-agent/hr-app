@@ -211,7 +211,7 @@ Oracle in every row is a field value, a document state, an HTTP response or text
 - **AC-25** Given 2 Held days, when the employee opens the month, then the banner reads "2 days are Held. Not paid until fixed. Tap a held day and send the missing time to HR." and the tile "Held days" is amber. With none: "No held days. Every day this month is paid."
 - **AC-26** Given one punch, when the sheet opens, then it shows "Held. One punch on this day.", the punch, "Not paid until fixed.", "HR looks at held days at the end of the month, before pay.", the field "What time did you leave?" (or "arrive" if the punch is an Out) and "Send to HR".
 - **AC-27** Given 3 or 5 punches, then the sheet shows the three-punch sentence and the field "What time was the missing punch?" with an In / Out choice.
-- **AC-28** Given a held day, when the form opens, then there is **no reason box and no explanation box**. Test: press Send and assert the payload's keys are date, time, In/Out and nothing else (PRIV-2).
+- **AC-28** [**PRIV-2 / no reason box: reversed by counsel, 21 Nov 2026 (ALV-418).** A reason is now required on every attendance request, a held day included. Built in slice 087.] Original text: Given a held day, when the form opens, then there is **no reason box and no explanation box**. Test: press Send and assert the payload's keys are date, time, In/Out and nothing else (PRIV-2).
 - **AC-29** Given a request sent, then the sheet shows "Sent to HR at 17:40 by you. The day stays Held and is not paid until HR decides." and no Send button.
 - **AC-30** Given a failed send, then the typed time is kept and the sheet says "Not sent. Your time is saved on this phone. Try again."; given a timeout it says "It may have gone through" and checks the server first.
 - **AC-31** Given the switch is on, when the month page loads, then the strings "Missing punch" and "Missing punches" appear nowhere on it. Given 360 px width and 200% text, nothing scrolls sideways and tag text wraps; targets are 44 px; field text is 16 px.
@@ -326,6 +326,8 @@ Oracle in every row is a field value, a document state, an HTTP response or text
 **No email, no push, no SMS is sent. None is built.** The employee is told by what they see on opening the portal (PRIV-3). Strings are exactly those in `01b` section 3 and quoted in the ACs above. Rules: a message never carries another person's name or a punch time the reader cannot already see; log lines carry ids only. HR is told "The slip was not changed" only in the HR view (AC-18). Notice for the 80 Grace people is Grace HR's job, from the register (Held filter); we do not export or email it.
 
 ## 12 · Prototype parity table
+
+> **PRIV-2 / no reason box: reversed by counsel, 21 Nov 2026 (ALV-418).** A reason is now required on every attendance request, a held day included. Built in slice 087. The held-day form in this table has no reason box; the box now exists (slice 087).
 
 Prototype `prototype-v1.html` (published artifact AAb1hryHeyKQfj1XhUPkvi). Surbhi's design gate: "go with this design (prototype v1)". Rows marked **needs her yes** differ from the prototype or the code.
 
@@ -449,7 +451,7 @@ Removed from this spec: a separate story for Hindi; a held-day email (not built)
 | SEC-6 | settings rights, limit on the document | US-10, 14 | AC-40, 53, 54 | covered |
 | SEC-7 | backfill | US-16 | AC-58..63 | covered |
 | PRIV-1 | no new reader | US-15 | AC-55..57 | covered |
-| PRIV-2 | time only, nothing in logs | US-6 | AC-28, AC-58 (no `employee_name`), AC-45 (log ids only) | covered |
+| PRIV-2 | time only, nothing in logs. **Reversed by counsel, 21 Nov 2026 (ALV-418): a reason is now required, held days included** | US-6 | AC-28 (superseded), AC-58 (no `employee_name`), AC-45 (log ids only) | covered; AC-28 superseded |
 | PRIV-3 | person sees state, reason, pay effect, release source | US-4, 5, 6 | AC-15, 20, 24, 26, 29 | covered; a year-old release traceable from AC-15 and AC-20 fields |
 | OPS-1 | chunked, dry run | US-16 | AC-58, 59 | covered |
 | OPS-2 | write once, tick leaves it | US-3, 5 | AC-11 | covered |

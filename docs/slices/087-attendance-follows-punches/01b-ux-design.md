@@ -301,3 +301,10 @@ Accepted with the recommendations:
   5. the reason-only form stays behind a link;
   6. approval is allowed even if the day stays Held, with a warning;
   7. "Added by HR" is shown without the name, which stays in the audit record (counsel still to confirm).
+
+
+---
+
+## Counsel's conditions, 21 Nov 2026 (ALV-418, ALV-419)
+
+**PRIV-2 is reversed by counsel, 21 Nov 2026 (ALV-418).** A reason is required on every request, a Held day included: one required reason box (label keeps the Q3 rule that HR and the manager read it), in the send bar. ALV-419: a request somebody else files for the employee waits for the employee's Confirm / Not right on their day sheet. **New, not in prototype-v2, needs Surbhi's yes.**

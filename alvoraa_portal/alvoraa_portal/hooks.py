@@ -247,6 +247,7 @@ doc_events = {
             "hrms.alvoraa_hr_core.access.refuse_own_submit",
             "alvoraa_portal.attendance_doors.refuse_raiser_submit",
             "alvoraa_portal.attendance_doors.refuse_outside_company",
+            "alvoraa_portal.punch_fix.refuse_unconfirmed",
             "alvoraa_portal.punch_fix.before_submit",
             "alvoraa_portal.held_day.note_held_day",
         ],

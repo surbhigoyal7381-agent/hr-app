@@ -97,3 +97,13 @@ Same read as §2. Tier 1. Every row below is for the BA to trace into a user sto
 **Subtract pass:** removed a deletion job (OPS-18 is one date field), a photo viewer, a separate log table beyond the print row, an nginx rate zone, a new alert tool. Kept: private files, phone-side shrink, insert-only print log, three thresholds on what already reports.
 
 **Left behind:** nothing. No container, no file outside this one, no setting changed. `prototype-v1.html` shows as modified in git status from before this run; I did not touch or stage it.
+
+## Surbhi's decisions on the 088 requirements, 21 Nov 2026
+
+All as recommended:
+1. **"Signed on the register" (the photo) moves from 087 to 088.** 088 builds the HR-only print record (SEC-8), which holds the photo, the print log and the changes covered. 087 keeps the app Confirm, disputes, Withdraw and the payroll block, and leaves a seam for recording the signature.
+2. **Until 088 ships,** an HR-filed change for a staff member without the app can only be confirmed in the app or withdrawn, so their slip stays blocked. Accepted. 087 and 088 release close together.
+3. **OPS-R-3:** print in English only until a Hindi reader has checked the wording.
+4. **OPS-R-4:** only HR of that company may open a register photo. Every opening is logged; it is never exported.
+5. **OPS-R-1 and C2 (retention, deletion) and OPS-R-2 and C1 (thumb print as biometric):** asked of counsel. Until counsel answers, nothing is deleted, the erase job stays off, and the photo is treated as sensitive.
+6. **Residual risks R1 to R8 (01c)** are accepted by Surbhi, 21 Nov 2026. R1 is two HR people colluding to forge a signature.

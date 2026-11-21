@@ -285,6 +285,8 @@ def _day_logs(employee, date, shift, aside=()):
 	shift started (`shift_start`), not to its calendar date, and a punch with no shift keeps its
 	calendar date. So this reads the day and the next and keeps what is this day's: leaving at
 	00:00 after a 20:30 shift end is the last punch of the day before, here as in the engine."""
+	from alvoraa_portal.payroll_rules_apply import shift_day  # the one working-day rule (ALV-402)
+
 	date = getdate(date)
 	filters = {"employee": employee, "skip_auto_attendance": 0, "offshift": 0,
 	           "time": ("between", [f"{date} 00:00:00", f"{add_days(date, 1)} 23:59:59"])}
@@ -293,7 +295,7 @@ def _day_logs(employee, date, shift, aside=()):
 	rows = frappe.get_all("Employee Checkin", filters=filters,
 	                      fields=["name", "time", "log_type", "shift_start", "shift_end"],
 	                      order_by="time asc")
-	return [r for r in rows if getdate(r.shift_start or r.time) == date]
+	return [r for r in rows if shift_day(r) == str(date)]
 
 
 def extra_when(shift, date, when, first_time=None):

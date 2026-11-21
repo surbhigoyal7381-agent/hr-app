@@ -24,6 +24,7 @@ from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetim
 import alvoraa_portal.held_day as held_day
 import hrms.alvoraa_hr_core.access as access
 from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES
+from alvoraa_portal.payroll_rules_apply import shift_day  # the one working-day rule (ALV-402)
 
 REQUEST = "Attendance Request"
 ATTENDANCE = "Attendance"
@@ -199,7 +200,7 @@ def day_punches(employee, date):
 		fields=["name", "time", "log_type", "device_id", "skip_auto_attendance", "offshift", "shift_start",
 		        ADDED, ASIDE],
 		order_by="time asc")
-	return [r for r in rows if getdate(r.shift_start or r.time) == date]
+	return [r for r in rows if shift_day(r) == str(date)]
 
 
 def counted(employee, date, aside=()):
@@ -332,7 +333,7 @@ def _check_aside(doc):
 	for name in names:
 		row = frappe.db.get_value(CHECKIN, name, ["employee", "time", "shift_start", "skip_auto_attendance", ASIDE],
 		                          as_dict=True)
-		if not row or row.employee != doc.employee or getdate(row.shift_start or row.time) != getdate(doc.from_date):
+		if not row or row.employee != doc.employee or shift_day(row) != str(getdate(doc.from_date)):
 			access.log_refusal("SEC-4", "punch_fix.validate", REQUEST, doc.name)
 			frappe.throw(_("One of the punches you picked is not on this day. Open the day again and pick "
 			               "from the list."))
@@ -561,7 +562,7 @@ def card(row, ctx=None):
 	req, emp = ctx["req"][doc.name], ctx["emp"].get(doc.employee)
 	date = getdate(doc.from_date)
 	day = ctx["att"].get((doc.employee, str(date)))
-	punches = [p for p in ctx["punches"].get(doc.employee, []) if getdate(p.shift_start or p.time) == date]
+	punches = [p for p in ctx["punches"].get(doc.employee, []) if shift_day(p) == str(date)]
 	out = {"blocked": day_state(doc.employee, date, day, emp, ctx) if emp else "left", "seen": _token(req.modified, punches),
 	       "own_day": bool(emp and emp.user_id == frappe.session.user),
 	       # ALV-419: not approvable until the employee has pressed Confirm; Decline stays open.

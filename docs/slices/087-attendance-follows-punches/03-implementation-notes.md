@@ -219,3 +219,12 @@ Incoming: `10ff4518` (docs, 085 R2a/R2b/S-2/R1 accepted) and `bad23ce0` (ALV-402
 
 **Tests (test_site, code 214ca513 / one fix after):** `test_punch_fix_087` 108 run: 107 passed; the 1 failure (the before-payroll test counted other committed fixtures) fixed, run singly OK. `_proof` 11/11; `test_held_day_085` 45 run, the 6 known backfill failures; `held_slip` 6/6; `doors` 16/16; `alv402` 7/7; `alv411_412` 9/9; `attendance_correction` 148/148. **Break tests (all fail):** slip refusal off; a withdrawn change also holding the slip; approval waits again; withdraw allowed on an approved change.
 **Browser (360 px and 1280 px, light and dark, `/Users/mac/hrlocal-data/087-screens/round3/`, `v5_*_results.json`):** no horizontal scroll, text at least 12 px, buttons 44 to 48 px; employee blocks (pending HR, approved HR, approved manager, dispute, confirmed), Not right on an approved change (the line changes with the time), the hint, HR before-payroll card and the pending HR card with Approve always present. Found by looking: after approval a manager addition still said "HR decides this": fixed. Not seen: Home for approved rows (the row text was checked in code only this round), a real phone. The default Redis queue held 607 dead jobs on this local bench (no worker); I deleted that one list so fixtures could be made.
+
+## 19. Undo this change (code and tests committed, NOT yet run)
+
+- `punch_fix.undo_change` (POST) and `_reverse`: restores set-aside punches first, then marks added punches not counted (same link field, so the order matters). Three new read-only fields on Attendance Request: `alvoraa_undone_by/on/reason` (18 fields now). `_unconfirmed_filters` skips undone requests.
+- `apply` reverses a replaced original when HR approves the employee's own replacement time (reason "Replaced by the employee's own request"); the card preview leaves out the original's added punches so preview equals result.
+- `before_payroll` rows carry `can_undo` and `instead`. Portal: button, required reason box, "Approve that request instead" line.
+- Tests: class `Undo` in test_punch_fix_087.py (7 tests). Status: written, never run; the bench was in use by round 3.
+- Break tests planned: undo skips the re-judge; hold still counts undone requests; own-day guard off; `can_undo` true for non-disputed; replacement does not reverse the original.
+- 01b parity: the Undo button is not in prototype-v5 (Surbhi's later decision); needs her look.

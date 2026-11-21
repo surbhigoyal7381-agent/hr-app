@@ -839,3 +839,10 @@ HR gets an **"Undo this change"** action on an approved change the employee disp
 - It frees the salary slip for that change.
 - If the dispute included the employee's own time, HR approves that request instead.
 - The usual rules apply: HR in scope only, never on your own day, POST only.
+
+## Undo this change (Surbhi, 21 Nov 2026) - AC-122 to AC-125
+
+- AC-122: On an approved punch fix the employee disputed, HR in scope sees "Undo this change" on the before-payroll card, and only there. It needs a reason. POST only; never on the HR user's own day.
+- AC-123: Undo marks an added punch not counted (aside link = the request), makes a set-aside punch count again, deletes nothing, re-judges the day with `worked_out`, refreshes the draft slip, and records who, when and why. An undone change no longer holds the slip.
+- AC-124: If the dispute carried the employee's own time, the card says "Approve that request instead". Approving that request undoes the original by itself, so the day never carries both times.
+- AC-125: A final slip on a non-Held day refuses the undo (same rule as approval).

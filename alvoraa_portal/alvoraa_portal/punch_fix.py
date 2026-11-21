@@ -38,7 +38,8 @@ MARKS = (ADDED, ASIDE, ASIDE_BY, ASIDE_ON)
 HR_ROLES = {"HR User", "HR Manager", "System Manager"}
 
 SERVER_OWNED = ("alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_replaces",
-                "alvoraa_disputed_by", "alvoraa_disputed_on", "alvoraa_dispute_reason")
+                "alvoraa_disputed_by", "alvoraa_disputed_on", "alvoraa_dispute_reason",
+                "alvoraa_undone_by", "alvoraa_undone_on", "alvoraa_undone_reason")
 
 
 def _signed_field():
@@ -89,6 +90,13 @@ FIELDS = {
 		 "label": "Disputed On", "insert_after": "alvoraa_disputed_by"},
 		{"fieldname": "alvoraa_dispute_reason", "fieldtype": "Small Text", "read_only": 1,
 		 "label": "Dispute Reason", "insert_after": "alvoraa_disputed_on"},
+		# HR's "Undo this change" on an approved change the employee disputed (Surbhi, 21 Nov).
+		{"fieldname": "alvoraa_undone_by", "fieldtype": "Link", "options": "User", "read_only": 1,
+		 "label": "Undone By", "insert_after": "alvoraa_dispute_reason"},
+		{"fieldname": "alvoraa_undone_on", "fieldtype": "Datetime", "read_only": 1,
+		 "label": "Undone On", "insert_after": "alvoraa_undone_by"},
+		{"fieldname": "alvoraa_undone_reason", "fieldtype": "Small Text", "read_only": 1,
+		 "label": "Undone Reason", "insert_after": "alvoraa_undone_on"},
 	],
 }
 
@@ -109,7 +117,8 @@ def columns_ready():
 	exactly as before instead of failing with an unknown column."""
 	try:
 		return bool(frappe.db.has_column(CHECKIN, ASIDE) and frappe.db.has_column(REQUEST, "alvoraa_set_aside")
-		            and frappe.db.has_column(REQUEST, "alvoraa_needs_confirm"))
+		            and frappe.db.has_column(REQUEST, "alvoraa_needs_confirm")
+		            and frappe.db.has_column(REQUEST, "alvoraa_undone_on"))
 	except Exception:
 		return False
 
@@ -349,6 +358,7 @@ def _own_the_confirm_fields(doc, before):
 		doc.alvoraa_needs_confirm = 0 if (filer in ("Administrator", login) or manager_adds) else 1
 		doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
 		doc.alvoraa_disputed_by = doc.alvoraa_disputed_on = doc.alvoraa_dispute_reason = None
+		doc.alvoraa_undone_by = doc.alvoraa_undone_on = doc.alvoraa_undone_reason = None
 		# Only `confirm` sets the link (a process flag a client cannot send), so it cannot be used to
 		# dodge the monthly limit.
 		doc.alvoraa_replaces = frappe.flags.get("punch_fix_replaces")
@@ -646,7 +656,10 @@ def card(row, ctx=None):
 	if out["blocked"] or not day.shift:
 		return out
 	# The same list `_day_logs` returns (counting punches, the ticked ones left out), from memory.
-	logs = [p for p in punches if not p.skip_auto_attendance and not p.offshift and p.name not in ticked]
+	# A replacement of an approved change: approving it first puts that change back, so its added
+	# punch does not count in the preview (the same as `apply`).
+	gone = set(frappe.get_all(CHECKIN, filters={ADDED: req.alvoraa_replaces}, pluck="name")) if req.get("alvoraa_replaces") else set()
+	logs = [p for p in punches if not p.skip_auto_attendance and not p.offshift and p.name not in ticked and p.name not in gone]
 	add = None
 	if held_day._has_time(req):
 		log_type, label, when = derive(doc.employee, date, req.alvoraa_missing_time, ticked, day.shift, logs)
@@ -691,6 +704,7 @@ def _unconfirmed_filters():
 	or a cut (`alvoraa_needs_confirm`), not confirmed in the app, not signed on the register (088), not
 	declined or withdrawn. Approved ones count: approval never waits (V5)."""
 	f = {"alvoraa_needs_confirm": 1, "alvoraa_confirmed_on": ("is", "not set"), "docstatus": ("<", 2),
+	     "alvoraa_undone_on": ("is", "not set"),
 	     "alvoraa_review_status": ("not in", ["Declined", "Withdrawn"])}
 	if _signed_field():
 		f["alvoraa_signed_notice"] = ("is", "not set")
@@ -776,8 +790,17 @@ def before_payroll(month=None):
 	scoped = frappe.get_all("Employee", filters=conditions, pluck="name", limit_page_length=0) \
 		if conditions is not None else None
 	rows = unconfirmed_changes(scoped, first, get_last_day(first), limit=100)
+	# An approved change the employee sent their own time against: HR approves that request instead (its
+	# approval reverses this one), so there is no Undo to press.
+	instead = {x.alvoraa_replaces: x for x in frappe.get_all(
+		REQUEST, filters={"alvoraa_replaces": ("in", [r["name"] for r in rows] or [""]), "docstatus": 0,
+		                 "alvoraa_review_status": "Waiting"},
+		fields=["name", "alvoraa_replaces", "alvoraa_missing_time"])}
 	for r in rows:
 		r["can_withdraw"] = not r["approved"]  # D-2: only a change still pending can be withdrawn
+		rep = instead.get(r["name"])
+		r["instead"] = {"name": rep.name, "time": _hhmm_t(rep.alvoraa_missing_time)} if rep and rep.alvoraa_missing_time else None
+		r["can_undo"] = bool(r["approved"] and r["disputed"] and not r["instead"])  # Undo only on a disputed approved change
 	return {"month": str(first), "rows": rows}
 
 
@@ -794,6 +817,59 @@ def withdraw_filed(name):
 	doc.db_set({"alvoraa_review_status": "Withdrawn", "alvoraa_reviewed_by": frappe.session.user,
 	            "alvoraa_reviewed_on": now_datetime()})
 	return {"name": name}
+
+
+def _reverse(orig, user):
+	"""Take an approved change back through the same marks, deleting nothing: a set-aside punch counts again;
+	a punch the change added is marked not counted, with its aside link pointing at this request (the undo
+	record). Order matters: the restore comes first, because both use the same link."""
+	frappe.flags.in_punch_fix_apply = True
+	try:
+		for name in frappe.get_all(CHECKIN, filters={ASIDE: orig.name}, pluck="name"):
+			punch = frappe.get_doc(CHECKIN, name)
+			punch.update({ASIDE: None, ASIDE_BY: None, ASIDE_ON: None, "skip_auto_attendance": 0})
+			punch.save()
+		for name in frappe.get_all(CHECKIN, filters={ADDED: orig.name}, pluck="name"):
+			punch = frappe.get_doc(CHECKIN, name)
+			punch.update({ASIDE: orig.name, ASIDE_BY: user, ASIDE_ON: now_datetime(), "skip_auto_attendance": 1})
+			punch.save()
+	finally:
+		frappe.flags.in_punch_fix_apply = False
+
+
+@frappe.whitelist(methods=["POST"])
+def undo_change(name, reason):
+	"""HR undoes an approved change the employee disputed (Surbhi, 21 Nov). A reason is required. The day is
+	judged again from the real punches by the same `outcome` approval uses, the draft slip is refreshed as
+	usual, who, when and why are kept on the request, and the change no longer holds the salary slip. HR in
+	scope, never on their own day, POST only; nothing is deleted. If the employee sent their own time, HR
+	approves that request instead (it reverses this one)."""
+	if not (reason or "").strip():
+		frappe.throw(_("Say why you are undoing this change."))
+	doc = frappe.get_doc(REQUEST, name, for_update=True)
+	if not HR_ROLES & set(frappe.get_roles()) or not access.employee_in_scope(doc.employee):
+		access.refuse(_("That request is outside the people you look after."), "SEC-17", "punch_fix.undo_change", REQUEST, name)
+	access.refuse_own_decision(doc.employee, REQUEST, name, "punch_fix.undo_change")
+	if doc.docstatus != 1 or not is_punch_fix(doc) or not doc.get("alvoraa_disputed_on") or doc.get("alvoraa_undone_on"):
+		frappe.throw(_("Only an approved change that the employee disputed can be undone, and only once."))
+	code = day_state(doc.employee, doc.from_date)
+	if code and code != "noshift":
+		frappe.throw(blocked_sentence(code, doc.employee, doc.from_date))
+	row = day_row(doc.employee, doc.from_date, for_update=True)
+	if not row or not row.shift:
+		frappe.throw(blocked_sentence("unmarked" if not row else "noshift", doc.employee, doc.from_date))
+	user = frappe.session.user
+	_reverse(doc, user)
+	actual = outcome(row)
+	_write_day(row, (actual["status"], actual["hours"], actual["late"], actual["early"],
+	                 actual["in_time"], actual["out_time"]))
+	_engine_must_agree(row, actual)
+	doc.db_set({"alvoraa_undone_by": user, "alvoraa_undone_on": now_datetime(),
+	            "alvoraa_undone_reason": reason.strip()}, update_modified=False)
+	frappe.flags.held_slip = held_day.refresh_draft_slip(doc.employee, row.attendance_date)
+	frappe.logger("alvoraa_portal").info("punch_fix undone request=%s attendance=%s user=%s outcome=%s",
+	                                     name, row.name, user, actual["status"])
+	return {"name": name, "status": actual["status"]}
 
 
 def record_register_signature(requests, notice):
@@ -910,16 +986,24 @@ def apply(doc, method=None):
 	row = day_row(doc.employee, doc.from_date, for_update=True)
 	if not row or not row.shift:
 		frappe.throw(blocked_sentence("unmarked" if not row else "noshift", doc.employee, doc.from_date))
-	ticked = _check_aside(doc)
 	user = frappe.session.user
+	before = _snapshot(row)
+	was_held = row.status == held_day.HELD
+	# The employee's own request that replaces an approved change: approving it puts that change back first
+	# (the same marks as "Undo this change"), so the day does not carry both times.
+	orig = frappe.get_doc(REQUEST, doc.alvoraa_replaces) if doc.get("alvoraa_replaces") else None
+	if orig and orig.docstatus == 1 and not orig.get("alvoraa_undone_on") and is_punch_fix(orig):
+		_reverse(orig, user)
+		orig.db_set({"alvoraa_undone_by": user, "alvoraa_undone_on": now_datetime(),
+		             "alvoraa_undone_reason": _("Replaced by the employee's own request {0}.").format(doc.name)},
+		            update_modified=False)
+	ticked = _check_aside(doc)
 	add = None
 	if held_day._has_time(doc):
 		log_type, _label, when = derive(doc.employee, doc.from_date, doc.alvoraa_missing_time, ticked, row.shift)
 		_check_not_a_repeat(doc, when, ticked)
 		add = (when, log_type)
 	expected = outcome(row, add, ticked)
-	before = _snapshot(row)
-	was_held = row.status == held_day.HELD
 
 	frappe.flags.in_punch_fix_apply = True
 	try:

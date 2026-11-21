@@ -113,11 +113,11 @@ class PunchFixCase(FrappeTestCase):
 
 
 class Install(PunchFixCase):
-	def test_the_fifteen_fields_exist(self):
+	def test_the_eighteen_fields_exist(self):
 		for dt, fields in punch_fix.FIELDS.items():
 			for f in fields:
 				self.assertTrue(frappe.db.exists("Custom Field", {"dt": dt, "fieldname": f["fieldname"]}), f["fieldname"])
-		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 15)
+		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 18)
 
 	def test_after_migrate_runs_twice_and_is_wired_to_install_too(self):
 		self.assertTrue(punch_fix.after_migrate() and punch_fix.after_migrate())
@@ -1374,6 +1374,122 @@ class V5(PunchFixCase):
 		hint = "This reason is printed on the employee's monthly notice."
 		self.assertGreaterEqual(js.count(hint), 3)  # the send bar, Not right, the 085 held form
 		self.assertIn(hint, open(os.path.join(PKG, "translations/hi.csv")).read())
+
+
+class Undo(PunchFixCase):
+	"""HR's "Undo this change" on an approved change the employee disputed (Surbhi, 21 Nov)."""
+
+	def undo(self, req, reason="The employee is right", by=None):
+		frappe.set_user(by or self.h.hr2)
+		try:
+			return punch_fix.undo_change(req, reason)
+		finally:
+			frappe.set_user("Administrator")
+
+	def disputed_cut(self):
+		"""A cut (only Administrator files one for somebody), approved, then disputed by the employee."""
+		att, names = self.held_three()
+		req = self.fix(aside=[names[1]], note="wrong scan")
+		frappe.db.set_value(REQUEST, req, "alvoraa_needs_confirm", 1)
+		self.decide(req, by=self.h.hr2)
+		frappe.set_user(self.emp_user)
+		try:
+			punch_fix.confirm(req, 0, "That scan was mine", "")
+		finally:
+			frappe.set_user("Administrator")
+		return att, names, req
+
+	def test_undoing_a_disputed_cut_makes_the_punch_count_again_and_frees_the_slip(self):
+		att, names, req = self.disputed_cut()
+		self.assertEqual(len(punch_fix.counted(self.emp, self.day)), 2)  # the cut is in force
+		self.assertEqual(len(punch_fix.unconfirmed_changes([self.emp])), 1)  # and holds the slip
+		self.undo(req, "The scan was the employee's own")
+		self.assertEqual(len(punch_fix.counted(self.emp, self.day)), 3)  # the set-aside punch counts again
+		self.assertTrue(frappe.db.exists(CHECKIN, names[1]))  # nothing deleted
+		self.assertFalse(frappe.db.get_value(CHECKIN, names[1], punch_fix.ASIDE))
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_undone_by", "alvoraa_undone_on", "alvoraa_undone_reason", "docstatus"], as_dict=True)
+		self.assertEqual((row.alvoraa_undone_by, bool(row.alvoraa_undone_on), row.alvoraa_undone_reason, row.docstatus),
+		                 (self.h.hr2, True, "The scan was the employee's own", 1))
+		self.assertEqual(punch_fix.unconfirmed_changes([self.emp]), [])  # no longer holds the slip
+		self.assertEqual(self.row(att).status, "Held")  # three punches again: judged from the real punches
+
+	def test_undoing_an_added_punch_marks_it_not_counted_with_an_aside_link_and_deletes_nothing(self):
+		att, names = self.held_three()
+		req = self.fix("12:40", by=self.hr, note="HR typed it")
+		self.decide(req, by=self.h.hr2)
+		self.assertEqual(self.row(att).status, "Present")
+		frappe.db.set_value(REQUEST, req, {"alvoraa_disputed_by": self.emp_user, "alvoraa_disputed_on": frappe.utils.now_datetime(),
+		                                   "alvoraa_dispute_reason": "I was not back"})
+		self.undo(req)
+		added = self.added(req)[0]
+		self.assertEqual((added[punch_fix.ASIDE], added.skip_auto_attendance, added.get(punch_fix.ADDED)), (req, 1, req))
+		self.assertEqual(len(punch_fix.counted(self.emp, self.day)), 3)
+		self.assertEqual(self.row(att).status, "Held")
+
+	def test_undo_needs_a_reason_a_disputed_approved_change_hr_in_scope_not_their_own_day_and_only_once(self):
+		att, names, req = self.disputed_cut()
+		self.refused(lambda: self.undo(req, "  "), "Say why")
+		self.refused(lambda: self.undo(req, "x", by=self.emp_user), "outside the people")
+		other_hr = self.h._login("hrundo", ("HR Manager",))
+		self.h._employee("Hrundo", other_hr, company=self.h.other_company)
+		self.refused(lambda: self.undo(req, "x", by=other_hr), "outside the people")
+		self.undo(req)
+		self.refused(lambda: self.undo(req), "only once")
+		# not disputed: refused
+		att2, names2 = self.held_three_on(add_days(self.day, -1))
+		plain = self.fix("12:40", by=self.hr, note="HR typed it")
+		self.decide(plain, by=self.h.hr2)
+		self.refused(lambda: self.undo(plain), "disputed")
+
+	def held_three_on(self, day):
+		self.h.day = self.day = day
+		return self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")])
+
+	def test_hr_cannot_undo_a_change_on_their_own_day(self):
+		hr_emp = frappe.db.get_value("Employee", {"user_id": self.hr}, "name")
+		att, names = self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")], employee=hr_emp)
+		req = self.fix(aside=[names[1]], employee=hr_emp, note="wrong scan")
+		frappe.db.set_value(REQUEST, req, {"alvoraa_needs_confirm": 1, "alvoraa_disputed_on": frappe.utils.now_datetime()})
+		frappe.db.set_value(REQUEST, req, "docstatus", 1)  # approved by somebody else, as the state under test
+		self.refused(lambda: self.undo(req, "x", by=self.hr), "own request")
+
+	def test_approving_the_employees_own_time_reverses_the_change_it_replaces(self):
+		att, names = self.held_three()
+		req = self.fix("12:40", by=self.hr, note="HR typed it")
+		self.decide(req, by=self.h.hr2)
+		frappe.set_user(self.emp_user)
+		try:
+			out = punch_fix.confirm(req, 0, "I was back by 12:50", "12:50")
+		finally:
+			frappe.set_user("Administrator")
+		rows = punch_fix.before_payroll(str(self.day)) if False else None
+		self.decide(out["replacement"], by=self.h.hr2)
+		self.assertEqual(sorted(str(p.time)[11:16] for p in punch_fix.counted(self.emp, self.day) and
+		                        frappe.get_all(CHECKIN, filters={"employee": self.emp, "skip_auto_attendance": 0}, fields=["time"])), ["09:00", "12:00", "12:50", "18:00"])
+		self.assertTrue(frappe.db.get_value(REQUEST, req, "alvoraa_undone_on"))  # the replaced change is undone
+		self.assertEqual(punch_fix.unconfirmed_changes([self.emp]), [])  # and no longer holds the slip
+		old = self.added(req)[0]
+		self.assertEqual((old.skip_auto_attendance, old[punch_fix.ASIDE]), (1, req))
+
+	def test_the_before_payroll_row_offers_undo_only_on_a_disputed_approved_change(self):
+		att, names, req = self.disputed_cut()
+		rows = [r for r in self._as(self.h.hr2, lambda: punch_fix.before_payroll(str(self.day)))["rows"] if r["name"] == req]
+		self.assertEqual((rows[0]["disputed"], rows[0]["can_undo"], rows[0]["can_withdraw"]), (True, True, False))
+		att2, names2 = self.held_three_on(add_days(self.day, -1))
+		plain = self.fix("12:40", by=self.hr, note="HR typed it")
+		self.decide(plain, by=self.h.hr2)
+		row = [r for r in self._as(self.h.hr2, lambda: punch_fix.before_payroll(str(self.day)))["rows"] if r["name"] == plain][0]
+		self.assertEqual((row["can_undo"], row["can_withdraw"]), (False, False))
+
+	def _as(self, user, fn):
+		frappe.set_user(user)
+		try:
+			return fn()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_undo_is_post_only(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func.get(punch_fix.undo_change), ["POST"])
 
 
 class NightShift(PunchFixCase):

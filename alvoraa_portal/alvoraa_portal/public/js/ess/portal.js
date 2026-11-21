@@ -6782,11 +6782,25 @@ async function acPrepay() {
       return '<li><span class="pfx-pre-main"><b>' + gpEsc(r.employee_name) + "</b> &middot; " + gpEsc(acNice(r.date)) + "<br>"
         + gpEsc(r.what) + " &middot; sent by " + gpEsc(r.filer) + " (" + gpEsc(r.filed_by) + ")"
         + (r.approved ? " &middot; approved" : "") + "<br>"
-        + '<span class="pfx-quiet">' + (r.disputed ? "Says it is not right" : "Not yet") + "</span></span>"
+        + '<span class="pfx-quiet">' + (r.disputed ? "Says it is not right" : "Not yet") + "</span>"
+        + (r.instead ? '<br><span class="pfx-quiet">' + gpEsc(r.employee_name) + " sent their own time, " + gpEsc(r.instead.time) + ". Approve that request instead.</span>" : "")
+        + (r.can_undo ? '<div hidden id="pfx-undo-' + gpEsc(r.name) + '"><label class="pfx-fl" for="pfx-undo-text-' + gpEsc(r.name) + '">Why are you undoing it? <span class="pfx-req">Required</span></label>'
+            + '<textarea id="pfx-undo-text-' + gpEsc(r.name) + '" rows="2" required aria-required="true"></textarea>'
+            + '<div class="pfx-err" id="pfx-undo-err-' + gpEsc(r.name) + '" role="alert"></div>'
+            + '<button type="button" class="btn btn-primary" onclick="acPrepayUndo(&quot;' + gpEsc(r.name) + '&quot;)">Undo this change</button></div>' : "")
+        + "</span>"
         + (r.can_withdraw ? '<button type="button" class="btn btn-outline" onclick="acPrepayWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button>' : "")
+        + (r.can_undo ? '<button type="button" class="btn btn-outline" onclick="document.getElementById(&quot;pfx-undo-' + gpEsc(r.name) + '&quot;).hidden=false;this.hidden=true">Undo this change</button>' : "")
         + "</li>";
     }).join("") + "</ul></div>";
 }
+window.acPrepayUndo = async function (name) {
+  var why = ((document.getElementById("pfx-undo-text-" + name) || {}).value || "").trim();
+  if (!why) { var e = document.getElementById("pfx-undo-err-" + name); if (e) e.textContent = "Say why you are undoing this change."; return; }
+  showLoad();
+  try { await pfApi("undo_change", {name: name, reason: why}); hideLoad(); toast("Undone. The day follows the punches again and the change no longer holds the salary slip.", "ok"); await acLoad(); }
+  catch (e) { hideLoad(); var b = document.getElementById("pfx-undo-err-" + name); if (b) b.textContent = e.message || ""; toast(e.message || "Could not undo that.", "err"); }
+};
 window.acPrepayWithdraw = async function (name) {
   showLoad();
   try { await pfApi("withdraw_filed", {name: name}); hideLoad(); toast("Withdrawn. It no longer holds the salary slip.", "ok"); await acLoad(); }

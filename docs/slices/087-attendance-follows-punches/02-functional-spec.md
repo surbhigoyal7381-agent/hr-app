@@ -829,3 +829,13 @@ This replaces ALV-419's "approval waits for Confirm".
 
 "Signed on the register" and its photo are **not built in 087**: no photo upload, no register dialog, no register fields. Slice 088 owns the HR-only print record (Frappe serves a private file to anyone who can read the record it is attached to, so the photo cannot hang on the Attendance Request). 087 keeps: the app Confirm, disputes, Withdraw, the list before payroll (rows show "Not yet" with Withdraw only), the slip refusal, the Salary Workings flag, and **one seam**: `punch_fix.record_register_signature(requests, notice)`, declared as in 088's spec 8.5 and raising "Recording a signed register is not available yet." until 088 implements it. **AC-115** Approval never waits for Confirm (`refuse_unconfirmed` removed). **AC-116** Confirm is for an HR-filed or cut change, before or after approval; Not right is for any filed change, with a time (when one was sent) and a reason required: pending = decline and the employee's own request in its place; approved = a new request (with a time) or a dispute (no time, or a cut), the day stays as approved. **AC-117** Withdraw only on a pending change, by HR in scope. **AC-118** HR's list before payroll (`punch_fix.before_payroll`), in scope only. **AC-119** A Salary Slip cannot be submitted while an HR-filed or cut change in its period is unconfirmed, unless withdrawn; the refusal names each change; a manager's addition and the employee's own request never hold it. **AC-120** Salary Workings has one column, "Unconfirmed change". **AC-121** Every reason box carries "This reason is printed on the employee's monthly notice." (Hindi line in `translations/hi.csv`, machine-drafted).
 **Open (for Surbhi):** a change HR approved and the employee disputes stays unconfirmed, so it holds the slip until the employee confirms it or 088's register signs it: there is no way for HR to clear a dispute from 087's side (it cannot be withdrawn after approval, D-2).
+
+## A disputed approved change — Surbhi's decision, 21 Nov 2026
+
+HR gets an **"Undo this change"** action on an approved change the employee disputed.
+- It needs a required reason.
+- It puts the day back as the punches show: an added punch is marked not counted, and a set-aside punch counts again. Nothing is deleted.
+- It records who did it, when and why.
+- It frees the salary slip for that change.
+- If the dispute included the employee's own time, HR approves that request instead.
+- The usual rules apply: HR in scope only, never on your own day, POST only.

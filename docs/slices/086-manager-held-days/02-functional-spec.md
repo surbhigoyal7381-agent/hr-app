@@ -551,3 +551,11 @@ The baseline's DPDP entry goes stale on 22 Nov 2026 (01c R6). Not re-verified by
 - [ ] **Usability test (5 people, 360 px) not run.** Needed before release, not before build.
 
 **Verdict: Ready to build, with conditions.** (1) 087 must be built first; 086 builds on its `ae249815`. (2) Surbhi's yes on the "needs her yes" rows in section 13 (P-1 to P-3, P-5 to P-7) before the screens are finished. (3) The engineer answers F8 and F5 at the start. (4) **Release is blocked by ALV-426 (F10) and F2.** Counsel's answer (C1, C2) is in; Surbhi's count of DTC staff with a login (N5) is now moot. None of these blocks the first day of work.
+
+## Surbhi's decisions on the spec, 21 Nov 2026
+
+All as recommended:
+1. Accept the parity items P-1 to P-6, including hiding "No clock-out" on the manager page.
+2. P-7: the employee sees a notice on their day sheet when their manager filed for them, with "Not right" (their own time and a required reason). This follows 087's Confirm redesign: the employee can modify, and approval never waits.
+3. ALV-426 (the monthly register or payslip notice) is its own small piece of work. It must land before 086 is released.
+4. A manager's pending request blocks the employee from filing the same day; this is stock Frappe HR. The employee sees "Your manager already sent this day to HR" and can use "Not right" on it.

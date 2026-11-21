@@ -321,7 +321,14 @@ def _own_the_confirm_fields(doc, before):
 		return
 	if before is None:
 		login = frappe.db.get_value("Employee", doc.employee, "user_id")
-		doc.alvoraa_needs_confirm = 0 if frappe.session.user in ("Administrator", login) else 1
+		filer = frappe.session.user
+		# Counsel, 21 Nov (manager additions): a request the employee's MANAGER files that only ADDS a time
+		# goes straight to HR. HR-filed requests, and anything that sets a punch aside, still wait. A manager
+		# is whoever files for the employee without an HR role (the same test as `_filed_by_hr`); decided
+		# here from the session, never from the client.
+		manager_adds = (filer != login and not held_day._filed_by_hr(filer, login)
+		                and held_day._has_time(doc) and not aside_names(doc))
+		doc.alvoraa_needs_confirm = 0 if (filer in ("Administrator", login) or manager_adds) else 1
 		doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
 		# Only `confirm` sets the link (a process flag a client cannot send), so it cannot be used to
 		# dodge the monthly limit.

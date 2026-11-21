@@ -952,6 +952,26 @@ class Confirm(PunchFixCase):
 		frappe.db.set_value(REQUEST, req, "alvoraa_review_status", "Withdrawn")
 		self.assertEqual(frappe.db.get_value(REQUEST, self.fix("12:40"), "alvoraa_needs_confirm"), 0)
 
+	def test_a_managers_addition_goes_straight_to_hr_and_an_hr_filing_still_waits(self):
+		"""Counsel, 21 Nov (manager additions)."""
+		mgr = self.h._login("mgradd", ())
+		self.h._employee("Mgradd", mgr)
+		att, names = self.held_three()
+		added = self.fix("12:40", by=mgr, note="He told me")
+		self.assertEqual(frappe.db.get_value(REQUEST, added, "alvoraa_needs_confirm"), 0)
+		self.decide(added, by=self.hr, confirmed=False)  # no Confirm asked for, and none needed
+		self.assertEqual(len(self.added(added)), 1)
+		# HR filing the same still waits
+		att2, names2 = self.held_three_on(add_days(self.day, -1))
+		waiting = self.fix("12:40", by=self.hr, note="HR typed it", day=add_days(self.day, -1))
+		self.assertEqual(frappe.db.get_value(REQUEST, waiting, "alvoraa_needs_confirm"), 1)
+		# a manager cannot set a punch aside at all (validate refuses it), and an ordinary request needs a Confirm
+		self.refused(lambda: self.fix(aside=[names[1]], by=mgr), "Only the employee")
+
+	def held_three_on(self, day):
+		self.h.day = self.day = day
+		return self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")])
+
 	def test_approval_is_refused_until_the_employee_confirms_then_works(self):
 		att, req = self.filed_by_hr()
 		self.refused(lambda: self.decide(req, by=self.h.hr2, confirmed=False), "has not confirmed")

@@ -963,7 +963,7 @@ class Confirm(PunchFixCase):
 		self.assertEqual(len(self.added(added)), 1)
 		# HR filing the same still waits
 		att2, names2 = self.held_three_on(add_days(self.day, -1))
-		waiting = self.fix("12:40", by=self.hr, note="HR typed it", day=add_days(self.day, -1))
+		waiting = self.fix("12:40", by=self.hr, note="HR typed it")
 		self.assertEqual(frappe.db.get_value(REQUEST, waiting, "alvoraa_needs_confirm"), 1)
 		# a manager cannot set a punch aside at all (validate refuses it), and an ordinary request needs a Confirm
 		self.refused(lambda: self.fix(aside=[names[1]], by=mgr), "Only the employee")

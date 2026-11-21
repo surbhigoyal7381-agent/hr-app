@@ -336,3 +336,7 @@ Removed from the v1 page: two row kinds, the split line, the shared note, the wh
 ### v2.6 For the business analyst
 
 Turn into criteria: only direct reports' held days with no request; one day by default; rows leave on send; reason required per row and shown in the confirm; one punch per row; Ready needs both; cap of 50 with the sentence; Case B no-login line (test: no box, no request created for a person with no login); Case A is a single condition. Test what it sends: the payload carries one reason per day.
+
+## Design gate — Surbhi's decision, 21 Nov 2026
+
+**Go with prototype-v2** (https://claude.ai/artifact/PrUbfMfJeotmXKaBmd7vgA), with one change: on a one-punch row, keep the inferred end ("What time did X leave?" or "arrive?"), and add a **Change** link that switches between arrival and leaving. A mid-day punch could be either.

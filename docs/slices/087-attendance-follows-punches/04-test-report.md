@@ -3,14 +3,74 @@ slice: 087-attendance-follows-punches
 artifact: 04-test-report
 code under test: branch slice/087-attendance-follows-punches at 2fab09a2 (code unchanged since c83510d6; the later commits are tests and docs only; 01c9f2e7 adds one more test)
 bench: container alv358-bench, site test_site, mounted from worktree alv358-daily-workings, detached at 2fab09a2. Schema on the site: 087 custom fields present (setUpModule runs `punch_fix.after_migrate`).
-verdict: FAIL (one release blocker, see section 1)
+verdict: ROUND 1 FAIL, ROUND 2 PASS WITH KNOWN DEFECTS (see section 0)
 ---
 
 # 087 test report
 
 Nothing here was run on devstack, production or ppj.dev. Fixtures are invented (example.com logins, "Hd..." names). The browser fixtures were committed to test_site and are still there.
 
-## 1. Bad news first
+## 0. Round 2 (re-test after fix round 1; code 694f0b91, branch HEAD eec1713c, on dev 13743380)
+
+Bench: alv358-bench, test_site, worktree alv358-daily-workings detached at 694f0b91. Browser: same method as round 1 (bench serve + throwaway proxy, both removed). Screens: `/Users/mac/hrlocal-data/087-screens/round2/` (59 files, scripts in its `scripts/`). Fixtures are new synthetic ones (tag Hdd3f91), committed to test_site.
+
+**Browser-only stand-ins (declared):** the server for the browser ran with two patches the tests also use, so the final-slip cards could be seen: `held_day.is_in_final_slip` and the list's slip read say "final" for two named employees; and the preview-page flag was on so the Inbox opens. No real Salary Slip was made.
+
+### Round 1 findings, one by one
+
+| # | Round 1 finding | Round 2 | How I know |
+|---|---|---|---|
+| 1 | P1 text cut off at 360 | **Fixed** | Ran it: 0 clipped text boxes on the employee sheet (held, night, leave, ordinary), the send bar and the HR cards, at 360 and desktop, light and dark; no horizontal scroll; send-bar text does not overlap the button. Screens `emp-leave-p360-light.png`, `emp-night-p360-dark.png` |
+| 2 | P2 AC-27 missing | **Fixed** | Ran it: card says "Also says 17:50 is wrong."; set-aside-only card says "says the punch at 12:30 is wrong."; the time is struck through on both Now and If approved |
+| 3 | P2 AC-35 queries | **Fixed** | Ran it: `test_ac35_...` 50 cards: 0.20 to 0.36 s per call (before 1.17 to 1.41), 222 queries (before 1,232) |
+| 4 | P2 bars 8 px low | **Fixed** | Ran it: bar centre minus dot centre = 0 px in every state I read. (Two cards read 154 px: my script compared the first bar and dot of two different strips, the Now strip has no bar; I treat it as a script artefact) |
+| 5 | P2 hollow test | **Fixed** | `test_still_odd_...` is gone; `test_ac48_...` stays (passes) |
+| 7 | P3 prototype differences | **Fixed except gap rows** | Note label "Note for X (optional)"; "Why not? X will see this." when declining; "Shaded band: shift ... Dots: punches." caption on every card variant. Gap rows are still 44 px (AC-96 says 52): for Surbhi |
+
+### New checks, round 2
+
+| Check | Result |
+|---|---|
+| Night-shift day, 09:00, 12:00 and a 00:00 punch on the next date | Pass: the sheet lists 09:00, 12:00, 00:00 in that order and draws 00:00 at the far end after the evening. Server: `NightShift` tests in test_punch_fix_087 (79 of 79) |
+| Note box: ordinary day's add sheet has "Note (optional). HR and your manager can read this."; Held day's has none | Pass (AC-89, PRIV-2) |
+| Final slip, Held day | Pass: card keeps Approve; real approval click: toast "Approved. 12:40 was added. The day is now Present. The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it." (with the stand-in above) |
+| Final slip, day that was not Held | Pass: card shows only Decline and "Since this was sent, the day went onto a salary slip that is final..." (with the stand-in above). The server refusal of an Approve is covered by the unit tests, not clicked |
+| Leaver | Pass: Decline only, "This person has left, so no punch can be added. Decline it and say why." |
+| Decline with no reason | Pass: no call sent, label "Why not? X will see this.", focus in the box, "Write a reason so X knows what to do next." |
+| Approve payload and toast on an ordinary Held card | Pass: `{name, approve:1, note:"", seen:<token>}`; "Approved. 12:40 was added. The day is now Present." |
+| Own-day card | **Not seen.** The HR person's own request is filtered out of their own queue, so the lock line can never be reached from the queue. Server tests (own-day locks) pass. Not a defect; the line may be dead text |
+| Empty queue | Seen: the "waiting for you" section is hidden, nothing is drawn. Same as before 087; the prototype's P12 empty message is not drawn on this page |
+| Inbox Review (AC-65) | **Partial.** In the preview Inbox, punch-fix rows show "Review" with no Approve; ordinary requests still show Approve and Decline. But "Review" lands on `#time/fix`, which in the preview frame is a placeholder ("the screen itself arrives in a later wave"). The card cannot be reached from the Inbox there |
+
+### Modules, round 2 (one at a time, both batches read)
+
+| Module | Ran | Result |
+|---|---|---|
+| test_punch_fix_087 | 79 | OK |
+| test_punch_fix_087_proof | 11 | OK |
+| test_midnight_punch_alv402 | 5 | OK |
+| test_held_day_085 | 44 | 6 failed, the 6 known backfill names |
+| test_held_slip_085 | 1 + 5 | OK |
+| test_held_p1_machine_accounts_085 | 3 | OK |
+| test_held_gaps_085 | 6 + 1 | 3 failed, the 3 known names |
+| test_security_alv411_412 | 9 | OK |
+| test_attendance_correction | 148 + 19 | 3 failed, the 3 known holiday / weekly-off names (on the re-run) |
+| test_company_scope_085 | 20 | OK |
+| test_attendance_doors_085 | 16 | OK |
+| test_portal_security_010 | 45 + 5 | 13 errors, the known Individual Goal / KPI import errors |
+
+**One flake to watch (P3).** In the first full run of test_attendance_correction at 694f0b91 there was a 4th failure: `test_blank_costs_no_holiday_or_employee_read_and_a_long_list_costs_no_more` (19 statements != 23, a query-count test). It passes alone at 694f0b91 and at dev 13743380, and the full module re-run at 694f0b91 gave only the 3 known failures; the dev baseline gives the same 3. That first run was during a slow window (test_punch_fix_087 took 2,478 s against 316 s the round before, with other containers busy), so I treat it as timing or cache state, not a 087 fault. Not proven; if it returns, look at holiday-list cache state.
+
+### Still open (unchanged, release gates)
+
+Dry run on ppj.dev or a DTC copy (AC-59, OPS-12, OPS-18, PRIV-4); ALV-291 guard not built (OPS-19); AC-25 owner rule an assumption; AC-99 usability test; two-connection race untested; gap rows 44 vs 52 px (Surbhi); the Inbox Review link is a stub in the preview frame (AC-65); AC-3, AC-8, AC-31 and the other "not tested" rows in section 6 are unchanged by this round.
+
+### Round 2 verdict
+
+**Pass with known defects.** All round 1 blockers and P2 findings I raised are fixed and re-seen. No new failure that is 087's. The open items above are release gates and decisions for Surbhi, not test failures. Sections 1 to 11 below are the round 1 report, kept as the record; where they disagree with this section, this section wins.
+
+
+## 1. Bad news first (round 1)
 
 | # | Level | Finding | Evidence |
 |---|---|---|---|

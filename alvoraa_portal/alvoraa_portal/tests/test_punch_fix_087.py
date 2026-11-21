@@ -1304,7 +1304,8 @@ class V5(PunchFixCase):
 			out = punch_fix.before_payroll(str(self.day))
 		finally:
 			frappe.set_user("Administrator")
-		self.assertEqual([(r["name"], r["what"], r["filed_by"], r["can_withdraw"]) for r in out["rows"]],
+		# test_site also holds the committed browser fixtures of earlier rounds, so look for this request only
+		self.assertEqual([(r["name"], r["what"], r["filed_by"], r["can_withdraw"]) for r in out["rows"] if r["name"] == req],
 		                 [(req, "added 12:40", "HR", True)])
 		other_hr = self.h._login("hrout2", ("HR Manager",))
 		self.h._employee("Hrout2", other_hr, company=self.h.other_company)

@@ -856,3 +856,9 @@ HR gets an **"Undo this change"** action on an approved change the employee disp
   - the monthly limit and card_context check the new columns exist before reading them;
   - a test submits a real Salary Slip;
   - `_signed_field` and its reads are deleted, and slice 088 adds them back with its field.
+
+## An HR time edit does not re-ask — Surbhi's decision, 22 Nov 2026
+
+If HR (or anyone other than the employee) moves only the time on a request that did not need Confirm, the employee is **not** asked to confirm again, even when the move cuts hours. `HR_TIME_EDIT_REASKS_CONFIRM` stays `False`.
+
+A set-aside or cut edit still re-asks, as fix round 1 decided. Both re-reviews raised this question; Surbhi answered "No".

@@ -6489,16 +6489,27 @@ function acPfPaint() {
     });
     /* ALV-418 (counsel, 21 Nov): one required reason box, on a Held day too. The Q3 rule stands:
        the label says HR and the manager read it. */
-    html += '<div class="pfx-bar-send"><div class="pfx-sum">' + gpEsc(parts.join(" · ")) + "<small>Nothing changes until HR approves.</small></div>"
-      + '<div class="pfx-field pfx-reason"><label class="pfx-fl" for="pfx-note">Reason (required). HR and your manager can read this.</label>'
-      + '<textarea id="pfx-note" rows="2" required aria-required="true" oninput="acPf.note=this.value">' + gpEsc(acPf.note || "") + "</textarea></div>"
+    html += '<div class="pfx-bar-send"><div class="pfx-sum">' + gpEsc(parts.join(" · ")) + "</div>"
+      + '<div class="pfx-field pfx-reason"><label class="pfx-fl" for="pfx-note">Your reason <span class="pfx-req">Required</span></label>'
+      + '<p class="pfx-sub">HR and your manager can read this.</p>'
+      + '<textarea id="pfx-note" rows="1" required aria-required="true" placeholder="e.g. Forgot to scan after lunch" oninput="acPfReasonInput(this)">'
+      + gpEsc(acPf.note || "") + "</textarea></div>"
       + '<div class="pfx-err" id="pfx-refusal" role="alert" hidden></div>'
-      + '<button type="button" class="btn btn-primary" onclick="acPfSend()">Send to HR</button></div>';
+      + '<div class="pfx-barrow"><small>Nothing changes until HR approves.</small>'
+      + '<button type="button" class="btn btn-primary" onclick="acPfSend()">Send to HR</button></div></div>';
   }
   el.innerHTML = html + acPfSheet();
   var first = el.querySelector("#pfx-time, #pfx-sheet .btn-primary");
   if (acPf.sheet && first) first.focus();
 }
+
+/* The reason box grows from one line to three; typing clears the error and the red border (V3 P-3, P-4). */
+window.acPfReasonInput = function (el) {
+  acPf.note = el.value;
+  el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 96) + "px";
+  el.classList.remove("bad");
+  var e = document.getElementById("pfx-refusal"); if (e) e.hidden = true;
+};
 
 window.acPfOther = function (date) {
   var o = document.getElementById("pfx-other-" + date);
@@ -6598,7 +6609,7 @@ window.acPfSend = async function () {
   /* Exactly four things leave this page: the day, the time, the punches set aside, the note. */
   var note = ((document.getElementById("pfx-note") || {}).value || acPf.note || "").trim();
   if (!note) {
-    if (box) { box.textContent = "Write a reason so HR can decide."; box.hidden = false; }
+    if (box) { box.innerHTML = '<span aria-hidden="true">! </span>' + "Write a reason so HR can decide."; box.hidden = false; }
     var nb = document.getElementById("pfx-note"); if (nb) { nb.classList.add("bad"); nb.focus(); }
     return;
   }
@@ -6637,39 +6648,41 @@ function pfxConfirmBlock(r, mode) {
     : "Set aside your punch at " + gpEsc(it.time || "")) + "</b></p>";
   if (r.filer_reason) h += '<p class="pfx-sub">' + (hr ? "Reason from HR" : "Reason from " + gpEsc(nm)) + ": " + gpEsc(r.filer_reason) + "</p>";
   h += '<p class="pfx-sub">Press Confirm only if this is what happened. After that HR decides. Nothing on your day changes until then.</p>'
-    + '<div class="pfx-acts" id="pfx-cf-btns"><button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,1,&quot;' + m + '&quot;)">Confirm</button>'
-    + '<button type="button" class="btn" onclick="acPfNotRight()">Not right</button></div>'
-    + '<div id="pfx-nr" hidden>';
+    + '<div class="pfx-acts" id="pfx-cf-btns-' + n + '"><button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,1,&quot;' + m + '&quot;)">Confirm</button>'
+    + '<button type="button" class="btn" onclick="acPfNotRight(&quot;' + n + '&quot;)">Not right</button></div>'
+    + '<div id="pfx-nr-' + n + '" hidden>';
   if (it && it.kind === "add") {
-    h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-time">' + gpEsc(PFX_KIND_Q[it.label] || "What time was it?")
+    h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-time-' + n + '">' + gpEsc(PFX_KIND_Q[it.label] || "What time was it?")
       + ' <span class="pfx-req">Required</span></label>'
-      + '<input type="time" id="pfx-nr-time" oninput="acPfNrEffect()" data-sent="' + gpEsc(it.time) + '" aria-describedby="pfx-nr-terr">'
+      + '<input type="time" id="pfx-nr-time-' + n + '" oninput="acPfNrEffect(&quot;' + n + '&quot;)" data-sent="' + gpEsc(it.time) + '" aria-describedby="pfx-nr-terr-' + n + '">'
       + '<p class="pfx-sub">' + gpEsc(it.time) + " was sent.</p>"
-      + '<div class="pfx-err" id="pfx-nr-terr" role="alert"></div></div>';
+      + '<div class="pfx-err" id="pfx-nr-terr-' + n + '" role="alert"></div></div>';
   }
-  h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-text">What is not right? <span class="pfx-req">Required</span></label>'
+  h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-text-' + n + '">What is not right? <span class="pfx-req">Required</span></label>'
     + '<p class="pfx-sub">HR will read this.</p>'
-    + '<textarea id="pfx-nr-text" rows="2" required aria-required="true" placeholder="e.g. I was back by 14:15, not 14:40"></textarea>'
-    + '<div class="pfx-err" id="pfx-nr-err" role="alert"></div></div>'
-    + '<p class="pfx-sub" id="pfx-nr-eff">HR will not add it, and your day stays as it is.</p>'
-    + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfNrBack()">Back</button>'
+    + '<textarea id="pfx-nr-text-' + n + '" rows="2" required aria-required="true" placeholder="e.g. I was back by 14:15, not 14:40"></textarea>'
+    + '<div class="pfx-err" id="pfx-nr-err-' + n + '" role="alert"></div></div>'
+    + '<p class="pfx-sub" id="pfx-nr-eff-' + n + '">HR will not add it, and your day stays as it is.</p>'
+    + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfNrBack(&quot;' + n + '&quot;)">Back</button>'
     + '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,0,&quot;' + m + '&quot;)">Send to HR</button></div></div>';
   return h;
 }
 
-window.acPfNotRight = function () {
-  var box = document.getElementById("pfx-nr"), btns = document.getElementById("pfx-cf-btns");
+window.acPfNotRight = function (n) {
+  var box = document.getElementById("pfx-nr-" + n), btns = document.getElementById("pfx-cf-btns-" + n);
   if (btns) btns.hidden = true;
-  if (box) { box.hidden = false; var t = document.getElementById("pfx-nr-time") || document.getElementById("pfx-nr-text"); if (t) t.focus(); }
+  if (box) { box.hidden = false; var t = document.getElementById("pfx-nr-time-" + n) || document.getElementById("pfx-nr-text-" + n); if (t) t.focus(); }
 };
-window.acPfNrBack = function () {
-  var box = document.getElementById("pfx-nr"), btns = document.getElementById("pfx-cf-btns");
+window.acPfNrBack = function (n) {
+  var box = document.getElementById("pfx-nr-" + n), btns = document.getElementById("pfx-cf-btns-" + n);
   if (box) box.hidden = true; if (btns) btns.hidden = false;
 };
 /* The line above Send changes as the time is typed (V4-3). */
-window.acPfNrEffect = function () {
-  var t = document.getElementById("pfx-nr-time"), e = document.getElementById("pfx-nr-eff");
+window.acPfNrEffect = function (n) {
+  var t = document.getElementById("pfx-nr-time-" + n), e = document.getElementById("pfx-nr-eff-" + n);
   if (!t || !e) return;
+  var te = document.getElementById("pfx-nr-terr-" + n); if (te) te.textContent = "";
+  t.classList.remove("bad");
   e.textContent = t.value ? "HR will not add " + t.getAttribute("data-sent") + ". Your own request for " + t.value
     + " goes to HR instead, and you do not need to confirm it." : "HR will not add it, and your day stays as it is.";
 };
@@ -6686,17 +6699,17 @@ function pfxNrTimeError(t, sent) {
 }
 
 window.acPfConfirm = async function (name, ok, mode) {
-  var why = ((document.getElementById("pfx-nr-text") || {}).value || "").trim();
-  var tEl = document.getElementById("pfx-nr-time"), t = tEl ? tEl.value : "";
+  var why = ((document.getElementById("pfx-nr-text-" + name) || {}).value || "").trim();
+  var tEl = document.getElementById("pfx-nr-time-" + name), t = tEl ? tEl.value : "";
   if (!ok) {
     var terr = tEl ? pfxNrTimeError(t, tEl.getAttribute("data-sent")) : "";
-    var e = document.getElementById("pfx-nr-err"), te = document.getElementById("pfx-nr-terr");
+    var e = document.getElementById("pfx-nr-err-" + name), te = document.getElementById("pfx-nr-terr-" + name);
     if (te) te.textContent = terr;
     if (tEl) { tEl.classList.toggle("bad", !!terr); }
     if (terr) { tEl.focus(); return; }
     if (!why) {
       if (e) e.textContent = "Say what is not right, so HR knows what to fix.";
-      var ta = document.getElementById("pfx-nr-text"); if (ta) { ta.classList.add("bad"); ta.focus(); }
+      var ta = document.getElementById("pfx-nr-text-" + name); if (ta) { ta.classList.add("bad"); ta.focus(); }
       return;
     }
   }
@@ -6708,7 +6721,7 @@ window.acPfConfirm = async function (name, ok, mode) {
     if (mode === "req") { await acLoad(); } else { await acPfLoad(acPf.date); }
   } catch (err) {
     hideLoad();
-    var box = document.getElementById("pfx-nr-err");
+    var box = document.getElementById("pfx-nr-err-" + name);
     if (box && err && err.server && err.message) box.textContent = err.message;
     toast(err.message || "Could not send that.", "err");
   }
@@ -6892,8 +6905,9 @@ function acHeldForm(x, d) {
     + '<input type="time" id="ac-missing-time" required>'
     + (one ? "" : '<label class="form-label" for="ac-missing-log">It was a</label>'
         + '<select id="ac-missing-log"><option value="OUT">Out</option><option value="IN">In</option></select>')
-    + '<label class="form-label" for="ac-held-reason">Reason (required). HR and your manager can read this.</label>'
-    + '<textarea id="ac-held-reason" rows="2" required aria-required="true"></textarea>'
+    + '<label class="form-label" for="ac-held-reason">Your reason <span class="pfx-req">Required</span></label>'
+    + '<p class="ac-help">HR and your manager can read this.</p>'
+    + '<textarea id="ac-held-reason" rows="2" required aria-required="true" placeholder="e.g. Forgot to scan after lunch"></textarea>'
     + '<p class="ac-help">HR sees your punches, this time and your reason, and decides.</p>'
     + '<div class="ac-acts"><button class="btn btn-primary" onclick="acHeldSubmit(&quot;' + x.date + '&quot;,'
     + (one ? (x.held_single_is_out ? 1 : 0) + "" : "null") + ')">'

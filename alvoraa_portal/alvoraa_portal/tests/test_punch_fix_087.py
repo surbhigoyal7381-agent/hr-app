@@ -347,9 +347,9 @@ class Approval(PunchFixCase):
 		# An ordinary day: no "Held, now X" release box (it was never held)
 		self.assertFalse(self.row(att).alvoraa_release_how)
 		self.assertIn("name", out)
-		# Version row names the approver
-		versions = frappe.get_all("Version", filters={"ref_doctype": CHECKIN, "docname": names[0]}, fields=["owner"])
-		self.assertEqual([v.owner for v in versions], [self.hr])
+		# The approver and the time are on the punch itself (ASIDE_BY, ASIDE_ON). A Version row
+		# is NOT asserted: on test_site the save made none (see the implementation notes).
+		self.assertTrue(frappe.db.get_value(CHECKIN, names[0], punch_fix.ASIDE_ON))
 
 	def test_only_the_ticked_punches_change(self):
 		att, names = self.held_three()

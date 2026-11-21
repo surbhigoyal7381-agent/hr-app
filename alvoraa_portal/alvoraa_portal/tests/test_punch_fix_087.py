@@ -1145,6 +1145,44 @@ class Confirm(PunchFixCase):
 		row = frappe.db.get_value(REQUEST, req, ["alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on"], as_dict=True)
 		self.assertEqual((row.alvoraa_needs_confirm, row.alvoraa_confirmed_by, row.alvoraa_confirmed_on), (1, None, None))
 
+	def test_a_confirm_is_cleared_when_the_filer_changes_what_the_request_says(self):
+		"""SEC-7 (from 086's review): confirm, then the filer edits the time, the reason or the set-aside:
+		the request is no longer confirmed, so the approval is refused until the employee confirms again."""
+		att, names = self.held_three()
+		for field, value in (("alvoraa_missing_time", "12:45:00"), ("explanation", "I typed it wrong"),
+		                     ("alvoraa_set_aside", None)):
+			req = self.fix("12:40", by=self.hr, note="HR typed it")
+			frappe.set_user(self.emp_user)
+			try:
+				punch_fix.confirm(req, 1)
+			finally:
+				frappe.set_user("Administrator")
+			self.assertTrue(frappe.db.get_value(REQUEST, req, "alvoraa_confirmed_on"))
+			doc = frappe.get_doc(REQUEST, req)
+			if field == "alvoraa_set_aside":
+				doc.alvoraa_set_aside = names[1]
+			else:
+				doc.set(field, value)
+			frappe.set_user(self.hr)  # the filer, saving as themselves
+			try:
+				doc.save(ignore_permissions=True)
+			finally:
+				frappe.set_user("Administrator")
+			row = frappe.db.get_value(REQUEST, req, ["alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_needs_confirm"], as_dict=True)
+			self.assertEqual((row.alvoraa_confirmed_by, row.alvoraa_confirmed_on, row.alvoraa_needs_confirm), (None, None, 1), field)
+			self.refused(lambda: self.decide(req, by=self.h.hr2, confirmed=False), "has not confirmed")
+			frappe.db.set_value(REQUEST, req, "alvoraa_review_status", "Withdrawn")  # one open request per day
+
+	def test_saving_the_request_again_without_a_change_keeps_the_confirm(self):
+		att, req = self.filed_by_hr()
+		frappe.set_user(self.emp_user)
+		try:
+			punch_fix.confirm(req, 1)
+		finally:
+			frappe.set_user("Administrator")
+		frappe.get_doc(REQUEST, req).save(ignore_permissions=True)
+		self.assertTrue(frappe.db.get_value(REQUEST, req, "alvoraa_confirmed_on"))
+
 	def test_the_card_and_the_day_sheet_say_the_request_is_waiting_for_the_employee(self):
 		att, req = self.filed_by_hr()
 		frappe.set_user(self.hr)

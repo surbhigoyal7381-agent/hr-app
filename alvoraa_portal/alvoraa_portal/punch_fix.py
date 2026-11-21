@@ -37,6 +37,10 @@ ASIDE_ON = "alvoraa_fix_aside_on"
 MARKS = (ADDED, ASIDE, ASIDE_BY, ASIDE_ON)
 HR_ROLES = {"HR User", "HR Manager", "System Manager"}
 
+# What a Confirm vouches for: the day, the time and kind, the punches to set aside, the words.
+CONFIRMED_CONTENT = ("from_date", "to_date", "alvoraa_missing_time", "alvoraa_missing_log", "alvoraa_set_aside",
+                     "explanation", "reason", "half_day", "half_day_date")
+
 FIELDS = {
 	CHECKIN: [
 		{"fieldname": ADDED, "fieldtype": "Link", "options": REQUEST, "read_only": 1,
@@ -325,6 +329,11 @@ def _own_the_confirm_fields(doc, before):
 	else:
 		for f in ("alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_replaces"):
 			doc.set(f, before.get(f))
+		# SEC-7 (from 086's review): a Confirm is for what the employee saw. If the filer changes what the
+		# request says after that, the Confirm is cleared and the employee must confirm again. Cleared, not
+		# refused: HR may need to correct a typo, and nothing is lost by asking the employee once more.
+		if doc.get("alvoraa_confirmed_on") and any(doc.has_value_changed(f) for f in CONFIRMED_CONTENT):
+			doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
 
 
 def _check_aside(doc):

@@ -1029,21 +1029,32 @@ class Confirm(PunchFixCase):
 		frappe.db.rollback(save_point="t087nr")
 
 	def test_the_replacement_does_not_count_against_the_monthly_limit_and_the_link_is_the_servers(self):
-		att, req = self.filed_by_hr()
-		held_day_ = self.day
-		# the employee's own, counted request on another ordinary day uses the limit of 1
+		# An ORDINARY day: a request for a Held day is outside the limit anyway, so only here does the exemption matter.
+		# Today only Administrator files a time for somebody on an ordinary day, so the Confirm flag is set by hand.
+		first_day = self.day
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		req = self.fix("12:00")
+		frappe.db.set_value(REQUEST, req, "alvoraa_needs_confirm", 1)
 		self.h.set_switch(1, limit=1)
-		self.h.day = self.day = add_days(held_day_, -1)
+		self.h.day = self.day = add_days(first_day, -1)
 		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
 		frappe.set_user(self.emp_user)
 		try:
-			punch_fix.send(self.day, "12:00", None, "my own")
-			with self.assertRaises(frappe.ValidationError):  # control: a second counted request is refused
-				punch_fix.send(self.day, "13:00", None, "second")
+			punch_fix.send(self.day, "12:00", None, "my own")  # uses the limit of 1
 		finally:
 			frappe.set_user("Administrator")
-		self.day = self.h.day = held_day_
-		out = self.not_right(req)  # the replacement is allowed although the limit is used up
+		self.h.day = self.day = add_days(first_day, -2)
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		frappe.set_user(self.emp_user)
+		try:
+			with self.assertRaises(frappe.ValidationError) as cm:  # control: a second counted request is refused
+				punch_fix.send(self.day, "13:30", None, "a second one")
+			self.assertIn("requests this month", str(cm.exception))
+		finally:
+			frappe.set_user("Administrator")
+		self.day = self.h.day = first_day
+		frappe.db.set_value(REQUEST, req, "alvoraa_review_status", "Waiting")
+		out = self.not_right(req, "I was back by 12:50", "12:50")  # the replacement is allowed with the limit used up
 		self.assertTrue(out["replacement"])
 		fake = frappe.new_doc(REQUEST)
 		fake.update({"employee": self.emp, "alvoraa_replaces": req})

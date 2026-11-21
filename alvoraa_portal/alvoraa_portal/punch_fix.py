@@ -306,8 +306,8 @@ def validate(doc, method=None):
 	else:
 		doc.alvoraa_for_held_day = 1 if (is_punch_fix(doc) and str(doc.from_date) == str(doc.to_date)
 		                                 and held_day._held_row(doc.employee, doc.from_date)) else 0
-	if before is not None and (is_punch_fix(before) or is_punch_fix(doc)):
-		# Whose day it is never changes on a saved request, for anyone including Administrator (SEC-4, ALV-419).
+	if before is not None:
+		# Whose day it is never changes on a saved request of ANY kind, for anyone including Administrator (SEC-4, ALV-419).
 		if before.employee != doc.employee or any(
 				before.get(f) and doc.get(f) and before.get(f) != doc.get(f) for f in ("employee_name", "company")):
 			frappe.throw(_("A request cannot be moved to another employee. Withdraw it and send a new one for the right person."))
@@ -328,13 +328,30 @@ def validate(doc, method=None):
 		frappe.throw(blocked_sentence(code, doc.employee, doc.from_date))
 
 	ticked = _check_aside(doc)
+	# A request that replaces an approved change is judged as if that change were already gone, so the
+	# In/Out it stores now is the one it will have when it is approved.
+	gone = _added_by(doc.get("alvoraa_replaces"))
 	if held_day._has_time(doc):
-		log_type, _label, when = derive(doc.employee, doc.from_date, doc.alvoraa_missing_time, ticked)
-		_check_not_a_repeat(doc, when, ticked)
+		log_type, _label, when = derive(doc.employee, doc.from_date, doc.alvoraa_missing_time, list(ticked) + gone)
+		_check_not_a_repeat(doc, when, list(ticked) + gone)
 		doc.alvoraa_missing_log = log_type
 	elif len(counted(doc.employee, doc.from_date, ticked)) == 0:
 		frappe.throw(_("A day cannot be left with no punches. Add a punch too."))
 	# Nothing in a refusal names a person or quotes the note.
+
+
+def _added_by(request):
+	"""The punches an approved, not undone change added and that still count (what a replacement takes over)."""
+	if not request or frappe.db.get_value(REQUEST, request, "docstatus") != 1 \
+			or frappe.db.get_value(REQUEST, request, "alvoraa_undone_on"):
+		return []
+	return frappe.get_all(CHECKIN, filters={ADDED: request, ASIDE: ("is", "not set")}, pluck="name")
+
+
+# PENDING Surbhi: when HR (not the employee) edits only the TIME on a request the employee filed
+# themselves, does the employee have to confirm again? Recommended yes when it cuts hours. One switch:
+# True asks again whenever the time is moved (the hours test is not built), False leaves it as it was.
+HR_TIME_EDIT_REASKS_CONFIRM = False
 
 
 def _own_the_confirm_fields(doc, before):
@@ -367,8 +384,10 @@ def _own_the_confirm_fields(doc, before):
 		# Decided again on every save, from who is saving and what the request now does (review B1): an edit
 		# by anybody but the employee that ADDS a cut puts the Confirm back and clears any earlier one.
 		login = frappe.db.get_value("Employee", doc.employee, "user_id")
+		adds_cut = bool(set(aside_names(doc)) - set(aside_names(before)))
+		moves_time = HR_TIME_EDIT_REASKS_CONFIRM and doc.has_value_changed("alvoraa_missing_time")
 		if (not cint(doc.alvoraa_needs_confirm) and frappe.session.user not in ("Administrator", login)
-				and set(aside_names(doc)) - set(aside_names(before))):
+				and (adds_cut or moves_time)):
 			doc.alvoraa_needs_confirm = 1
 			doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
 		# SEC-7 (from 086's review): a Confirm is for what the employee saw. If the filer changes what the
@@ -579,8 +598,8 @@ def card_context(rows):
 	list (AC-35): the requests, the employees, the day rows, the punches, and the approved leave
 	and final slips that overlap. `card` then reads memory, not the database."""
 	rows = [r for r in rows if r.get("punch_fix")]
-	if not rows:
-		return {}
+	if not rows or not columns_ready():
+		return {}  # a site whose image is newer than its migrate: no cards, no unknown column
 	names, emps = [r["name"] for r in rows], list({r["employee"] for r in rows})
 	days = [getdate(r["from_date"]) for r in rows]
 	lo, hi = min(days), max(days)
@@ -735,7 +754,7 @@ def unconfirmed_changes(employees=None, start=None, end=None, limit=100):
 	rows = frappe.get_all(
 		REQUEST, filters=filters, order_by="from_date asc", limit_page_length=limit,
 		fields=["name", "employee", "employee_name", "from_date", "owner", "docstatus", "alvoraa_review_status",
-		        "alvoraa_missing_time", "alvoraa_set_aside", "alvoraa_disputed_on"])
+		        "alvoraa_missing_time", "alvoraa_set_aside", "alvoraa_disputed_on", "alvoraa_reviewed_on"])
 	logins = {}
 	out = []
 	for r in rows:
@@ -743,7 +762,8 @@ def unconfirmed_changes(employees=None, start=None, end=None, limit=100):
 		kind, who = _filer(r.owner, login)
 		out.append({"name": r.name, "employee": r.employee, "employee_name": r.employee_name,
 		            "date": str(r.from_date), "what": _what(r), "filed_by": kind, "filer": who,
-		            "approved": r.docstatus == 1, "disputed": bool(r.alvoraa_disputed_on)})
+		            "approved": r.docstatus == 1, "disputed": bool(r.alvoraa_disputed_on),
+		            "reviewed": str(r.alvoraa_reviewed_on)[:10] if r.alvoraa_reviewed_on else None})
 	return out
 
 
@@ -760,8 +780,10 @@ def refuse_slip_while_unconfirmed(doc, method=None):
 	rows = unconfirmed_changes([doc.employee], doc.start_date, doc.end_date, limit=20)
 	# Surbhi, 21 Nov: a change for a day that is already on a final slip is paid as an arrear in this slip,
 	# so it holds this slip too until the employee confirms.
+	# Only the slip that carries the arrears: the one whose period holds the day HR approved it.
 	rows += [r for r in unconfirmed_changes([doc.employee], "1900-01-01", frappe.utils.add_days(doc.start_date, -1), limit=20)
-	         if r["approved"] and held_day.is_in_final_slip(doc.employee, r["date"])]
+	         if r["approved"] and r["reviewed"] and str(doc.start_date) <= r["reviewed"] <= str(doc.end_date)
+	         and held_day.is_in_final_slip(doc.employee, r["date"])]
 	if not rows:
 		return
 	first = (doc.employee_name or "").split(" ")[0] or _("the employee")
@@ -872,6 +894,9 @@ def undo_change(name, reason):
 	_write_day(row, (actual["status"], actual["hours"], actual["late"], actual["early"],
 	                 actual["in_time"], actual["out_time"]))
 	_engine_must_agree(row, actual)
+	if actual["status"] == held_day.HELD:  # the day is open again: the old "HR decision" no longer stands
+		frappe.db.set_value(ATTENDANCE, row.name, {"alvoraa_release_how": None, "alvoraa_release_by": None,
+		                                          "alvoraa_release_on": None}, update_modified=False)
 	doc.db_set({"alvoraa_undone_by": user, "alvoraa_undone_on": now_datetime(),
 	            "alvoraa_undone_reason": reason.strip()}, update_modified=False)
 	frappe.flags.held_slip = held_day.refresh_draft_slip(doc.employee, row.attendance_date)
@@ -964,7 +989,7 @@ def _replacement(filed, me, reason, time, filed_time):
 		frappe.throw(_("That time was not understood. Enter it like 18:30."))
 	if when[:5] == filed_time:
 		frappe.throw(_("That is the time that was sent. If it is right, go back and press Confirm."))
-	log_type, _label, _when = derive(me.name, filed.from_date, when, [])
+	log_type, _label, _when = derive(me.name, filed.from_date, when, _added_by(filed.name))
 	new = frappe.get_doc({
 		"doctype": REQUEST, "employee": me.name, "employee_name": me.employee_name, "company": me.company,
 		"from_date": filed.from_date, "to_date": filed.from_date,

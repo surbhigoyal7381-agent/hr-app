@@ -248,3 +248,12 @@ Incoming: `10ff4518` (docs, 085 R2a/R2b/S-2/R1 accepted) and `bad23ce0` (ALV-402
 - Report branch scope (from 06): read, it filters by `permitted_employees()`; test in `SecurityReview`.
 - Tests: class `ReviewFixRound1` (5). The arrears test patches `held_day.is_in_final_slip` (labelled: not a real final slip). Break tests planned: B1 recompute off (the slip must not be held); window exemption off; has_column guard off; arrears addition off; gate hook off (real slip submits while unconfirmed).
 - Known, not fixed: an employee's replacement time within 2 minutes of HR's added time is refused as a repeat at filing (HR's punch still counts until approval).
+
+## 22. Final fixes after both re-reviews (written, NOT yet run; bench in use by a break-test agent)
+
+- Run before these edits: `test_punch_fix_087` at 68b4a544 on alv358: Ran 127, OK (618 s). No other module was run.
+- Security P2: the employee-cannot-move rule now covers every Attendance Request, not only punch fixes. Test with an ordinary request.
+- Senior M2: `card_context` returns {} unless `columns_ready()`. The M2 test mocks `has_column` to say the columns are missing (and asserts `columns_ready()` is False), then calls the limit, `card_context` and `to_review`.
+- P3: arrears hold only the slip whose period contains the day HR approved (`unconfirmed_changes` now returns `reviewed`). `undo_change` clears `alvoraa_release_how/by/on` when the day is Held again. A replacement is judged with the original's still-counting added punches treated as gone, so it stores the In/Out it will have at approval (and a 2-minute repeat of HR's punch is no longer refused). Helper `_added_by`.
+- PENDING Surbhi: `HR_TIME_EDIT_REASKS_CONFIRM = False` in punch_fix.py. True re-asks the employee when someone other than the employee moves the time on a request that did not need Confirm. The "only if it cuts hours" test is NOT built.
+- Break tests planned: ordinary-request move check removed; `columns_ready` early return removed; arrears period test (drop the reviewed-in-period condition); release-field clear removed; `_added_by` replaced with [].

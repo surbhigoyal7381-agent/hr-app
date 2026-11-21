@@ -192,6 +192,8 @@ select{font:inherit;font-size:16px;min-height:44px;padding:8px 12px;border:1px s
 .mr .field{margin:16px 0 0}
 .mr input[type=time]{max-width:200px}
 .mgrid{display:block}
+.qrow{display:flex;justify-content:space-between;align-items:center;gap:8px}.qrow .fl{margin:0}
+.strip .pt.ghost{background:var(--surface);border:2px dashed var(--primary)}
 @container (min-width:640px){.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}}
 .lnk2{background:none;border:0;color:var(--primary);font-weight:600;font-size:14px;min-height:44px;padding:0 4px;text-decoration:underline;text-underline-offset:3px;text-align:left}
 .addsum{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;font-weight:700;font-size:15px}
@@ -244,6 +246,7 @@ const T={
  punches:["Punches: {0}","पंच: {0}"],shift:["Shift {0}","शिफ्ट {0}"],
  q_leave:["What time did {0} leave?","{0} कितने बजे गए?"],q_arrive:["What time did {0} arrive?","{0} कितने बजे पहुँचे?"],
  q_help:["Type the time you know it was. Nothing is filled in for you.","वह समय लिखें जो आपको पता है। आपके लिए कुछ भरा नहीं गया है।"],
+ to_arr:["Change to arrival","आने का समय करें"],to_leave:["Change to leaving","जाने का समय करें"],
  where:["Where is the missing punch?","छूटा पंच कहाँ है?"],showp:["Show the punches and tap the gap","पंच देखें और खाली जगह दबाएं"],
  change:["Change","बदलें"],hide:["Hide punches","पंच छिपाएं"],
  reason:["Your reason","आपका कारण"],req:["Required","ज़रूरी"],
@@ -306,7 +309,7 @@ fresh();
 const mins=h=>+h.slice(0,2)*60+ +h.slice(3);
 const KN={arrival:"k_arrival",back:"k_back",outb:"k_outb",leaving:"k_leaving"};
 /* one punch: which end is missing (the shift's first half = the arrival is there) */
-const missing1=r=>mins(r.p[0].t)<mins("15:00")?"leave":"arrive";
+const missing1=r=>{const k=mins(r.p[0].t)<mins("15:00")?"leave":"arrive";return r.flip?(k==="leave"?"arrive":"leave"):k};
 const multi=r=>r.p.length>1;
 const needsBox=r=>r.login||CASE==="A";
 function gapKind(r,i){const before=i,after=r.p.length-i;if(before===0)return"arrival";const k=before%2===0?"IN":"OUT";if(after===0&&k==="OUT")return"leaving";return k==="IN"?"back":"outb"}
@@ -316,7 +319,7 @@ function readyRows(){return visible().filter(isReady)}
 function sub(){/* the day names that still hold rows, newest first */return["d20","d19","d17"].filter(k=>S.rows.some(r=>r.day===k))}
 function strip(r){const S0=540,W=660,x=v=>Math.max(0,Math.min(100,(mins(v)-S0)/W*100));
  let h=`<div class="strip" aria-hidden="true"><i class="band" style="left:${x(SHIFT[0])}%;width:${x(SHIFT[1])-x(SHIFT[0])}%"></i>`;
- r.p.forEach(p=>h+=`<i class="pt" style="left:${x(p.t)}%"></i>`);if(r.add)h+=`<i class="pt add" style="left:${x(r.add.t)}%"></i>`;if(r.time)h+=`<i class="pt add" style="left:${x(r.time)}%"></i>`;return h+"</div>"}
+ r.p.forEach(p=>h+=`<i class="pt" style="left:${x(p.t)}%"></i>`);if(!multi(r)&&!r.time&&needsBox(r))h+=`<i class="pt ghost" style="left:${x(missing1(r)==="leave"?SHIFT[1]:SHIFT[0])}%"></i>`;if(r.add)h+=`<i class="pt add" style="left:${x(r.add.t)}%"></i>`;if(r.time)h+=`<i class="pt add" style="left:${x(r.time)}%"></i>`;return h+"</div>"}
 /* ---------- render ---------- */
 function render(){const st=document.getElementById("stage"),keep=st.querySelector(".scroll"),top=keep?keep.scrollTop:0;
  st.className=DEV==="desktop"?"desktop mgr":"phone"+(DEV==="p360"?" p360":"");
@@ -344,7 +347,7 @@ function rowHtml(r){const bx=needsBox(r);
  h+=strip(r)+`<p class="pun num">${t("punches",ptxt(r))} · ${t("shift",SHIFT[0]+"–"+SHIFT[1])}</p>`;
  if(!bx)return h+`<p class="nologin">${ic("lock")}<span>${t("nologin",esc(r.first))}</span></p></article>`;
  h+=`<div class="mgrid"><div>`;
- if(!multi(r)){const k=missing1(r);h+=`<div class="field"><label class="fl" for="t-${r.id}">${t(k==="leave"?"q_leave":"q_arrive",esc(r.first))}</label><input type="time" id="t-${r.id}" value="${r.time}" aria-describedby="th-${r.id}" oninput="setTime('${r.id}',this.value)"><p class="hint" id="th-${r.id}">${t("q_help")}</p></div>`}
+ if(!multi(r)){const k=missing1(r);h+=`<div class="field"><div class="qrow"><label class="fl" for="t-${r.id}">${t(k==="leave"?"q_leave":"q_arrive",esc(r.first))}</label><button class="lnk2" aria-label="${t(k==="leave"?"to_arr":"to_leave")}" onclick="flipEnd('${r.id}')">${t("change")}</button></div><input type="time" id="t-${r.id}" value="${r.time}" aria-describedby="th-${r.id}" oninput="setTime('${r.id}',this.value)"><p class="hint" id="th-${r.id}">${t("q_help")}</p></div>`}
  else{h+=`<div class="field"><span class="fl">${t("where")}</span>`;
   if(r.add)h+=`<div class="addsum">${ic("plus")}<span class="num">+${r.add.t} · ${t(KN[r.add.kind])}</span><button class="lnk2" onclick="openTl('${r.id}')">${t("change")}</button></div>`;
   else if(!r.open)h+=`<button class="btn" onclick="openTl('${r.id}')">${t("showp")}</button>`;
@@ -367,6 +370,7 @@ function after(id){const r=R(id);const m=document.getElementById("rd-"+id);if(m)
 function clearErr(r){if(r.err){r.err="";const a=document.querySelector("#"+r.id+" .rerr");if(a)a.remove()}}
 function setTime(id,v){const r=R(id);r.time=v;clearErr(r);const s=document.querySelector("#"+id+" .strip");if(s)s.outerHTML=strip(r);after(id)}
 function setWhy(id,el){const r=R(id);r.why=el.value;clearErr(r);grow(el);after(id)}
+function flipEnd(id){const r=R(id);r.flip=!r.flip;r.time="";clearErr(r);render();const i=document.getElementById("t-"+id);if(i)i.focus()}
 function openTl(id){const r=R(id);r.open=!r.open;render()}
 function openGap(id,i){const r=R(id);S.sheet={id,gap:i,time:"",err:""};S.noFocus=false;render()}
 function sheetHtml(){const s=S.sheet,r=R(s.id),i=s.gap,lo=i>0?r.p[i-1].t:"",hi=i<r.p.length?r.p[i].t:"",gk=gapKind(r,i);

@@ -340,3 +340,12 @@ Turn into criteria: only direct reports' held days with no request; one day by d
 ## Design gate — Surbhi's decision, 21 Nov 2026
 
 **Go with prototype-v2** (https://claude.ai/artifact/PrUbfMfJeotmXKaBmd7vgA), with one change: on a one-punch row, keep the inferred end ("What time did X leave?" or "arrive?"), and add a **Change** link that switches between arrival and leaving. A mid-day punch could be either.
+
+
+### v2.7 Surbhi's change, 21 Nov 2026: Change the inferred end
+
+| # | v2 (first draft) | v2 (approved) | Why |
+|---|---|---|---|
+| H-11 | One-punch row: the inferred end ("What time did Ravi leave?") is fixed; a manager who disagrees has no way to say so | A **Change** link beside the question switches between arrival and leaving. The label follows it, the time box is emptied (a time typed for the other end would be wrong), and a dashed ring on the strip marks where the missing end falls (shift start for arrival, shift end for leaving). Focus returns to the time box. Link spoken name: "Change to arrival" or "Change to leaving". Resets on Start again; not saved anywhere | the person who knows the day must be able to correct the inference, the same lesson as 087 v4 |
+
+This settles the small ⚠ in v2.4: the inference stays, and the manager can overrule it. The server still checks the time against the punches, so a wrong switch is refused in words, not filed.

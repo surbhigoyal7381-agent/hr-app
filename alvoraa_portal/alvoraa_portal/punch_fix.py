@@ -49,7 +49,7 @@ def _signed_field():
 
 
 # What a Confirm vouches for: the day, the time and kind, the punches to set aside, the words.
-CONFIRMED_CONTENT = ("from_date", "to_date", "alvoraa_missing_time", "alvoraa_missing_log", "alvoraa_set_aside",
+CONFIRMED_CONTENT = ("employee", "from_date", "to_date", "alvoraa_missing_time", "alvoraa_missing_log", "alvoraa_set_aside",
                      "explanation", "reason", "half_day", "half_day_date")
 
 FIELDS = {
@@ -312,6 +312,11 @@ def validate(doc, method=None):
 	else:
 		doc.alvoraa_for_held_day = 1 if (is_punch_fix(doc) and str(doc.from_date) == str(doc.to_date)
 		                                 and held_day._held_row(doc.employee, doc.from_date)) else 0
+	if before is not None and (is_punch_fix(before) or is_punch_fix(doc)):
+		# Whose day it is never changes on a saved request, for anyone including Administrator (SEC-4, ALV-419).
+		if before.employee != doc.employee or any(
+				before.get(f) and doc.get(f) and before.get(f) != doc.get(f) for f in ("employee_name", "company")):
+			frappe.throw(_("A request cannot be moved to another employee. Withdraw it and send a new one for the right person."))
 	_own_the_confirm_fields(doc, before)
 	if doc.docstatus or not is_punch_fix(doc):
 		return
@@ -812,10 +817,12 @@ def withdraw_filed(name):
 	if not HR_ROLES & set(frappe.get_roles()) or not access.employee_in_scope(doc.employee):
 		access.refuse(_("That request is outside the people you look after."), "SEC-17", "punch_fix.withdraw_filed",
 		              REQUEST, name)
+	access.refuse_own_decision(doc.employee, REQUEST, name, "punch_fix.withdraw_filed")
 	if doc.docstatus != 0 or doc.get("alvoraa_review_status") != "Waiting" or not cint(doc.get("alvoraa_needs_confirm")):
 		frappe.throw(_("Only a change that is still waiting for HR can be withdrawn."))
 	doc.db_set({"alvoraa_review_status": "Withdrawn", "alvoraa_reviewed_by": frappe.session.user,
 	            "alvoraa_reviewed_on": now_datetime()})
+	access.security_logger().warning("punch_fix withdrawn request=%s user=%s", name, frappe.session.user)
 	return {"name": name}
 
 
@@ -867,7 +874,7 @@ def undo_change(name, reason):
 	doc.db_set({"alvoraa_undone_by": user, "alvoraa_undone_on": now_datetime(),
 	            "alvoraa_undone_reason": reason.strip()}, update_modified=False)
 	frappe.flags.held_slip = held_day.refresh_draft_slip(doc.employee, row.attendance_date)
-	frappe.logger("alvoraa_portal").info("punch_fix undone request=%s attendance=%s user=%s outcome=%s",
+	access.security_logger().warning("punch_fix undone request=%s attendance=%s user=%s outcome=%s",
 	                                     name, row.name, user, actual["status"])
 	return {"name": name, "status": actual["status"]}
 
@@ -909,7 +916,7 @@ def confirm(name, ok, reason=None, time=None):
 		if doc.get("alvoraa_confirmed_on") or (_signed_field() and doc.get("alvoraa_signed_notice")):
 			frappe.throw(_("You have already confirmed this one."))
 		doc.db_set({"alvoraa_confirmed_by": user, "alvoraa_confirmed_on": now}, update_modified=not approved)
-		frappe.logger("alvoraa_portal").info("punch_fix confirm request=%s employee=%s user=%s answer=confirmed",
+		access.security_logger().warning("punch_fix confirm request=%s employee=%s user=%s answer=confirmed",
 		                                     name, me.name, user)
 		return ac._shape(frappe.get_doc(REQUEST, name).as_dict())
 	if not (reason or "").strip():
@@ -935,7 +942,7 @@ def confirm(name, ok, reason=None, time=None):
 	except Exception:
 		frappe.db.rollback(save_point="pf_not_right")
 		raise
-	frappe.logger("alvoraa_portal").info("punch_fix confirm request=%s employee=%s user=%s answer=not right replacement=%s disputed=%s",
+	access.security_logger().warning("punch_fix confirm request=%s employee=%s user=%s answer=not right replacement=%s disputed=%s",
 	                                     name, me.name, user, replacement, bool(disputed))
 	out = ac._shape(frappe.get_doc(REQUEST, name).as_dict())
 	out["replacement"], out["disputed"] = replacement, bool(disputed)
@@ -1051,7 +1058,7 @@ def apply(doc, method=None):
 	                     late_entry=actual["late"], early_exit=actual["early"])
 	doc.db_set({"alvoraa_fix_before": before, "alvoraa_fix_after": _snapshot(after)}, update_modified=False)
 	frappe.flags.held_slip = held_day.refresh_draft_slip(doc.employee, row.attendance_date)
-	frappe.logger("alvoraa_portal").info(
+	access.security_logger().warning(
 		"punch_fix approved request=%s attendance=%s approver=%s outcome=%s", doc.name, row.name, user,
 		actual["status"])
 
@@ -1072,7 +1079,7 @@ def _engine_must_agree(row, actual):
 
 	verdict = evaluate_attendance(row.name)
 	if verdict is not None and bool(verdict.held) != (actual["status"] == held_day.HELD):
-		frappe.logger("alvoraa_portal").info("punch_fix engine disagrees attendance=%s", row.name)
+		access.security_logger().warning("punch_fix engine disagrees attendance=%s", row.name)
 		frappe.throw(_("The pay engine would still hold this day. Decline it and ask HR to look at it in "
 		               "the Desk."))
 
@@ -1098,7 +1105,7 @@ def guard_marks(doc, method=None):
 	if not moved:
 		return
 	if frappe.session.user == "Administrator":
-		frappe.logger("alvoraa_portal").info("punch_fix marked punch changed by Administrator checkin=%s", doc.name)
+		access.security_logger().warning("punch_fix marked punch changed by Administrator checkin=%s", doc.name)
 		return
 	access.refuse(_("This punch was added or set aside by an approved fix, so it cannot be changed or "
 	                "deleted. Raise a new request to change the day."), "SEC-6",

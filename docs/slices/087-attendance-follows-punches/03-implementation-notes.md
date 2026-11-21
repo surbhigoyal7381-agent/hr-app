@@ -228,3 +228,11 @@ Incoming: `10ff4518` (docs, 085 R2a/R2b/S-2/R1 accepted) and `bad23ce0` (ALV-402
 - Tests: class `Undo` in test_punch_fix_087.py (7 tests). Status: written, never run; the bench was in use by round 3.
 - Break tests planned: undo skips the re-judge; hold still counts undone requests; own-day guard off; `can_undo` true for non-disputed; replacement does not reverse the original.
 - 01b parity: the Undo button is not in prototype-v5 (Surbhi's later decision); needs her look.
+
+## 20. Fixes from the security review (a8e6108f) - written, NOT yet run
+
+- F1: validate refuses any change of employee (and employee_name, company when both set) on a saved punch-fix request, Administrator included. `employee` added to CONFIRMED_CONTENT too.
+- P2: all punch_fix log lines now go through `access.security_logger().warning` (the ALV-391 path). Tests attach a handler and read the written line.
+- Minor: `withdraw_filed` refuses HR's own day and logs; "Punch fixes this month" now counts only `permitted_employees()` (company, then branch). `undo_change` already had scope, own-day, POST and a log (now WARNING).
+- Tests: class `SecurityReview` (7). Break tests planned: remove the employee-change throw (both F1 cases must fail); remove "employee" from CONFIRMED_CONTENT (confirm-clears test); logger back to info.
+- Not run: bench in use. Branch tests rely on a User Permission on Branch plus clear_cache; may need adjusting on first run.

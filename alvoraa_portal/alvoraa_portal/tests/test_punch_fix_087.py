@@ -670,11 +670,22 @@ class Marks(PunchFixCase):
 	def test_administrator_may_and_it_is_logged(self):
 		att, names, req, added = self.approved()
 		frappe.set_user("Administrator")
-		with patch.object(frappe, "logger") as lg:
+		import logging
+		seen = []
+
+		class Catch(logging.Handler):
+			def emit(self, record):
+				seen.append(record.getMessage())
+
+		lg, handler = access.security_logger(), Catch()
+		lg.addHandler(handler)
+		try:
 			doc = frappe.get_doc(CHECKIN, added)
 			doc.log_type = "IN"
 			doc.save()
-		self.assertTrue(any("Administrator" in str(c) for c in lg.return_value.info.call_args_list))
+		finally:
+			lg.removeHandler(handler)
+		self.assertTrue(any("Administrator" in m for m in seen), seen)  # really written, not just called
 
 	def test_an_unmarked_punch_edits_as_before(self):
 		att, names = self.held_three()
@@ -1374,6 +1385,107 @@ class V5(PunchFixCase):
 		hint = "This reason is printed on the employee's monthly notice."
 		self.assertGreaterEqual(js.count(hint), 3)  # the send bar, Not right, the 085 held form
 		self.assertIn(hint, open(os.path.join(PKG, "translations/hi.csv")).read())
+
+
+class SecurityReview(PunchFixCase):
+	"""Fixes from the 087 security review: F1 (employee cannot be moved), SEC-6 logging, minor scope rules."""
+
+	def other_worker(self):
+		return self.h._employee("Moved")
+
+	def move(self, req, to, by="Administrator"):
+		frappe.set_user(by)
+		try:
+			doc = frappe.get_doc(REQUEST, req)
+			doc.employee = to
+			doc.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_confirmed_request_cannot_be_moved_to_another_employee(self):
+		att, names = self.held_three()
+		req = self.fix(aside=[names[1]], note="wrong scan")
+		frappe.db.set_value(REQUEST, req, "alvoraa_needs_confirm", 1)
+		self.confirm_as_employee(req)
+		y = self.other_worker()
+		self.refused(lambda: self.move(req, y), "another employee")
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "employee"), self.emp)
+
+	def test_an_hr_own_day_fix_cannot_be_moved_to_someone_elses_day(self):
+		hr_emp = frappe.db.get_value("Employee", {"user_id": self.hr}, "name")
+		att, names = self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")], employee=hr_emp)
+		req = self.fix("12:40", employee=hr_emp, by=self.hr)
+		self.refused(lambda: self.move(req, self.emp, by=self.hr), "another employee")
+
+	def test_employee_is_part_of_what_a_confirm_vouches_for(self):
+		self.assertIn("employee", punch_fix.CONFIRMED_CONTENT)
+
+	def test_the_punch_fix_log_lines_are_really_written_to_the_security_log(self):
+		import logging
+		seen = []
+
+		class Catch(logging.Handler):
+			def emit(self, record):
+				seen.append(record.getMessage())
+
+		att, names = self.held_three()
+		req = self.fix("12:40")
+		lg = access.security_logger()
+		handler = Catch()
+		lg.addHandler(handler)
+		try:
+			self.decide(req)
+		finally:
+			lg.removeHandler(handler)
+		self.assertTrue(any("punch_fix approved request=%s" % req in m for m in seen), seen)
+
+	def test_withdraw_is_post_only_and_refused_on_the_hr_persons_own_day(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func.get(punch_fix.withdraw_filed), ["POST"])
+		hr_emp = frappe.db.get_value("Employee", {"user_id": self.hr}, "name")
+		att, names = self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")], employee=hr_emp)
+		req = self.fix(aside=[names[1]], employee=hr_emp, note="wrong scan")
+		frappe.db.set_value(REQUEST, req, "alvoraa_needs_confirm", 1)
+		frappe.set_user(self.hr)
+		try:
+			self.refused(lambda: punch_fix.withdraw_filed(req), "cannot decide your own")
+		finally:
+			frappe.set_user("Administrator")
+
+	def branch_hr(self):
+		"""An HR login limited to branch A, and a worker who sits in branch B."""
+		for b in ("A87A", "A87B"):
+			if not frappe.db.exists("Branch", b):
+				frappe.get_doc({"doctype": "Branch", "branch": b}).insert(ignore_permissions=True)
+		frappe.db.set_value("Employee", self.emp, "branch", "A87B")
+		frappe.get_doc({"doctype": "User Permission", "user": self.h.hr2, "allow": "Branch", "for_value": "A87A",
+		                "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)
+		frappe.clear_cache(user=self.h.hr2)
+		return self.h.hr2
+
+	def test_withdraw_and_the_before_payroll_list_respect_the_branch(self):
+		att, names = self.held_three()
+		req = self.fix(aside=[names[1]], note="wrong scan")
+		frappe.db.set_value(REQUEST, req, "alvoraa_needs_confirm", 1)
+		hr = self.branch_hr()
+		frappe.set_user(hr)
+		try:
+			self.refused(lambda: punch_fix.withdraw_filed(req), "outside the people")
+			rows = punch_fix.before_payroll(str(self.day))
+			self.assertNotIn(req, [r["name"] for r in rows["rows"]])
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_the_report_counts_only_the_callers_branch(self):
+		from alvoraa_portal.alvoraa_portal.report.punch_fixes_this_month import punch_fixes_this_month as rpt
+		att, names = self.held_three()
+		self.fix("12:40")
+		hr = self.branch_hr()
+		frappe.set_user(hr)
+		try:
+			cols, rows = rpt.execute()
+			self.assertEqual(rows, [])
+		finally:
+			frappe.set_user("Administrator")
 
 
 class Undo(PunchFixCase):

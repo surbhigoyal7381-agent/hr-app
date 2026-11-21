@@ -25,9 +25,12 @@ def execute(filters=None):
 	companies = access.permitted_companies()
 	if not companies:
 		return columns, []
+	employees = access.permitted_employees()  # company, then branch (ALV-412)
+	if not employees:
+		return columns, []
 	rows = frappe.get_all(
 		"Attendance Request",
-		filters={"company": ("in", companies), "docstatus": ("<", 2),
+		filters={"company": ("in", companies), "employee": ("in", list(employees)), "docstatus": ("<", 2),
 		         "creation": ("between", [get_first_day(nowdate()), f"{get_last_day(nowdate())} 23:59:59"])},
 		fields=["company", "docstatus", "alvoraa_review_status", "alvoraa_missing_time", "alvoraa_set_aside"])
 	counts = {}

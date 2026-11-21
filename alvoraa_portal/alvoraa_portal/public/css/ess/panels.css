@@ -2080,7 +2080,9 @@ body.panel-fullscreen{overflow:hidden}
    the days around it. */
 .ac-open{background:var(--surface2)}
 .ac-open td{padding:0;border-bottom:1px solid var(--border)}
-.ac-detail{padding:14px 12px;font-size:var(--fs-sm);color:var(--text2);line-height:1.6}
+/* The open day sits inside a table cell, and .ac-tbl td is nowrap; without this
+   every sentence in the panel ran off the right edge on a 360 px phone. */
+.ac-detail{padding:14px 12px;font-size:var(--fs-sm);color:var(--text2);line-height:1.6;white-space:normal}
 .ac-punches{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
 .ac-punch{border:1px solid var(--border);border-radius:var(--r-sm);padding:4px 9px;
   background:var(--surface);font-size:var(--fs-xs);color:var(--text2);

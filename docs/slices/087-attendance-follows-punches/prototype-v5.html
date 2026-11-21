@@ -265,7 +265,7 @@ const T={
  nt_arrival:["What time did you arrive?","आप कितने बजे पहुँचे?"],nt_back:["What time were you back?","आप कितने बजे वापस आए?"],
  nt_outb:["What time did you go out?","आप कितने बजे बाहर गए?"],nt_leaving:["What time did you leave?","आप कितने बजे निकले?"],
  opt:["Optional","वैकल्पिक"],
- nt_why:["{0} was sent. Give the time you were really back.","{0} भेजा गया था। वह समय दें जब आप सच में लौटे।"],
+ nt_why:["{0} was sent. Give the real time.","{0} भेजा गया था। असली समय दें।"],
  e_same:["That is the time that was sent. If it is right, go back and press Confirm.","यही समय भेजा गया था। सही है तो वापस जाकर पुष्टि करें दबाएं।"],
  nr_eff:["HR will not add {0}. Your own request for {1} goes to HR instead, and you do not need to confirm it.","HR {0} नहीं जोड़ेगा। इसके बदले आपका अपना {1} का अनुरोध HR को जाएगा, और आपको पुष्टि नहीं करनी।"],
  toast_nr2:["Sent to HR. Your own time replaces the one that was sent.","HR को भेज दिया। आपका अपना समय भेजे गए समय की जगह लेगा।"],
@@ -582,7 +582,7 @@ function doConfirm(k){const d=S[k];d.conf="app";d.cfAt="09:40";d.cfOn=ON()+", 09
 function openNR(k){S[k].cf.nr=true;render();const f=document.getElementById("f-nr");if(f)f.focus()}
 function closeNR(k){S[k].cf.nr=false;S[k].cf.err=false;render()}
 function doNR(k){const d=S[k],ui=d.cf,r=d.req,appr=d.stage==="approved",v=((document.getElementById("f-nr")||{}).value||"").trim(),tm=r.add?((document.getElementById("f-nt")||{}).value||""):"";
- ui.text=v;ui.time=tm;ui.err=!v;ui.terr=tm?chkTime(d,r,tm):"";
+ ui.text=v;ui.time=tm;ui.err=!v;ui.terr=tm?chkTime(d,r,tm):(r.add?t("e_time"):"");
  if(ui.err||ui.terr){render();const f=document.getElementById(ui.terr?"f-nt":"f-nr");if(f)f.focus();return}
  ui.nr=false;
  if(appr){/* HR already approved: the day stays as approved; the employee's own time becomes a NEW request */

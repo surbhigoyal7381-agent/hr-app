@@ -371,7 +371,7 @@ def day_sheet(date):
 			state = ac._state(r)
 			out["request"] = {
 				"name": r.name, "state": state, "sent_at": str(r.creation)[11:16],
-				"time": _hhmm(r.alvoraa_missing_time) if held_day._has_time(r) else None,
+				"time": frappe.utils.get_time(r.alvoraa_missing_time).strftime("%H:%M") if held_day._has_time(r) else None,
 				"log_type": r.alvoraa_missing_log, "aside": aside_names(r), "note": r.explanation,
 				"hr_note": r.alvoraa_review_note if state in ("declined", "approved") else None,
 				"decided_on": str(r.alvoraa_reviewed_on)[:10] if r.alvoraa_reviewed_on else None}

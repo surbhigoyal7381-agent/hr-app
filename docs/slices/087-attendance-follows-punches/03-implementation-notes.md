@@ -116,3 +116,12 @@ Integrity check passes (1002 checks).
 ## 8. Not done / known gaps
 
 Listed in section 0 (items 1, 3, 4, 5) and section 6 (not break-tested). Also: Hindi (English only); the report "Punch fixes this month" not opened in a browser; ALV-404 not fixed or touched (a lone OUT punch still gives Absent in `hold_odd_punch_day`).
+
+## Merge note: ALV-402 (from the 085 session, 21 Nov 2026)
+
+ALV-402 counts a punch after midnight on the right day. It is committed as 13743380 on fix/alv402-midnight-punch, not pushed, and waiting for Surbhi. It changes the same `_punches` in payroll_rules_apply.py as this slice:
+
+- it reads this day and the next with `fields=["time","shift_start"]`, and keeps a row only when `getdate(r.shift_start or r.time) == date`;
+- it then calls `punch_minutes(times, day=date)`, which in payroll_rules.py adds 1440 for each calendar day past `day`.
+
+**Whichever lands second:** keep 087's `alvoraa_fix_aside_request is not set` filter, and take ALV-402's two-day time range and its shift_start check.

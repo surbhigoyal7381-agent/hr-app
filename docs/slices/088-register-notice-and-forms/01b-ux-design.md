@@ -220,3 +220,19 @@ For `hrms-business-analyst`: section 11 and the ⚠ list. For `hrms-security-pri
 - **D-3:** the filer's reason prints in full. 087's send bar gets a hint that the reason is printed on the employee's notice.
 - **D-1:** a Hindi reader checks the wording before any sheet is printed for a customer.
 - **Assumptions accepted:** up to 5 changes per page, and a batch of up to 100. Both are checked on a real printer.
+
+## Design gate, Surbhi, 21 Nov 2026: prototype-v1 approved with my recommendations, plus two changes (in place in prototype-v1.html)
+
+- **D-1, D-3:** taken as recommended (Hindi read before print; one hint line under the filer's reason in 087's send bar, which she has said yes to).
+- **D-4 changed:** **manager-added changes DO appear on the notice**, labelled with the manager's name and "Manager" (Hindi "मैनेजर"). Sample: Sunil's notice now has a manager-added in-time. Section 4.2's "only changes that need confirmation" and 11.1 now read "every change filed by someone else". Open for the BA: a manager's addition needs no confirmation (087 v5), so the **pay line "waits until each change is confirmed" is true only for the HR-filed and set-aside rows**. Recommend the pay line stay, worded as now, and the BA decides whether a sheet holding only manager additions prints it.
+- **D-2 accepted:** the dialog has a second action, **Says it is not right**. It opens a required box ("What did Joginder say is not right?", hint "These changes stay open. HR decides what to do next."), buttons **Back** and **Record that it is not right**. Empty reason: "Write what Joginder said is not right." It records 087's dispute for the changes on the page. They **stay open**, so the slip stays blocked and the row shows an amber line: "Joginder says it is not right (told HR on 21 Nov, recorded by Kavita Sample). The changes stay open: ...". Signature rule is unchanged: the filer cannot record either action (the same sentence replaces both).
+
+### Parity (v1 as first drawn against the gate)
+
+| # | Before | After the gate | Needs |
+|---|---|---|---|
+| P-6 | Notice lists only changes needing confirmation | Also manager-added changes, labelled with name and Manager | list query includes them; they carry no confirm state of their own, so signing marks them seen |
+| P-7 | One action in the dialog | Second action, **Says it is not right**, required reason | reuse 087's dispute record; link it to every change on the page; changes stay open |
+| P-8 | Row states: not printed, printed, changed after printing, signed, app | Adds a "says it is not right" line on the row | row reads the dispute; clears when HR resolves it (how HR resolves it is 087's, not drawn here) |
+
+**For the BA:** add criteria for P-6 to P-8; a test that presses **Says it is not right** with an empty reason (refused) and with a reason (dispute stored, changes still open, slip still blocked). Not checked: the not-right path was syntax-checked and loaded, not clicked through in a browser.

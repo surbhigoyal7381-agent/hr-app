@@ -195,6 +195,14 @@ const W={
  rg_check:["Look at the photo. Can you read the signature or thumb print? If not, take it again.","फ़ोटो देखें। क्या दस्तख़त या अंगूठे का निशान पढ़ा जा रहा है? नहीं तो दोबारा लें।"],
  rg_keep:["Your name, today's date and the photo are kept with these changes. Only HR can open the photo.","आपका नाम, आज की तारीख़ और फ़ोटो इन बदलावों के साथ रखे जाएंगे। फ़ोटो केवल HR खोल सकता है।"],
  rg_err:["Add the photo of the signed notice first.","पहले दस्तख़त वाली सूचना की फ़ोटो जोड़ें।"],
+ nr_btn:["Says it is not right","कहते हैं कि यह ठीक नहीं है"],
+ nr_l:["What did {0} say is not right?","{0} ने क्या ठीक नहीं बताया?"],
+ nr_h:["These changes stay open. HR decides what to do next.","ये बदलाव खुले रहेंगे। आगे क्या करना है, यह HR तय करेगा।"],
+ nr_err:["Write what {0} said is not right.","लिखें कि {0} ने क्या ठीक नहीं बताया।"],
+ nr_ok:["Record that it is not right","दर्ज करें कि यह ठीक नहीं है"],
+ nr_back:["Back","वापस"],
+ nr_note:["{0} says it is not right (told HR on {1}, recorded by {2}). The changes stay open: {3}","{0} का कहना है कि यह ठीक नहीं (HR को {1} को बताया, {2} ने दर्ज किया)। बदलाव खुले हैं: {3}"],
+ toast_nr:["Recorded for HR to decide: {0} says it is not right. {1} changes stay open.","HR के फ़ैसले के लिए दर्ज: {0} का कहना है कि यह ठीक नहीं। {1} बदलाव खुले हैं।"],
  rg_ok:["Record signature","दस्तख़त दर्ज करें"],cancel:["Cancel","रद्द करें"],
  toast_reg:["Signature recorded for {0}. {1} changes are now confirmed.","{0} के दस्तख़त दर्ज हुए। {1} बदलाव की पुष्टि हो गई।"],
  toast_pr:["Print opened and logged: {0}, {1} people, {2} sheets.","प्रिंट खुला और दर्ज हुआ: {0}, {1} लोग, {2} पन्ने।"],
@@ -232,7 +240,7 @@ const P=[
  {id:"e3",name:"Joginder Sample",code:"EMP-0311",br:"Store B (Sample)",ch:[C(12,"in","09:05",485,ANIL,"hr","13 Nov","Arrived on time, machine was down.")],printed:{by:KAV,on:"19 Nov",ids:[0],pages:1}},
  {id:"e4",name:"Pooja Sample",code:"EMP-0045",br:"Store B (Sample)",ch:[Object.assign(C(4,"out","18:00",540,ANIL,"hr","5 Nov","Forgot to punch out."),{st:"signed",sig:{by:KAV,on:"20 Nov"}}),Object.assign(C(11,"aside","13:02",480,SUN,"mgr","12 Nov","Repeat scan."),{st:"signed",sig:{by:KAV,on:"20 Nov"}})],printed:null},
  {id:"e5",name:"Harpreet Sample",code:"EMP-0190",br:"Store A (Sample)",ch:[C(5,"out","17:30",510,ANIL,"hr","6 Nov","Forgot to punch out."),C(9,"in","09:00",480,ANIL,"hr","10 Nov","Machine missed the scan."),C(17,"brk","14:20",470,ANIL,"hr","18 Nov","Break scan missed.")],printed:{by:KAV,on:"18 Nov",ids:[0,1],pages:1}},
- {id:"e6",name:"Sunil Sample",code:"EMP-0402",br:"Store C (Sample)",ch:[C(14,"out","19:10",600,ANIL,"hr","15 Nov","Late close, shift lead confirmed.")],printed:null},
+ {id:"e6",name:"Sunil Sample",code:"EMP-0402",br:"Store C (Sample)",ch:[C(14,"out","19:10",600,ANIL,"hr","15 Nov","Late close, shift lead confirmed."),C(16,"in","09:00",480,SUN,"mgr","17 Nov","Machine missed the scan.")],printed:null},
  {id:"e7",name:"Lakhbir Sample",code:"EMP-0066",br:"Store C (Sample)",ch:[Object.assign(C(6,"in","09:00",480,ANIL,"hr","7 Nov","Machine missed the scan."),{st:"app"})],printed:null}
 ];
 const CAP=5; /* changes per sheet: ASSUMPTION, check by printing dummy sheets for three people */
@@ -264,6 +272,7 @@ function rowHtml(p){
  if(st==="af")note=`<span class="sl sl-held">${ic("alert")}<span>${pr}<small>${t("st_af",o.filter(x=>!p.printed.ids.includes(x.i)).length)}</small></span></span>`;
  if(st==="sg"){const s=p.ch.find(c=>c.st==="signed").sig;note=`<span class="sl sl-ok">${ic("check")}<span>${t("st_sg",s.on,s.by)}</span></span>`}
  if(st==="ap")note=`<span class="sl sl-ok">${ic("check")}<span>${t("st_ap","8 Nov")}</span></span>`;
+ if(p.dispute&&o.length)note+=`<div class="sl sl-held" style="margin-top:4px">${ic("alert")}<span>${t("nr_note",esc(p.name.split(" ")[0]),p.dispute.on,p.dispute.by,esc(p.dispute.why))}</span></div>`;
  const cb=o.length?`<label class="cb"><input type="checkbox" aria-label="${esc(t("sel",p.name))}" ${SEL.has(p.id)?"checked":""} onchange="togSel('${p.id}',this.checked)"></label>`:`<span></span>`;
  return`<div class="row">${cb}<div><div class="nm">${esc(p.name)}</div><div class="meta">${p.code} · ${esc(p.br)} · ${cnt}</div></div><div class="acts">${acts}</div><div class="note">${note}</div></div>`}
 function hrView(){
@@ -333,7 +342,16 @@ function regHtml(){
  <p class="hint" id="ph-h">${t("rg_ph_h",esc(first))}</p>${REG.err?`<div class="err" role="alert">${ic("warn")}<span>${REG.err}</span></div>`:""}
  ${REG.files.length?`<p class="hint" style="color:var(--text2)">${t("rg_check")}</p>`+REG.files.map(u=>`<img src="${u}" alt="Your photo of the signed notice">`).join(""):""}</div>
  <p class="sub" style="margin:0 0 16px">${t("rg_keep")}</p>
- <div class="acts2"><button class="btn" onclick="REG=null;render()">${t("cancel")}</button><button class="btn btn-primary" onclick="doReg()">${t("rg_ok")}</button></div></div></div>`}
+ ${REG.nr?`<div class="field"><label class="fl" for="f-nr">${t("nr_l",esc(first))}</label><textarea id="f-nr" rows="3" style="width:100%;font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text)" aria-describedby="nr-h" oninput="REG.why=this.value">${esc(REG.why||"")}</textarea><p class="hint" id="nr-h">${t("nr_h")}</p>${REG.nerr?`<div class="err" role="alert">${ic("warn")}<span>${REG.nerr}</span></div>`:""}</div>
+ <div class="acts2"><button class="btn" onclick="REG.nr=false;REG.nerr='';render()">${t("nr_back")}</button><button class="btn btn-primary" onclick="doNr()">${t("nr_ok")}</button></div>`:`<div class="acts2"><button class="btn" onclick="REG=null;render()">${t("cancel")}</button><button class="btn btn-primary" onclick="doReg()">${t("rg_ok")}</button></div>
+ <button class="btn" style="width:100%;margin-top:8px" onclick="REG.nr=true;render()">${t("nr_btn")}</button>`}</div></div>`}
+function doNr(){
+ const p=P.find(x=>x.id===REG.id);
+ if(!(REG.why||"").trim()){REG.nerr=t("nr_err",esc(p.name.split(" ")[0]));render();return}
+ const n=open(p).filter(x=>p.printed.ids.includes(x.i)).length;
+ p.dispute={by:meName(),on:"21 Nov",why:REG.why.trim()};
+ toast(te("toast_nr",p.name.split(" ")[0],n));REG=null;render();
+}
 function regFiles(inp){REG.files=[...inp.files].map(f=>URL.createObjectURL(f));REG.err="";render();const e=$("f-ph");if(e)e.focus()}
 function doReg(){
  const p=P.find(x=>x.id===REG.id),pages=p.printed.pages||1;

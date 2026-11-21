@@ -184,14 +184,22 @@ def break_gaps(times: list) -> list:
 	return [(times[k], times[k + 1]) for k in range(1, len(times) - 1, 2)]
 
 
-def punch_minutes(times) -> list:
+def punch_minutes(times, day=None) -> list:
 	"""A day's punch times as whole minutes from midnight, repeat scans folded.
 
 	Seconds are dropped (ALV-326, D3: 10:36:40 reads as 10:36). The engine and
 	the break shown on screen (ALV-328) both start here, so the two cannot count
 	one day differently. `times` are datetimes, in any order.
+
+	`day` is the working day the punches belong to. A punch on a later calendar
+	date runs on past 1440: leaving at 00:00:42 after a 20:30 shift end is
+	minute 1440, the last punch out, not the first punch in (ALV-402).
 	"""
-	return collapse_duplicate_punches([t.hour * 60 + t.minute for t in times])
+	def minute(t):
+		late = (t.date() - day).days * 1440 if day else 0
+		return late + t.hour * 60 + t.minute
+
+	return collapse_duplicate_punches([minute(t) for t in times])
 
 
 def minutes_on_break(gaps, start: float, end: float) -> float:

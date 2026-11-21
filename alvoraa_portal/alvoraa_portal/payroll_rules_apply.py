@@ -24,7 +24,7 @@ The monthly roll-up and the salary slip read these figures later.
 """
 
 import frappe
-from frappe.utils import get_datetime, getdate, now
+from frappe.utils import add_days, get_datetime, getdate, now
 
 from alvoraa_portal.payroll_rules import break_gaps, evaluate_day, minutes_on_break, punch_minutes
 
@@ -375,16 +375,25 @@ def _punches(employee, date):
 	present days record zero hours while only 186 genuinely lack a check-out.
 	Trusting that field would hold five times as many days as it should.
 	"""
+	# ALV-402: a punch belongs to the day its shift started, as Frappe matched it
+	# (`shift_start`), not to its calendar date. Leaving at 00:00:42 after a
+	# 20:30 shift end is the last punch of the day before; filed by the calendar
+	# it made both days odd and held them both. A punch with no shift keeps its
+	# calendar date. So read this day and the next, and keep what is this day's.
+	date = getdate(date)
 	rows = frappe.get_all("Employee Checkin",
 	                      filters={"employee": employee, "time": ("between", [
-		                      "{0} 00:00:00".format(date), "{0} 23:59:59".format(date)])},
-	                      pluck="time", order_by="time asc")
-	if not rows:
+		                      "{0} 00:00:00".format(date),
+		                      "{0} 23:59:59".format(add_days(date, 1))])},
+	                      fields=["time", "shift_start"], order_by="time asc")
+	times = [get_datetime(r.time) for r in rows
+	         if getdate(r.shift_start or r.time) == date]
+	if not times:
 		return None, None, 0, []
 	# A reader that scans twice in a second has not recorded a working day of
 	# one second. Collapse before counting, or ATT-06 never sees the day as the
 	# single punch it really is.
-	distinct = punch_minutes(map(get_datetime, rows))
+	distinct = punch_minutes(times, day=date)
 	if not distinct:
 		return None, None, 0, []
 	return distinct[0], distinct[-1], len(distinct), break_gaps(distinct)

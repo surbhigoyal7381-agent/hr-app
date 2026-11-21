@@ -413,3 +413,56 @@ Add to AC-103: label words, "Required", the example, the error beside the box. A
 **⚠ DECISION (Surbhi).** I kept the proposed "decline and re-file" over the alternative of letting the employee edit the filed request's time. Why: counsel's condition makes the filer's claim and the employee's claim two separate records; editing would blur whose statement it is. Cost: one Link field. **Questions for `hrms-business-analyst`:** (a) does the replacement count against the employee's monthly limit (it should not, since they did not choose to file)? (b) the one-open-request-per-day rule: the decline must come first. Neither checked in code.
 
 **Subtract pass.** Removed: a time field on a set-aside, a third "edit" path, a "reply to HR" thread.
+
+
+---
+
+## v5, Confirm redesigned (Surbhi's decisions, 21 Nov 2026)
+
+**Prototype:** `prototype-v5.html` (copy in `/Users/mac/hrlocal-data/prototypes/087-attendance-follows-punches/`). v4 plus the changes below; everything else is v4. Show buttons 2, 3, 5 and 6 jump to the new screens; HR: Kavita can record a signature on Anil's request (Anil cannot). **Not published: I have no publish tool.** Checked by script at 360 px and desktop in English and Hindi (nothing wider than the screen, no target under 44 px, no field text under 16 px, nothing under 12 px) and looked at three screens once. Hindi is machine-drafted. I did not run the build.
+
+**The rule drawn.** Approval never waits. An **HR-filed change, or any cut (set aside)**, needs the employee's confirmation before pay is locked: an app Confirm, or "Signed on the register" by an HR person who did not file it, with a photo. A **manager's addition** needs nothing. The employee can always say "Not right".
+
+### v5.1 What each person sees
+
+- **HR card.** No waiting gate, Approve and Decline always there. For an HR-filed or cut change, one quiet line under the reason: "**Needs Ravi's confirmation before pay is locked** · Not yet" (other states: "Confirmed in the app on 21 Nov, 09:40"; "Signed on the register on 21 Nov, recorded by Kavita Sample (photo kept)"; "Ravi says it is not right"). Under the buttons, **Signed on the register** for any HR person but the filer; for the filer a sentence instead: "You filed this, so another HR person records the signature."
+- **Signed on the register** (dialog): "Record this only if Ravi signed next to this change on the printed register: Added 14:40, Thu 13 Nov." A required **photo of the signed page** ("Show only this person's line if you can. Other people's names are on the page."), "Your name, today's date and the photo are kept with the request." Empty: "Add the photo of the signed page first."
+- **Employee day sheet**, for a request filed for them, pending or already approved: the filed item, who filed it ("HR", or the manager's name), their reason, then the buttons.
+  - Manager addition: **Not right** only. Words: "HR decides this. Nothing on your day changes until then. If it is not right, say so and give your own time."
+  - HR-filed or cut: **Confirm** and **Not right**. Words: "Press Confirm only if this is what happened. HR can decide it now. Your salary slip for this month waits until you confirm it, or sign for it on the register." If HR already approved, the header says so ("HR added this for you and has approved it. Is it right?") and the day above already shows the approved result.
+  - After Confirm the block stays: "You confirmed this at 09:40" and "You can still say it is not right."
+  - Timeline lines say where things stand: "Added by HR on 21 Nov. Not confirmed by you yet." / "...You confirmed it." / "...You signed for it on the register." Tags before a decision say "sent for you", not "waiting for you".
+- **Not right.** As v4: optional own time (by kind), required reason. **Pending:** the filed request is declined and the employee's own goes in (with a time), or it is declined with the reason (no time, or a cut). **Already approved:** the day **stays as approved**. With a time it becomes a **new request** ("You sent your own time, 14:15 · Waiting for HR"). With no time, or for a cut, the reason goes to HR as a **dispute** ("You told HR this is not right · Waiting for HR"). The consequence line says which, before the button.
+- **Home** "Needs you" row: as v4, now also for approved changes still waiting on the employee.
+- **Before payroll (HR).** A card at the top of the HR page: "**2 changes not yet confirmed this month**" with "A salary slip cannot be submitted for these people until each change is confirmed, signed on the register, or withdrawn." One row each: person, day, what, who sent it, where it stands, and the actions: Signed on the register (not for the filer), Withdraw (while still pending). A button tries the slip; the refusal reads: "The salary slip for Ravi Sample, Nov 2026, cannot be submitted. 2 changes are not confirmed: 13 Nov: added 14:40, sent by Anil Sample (HR); 10 Nov: set aside 11:00, sent by Sunita Rao (manager). Ask Ravi to confirm in the app, record the signed register, or withdraw the change."
+- **Salary Workings (DTC), note only.** One row mock with a flag "Unconfirmed change: Thu 13 Nov added 14:40; Mon 10 Nov set aside 11:00". The report keeps its columns; the words match the list.
+
+### v5.2 Parity: v5 against v4 and the coded 087 build
+
+| # | v4 / coded | v5 | Needs |
+|---|---|---|---|
+| F-1 | HR card waits for the employee ("Waiting for X to confirm", Decline only) | Approve always; quiet line with state | `awaiting_confirm` gate removed; `refuse_unconfirmed` removed |
+| F-2 | Block only while pending; Confirm + Not right for everyone | Pending or approved; manager addition Not right only | `needs_confirm` rule: HR filer or any set-aside |
+| F-3 | After Confirm: "waiting for HR" status, block gone | Block stays with "You confirmed this", Not right still there | `confirmed_by/on` shown |
+| F-4 | Not right only before HR decides | After approval: new request or dispute, day unchanged | new request path from `confirm`; ⚠ D-1 |
+| F-5 | no register route | Signed on the register + photo, not by the filer | new fields: signed by, on, file; refuse if signer = filer |
+| F-6 | no pre-payroll view | Card with rows and actions; slip refusal names them | list query; refusal on slip submit; ⚠ D-2 |
+| F-7 | none | One flag in Salary Workings | report column or note |
+| F-8 | "...from your request" on approved filed items | "Added by HR on 21 Nov. Not confirmed by you yet." etc. | `filed_by`, `conf` state in payload |
+| F-9 | HR card said "{Employee} says" for filed requests (fixed in v3 P-15) | unchanged | none |
+
+### v5.3 ⚠ DECISIONS and risks
+
+- **⚠ D-1 (owner: BA and Surbhi): after HR approves a cut, what can "Not right" do?** 087 never cancels an approved fix, so there is no way to bring a set-aside punch back. I drew a **dispute**: the reason goes to HR, the day stays as approved, HR decides what to do by hand. If you want a real "restore this punch", that is a new mechanism and a new slice. Risk if it waits: an employee can say "not right" and nothing visible happens.
+- **⚠ D-2 (owner: BA): "unless the change is withdrawn".** I could draw Withdraw only on changes still pending (it is a decline). An **approved** change cannot be withdrawn today. Until you say how, an approved, unconfirmed change blocks the slip until it is confirmed or signed.
+- **⚠ D-3 (owner: `hrms-security-privacy-engineer`, counsel for retention): the register photo shows other people's names and signatures.** Recommend: one line per person on the printed register or a crop, visible to HR only, never in exports, a retention period set with counsel (nothing in the product sets one yet). I have not checked what the joiner documents do for this.
+- **Risk (fairness):** "Your salary slip waits until you confirm it" is the true rule (Option 1), but it presses on the person with the least power. The register route is the way out for staff who cannot use the app (no login). I kept the words factual and put no timer or warning colour on it. **Experiment:** count slips held for this reason and for how long.
+- **Risk:** an employee with no login can only be cleared by the register route or a withdrawal. That is by design, and it is why the pre-payroll list exists.
+
+### v5.4 Subtract pass
+
+Removed from the first draft: a reminder button for HR, a "chase" message to the employee, a count badge on the Home row, a separate page for the pre-payroll list (it is a card on the HR page), a column in the Salary Workings frame beyond one flag. **Not in this slice:** a reminder after some days; HR filtering the list by branch; photo capture on the phone's camera app inside the product.
+
+### v5.5 For the business analyst
+
+Replace AC-105 and AC-107 (approval waits). New criteria: the gate rule (HR filer or any set-aside; manager addition none; Administrator unchanged, decide); register signature (photo required, signer is not the filer, who/when/photo kept); the pre-payroll list and the slip refusal sentence; the Salary Workings flag; employee states (pending, approved-unconfirmed, confirmed, signed, disputed, replaced); and decisions D-1 to D-3.

@@ -755,3 +755,15 @@ Deleted from my own draft, and why: a "kind" field on the client payload (the se
 3. **OPS-R10 kept (Surbhi, 20 Nov 2026, at the build preflight).** It is traced to a new criterion:
    - **AC-100:** Given punch-fix requests exist, when HR opens the saved report "Punch fixes this month" (Report Builder on Attendance Request, filtered to punch fixes, grouped by company and status: Approved / Declined / Waiting), then the counts match the requests. The report is shipped as configuration (a fixture), and a test proves it exists and counts correctly.
    - It also gives the brief's success measure 4 its number.
+
+## Surbhi's decisions at build, 21 Nov 2026
+
+1. **A Held day on a final slip keeps 085's arrear path.** For a request on a day that was Held, approval goes through even when the day sits on a submitted (final) salary slip. The slip itself is never touched (AC-18, Q4). The day is flagged `released_after_final_slip`, so the pay comes back as an arrear. **AC-33 is amended:** its refusal ("Decline only") now applies only to punch fixes on days that were **not** Held.
+2. **Release fields only on Held days.** `alvoraa_release_how/by/on` are written only when the day was Held, so the "Held, now X. Pay restored." box never shows on an ordinary fix. **AC-45 is amended to say this.**
+3. **No note on a Held day.** Her 19 Nov rule stands: PRIV-2, no reason box. `send` refuses a note on a Held day, and the screen shows no note box for one.
+
+The four screen differences from prototype-v2 were not approved, so the screens are built as drawn:
+- the strip on the HR card;
+- the note in the sheet, not a browser prompt;
+- the real-status toast (N3);
+- the time sentences.

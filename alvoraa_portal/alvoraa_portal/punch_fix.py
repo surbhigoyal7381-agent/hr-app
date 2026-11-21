@@ -163,7 +163,7 @@ def day_punches(employee, date):
 	return frappe.get_all(
 		CHECKIN, filters={"employee": employee,
 		                  "time": ("between", [f"{getdate(date)} 00:00:00", f"{getdate(date)} 23:59:59"])},
-		fields=["name", "time", "log_type", "device_id", "skip_auto_attendance", ADDED, ASIDE],
+		fields=["name", "time", "log_type", "device_id", "skip_auto_attendance", "offshift", ADDED, ASIDE],
 		order_by="time asc")
 
 
@@ -328,6 +328,57 @@ def send(date, time=None, set_aside=None, note=None):
 	return ac._shape(doc.as_dict())
 
 
+def _shift_line(shift):
+	"""Start, end and expected hours of a Shift Type, for the day sheet and the card."""
+	doc = frappe.get_cached_doc("Shift Type", shift)
+	start, end = held_day._as_time(doc.start_time), held_day._as_time(doc.end_time)
+	span = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
+	return {"start": start.strftime("%H:%M"), "end": end.strftime("%H:%M"),
+	        "expected": round((span % 1440) / 60, 2)}
+
+
+def _source(p):
+	return (_("Added by HR") if p.get(ADDED) else _("Machine") if p.device_id else _("Check In on this portal"))
+
+
+@frappe.whitelist()
+def day_sheet(date):
+	"""Everything the employee's day sheet draws for ONE of their own days: whether it can be
+	fixed (a code and its sentence), the shift, the punches with their marks, and the latest
+	punch fix for the day. One day, a handful of queries, own record only, never cached."""
+	import alvoraa_portal.attendance_correction as ac
+
+	me = ac._me()
+	out = {"date": str(getdate(date)), "blocked": None, "blocked_text": None}
+	code = day_state(me.name, date)
+	if code:
+		out["blocked"], out["blocked_text"] = code, blocked_sentence(code, me.name, date)
+	row = day_row(me.name, date)
+	if not row:
+		return out
+	out.update({"status": row.status, "hours": flt(row.working_hours, 2), "held": row.status == held_day.HELD,
+	            "shift": _shift_line(row.shift) if row.shift else None})
+	out["punches"] = [{"name": p.name, "time": _hhmm(p.time), "log_type": p.log_type, "source": _source(p),
+	                   "added": bool(p.get(ADDED)), "aside": bool(p.get(ASIDE)),
+	                   "counted": not (p.skip_auto_attendance or p.offshift or p.get(ASIDE))}
+	                  for p in day_punches(me.name, date)]
+	for r in frappe.get_all(
+			REQUEST, filters={"employee": me.name, "docstatus": ("<", 2), "from_date": getdate(date)},
+			fields=["name", "docstatus", "alvoraa_review_status", "creation", "alvoraa_missing_time",
+			        "alvoraa_missing_log", "alvoraa_set_aside", "explanation", "alvoraa_review_note",
+			        "alvoraa_reviewed_on"], order_by="creation desc", limit_page_length=5):
+		if is_punch_fix(r):
+			state = ac._state(r)
+			out["request"] = {
+				"name": r.name, "state": state, "sent_at": str(r.creation)[11:16],
+				"time": _hhmm(r.alvoraa_missing_time) if held_day._has_time(r) else None,
+				"log_type": r.alvoraa_missing_log, "aside": aside_names(r), "note": r.explanation,
+				"hr_note": r.alvoraa_review_note if state in ("declined", "approved") else None,
+				"decided_on": str(r.alvoraa_reviewed_on)[:10] if r.alvoraa_reviewed_on else None}
+			break
+	return out
+
+
 # ── the card HR reads (the same `outcome` the approval runs) ─────────────────
 
 def card(row):
@@ -344,11 +395,13 @@ def card(row):
 		return out
 	ticked = aside_names(doc_full)
 	out["now"] = {"status": day.status, "hours": flt(day.working_hours, 2),
-	              "punches": [{"time": _hhmm(p.time), "log_type": p.log_type,
-	                           "source": (_("Added by HR") if p.get(ADDED) else
-	                                      _("Machine") if p.device_id else _("Check In on this portal")),
+	              "shift": _shift_line(day.shift) if day.shift else None,
+	              "punches": [{"time": _hhmm(p.time), "log_type": p.log_type, "source": _source(p),
 	                           "aside": bool(p.name in ticked or p.skip_auto_attendance or p.get(ASIDE)),
 	                           "name": p.name} for p in day_punches(doc.employee, doc.from_date)]}
+	# Q6: HR is told in words when the punch to set aside came from a machine.
+	out["sets_aside_machine"] = any(p["name"] in ticked and p["source"] == _("Machine")
+	                                for p in out["now"]["punches"])
 	if out["blocked"] or not day.shift:
 		return out
 	add = None
@@ -360,8 +413,12 @@ def card(row):
 		after = outcome(day, add, ticked)
 	except Exception:
 		return out
+	kept = [_hhmm(x.time) for x in counted(doc.employee, doc.from_date, ticked)]
 	out["after"] = {"status": after["status"], "hours": flt(after["hours"], 2), "late": after["late"],
-	                "still_held": after["status"] == held_day.HELD}
+	                "still_held": after["status"] == held_day.HELD,
+	                "punches": sorted([{"time": t, "added": False} for t in kept]
+	                                  + ([{"time": _hhmm(add[0]), "added": True}] if add else []),
+	                                  key=lambda x: x["time"])}
 	return out
 
 

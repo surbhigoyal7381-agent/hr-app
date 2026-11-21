@@ -351,6 +351,17 @@ class Approval(PunchFixCase):
 		# is NOT asserted: on test_site the save made none (see the implementation notes).
 		self.assertTrue(frappe.db.get_value(CHECKIN, names[0], punch_fix.ASIDE_ON))
 
+	def test_a_set_aside_leaves_a_version_row_naming_the_approver(self):
+		"""AC-38. Frappe skips Version rows while `frappe.in_test` is true (document.py `_save`:
+		`ignore_version = frappe.in_test`), so this switches it off for the approval only."""
+		att, names = self.held_three()
+		req = self.fix("12:40", aside=[names[1]])
+		with patch.object(frappe, "in_test", False):
+			self.decide(req)
+		versions = frappe.get_all("Version", filters={"ref_doctype": CHECKIN, "docname": names[1]},
+		                          fields=["owner"])
+		self.assertEqual([v.owner for v in versions], [self.hr])
+
 	def test_only_the_ticked_punches_change(self):
 		att, names = self.held_three()
 		before = {n: frappe.db.get_value(CHECKIN, n, ["skip_auto_attendance", "time", "log_type"], as_dict=True)
@@ -793,3 +804,62 @@ class Screens(PunchFixCase):
 		after = mine()
 		self.assertEqual((after["approved"] - before["approved"], after["waiting"] - before["waiting"]), (1, 1))
 		self.assertTrue(frappe.db.exists("Report", "Punch fixes this month"))
+
+
+class DaySheet(PunchFixCase):
+	def sheet(self, date=None):
+		frappe.set_user(self.emp_user)
+		try:
+			return punch_fix.day_sheet(date or self.day)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_the_sheet_gives_punches_with_marks_and_the_shift_and_no_photo_or_location(self):
+		att, names = self.day_of([("09:00", "IN"), ("12:00", "OUT", "M1"), ("18:00", "OUT")])
+		out = self.sheet()
+		self.assertIsNone(out["blocked"])
+		self.assertEqual((out["shift"]["start"], out["shift"]["end"], out["shift"]["expected"]), ("09:00", "18:00", 9.0))
+		self.assertEqual([(p["time"], p["counted"]) for p in out["punches"]],
+		                 [("09:00", True), ("12:00", True), ("18:00", True)])
+		self.assertEqual(out["punches"][1]["source"], "Machine")
+		flat = json.dumps(out, default=str).lower()
+		for bad in ("photo", "latitude", "longitude"):
+			self.assertNotIn(bad, flat)
+
+	def test_the_sheet_says_why_a_day_cannot_be_fixed_and_shows_the_request_state(self):
+		self.held_three()
+		req = self.fix("12:40", note="forgot")
+		out = self.sheet()
+		self.assertEqual((out["request"]["state"], out["request"]["time"], out["request"]["note"]),
+		                 ("waiting", "12:40", "forgot"))
+		with patch.object(held_day, "is_in_final_slip", return_value=True):
+			out = self.sheet()
+		self.assertEqual(out["blocked"], "slip")
+		self.assertIn("already final", out["blocked_text"])
+
+	def test_an_approved_fix_shows_added_and_set_aside_marks_to_the_employee(self):
+		att, names = self.held_three()
+		req = self.fix("12:40", aside=[names[1]])
+		self.decide(req, note="ok")
+		out = self.sheet()
+		self.assertEqual(out["request"]["state"], "approved")
+		marks = {p["time"]: (p["added"], p["aside"], p["counted"]) for p in out["punches"]}
+		self.assertEqual(marks["12:40"], (True, False, True))
+		self.assertEqual(marks["12:00"], (False, True, False))
+
+	def test_the_sheet_is_for_the_callers_own_record_only(self):
+		other = self.h._employee("Peer")
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")], employee=other)
+		self.assertEqual(self.sheet().get("punches"), None)  # the caller's own day has no row
+
+	def test_the_card_carries_the_after_times_the_shift_and_the_machine_note(self):
+		att, names = self.day_of([("11:15", "IN"), ("19:30", "OUT", "M1")])
+		req = self.fix("09:30", aside=[names[1]])
+		frappe.set_user(self.hr)
+		try:
+			card = punch_fix.card(frappe.get_doc(REQUEST, req).as_dict())
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(card["sets_aside_machine"])
+		self.assertEqual(card["now"]["shift"]["start"], "09:00")
+		self.assertEqual([(p["time"], p["added"]) for p in card["after"]["punches"]], [("09:30", True), ("11:15", False)])

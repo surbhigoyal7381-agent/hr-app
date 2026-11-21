@@ -250,10 +250,12 @@ Still open from the first review: F4 (the limit is still `before_insert`, `hooks
 
 | # | Risk | Label | Accepted? |
 |---|---|---|---|
-| R2a | A sync account with no Company rows stays unscoped until the operator adds them (runbook OPS-35) | intentional trade-off | No |
-| R2b | Sync accounts hold HR roles; anyone with the key can change or delete any punch in a company the account serves, and in every company when it has no rows | temporary debt; removed by key rotation and an IP allow-list (ticket not checked) | No |
-| S-2 | Leave approval and leave cancel are not company-scoped for HR logins without Company rows (stock code skips the hooks) | temporary debt, older than 085. The cheapest fix is one hook line: `refuse_outside_company` on Leave Application `before_submit` and `before_cancel`. That is a scope call for `hrms-business-analyst` | No |
-| R1 | Wage-law basis for holding pay | intentional trade-off (her 19 Nov decision) | As before |
+| R2a | A sync account with no Company rows stays unscoped until the operator adds them (runbook OPS-35) | intentional trade-off | **Accepted: AllAboutHR (Surbhi), 21 November 2026** |
+| R2b | Sync accounts hold HR roles; anyone with the key can change or delete any punch in a company the account serves, and in every company when it has no rows | temporary debt; removed by key rotation and an IP allow-list (ticket not checked) | **Accepted: AllAboutHR (Surbhi), 21 November 2026** |
+| S-2 | Leave approval and leave cancel are not company-scoped for HR logins without Company rows (stock code skips the hooks) | temporary debt, older than 085. The cheapest fix is one hook line: `refuse_outside_company` on Leave Application `before_submit` and `before_cancel`. That is a scope call for `hrms-business-analyst` | **Accepted: AllAboutHR (Surbhi), 21 November 2026** |
+| R1 | Wage-law basis for holding pay | intentional trade-off (her 19 Nov decision) | **Accepted: AllAboutHR (Surbhi), 21 November 2026** |
+
+The acceptance was given in her own words in the 085 session ("AllAboutHR, 21 November 2026"), in answer to the list of these four risks.
 
 ## 3.4 · Not checked
 

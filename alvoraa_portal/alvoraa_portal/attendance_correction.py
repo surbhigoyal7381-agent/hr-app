@@ -1620,7 +1620,8 @@ def refuse_own_day_outside_window(doc, method=None):
 	# the hook list and refuses a time on a day that is not Held.
 	# Slice 087: keyed on the server's own flag, not on "carries a time": a punch fix on an
 	# ordinary day carries a time too and is held to the window.
-	if doc.get("alvoraa_for_held_day"):
+	# "Not right" replacements are not the employee's choice either (review M1), as in the monthly limit.
+	if doc.get("alvoraa_for_held_day") or doc.get("alvoraa_replaces"):
 		return
 	from hrms.alvoraa_hr_core.access import is_own_record
 

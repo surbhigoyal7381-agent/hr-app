@@ -236,3 +236,15 @@ Incoming: `10ff4518` (docs, 085 R2a/R2b/S-2/R1 accepted) and `bad23ce0` (ALV-402
 - Minor: `withdraw_filed` refuses HR's own day and logs; "Punch fixes this month" now counts only `permitted_employees()` (company, then branch). `undo_change` already had scope, own-day, POST and a log (now WARNING).
 - Tests: class `SecurityReview` (7). Break tests planned: remove the employee-change throw (both F1 cases must fail); remove "employee" from CONFIRMED_CONTENT (confirm-clears test); logger back to info.
 - Not run: bench in use. Branch tests rely on a User Permission on Branch plus clear_cache; may need adjusting on first run.
+
+## 21. Review fix round 1 (05-review.md, Surbhi's decisions 382c1aa4) - written, NOT yet run
+
+- B1: `_own_the_confirm_fields` now decides again on every save. An edit by someone other than the employee (Administrator excepted, as at create) that adds a set-aside to a request with needs_confirm=0 sets it to 1 and clears any earlier Confirm.
+- B2/B3: covered by ecf33389 (`apply` reverses the replaced original; `undo_change`). Test rewritten to assert the day ends with 4 counted punches, HR's 12:40 aside-marked to its request, nothing deleted.
+- Arrears (Surbhi): `refuse_slip_while_unconfirmed` also counts unconfirmed approved changes for earlier days that sit on a final slip.
+- M1: `refuse_own_day_outside_window` skips a replacement (`alvoraa_replaces`), like the monthly limit. M2: `enforce_monthly_limit` and `card_context` check `has_column` first.
+- M3: test_held_slip_085 `SlipRefusedWhileUnconfirmed` submits a real Salary Slip, refused then allowed.
+- `_signed_field` and all its reads deleted; 088 adds them back.
+- Report branch scope (from 06): read, it filters by `permitted_employees()`; test in `SecurityReview`.
+- Tests: class `ReviewFixRound1` (5). The arrears test patches `held_day.is_in_final_slip` (labelled: not a real final slip). Break tests planned: B1 recompute off (the slip must not be held); window exemption off; has_column guard off; arrears addition off; gate hook off (real slip submits while unconfirmed).
+- Known, not fixed: an employee's replacement time within 2 minutes of HR's added time is refused as a repeat at filing (HR's punch still counts until approval).

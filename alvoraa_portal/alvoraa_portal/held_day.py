@@ -226,9 +226,13 @@ def enforce_monthly_limit(doc, method=None):
 	filters = {
 		"employee": doc.employee, "docstatus": ("!=", 2),
 		"from_date": ("between", [first, last]),
-		"alvoraa_for_held_day": 0, "alvoraa_replaces": ("is", "not set"),
 		"alvoraa_review_status": ("not in", ["Declined"]),
 	}
+	# Before migrate the two 087 columns are not there yet (review M2).
+	if frappe.db.has_column(REQUEST, "alvoraa_for_held_day"):
+		filters["alvoraa_for_held_day"] = 0
+	if frappe.db.has_column(REQUEST, "alvoraa_replaces"):
+		filters["alvoraa_replaces"] = ("is", "not set")
 	if not doc.is_new():
 		filters["name"] = ("!=", doc.name)
 	rows = frappe.get_all(REQUEST, filters=filters, pluck="owner")

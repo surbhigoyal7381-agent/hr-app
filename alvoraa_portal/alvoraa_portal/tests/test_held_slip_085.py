@@ -223,3 +223,35 @@ class ReleaseAndTheSlip(RealSlip):
 		self.assertTrue(out["slip_final"])
 		self.assertEqual(frappe.db.get_value("Attendance", att, "alvoraa_release_how"), "HR decision")
 		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "payment_days"), before)
+
+
+class SlipRefusedWhileUnconfirmed(RealSlip):
+	"""Slice 087 (review M3, ALV-419): a REAL Salary Slip is refused at submit while a change filed for the
+	employee is unconfirmed, then goes through once the employee has confirmed."""
+
+	def test_a_real_submit_is_refused_then_allowed(self):
+		from alvoraa_portal import punch_fix
+		punch_fix.after_migrate()
+		emp = self._employee()
+		day = add_days(START, 1)
+		self._present(emp, day)
+		req = frappe.get_doc({"doctype": "Attendance Request", "employee": emp, "company": COMPANY,
+		                      "from_date": day, "to_date": day, "reason": "Forgot to Punch In",
+		                      "explanation": "typed by HR", "alvoraa_missing_time": "10:30:00",
+		                      "alvoraa_review_status": "Waiting", "alvoraa_needs_confirm": 1})
+		req.db_insert()  # as a stored row: this test is about the slip, not about filing
+		slip = _insert({"doctype": "Salary Slip", "employee": emp, "company": COMPANY,
+		                "start_date": START, "end_date": END, "posting_date": END,
+		                "payroll_frequency": "Monthly", "currency": "INR"})
+		slip = frappe.get_doc("Salary Slip", slip.name)
+		slip.flags.ignore_permissions = True
+		with self.assertRaises(frappe.ValidationError) as cm:
+			slip.submit()
+		self.assertIn("cannot be submitted", str(cm.exception))
+		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "docstatus"), 0)
+		frappe.db.set_value("Attendance Request", req.name, {"alvoraa_confirmed_by": "Administrator",
+		                    "alvoraa_confirmed_on": frappe.utils.now_datetime()})
+		slip = frappe.get_doc("Salary Slip", slip.name)
+		slip.flags.ignore_permissions = True
+		slip.submit()
+		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "docstatus"), 1)

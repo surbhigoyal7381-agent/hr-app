@@ -1387,6 +1387,97 @@ class V5(PunchFixCase):
 		self.assertIn(hint, open(os.path.join(PKG, "translations/hi.csv")).read())
 
 
+class ReviewFixRound1(PunchFixCase):
+	"""05-review.md B1, M1, M2 and Surbhi's arrears decision (21 Nov)."""
+
+	def test_b1_a_managers_time_only_filing_then_a_set_aside_edit_holds_the_slip(self):
+		mgr = self.h._login("mgrb1", ())
+		self.h._employee("Mgrb1", mgr)
+		att, names = self.held_three()
+		req = self.fix("12:40", by=mgr, note="He told me")
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 0)
+		frappe.set_user("Administrator")  # a person other than the employee edits it to cut a punch
+		frappe.set_user(self.hr)
+		try:
+			doc = frappe.get_doc(REQUEST, req)
+			doc.alvoraa_set_aside = names[1]
+			doc.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_needs_confirm", "alvoraa_confirmed_on"], as_dict=True)
+		self.assertEqual((row.alvoraa_needs_confirm, row.alvoraa_confirmed_on), (1, None))
+		self.decide(req, by=self.h.hr2)
+		first = frappe.utils.get_first_day(self.day)
+		from types import SimpleNamespace
+		slip = SimpleNamespace(docstatus=0, employee=self.emp, employee_name="Ravi Sample", start_date=first,
+		                       end_date=frappe.utils.get_last_day(first))
+		with self.assertRaises(frappe.ValidationError):
+			punch_fix.refuse_slip_while_unconfirmed(slip)  # the slip is held
+
+	def test_b1_an_edit_by_the_employee_or_a_time_only_edit_does_not_ask_again(self):
+		att, names = self.held_three()
+		req = self.fix("12:40", by=self.emp_user, note="my own")
+		frappe.set_user(self.emp_user)
+		try:
+			doc = frappe.get_doc(REQUEST, req)
+			doc.explanation = "my own, edited"
+			doc.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 0)
+
+	def test_a_change_for_a_day_on_a_final_slip_holds_the_next_slip(self):
+		"""Surbhi, 21 Nov: an HR change paid as an arrear holds the slip that carries it."""
+		att, names = self.held_three()
+		req = self.fix("12:40", by=self.hr, note="HR typed it")
+		self.decide(req, by=self.h.hr2)
+		nxt = frappe.utils.add_months(frappe.utils.get_first_day(self.day), 1)
+		from types import SimpleNamespace
+		slip = SimpleNamespace(docstatus=0, employee=self.emp, employee_name="Ravi Sample", start_date=nxt,
+		                       end_date=frappe.utils.get_last_day(nxt))
+		with patch.object(held_day, "is_in_final_slip", return_value=False):
+			punch_fix.refuse_slip_while_unconfirmed(slip)  # the day is not on a final slip: nothing to hold
+		with patch.object(held_day, "is_in_final_slip", return_value=True):
+			self.refused(lambda: punch_fix.refuse_slip_while_unconfirmed(slip), "cannot be submitted")
+			self.confirm_as_employee(req)
+			punch_fix.refuse_slip_while_unconfirmed(slip)
+
+	def test_m1_not_right_is_outside_the_filing_window(self):
+		att, names = self.held_three()
+		doc = frappe.get_doc({"doctype": REQUEST, "employee": self.emp, "from_date": self.day, "to_date": self.day,
+		                      "reason": "Forgot to Punch In", "alvoraa_missing_time": "12:50"})
+		doc.alvoraa_replaces = "x"
+		frappe.set_user(self.emp_user)
+		try:
+			with patch.object(ac, "employee_filing_window_days", return_value=1):
+				ac.refuse_own_day_outside_window(doc)  # a replacement is exempt: nothing is raised
+				with patch.object(ac, "own_day_state", return_value="old") as st:
+					ac.refuse_own_day_outside_window(doc)
+					st.assert_not_called()  # exempt before the window is looked at
+				doc.alvoraa_replaces = None  # without the link the window is asked
+				with patch.object(ac, "own_day_state", return_value="open") as st:
+					ac.refuse_own_day_outside_window(doc)
+					st.assert_called_once()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_m2_the_limit_and_the_card_work_before_the_columns_exist(self):
+		att, names = self.held_three()
+		req = self.fix("12:40")
+		real = frappe.db.has_column
+
+		def has(doctype, col):
+			if doctype == REQUEST and col in ("alvoraa_for_held_day", "alvoraa_replaces", "alvoraa_needs_confirm",
+			                                 "alvoraa_confirmed_on"):
+				return False
+			return real(doctype, col)
+		doc = frappe.get_doc(REQUEST, req)
+		with patch.object(frappe.db, "has_column", side_effect=has):
+			held_day.enforce_monthly_limit(doc)  # does not read a missing column
+			ctx = punch_fix.card_context([dict(frappe.get_doc(REQUEST, req).as_dict(), punch_fix=True)])
+			self.assertIn(req, ctx["req"])
+
+
 class SecurityReview(PunchFixCase):
 	"""Fixes from the 087 security review: F1 (employee cannot be moved), SEC-6 logging, minor scope rules."""
 
@@ -1566,6 +1657,7 @@ class Undo(PunchFixCase):
 		self.refused(lambda: self.undo(req, "x", by=self.hr), "own request")
 
 	def test_approving_the_employees_own_time_reverses_the_change_it_replaces(self):
+		"""Review B2: after approval, "Not right" with the employee's own time must not leave HR's punch counting."""
 		att, names = self.held_three()
 		req = self.fix("12:40", by=self.hr, note="HR typed it")
 		self.decide(req, by=self.h.hr2)
@@ -1574,14 +1666,15 @@ class Undo(PunchFixCase):
 			out = punch_fix.confirm(req, 0, "I was back by 12:50", "12:50")
 		finally:
 			frappe.set_user("Administrator")
-		rows = punch_fix.before_payroll(str(self.day)) if False else None
+		self.assertEqual(len(punch_fix.counted(self.emp, self.day)), 4)  # HR's 12:40 still counts until HR decides
 		self.decide(out["replacement"], by=self.h.hr2)
-		self.assertEqual(sorted(str(p.time)[11:16] for p in punch_fix.counted(self.emp, self.day) and
-		                        frappe.get_all(CHECKIN, filters={"employee": self.emp, "skip_auto_attendance": 0}, fields=["time"])), ["09:00", "12:00", "12:50", "18:00"])
-		self.assertTrue(frappe.db.get_value(REQUEST, req, "alvoraa_undone_on"))  # the replaced change is undone
-		self.assertEqual(punch_fix.unconfirmed_changes([self.emp]), [])  # and no longer holds the slip
+		times = sorted(str(p.time)[11:16] for p in punch_fix.counted(self.emp, self.day))
+		self.assertEqual(times, ["09:00", "12:00", "12:50", "18:00"])  # HR's 12:40 is not counted next to theirs
+		self.assertTrue(frappe.db.get_value(REQUEST, req, "alvoraa_undone_on"))
+		self.assertEqual(punch_fix.unconfirmed_changes([self.emp]), [])
 		old = self.added(req)[0]
 		self.assertEqual((old.skip_auto_attendance, old[punch_fix.ASIDE]), (1, req))
+		self.assertTrue(frappe.db.exists(CHECKIN, old.name))  # nothing deleted
 
 	def test_the_before_payroll_row_offers_undo_only_on_a_disputed_approved_change(self):
 		att, names, req = self.disputed_cut()

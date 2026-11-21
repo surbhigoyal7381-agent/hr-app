@@ -167,3 +167,11 @@ Written without the bench (Surbhi was using it). **Nothing in this section has b
 - Broken by my change and fixed: 4 of my own new tests (they filed a second request on a day that already had one, or used a manager login the fixture cannot give an insert right to); `test_raiser_cannot_submit_but_a_colleague_can` in `test_attendance_doors_085` (HR-filed, so it now needs the worker's Confirm before the colleague approves: the test checks the refusal, confirms, then approves); `test_a_held_request_sent_from_the_portal_carries_only_the_time` in `test_held_day_085` (the explanation is now the reason plus the stamp; run singly after the change: see report). `test_held_day_085` otherwise: the 6 known backfill failures.
 - **Break tests (all 6 watched fail, restored, worktree clean):** `refuse_unconfirmed` off; `send` reason check off; `raise_correction` held reason off; `raise_for_report` reason off; confirm fields not owned by the server ((0, hr login, time) != (1, None, None)); `confirm` ownership off.
 - **Text running off the edge on the 085 sheet:** the cause is `.ac-tbl td{white-space:nowrap}`; the opened day is a cell of that table. 087's first fix (`.pfx{white-space:normal}`) covered only 087's block, NOT the 085 held box, the "Sent to HR" card or the ordinary form. Now `.ac-open td{white-space:normal}`, which covers the whole opened day. Checked by reading the CSS only, not in a browser.
+
+## 12. Section 10's open questions: DECIDED (Surbhi, 21 Nov 2026, spec commit 659a1c2d, all five as recommended)
+
+1. Administrator-filed requests need no Confirm (the break-glass account). **Decided.**
+2. An employee with no login cannot confirm; the request waits until HR declines it; HR files only for staff with a login. **Decided.**
+3. Requests already waiting before the migrate carry no Confirm flag; no backfill. **Decided.**
+4. An ordinary request without a time keeps the dropdown reason, free text only for "Other". **Decided.**
+5. The Confirm block and the reason box in the send bar are new screens; her yes is asked once they can be seen working. **Still waiting for her yes on the screens.** Prototype-v4 exists (file in this folder, parity rows P-1 to P-19 and V4-1 to V4-6 in 01b) and is waiting for her yes: **not built to, on the coordinator's word.**

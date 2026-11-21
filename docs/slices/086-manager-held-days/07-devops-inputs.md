@@ -80,3 +80,11 @@ Read: worktree `.claude/worktrees/086-manager-held-days`, branch slice/086-manag
 **Subtract pass:** removed a proposed background job with progress polling, a per-manager daily counter, an nginx rate-limit change, a new monitoring alert, a "pending sends" table for retries, and a cache of the Held list. Nothing else; no migration item left because there is none.
 
 **Left behind:** this file only. Not pushed, nothing deployed.
+
+## Surbhi's decisions on the 086 requirements, 21 Nov 2026
+
+All as recommended:
+- **C1 and C2:** ask counsel whether case A or case B applies, and whether staff with no login must be told what was filed in their name. Both go in one follow-up. Release waits for the answer.
+- **Limits:** 30 sends an hour per login, and 500 characters per reason.
+- **OPS-R-1:** no daily cap per manager.
+- **OPS-R-2:** 087 goes to main and is proved first, then 086. If counsel is late, the list ships without the send bar.

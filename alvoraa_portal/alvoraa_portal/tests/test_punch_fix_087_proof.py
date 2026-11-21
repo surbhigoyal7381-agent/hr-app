@@ -120,6 +120,17 @@ class Proof(base.PunchFixCase):
 		self.assertEqual(frappe.db.get_value(REQUEST, req, "docstatus"), 0)
 		self.assertEqual((self.row(att).status, self.row(att).attendance_request), ("Held", None))  # one punch is a Held day; unchanged
 
+	# ── AC-48: the first file's "still odd" test cannot fail, this one can ──
+
+	def test_ac48_a_result_that_is_still_odd_stays_held_and_the_hours_are_written(self):
+		att, names = self.held_three()
+		req = self.fix("13:00", aside=[names[1]])  # 3 punches - 1 set aside + 1 added = 3, still odd
+		self.decide(req)
+		row = self.row(att)
+		self.assertEqual(row.status, "Held")
+		self.assertEqual(len(punch_fix.counted(self.emp, self.day)), 3)
+		self.assertEqual(round(row.working_hours, 2), 4.0)  # 09:00 to 13:00; the 18:00 stays unpaired
+
 	# ── own-day locks, scope, exactly once, preview, engine ─────────────
 
 	def test_exactly_once_a_stale_second_approval_adds_no_second_punch(self):

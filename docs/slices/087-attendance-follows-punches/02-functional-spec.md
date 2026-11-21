@@ -846,3 +846,13 @@ HR gets an **"Undo this change"** action on an approved change the employee disp
 - AC-123: Undo marks an added punch not counted (aside link = the request), makes a set-aside punch count again, deletes nothing, re-judges the day with `worked_out`, refreshes the draft slip, and records who, when and why. An undone change no longer holds the slip.
 - AC-124: If the dispute carried the employee's own time, the card says "Approve that request instead". Approving that request undoes the original by itself, so the day never carries both times.
 - AC-125: A final slip on a non-Held day refuses the undo (same rule as approval).
+
+## Review fix round 1 — Surbhi's decisions, 21 Nov 2026
+
+- **Whether a request needs the employee's Confirm is decided afresh on every save,** from who filed it and what it does. An edit by someone other than the employee that adds a cut or set-aside sets it back to needs-Confirm and clears any earlier confirmation.
+- **An HR change paid as arrears** (a day on a final slip) needs the employee's Confirm too. It holds the next salary slip that carries the arrears.
+- **Also, as recommended:**
+  - "Not right" is outside the filing window;
+  - the monthly limit and card_context check the new columns exist before reading them;
+  - a test submits a real Salary Slip;
+  - `_signed_field` and its reads are deleted, and slice 088 adds them back with its field.

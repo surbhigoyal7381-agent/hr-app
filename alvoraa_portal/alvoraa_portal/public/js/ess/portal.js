@@ -6667,7 +6667,8 @@ function pfxConfirmBlock(r, mode) {
   } else if (cs === "confirmed") {
     h += '<p class="pfx-sub">You can still say it is not right.</p>';
   } else if (cs !== "signed" && !r.needs_confirm) {
-    h += '<p class="pfx-sub">HR decides this. Nothing on your day changes until then. If it is not right, say so and give your own time.</p>';
+    h += '<p class="pfx-sub">' + (ap ? "HR has approved this. If it is not right, say so and give your own time."
+      : "HR decides this. Nothing on your day changes until then. If it is not right, say so and give your own time.") + "</p>";
   }
   if (!r.can_not_right) return h;
   h += '<div class="pfx-acts" id="pfx-cf-btns-' + n + '">'

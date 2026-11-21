@@ -121,7 +121,9 @@ def day_state(employee, date):
 	row = day_row(employee, date)
 	if not row:
 		return "unmarked"
-	if held_day.is_in_final_slip(employee, date):
+	# A day that was Held keeps 085's arrear path (Surbhi, 21 Nov): approval goes through even on a
+	# final slip, the slip is never touched, and the day is flagged released-after-final-slip.
+	if row.status != held_day.HELD and held_day.is_in_final_slip(employee, date):
 		return "slip"
 	if row.status == "On Leave" or frappe.db.exists("Leave Application", {
 			"employee": employee, "docstatus": 1, "status": "Approved",
@@ -307,6 +309,9 @@ def send(date, time=None, set_aside=None, note=None):
 	                      re.split(r"[,\s]+", str(set_aside or ""))) if n]
 	if not time and not ticked:
 		frappe.throw(_("Enter the time first."))
+	# PRIV-2: no note on a Held day (085's rule, kept by Surbhi on 21 Nov).
+	if (note or "").strip() and held_day._held_row(me.name, date):
+		frappe.throw(_("A held day takes only the time. Leave the note empty."))
 	if time:
 		try:
 			time = frappe.utils.get_time(time).strftime("%H:%M:%S")

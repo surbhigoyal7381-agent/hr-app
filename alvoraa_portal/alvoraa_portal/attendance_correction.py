@@ -2043,6 +2043,10 @@ def decide(name, approve, note=None, seen=None):
 		result = _shape(frappe.get_doc(REQUEST, name).as_dict())
 		# A held day released after its slip was final: HR is told in words (Q4).
 		result["slip_final"] = frappe.flags.get("held_slip") == "final"
+		if result.get("punch_fix"):
+			# The real status, so HR's toast can say what happened (slice 087, N3).
+			result["day_status"] = frappe.db.get_value(
+				"Attendance", {"employee": doc.employee, "attendance_date": doc.from_date, "docstatus": 1}, "status")
 		return result
 
 	if not (note or "").strip():

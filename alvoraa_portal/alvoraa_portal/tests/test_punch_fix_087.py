@@ -225,11 +225,16 @@ class Raising(PunchFixCase):
 		self.refused(lambda: self.fix("12:40", aside=[names[0]]), "does not count already")
 		self.fix("12:40", aside=[names[2]])  # control
 
-	def test_a_final_slip_blocks_a_new_request_and_creates_nothing(self):
+	def test_a_final_slip_blocks_a_fix_on_a_day_that_was_not_held_and_creates_nothing(self):
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		with patch.object(held_day, "is_in_final_slip", return_value=True):
+			self.refused(lambda: self.fix("12:00"), "salary slip that is already final")
+		self.assertEqual(frappe.db.count(REQUEST, {"employee": self.emp}), 0)
+
+	def test_a_held_day_on_a_final_slip_can_still_be_asked_about(self):
 		self.held_three()
 		with patch.object(held_day, "is_in_final_slip", return_value=True):
-			self.refused(lambda: self.fix("12:40"), "salary slip that is already final")
-		self.assertEqual(frappe.db.count(REQUEST, {"employee": self.emp}), 0)
+			self.fix("12:40")  # control: 085's arrear path stays open
 
 	def test_a_day_with_no_attendance_row_is_not_fixable(self):
 		self.refused(lambda: self.fix("12:40"), "has not been marked yet")
@@ -432,13 +437,25 @@ class Approval(PunchFixCase):
 		r.assert_called_once()
 		self.assertEqual(self.row(att).status, "Present")
 
-	def test_a_final_slip_blocks_the_approval_and_changes_nothing(self):
-		att, names = self.held_three()
-		req = self.fix("12:40")
+	def test_a_final_slip_blocks_the_approval_of_a_day_that_was_not_held_and_changes_nothing(self):
+		att, names = self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		req = self.fix("12:00")
 		with patch.object(held_day, "is_in_final_slip", return_value=True):
 			self.refused(lambda: self.decide(req), "already final")
 		self.assertEqual(len(self.added(req)), 0)
-		self.assertEqual(self.row(att).status, "Held")
+		self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Present")
+
+	def test_a_held_day_on_a_final_slip_is_approved_the_slip_is_not_touched_and_hr_is_told(self):
+		"""085's arrear path (Surbhi, 21 Nov): approved, the slip never touched, flagged for the sheet."""
+		att, names = self.held_three()
+		req = self.fix("12:40")
+		with patch.object(held_day, "is_in_final_slip", return_value=True), \
+				patch.object(frappe, "get_doc", wraps=frappe.get_doc) as gd:
+			out = self.decide(req)
+		self.assertTrue(out["slip_final"])
+		self.assertEqual(out["day_status"], "Present")
+		self.assertEqual(self.row(att).alvoraa_release_how, "HR decision")
+		self.assertFalse([c for c in gd.call_args_list if c.args and c.args[0] == "Salary Slip"])
 
 	def test_a_leaver_cannot_be_approved(self):
 		att, names = self.held_three()
@@ -759,7 +776,9 @@ class Screens(PunchFixCase):
 		att, names = self.held_three()
 		frappe.set_user(self.emp_user)
 		try:
-			out = punch_fix.send(self.day, "12:40", None, "forgot the lunch scan")
+			self.refused(lambda: punch_fix.send(self.day, "12:40", None, "forgot the lunch scan"), "takes only the time")
+			self.assertEqual(frappe.db.count(REQUEST, {"employee": self.emp}), 0)
+			out = punch_fix.send(self.day, "12:40", None, None)
 			self.refused(lambda: punch_fix.send(self.day, "12:40,13:00"), "One punch per request")
 			self.refused(lambda: punch_fix.send(self.day, None, None), "Enter the time first")
 		finally:
@@ -767,7 +786,7 @@ class Screens(PunchFixCase):
 		doc = frappe.get_doc(REQUEST, out["name"])
 		self.assertEqual((doc.employee, doc.alvoraa_review_status, doc.alvoraa_missing_log, doc.alvoraa_for_held_day,
 		                  doc.reason, doc.explanation),
-		                 (self.emp, "Waiting", "IN", 1, "Forgot to Punch In", "forgot the lunch scan"))
+		                 (self.emp, "Waiting", "IN", 1, "Forgot to Punch In", None))
 		self.assertEqual(frappe.db.count(REQUEST, {"employee": self.emp}), 1)
 
 	def test_send_for_a_blocked_day_creates_no_request(self):
@@ -827,11 +846,11 @@ class DaySheet(PunchFixCase):
 			self.assertNotIn(bad, flat)
 
 	def test_the_sheet_says_why_a_day_cannot_be_fixed_and_shows_the_request_state(self):
-		self.held_three()
-		req = self.fix("12:40", note="forgot")
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		req = self.fix("12:00", note="forgot")
 		out = self.sheet()
 		self.assertEqual((out["request"]["state"], out["request"]["time"], out["request"]["note"]),
-		                 ("waiting", "12:40", "forgot"))
+		                 ("waiting", "12:00", "forgot"))
 		with patch.object(held_day, "is_in_final_slip", return_value=True):
 			out = self.sheet()
 		self.assertEqual(out["blocked"], "slip")
@@ -863,3 +882,14 @@ class DaySheet(PunchFixCase):
 		self.assertTrue(card["sets_aside_machine"])
 		self.assertEqual(card["now"]["shift"]["start"], "09:00")
 		self.assertEqual([(p["time"], p["added"]) for p in card["after"]["punches"]], [("09:30", True), ("11:15", False)])
+
+
+class NoteOnOrdinaryDay(PunchFixCase):
+	def test_a_note_is_taken_on_an_ordinary_day_and_refused_on_a_held_day(self):
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		frappe.set_user(self.emp_user)
+		try:
+			out = punch_fix.send(self.day, "12:00", None, "went to the bank")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "explanation"), "went to the bank")

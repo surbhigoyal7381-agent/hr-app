@@ -6486,9 +6486,9 @@ function acPfSheet() {
       + '<input type="time" id="pf-time" value="' + gpEsc(s.time || "") + '" oninput="acPfTime(this.value)" aria-describedby="pf-infer pf-err">'
       + '<p class="pf-infer" id="pf-infer" aria-live="polite">' + (s.kind ? "It will be added as: <b>" + gpEsc(s.kind.label) + "</b>." : "") + "</p>"
       + '<div class="pf-err" id="pf-err" role="alert">' + (s.err ? gpEsc(s.err) : "") + "</div></div>"
-      /* Q3: the note label says who reads it */
-      + '<div class="pf-field"><label class="pf-fl" for="pf-note">Note (optional). HR and your manager can read this.</label>'
-      + '<textarea id="pf-note" rows="2">' + gpEsc(acPf.note || "") + "</textarea></div>"
+      /* Q3: the note label says who reads it. PRIV-2: a Held day takes no note, so no box. */
+      + (d.held ? "" : '<div class="pf-field"><label class="pf-fl" for="pf-note">Note (optional). HR and your manager can read this.</label>'
+        + '<textarea id="pf-note" rows="2">' + gpEsc(acPf.note || "") + "</textarea></div>")
       + '<div class="pf-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
       + '<button type="button" class="btn btn-primary" onclick="acPfAdd()">Add to request</button></div>';
   } else {
@@ -6548,7 +6548,7 @@ window.acPfTime = function (v) {
 
 window.acPfAdd = function () {
   var s = acPf.sheet, t = (document.getElementById("pf-time") || {}).value;
-  acPf.note = (document.getElementById("pf-note") || {}).value || "";
+  acPf.note = acPf.data.held ? "" : ((document.getElementById("pf-note") || {}).value || "");
   s.time = t;
   var err = pfFit(s, t);
   if (!err && (acPf.data.punches || []).some(function (p) { return p.counted && p.time === t; })) {
@@ -6605,7 +6605,57 @@ function pfCardTimes(list, mode) {
   }).join(" &middot; ");
 }
 
+function pfFirst(r) { return String(r.employee_name || "").split(" ")[0] || "the employee"; }
+function pfNoteBox(r) {
+  return '<div class="pf-notebox" id="pf-note-' + gpEsc(r.name) + '" hidden><label class="pf-fl" for="pf-note-text-' + gpEsc(r.name)
+    + '">Note for ' + gpEsc(pfFirst(r)) + '. ' + gpEsc(pfFirst(r)) + ' will see it.</label>'
+    + '<textarea id="pf-note-text-' + gpEsc(r.name) + '" rows="2"></textarea>'
+    + '<div class="pf-err" id="pf-note-err-' + gpEsc(r.name) + '" role="alert"></div></div>';
+}
+
+function pfCardStrip(shift, items) {
+  items.sort(function (a, b) { return a.m - b.m; });
+  return pfStrip(shift, items);
+}
+
+/* HR's decision from the card. The note is the box on the card, not a browser prompt. A decline
+   needs a reason: no reason sends nothing, opens the box and puts the cursor in it (AC-30). */
+window.acPfNote = function (name) {
+  var box = document.getElementById("pf-note-" + name);
+  if (box) { box.hidden = false; var t = box.querySelector("textarea"); if (t) t.focus(); }
+};
+
+window.acPfDecide = async function (name, approve, seen, first) {
+  var ta = document.getElementById("pf-note-text-" + name), note = ta ? ta.value.trim() : "";
+  if (!approve && !note) {
+    var err = document.getElementById("pf-note-err-" + name);
+    acPfNote(name);
+    if (err) err.textContent = "Write a reason so " + (first || "the employee") + " knows what to do next.";
+    return;
+  }
+  showLoad();
+  try {
+    var res = await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note, seen: seen || ""});
+    hideLoad();
+    var said = "Declined. The employee will see your reason.";
+    if (approve) {
+      var card = (acPfCards[name] || {});
+      var row = card.row || {}, c = card.card || {};
+      var status = (res && res.day_status) || "";
+      var added = row.missing_time, aside = ((c.now || {}).punches || []).filter(function (p) { return p.aside; })[0];
+      said = "Approved. "
+        + (added ? added + " was added. " : aside ? aside.time + " was set aside. " : "")
+        + (status === "Held" ? "The day stays Held." : "The day is now " + status + ".");
+      if (res && res.slip_final) said += " The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it.";
+    }
+    toast(said, "ok");
+    await acLoad();
+  } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
+};
+var acPfCards = {};
+
 window.acPfCard = function (r) {
+  acPfCards[r.name] = {row: r, card: r.card};
   var c = r.card || {};
   if (!c.now) return "";
   var after = c.after, now = c.now, mine = c.own_day, blocked = c.blocked;
@@ -6617,13 +6667,15 @@ window.acPfCard = function (r) {
     + (r.explanation ? "<q>" + gpEsc(r.explanation) + "</q>" : "") + "</p>"
     + (c.sets_aside_machine ? '<p class="pf-says">This asks to set aside a punch from the machine.</p>' : "")
     + '<div class="pf-ba"><div><h4>Now</h4><p class="num pf-st">' + gpEsc(now.status) + " &middot; " + now.punches.length + " punches</p>"
+    + pfCardStrip(now.shift, now.punches.map(function (p) { return {m: pfMin(p.time), k: p.aside ? "aside" : "io"}; }))
     + '<p class="pf-tms num">' + pfCardTimes(now.punches, "now") + "</p></div>"
     + '<div class="pf-arr" aria-hidden="true">&rarr;</div>';
   if (after) {
     h += '<div><h4>If approved</h4><p class="num pf-st" id="pf-after-' + gpEsc(r.name) + '">'
       + (after.still_held ? "Still held &middot; " + after.punches.length + " punches &middot; not paid"
         : gpEsc(after.status) + " &middot; " + pfHours(after.hours) + (after.status === "Absent" ? " &middot; not paid" : " &middot; paid"))
-      + '</p><p class="pf-tms num">' + pfCardTimes(after.punches, "after") + "</p></div>";
+      + "</p>" + pfCardStrip(now.shift, after.punches.map(function (p) { return {m: pfMin(p.time), k: p.added ? "add" : "io"}; }))
+      + '<p class="pf-tms num">' + pfCardTimes(after.punches, "after") + "</p></div>";
   } else { h += "<div></div>"; }
   h += "</div>";
   var foot = "";
@@ -6634,11 +6686,12 @@ window.acPfCard = function (r) {
       ? "Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary."
       : blocked === "left" ? "This person has left, so no punch can be added. Decline it and say why."
       : "This day can no longer be fixed. Decline it and say why.") + "</p>"
-      + '<div class="pf-foot"><button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button></div>';
+      + pfNoteBox(r) + '<div class="pf-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
   } else if (r.can_decide !== false) {
     var seen = gpEsc(c.seen || "");
-    foot = '<div class="pf-foot"><button class="btn btn-primary" aria-describedby="pf-after-' + gpEsc(r.name) + '" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1,&quot;' + seen + '&quot;)">Approve</button>'
-      + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>'
+    foot = pfNoteBox(r) + '<div class="pf-foot"><button class="btn btn-primary" aria-describedby="pf-after-' + gpEsc(r.name) + '" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,1,&quot;' + seen + '&quot;)">Approve</button>'
+      + '<button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button>'
+      + '<button type="button" class="pf-lnk" onclick="acPfNote(&quot;' + gpEsc(r.name) + '&quot;)">Add a note for ' + gpEsc(pfFirst(r)) + "</button>"
       + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button></div>'
       + (r.missing_time ? '<p class="pf-legend">Approving adds ' + gpEsc(r.missing_time) + " (" + (c.after && c.kind ? "" : "") + (r.missing_log === "OUT" ? "Out" : "In")
         + "), marked &ldquo;added by HR&rdquo;. It is never deleted.</p>" : "");

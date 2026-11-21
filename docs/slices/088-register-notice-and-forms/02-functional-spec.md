@@ -654,3 +654,15 @@ Nothing in 088 needs AI to set a rating, emotion or inference, passive monitorin
 - [ ] Release (not build) is blocked on C1, C2, C3 and the Hindi review.
 
 **Verdict: the spec is complete; the slice is NOT ready to build until OQ-1 and OQ-5 are closed and 087 has landed its side of the seam.**
+
+## Surbhi's decisions on the spec, 21 Nov 2026
+
+All as recommended:
+- **OQ-1:** the notice prints "HR", not the HR person's name, matching 087 decision 7. The name stays in the HR-only record, as counsel allowed.
+- **OQ-3:** keep US-7, the small app view "N days changed by someone else this month".
+- **P-9:** the print number is added to the page reference. Yes.
+- **P-11:** the "salary slip waits" line prints only when the sheet holds a change that blocks pay. Yes.
+- **P-14:** an `open_photo` endpoint with no new screen. Yes.
+- **P-15:** new app wording for manager additions. Yes.
+
+**Still open before build:** OQ-5, which is the 087 engineer agreeing the `record_register_signature` contract (§8.5) while building 087 v5.

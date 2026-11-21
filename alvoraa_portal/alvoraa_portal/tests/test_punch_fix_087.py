@@ -31,6 +31,30 @@ def setUpModule():
 	frappe.clear_cache()
 
 
+def security_lines_from_a_fresh_process(fn):
+	"""Run `fn` and return the lines written to the "security" logger, with that logger set back to Frappe's
+	own default (ERROR) first. Frappe caches the logger, so once anything in the process has raised it the
+	level stays raised; a test that asks `access.security_logger()` itself would raise it too and could not
+	tell a code path that never raises it (ALV-391: every such line was thrown away) from one that does."""
+	import logging
+	seen = []
+
+	class Catch(logging.Handler):
+		def emit(self, record):
+			seen.append(record.getMessage())
+
+	lg = frappe.logger("security")
+	level, handler = lg.level, Catch()
+	lg.setLevel(logging.ERROR)
+	lg.addHandler(handler)
+	try:
+		fn()
+	finally:
+		lg.removeHandler(handler)
+		lg.setLevel(level)
+	return seen
+
+
 class PunchFixCase(FrappeTestCase):
 	def setUp(self):
 		self.h = hd.HeldDayCase("test_held_is_a_status_and_the_fields_exist")
@@ -1579,22 +1603,9 @@ class SecurityReview(PunchFixCase):
 		self.assertIn("employee", punch_fix.CONFIRMED_CONTENT)
 
 	def test_the_punch_fix_log_lines_are_really_written_to_the_security_log(self):
-		import logging
-		seen = []
-
-		class Catch(logging.Handler):
-			def emit(self, record):
-				seen.append(record.getMessage())
-
 		att, names = self.held_three()
 		req = self.fix("12:40")
-		lg = access.security_logger()
-		handler = Catch()
-		lg.addHandler(handler)
-		try:
-			self.decide(req)
-		finally:
-			lg.removeHandler(handler)
+		seen = security_lines_from_a_fresh_process(lambda: self.decide(req))
 		self.assertTrue(any("punch_fix approved request=%s" % req in m for m in seen), seen)
 
 	def test_withdraw_is_post_only_and_refused_on_the_hr_persons_own_day(self):
@@ -1714,6 +1725,11 @@ class Undo(PunchFixCase):
 	def held_three_on(self, day):
 		self.h.day = self.day = day
 		return self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")])
+
+	def test_the_undo_log_line_is_really_written_to_the_security_log(self):
+		att, names, req = self.disputed_cut()
+		seen = security_lines_from_a_fresh_process(lambda: self.undo(req))
+		self.assertTrue(any("punch_fix undone request=%s" % req in m for m in seen), seen)
 
 	def test_hr_cannot_undo_a_change_on_their_own_day(self):
 		hr_emp = frappe.db.get_value("Employee", {"user_id": self.hr}, "name")

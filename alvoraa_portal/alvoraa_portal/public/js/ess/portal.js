@@ -6993,8 +6993,9 @@ function acHeldForm(x, d) {
     + (d.is_self ? "Send to HR" : "Send to HR for " + gpEsc((d.employee_name || "").split(" ")[0])) + "</button></div></div>";
 }
 
-/* The payload is the day, the time and In/Out, and nothing else: no reason and
-   no explanation are collected for a held day (PRIV-2). */
+/* The payload is the day, the time, In/Out and the required reason. Counsel's
+   ALV-418 (21 Nov 2026) reversed PRIV-2: every request, a held day included,
+   carries a reason, which HR and the manager can read. */
 window.acHeldSubmit = async function (date, singleIsOut) {
   var t = (document.getElementById("ac-missing-time") || {}).value;
   var logEl = document.getElementById("ac-missing-log");
@@ -7029,6 +7030,8 @@ window.acHeldSubmit = async function (date, singleIsOut) {
         again.value = t;
         var lg = document.getElementById("ac-missing-log");
         if (lg) lg.value = log;
+        var rs = document.getElementById("ac-held-reason");
+        if (rs) rs.value = why;
       }
       return;
     }

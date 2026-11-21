@@ -211,3 +211,12 @@ Marked inline: five rows per sheet, 100 per batch, counsel accepts one photo per
 ## Handoff note
 
 For `hrms-business-analyst`: section 11 and the ⚠ list. For `hrms-security-privacy-engineer`: D-3, the photo (who opens it, logging, retention, brief Q4/Q5), and the printed reason. For the session that ran me: **publish `prototype-v1.html` and put the link here**; the design gate is Surbhi's.
+
+## Design gate — Surbhi's decision, 21 Nov 2026
+
+**Go with prototype-v1** (https://claude.ai/artifact/HkursyZu1uRPkmGMZz86Q2), with every recommendation:
+- **D-4:** manager-added changes ARE on the notice. Counsel allowed a manager's addition without Confirm because it is shown on the monthly register.
+- **D-2:** the record dialog gets a second action that records the employee's dispute, reusing 087's dispute.
+- **D-3:** the filer's reason prints in full. 087's send bar gets a hint that the reason is printed on the employee's notice.
+- **D-1:** a Hindi reader checks the wording before any sheet is printed for a customer.
+- **Assumptions accepted:** up to 5 changes per page, and a batch of up to 100. Both are checked on a real printer.

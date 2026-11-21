@@ -466,3 +466,10 @@ Removed from the first draft: a reminder button for HR, a "chase" message to the
 ### v5.5 For the business analyst
 
 Replace AC-105 and AC-107 (approval waits). New criteria: the gate rule (HR filer or any set-aside; manager addition none; Administrator unchanged, decide); register signature (photo required, signer is not the filer, who/when/photo kept); the pre-payroll list and the slip refusal sentence; the Salary Workings flag; employee states (pending, approved-unconfirmed, confirmed, signed, disputed, replaced); and decisions D-1 to D-3.
+
+## v5 design gate — Surbhi's decision, 21 Nov 2026
+
+**Go with prototype-v5** (https://claude.ai/artifact/UdDqFpD4vzYgpqkAQXqUgU), with the Not right time required.
+- **D-1:** after HR approves a cut, "Not right" is a dispute. HR decides by hand.
+- **D-2:** Withdraw shows only on pending changes.
+- **D-3:** the register photo shows only this person's line where possible. It is HR-only and never exported. Counsel is asked how long to keep it, and whether one photo per page (slice 088) is enough.

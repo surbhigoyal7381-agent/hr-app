@@ -182,7 +182,7 @@ function makeSignIn(frm) {
 				   style="width:100%;font-family:monospace;font-size:12px"
 				   onclick="this.select()">${esc(message)}</textarea></p>
 				<p>${__("Copy it with Ctrl+C after clicking in the box.")}</p>
-				<p class="text-muted"><b>${__("She cannot see anything else.")}</b> ${__(
+				<p class="text-muted"><b>${__("They cannot see anything else.")}</b> ${__(
 					"This sign-in opens their own form and nothing else here. They are "
 					+ "not an employee, not in your headcount, not on the organisation "
 					+ "chart, and not a paid seat until they start.")}</p>`,

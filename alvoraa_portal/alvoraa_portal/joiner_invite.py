@@ -394,6 +394,39 @@ def _login_id():
 	return f"joiner-{frappe.generate_hash(length=18)}@{LOGIN_DOMAIN}"
 
 
+def _plain_url():
+	"""This site's address, without a port number that means nothing. ALV-428.
+
+	`frappe.utils.get_url()` builds the address from the `Host` header
+	(`get_host_name_from_request`), so whatever the proxy in front of us put
+	there is what a joiner is told to type. On 21 Nov 2026 the invite box at
+	ppj.dev read `https://ppj.dev.alvoraa.co:443/joining`.
+
+	**The `:443` is correct and still wrong.** It is the default port for https,
+	so the link works - but this address goes into a message a joiner is told to
+	keep and may retype by hand onto a phone, and an address with a port on it
+	reads like something has gone wrong. This slice exists to serve frontline
+	staff on their first contact with an employer; that is the worst audience
+	for a URL that looks malformed.
+
+	**Fixed here rather than in nginx, deliberately.** The repository's own
+	config already forwards `Host $host`, which carries no port, so the port is
+	being added by the proxy actually in front of the site - and one nginx
+	serves both dev and production, so changing it to tidy a string would put a
+	live site's front door at risk for a cosmetic gain. Trimming the default
+	port where we build the message costs nothing and is right whatever sits in
+	front of us tomorrow.
+
+	Only `:443` on https and `:80` on http are removed. Any other port is real -
+	a bench on `:8010` has to keep it or the address stops working.
+	"""
+	url = cstr(frappe.utils.get_url()).rstrip("/")
+	for scheme, default in (("https://", ":443"), ("http://", ":80")):
+		if url.startswith(scheme) and url.endswith(default):
+			return url[: -len(default)]
+	return url
+
+
 def _looks_like_a_number(value):
 	"""Is what HR typed a telephone number rather than an email address?
 
@@ -586,7 +619,7 @@ def make_sign_in(submission=None):
 		"password": password,
 		"expires_on": str(expires),
 		"access_days": days,
-		"address": f"{frappe.utils.get_url()}/joining",
+		"address": f"{_plain_url()}/joining",
 		"contact": hr_contact(),
 	}
 

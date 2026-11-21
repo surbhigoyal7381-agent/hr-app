@@ -167,3 +167,42 @@ This is advice. Surbhi decides.
 2. **m5.** Does an HR-filed change paid as an arrear need the employee's confirmation first? I am ranking it P3 until Surbhi says.
 
 **Subtract pass:** I removed three findings I could not trace to a failure: a "flags" bypass (Frappe strips it), a Payroll Entry batch abort (each slip is caught), and a held_day 085 condition I thought was broken (the arrear path is 085's own). Nothing else removed.
+
+---
+
+## Re-review, fix round 1 (68b4a544, 21 Nov 2026)
+
+**Verdict: SHIP WITH FIXES.** All three blockers are closed in the code. One small gap is left from M2: a single unguarded read before the migrate. It is a one-line fix and should land before dev.
+
+**How I checked.** I read `git diff 94f22878..68b4a544` in the 087 worktree, at HEAD 68b4a544. I ran no code; the coordinator asked me to keep off alv358-bench. The test figures come from the coordinator's file, `/private/tmp/claude-501/-Users-mac-hr-app/67b461e9-84fe-425b-b761-79423d0b7215/scratchpad/087-fixround1-tests.txt`:
+- `test_punch_fix_087`: 127 OK.
+- `test_held_day_085`: 6 failures. `test_held_gaps_085`: 3 failures.
+- Every other module listed: OK.
+
+The file gives counts only, with no test names. **So I could not confirm that the 9 failures are the known backfill ones.** That figure is not checked.
+
+### My findings, one by one
+
+| Finding | Status | Evidence |
+|---|---|---|
+| **B1**: the Confirm rule skipped on an edit | **Closed, as Surbhi worded it** | `punch_fix.py:366-373` works the flag out again on every save. An edit by anyone but the employee or Administrator that adds a set-aside sets `needs_confirm = 1` and clears any Confirm. Tests: `test_b1_a_managers_time_only_filing_then_a_set_aside_edit_holds_the_slip` (my scenario A). Moving a request to another employee is now refused for everyone (`punch_fix.py:309-313`). **Left over, P3, for Surbhi:** an HR edit that only moves the *time* on the employee's own request still needs no Confirm. Her decision says "adds a cut or set-aside", and `test_b1_..._or_a_time_only_edit_does_not_ask_again` locks that in. Moving an In time later is a cut in hours. She should say whether that counts |
+| **B2**: the replacement after approval left both times | **Closed** | `apply` (`punch_fix.py:1000-1007`) takes the original change back first, through `_reverse`, before the replacement is judged. The card leaves out the original's added punch (`punch_fix.py:663-666`). Test: `test_approving_the_employees_own_time_reverses_the_change_it_replaces` (counted times 09:00, 12:00, 12:50, 18:00; nothing deleted) |
+| **B3**: a disputed change held the slip for ever | **Closed** | `undo_change` (`punch_fix.py:850-881`): POST only, HR in scope, not on their own day, a reason required, disputed approved changes only, once only. It re-judges the day, the engine must agree, and the slip is freed (`_unconfirmed_filters` skips undone requests, `punch_fix.py:711`). Seven `Undo` tests |
+| **M1**: the filing window blocked "Not right" | **Closed** | `attendance_correction.py:1624` exempts `alvoraa_replaces`. Test `test_m1_not_right_is_outside_the_filing_window` |
+| **M2**: new columns read before the migrate | **Partial** | The monthly limit is guarded (`held_day.py:231-235`), and so is the request read in `card_context`. **Still open:** the Employee Checkin read in `card_context` asks for `alvoraa_fix_added_request` and `alvoraa_fix_aside_request` with no guard (`punch_fix.py:591`). `to_review` calls it for every waiting request that carries a time (`attendance_correction.py:1949`). The new test patches `has_column` for Attendance Request columns only, so it could never have shown this. **Fix:** return `{}` at the top of `card_context` when `not columns_ready()`. `to_review` then falls back to 085's `held_preview` |
+| **M3**: no real Salary Slip test | **Closed** | `test_held_slip_085.SlipRefusedWhileUnconfirmed.test_a_real_submit_is_refused_then_allowed` makes a real `slip.submit()`: refused, then allowed once confirmed. Payroll Entry is still checked by reading only (`payroll_entry.py:1687-1690`) |
+| **Delete**: `_signed_field` | **Closed** | Removed with all its reads. Only the `record_register_signature` docstring still names 088's field, which is correct |
+| m1 `withdraw_filed` had no own-day lock | **Closed** | `refuse_own_decision` added (`punch_fix.py:821`) |
+
+### New things the fixes brought in
+
+- **n1 · P3 · The arrears rule holds every later slip, not only the one that carries the arrears.** `refuse_slip_while_unconfirmed` (`punch_fix.py:761-764`) also counts approved, unconfirmed changes on any earlier day that is on a final slip. So the hold lasts until the employee confirms, slip after slip. Surbhi's words were "the next salary slip that carries the arrears". It is safe, because it errs toward holding, but it is wider than she said. A test calls the function on a SimpleNamespace, not on a real slip.
+- **n2 · P3 · Undoing a change on a day that was Held leaves the old release record behind.** `undo_change` writes the status through `_write_day`, but `alvoraa_release_how/by/on` still say "HR decision". The 085 box on the day sheet can then still say "Held, now Present. Pay restored." after the undo.
+- **n3 · P4 · A replacement stores the wrong In/Out until it is approved.** `_replacement` works the kind out while HR's punch still counts (`derive(..., [])`), so `alvoraa_missing_log` and `reason` may read Out where approval will write In. `apply` works it out again correctly. Only the stored label and the "says" line are wrong until then.
+- **n4 · P3 · Two more scope lists are read into Python and sent back as `IN (...)`:** in the report (`access.permitted_employees()`) and in `before_payroll`. nfr-budget §2. Both are bounded by one tenant's headcount.
+- **Logging:** the punch-fix lines now go to `security_logger().warning`, which is the ALV-391 fix. The lines I read carry ids only.
+
+### What is still needed before dev
+
+1. Guard `card_context` (M2, one line), with a test that also patches the Employee Checkin columns.
+2. Surbhi's word on n1 and on the B1 time-only edit. Neither blocks a push to dev.

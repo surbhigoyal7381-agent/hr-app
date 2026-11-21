@@ -2,19 +2,23 @@
 slice: 087-attendance-follows-punches
 artifact: 03-implementation-notes
 worktree: /Users/mac/hr-app/.claude/worktrees/087-attendance-follows-punches
-branch: slice/087-attendance-follows-punches, built on 50ae6da8 (ALV-411/412) via a72bd6ce; last commit 9ba2f0d3
-status: PART 1 (server side) built and mostly tested on the local bench. PART 2 (screens) NOT built. Nothing pushed.
+branch: slice/087-attendance-follows-punches, built on 50ae6da8 (ALV-411/412) via a72bd6ce; last commit dbc4f82a
+status: PART 1 (server) built and tested locally; PART 2 (screens) built, not seen in a browser. Nothing pushed.
 ---
 
 # 087 implementation notes
 
 ## 0. Bad news first
 
-1. **Part 2, the screens, is not built.** No day sheet, strip, send bar or HR card (prototype P1 to P14). Only the old screens were touched, as the approved split says (Inbox "Review", the card token). Details in section 4.
-2. **The last three fixes are not run on the bench.** The bench was handed to the coordinator for the ALV-411/412 dev test after the last run (commit 081d1a26). Fixes made after that run and not yet re-run: the monthly-limit filter, the edited-held-draft counts again (085 F4), the 085 slip test, the case (a) test. Run again, in this order: `test_punch_fix_087`, `test_held_day_085`, `test_held_slip_085`, `test_held_p1_machine_accounts_085`.
-3. **The break tests are not done.** I did not undo any control and watch its test fail, except where noted in section 6. No test here counts as proven until that is done.
-4. **A behaviour change from 085 that needs Surbhi's word.** 085 let HR release a Held day that sat on a final slip and told HR in words. 087 spec (SEC-5, AC-33) refuses it. I followed 087. `test_ac18` in `test_held_slip_085.py` now expects the refusal. The `slip_final` flag in `decide` and `released_after_final_slip` in the day sheet can no longer fire for a punch fix. Left in place (not mine to remove).
-5. **A Version row is not made when a punch is set aside**, on test_site (0 rows after a save by HR). The audit does not rest on it: the approver and time are on the punch (`alvoraa_fix_aside_by`, `_on`). Not investigated. AC-38's "a Version row names the approver" is therefore NOT met as written.
+1. **The screens (Part 2) are built but never seen in a browser.** The JavaScript passes `node --check`, the kind rule passes a node table check (`scripts/087_kind_table_check.js`, 6 of 6), and the server data behind them is tested. Nobody has looked at them at 360 px, with a screen reader or in dark theme. AC-1, AC-96, AC-97 and AC-99 are therefore NOT met until that is done.
+2. **Waiting for Surbhi (unchanged, not touched since the first report):**
+   - (4) 085 released a Held day that sat on a final slip and told HR; 087 (SEC-5, AC-33) refuses it. I followed 087; `test_ac18` expects the refusal. `slip_final` in `decide` and `released_after_final_slip` on the day sheet cannot fire for a punch fix now.
+   - (5a) Release fields (`alvoraa_release_how/by/on`) are written only for a day that was Held, not for every fixed day (AC-45), so the old "Held, now X" box never shows on an ordinary day.
+   - (5b) The new `send` accepts a note on a Held day; 085's PRIV-2 says no reason box for a held day. The 085 session should confirm.
+3. **Parity differences I made that Surbhi has not seen** (see section 4): Approve and Decline still use the old prompt box for the note, not the inline note drawn in P9; the server cannot know which gap was tapped, so the "not before / after / between" sentences exist only in the browser.
+4. **Not done:** AC-81 (race with Frappe's `process_auto_attendance` in both orders), AC-35 (50 cards timed), AC-25 on ppj.dev, AC-43 test, AC-98 Hindi (English only by decision), AC-99 usability test, the D6 ticket.
+5. **The dry run is a belt check only** (see section 6): 34 days read on test_site, 0 moved, no punch set aside anywhere. It has not been run on ppj.dev or a copy of DTC data.
+6. **Resolved: AC-38 (Version row).** Frappe skips Version rows while `frappe.in_test` is true (`frappe/model/document.py` `_save`: `ignore_version = frappe.in_test`). With that switched off for the approval, a test shows one Version row owned by the approver. The earlier "no Version row" was the test run, not the code.
 
 ## 1. Rung of the ladder
 
@@ -55,13 +59,24 @@ ALV-410: fixed by inserting the real punch; `release_by_hr` deleted. Test goes r
 
 ## 4. Prototype parity table
 
+Built in `portal.js` (new block before `acHeldBox`), `panels.css` (appended, `.pf-` classes) and `punch_fix.py` (`day_sheet`, `card`). Not opened in a browser.
+
 | ID | Status |
 |---|---|
-| P1 to P8, P13, P14 (day sheet, strip, sheets, send bar, waiting, approved, declined, locked days, Hindi/dark) | **Not built (Part 2)** |
-| P9 to P12 HR card, own day, final slip, queue empty | **Not built.** Server data exists (`card()`); the old card now sends the token and Approve works |
-| P15 "Not about a punch" link | Unchanged old form |
-| P16 Inbox Review | Built, not browser-tested |
-| N1 to N4 (accepted by Surbhi) | Sentences are in `punch_fix.py`; toasts with the real status are Part 2 |
+| P1 day sheet: one status line, muted shift line, strip, timeline with 44 px gap rows and 56 px punch rows, hint | Built. Row heights are in CSS, not measured |
+| P2 add sheet: empty time field, "It will be added as: ...", note, "Add to request" | Built as a role=dialog bottom sheet, focus on the time, Escape closes. P2a: the note label says HR and the manager read it (Surbhi's Q3) |
+| P3 "This punch is wrong" / "Keep this punch" | Built |
+| P4 sticky send bar "+10:30 In · 11:15 set aside", "Nothing changes until HR approves.", Send to HR | Built. Sent keys are exactly date, time, set_aside, note. The server's sentence shows beside the button and stays; a network failure says "It may have gone through. Checking with the office." and reloads |
+| P5 Waiting (dashed asked-for punch, Withdraw) / P6 Approved (added and set-aside lines, time still shown struck through) / P7 Declined with HR's reason | Built from `day_sheet`. The name of the HR person is never shown |
+| P8 locked days (slip, leave, hand-marked) plus "not marked yet" | Built: sentence from the server, punches read-only, no gap rows |
+| P9 HR card: Now beside If approved, strip-less times line (added in bold with +, set-aside struck through), Approve, Decline, See their month, caption | Built as `acPfCard`. **Differences:** no strip drawn on the card; Approve and Decline ask for the note in the old browser prompt, not an inline note box; "Add a note for X" link not built |
+| P10 own day / P11 final slip / left | Built (own day: lock line and no buttons; slip or left: Decline only) |
+| P12 queue empty | Existing "Nothing waiting" behaviour |
+| P13 strip (shift band, dots, worked bars, aria-hidden) | Built on the employee sheet only |
+| P14 Hindi, dark theme, frames | Hindi: English only. Dark theme: uses the same tokens as the prototype, not looked at |
+| P15 "Not about a punch?" link | Built; opens today's reason form |
+| P16 Inbox Review | Built |
+| N1 to N4 | Sentences in place; the HR toasts still say "Approved — the day has been corrected." (the real-status toast N3 is NOT built) |
 
 ## 5. Seven dimensions, against the code written
 
@@ -75,21 +90,34 @@ ALV-410: fixed by inserting the real punch; `release_by_hr` deleted. Test goes r
 | Data integrity | improves: day, punches, pay agree; before/after on the request. Risk D6 (ALV-291 clears `skip_auto_attendance` on set-aside punches): ticket, no code |
 | Compliance/privacy | improves: ids and times only in the audit fields and logs; no photo or GPS key in any new payload (tested); no cache; release to main waits for counsel |
 
-## 6. Tests
+## 6. Tests (bench alv358-bench, site test_site, one module at a time)
 
-Files: `tests/test_punch_fix_087.py` (69 tests), updates in `test_held_day_085.py`, `test_held_slip_085.py`. Last full run (081d1a26): 087 file 66 of 68 passed; 085 day file 37 of 44 (6 are the known backfill failures on the unchanged base, the 7th was the F4 test, since fixed); slip file 5 of 5 after the one failing test was rewritten, not re-run; p1 3 of 3. Baseline recorded on a72bd6ce before touching held code: 43 tests, 6 failures, all in `BackfillScript`/the backfill tests (`test_it_refuses_any_other_site_and_a_repo_undo_file`, `test_undo_puts_back_only_rows_that_are_still_held`, `test_a_day_in_a_submitted_slip_is_not_held_by_the_backfill`, `test_backfill_end_to_end_dry_run_then_apply_then_undo`, `test_hold_then_rerun_finds_nothing_then_undo_restores`, `test_the_test_hook_still_refuses_every_other_site`: the script path is missing in the bench).
-Integrity check passes (1002 checks). Not run: test_portal_security_010, the neighbours (`test_attendance_correction`, `test_security_alv411_412`), the dry run, any browser check.
-Break-tested: one thing, by accident: the guard test on a marked punch failed for a wrong test value, not a removed control. Everything else not break-tested.
+Last full runs, on d57c65f8 / f4155b1c / dbc4f82a:
+- `test_punch_fix_087`: 75 tests; 73 passed on f4155b1c, the other 2 (day-sheet tests that read the Time field) fixed in dbc4f82a and re-run singly: both OK. The whole file was not re-run after that fix.
+- `test_held_day_085`: 44 run, 6 failed: exactly the 6 baseline names recorded before I touched held code (the backfill tests: script path missing in the bench). `test_held_slip_085` 6 of 6 OK. `test_held_p1_machine_accounts_085` 3 of 3 OK.
+- `test_security_alv411_412` 9 of 9 OK.
+- `test_attendance_correction`: 148 run, 3 failed (`test_a_holiday_in_the_range_pushes_the_reach_further_back`, `test_a_weekly_off_counts_the_same_way`, `test_a_holiday_pushes_the_boundary_further_back`). The same 3 fail on a72bd6ce, before any 087 code (run singly). Not mine.
+- `test_portal_security_010`: 45 run, 13 errors, all "Module import failed" for Individual Goal / KPI (known site state).
+- Not run: `test_held_gaps_085`; the browser.
+
+Break tests (a change in the code, one test, watched fail, restored; worktree back at f4155b1c clean):
+| Control undone | Test that failed | Failure |
+|---|---|---|
+| door check in `before_submit` | `test_desk_submit_is_refused_and_the_control_works_through_decide` | Desk submit not refused |
+| marks guard (`guard_marks`) | `test_marks_cannot_be_written_outside_an_approval` | write not refused |
+| `_punches` set-aside filter | `test_punches_skip_a_set_aside_punch_and_nothing_else` | 3 != 2 |
+| limit flag (restore the `_has_time` early return) | `test_the_monthly_limit_counts_ordinary_day_fixes_and_not_held_day_ones` | 4th request not refused |
+| HR-only (both checks) | `test_a_login_with_the_submit_right_but_no_hr_role_is_refused` | PermissionError not raised |
+Not break-tested: own-day locks, scope, exactly-once, the preview-equals-result test, the engine check, the ALV-410 test.
+
+Dry run `scripts/087_dry_run.py` on test_site only, 60 days: 34 days read, 0 moved, 0 set-aside punches on the site. With nothing set aside the filter is the identity by construction, so this proves little; it must be run on ppj.dev or a DTC copy (Surbhi's word) before main.
+Integrity check passes (1002 checks).
 
 ## 7. The two-push split (D1)
 
-- **Push 1 = commits 6447828b, 904bda32, 081d1a26, 571c4481, 9ba2f0d3** (all server side, old screens carry the token, Inbox Review). HR keeps approving with the old screen. They sit on top of the unpushed ALV-411/412 commits.
-- **Push 2 = the screens**, not written.
+- **Push 1 = server side:** 6447828b, 904bda32, 081d1a26, 571c4481, 9ba2f0d3 (plus the docs commit d57c65f8). HR keeps approving with the old screen, which now sends the token. One part of the Inbox change (Review) is in push 1.
+- **Push 2 = screens:** f4155b1c (day sheet, sheets, send bar, HR card, `day_sheet` endpoint, CSS) and dbc4f82a (a one-line fix). `day_sheet` and `card` extras live in `punch_fix.py`, which is also in push 1, so push 2 cannot be a clean cherry-pick of files; split by commit.
 
 ## 8. Not done / known gaps
 
-- Part 2 screens; JS tests for them; 360 px and accessibility checks (US-16); usability test.
-- Break-tests; the bench re-run; the `scripts/087_dry_run.py` run (AC-59, kill criterion 1: not met until run); AC-81 race with `process_auto_attendance` in both orders; AC-35 timing; AC-25 (hand-marked rule proved on ppj.dev: only a unit test, ppj.dev not touched); AC-43 outside-window punch (guard written, not tested).
-- Version row on set-aside (section 0.5). Hindi: English only.
-- D6 ticket for ALV-291 not created by me.
-- The report "Punch fixes this month" is a standard Script Report file, synced on migrate: not opened in a browser.
+Listed in section 0 (items 1, 3, 4, 5) and section 6 (not break-tested). Also: Hindi (English only); the report "Punch fixes this month" not opened in a browser; ALV-404 not fixed or touched (a lone OUT punch still gives Absent in `hold_odd_punch_day`).

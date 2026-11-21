@@ -265,7 +265,7 @@ const T={
  nt_arrival:["What time did you arrive?","आप कितने बजे पहुँचे?"],nt_back:["What time were you back?","आप कितने बजे वापस आए?"],
  nt_outb:["What time did you go out?","आप कितने बजे बाहर गए?"],nt_leaving:["What time did you leave?","आप कितने बजे निकले?"],
  opt:["Optional","वैकल्पिक"],
- nt_why:["{0} was sent. Leave this empty if you do not know the time.","{0} भेजा गया था। समय न पता हो तो खाली छोड़ें।"],
+ nt_why:["{0} was sent. Give the time you were really back.","{0} भेजा गया था। वह समय दें जब आप सच में लौटे।"],
  e_same:["That is the time that was sent. If it is right, go back and press Confirm.","यही समय भेजा गया था। सही है तो वापस जाकर पुष्टि करें दबाएं।"],
  nr_eff:["HR will not add {0}. Your own request for {1} goes to HR instead, and you do not need to confirm it.","HR {0} नहीं जोड़ेगा। इसके बदले आपका अपना {1} का अनुरोध HR को जाएगा, और आपको पुष्टि नहीं करनी।"],
  toast_nr2:["Sent to HR. Your own time replaces the one that was sent.","HR को भेज दिया। आपका अपना समय भेजे गए समय की जगह लेगा।"],
@@ -560,7 +560,7 @@ function confirmBlock(k){const d=S[k],r=d.req,by=d.by,hr=by.role==="hr",appr=d.s
  const canC=need&&d.conf==="no";
  h+=`<p class="sub">${canC?(appr?t("cf_truth_a"):t("cf_truth_p")):need?t("cf_done_p"):(appr?t("cf_truth_ma"):t("cf_truth_m"))}</p>`;
  if(!ui.nr)return h+`<div class="cf-acts">${canC?`<button class="btn btn-primary" onclick="doConfirm('${k}')">${t("confirm")}</button>`:""}<button class="btn" onclick="openNR('${k}')">${t("notright")}</button></div>`;
- const tf=r.add?`<div class="field"><label class="fl" for="f-nt"><span class="lblrow"><span>${t("nt_"+kindFor(d.p.filter(x=>!(appr&&x.t===r.add&&x.src==="HR")),[],r.add))}</span><span class="req">${t("opt")}</span></span><span class="why">${t("nt_why",r.add)}</span></label>
+ const tf=r.add?`<div class="field"><label class="fl" for="f-nt"><span class="lblrow"><span>${t("nt_"+kindFor(d.p.filter(x=>!(appr&&x.t===r.add&&x.src==="HR")),[],r.add))}</span><span class="req">${t("req")}</span></span><span class="why">${t("nt_why",r.add)}</span></label>
  <input type="time" id="f-nt" class="${ui.terr?"bad":""}" value="${ui.time}" ${ui.terr?'aria-invalid="true" aria-describedby="e-nt"':""} oninput="ntTyped('${k}',this)">
  ${ui.terr?`<div class="err" id="e-nt" role="alert">${ic("warn")}<span>${ui.terr}</span></div>`:""}</div>`:"";
  return h+`<div class="cf-nr">${tf}<label class="fl" for="f-nr"><span class="lblrow"><span>${t("nr_l")}</span><span class="req">${t("req")}</span></span><span class="why">${t("nr_read")}</span></label>

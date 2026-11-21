@@ -261,3 +261,85 @@ Read from `ci.yml` step names: `check_api_paths.py --max 0`, `check_app_integrit
 | OPS-20 | Count HR users who can approve (company and branch scope) per tenant before main | HR with no scope sees nobody | Nobody can approve a fix | P2, Recommend | |
 
 **Subtract pass:** I removed nothing from the engineer's plan; I added seven rows, each tied to a read fact or marked inference. I dropped my OPS-R2 daily cap (Surbhi did). **Not checked:** the 411/412 branch itself, the CI site's installed apps, `has_column` internals and the patch/after_migrate order (inference), any timing. **Left behind:** this appended section only; not committed.
+
+---
+
+## §5 Release readiness (21 Nov 2026)
+
+Read: worktree `087-attendance-follows-punches`, HEAD `94f22878`, base dev `bad23ce0`; `git diff --stat bad23ce0..HEAD` (48 files, +9,603 -114); `punch_fix.py` FIELDS, `columns_ready`, `refuse_slip_while_unconfirmed`; the patch file; `hooks.py` diff; `scripts/087_dry_run.py`; `03-implementation-notes.md`; `deploy.yml` inputs; `REHEARSAL.md` headings; memory notes on Grace's slip job and the asset trap. **No server command run. Nothing timed today. Every command below is quoted, not run, and each is FOR SURBHI TO APPROVE.**
+
+**Bad news first**
+
+1. **P1: the screens are still not seen in a browser** (notes §0.1), and the Confirm/v5 build and the 21 Nov fix round are "built, not run" (notes §10) unless 04-test-report says otherwise. I cannot call this ready until the test engineer's re-run is green on `94f22878`. **Not checked by me.**
+2. **P1: AC-59 (the dry run on real data) is still not done.** Details below. Main waits for it.
+3. **P1: 087 alone must not reach main without 088.** The slip refusal tells HR to "record the signed register"; the register moved to 088. DTC pays outside the portal, and staff without a login cannot press Confirm. Until 088 exists the only exits are Withdraw or the app. (Inference from the spec move and the hook text.)
+4. **P2: the dry-run script can show false "moved" days.** It counts the old way on the calendar day only; `_punches` now reads two days and applies ALV-402's `shift_day` rule. A night-shift day can differ with zero set-aside punches. Read each "moved" name; a night-shift one is ALV-402, not 087. Also its docstring `bench execute alvoraa_portal.scripts_087_dry_run.run` does not exist (the file is in `scripts/`); use the `env/bin/python` line.
+
+### Rollout: does D1 (two pushes) still hold?
+
+**No. Recommend one push to dev, one deploy, then one release to main.** Reason (fact): the later commits (`73716615`, `c0a73d0b`, `7540721c`, `81a6c397`) edit `punch_fix.py`, `portal.js`, `hooks.py` and the tests together; the notes (§7) already said push 2 "cannot be a clean cherry-pick". Inference: the Confirm server rules without the Confirm screen would let a slip be blocked with no way to clear it. I did not try a split. The safety D1 gave (server first, watch it) comes instead from the checks below, run before anyone uses the screens. This replaces my §4 "commit 1 alone first". `[ASSUMPTION]` the engineer agrees; their word needed.
+
+| Step | What | Gate |
+|---|---|---|
+| Local | Test engineer's green on `94f22878`; screens seen at 360 px; `scripts/check_app_integrity.py`; `git diff origin/dev --stat -- deploy/` empty (it is: no `deploy/` or `.github/` file in the diff) | Surbhi's word to push dev |
+| Dev | Fetch `origin/dev`, rebase, read incoming diff; last dev CI **passed** (not just finished); one push; checks below | Surbhi's word for main |
+| Main | Night window 00:30-06:00 IST, together with 088 (same night or the next), 086 after. I have not read 086 or 088 | Surbhi's word, then she clicks the `production` approval herself |
+
+**Release order: 087, 088 close together, then 086.** Do not push 087 to main and leave it a week without 088 (point 3). Never start the next push while CI or a Deploy is running.
+
+### Migration dry run on a copy (AC-59 and OPS-R8/12/18)
+
+Throwaway stack per `REHEARSAL.md` §3-5 (dump, start rehearsal stack, restore into `rehearsal.alvoraa.co`). DTC copy preferred; ppj.dev is the fallback and holds fewer real days. **Never production, never `/var/www/html/hr-app`.** Needs Surbhi's yes to take the dump.
+
+1. Before migrate, read and write down: Attendance Request rows total; rows with `alvoraa_missing_log` set (these are the patch's targets); Employee Checkin count; migrate queue depth (`rq` default queue empty, 5 Nov trap).
+2. Run `bench --site rehearsal.alvoraa.co migrate` with a stopwatch.
+3. **Expected reads:** all 15 columns present (Employee Checkin 4: the added-by, set-aside-by-request, set-aside-by user, set-aside-on; Attendance Request 11); `alvoraa_for_held_day = 1` on exactly the rows counted in step 1 with `alvoraa_missing_log` set, and `0` on every other row; Attendance and Employee Checkin row counts **unchanged** (the patch touches neither); set-aside punches: 0.
+4. Run the script from the sites folder: `../env/bin/python <path>/087_dry_run.py rehearsal.alvoraa.co 60`, then again with `90`. Expected: `set-aside punches on the site: 0`, `days whose punch count moved: 0` except night-shift names explained by ALV-402. Record days read, days moved, date, copy name.
+5. OPS-18: approve one real fix on a test employee on the copy (set one punch aside); read day, Attendance row and draft slip agree.
+6. Re-run the migrate a second time: no change (patch is safe twice).
+7. Time the Salary Workings report on the copy before/after the image change (OPS-15; DTC has 442 people).
+8. Read `frappe.get_hooks("override_doctype_class")["Attendance Request"]`; expect exactly our class (OPS-16).
+
+**Stop the release if** any non-night day moves, a column is missing, a row count changed outside Attendance Request, or migrate fails.
+
+### Deploy commands (all FOR SURBHI TO APPROVE; I run none)
+
+1. **Dev push** (her word): `git fetch origin dev && git rebase origin/dev`, then `git push origin <branch>:dev`. The automatic dev Deploy runs `main`'s copy of `deploy.yml` (lesson 14); this slice does not change the workflow.
+2. **Check the run is the right one** by run id, not by commit: `gh run list --workflow Deploy --limit 5`. Wait for the deploy; the version wait still burns about 7 minutes (lesson 22; not re-measured).
+3. **Main** (her word, night window): `git push origin <exact SHA>:main` after the merge she approves. The `production` environment then waits for her click.
+4. **Rollback deploy:** `gh workflow run Deploy --ref dev -f environment=<dev|production> -f image_tag=<previous tag> -f run_migrations=false -f image_package=alvoraa-app`. Needs the previous tag to exist in `alvoraa-app`: **check before release** (`gh api` on the package versions). Not checked.
+
+### Checks after deploy (read-only; name stack and container every time)
+
+1. **Three-way landing:** the stack's pin file (`.image.dev.env` on dev, `.image.env` on production) names the new tag; every app container (backend, scheduler, each worker) reports that tag; `punch_fix.py` exists in the container and its md5 equals the image's. Count the containers and say how many matched.
+2. **Workers alive, not just Up:** `scripts/check_workers.sh`, plus `docker top` and `rq:workers` (lesson 15). Disk headroom first (lesson 16).
+3. **Migrate on every site:** count sites in the stack, count sites migrated, name any failure. Then on each site: 15 columns exist; `frappe.get_hooks("override_doctype_class")["Attendance Request"]` is our class; the patch is listed done.
+4. **Assets:** compare `assets.json` in the sites volume against the image's. The volume hides the image's assets (dev and production were stale in September). If the volume copy is old: copy `portal.js` and `panels.css` in, then `touch sites/assets/assets.json` and `clear-cache` (the `?v=` is that file's mtime). Commands for her approval, per stack. Record the new `portal.js` size (was 1,297,945 bytes).
+5. **Behaviour:** in a browser, one employee sends a fix, HR approves, the day sheet and slip agree; Desk submit of a punch fix is refused; no "Unknown column" in Error Log; GET on the three calls refused.
+6. nginx: no change in the diff, so no nginx restart is planned. If anything touches it, run `scripts/check_nginx_parses.sh` first.
+
+### Grace's daily draft-slip job and the Salary Slip hook
+
+**Effect: none expected, and it does not fix the freeze.** Fact (`hooks.py` diff): the new hook is on Salary Slip `before_submit` only. Inference: the Grace Server Script (not in the repo, I could not read it) calls `save()` on drafts, which does not fire `before_submit`; so the five leavers (HR-EMP-00022, 00045, 00065, 00096, 00101) still roll the whole batch back, exactly as before. The hook also returns at once when the columns are missing. **Two cautions:** (a) if that script or anyone ever submits slips in bulk, one unconfirmed HR-filed change blocks that employee's submit, and a bulk loop with a single commit has the 18 Nov failure shape; (b) on approval `punch_fix.apply` refreshes one employee's draft slip inline; it must not throw for a leaver. A leaver's approval refusing would be a new, visible failure; the test engineer should include one. Fix Grace's loop (catch per row) separately; do not couple it to this release. Existing requests have no flag, so nothing blocks on day one (notes §10 gap 2).
+
+### Monitoring (nothing new)
+
+Error Log read daily for a week, filtered on the feature's titles; `check_workers.sh`; counts from the audit fields (requests, approvals, declines, Confirm waiting, disputes) via the Script Report "Punch fixes this month"; Salary Workings "unconfirmed" column read by HR before payroll. Capacity: no new container or queue; estimated 1,232 queries per 50 cards before, 222 after (engineer's measure, local).
+
+### Rollback (revert only)
+
+Code: redeploy the previous tag with migrations off (about 7 min, not re-measured). The 15 columns and the patch's flag stay and are harmless. **An added punch is never deleted:** undo through a new approved request that sets it aside. Before a rollback, tell HR to stop approving: after it, a punch already set aside counts again only if the old reader runs, so read any day set aside during the window by hand. ALV-291 must not be run at DTC until its guard exists (OPS-19).
+
+### Rows
+
+| ID | Recommendation | Why | Cost of ignoring | Level | Decision |
+|---|---|---|---|---|---|
+| OPS-21 | One push to dev and one release, not two (D1 retired) | Commits interleave; Confirm without its screen blocks slips | Half-state live | P1, Recommend | |
+| OPS-22 | 087 reaches main only with 088 close behind; 086 after | Slip refusal points to a register that is in 088 | Payroll blocked at DTC with no exit | P1, Recommend | |
+| OPS-23 | AC-59 and OPS-18 run on a DTC copy, steps above, before main | Never run on real data | Silent pay change for 442 people | P1, Recommend | |
+| OPS-24 | Fix the dry-run docstring; treat night-shift "moved" days as ALV-402 | Script compares one calendar day | False alarm or a missed real move | P3, Recommend | |
+| OPS-25 | Confirm the previous tag exists in `alvoraa-app` before release | Rollback depends on it | No rollback | P1, Recommend | |
+| OPS-26 | Test: approving a fix for a leaver does not throw in the slip refresh | Grace's job died on leavers | New silent failure | P2, Recommend | |
+| OPS-27 | Fix Grace's draft-slip loop separately (per-row catch) | Frozen since 18 Nov; this release does not touch it | Stale draft slips continue | P2, Consider | |
+
+**Subtract pass:** I removed a separate alert rule, a dashboard and any staged server-then-screens deploy (retired D1). I removed nothing else. **Left behind:** this appended section only, committed; no container, file or setting elsewhere.

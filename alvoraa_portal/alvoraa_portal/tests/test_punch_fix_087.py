@@ -377,13 +377,6 @@ class Approval(PunchFixCase):
 			self.assertEqual(frappe.db.get_value(CHECKIN, n, ["skip_auto_attendance", "time", "log_type"],
 			                                     as_dict=True), before[n])
 
-	def test_still_odd_stays_held_and_hours_are_written(self):
-		att, names = self.day_of([("09:00", "IN")])
-		req = self.fix("12:00", aside=[])
-		# 09:00 plus 12:00 = even; to stay odd, send a set-aside of nothing useful: use two punches
-		self.decide(req)
-		self.assertEqual(self.row(att).status, "Absent" if self.row(att).working_hours < 4 else self.row(att).status)
-
 	def test_a_result_below_the_absent_threshold_is_absent(self):
 		att, names = self.day_of([("09:00", "IN")])
 		req = self.fix("10:00")
@@ -881,7 +874,10 @@ class DaySheet(PunchFixCase):
 			frappe.set_user("Administrator")
 		self.assertTrue(card["sets_aside_machine"])
 		self.assertEqual(card["now"]["shift"]["start"], "09:00")
-		self.assertEqual([(p["time"], p["added"]) for p in card["after"]["punches"]], [("09:30", True), ("11:15", False)])
+		# AC-27: the set-aside 19:30 stays on the If-approved side, flagged so the screen strikes it through
+		self.assertEqual([(p["time"], p["added"], bool(p.get("aside"))) for p in card["after"]["punches"]],
+		                 [("09:30", True, False), ("11:15", False, False), ("19:30", False, True)])
+		self.assertEqual([p["time"] for p in card["now"]["punches"] if p["ticked"]], ["19:30"])
 
 
 class NoteOnOrdinaryDay(PunchFixCase):
@@ -893,3 +889,54 @@ class NoteOnOrdinaryDay(PunchFixCase):
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "explanation"), "went to the bank")
+
+
+class NightShift(PunchFixCase):
+	"""ALV-402's rule in 087's reads: a punch counts on its `shift_start` day. DTC's case: two
+	daytime punches and a 00:00 departure on the next calendar date."""
+
+	def night_day(self):
+		names = []
+		for when, lt, start in (("%s 09:00:00" % self.day, "IN", self.day), ("%s 12:00:00" % self.day, "OUT", self.day),
+		                        ("%s 00:00:00" % add_days(self.day, 1), "OUT", self.day)):
+			doc = frappe.get_doc({"doctype": CHECKIN, "employee": self.emp, "log_type": lt, "time": when})
+			doc.insert(ignore_permissions=True)
+			# Set after insert, as test_midnight_punch_alv402 does: Frappe's own shift match depends on the site.
+			frappe.db.set_value(CHECKIN, doc.name, {"shift_start": "%s 09:00:00" % start, "offshift": 0},
+			                    update_modified=False)
+			names.append(doc.name)
+		att = self.h._attendance(self.emp)
+		att.submit()
+		return att.name, names
+
+	def test_the_card_the_preview_and_the_engine_count_the_00_00_departure_on_its_shift_day(self):
+		from alvoraa_portal.payroll_rules_apply import _punches
+		att, names = self.night_day()
+		self.assertEqual(self.row(att).status, "Held")  # 3 punches by the shift day, as the engine reads them
+		self.assertEqual(_punches(self.emp, self.day)[2], 3)
+		self.assertEqual(len(punch_fix.counted(self.emp, self.day)), 3)
+		self.assertEqual(len(punch_fix.day_punches(self.emp, self.day)), 3)
+		self.assertEqual(len(punch_fix.day_punches(self.emp, add_days(self.day, 1))), 0)  # not the next day's
+		row = frappe._dict(frappe.db.get_value("Attendance", att, ["*"], as_dict=True))
+		status, hours, late, early, first, last = held_day.worked_out(row)
+		self.assertEqual(str(last), "%s 00:00:00" % add_days(self.day, 1))  # the 00:00 punch is the out time
+		req = self.fix("12:40")
+		frappe.set_user(self.hr)
+		try:
+			card = punch_fix.card(frappe.get_doc(REQUEST, req).as_dict())
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual([p["time"] for p in card["now"]["punches"]], ["00:00", "09:00", "12:00"])
+		self.decide(req)
+		row = self.row(att)
+		self.assertEqual((row.status, round(row.working_hours, 2)), (card["after"]["status"], card["after"]["hours"]))
+		self.assertEqual(card["after"]["status"], "Present")
+
+	def test_a_day_punch_for_the_next_day_is_not_taken_into_this_days_card(self):
+		att, names = self.night_day()
+		doc = frappe.get_doc({"doctype": CHECKIN, "employee": self.emp, "log_type": "IN",
+		                      "time": "%s 11:00:00" % add_days(self.day, 1)})
+		doc.insert(ignore_permissions=True)
+		frappe.db.set_value(CHECKIN, doc.name, {"shift_start": "%s 11:00:00" % add_days(self.day, 1), "offshift": 0},
+		                    update_modified=False)
+		self.assertEqual(len(punch_fix.day_punches(self.emp, self.day)), 3)

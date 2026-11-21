@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime
 
 HELD = "Held"
 ATTENDANCE = "Attendance"
@@ -277,14 +277,21 @@ def _held_row(employee, date):
 def _day_logs(employee, date, shift, aside=()):
 	"""The punches a day is judged from. `aside` are punch names to leave out (slice 087:
 	a punch a pending fix would set aside; once approved it is out through its own
-	`skip_auto_attendance`)."""
+	`skip_auto_attendance`).
+
+	ALV-402's rule, the same as `payroll_rules_apply._punches`: a punch belongs to the day its
+	shift started (`shift_start`), not to its calendar date, and a punch with no shift keeps its
+	calendar date. So this reads the day and the next and keeps what is this day's: leaving at
+	00:00 after a 20:30 shift end is the last punch of the day before, here as in the engine."""
+	date = getdate(date)
 	filters = {"employee": employee, "skip_auto_attendance": 0, "offshift": 0,
-	           "time": ("between", [f"{date} 00:00:00", f"{date} 23:59:59"])}
+	           "time": ("between", [f"{date} 00:00:00", f"{add_days(date, 1)} 23:59:59"])}
 	if aside:
 		filters["name"] = ("not in", list(aside))
-	return frappe.get_all("Employee Checkin", filters=filters,
+	rows = frappe.get_all("Employee Checkin", filters=filters,
 	                      fields=["name", "time", "log_type", "shift_start", "shift_end"],
 	                      order_by="time asc")
+	return [r for r in rows if getdate(r.shift_start or r.time) == date]
 
 
 def extra_when(shift, date, when, first_time=None):
@@ -298,12 +305,14 @@ def extra_when(shift, date, when, first_time=None):
 	return when
 
 
-def worked_out(row, extra=None, aside=()):
+def worked_out(row, extra=None, aside=(), logs=None):
 	"""(status, working_hours, late, early, in_time, out_time) for a day, by the Shift
 	Type's own `get_attendance`: no threshold rule of ours. `extra` is a punch not yet
 	stored, as (time, log_type); `aside` are punch names to leave out."""
 	shift = frappe.get_cached_doc("Shift Type", row.shift)
-	logs = _day_logs(row.employee, row.attendance_date, row.shift, aside)
+	# `logs` lets a caller that has just read the day's punches pass them in (slice 087's card).
+	logs = (_day_logs(row.employee, row.attendance_date, row.shift, aside) if logs is None
+	        else [frappe._dict(x) for x in logs])
 	if extra:
 		when, log_type = extra
 		first = logs[0] if logs else frappe._dict()

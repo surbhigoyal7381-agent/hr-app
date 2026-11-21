@@ -6206,9 +6206,9 @@ function acDetail(x) {
        reason form stays one tap away for something that is not about a punch (P15). */
     var other = (x.request && !x.request.punch_fix) ? acReqCard(x.request, true) : (d.can_request ? acForm(x) : "");
     setTimeout(function () { acPfLoad(x.date); }, 0);
-    return html + '<div class="pf" id="pf-' + gpEsc(x.date) + '"><p class="ac-help">Loading the day&hellip;</p></div>'
-      + (other ? '<p class="ac-help"><button type="button" class="pf-lnk" onclick="acPfOther(&quot;' + gpEsc(x.date)
-        + '&quot;)">Not about a punch? Something else went wrong</button></p><div id="pf-other-' + gpEsc(x.date) + '" hidden>' + other + "</div>" : "")
+    return html + '<div class="pfx" id="pfx-' + gpEsc(x.date) + '"><p class="ac-help">Loading the day&hellip;</p></div>'
+      + (other ? '<p class="ac-help"><button type="button" class="pfx-lnk" onclick="acPfOther(&quot;' + gpEsc(x.date)
+        + '&quot;)">Not about a punch? Something else went wrong</button></p><div id="pfx-other-' + gpEsc(x.date) + '" hidden>' + other + "</div>" : "")
       + "</div></td></tr>";
   }
   html += acHeldBox(x, d);
@@ -6356,7 +6356,7 @@ function pfCounted(excludeAside) {
 }
 
 window.acPfLoad = async function (date) {
-  var el = document.getElementById("pf-" + date);
+  var el = document.getElementById("pfx-" + date);
   if (!el) return;
   if (acPf.date !== date) { acPf = {date: date, data: null, add: null, aside: [], note: "", sheet: null, sending: false}; }
   try {
@@ -6372,40 +6372,40 @@ function pfStrip(shift, times, marks) {
   var s = pfMin(shift.start), e = pfMin(shift.end), lo = Math.min(s, times.length ? times[0].m : s) - 30,
       hi = Math.max(e, times.length ? times[times.length - 1].m : e) + 30, span = hi - lo || 1;
   function pos(m) { return Math.max(0, Math.min(100, (m - lo) / span * 100)); }
-  var h = '<div class="pf-strip" aria-hidden="true"><div class="pf-band" style="left:' + pos(s) + "%;width:" + (pos(e) - pos(s)) + '%"></div>';
+  var h = '<div class="pfx-strip" aria-hidden="true"><div class="pfx-band" style="left:' + pos(s) + "%;width:" + (pos(e) - pos(s)) + '%"></div>';
   var c = times.filter(function (t) { return t.k !== "aside"; });
   for (var i = 0; i + 1 < c.length; i += 2) {
-    h += '<div class="pf-bar" style="left:' + pos(c[i].m) + "%;width:" + (pos(c[i + 1].m) - pos(c[i].m)) + '%"></div>';
+    h += '<div class="pfx-bar" style="left:' + pos(c[i].m) + "%;width:" + (pos(c[i + 1].m) - pos(c[i].m)) + '%"></div>';
   }
-  times.forEach(function (t) { h += '<span class="pf-pt ' + t.k + '" style="left:' + pos(t.m) + '%"></span>'; });
-  return h + '</div><div class="pf-strip-cap" aria-hidden="true"><span>' + gpEsc(shift.start) + "</span><span>" + gpEsc(shift.end) + "</span></div>";
+  times.forEach(function (t) { h += '<span class="pfx-pt ' + t.k + '" style="left:' + pos(t.m) + '%"></span>'; });
+  return h + '</div><div class="pfx-strip-cap" aria-hidden="true"><span>' + gpEsc(shift.start) + "</span><span>" + gpEsc(shift.end) + "</span></div>";
 }
 
 function acPfPaint() {
-  var el = document.getElementById("pf-" + acPf.date), d = acPf.data;
+  var el = document.getElementById("pfx-" + acPf.date), d = acPf.data;
   if (!el || !d) return;
   var r = d.request, html = "", add = acPf.add, staged = !!(add || acPf.aside.length);
   var locked = !!d.blocked, waiting = r && r.state === "waiting";
   var status = d.status === "Held" ? "held" : "ok";
   /* one status line */
   if (locked) {
-    html += '<div class="pf-sl pf-lock"><span class="pf-ic" aria-hidden="true">&#9679;</span><span>This day cannot be fixed here</span></div>'
-      + '<p class="pf-sub">' + gpEsc(d.blocked_text) + "</p>";
+    html += '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This day cannot be fixed here</span></div>'
+      + '<p class="pfx-sub">' + gpEsc(d.blocked_text) + "</p>";
   } else if (waiting) {
-    html += '<div class="pf-sl pf-wait"><span class="pf-ic" aria-hidden="true">&#9719;</span><span>Sent to HR at ' + gpEsc(r.sent_at) + " &middot; Waiting</span></div>"
-      + '<p class="pf-sub">The day stays as it is until HR decides. You will see the answer here.</p>';
+    html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Sent to HR at ' + gpEsc(r.sent_at) + " &middot; Waiting</span></div>"
+      + '<p class="pfx-sub">The day stays as it is until HR decides. You will see the answer here.</p>';
   } else if (r && r.state === "approved") {
-    html += '<div class="pf-sl pf-ok"><span class="pf-ic" aria-hidden="true">&#10003;</span><span>Fixed by HR &middot; ' + pfHours(d.hours) + " &middot; "
+    html += '<div class="pfx-sl pfx-ok"><span class="pfx-ic" aria-hidden="true">&#10003;</span><span>Fixed by HR &middot; ' + pfHours(d.hours) + " &middot; "
       + (d.status === "Absent" || d.status === "Held" ? "Not paid" : "Paid") + "</span></div>";
   } else if (r && r.state === "declined") {
-    html += '<div class="pf-sl pf-held"><span class="pf-ic" aria-hidden="true">!</span><span>HR did not add this</span></div>'
-      + (r.hr_note ? '<p class="pf-sub">Reason from HR: ' + gpEsc(r.hr_note) + "</p>" : "");
+    html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>HR did not add this</span></div>'
+      + (r.hr_note ? '<p class="pfx-sub">Reason from HR: ' + gpEsc(r.hr_note) + "</p>" : "");
   } else {
-    html += '<div class="pf-sl pf-' + status + '"><span class="pf-ic" aria-hidden="true">' + (d.held ? "!" : "&#10003;") + "</span><span>"
+    html += '<div class="pfx-sl pfx-' + status + '"><span class="pfx-ic" aria-hidden="true">' + (d.held ? "!" : "&#10003;") + "</span><span>"
       + (d.held ? "Held &middot; not paid until fixed" : gpEsc(d.status) + " &middot; " + pfHours(d.hours)) + "</span></div>";
   }
   if (d.shift) {
-    html += '<p class="pf-muted">Shift ' + gpEsc(d.shift.start) + "&ndash;" + gpEsc(d.shift.end) + " &middot; Expected " + pfHM(Math.round(d.shift.expected * 60)) + "</p>";
+    html += '<p class="pfx-muted">Shift ' + gpEsc(d.shift.start) + "&ndash;" + gpEsc(d.shift.end) + " &middot; Expected " + pfHM(Math.round(d.shift.expected * 60)) + "</p>";
   }
   /* strip + timeline */
   var items = (d.punches || []).map(function (p) {
@@ -6417,14 +6417,14 @@ function acPfPaint() {
   items.sort(function (a, b) { return a.m - b.m; });
   html += pfStrip(d.shift, items);
   if (!locked && !staged && !waiting) {
-    html += '<p class="pf-hint">Something missing? Tap a gap. Something wrong? Tap that punch.</p>';
+    html += '<p class="pfx-hint">Something missing? Tap a gap. Something wrong? Tap that punch.</p>';
   }
-  html += '<ul class="pf-tl">';
+  html += '<ul class="pfx-tl">';
   var canTap = !locked && !waiting && !(add) ;
   function gapRow(i) {
-    return canTap ? '<li><button type="button" class="pf-b pf-g" onclick="acPfGap(' + i + ')"><span class="pf-tm"></span>'
-      + '<span class="pf-rail"><span class="pf-gdot" aria-hidden="true">+</span></span>'
-      + '<span class="pf-gl">Add a missing punch here</span><span></span></button></li>' : "";
+    return canTap ? '<li><button type="button" class="pfx-b pfx-g" onclick="acPfGap(' + i + ')"><span class="pfx-tm"></span>'
+      + '<span class="pfx-rail"><span class="pfx-gdot" aria-hidden="true">+</span></span>'
+      + '<span class="pfx-gl">Add a missing punch here</span><span></span></button></li>' : "";
   }
   html += gapRow(0);
   items.forEach(function (it, i) {
@@ -6440,19 +6440,19 @@ function acPfPaint() {
         + ", from your request. It stays on record but no longer counts.";
       if (acPf.aside.indexOf(it.p.name) >= 0) sub = "Set aside in this request";
     }
-    var inner = '<span class="pf-tm num">' + gpEsc(it.t) + '</span><span class="pf-rail"><span class="pf-dot ' + it.k + (it.ask ? " pend" : "") + '"></span></span>'
-      + '<span class="pf-lb"><span class="pf-lbt">' + (it.add || it.ask ? label : gpEsc(label)) + '</span><span class="pf-sb">' + sub + "</span></span><span></span>";
+    var inner = '<span class="pfx-tm num">' + gpEsc(it.t) + '</span><span class="pfx-rail"><span class="pfx-dot ' + it.k + (it.ask ? " pend" : "") + '"></span></span>'
+      + '<span class="pfx-lb"><span class="pfx-lbt">' + (it.add || it.ask ? label : gpEsc(label)) + '</span><span class="pfx-sb">' + sub + "</span></span><span></span>";
     var tap = it.p && it.p.counted && !it.p.aside && canTap;
     var tapAside = it.p && acPf.aside.indexOf(it.p.name) >= 0 && !waiting;
     html += '<li>' + (tap || tapAside
-      ? '<button type="button" class="pf-b pf-p' + cls + '" onclick="acPfPunch(&quot;' + gpEsc(it.p.name) + '&quot;)">' + inner + "</button>"
-      : '<div class="pf-s pf-p' + cls + '">' + inner + "</div>") + "</li>";
+      ? '<button type="button" class="pfx-b pfx-p' + cls + '" onclick="acPfPunch(&quot;' + gpEsc(it.p.name) + '&quot;)">' + inner + "</button>"
+      : '<div class="pfx-s pfx-p' + cls + '">' + inner + "</div>") + "</li>";
     html += gapRow(i + 1);
   });
   html += "</ul>";
-  if (r && r.note && (waiting || r.state === "approved")) html += '<p class="pf-sub">Your note: ' + gpEsc(r.note) + "</p>";
+  if (r && r.note && (waiting || r.state === "approved")) html += '<p class="pfx-sub">Your note: ' + gpEsc(r.note) + "</p>";
   if (waiting) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
-  if (add) html += '<p class="pf-one">One punch per request. If another is missing, send this first and add the next after HR decides.</p>';
+  if (add) html += '<p class="pfx-one">One punch per request. If another is missing, send this first and add the next after HR decides.</p>';
   /* the sticky send bar */
   if (staged && !locked) {
     var parts = [];
@@ -6461,17 +6461,17 @@ function acPfPaint() {
       var p = (d.punches || []).filter(function (x) { return x.name === n; })[0];
       if (p) parts.push(p.time + " set aside");
     });
-    html += '<div class="pf-bar-send"><div class="pf-sum">' + gpEsc(parts.join(" · ")) + "<small>Nothing changes until HR approves.</small></div>"
-      + '<div class="pf-err" id="pf-refusal" role="alert" hidden></div>'
+    html += '<div class="pfx-bar-send"><div class="pfx-sum">' + gpEsc(parts.join(" · ")) + "<small>Nothing changes until HR approves.</small></div>"
+      + '<div class="pfx-err" id="pfx-refusal" role="alert" hidden></div>'
       + '<button type="button" class="btn btn-primary" onclick="acPfSend()">Send to HR</button></div>';
   }
   el.innerHTML = html + acPfSheet();
-  var first = el.querySelector("#pf-time, #pf-sheet .btn-primary");
+  var first = el.querySelector("#pfx-time, #pfx-sheet .btn-primary");
   if (acPf.sheet && first) first.focus();
 }
 
 window.acPfOther = function (date) {
-  var o = document.getElementById("pf-other-" + date);
+  var o = document.getElementById("pfx-other-" + date);
   if (o) o.hidden = !o.hidden;
 };
 
@@ -6479,25 +6479,25 @@ window.acPfOther = function (date) {
 function acPfSheet() {
   var s = acPf.sheet, d = acPf.data;
   if (!s) return "";
-  var h = '<div class="pf-scrim" onclick="if(event.target===this)acPfClose()"><div id="pf-sheet" class="pf-sheet" role="dialog" aria-modal="true" aria-labelledby="pf-sh" onkeydown="if(event.key===&quot;Escape&quot;)acPfClose()">';
+  var h = '<div class="pfx-scrim" onclick="if(event.target===this)acPfClose()"><div id="pfx-sheet" class="pfx-sheet" role="dialog" aria-modal="true" aria-labelledby="pfx-sh" onkeydown="if(event.key===&quot;Escape&quot;)acPfClose()">';
   if (s.type === "add") {
-    h += '<h2 id="pf-sh">Add the missing punch</h2><p class="pf-ctx">' + gpEsc(s.ctx) + "</p>"
-      + '<div class="pf-field"><label class="pf-fl" for="pf-time">Time</label>'
-      + '<input type="time" id="pf-time" value="' + gpEsc(s.time || "") + '" oninput="acPfTime(this.value)" aria-describedby="pf-infer pf-err">'
-      + '<p class="pf-infer" id="pf-infer" aria-live="polite">' + (s.kind ? "It will be added as: <b>" + gpEsc(s.kind.label) + "</b>." : "") + "</p>"
-      + '<div class="pf-err" id="pf-err" role="alert">' + (s.err ? gpEsc(s.err) : "") + "</div></div>"
+    h += '<h2 id="pfx-sh">Add the missing punch</h2><p class="pfx-ctx">' + gpEsc(s.ctx) + "</p>"
+      + '<div class="pfx-field"><label class="pfx-fl" for="pfx-time">Time</label>'
+      + '<input type="time" id="pfx-time" value="' + gpEsc(s.time || "") + '" oninput="acPfTime(this.value)" aria-describedby="pfx-infer pfx-err">'
+      + '<p class="pfx-infer" id="pfx-infer" aria-live="polite">' + (s.kind ? "It will be added as: <b>" + gpEsc(s.kind.label) + "</b>." : "") + "</p>"
+      + '<div class="pfx-err" id="pfx-err" role="alert">' + (s.err ? gpEsc(s.err) : "") + "</div></div>"
       /* Q3: the note label says who reads it. PRIV-2: a Held day takes no note, so no box. */
-      + (d.held ? "" : '<div class="pf-field"><label class="pf-fl" for="pf-note">Note (optional). HR and your manager can read this.</label>'
-        + '<textarea id="pf-note" rows="2">' + gpEsc(acPf.note || "") + "</textarea></div>")
-      + '<div class="pf-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
+      + (d.held ? "" : '<div class="pfx-field"><label class="pfx-fl" for="pfx-note">Note (optional). HR and your manager can read this.</label>'
+        + '<textarea id="pfx-note" rows="2">' + gpEsc(acPf.note || "") + "</textarea></div>")
+      + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
       + '<button type="button" class="btn btn-primary" onclick="acPfAdd()">Add to request</button></div>';
   } else {
     var p = (d.punches || []).filter(function (x) { return x.name === s.name; })[0] || {time: ""};
     var on = acPf.aside.indexOf(s.name) >= 0;
-    h += '<h2 id="pf-sh">' + (on ? "Keep this punch" : "This punch is wrong") + "</h2>"
-      + '<p class="pf-ctx">' + (on ? "It will count again. Nothing is sent for it."
+    h += '<h2 id="pfx-sh">' + (on ? "Keep this punch" : "This punch is wrong") + "</h2>"
+      + '<p class="pfx-ctx">' + (on ? "It will count again. Nothing is sent for it."
         : "It stays on record, crossed out, and stops counting once HR approves.") + "</p>"
-      + '<div class="pf-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
+      + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
       + '<button type="button" class="btn btn-primary" onclick="acPfToggleAside(&quot;' + gpEsc(s.name) + '&quot;)">'
       + (on ? "Keep " + gpEsc(p.time) : "Set " + gpEsc(p.time) + " aside") + "</button></div>";
   }
@@ -6541,14 +6541,14 @@ window.acPfTime = function (v) {
   var s = acPf.sheet; if (!s) return;
   s.time = v;
   var m = pfMin(v), k = isNaN(m) ? null : acKind(pfCounted(), m);
-  var inf = document.getElementById("pf-infer");
+  var inf = document.getElementById("pfx-infer");
   if (inf) inf.innerHTML = k ? "It will be added as: <b>" + gpEsc(k.label) + "</b>." : "";
   s.kind = k;
 };
 
 window.acPfAdd = function () {
-  var s = acPf.sheet, t = (document.getElementById("pf-time") || {}).value;
-  acPf.note = acPf.data.held ? "" : ((document.getElementById("pf-note") || {}).value || "");
+  var s = acPf.sheet, t = (document.getElementById("pfx-time") || {}).value;
+  acPf.note = acPf.data.held ? "" : ((document.getElementById("pfx-note") || {}).value || "");
   s.time = t;
   var err = pfFit(s, t);
   if (!err && (acPf.data.punches || []).some(function (p) { return p.counted && p.time === t; })) {
@@ -6556,7 +6556,7 @@ window.acPfAdd = function () {
   }
   if (err) {
     s.err = err;
-    var box = document.getElementById("pf-err"), inp = document.getElementById("pf-time");
+    var box = document.getElementById("pfx-err"), inp = document.getElementById("pfx-time");
     if (box) box.textContent = err;
     if (inp) { inp.classList.add("bad"); inp.focus(); }
     return;
@@ -6568,7 +6568,7 @@ window.acPfAdd = function () {
 
 window.acPfSend = async function () {
   if (acPf.sending) return;
-  var box = document.getElementById("pf-refusal");
+  var box = document.getElementById("pfx-refusal");
   /* Exactly four things leave this page: the day, the time, the punches set aside, the note. */
   var body = {date: acPf.date, time: acPf.add ? acPf.add.time : "", set_aside: JSON.stringify(acPf.aside), note: acPf.note || ""};
   acPf.sending = true; showLoad();
@@ -6600,17 +6600,17 @@ window.acPfWithdraw = async function (name) {
 function pfCardTimes(list, mode) {
   return (list || []).map(function (p) {
     var t = gpEsc(p.time);
-    if (mode === "now") return p.aside ? '<s class="pf-x">' + t + "</s>" : t;
-    return p.added ? '<b class="pf-a">+' + t + "</b>" : t;
+    if (mode === "now") return p.aside ? '<s class="pfx-x">' + t + "</s>" : t;
+    return p.added ? '<b class="pfx-a">+' + t + "</b>" : p.aside ? '<s class="pfx-x">' + t + "</s>" : t;
   }).join(" &middot; ");
 }
 
 function pfFirst(r) { return String(r.employee_name || "").split(" ")[0] || "the employee"; }
 function pfNoteBox(r) {
-  return '<div class="pf-notebox" id="pf-note-' + gpEsc(r.name) + '" hidden><label class="pf-fl" for="pf-note-text-' + gpEsc(r.name)
-    + '">Note for ' + gpEsc(pfFirst(r)) + '. ' + gpEsc(pfFirst(r)) + ' will see it.</label>'
-    + '<textarea id="pf-note-text-' + gpEsc(r.name) + '" rows="2"></textarea>'
-    + '<div class="pf-err" id="pf-note-err-' + gpEsc(r.name) + '" role="alert"></div></div>';
+  return '<div class="pfx-notebox" id="pfx-note-' + gpEsc(r.name) + '" hidden><label class="pfx-fl" for="pfx-note-text-' + gpEsc(r.name)
+    + '">Note for ' + gpEsc(pfFirst(r)) + ' (optional)</label>'
+    + '<textarea id="pfx-note-text-' + gpEsc(r.name) + '" rows="2"></textarea>'
+    + '<div class="pfx-err" id="pfx-note-err-' + gpEsc(r.name) + '" role="alert"></div></div>';
 }
 
 function pfCardStrip(shift, items) {
@@ -6621,15 +6621,18 @@ function pfCardStrip(shift, items) {
 /* HR's decision from the card. The note is the box on the card, not a browser prompt. A decline
    needs a reason: no reason sends nothing, opens the box and puts the cursor in it (AC-30). */
 window.acPfNote = function (name) {
-  var box = document.getElementById("pf-note-" + name);
+  var box = document.getElementById("pfx-note-" + name);
   if (box) { box.hidden = false; var t = box.querySelector("textarea"); if (t) t.focus(); }
 };
 
 window.acPfDecide = async function (name, approve, seen, first) {
-  var ta = document.getElementById("pf-note-text-" + name), note = ta ? ta.value.trim() : "";
+  var ta = document.getElementById("pfx-note-text-" + name), note = ta ? ta.value.trim() : "";
   if (!approve && !note) {
-    var err = document.getElementById("pf-note-err-" + name);
+    var err = document.getElementById("pfx-note-err-" + name);
     acPfNote(name);
+    var lbl = document.querySelector("#pfx-note-" + name + " label");
+    if (lbl) lbl.textContent = "Why not? " + (first || "The employee") + " will see this.";
+    if (ta) { ta.classList.add("bad"); ta.setAttribute("aria-invalid", "true"); }
     if (err) err.textContent = "Write a reason so " + (first || "the employee") + " knows what to do next.";
     return;
   }
@@ -6659,44 +6662,47 @@ window.acPfCard = function (r) {
   var c = r.card || {};
   if (!c.now) return "";
   var after = c.after, now = c.now, mine = c.own_day, blocked = c.blocked;
+  var wrong = (now.punches || []).filter(function (p) { return p.ticked; }).map(function (p) { return p.time; }).join(", ");
   var says = r.missing_time
     ? gpEsc(r.employee_name) + " says: " + gpEsc(c.kind || "") + " at " + gpEsc(r.missing_time) + "."
-    : gpEsc(r.employee_name) + " says a punch is wrong.";
-  var h = '<div class="pf-card"><div class="pf-hrh"><b>' + gpEsc(r.employee_name) + " &middot; " + (r.missing_time ? "Missing punch" : "Wrong punch")
-    + "</b><span>" + gpEsc(r.from_date) + "</span></div><p class=\"pf-says\">" + says
+      + (wrong ? " Also says " + gpEsc(wrong) + " is wrong." : "")
+    : gpEsc(r.employee_name) + " says the punch at " + gpEsc(wrong) + " is wrong.";
+  var h = '<div class="pfx-card"><div class="pfx-hrh"><b>' + gpEsc(r.employee_name) + " &middot; " + (r.missing_time ? "Missing punch" : "Wrong punch")
+    + "</b><span>" + gpEsc(r.from_date) + "</span></div><p class=\"pfx-says\">" + says
     + (r.explanation ? "<q>" + gpEsc(r.explanation) + "</q>" : "") + "</p>"
-    + (c.sets_aside_machine ? '<p class="pf-says">This asks to set aside a punch from the machine.</p>' : "")
-    + '<div class="pf-ba"><div><h4>Now</h4><p class="num pf-st">' + gpEsc(now.status) + " &middot; " + now.punches.length + " punches</p>"
+    + (c.sets_aside_machine ? '<p class="pfx-says">This asks to set aside a punch from the machine.</p>' : "")
+    + '<div class="pfx-ba"><div><h4>Now</h4><p class="num pfx-st">' + gpEsc(now.status) + " &middot; " + now.punches.length + " punches</p>"
     + pfCardStrip(now.shift, now.punches.map(function (p) { return {m: pfMin(p.time), k: p.aside ? "aside" : "io"}; }))
-    + '<p class="pf-tms num">' + pfCardTimes(now.punches, "now") + "</p></div>"
-    + '<div class="pf-arr" aria-hidden="true">&rarr;</div>';
+    + '<p class="pfx-tms num">' + pfCardTimes(now.punches, "now") + "</p></div>"
+    + '<div class="pfx-arr" aria-hidden="true">&rarr;</div>';
   if (after) {
-    h += '<div><h4>If approved</h4><p class="num pf-st" id="pf-after-' + gpEsc(r.name) + '">'
+    h += '<div><h4>If approved</h4><p class="num pfx-st" id="pfx-after-' + gpEsc(r.name) + '">'
       + (after.still_held ? "Still held &middot; " + after.punches.length + " punches &middot; not paid"
         : gpEsc(after.status) + " &middot; " + pfHours(after.hours) + (after.status === "Absent" ? " &middot; not paid" : " &middot; paid"))
-      + "</p>" + pfCardStrip(now.shift, after.punches.map(function (p) { return {m: pfMin(p.time), k: p.added ? "add" : "io"}; }))
-      + '<p class="pf-tms num">' + pfCardTimes(after.punches, "after") + "</p></div>";
+      + "</p>" + pfCardStrip(now.shift, after.punches.map(function (p) { return {m: pfMin(p.time), k: p.added ? "add" : p.aside ? "aside" : "io"}; }))
+      + '<p class="pfx-tms num">' + pfCardTimes(after.punches, "after") + "</p></div>";
   } else { h += "<div></div>"; }
   h += "</div>";
   var foot = "";
   if (mine) {
-    foot = '<div class="pf-sl pf-lock"><span class="pf-ic" aria-hidden="true">&#9679;</span><span>This is your own day, so you cannot approve it. Another HR person will decide it.</span></div>';
+    foot = '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This is your own day, so you cannot approve it. Another HR person will decide it.</span></div>';
   } else if (blocked) {
-    foot = '<p class="pf-sub">' + gpEsc(blocked === "slip"
+    foot = '<p class="pfx-sub">' + gpEsc(blocked === "slip"
       ? "Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary."
       : blocked === "left" ? "This person has left, so no punch can be added. Decline it and say why."
       : "This day can no longer be fixed. Decline it and say why.") + "</p>"
-      + pfNoteBox(r) + '<div class="pf-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
+      + pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
   } else if (r.can_decide !== false) {
     var seen = gpEsc(c.seen || "");
-    foot = pfNoteBox(r) + '<div class="pf-foot"><button class="btn btn-primary" aria-describedby="pf-after-' + gpEsc(r.name) + '" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,1,&quot;' + seen + '&quot;)">Approve</button>'
+    foot = pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-primary" aria-describedby="pfx-after-' + gpEsc(r.name) + '" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,1,&quot;' + seen + '&quot;)">Approve</button>'
       + '<button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button>'
-      + '<button type="button" class="pf-lnk" onclick="acPfNote(&quot;' + gpEsc(r.name) + '&quot;)">Add a note for ' + gpEsc(pfFirst(r)) + "</button>"
+      + '<button type="button" class="pfx-lnk" onclick="acPfNote(&quot;' + gpEsc(r.name) + '&quot;)">Add a note for ' + gpEsc(pfFirst(r)) + "</button>"
       + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button></div>'
-      + (r.missing_time ? '<p class="pf-legend">Approving adds ' + gpEsc(r.missing_time) + " (" + (c.after && c.kind ? "" : "") + (r.missing_log === "OUT" ? "Out" : "In")
+      + (r.missing_time ? '<p class="pfx-legend">Approving adds ' + gpEsc(r.missing_time) + " (" + (c.after && c.kind ? "" : "") + (r.missing_log === "OUT" ? "Out" : "In")
         + "), marked &ldquo;added by HR&rdquo;. It is never deleted.</p>" : "");
   }
-  return h + foot + "</div>";
+  var legend = now.shift ? '<p class="pfx-legend">Shaded band: shift ' + gpEsc(now.shift.start) + "&ndash;" + gpEsc(now.shift.end) + ". Dots: punches.</p>" : "";
+  return h + foot + legend + "</div>";
 };
 
 function acHeldBox(x, d) {

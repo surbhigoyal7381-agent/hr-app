@@ -19,7 +19,7 @@ from datetime import timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime
 
 import alvoraa_portal.held_day as held_day
 import hrms.alvoraa_hr_core.access as access
@@ -113,12 +113,14 @@ def day_row(employee, date, for_update=False):
 		 "late_entry", "early_exit"], as_dict=True, for_update=for_update)
 
 
-def day_state(employee, date):
+def day_state(employee, date, row=None, emp=None):
 	"""None when the day can be fixed, else one word: left, unmarked, slip, leave,
-	hand, noshift. ONE answer, asked at raise and again at approval (SEC-5)."""
-	if frappe.db.get_value("Employee", employee, "status") != "Active":
+	hand, noshift. ONE answer, asked at raise and again at approval (SEC-5). A caller that
+	has the employee's status and the day's row already passes them in (the card does)."""
+	status = emp.status if emp else frappe.db.get_value("Employee", employee, "status")
+	if status != "Active":
 		return "left"
-	row = day_row(employee, date)
+	row = row or day_row(employee, date)
 	if not row:
 		return "unmarked"
 	# A day that was Held keeps 085's arrear path (Surbhi, 21 Nov): approval goes through even on a
@@ -161,12 +163,17 @@ def blocked_sentence(code, employee, date):
 # ── the punches ──────────────────────────────────────────────────────────────
 
 def day_punches(employee, date):
-	"""Every punch on the calendar day, set-aside ones too, for the card and the token."""
-	return frappe.get_all(
+	"""Every punch of the day, set-aside ones too, for the card, the sheet and the token. The same
+	day rule as the engine (ALV-402): a punch counts on its `shift_start` date, or its own date
+	with no shift, so a 00:00 departure is the last punch of the day before."""
+	date = getdate(date)
+	rows = frappe.get_all(
 		CHECKIN, filters={"employee": employee,
-		                  "time": ("between", [f"{getdate(date)} 00:00:00", f"{getdate(date)} 23:59:59"])},
-		fields=["name", "time", "log_type", "device_id", "skip_auto_attendance", "offshift", ADDED, ASIDE],
+		                  "time": ("between", [f"{date} 00:00:00", f"{add_days(date, 1)} 23:59:59"])},
+		fields=["name", "time", "log_type", "device_id", "skip_auto_attendance", "offshift", "shift_start",
+		        ADDED, ASIDE],
 		order_by="time asc")
+	return [r for r in rows if getdate(r.shift_start or r.time) == date]
 
 
 def counted(employee, date, aside=()):
@@ -183,12 +190,12 @@ def kind_for(before_count, after_count, log_type):
 	return "Back in after a break"
 
 
-def derive(employee, date, when_time, aside=(), shift=None):
+def derive(employee, date, when_time, aside=(), shift=None, logs=None):
 	"""(log_type, label, datetime) for a punch added at `when_time` on `date`. The
 	server's answer is the one stored: a log type sent by a client is never read."""
 	shift = shift or frappe.db.get_value(ATTENDANCE, {"employee": employee, "attendance_date": getdate(date),
 	                                                  "docstatus": 1}, "shift")
-	logs = counted(employee, date, aside)
+	logs = counted(employee, date, aside) if logs is None else logs
 	shift_doc = frappe.get_cached_doc("Shift Type", shift) if shift else frappe._dict()
 	when = held_day.extra_when(shift_doc, date, frappe.utils.get_time(when_time), logs[0].time if logs else None)
 	before = sum(1 for x in logs if get_datetime(x.time) < when)
@@ -196,12 +203,13 @@ def derive(employee, date, when_time, aside=(), shift=None):
 	return log_type, kind_for(before, len(logs) - before, log_type), when
 
 
-def outcome(row, add=None, aside=()):
+def outcome(row, add=None, aside=(), logs=None):
 	"""What the day comes to, from the counted punches, with `add` = (time, log_type)
 	put in and `aside` (punch names) left out. THE one function: the card calls it
 	to show "If approved" and the approval calls it to write, so they cannot differ."""
-	status, hours, late, early, first, last = held_day.worked_out(row, add, aside)
-	count = len(held_day._day_logs(row.employee, row.attendance_date, row.shift, aside)) + (1 if add else 0)
+	logs = held_day._day_logs(row.employee, row.attendance_date, row.shift, aside) if logs is None else logs
+	status, hours, late, early, first, last = held_day.worked_out(row, add, aside, logs)
+	count = len(logs) + (1 if add else 0)
 	# An odd count is still a missing punch. Held stays held; elsewhere the company's switch decides.
 	if count % 2 and (row.status == held_day.HELD or held_day._switch_on(row.company)):
 		status = held_day.HELD
@@ -217,11 +225,14 @@ def _snapshot(row, aside=()):
 	                       "punches": [_hhmm(x.time) for x in logs]})
 
 
+def _token(modified, punches):
+	return hashlib.sha1(f"{modified}|{','.join(sorted(p.name for p in punches))}".encode()).hexdigest()
+
+
 def seen_token(doc):
 	"""What HR saw: the request as last saved and the ids of the day's punches. If
 	either moves, an approval sent with the old token is refused (SEC-1)."""
-	names = sorted(p.name for p in day_punches(doc.employee, doc.from_date))
-	return hashlib.sha1(f"{doc.modified}|{','.join(names)}".encode()).hexdigest()
+	return _token(doc.modified, day_punches(doc.employee, doc.from_date))
 
 
 # ── raising (validate: Desk, REST, the portal) ───────────────────────────────
@@ -272,9 +283,9 @@ def _check_aside(doc):
 	"""Each punch to set aside must be this employee's, on this day, and still counting."""
 	names = aside_names(doc)
 	for name in names:
-		row = frappe.db.get_value(CHECKIN, name, ["employee", "time", "skip_auto_attendance", ASIDE],
+		row = frappe.db.get_value(CHECKIN, name, ["employee", "time", "shift_start", "skip_auto_attendance", ASIDE],
 		                          as_dict=True)
-		if not row or row.employee != doc.employee or getdate(row.time) != getdate(doc.from_date):
+		if not row or row.employee != doc.employee or getdate(row.shift_start or row.time) != getdate(doc.from_date):
 			access.log_refusal("SEC-4", "punch_fix.validate", REQUEST, doc.name)
 			frappe.throw(_("One of the punches you picked is not on this day. Open the day again and pick "
 			               "from the list."))
@@ -387,43 +398,46 @@ def day_sheet(date):
 # ── the card HR reads (the same `outcome` the approval runs) ─────────────────
 
 def card(row):
-	"""Now and If approved for one waiting punch fix, plus the token to send back."""
+	"""Now and If approved for one waiting punch fix, plus the token to send back. About eight
+	queries a card: each read is made once and handed on (AC-35)."""
 	if not columns_ready():
 		return {}
 	doc = frappe._dict(row)
+	req = frappe.db.get_value(REQUEST, doc.name, ["modified", "alvoraa_missing_time", "alvoraa_set_aside"], as_dict=True)
+	emp = frappe.db.get_value("Employee", doc.employee, ["status", "user_id"], as_dict=True)
 	day = day_row(doc.employee, doc.from_date)
-	out = {"blocked": day_state(doc.employee, doc.from_date), "seen": None}
-	doc_full = frappe.get_doc(REQUEST, doc.name)
-	out["seen"] = seen_token(doc_full)
-	out["own_day"] = access.is_own_record(doc.employee)
+	punches = day_punches(doc.employee, doc.from_date)
+	out = {"blocked": day_state(doc.employee, doc.from_date, day, emp), "seen": _token(req.modified, punches),
+	       "own_day": bool(emp and emp.user_id == frappe.session.user)}
 	if not day:
 		return out
-	ticked = aside_names(doc_full)
+	ticked = aside_names(req)
 	out["now"] = {"status": day.status, "hours": flt(day.working_hours, 2),
 	              "shift": _shift_line(day.shift) if day.shift else None,
 	              "punches": [{"time": _hhmm(p.time), "log_type": p.log_type, "source": _source(p),
 	                           "aside": bool(p.name in ticked or p.skip_auto_attendance or p.get(ASIDE)),
-	                           "name": p.name} for p in day_punches(doc.employee, doc.from_date)]}
+	                           "ticked": p.name in ticked, "name": p.name} for p in punches]}
 	# Q6: HR is told in words when the punch to set aside came from a machine.
-	out["sets_aside_machine"] = any(p["name"] in ticked and p["source"] == _("Machine")
-	                                for p in out["now"]["punches"])
+	out["sets_aside_machine"] = any(p["ticked"] and p["source"] == _("Machine") for p in out["now"]["punches"])
 	if out["blocked"] or not day.shift:
 		return out
+	logs = held_day._day_logs(doc.employee, doc.from_date, day.shift, ticked)
 	add = None
-	if held_day._has_time(doc_full):
-		log_type, label, when = derive(doc.employee, doc.from_date, doc_full.alvoraa_missing_time, ticked, day.shift)
+	if held_day._has_time(req):
+		log_type, label, when = derive(doc.employee, doc.from_date, req.alvoraa_missing_time, ticked, day.shift, logs)
 		add = (when, log_type)
 		out["kind"] = label
 	try:
-		after = outcome(day, add, ticked)
+		after = outcome(day, add, ticked, logs)
 	except Exception:
 		return out
-	kept = [_hhmm(x.time) for x in counted(doc.employee, doc.from_date, ticked)]
+	# If approved: what counts, the added punch, and the ticked ones struck through (AC-27).
+	shown = ([{"time": _hhmm(x.time), "added": False} for x in logs]
+	         + ([{"time": _hhmm(add[0]), "added": True}] if add else [])
+	         + [{"time": p["time"], "added": False, "aside": True} for p in out["now"]["punches"] if p["ticked"]])
 	out["after"] = {"status": after["status"], "hours": flt(after["hours"], 2), "late": after["late"],
 	                "still_held": after["status"] == held_day.HELD,
-	                "punches": sorted([{"time": t, "added": False} for t in kept]
-	                                  + ([{"time": _hhmm(add[0]), "added": True}] if add else []),
-	                                  key=lambda x: x["time"])}
+	                "punches": sorted(shown, key=lambda x: x["time"])}
 	return out
 
 
@@ -500,9 +514,9 @@ def apply(doc, method=None):
 	finally:
 		frappe.flags.in_punch_fix_apply = False
 
-	# A punch after midnight on a night shift is not on the day's calendar date, so the
-	# engine does not read it for this day; the read-back is then taken from the preview.
-	actual = outcome(row, add if add and add[0].date() != getdate(row.attendance_date) else None)
+	# Read back from the real punches. A punch after midnight is on this day through its
+	# `shift_start` (ALV-402), the same rule the engine, the card and `worked_out` use.
+	actual = outcome(row)
 	if any(actual[k] != expected[k] for k in ("status", "hours", "late", "early", "count")):
 		frappe.throw(_("The day did not come out as the review card showed, so nothing was changed. "
 		               "Open the card again."))

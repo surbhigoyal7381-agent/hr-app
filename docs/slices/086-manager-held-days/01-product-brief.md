@@ -324,3 +324,14 @@ Keep the four above. Add: (5) counsel says B, and fewer than about half of DTC's
 **Gate:** Surbhi approves this revised brief, then the UX designer draws prototype-v2, then she agrees the design. Release also waits for N1. Nothing here is built, pushed or deployed.
 
 **New assumptions:** [ASSUMPTION] "single day" means one day at a time on the page, one request per person per day. [ASSUMPTION] `Employee.user_id` tells whether a person has a login. [ASSUMPTION] `raise_for_report` on the 087 branch already requires a reason and sets the Confirm flag (spec says so; code not read).
+
+## Brief gate — Surbhi's decision, 21 Nov 2026
+
+**Build it, with every recommendation taken:**
+1. Ask counsel this week whether a held-day request from the person's own manager, naming the manager and decided by HR, meets ALV-419. Until counsel answers, build for case B, where Confirm applies.
+2. One required reason box on each row, never a shared one (ALV-418).
+3. Direct reports only on this page.
+4. One day at a time, the latest day with held days, with the period filter to catch up.
+5. Surbhi counts the DTC held-day staff who have a login. If case B applies and fewer than about half have one, drop the send bar and keep the list only.
+
+Next: the UX designer draws prototype-v2, then the design gate. The build starts after slice 087.

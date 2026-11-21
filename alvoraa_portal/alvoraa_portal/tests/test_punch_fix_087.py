@@ -926,7 +926,8 @@ class NightShift(PunchFixCase):
 			card = punch_fix.card(frappe.get_doc(REQUEST, req).as_dict())
 		finally:
 			frappe.set_user("Administrator")
-		self.assertEqual([p["time"] for p in card["now"]["punches"]], ["00:00", "09:00", "12:00"])
+		self.assertEqual([p["time"] for p in card["now"]["punches"]], ["09:00", "12:00", "00:00"])
+		self.assertEqual([p["m"] for p in card["now"]["punches"]], [540, 720, 1440])  # after midnight runs on
 		self.decide(req)
 		row = self.row(att)
 		self.assertEqual((row.status, round(row.working_hours, 2)), (card["after"]["status"], card["after"]["hours"]))

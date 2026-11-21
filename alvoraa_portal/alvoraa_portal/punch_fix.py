@@ -99,6 +99,12 @@ def is_punch_fix(doc):
 	return held_day._has_time(doc) or bool(aside_names(doc))
 
 
+def _mins(value, date):
+	"""Minutes from the start of `date`; over 1440 for a punch after midnight on the shift day (ALV-402),
+	so a screen can place it after the evening punches."""
+	return int((get_datetime(value) - get_datetime(getdate(date))).total_seconds() // 60)
+
+
 def _hhmm(value):
 	return get_datetime(value).strftime("%H:%M")
 
@@ -374,7 +380,8 @@ def day_sheet(date):
 		return out
 	out.update({"status": row.status, "hours": flt(row.working_hours, 2), "held": row.status == held_day.HELD,
 	            "shift": _shift_line(row.shift) if row.shift else None})
-	out["punches"] = [{"name": p.name, "time": _hhmm(p.time), "log_type": p.log_type, "source": _source(p),
+	out["punches"] = [{"name": p.name, "time": _hhmm(p.time), "m": _mins(p.time, date), "log_type": p.log_type,
+	                   "source": _source(p),
 	                   "added": bool(p.get(ADDED)), "aside": bool(p.get(ASIDE)),
 	                   "counted": not (p.skip_auto_attendance or p.offshift or p.get(ASIDE))}
 	                  for p in day_punches(me.name, date)]
@@ -414,8 +421,8 @@ def card(row):
 	ticked = aside_names(req)
 	out["now"] = {"status": day.status, "hours": flt(day.working_hours, 2),
 	              "shift": _shift_line(day.shift) if day.shift else None,
-	              "punches": [{"time": _hhmm(p.time), "log_type": p.log_type, "source": _source(p),
-	                           "aside": bool(p.name in ticked or p.skip_auto_attendance or p.get(ASIDE)),
+	              "punches": [{"time": _hhmm(p.time), "m": _mins(p.time, doc.from_date), "log_type": p.log_type,
+	                           "source": _source(p), "aside": bool(p.name in ticked or p.skip_auto_attendance or p.get(ASIDE)),
 	                           "ticked": p.name in ticked, "name": p.name} for p in punches]}
 	# Q6: HR is told in words when the punch to set aside came from a machine.
 	out["sets_aside_machine"] = any(p["ticked"] and p["source"] == _("Machine") for p in out["now"]["punches"])
@@ -432,12 +439,12 @@ def card(row):
 	except Exception:
 		return out
 	# If approved: what counts, the added punch, and the ticked ones struck through (AC-27).
-	shown = ([{"time": _hhmm(x.time), "added": False} for x in logs]
-	         + ([{"time": _hhmm(add[0]), "added": True}] if add else [])
-	         + [{"time": p["time"], "added": False, "aside": True} for p in out["now"]["punches"] if p["ticked"]])
+	shown = ([{"time": _hhmm(x.time), "m": _mins(x.time, doc.from_date), "added": False} for x in logs]
+	         + ([{"time": _hhmm(add[0]), "m": _mins(add[0], doc.from_date), "added": True}] if add else [])
+	         + [{"time": p["time"], "m": p["m"], "added": False, "aside": True} for p in out["now"]["punches"] if p["ticked"]])
 	out["after"] = {"status": after["status"], "hours": flt(after["hours"], 2), "late": after["late"],
 	                "still_held": after["status"] == held_day.HELD,
-	                "punches": sorted(shown, key=lambda x: x["time"])}
+	                "punches": sorted(shown, key=lambda x: x["m"])}
 	return out
 
 

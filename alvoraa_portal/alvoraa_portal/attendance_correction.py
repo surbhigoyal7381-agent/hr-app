@@ -1940,14 +1940,15 @@ def to_review(limit=50):
 	# the row, so it is not sent.
 	for r in rows:
 		r.pop("owner", None)
-		# Slice 085: what approving a held day's request will do (Q3).
-		if r.get("missing_time"):
-			r["held_preview"] = preview(r["employee"], r["from_date"], r["missing_time"],
-			                            r["missing_log"])
 		# Slice 087: Now, If approved and the token the approval needs, from the same
 		# function the approval runs. Never cached.
 		if r.get("punch_fix"):
 			r["card"] = punch_fix.card(r)
+		# Slice 085: what approving a held day's request will do (Q3). Only the old screen reads it,
+		# and only when the card could not be made (a site that has not migrated yet).
+		if r.get("missing_time") and not r.get("card"):
+			r["held_preview"] = preview(r["employee"], r["from_date"], r["missing_time"],
+			                            r["missing_log"])
 	return rows
 
 

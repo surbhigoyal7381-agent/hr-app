@@ -6335,6 +6335,8 @@ var acPf = {date: null, data: null, add: null, aside: [], note: "", sheet: null,
 
 function pfApi(fn, args) { return gpFetch("alvoraa_portal.punch_fix." + fn, args || {}); }
 function pfMin(hhmm) { var p = String(hhmm || "").split(":"); return p.length < 2 ? NaN : (+p[0]) * 60 + (+p[1]); }
+/* Minutes from the start of the day; the server sends `m` (over 1440 after midnight on the shift day). */
+function pfM(p) { return p.m != null ? p.m : pfMin(p.time); }
 function pfHM(mins) { return Math.floor(mins / 60) + "h " + ("0" + Math.round(mins % 60)).slice(-2) + "m"; }
 function pfHours(h) { return pfHM(Math.round((+h || 0) * 60)); }
 
@@ -6352,7 +6354,7 @@ function pfCounted(excludeAside) {
   var d = acPf.data;
   return (d.punches || []).filter(function (p) {
     return p.counted && acPf.aside.indexOf(p.name) < 0;
-  }).map(function (p) { return pfMin(p.time); }).sort(function (a, b) { return a - b; });
+  }).map(function (p) { return pfM(p); }).sort(function (a, b) { return a - b; });
 }
 
 window.acPfLoad = async function (date) {
@@ -6410,10 +6412,10 @@ function acPfPaint() {
   /* strip + timeline */
   var items = (d.punches || []).map(function (p) {
     var isAside = p.aside || acPf.aside.indexOf(p.name) >= 0;
-    return {m: pfMin(p.time), t: p.time, p: p, k: isAside ? "aside" : p.added ? "add" : p.counted ? "io" : "aside"};
+    return {m: pfM(p), t: p.time, p: p, k: isAside ? "aside" : p.added ? "add" : p.counted ? "io" : "aside"};
   });
   if (add) items.push({m: add.m, t: add.time, add: true, k: "add"});
-  if (waiting && r.time) items.push({m: pfMin(r.time), t: r.time, ask: true, k: "add"});
+  if (waiting && r.time) items.push({m: pfM(r), t: r.time, ask: true, k: "add"});
   items.sort(function (a, b) { return a.m - b.m; });
   html += pfStrip(d.shift, items);
   if (!locked && !staged && !waiting) {
@@ -6508,9 +6510,9 @@ window.acPfClose = function () { acPf.sheet = null; acPfPaint(); };
 
 window.acPfGap = function (i) {
   /* bounds: the counted punches either side of this position in the list */
-  var all = (acPf.data.punches || []).slice().sort(function (a, b) { return pfMin(a.time) - pfMin(b.time); });
+  var all = (acPf.data.punches || []).slice().sort(function (a, b) { return pfM(a) - pfM(b); });
   var prev = all[i - 1], next = all[i];
-  var pm = prev ? pfMin(prev.time) : null, nm = next ? pfMin(next.time) : null;
+  var pm = prev ? pfM(prev) : null, nm = next ? pfM(next) : null;
   var ctx = prev && next ? "Between " + prev.time + " and " + next.time + "." : prev ? "After " + prev.time + "." : next ? "Before " + next.time + "." : "";
   acPf.sheet = {type: "add", prev: pm, next: nm, ctx: ctx, time: "", kind: null, err: ""};
   acPfPaint();
@@ -6672,14 +6674,14 @@ window.acPfCard = function (r) {
     + (r.explanation ? "<q>" + gpEsc(r.explanation) + "</q>" : "") + "</p>"
     + (c.sets_aside_machine ? '<p class="pfx-says">This asks to set aside a punch from the machine.</p>' : "")
     + '<div class="pfx-ba"><div><h4>Now</h4><p class="num pfx-st">' + gpEsc(now.status) + " &middot; " + now.punches.length + " punches</p>"
-    + pfCardStrip(now.shift, now.punches.map(function (p) { return {m: pfMin(p.time), k: p.aside ? "aside" : "io"}; }))
+    + pfCardStrip(now.shift, now.punches.map(function (p) { return {m: pfM(p), k: p.aside ? "aside" : "io"}; }))
     + '<p class="pfx-tms num">' + pfCardTimes(now.punches, "now") + "</p></div>"
     + '<div class="pfx-arr" aria-hidden="true">&rarr;</div>';
   if (after) {
     h += '<div><h4>If approved</h4><p class="num pfx-st" id="pfx-after-' + gpEsc(r.name) + '">'
       + (after.still_held ? "Still held &middot; " + after.punches.length + " punches &middot; not paid"
         : gpEsc(after.status) + " &middot; " + pfHours(after.hours) + (after.status === "Absent" ? " &middot; not paid" : " &middot; paid"))
-      + "</p>" + pfCardStrip(now.shift, after.punches.map(function (p) { return {m: pfMin(p.time), k: p.added ? "add" : p.aside ? "aside" : "io"}; }))
+      + "</p>" + pfCardStrip(now.shift, after.punches.map(function (p) { return {m: pfM(p), k: p.added ? "add" : p.aside ? "aside" : "io"}; }))
       + '<p class="pfx-tms num">' + pfCardTimes(after.punches, "after") + "</p></div>";
   } else { h += "<div></div>"; }
   h += "</div>";

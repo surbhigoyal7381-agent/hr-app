@@ -303,3 +303,84 @@ class TestTheSignOutButtonExists(_Base):
 		"""If the button is ever removed, the gate entry above becomes dead
 		code and this file starts proving nothing."""
 		self.assertIn('id="signout"', _the_joining_page())
+
+
+# ── the way back after a cancel (ALV-423) ──────────────────────────────────
+
+def _the_invite_form_js():
+	path = os.path.join(frappe.get_app_path("alvoraa_portal"), "public", "js",
+	                    "alvoraa_joiner_submission.js")
+	with open(path, encoding="utf-8") as f:
+		return f.read()
+
+
+class TestHRCanInviteAgain(Wave4Base):
+	"""ALV-423. A cancelled invite stays dead; HR gets a way to make a new one.
+
+	These read the source rather than drive Desk, and that is a real limit -
+	they cannot prove the button appears. What they CAN prove is the part a
+	later edit is most likely to get wrong: which statuses offer it, and that
+	the prefill carries nothing of the joiner's own.
+	"""
+
+	def test_a_cancelled_or_expired_invite_offers_a_way_back(self):
+		js = _the_invite_form_js()
+		self.assertIn('__("Invite again")', js)
+		self.assertIn('["Cancelled", "Expired"].includes(frm.doc.status)', js)
+
+	def test_a_hired_person_is_not_offered_it(self):
+		"""The third terminal status. Re-inviting somebody already on the
+		payroll is not a gap, so the button must not reach them."""
+		js = _the_invite_form_js()
+		guard = '["Cancelled", "Expired"].includes(frm.doc.status)'
+		self.assertIn(guard, js)
+		self.assertNotIn("Made an employee", guard)
+
+	def test_the_prefill_carries_nothing_the_joiner_sent(self):
+		"""**The privacy decision, pinned.**
+
+		Only what HR typed crosses to the new row: the name and "Signs in
+		with". Copying the joiner's own details would put a second copy of one
+		person's data on a second row with its own retention clock, and the
+		whole erase design turns on there being one row to erase.
+		"""
+		js = _the_invite_form_js()
+		start = js.index("function inviteAgain(")
+		body = js[start:js.index("\n}", start)]
+		self.assertIn("full_name: frm.doc.full_name", body)
+		self.assertIn("login_id: frm.doc.login_id", body)
+		for field in ("mobile", "personal_email", "current_address",
+		              "emergency_contact_name", "emergency_contact_number",
+		              "user", "status"):
+			with self.subTest(field=field):
+				self.assertNotIn(f"frm.doc.{field}", body)
+
+	def test_it_writes_nothing_and_adds_no_endpoint(self):
+		"""`frappe.new_doc` opens an unsaved form. If this ever becomes a
+		`frappe.call`, it is a new server surface and needs its own review."""
+		start = _the_invite_form_js().index("function inviteAgain(")
+		body = _the_invite_form_js()[start:]
+		body = body[:body.index("\n}")]
+		self.assertIn("frappe.new_doc(", body)
+		self.assertNotIn("frappe.call(", body)
+
+	def test_a_cancelled_invite_still_cannot_be_revived(self):
+		"""The rule the button exists to work WITH, not around. If this ever
+		goes green by the row reopening, the fix has undone the thing it was
+		built to respect."""
+		frappe.set_user("Administrator")
+		fx.clear_the_rows()
+		fx.switch_the_form_on()
+		try:
+			row = fx.a_row(full_name="S423 Asha Pillai",
+			               login_id="s423.asha@example.com")
+			frappe.db.set_value(DOCTYPE, row.name, "status", "Cancelled")
+			frappe.db.commit()
+			doc = frappe.get_doc(DOCTYPE, row.name)
+			doc.status = "Invited"
+			with self.assertRaises(frappe.ValidationError):
+				doc.save(ignore_permissions=True)
+		finally:
+			frappe.db.rollback()
+			fx.clear_the_rows()
+			fx.switch_the_form_off()

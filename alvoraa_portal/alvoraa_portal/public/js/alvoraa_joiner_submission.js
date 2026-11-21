@@ -75,6 +75,25 @@ frappe.ui.form.on("Alvoraa Joiner Submission", {
 			});
 		}
 
+		/* ALV-423. The way back after a cancel.
+		 *
+		 * A cancelled or expired invite is terminal on purpose - the
+		 * controller's `_refuse_a_revival` is what keeps a dead link dead - and
+		 * that is not in question here. What was missing is that a terminal row
+		 * offered HR NO action at all, so the only route was to build a fresh
+		 * record by hand and retype the person, and nothing on the screen said
+		 * so. HR's natural move is the button in front of them, which answers
+		 * "This invite is already Cancelled" - which is why the report that
+		 * came back was that the system would not let them invite the person
+		 * again. The refusal was right; the missing path was not.
+		 *
+		 * **"Made an employee" is deliberately not here.** That person has been
+		 * hired; there is nothing to re-invite.
+		 */
+		if (["Cancelled", "Expired"].includes(frm.doc.status)) {
+			frm.add_custom_button(__("Invite again"), () => inviteAgain(frm));
+		}
+
 		/* Counsel, 29 October 2026. A candidate who never joined has no login,
 		   so they cannot see or export anything themselves - HR has to be able
 		   to answer "what do you hold about me" and "delete it" in one click,
@@ -169,6 +188,34 @@ function makeSignIn(frm) {
 					+ "chart, and not a paid seat until they start.")}</p>`,
 		});
 		frm.reload_doc();
+	});
+}
+
+/* ALV-423. A new, UNSAVED invite for the same person.
+ *
+ * **It carries exactly the two things HR typed, and nothing the joiner sent.**
+ * Name and "Signs in with" are HR's own entry on the old row. The joiner's
+ * mobile, personal email, address, emergency contact and uploaded documents
+ * are deliberately left where they are: copying them would put a second copy
+ * of one person's details on a second row with its own clock, and the whole
+ * retention design turns on there being one row to erase. HR can still read
+ * the old row, and the old row still erases on its own schedule.
+ *
+ * Nothing is written here. `frappe.new_doc` hands HR an unsaved form through
+ * `frappe.route_options` (`create_new.js:364-385`), and because this DocType
+ * sets no `quick_entry` the full form opens rather than a dialog
+ * (`quick_entry.js:55-70`). Read in the installed source, v16.33.1.
+ *
+ * **No new permission and no new endpoint.** HR already holds create on this
+ * DocType - verified by inserting a row as an HR Manager, 21 Nov 2026 - and
+ * the duplicate check still runs server side when they press "Make the
+ * sign-in", so two live invites on one address are no more possible than
+ * before. The old row is not touched, so its link stays dead.
+ */
+function inviteAgain(frm) {
+	frappe.new_doc("Alvoraa Joiner Submission", {
+		full_name: frm.doc.full_name,
+		login_id: frm.doc.login_id,
 	});
 }
 

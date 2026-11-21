@@ -459,6 +459,12 @@ _JOINER_MAY_REACH = (
     "/alvoraa-login",
     "/assets/",
     "/favicon.ico",
+    # **ALV-422.** `/logout` is a Frappe web page and pulls this in, so a
+    # joiner's sign-out screen was served a redirect to the joining form where
+    # a script was expected. `_FIRST_USE_MAY_REACH` has allowed it from the
+    # start, and its comment says that list was built by watching what that
+    # same screen actually loads. This one was written without the measurement.
+    "/website_script.js",
     # Sign-in and sign-out themselves. Frappe completes the login inside
     # `init_request`, which is also where this hook runs - so by the time we are
     # called the session is ALREADY the joiner. Leave `/api/method/login` out
@@ -481,13 +487,34 @@ _JOINER_MAY_REACH = (
     "/api/method/alvoraa_portal.joiner_public.",
 )
 
-# **Empty, and that is not an oversight.** The joining page uses `fetch` to
-# /api/method/<dotted>, never a website-page `frappe.call`, so there is no
-# legitimate `cmd` for a joiner at all. The set exists so that the check on "/"
-# exists: honouring a `cmd` the allow-list does not name would hand over the
-# key, and a POST to "/" with `cmd=frappe.client.get_list` is a door a path
-# check cannot see. This product has paid for the missing-`cmd` half twice.
-_JOINER_MAY_CALL = frozenset()
+# **One name, and the reason it is not none is ALV-422.**
+#
+# This set was empty, and the comment here argued that it could stay empty:
+# *the joining page uses `fetch` to /api/method/<dotted>, never a website-page
+# `frappe.call`, so there is no legitimate `cmd` for a joiner at all.* That is
+# true of the joining page. **It is false of `/logout`**, which this gate
+# deliberately lets a joiner reach and which is not our page at all.
+#
+# `/logout` is Frappe's own. It calls `frappe.logout()`, which is
+# `frappe.call({method: "logout"})`, and `frappe.call` with a bare method name
+# posts to **"/" with `cmd=logout`** - `frappe.request.url = "/"`
+# (`request.js:8`), used at `:260`. So the one address a joiner is given as the
+# way out made the one kind of call this set refused: the sign-out became a
+# redirect back to the joining form and the person stayed signed in. Reported
+# from dev on 21 Nov 2026 and reproduced in a browser.
+#
+# **The reasoning that keeps it to one name is unchanged.** The set exists so
+# that the check on "/" exists: honouring a `cmd` the allow-list does not name
+# would hand over the key, and a POST to "/" with `cmd=frappe.client.get_list`
+# is a door a path check cannot see. This product has paid for the missing-`cmd`
+# half twice. An allow-list widened by an exact name is still an allow-list -
+# `logout` needs no permissions (`allow_guest=True`), is POST-only, returns no
+# data and ends only the caller's own session.
+#
+# `_FIRST_USE_MAY_CALL` below has listed `"logout"` since it was written, for
+# exactly this reason. Two gates in one file disagreed about the same page, and
+# the one with the measurement behind it was right.
+_JOINER_MAY_CALL = frozenset({"logout"})
 
 # "Has this account got the joiner role?" Remembered per user, in one hash.
 # Keeping it off the database is the whole of NFR-3: this gate must add no

@@ -809,3 +809,18 @@ Prototype-v4 (`prototype-v4.html`; 01b "v3" and "v4"; parity rows P-1 to P-19 an
 
 Counsel's rule change (memory counsel-087-hr-punches-nov21, ALV-419 comment): a request filed by the employee's **manager** that only **adds** a time no longer needs the employee's Confirm and goes straight to HR. **Still needing Confirm:** every HR-filed request, and anything that sets a punch aside or cuts time. **AC-113** In `_own_the_confirm_fields`, a new request sets `alvoraa_needs_confirm = 0` when the filer is not the employee, holds no HR role (the `_filed_by_hr` test), the request carries a time and sets nothing aside; decided on the server from the session, never from the client. A manager's ordinary (non-punch) request still needs Confirm, because it is not an addition. Requests a manager filed before this change and that already wait keep their flag. The manager Confirm block and the HR "waiting for X" state therefore no longer appear for manager additions (they follow the flag); HR-filed requests are unchanged. A manager cannot set a punch aside in 087 (the document refuses it), so that case does not arise.
 **SEC-7 (from 086's review), AC-114:** once confirmed, a change by the filer to the day, time, kind, set-aside list or words clears the Confirm (see 03 section 15).
+
+## Confirm redesigned — Surbhi's decisions, 21 Nov 2026
+
+This replaces ALV-419's "approval waits for Confirm".
+
+- **Approval never waits for the employee.** HR can approve any request straight away.
+- **The employee always sees** every request filed for them, by a manager or HR: on the day sheet and in Home's "Needs you" row.
+- **The employee can modify it at any time.** "Not right" plus their own time and a required reason files their own request, which replaces the filed one, as in prototype v4. If HR has already approved, it becomes a new request, and the day stays as approved until HR decides.
+- **Manager additions** need nothing more (counsel, 21 Nov).
+- **HR-filed changes, and any cut or set-aside**, need the employee's confirmation **before pay is locked** (counsel, 21 Nov). It can be given in two ways:
+  - an app Confirm by the employee;
+  - **"Signed on the register"**, recorded by an HR person who did not file it, with a photo of the signed page.
+- **Option 1, chosen:** that employee's salary slip cannot be submitted while such a change in its period is unconfirmed, unless the change is withdrawn. HR gets a list of unconfirmed changes before payroll.
+- **DTC pays outside the portal** (Excel workings), so the unconfirmed changes must also show in the Salary Workings report.
+- **Needs ALV-426:** the printed monthly register lists these changes, so they can be signed.

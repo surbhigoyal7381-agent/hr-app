@@ -278,3 +278,61 @@ Removed from my own first idea: a client-side check of every refusal (the server
 ## Handoff note
 
 For the analyst: the screen is the existing page plus one component, so most acceptance criteria are about words, counts that must equal their list, and per-day results that must add up. Watch three traps. (1) A sent row stays in the list as "Waiting for HR", so the chip number must not fall until HR decides, and the split line must say so. (2) UX-3 is not mine to settle: if security says no, drop the note box and AC-6's note, and nothing else changes. (3) The prototype's fake office shows refusals the real server may not make yet (Q4): do not write those acceptance criteria as met until the engineer reads `validate_missing_time` and the request's own checks. I did not run the real portal, so every statement about today's page is code reading, not a screenshot.
+
+
+---
+
+## v2 (21 Nov 2026): one day, one reason per row, built in 087's language
+
+**Prototype:** `prototype-v2.html` in this folder (copy at `/Users/mac/hrlocal-data/prototypes/086-manager-held-days/`). **Not published: I have no publish tool in this run.** Everything not named here is as v1 section 5. All names, times and reasons are **Sample**. It reuses 087 prototype-v4: the same tokens, the strip, the punch timeline with tappable gaps, the add sheet, the bottom sheet and the status chips. Checked by script at 360 px, desktop, Hindi, 55 rows: nothing wider than the screen, no target under 44 px, no field text under 16 px, nothing under 12 px. Looked at once, light and dark. I did not run the build; the page is not in the product yet. Hindi is machine-drafted.
+
+**Serves:** the line manager (phone and laptop). **Changes for others:** the employee gets 087's Confirm block (Case B) or a notice (Case A); HR gets the requests it already knows; CXO nothing. **One-way rule:** a manager's convenience never removes the employee's say, which is why Case B is the default.
+
+### v2.1 The page
+
+1. **Show:** one control, a day list (latest day with held days first) plus "All days in this period" for catching up. A day with no rows left drops out of the list.
+2. **Chips:** Everything, and Held with its count. The count equals the rows under it. One line: "4 held days need a time from you." One explanation: "Held days have a punch missing, so pay for the day is on hold until HR fixes it. Give the missing time and a reason, and HR decides."
+3. **A row (direct reports only):** name, day, the Held chip, Ready mark, the strip, the real punches, then two boxes.
+   - **Time.** One punch: "What time did Ravi leave?" (or arrive) with "Type the time you know it was. Nothing is filled in for you." Which end is missing is inferred from where the single punch falls in the shift. **[ASSUMPTION]** the engineer keeps `acHeldForm`'s own rule for this; I show the result, not the rule. 3 or more punches: "Where is the missing punch?" and a button that opens 087's timeline. Tap a gap, 087's add sheet asks the time and shows the kind it worked out ("Back in after a break"), with the same checks. The row then shows "+14:40 · Back in after a break" and Change. **One punch per row.**
+   - **Reason**, required, one line that grows: "Your reason · Required", "HR and Ravi can read this. No health or family details.", example "e.g. Forgot to scan after lunch". Never copied between rows.
+4. **Ready** shows only when the time (or gap) and the reason are both there. A time with no reason shows the quiet line "Add a reason to include this day": no red, no error before the person has tried anything.
+5. **Bar:** "3 days ready" and "Each person confirms in the app first. Then HR decides." with **Send 3 to HR**. Over 50: "50 at most in one send. The first 50 go now; 5 stay here for the next send."
+6. **Confirm** (bottom sheet on a phone, centred on a laptop): "Send 3 days to HR?", "Your name goes on each request. Each person must confirm in the app before HR can decide. Until HR does, the day stays held.", one line per day with the person, day, time and **the reason typed for it**, then Send and Go back. No shared note box.
+7. **After sending:** sent rows **leave the list**. Banner: "3 of 3 sent to HR. Ravi, Anita and Preet: HR will decide each one. Each person must confirm in the app before HR can decide." A refused row stays with its time and reason and the server's sentence ("Not sent. This day is no longer held..."). Offline, answer-lost and refusal wording are v1's, kept.
+8. **Empty:** "Nothing is held on Thu 20 Nov." and a button to the next day that still has rows, or "See everything".
+
+### v2.2 Case B (default), and the one Case A variant
+
+**Case B, until counsel answers.** A direct report with no login shows no time box and no reason box, only: "Imran has no login, so this cannot be confirmed in the app. Ask HR to fix this day." Neutral words, nothing about ability. **Case A** (manager's request counts as the request itself) changes four things, switched in the review bar and outlined in amber with a "Case A" tag in the prototype: (1) a no-login person gets the boxes; (2) the bar line "Each person is told on their day sheet. HR decides."; (3) the confirm sentence ("...Each person is told on their day sheet and can say it is not right..."); (4) the banner line "Each person has been told on their day sheet." Nothing else differs, so it is one condition in one place, as the brief said.
+
+### v2.3 Parity: v2 against prototype-v1 (the last design Surbhi saw)
+
+| # | v1 | v2 | Why |
+|---|---|---|---|
+| H-1 | Period filter, Held chip with a split line (need a time / waiting / another manager's) | Day control (+ catch-up), Held chip, one line "N held days need a time from you" | Surbhi, 21 Nov |
+| H-2 | Three row kinds ("Waiting for HR", "Not yours to send") | Dropped. Only held days with no request, direct reports | same |
+| H-3 | Row shows the punches as a line | The strip and the line, and 087's timeline for 3+ punches | reuse 087 |
+| H-4 | Arrival / Leaving buttons with no default for 3 or 5 punches | Tap the gap on the timeline; the kind is worked out and shown (087 decision ⚠8) | one way to say where; consistent with 087 |
+| H-5 | Optional shared note in the confirm | Required reason on every row; the confirm lists each reason | ALV-418 |
+| H-6 | Sent row turns into "Waiting for HR" and stays | The row leaves; a banner names who was sent | Surbhi, 21 Nov |
+| H-7 | "Everyone below me" option | Not offered (direct reports only) | Surbhi, 21 Nov |
+| H-8 | no no-login state | Case B no-login line (Case A: boxes) | ALV-419 |
+| H-9 | Bar line "HR reviews each day. Your name goes on each request." | Adds who must act next (the person's Confirm, B) | ALV-419 |
+| H-10 | Kept: Held chip, real punches, no pre-filled time, Ready mark, bottom bar, cap of 50, confirm dialog, banner and refusal words, answer-lost guard, phone, Hindi, nothing in `localStorage` | unchanged | Surbhi, 21 Nov |
+
+Where the 087 screens appear (Confirm block, Not right with a time), they are 087 v4 and are not redrawn here.
+
+### v2.4 ⚠ and risks
+
+- **⚠ DECISION (small, owner: engineer, then Surbhi):** the inferred missing end for one punch (v2.1 point 3). v1 never said how it is decided. If the existing held logic cannot tell, show Arrival / Leaving buttons with no default for those rows too (v1's way). Cost: one more tap.
+- **Risk (P3 until measured):** on a 360 px phone the page head (Show, chips, two lines) is about 300 px before the first row. Measure it with real DTC rows; if it is too much, the explanation line goes behind a "What is Held?" link.
+- **Risk:** each row needs its own reason, so 20 rows is 20 typed lines. That is counsel's condition, not a design choice. **Not in this slice (yours to decide):** a "same reason as the row above" link. I recommend against it: it is the blanket text the condition is meant to stop.
+- The employee sees the manager's **reason** on their Confirm block (087 v3), which is why each row says "HR and Ravi can read this" and asks for no health or family details.
+
+### v2.5 Subtract pass
+
+Removed from the v1 page: two row kinds, the split line, the shared note, the whole-line choice, the "Waiting for HR" row state. Removed from my own draft: an Inbox link, a count inside the day list, a "copy reason down" link, an Undo after sending, a sort control.
+
+### v2.6 For the business analyst
+
+Turn into criteria: only direct reports' held days with no request; one day by default; rows leave on send; reason required per row and shown in the confirm; one punch per row; Ready needs both; cap of 50 with the sentence; Case B no-login line (test: no box, no request created for a person with no login); Case A is a single condition. Test what it sends: the payload carries one reason per day.

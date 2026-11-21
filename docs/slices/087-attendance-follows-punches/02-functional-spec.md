@@ -784,3 +784,12 @@ Counsel replied in writing on 21 Nov (relayed by Surbhi): HR-added punches on th
    - **AC-107** The HR card says it is waiting for the employee and offers Decline only.
    - **Out of scope until counsel answers:** HR marking attendance by hand in the Desk. **Open for Surbhi:** an employee with no login cannot confirm, so a request filed for them waits for ever (fails closed); the Inbox does not show it, only the day sheet; no backfill for requests already waiting.
    - **Parity: new, needs Surbhi's yes** (not in prototype-v2): the "HR sent this for you. Is it right?" block with Confirm, Not right and a reason box, built from existing 087 styles.
+
+## Surbhi's decisions on ALV-418 and ALV-419, 21 Nov 2026
+
+All five as recommended:
+1. A request the Administrator account files needs no Confirm. It is the break-glass account.
+2. An employee with no login can never confirm, so the request waits until HR declines it. HR files only for staff who have a login.
+3. Requests already waiting before the migrate carry no Confirm flag. There is no backfill.
+4. An ordinary request without a time keeps its reason from the existing dropdown, with free text only for "Other". This meets counsel's reason condition.
+5. The Confirm block and the reason box in the send bar are new screens, not in prototype-v2. Surbhi reviewed the local build on 21 Nov. Her yes on the new screens is asked once they can be seen working.

@@ -87,11 +87,7 @@ class PunchFixCase(FrappeTestCase):
 		                                    "alvoraa_confirmed_on": frappe.utils.now_datetime()})
 
 	def decide(self, name, approve=1, by=None, note=None, seen="auto", confirmed=True):
-		# ALV-419: a request somebody else filed waits for the employee. Most tests are about the
-		# approval itself, so they confirm first; the ones about the wait pass confirmed=False.
-		if approve and confirmed and frappe.db.get_value(REQUEST, name, "alvoraa_needs_confirm") \
-				and not frappe.db.get_value(REQUEST, name, "alvoraa_confirmed_on"):
-			self.confirm_as_employee(name)
+		# V5: approval never waits for the employee's Confirm, so nothing is confirmed first.
 		if seen == "auto":
 			seen = punch_fix.seen_token(frappe.get_doc(REQUEST, name))
 		frappe.set_user(by or self.hr)
@@ -117,11 +113,11 @@ class PunchFixCase(FrappeTestCase):
 
 
 class Install(PunchFixCase):
-	def test_the_twelve_fields_exist(self):
+	def test_the_fifteen_fields_exist(self):
 		for dt, fields in punch_fix.FIELDS.items():
 			for f in fields:
 				self.assertTrue(frappe.db.exists("Custom Field", {"dt": dt, "fieldname": f["fieldname"]}), f["fieldname"])
-		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 12)
+		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 15)
 
 	def test_after_migrate_runs_twice_and_is_wired_to_install_too(self):
 		self.assertTrue(punch_fix.after_migrate() and punch_fix.after_migrate())
@@ -972,30 +968,19 @@ class Confirm(PunchFixCase):
 		self.h.day = self.day = day
 		return self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")])
 
-	def test_approval_is_refused_until_the_employee_confirms_then_works(self):
+	def test_approval_never_waits_for_the_employee_and_confirm_can_come_after(self):
 		att, req = self.filed_by_hr()
-		self.refused(lambda: self.decide(req, by=self.h.hr2, confirmed=False), "has not confirmed")
-		self.assertEqual(len(self.added(req)), 0)
+		self.decide(req, by=self.h.hr2)  # V5: no Confirm needed to approve
+		self.assertEqual(len(self.added(req)), 1)
+		self.assertEqual(self.row(att).status, "Present")
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 1)  # unconfirmed: pay not locked yet
 		frappe.set_user(self.emp_user)
 		try:
-			out = punch_fix.confirm(req, 1)
+			punch_fix.confirm(req, 1)  # after approval
 		finally:
 			frappe.set_user("Administrator")
-		row = frappe.db.get_value(REQUEST, req, ["alvoraa_confirmed_by", "alvoraa_confirmed_on"], as_dict=True)
-		self.assertEqual(row.alvoraa_confirmed_by, self.emp_user)
-		self.assertTrue(row.alvoraa_confirmed_on)
-		self.decide(req, by=self.h.hr2, confirmed=False)  # control: the same call now goes through
-		self.assertEqual(len(self.added(req)), 1)
-
-	def test_the_desk_submit_path_is_refused_too(self):
-		att, req = self.filed_by_hr()
-		doc = frappe.get_doc(REQUEST, req)
-		doc.flags.punch_fix_decided = True
-		frappe.set_user(self.h.hr2)
-		try:
-			self.refused(lambda: doc.submit(), "has not confirmed")
-		finally:
-			frappe.set_user("Administrator")
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_confirmed_by", "alvoraa_confirmed_on", "docstatus"], as_dict=True)
+		self.assertEqual((row.alvoraa_confirmed_by, bool(row.alvoraa_confirmed_on), row.docstatus), (self.emp_user, True, 1))
 
 	def not_right(self, req, reason="I was back by 12:50", time="12:50"):
 		frappe.set_user(self.emp_user)
@@ -1190,7 +1175,7 @@ class Confirm(PunchFixCase):
 				frappe.set_user("Administrator")
 			row = frappe.db.get_value(REQUEST, req, ["alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_needs_confirm"], as_dict=True)
 			self.assertEqual((row.alvoraa_confirmed_by, row.alvoraa_confirmed_on, row.alvoraa_needs_confirm), (None, None, 1), field)
-			self.refused(lambda: self.decide(req, by=self.h.hr2, confirmed=False), "has not confirmed")
+			self.assertIn(req, [x["name"] for x in punch_fix.unconfirmed_changes([self.emp])])  # unconfirmed again
 			frappe.db.set_value(REQUEST, req, "alvoraa_review_status", "Withdrawn")  # one open request per day
 
 	def test_saving_the_request_again_without_a_change_keeps_the_confirm(self):
@@ -1220,13 +1205,174 @@ class Confirm(PunchFixCase):
 		self.confirm_as_employee(req)
 		frappe.set_user(self.emp_user)
 		try:
-			self.assertFalse(punch_fix.day_sheet(self.day)["request"]["needs_confirm"])
+			self.assertEqual(punch_fix.day_sheet(self.day)["request"]["confirm_state"], "confirmed")
 		finally:
 			frappe.set_user("Administrator")
 
 	def test_confirm_is_post_only_and_the_module_still_has_no_permission_bypass(self):
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func.get(punch_fix.confirm), ["POST"])
 		self.assertNotIn("ignore_permissions", open(os.path.join(PKG, "punch_fix.py")).read())
+
+
+class V5(PunchFixCase):
+	"""V5 (Surbhi, 21 Nov): approval never waits; the employee can confirm or say Not right before or after
+	approval; HR's list before payroll; the salary slip refuses while an HR-filed or cut change is unconfirmed."""
+
+	def filed(self, by=None, note="HR typed it"):
+		att, names = self.held_three()
+		return att, names, self.fix("12:40", by=by or self.hr, note=note)
+
+	def not_right(self, req, reason="I was back by 12:50", time="12:50"):
+		frappe.set_user(self.emp_user)
+		try:
+			return punch_fix.confirm(req, 0, reason, time)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_after_approval_not_right_with_a_time_is_a_new_request_and_the_day_stays_as_approved(self):
+		att, names, req = self.filed()
+		self.decide(req, by=self.h.hr2)
+		self.refused(lambda: self.not_right(req, "wrong", ""), "Enter the time first")
+		out = self.not_right(req)
+		new = frappe.get_doc(REQUEST, out["replacement"])
+		self.assertEqual((new.docstatus, new.alvoraa_review_status, new.alvoraa_replaces, new.alvoraa_needs_confirm, new.owner),
+		                 (0, "Waiting", req, 0, self.emp_user))
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "docstatus"), 1)  # the approved one is untouched
+		self.assertEqual((self.row(att).status, len(self.added(req))), ("Present", 1))  # the day stays as approved
+
+	def test_after_approval_not_right_for_a_cut_is_a_dispute_that_reaches_hr_and_changes_no_day(self):
+		att, names = self.held_three()
+		req = self.fix(aside=[names[1]], note="wrong scan")  # only Administrator can file a cut for somebody
+		frappe.db.set_value(REQUEST, req, {"alvoraa_needs_confirm": 1})
+		self.decide(req, by=self.h.hr2)
+		status = self.row(att).status
+		out = self.not_right(req, "That scan was mine", "")
+		self.assertTrue(out["disputed"])
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_disputed_by", "alvoraa_dispute_reason", "docstatus"], as_dict=True)
+		self.assertEqual((row.alvoraa_disputed_by, row.alvoraa_dispute_reason, row.docstatus), (self.emp_user, "That scan was mine", 1))
+		self.assertEqual(self.row(att).status, status)
+		self.assertEqual([x["disputed"] for x in punch_fix.unconfirmed_changes([self.emp])], [True])  # it still holds the slip
+
+	def test_a_managers_addition_needs_no_confirm_but_the_employee_can_still_say_not_right(self):
+		mgr = self.h._login("mgrv5", ())
+		self.h._employee("Mgrv5", mgr)
+		att, names = self.held_three()
+		req = self.fix("12:40", by=mgr, note="He told me")
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: punch_fix.confirm(req, 1), "nothing to confirm")
+			sheet = punch_fix.day_sheet(self.day)["request"]
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((sheet["needs_confirm"], sheet["can_confirm"], sheet["can_not_right"]), (False, False, True))
+		out = self.not_right(req)
+		self.assertTrue(out["replacement"])
+
+	def test_withdraw_is_for_a_pending_change_only_and_only_by_hr_in_scope(self):
+		att, names, req = self.filed()
+		other_hr = self.h._login("hrout", ("HR Manager",))
+		self.h._employee("Hrout", other_hr, company=self.h.other_company)
+		frappe.set_user(other_hr)
+		try:
+			self.refused(lambda: punch_fix.withdraw_filed(req), "outside the people")
+		finally:
+			frappe.set_user("Administrator")
+		frappe.set_user(self.h.hr2)
+		try:
+			punch_fix.withdraw_filed(req)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_review_status"), "Withdrawn")
+		self.assertEqual(punch_fix.unconfirmed_changes([self.emp]), [])  # a withdrawn change no longer holds the slip
+		att2, names2 = self.held_three_on(add_days(self.day, -1))
+		approved = self.fix("12:40", by=self.hr, note="HR typed it")
+		self.decide(approved, by=self.h.hr2)
+		frappe.set_user(self.h.hr2)
+		try:
+			self.refused(lambda: punch_fix.withdraw_filed(approved), "still waiting for HR")  # D-2
+		finally:
+			frappe.set_user("Administrator")
+
+	def held_three_on(self, day):
+		self.h.day = self.day = day
+		return self.day_of([("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")])
+
+	def test_the_list_before_payroll_names_unconfirmed_changes_for_hr_in_scope_only(self):
+		att, names, req = self.filed()
+		frappe.set_user(self.h.hr2)
+		try:
+			out = punch_fix.before_payroll(str(self.day))
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual([(r["name"], r["what"], r["filed_by"], r["can_withdraw"]) for r in out["rows"]],
+		                 [(req, "added 12:40", "HR", True)])
+		other_hr = self.h._login("hrout2", ("HR Manager",))
+		self.h._employee("Hrout2", other_hr, company=self.h.other_company)
+		frappe.set_user(other_hr)
+		try:
+			self.assertEqual(punch_fix.before_payroll(str(self.day))["rows"], [])
+		finally:
+			frappe.set_user("Administrator")
+		self.refused(lambda: self._as(self.emp_user, lambda: punch_fix.before_payroll(str(self.day))), "Only HR")
+
+	def _as(self, user, fn):
+		frappe.set_user(user)
+		try:
+			return fn()
+		finally:
+			frappe.set_user("Administrator")
+
+	def slip(self):
+		from types import SimpleNamespace
+		first = frappe.utils.get_first_day(self.day)
+		return SimpleNamespace(docstatus=0, employee=self.emp, employee_name="Ravi Sample", start_date=first,
+		                       end_date=frappe.utils.get_last_day(first))
+
+	def test_the_salary_slip_is_refused_while_an_hr_filed_change_is_unconfirmed_and_names_it(self):
+		att, names, req = self.filed()
+		with self.assertRaises(frappe.ValidationError) as cm:
+			punch_fix.refuse_slip_while_unconfirmed(self.slip())
+		text = str(cm.exception)
+		for needle in ("cannot be submitted", "1 change is not confirmed", "added 12:40", "(HR)", "confirm in the app"):
+			self.assertIn(needle, text)
+		self.decide(req, by=self.h.hr2)  # approval does not lift it
+		with self.assertRaises(frappe.ValidationError):
+			punch_fix.refuse_slip_while_unconfirmed(self.slip())
+		self.confirm_as_employee(req)  # confirmed: lifted
+		punch_fix.refuse_slip_while_unconfirmed(self.slip())
+
+	def test_the_slip_is_not_held_by_a_withdrawn_change_a_managers_addition_or_the_employees_own_request(self):
+		mgr = self.h._login("mgrslip", ())
+		self.h._employee("Mgrslip", mgr)
+		att, names = self.held_three()
+		manager_add = self.fix("12:40", by=mgr, note="He told me")
+		punch_fix.refuse_slip_while_unconfirmed(self.slip())  # a manager's addition never holds the slip
+		self.decide(manager_add, by=self.hr)
+		att2, names2 = self.held_three_on(add_days(self.day, -1))
+		hr_filed = self.fix("12:40", by=self.hr, note="HR typed it")
+		with self.assertRaises(frappe.ValidationError):
+			punch_fix.refuse_slip_while_unconfirmed(self.slip())
+		frappe.db.set_value(REQUEST, hr_filed, "alvoraa_review_status", "Withdrawn")
+		punch_fix.refuse_slip_while_unconfirmed(self.slip())
+
+	def test_the_slip_check_is_wired_to_the_slip_submit_and_the_workings_report_gets_the_flag(self):
+		hooks = frappe.get_hooks("doc_events")["Salary Slip"]["before_submit"]
+		self.assertIn("alvoraa_portal.punch_fix.refuse_slip_while_unconfirmed", hooks)
+		att, names, req = self.filed()
+		first = frappe.utils.get_first_day(self.day)
+		text = punch_fix.unconfirmed_text_by_employee([self.emp], first, frappe.utils.get_last_day(first))
+		self.assertIn("added 12:40", text[self.emp])
+		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import salary_components_and_workings as rpt
+		self.assertIn("unconfirmed", [c["fieldname"] for c in rpt._columns()])
+
+	def test_the_register_seam_is_declared_and_not_available_yet(self):
+		self.refused(lambda: punch_fix.record_register_signature(["HR-ARQ-X"], "NOTICE-X"), "not available yet")
+
+	def test_the_printed_reason_hint_is_on_every_reason_box_and_has_a_hindi_line(self):
+		js = open(os.path.join(PKG, "public/js/ess/portal.js")).read()
+		hint = "This reason is printed on the employee's monthly notice."
+		self.assertGreaterEqual(js.count(hint), 3)  # the send bar, Not right, the 085 held form
+		self.assertIn(hint, open(os.path.join(PKG, "translations/hi.csv")).read())
 
 
 class NightShift(PunchFixCase):

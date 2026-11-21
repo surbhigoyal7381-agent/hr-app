@@ -624,7 +624,8 @@ def _needs(me, me_row, features, date_):
 		out.append({
 			"id": "confirm_" + r["name"],
 			"kind": "confirm_request",
-			"title": _("{0} sent {1} for {2}. Is it right?").format(who, what, day),
+			"title": (_("{0} added {1} for {2} and HR has approved it. Is it right?") if r["approved"]
+			          else _("{0} sent {1} for {2}. Is it right?")).format(who, what, day),
 			"detail": {"date": r["date"]},
 			"action": "open_day",
 			"route": "#time/fix",

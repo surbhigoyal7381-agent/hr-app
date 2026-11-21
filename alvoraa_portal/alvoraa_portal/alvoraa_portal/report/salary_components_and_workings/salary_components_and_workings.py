@@ -60,6 +60,13 @@ def execute(filters=None):
 			continue
 		rows.append(_row(emp, summary))
 
+	# Slice 087 (V5): DTC pays outside the portal, so the changes still waiting for the employee's
+	# confirmation show here too, one flag per person, in the same words as HR's list before payroll.
+	from alvoraa_portal.punch_fix import unconfirmed_text_by_employee
+
+	flags = unconfirmed_text_by_employee([r["employee"] for r in rows], from_date, to_date)
+	for r in rows:
+		r["unconfirmed"] = flags.get(r["employee"], "")
 	return _columns(), rows, _message(rule_set, from_date, to_date, skipped, live), None
 
 
@@ -328,4 +335,5 @@ def _columns():
 		c("net", "Net", 115, "Currency"),
 
 		c("why", "Why", 420, "Small Text"),
+		c("unconfirmed", "Unconfirmed change", 280, "Data"),
 	]

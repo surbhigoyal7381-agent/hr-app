@@ -5617,7 +5617,7 @@ async function acLoad() {
     acBar();
     acPaint();
     acMine();
-    if (d.can_review) acReviewQueue();
+    if (d.can_review) { acReviewQueue(); acPrepay(); }
   }
   try {
     await show(await acApi("month", {year: acState.year, month: acState.month,
@@ -6393,13 +6393,10 @@ function acPfPaint() {
   if (locked) {
     html += '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This day cannot be fixed here</span></div>'
       + '<p class="pfx-sub">' + gpEsc(d.blocked_text) + "</p>";
-  } else if (waiting && r.needs_confirm) {
-    /* ALV-419, prototype-v4: somebody filed this for the employee, who answers first. */
-    html += pfxConfirmBlock(r, "pf");
-  } else if (waiting && r.was_filed && r.confirmed_at) {
-    /* V4 P-11: confirmed, so the wait is HR's. It is not the employee's request, so no Withdraw. */
-    html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>You confirmed at ' + gpEsc(r.confirmed_at) + " &middot; Waiting for HR</span></div>"
-      + '<p class="pfx-sub">HR can now decide it. The day stays as it is until then. You will see the answer here.</p>';
+  } else if (waiting && r.was_filed) {
+    /* V5: filed for the employee; HR can decide it now, so the status line says it is HR's. */
+    html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Waiting for HR</span></div>'
+      + '<p class="pfx-sub">HR can decide this now. The day stays as it is until then. You will see the answer here.</p>';
   } else if (waiting) {
     html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Sent to HR at ' + gpEsc(r.sent_at) + " &middot; Waiting</span></div>"
       + '<p class="pfx-sub">The day stays as it is until HR decides. You will see the answer here.</p>'
@@ -6420,6 +6417,7 @@ function acPfPaint() {
     html += '<div class="pfx-sl pfx-' + status + '"><span class="pfx-ic" aria-hidden="true">' + (d.held ? "!" : "&#10003;") + "</span><span>"
       + (d.held ? "Held &middot; not paid until fixed" : gpEsc(d.status) + " &middot; " + pfHours(d.hours)) + "</span></div>";
   }
+  if (r && r.was_filed && !locked && (r.can_not_right || r.confirm_state)) html += '<div class="pfx-block">' + pfxConfirmBlock(r, "pf") + "</div>";
   if (d.shift) {
     html += '<p class="pfx-muted">Shift ' + gpEsc(d.shift.start) + "&ndash;" + gpEsc(d.shift.end) + " &middot; Expected " + pfHM(Math.round(d.shift.expected * 60)) + "</p>";
   }
@@ -6449,8 +6447,8 @@ function acPfPaint() {
     if (it.add) { label = "Added: " + acPf.add.label; sub = "In this request"; }
     else if (it.ask) {
       label = (r.log_type === "OUT" ? "Out" : "In") + " &middot; asked for";
-      sub = r.needs_confirm ? (r.filed_by === "HR" ? "Added by HR &middot; waiting for you"
-              : "Asked for by " + gpEsc(r.filed_by_name || "your manager") + " &middot; waiting for you")
+      sub = r.was_filed ? (r.filed_by === "HR" ? "Added by HR &middot; sent for you"
+              : "Asked for by " + gpEsc(r.filed_by_name || "your manager") + " &middot; sent for you")
         : "Asked for &middot; waiting for HR";
     }
     else {
@@ -6459,8 +6457,12 @@ function acPfPaint() {
       if (it.p.added) {
         /* V4 P-13: a request somebody filed for you was not "your request". */
         sub = "Added by HR" + (r && r.decided_on ? " on " + gpEsc(acNice(r.decided_on)) : "")
-          + (r && r.was_filed ? (r.filed_by === "manager" && r.filed_by_name ? ", asked for by " + gpEsc(r.filed_by_name) : "") + ". You confirmed it."
-                              : ", from your request.");
+          + (r && r.was_filed
+              ? (r.filed_by === "manager" && r.filed_by_name ? ", asked for by " + gpEsc(r.filed_by_name) : "")
+                + (r.confirm_state === "signed" ? ". You signed for it on the register."
+                  : r.confirm_state === "confirmed" ? ". You confirmed it."
+                  : r.needs_confirm ? ". Not confirmed by you yet." : ".")
+              : ", from your request.");
       }
       if (it.p.aside) sub = "Set aside by HR" + (r && r.decided_on ? " on " + gpEsc(acNice(r.decided_on)) : "")
         + ", from your request. It stays on record but no longer counts.";
@@ -6476,7 +6478,7 @@ function acPfPaint() {
     html += gapRow(i + 1);
   });
   html += "</ul>";
-  if (r && r.note && (waiting || r.state === "approved") && !r.needs_confirm) html += '<p class="pfx-sub">Your reason: ' + gpEsc(r.note) + "</p>";
+  if (r && r.note && (waiting || r.state === "approved") && !r.was_filed) html += '<p class="pfx-sub">Your reason: ' + gpEsc(r.note) + "</p>";
   if (waiting && !r.was_filed) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
   if (add) html += '<p class="pfx-one">One punch per request. If another is missing, send this first and add the next after HR decides.</p>';
   /* the sticky send bar */
@@ -6492,6 +6494,7 @@ function acPfPaint() {
     html += '<div class="pfx-bar-send"><div class="pfx-sum">' + gpEsc(parts.join(" · ")) + "</div>"
       + '<div class="pfx-field pfx-reason"><label class="pfx-fl" for="pfx-note">Your reason <span class="pfx-req">Required</span></label>'
       + '<p class="pfx-sub">HR and your manager can read this.</p>'
+      + '<p class="pfx-sub pfx-print">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
       + '<textarea id="pfx-note" rows="1" required aria-required="true" placeholder="e.g. Forgot to scan after lunch" oninput="acPfReasonInput(this)">'
       + gpEsc(acPf.note || "") + "</textarea></div>"
       + '<div class="pfx-err" id="pfx-refusal" role="alert" hidden></div>'
@@ -6641,31 +6644,62 @@ var PFX_KIND_Q = {"Arrival": "What time did you arrive?", "Back in after a break
 /* The Confirm block (prototype-v4). `mode` is "pf" on the day sheet and "req" on the older request card:
    where to reload after the answer. A filed set-aside, or a request with no time, has no time field. */
 function pfxConfirmBlock(r, mode) {
+  /* V5: a request filed for the employee, pending or already approved. HR-filed or a cut: Confirm and Not
+     right. A manager's addition: Not right only. After Confirm the block stays. Approval never waits. */
   var hr = r.filed_by === "HR", nm = r.filed_by_name || "Your manager", it = r.item, n = gpEsc(r.name), m = gpEsc(mode);
-  var h = '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>'
-    + (hr ? "HR sent this for you. Is it right?" : "Your manager " + gpEsc(nm) + " sent this for you. Is it right?") + "</span></div>";
+  var ap = !!r.approved, cs = r.confirm_state, who = hr ? "HR" : "Your manager " + gpEsc(nm);
+  var head = cs === "disputed" ? "You told HR this is not right"
+    : cs === "signed" ? "You signed for it on the register"
+    : cs === "confirmed" ? "You confirmed this at " + gpEsc(r.confirmed_at || "")
+    : ap ? (hr ? "HR added this for you and has approved it. Is it right?" : who + " added this for you and HR has approved it. Is it right?")
+         : (hr ? "HR sent this for you. Is it right?" : who + " sent this for you. Is it right?");
+  var h = '<div class="pfx-sl ' + (cs === "confirmed" || cs === "signed" ? "pfx-ok" : cs === "disputed" ? "pfx-wait" : "pfx-held") + '"><span class="pfx-ic" aria-hidden="true">'
+    + (cs === "confirmed" || cs === "signed" ? "&#10003;" : cs === "disputed" ? "&#9719;" : "!") + "</span><span>" + head + "</span></div>";
   if (it) h += '<p class="pfx-sub"><b>' + (it.kind === "add" ? "Add a punch at " + gpEsc(it.time) + " &middot; " + gpEsc(it.label)
     : "Set aside your punch at " + gpEsc(it.time || "")) + "</b></p>";
   if (r.filer_reason) h += '<p class="pfx-sub">' + (hr ? "Reason from HR" : "Reason from " + gpEsc(nm)) + ": " + gpEsc(r.filer_reason) + "</p>";
-  h += '<p class="pfx-sub">Press Confirm only if this is what happened. After that HR decides. Nothing on your day changes until then.</p>'
-    + '<div class="pfx-acts" id="pfx-cf-btns-' + n + '"><button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,1,&quot;' + m + '&quot;)">Confirm</button>'
+  if (cs === "disputed") {
+    return h + '<p class="pfx-sub">Your day stays as HR approved it until HR decides.</p>'
+      + (r.disputed && r.disputed.reason ? '<p class="pfx-sub">Your reason: ' + gpEsc(r.disputed.reason) + "</p>" : "");
+  }
+  if (r.can_confirm) {
+    h += '<p class="pfx-sub">Press Confirm only if this is what happened. HR can decide it now. Your salary slip for this month waits until you confirm it, or sign for it on the register.</p>';
+  } else if (cs === "confirmed") {
+    h += '<p class="pfx-sub">You can still say it is not right.</p>';
+  } else if (cs !== "signed" && !r.needs_confirm) {
+    h += '<p class="pfx-sub">HR decides this. Nothing on your day changes until then. If it is not right, say so and give your own time.</p>';
+  }
+  if (!r.can_not_right) return h;
+  h += '<div class="pfx-acts" id="pfx-cf-btns-' + n + '">'
+    + (r.can_confirm ? '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,1,&quot;' + m + '&quot;)">Confirm</button>' : "")
     + '<button type="button" class="btn" onclick="acPfNotRight(&quot;' + n + '&quot;)">Not right</button></div>'
     + '<div id="pfx-nr-' + n + '" hidden>';
   if (it && it.kind === "add") {
     h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-time-' + n + '">' + gpEsc(PFX_KIND_Q[it.label] || "What time was it?")
       + ' <span class="pfx-req">Required</span></label>'
-      + '<input type="time" id="pfx-nr-time-' + n + '" oninput="acPfNrEffect(&quot;' + n + '&quot;)" data-sent="' + gpEsc(it.time) + '" aria-describedby="pfx-nr-terr-' + n + '">'
+      + '<input type="time" id="pfx-nr-time-' + n + '" oninput="acPfNrEffect(&quot;' + n + '&quot;)" data-sent="' + gpEsc(it.time) + '" data-approved="' + (ap ? 1 : 0) + '" aria-describedby="pfx-nr-terr-' + n + '">'
       + '<p class="pfx-sub">' + gpEsc(it.time) + " was sent.</p>"
       + '<div class="pfx-err" id="pfx-nr-terr-' + n + '" role="alert"></div></div>';
   }
   h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-text-' + n + '">What is not right? <span class="pfx-req">Required</span></label>'
     + '<p class="pfx-sub">HR will read this.</p>'
+    + '<p class="pfx-sub pfx-print">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
     + '<textarea id="pfx-nr-text-' + n + '" rows="2" required aria-required="true" placeholder="e.g. I was back by 14:15, not 14:40"></textarea>'
     + '<div class="pfx-err" id="pfx-nr-err-' + n + '" role="alert"></div></div>'
-    + '<p class="pfx-sub" id="pfx-nr-eff-' + n + '">HR will not add it, and your day stays as it is.</p>'
+    + '<p class="pfx-sub" id="pfx-nr-eff-' + n + '" data-approved="' + (ap ? 1 : 0) + '">' + pfxNrLine(ap, it && it.kind === "add", "", "") + "</p>"
     + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfNrBack(&quot;' + n + '&quot;)">Back</button>'
     + '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,0,&quot;' + m + '&quot;)">Send to HR</button></div></div>';
   return h;
+}
+
+/* The consequence line above Send, before the button (V5): which of the three things happens. */
+function pfxNrLine(approved, hasTime, sent, typed) {
+  if (approved) {
+    return typed ? "HR has already approved this, so your day stays as it is. Your own time, " + gpEsc(typed) + ", goes to HR as a new request."
+      : "HR has already approved this, so your day stays as it is. Your reason goes to HR" + (hasTime ? ", with your own time." : ".");
+  }
+  return typed ? "HR will not add " + gpEsc(sent) + ". Your own request for " + gpEsc(typed) + " goes to HR instead."
+    : "HR will not add it, and your day stays as it is.";
 }
 
 window.acPfNotRight = function (n) {
@@ -6683,8 +6717,7 @@ window.acPfNrEffect = function (n) {
   if (!t || !e) return;
   var te = document.getElementById("pfx-nr-terr-" + n); if (te) te.textContent = "";
   t.classList.remove("bad");
-  e.textContent = t.value ? "HR will not add " + t.getAttribute("data-sent") + ". Your own request for " + t.value
-    + " goes to HR instead, and you do not need to confirm it." : "HR will not add it, and your day stays as it is.";
+  e.textContent = pfxNrLine(e.getAttribute("data-approved") === "1", true, t.getAttribute("data-sent"), t.value).replace(/&[a-z]+;/g, "");
 };
 
 /* The time checks of the add sheet, against the gap the sent time sits in, plus "that is the time that was sent". */
@@ -6717,7 +6750,9 @@ window.acPfConfirm = async function (name, ok, mode) {
   try {
     await pfApi("confirm", {name: name, ok: ok ? 1 : 0, reason: why, time: t});
     hideLoad();
-    toast(ok ? "Confirmed. HR can now decide it." : (t ? "Sent to HR. Your own time replaces the one that was sent." : "Sent to HR. Nothing was changed."), "ok");
+    var effEl = document.getElementById("pfx-nr-eff-" + name), apr = !!effEl && effEl.getAttribute("data-approved") === "1";
+    toast(ok ? "Confirmed. Thank you." : apr ? (t ? "Sent to HR as a new request. Your day stays as it is until HR decides." : "Sent to HR. Your day stays as it is until HR decides.")
+      : (t ? "Sent to HR. Your own time replaces the one that was sent." : "Sent to HR. Nothing was changed."), "ok");
     if (mode === "req") { await acLoad(); } else { await acPfLoad(acPf.date); }
   } catch (err) {
     hideLoad();
@@ -6725,6 +6760,36 @@ window.acPfConfirm = async function (name, ok, mode) {
     if (box && err && err.server && err.message) box.textContent = err.message;
     toast(err.message || "Could not send that.", "err");
   }
+};
+
+/* ── HR's list before payroll (V5) ─────────────────────────────────────────
+   Changes HR or a manager filed that need the employee's confirmation before pay is locked, and have not
+   had it. A card at the top of the HR page; "Not yet", and Withdraw only while a change is still pending. */
+async function acPrepay() {
+  var host = document.getElementById("ac-prepay");
+  if (!host) {
+    var w = document.getElementById("ac-review-wrap"); if (!w || !w.parentNode) return;
+    host = document.createElement("section"); host.id = "ac-prepay"; w.parentNode.insertBefore(host, w);
+  }
+  var res;
+  try { res = await pfApi("before_payroll", {}); } catch (e) { host.innerHTML = ""; return; }
+  var rows = (res && res.rows) || [];
+  if (!rows.length) { host.innerHTML = ""; return; }
+  host.innerHTML = '<div class="pfx-card pfx-prepay"><h3>' + gpEsc(rows.length === 1 ? "1 change not yet confirmed this month" : rows.length + " changes not yet confirmed this month") + "</h3>"
+    + '<p class="pfx-sub">A salary slip cannot be submitted for these people until each change is confirmed, signed on the register, or withdrawn.</p>'
+    + '<ul class="pfx-pre">' + rows.map(function (r) {
+      return '<li><span class="pfx-pre-main"><b>' + gpEsc(r.employee_name) + "</b> &middot; " + gpEsc(acNice(r.date)) + "<br>"
+        + gpEsc(r.what) + " &middot; sent by " + gpEsc(r.filer) + " (" + gpEsc(r.filed_by) + ")"
+        + (r.approved ? " &middot; approved" : "") + "<br>"
+        + '<span class="pfx-quiet">' + (r.disputed ? "Says it is not right" : "Not yet") + "</span></span>"
+        + (r.can_withdraw ? '<button type="button" class="btn btn-outline" onclick="acPrepayWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button>' : "")
+        + "</li>";
+    }).join("") + "</ul></div>";
+}
+window.acPrepayWithdraw = async function (name) {
+  showLoad();
+  try { await pfApi("withdraw_filed", {name: name}); hideLoad(); toast("Withdrawn. It no longer holds the salary slip.", "ok"); await acLoad(); }
+  catch (e) { hideLoad(); toast(e.message || "Could not withdraw that.", "err"); }
 };
 
 window.acPfWithdraw = async function (name) {
@@ -6820,10 +6885,10 @@ window.acPfCard = function (r) {
     + (quote ? "<q>" + gpEsc(quote) + "</q>" : "") + "</p>"
     + (c.replaces ? '<p class="pfx-says">Replaces the ' + gpEsc(c.replaces.time || "") + " that " + gpEsc(c.replaces.name) + " (" + gpEsc(c.replaces.by)
         + ") sent. " + gpEsc(pfFirst(r)) + " said that one was not right.</p>" : "")
-    + (f && c.awaiting_confirm ? '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Waiting for ' + gpEsc(pfFirst(r)) + " to confirm</span></div>"
-        + '<p class="pfx-sub">Filed on ' + gpEsc(acNice(f.on)) + " at " + gpEsc(f.at) + ". You can approve it after " + gpEsc(pfFirst(r)) + " presses Confirm in the app. You can still decline it.</p>" : "")
-    + (f && f.confirmed_on ? '<div class="pfx-sl pfx-ok"><span class="pfx-ic" aria-hidden="true">&#10003;</span><span>' + gpEsc(pfFirst(r)) + " confirmed this in the app on "
+    + (f && f.needs_confirm && f.state === "not_yet" ? '<p class="pfx-sub pfx-quiet">Needs ' + gpEsc(pfFirst(r)) + "'s confirmation before pay is locked &middot; Not yet</p>" : "")
+    + (f && f.state === "confirmed" && f.confirmed_on ? '<div class="pfx-sl pfx-ok"><span class="pfx-ic" aria-hidden="true">&#10003;</span><span>' + gpEsc(pfFirst(r)) + " confirmed this in the app on "
         + gpEsc(acNice(f.confirmed_on[0])) + ", " + gpEsc(f.confirmed_on[1]) + "</span></div>" : "")
+    + (f && f.state === "signed" ? '<p class="pfx-sub pfx-quiet">Signed on the register</p>' : "")
     + (c.sets_aside_machine ? '<p class="pfx-says">This asks to set aside a punch from the machine.</p>' : "")
     + '<div class="pfx-ba"><div><h4>Now</h4><p class="num pfx-st">' + gpEsc(now.status) + " &middot; " + now.punches.length + " punches</p>"
     + pfCardStrip(now.shift, now.punches.map(function (p) { return {m: pfM(p), k: p.aside ? "aside" : "io"}; }))
@@ -6840,8 +6905,6 @@ window.acPfCard = function (r) {
   var foot = "";
   if (mine) {
     foot = '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This is your own day, so you cannot approve it. Another HR person will decide it.</span></div>';
-  } else if (c.awaiting_confirm) {
-    foot = pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
   } else if (blocked) {
     foot = '<p class="pfx-sub">' + gpEsc(blocked === "slip"
       ? "Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary."
@@ -6907,6 +6970,7 @@ function acHeldForm(x, d) {
         + '<select id="ac-missing-log"><option value="OUT">Out</option><option value="IN">In</option></select>')
     + '<label class="form-label" for="ac-held-reason">Your reason <span class="pfx-req">Required</span></label>'
     + '<p class="ac-help">HR and your manager can read this.</p>'
+    + '<p class="ac-help">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
     + '<textarea id="ac-held-reason" rows="2" required aria-required="true" placeholder="e.g. Forgot to scan after lunch"></textarea>'
     + '<p class="ac-help">HR sees your punches, this time and your reason, and decides.</p>'
     + '<div class="ac-acts"><button class="btn btn-primary" onclick="acHeldSubmit(&quot;' + x.date + '&quot;,'

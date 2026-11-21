@@ -19,7 +19,7 @@ from datetime import timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, flt, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, cint, flt, get_datetime, get_first_day, get_last_day, getdate, now_datetime, nowdate
 
 import alvoraa_portal.held_day as held_day
 import hrms.alvoraa_hr_core.access as access
@@ -36,6 +36,16 @@ ASIDE_BY = "alvoraa_fix_aside_by"
 ASIDE_ON = "alvoraa_fix_aside_on"
 MARKS = (ADDED, ASIDE, ASIDE_BY, ASIDE_ON)
 HR_ROLES = {"HR User", "HR Manager", "System Manager"}
+
+SERVER_OWNED = ("alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_replaces",
+                "alvoraa_disputed_by", "alvoraa_disputed_on", "alvoraa_dispute_reason")
+
+
+def _signed_field():
+	"""`alvoraa_signed_notice` is slice 088's field (the register signature). 087 only guards it: it is put
+	back on every ordinary save, and the slip gate counts it as a confirmation. () until 088 adds it."""
+	return ("alvoraa_signed_notice",) if frappe.get_meta(REQUEST).has_field("alvoraa_signed_notice") else ()
+
 
 # What a Confirm vouches for: the day, the time and kind, the punches to set aside, the words.
 CONFIRMED_CONTENT = ("from_date", "to_date", "alvoraa_missing_time", "alvoraa_missing_log", "alvoraa_set_aside",
@@ -71,6 +81,14 @@ FIELDS = {
 		# V4: the employee's own request that replaces one filed for them ("Not right" with a time).
 		{"fieldname": "alvoraa_replaces", "fieldtype": "Link", "options": REQUEST, "read_only": 1,
 		 "label": "Replaces Request", "insert_after": "alvoraa_confirmed_on"},
+		# V5 D-1: after HR approved a change, "Not right" without a time (or for a cut) is a dispute: the
+		# employee's reason goes to HR and the day stays as approved.
+		{"fieldname": "alvoraa_disputed_by", "fieldtype": "Link", "options": "User", "read_only": 1,
+		 "label": "Disputed By", "insert_after": "alvoraa_replaces"},
+		{"fieldname": "alvoraa_disputed_on", "fieldtype": "Datetime", "read_only": 1,
+		 "label": "Disputed On", "insert_after": "alvoraa_disputed_by"},
+		{"fieldname": "alvoraa_dispute_reason", "fieldtype": "Small Text", "read_only": 1,
+		 "label": "Dispute Reason", "insert_after": "alvoraa_disputed_on"},
 	],
 }
 
@@ -330,11 +348,12 @@ def _own_the_confirm_fields(doc, before):
 		                and held_day._has_time(doc) and not aside_names(doc))
 		doc.alvoraa_needs_confirm = 0 if (filer in ("Administrator", login) or manager_adds) else 1
 		doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
+		doc.alvoraa_disputed_by = doc.alvoraa_disputed_on = doc.alvoraa_dispute_reason = None
 		# Only `confirm` sets the link (a process flag a client cannot send), so it cannot be used to
 		# dodge the monthly limit.
 		doc.alvoraa_replaces = frappe.flags.get("punch_fix_replaces")
 	else:
-		for f in ("alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_replaces"):
+		for f in SERVER_OWNED + _signed_field():
 			doc.set(f, before.get(f))
 		# SEC-7 (from 086's review): a Confirm is for what the employee saw. If the filer changes what the
 		# request says after that, the Confirm is cleared and the employee must confirm again. Cleared, not
@@ -460,22 +479,34 @@ def day_sheet(date):
 			fields=["name", "docstatus", "alvoraa_review_status", "creation", "alvoraa_missing_time",
 			        "alvoraa_missing_log", "alvoraa_set_aside", "explanation", "alvoraa_review_note",
 			        "alvoraa_reviewed_on", "alvoraa_reviewed_by", "alvoraa_needs_confirm", "alvoraa_confirmed_on",
-			        "alvoraa_replaces", "owner"],
+			        "alvoraa_replaces", "alvoraa_disputed_on", "alvoraa_dispute_reason", "owner"]
+			       + (["alvoraa_signed_notice"] if _signed_field() else []),
 			order_by="creation desc", limit_page_length=5):
 		if is_punch_fix(r):
 			state = ac._state(r)
+			filed_for = r.owner != frappe.session.user
+			needs = bool(cint(r.alvoraa_needs_confirm))
+			signed = bool(_signed_field() and r.get("alvoraa_signed_notice"))
+			confirm_state = ("signed" if signed else "confirmed" if r.alvoraa_confirmed_on
+			                 else "disputed" if r.alvoraa_disputed_on else "not_yet") if needs else None
 			out["request"] = {
 				"name": r.name, "state": state, "sent_at": str(r.creation)[11:16],
 				"time": frappe.utils.get_time(r.alvoraa_missing_time).strftime("%H:%M") if held_day._has_time(r) else None,
 				"log_type": r.alvoraa_missing_log, "aside": aside_names(r), "note": r.explanation,
 				# ALV-419: waiting on the employee's own Confirm, and whether HR or a manager filed it.
-				"needs_confirm": bool(cint(r.alvoraa_needs_confirm) and not r.alvoraa_confirmed_on and state == "waiting"),
-				"was_filed": bool(cint(r.alvoraa_needs_confirm)),
+				# V5: approval never waits. `needs_confirm` = HR-filed or a cut, confirmed before pay is locked;
+				# `can_confirm` = Confirm is offered; `can_not_right` = filed for the employee and still open
+				# (pending or approved), so Not right is offered (also for a manager's addition).
+				"needs_confirm": needs, "confirm_state": confirm_state,
+				"can_confirm": bool(needs and confirm_state == "not_yet" and state in ("waiting", "approved")),
+				"can_not_right": bool(filed_for and state in ("waiting", "approved") and not r.alvoraa_disputed_on),
+				"was_filed": filed_for, "approved": state == "approved",
+				"disputed": ({"on": str(r.alvoraa_disputed_on)[:10], "reason": r.alvoraa_dispute_reason}
+				             if r.alvoraa_disputed_on else None),
 				"filed_by": "HR" if held_day._filed_by_hr(r.owner, frappe.session.user) else "manager",
 				"filed_by_name": (_filer(r.owner, frappe.session.user)[1]
-				                  if cint(r.alvoraa_needs_confirm) and not held_day._filed_by_hr(r.owner, frappe.session.user)
-				                  else None),
-				"filer_reason": _reason_of(r.explanation) if cint(r.alvoraa_needs_confirm) else None,
+				                  if filed_for and not held_day._filed_by_hr(r.owner, frappe.session.user) else None),
+				"filer_reason": _reason_of(r.explanation) if filed_for else None,
 				"item": _filed_item(r, me.name, date),
 				"confirmed_at": str(r.alvoraa_confirmed_on)[11:16] if r.alvoraa_confirmed_on else None,
 				"declined_by_you": bool(state == "declined" and r.alvoraa_reviewed_by == frappe.session.user),
@@ -518,13 +549,12 @@ def home_rows(employee):
 	login = frappe.db.get_value("Employee", employee, "user_id")
 	out = []
 	for r in frappe.get_all(
-			REQUEST, filters={"employee": employee, "docstatus": 0, "alvoraa_review_status": "Waiting",
-			                  "alvoraa_needs_confirm": 1, "alvoraa_confirmed_on": ("is", "not set")},
-			fields=["name", "from_date", "owner", "alvoraa_missing_time", "alvoraa_set_aside"],
+			REQUEST, filters=dict(_unconfirmed_filters(), employee=employee),
+			fields=["name", "from_date", "owner", "docstatus", "alvoraa_missing_time", "alvoraa_set_aside"],
 			order_by="from_date desc", limit_page_length=10):
 		kind, who = _filer(r.owner, login)
 		out.append({"name": r.name, "date": str(r.from_date), "filed_by": kind, "filer": who,
-		            "punch_fix": is_punch_fix(r)})
+		            "punch_fix": is_punch_fix(r), "approved": r.docstatus == 1})
 	return out
 
 
@@ -550,8 +580,8 @@ def card_context(rows):
 		"req": {x.name: x for x in frappe.get_all(
 			REQUEST, filters={"name": ("in", names)},
 			fields=["name", "modified", "alvoraa_missing_time", "alvoraa_set_aside", "alvoraa_needs_confirm",
-			        "alvoraa_confirmed_on", "alvoraa_replaces", "owner", "creation", "explanation"],
-			limit_page_length=0)},
+			        "alvoraa_confirmed_on", "alvoraa_replaces", "owner", "creation", "explanation"]
+			       + (["alvoraa_signed_notice"] if _signed_field() else []), limit_page_length=0)},
 		"emp": {x.name: x for x in frappe.get_all(
 			"Employee", filters={"name": ("in", emps)}, fields=["name", "status", "user_id"], limit_page_length=0)},
 		"att": {(x.employee, str(x.attendance_date)): x for x in frappe.get_all(
@@ -581,13 +611,19 @@ def card(row, ctx=None):
 	punches = [p for p in ctx["punches"].get(doc.employee, []) if shift_day(p) == str(date)]
 	out = {"blocked": day_state(doc.employee, date, day, emp, ctx) if emp else "left", "seen": _token(req.modified, punches),
 	       "own_day": bool(emp and emp.user_id == frappe.session.user),
-	       # ALV-419: not approvable until the employee has pressed Confirm; Decline stays open.
-	       "awaiting_confirm": bool(cint(req.alvoraa_needs_confirm) and not req.alvoraa_confirmed_on)}
+	       # V5: approval never waits. This is only the quiet line under the reason: does the change need the
+	       # employee's confirmation before pay is locked, and where does it stand.
+	       "awaiting_confirm": bool(cint(req.alvoraa_needs_confirm) and not req.alvoraa_confirmed_on
+	                                and not (_signed_field() and req.get("alvoraa_signed_notice")))}
 	# V4 (P-15, P-16, P-17): who filed it, when, and whether the employee has confirmed; and the request
 	# this one replaces. HR sees the filer's name.
-	if cint(req.alvoraa_needs_confirm):
+	if req.owner != (emp.user_id if emp else None):
 		kind, who = _filer(req.owner, emp.user_id if emp else None)
+		needs = bool(cint(req.alvoraa_needs_confirm))
+		signed = bool(_signed_field() and req.get("alvoraa_signed_notice"))
 		out["filed"] = {"by": kind, "name": who, "on": str(req.creation)[:10], "at": str(req.creation)[11:16],
+		                "needs_confirm": needs,
+		                "state": ("signed" if signed else "confirmed" if req.alvoraa_confirmed_on else "not_yet") if needs else None,
 		                "reason": _reason_of(req.explanation),
 		                "confirmed_on": (str(req.alvoraa_confirmed_on)[:10], str(req.alvoraa_confirmed_on)[11:16])
 		                if req.alvoraa_confirmed_on else None}
@@ -650,36 +686,153 @@ def before_submit(doc, method=None):
 		frappe.throw(blocked_sentence(code, doc.employee, doc.from_date))
 
 
-def refuse_unconfirmed(doc, method=None):
-	"""Attendance Request before_submit, for EVERY request (ALV-419): one the employee did not file
-	cannot be approved until they have pressed Confirm. Desk, REST and `decide` all pass here."""
-	if cint(doc.get("alvoraa_needs_confirm")) and not doc.get("alvoraa_confirmed_on"):
-		frappe.throw(_("The employee has not confirmed this request yet. You can approve it after they "
-		               "press Confirm in the app. You can still decline it."))
+def _unconfirmed_filters():
+	"""Requests that need the employee's confirmation before pay is locked and have not had it: HR-filed
+	or a cut (`alvoraa_needs_confirm`), not confirmed in the app, not signed on the register (088), not
+	declined or withdrawn. Approved ones count: approval never waits (V5)."""
+	f = {"alvoraa_needs_confirm": 1, "alvoraa_confirmed_on": ("is", "not set"), "docstatus": ("<", 2),
+	     "alvoraa_review_status": ("not in", ["Declined", "Withdrawn"])}
+	if _signed_field():
+		f["alvoraa_signed_notice"] = ("is", "not set")
+	return f
+
+
+def _what(r):
+	"""A change in words: "added 14:40", "set aside 11:00"."""
+	bits = []
+	if held_day._has_time(r):
+		bits.append(_("added {0}").format(_hhmm_t(r.alvoraa_missing_time)))
+	for name in aside_names(r):
+		t = frappe.db.get_value(CHECKIN, name, "time")
+		bits.append(_("set aside {0}").format(_hhmm(t) if t else "?"))
+	return _(", ").join(bits) or _("a correction")
+
+
+def unconfirmed_changes(employees=None, start=None, end=None, limit=100):
+	"""The unconfirmed changes (see `_unconfirmed_filters`) with their day in [start, end], for the given
+	employees or everybody. Plain facts: employee, day, what, who filed it, whether HR has approved."""
+	filters = _unconfirmed_filters()
+	if employees is not None:
+		filters["employee"] = ("in", list(employees) or [""])
+	if start and end:
+		filters["from_date"] = ("between", [start, end])
+	rows = frappe.get_all(
+		REQUEST, filters=filters, order_by="from_date asc", limit_page_length=limit,
+		fields=["name", "employee", "employee_name", "from_date", "owner", "docstatus", "alvoraa_review_status",
+		        "alvoraa_missing_time", "alvoraa_set_aside", "alvoraa_disputed_on"])
+	logins = {}
+	out = []
+	for r in rows:
+		login = logins.setdefault(r.employee, frappe.db.get_value("Employee", r.employee, "user_id"))
+		kind, who = _filer(r.owner, login)
+		out.append({"name": r.name, "employee": r.employee, "employee_name": r.employee_name,
+		            "date": str(r.from_date), "what": _what(r), "filed_by": kind, "filer": who,
+		            "approved": r.docstatus == 1, "disputed": bool(r.alvoraa_disputed_on)})
+	return out
+
+
+def _day_label(date):
+	return frappe.utils.formatdate(date, "d MMM")
+
+
+def refuse_slip_while_unconfirmed(doc, method=None):
+	"""Salary Slip before_submit (V5, Option 1): the slip of an employee cannot be submitted while an
+	HR-filed or cut change in its period is unconfirmed, unless it is withdrawn. Names each change.
+	Manager additions and the employee's own requests never block it."""
+	if doc.docstatus == 2 or not doc.employee or not columns_ready():
+		return
+	rows = unconfirmed_changes([doc.employee], doc.start_date, doc.end_date, limit=20)
+	if not rows:
+		return
+	first = (doc.employee_name or "").split(" ")[0] or _("the employee")
+	lines = "; ".join(_("{0}: {1}, sent by {2} ({3})").format(_day_label(r["date"]), r["what"], r["filer"], r["filed_by"])
+	                  for r in rows)
+	frappe.throw(_("The salary slip for {0}, {1}, cannot be submitted. {2} not confirmed: {3}. Ask {4} to "
+	               "confirm in the app, record the signed register, or withdraw the change.").format(
+		doc.employee_name or doc.employee, frappe.utils.formatdate(doc.start_date, "MMM yyyy"),
+		_("1 change is") if len(rows) == 1 else _("{0} changes are").format(len(rows)), lines, first))
+
+
+def unconfirmed_text_by_employee(employees, start, end):
+	"""One line per employee for the Salary Workings report (DTC pays outside the portal)."""
+	if not columns_ready() or not employees:
+		return {}
+	out = {}
+	for r in unconfirmed_changes(employees, start, end, limit=1000):
+		out.setdefault(r["employee"], []).append(f"{frappe.utils.formatdate(r['date'], 'EEE d MMM')} {r['what']}")
+	return {k: "; ".join(v) for k, v in out.items()}
+
+
+@frappe.whitelist()
+def before_payroll(month=None):
+	"""HR's list before payroll: the unconfirmed changes of the month, for the employees this caller looks
+	after (company and branch, fail closed). Not a screen of its own: a card on the HR page."""
+	import alvoraa_portal.attendance_correction as ac
+
+	if not HR_ROLES & set(frappe.get_roles()):
+		access.refuse(_("Only HR sees this list."), "SEC-3", "punch_fix.before_payroll", REQUEST, None)
+	first = get_first_day(month or nowdate())
+	conditions = ac._scope_conditions()
+	scoped = frappe.get_all("Employee", filters=conditions, pluck="name", limit_page_length=0) \
+		if conditions is not None else None
+	rows = unconfirmed_changes(scoped, first, get_last_day(first), limit=100)
+	for r in rows:
+		r["can_withdraw"] = not r["approved"]  # D-2: only a change still pending can be withdrawn
+	return {"month": str(first), "rows": rows}
+
+
+@frappe.whitelist(methods=["POST"])
+def withdraw_filed(name):
+	"""HR takes back a change that was filed for an employee and is still pending (V5 D-2). It becomes
+	Withdrawn, so it no longer blocks the slip. An approved change cannot be withdrawn."""
+	doc = frappe.get_doc(REQUEST, name, for_update=True)
+	if not HR_ROLES & set(frappe.get_roles()) or not access.employee_in_scope(doc.employee):
+		access.refuse(_("That request is outside the people you look after."), "SEC-17", "punch_fix.withdraw_filed",
+		              REQUEST, name)
+	if doc.docstatus != 0 or doc.get("alvoraa_review_status") != "Waiting" or not cint(doc.get("alvoraa_needs_confirm")):
+		frappe.throw(_("Only a change that is still waiting for HR can be withdrawn."))
+	doc.db_set({"alvoraa_review_status": "Withdrawn", "alvoraa_reviewed_by": frappe.session.user,
+	            "alvoraa_reviewed_on": now_datetime()})
+	return {"name": name}
+
+
+def record_register_signature(requests, notice):
+	"""The seam with slice 088 (088's 02-functional-spec section 8.5). 088 implements it: it sets
+	`alvoraa_signed_notice = notice` on each request in the list under a process flag, with no commit,
+	called only from its own transaction. Declared here so 087 and 088 agree the name and the shape.
+	Until 088 lands it refuses in plain words."""
+	frappe.throw(_("Recording a signed register is not available yet."))
 
 
 @frappe.whitelist(methods=["POST"])
 def confirm(name, ok, reason=None, time=None):
-	"""The employee answers a request somebody filed for them: Confirm (ok=1) or Not right (ok=0). Own
-	request only. Who and when are recorded on the request, as the other audit fields are.
+	"""The employee answers a request somebody filed for them: Confirm (ok=1) or Not right (ok=0).
 
-	Not right declines it with the employee's reason. If the filed request carried a time, the employee
-	must say the right time (Surbhi, 21 Nov): their OWN request for it goes in, linked by
-	`alvoraa_replaces`, in the same transaction (both or neither), and needs no Confirm because they filed it."""
+	Approval never waits for this (V5): it can come before or after HR decides. Confirm is for an HR-filed
+	or a cut change (`alvoraa_needs_confirm`); a manager's addition needs none, but the employee can still
+	say Not right. Not right needs a reason, and a time when one was sent:
+	- still pending: the filed request is declined and, with a time, the employee's OWN request goes in
+	  its place (`alvoraa_replaces`), in the same transaction;
+	- already approved (D-1): the day stays as approved. With a time it is a NEW request; with no time, or
+	  for a cut, it is a dispute: the reason goes to HR.
+	Own request only; who and when are recorded on the request."""
 	import alvoraa_portal.attendance_correction as ac
 
 	me = ac._me()
 	doc = frappe.get_doc(REQUEST, name, for_update=True)
 	if doc.employee != me.name:
 		access.refuse(_("That request is not about you."), "SEC-4", "punch_fix.confirm", REQUEST, name)
-	if not cint(doc.get("alvoraa_needs_confirm")) or doc.docstatus != 0 \
-			or doc.get("alvoraa_review_status") != "Waiting":
+	approved = doc.docstatus == 1
+	if doc.owner == frappe.session.user or doc.docstatus == 2 or doc.get("alvoraa_review_status") in ("Declined", "Withdrawn") \
+			or (doc.docstatus == 0 and doc.get("alvoraa_review_status") != "Waiting"):
 		frappe.throw(_("There is nothing to confirm on this request."))
-	if doc.get("alvoraa_confirmed_on"):
-		frappe.throw(_("You have already confirmed this one."))
 	user, now = frappe.session.user, now_datetime()
 	if cint(ok):
-		doc.db_set({"alvoraa_confirmed_by": user, "alvoraa_confirmed_on": now})
+		if not cint(doc.get("alvoraa_needs_confirm")):
+			frappe.throw(_("There is nothing to confirm on this request."))
+		if doc.get("alvoraa_confirmed_on") or (_signed_field() and doc.get("alvoraa_signed_notice")):
+			frappe.throw(_("You have already confirmed this one."))
+		doc.db_set({"alvoraa_confirmed_by": user, "alvoraa_confirmed_on": now}, update_modified=not approved)
 		frappe.logger("alvoraa_portal").info("punch_fix confirm request=%s employee=%s user=%s answer=confirmed",
 		                                     name, me.name, user)
 		return ac._shape(frappe.get_doc(REQUEST, name).as_dict())
@@ -689,18 +842,27 @@ def confirm(name, ok, reason=None, time=None):
 	if filed_time and not (time or "").strip():
 		frappe.throw(_("Enter the time first."))
 	frappe.db.savepoint("pf_not_right")
+	replacement = disputed = None
 	try:
-		# Declined first: the one-open-request rule then lets the replacement in.
-		doc.db_set({"alvoraa_review_status": "Declined", "alvoraa_review_note": (reason or "").strip() or None,
-		            "alvoraa_reviewed_by": user, "alvoraa_reviewed_on": now})
-		replacement = _replacement(doc, me, reason, time, filed_time) if filed_time else None
+		if approved:
+			if filed_time:
+				replacement = _replacement(doc, me, reason, time, filed_time)
+			else:
+				doc.db_set({"alvoraa_disputed_by": user, "alvoraa_disputed_on": now,
+				            "alvoraa_dispute_reason": reason.strip()}, update_modified=False)
+				disputed = True
+		else:
+			# Declined first: the one-open-request rule then lets the replacement in.
+			doc.db_set({"alvoraa_review_status": "Declined", "alvoraa_review_note": reason.strip(),
+			            "alvoraa_reviewed_by": user, "alvoraa_reviewed_on": now})
+			replacement = _replacement(doc, me, reason, time, filed_time) if filed_time else None
 	except Exception:
 		frappe.db.rollback(save_point="pf_not_right")
 		raise
-	frappe.logger("alvoraa_portal").info("punch_fix confirm request=%s employee=%s user=%s answer=not right replacement=%s",
-	                                     name, me.name, user, replacement)
+	frappe.logger("alvoraa_portal").info("punch_fix confirm request=%s employee=%s user=%s answer=not right replacement=%s disputed=%s",
+	                                     name, me.name, user, replacement, bool(disputed))
 	out = ac._shape(frappe.get_doc(REQUEST, name).as_dict())
-	out["replacement"] = replacement
+	out["replacement"], out["disputed"] = replacement, bool(disputed)
 	return out
 
 

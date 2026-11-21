@@ -111,18 +111,22 @@ def _hhmm(value):
 
 # ── the day ──────────────────────────────────────────────────────────────────
 
+DAY_FIELDS = ["name", "employee", "attendance_date", "shift", "status", "company", "in_time",
+              "owner", "attendance_request", "leave_application", "creation", "working_hours",
+              "late_entry", "early_exit"]
+
+
 def day_row(employee, date, for_update=False):
 	return frappe.db.get_value(
 		ATTENDANCE, {"employee": employee, "attendance_date": getdate(date), "docstatus": 1},
-		["name", "employee", "attendance_date", "shift", "status", "company", "in_time",
-		 "owner", "attendance_request", "leave_application", "creation", "working_hours",
-		 "late_entry", "early_exit"], as_dict=True, for_update=for_update)
+		DAY_FIELDS, as_dict=True, for_update=for_update)
 
 
-def day_state(employee, date, row=None, emp=None):
+def day_state(employee, date, row=None, emp=None, ctx=None):
 	"""None when the day can be fixed, else one word: left, unmarked, slip, leave,
 	hand, noshift. ONE answer, asked at raise and again at approval (SEC-5). A caller that
-	has the employee's status and the day's row already passes them in (the card does)."""
+	has the employee's status and the day's row already passes them in, with `ctx` (from
+	`card_context`) holding every pending leave and slip, so a list of cards asks once."""
 	status = emp.status if emp else frappe.db.get_value("Employee", employee, "status")
 	if status != "Active":
 		return "left"
@@ -131,11 +135,16 @@ def day_state(employee, date, row=None, emp=None):
 		return "unmarked"
 	# A day that was Held keeps 085's arrear path (Surbhi, 21 Nov): approval goes through even on a
 	# final slip, the slip is never touched, and the day is flagged released-after-final-slip.
-	if row.status != held_day.HELD and held_day.is_in_final_slip(employee, date):
+	day = getdate(date)
+	if row.status != held_day.HELD and (
+			any(x.employee == employee and x.start_date <= day <= x.end_date for x in ctx["slips"]) if ctx
+			else held_day.is_in_final_slip(employee, date)):
 		return "slip"
-	if row.status == "On Leave" or frappe.db.exists("Leave Application", {
-			"employee": employee, "docstatus": 1, "status": "Approved",
-			"from_date": ("<=", getdate(date)), "to_date": (">=", getdate(date))}):
+	if row.status == "On Leave" or (
+			any(x.employee == employee and x.from_date <= day <= x.to_date for x in ctx["leaves"]) if ctx
+			else frappe.db.exists("Leave Application", {
+				"employee": employee, "docstatus": 1, "status": "Approved",
+				"from_date": ("<=", day), "to_date": (">=", day)})):
 		return "leave"
 	# Only auto-attendance sets `in_time`, and it creates rows as Administrator; a
 	# status-only request leaves its own link; leave leaves its link. What is left,
@@ -404,34 +413,72 @@ def day_sheet(date):
 
 # ── the card HR reads (the same `outcome` the approval runs) ─────────────────
 
-def card(row):
-	"""Now and If approved for one waiting punch fix, plus the token to send back. About eight
-	queries a card: each read is made once and handed on (AC-35)."""
+def card_context(rows):
+	"""Everything the cards of these waiting requests read, in about eight queries for the whole
+	list (AC-35): the requests, the employees, the day rows, the punches, and the approved leave
+	and final slips that overlap. `card` then reads memory, not the database."""
+	rows = [r for r in rows if r.get("punch_fix")]
+	if not rows:
+		return {}
+	names, emps = [r["name"] for r in rows], list({r["employee"] for r in rows})
+	days = [getdate(r["from_date"]) for r in rows]
+	lo, hi = min(days), max(days)
+	by_emp = {}
+	for p in frappe.get_all(
+			CHECKIN, filters={"employee": ("in", emps), "time": ("between", [f"{lo} 00:00:00", f"{add_days(hi, 1)} 23:59:59"])},
+			fields=["name", "employee", "time", "log_type", "device_id", "skip_auto_attendance", "offshift",
+			        "shift_start", "shift_end", ADDED, ASIDE], order_by="time asc", limit_page_length=0):
+		by_emp.setdefault(p.employee, []).append(p)
+	return {
+		"req": {x.name: x for x in frappe.get_all(
+			REQUEST, filters={"name": ("in", names)},
+			fields=["name", "modified", "alvoraa_missing_time", "alvoraa_set_aside"], limit_page_length=0)},
+		"emp": {x.name: x for x in frappe.get_all(
+			"Employee", filters={"name": ("in", emps)}, fields=["name", "status", "user_id"], limit_page_length=0)},
+		"att": {(x.employee, str(x.attendance_date)): x for x in frappe.get_all(
+			ATTENDANCE, filters={"employee": ("in", emps), "docstatus": 1, "attendance_date": ("between", [lo, hi])},
+			fields=DAY_FIELDS, limit_page_length=0)},
+		"punches": by_emp,
+		"leaves": frappe.get_all(
+			"Leave Application", filters={"employee": ("in", emps), "docstatus": 1, "status": "Approved",
+			                              "from_date": ("<=", hi), "to_date": (">=", lo)},
+			fields=["employee", "from_date", "to_date"], limit_page_length=0),
+		"slips": frappe.get_all(
+			"Salary Slip", filters={"employee": ("in", emps), "docstatus": 1, "start_date": ("<=", hi), "end_date": (">=", lo)},
+			fields=["employee", "start_date", "end_date"], limit_page_length=0),
+	}
+
+
+def card(row, ctx=None):
+	"""Now and If approved for one waiting punch fix, plus the token to send back. Pass the
+	`card_context` of the whole list; alone, it makes the context for this one row."""
 	if not columns_ready():
 		return {}
 	doc = frappe._dict(row)
-	req = frappe.db.get_value(REQUEST, doc.name, ["modified", "alvoraa_missing_time", "alvoraa_set_aside"], as_dict=True)
-	emp = frappe.db.get_value("Employee", doc.employee, ["status", "user_id"], as_dict=True)
-	day = day_row(doc.employee, doc.from_date)
-	punches = day_punches(doc.employee, doc.from_date)
-	out = {"blocked": day_state(doc.employee, doc.from_date, day, emp), "seen": _token(req.modified, punches),
+	ctx = ctx or card_context([dict(row, punch_fix=True)])
+	req, emp = ctx["req"][doc.name], ctx["emp"].get(doc.employee)
+	date = getdate(doc.from_date)
+	day = ctx["att"].get((doc.employee, str(date)))
+	punches = [p for p in ctx["punches"].get(doc.employee, []) if getdate(p.shift_start or p.time) == date]
+	out = {"blocked": day_state(doc.employee, date, day, emp, ctx) if emp else "left", "seen": _token(req.modified, punches),
 	       "own_day": bool(emp and emp.user_id == frappe.session.user)}
 	if not day:
 		return out
 	ticked = aside_names(req)
 	out["now"] = {"status": day.status, "hours": flt(day.working_hours, 2),
 	              "shift": _shift_line(day.shift) if day.shift else None,
-	              "punches": [{"time": _hhmm(p.time), "m": _mins(p.time, doc.from_date), "log_type": p.log_type,
+	              "punches": [{"time": _hhmm(p.time), "m": _mins(p.time, date), "log_type": p.log_type,
 	                           "source": _source(p), "aside": bool(p.name in ticked or p.skip_auto_attendance or p.get(ASIDE)),
 	                           "ticked": p.name in ticked, "name": p.name} for p in punches]}
 	# Q6: HR is told in words when the punch to set aside came from a machine.
 	out["sets_aside_machine"] = any(p["ticked"] and p["source"] == _("Machine") for p in out["now"]["punches"])
 	if out["blocked"] or not day.shift:
 		return out
-	logs = held_day._day_logs(doc.employee, doc.from_date, day.shift, ticked)
+	# The same list `_day_logs` returns (counting punches, the ticked ones left out), from memory.
+	logs = [p for p in punches if not p.skip_auto_attendance and not p.offshift and p.name not in ticked]
 	add = None
 	if held_day._has_time(req):
-		log_type, label, when = derive(doc.employee, doc.from_date, req.alvoraa_missing_time, ticked, day.shift, logs)
+		log_type, label, when = derive(doc.employee, date, req.alvoraa_missing_time, ticked, day.shift, logs)
 		add = (when, log_type)
 		out["kind"] = label
 	try:
@@ -439,8 +486,8 @@ def card(row):
 	except Exception:
 		return out
 	# If approved: what counts, the added punch, and the ticked ones struck through (AC-27).
-	shown = ([{"time": _hhmm(x.time), "m": _mins(x.time, doc.from_date), "added": False} for x in logs]
-	         + ([{"time": _hhmm(add[0]), "m": _mins(add[0], doc.from_date), "added": True}] if add else [])
+	shown = ([{"time": _hhmm(x.time), "m": _mins(x.time, date), "added": False} for x in logs]
+	         + ([{"time": _hhmm(add[0]), "m": _mins(add[0], date), "added": True}] if add else [])
 	         + [{"time": p["time"], "m": p["m"], "added": False, "aside": True} for p in out["now"]["punches"] if p["ticked"]])
 	out["after"] = {"status": after["status"], "hours": flt(after["hours"], 2), "late": after["late"],
 	                "still_held": after["status"] == held_day.HELD,

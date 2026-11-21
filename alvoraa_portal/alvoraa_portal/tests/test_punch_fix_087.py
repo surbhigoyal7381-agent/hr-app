@@ -117,11 +117,11 @@ class PunchFixCase(FrappeTestCase):
 
 
 class Install(PunchFixCase):
-	def test_the_eleven_fields_exist(self):
+	def test_the_twelve_fields_exist(self):
 		for dt, fields in punch_fix.FIELDS.items():
 			for f in fields:
 				self.assertTrue(frappe.db.exists("Custom Field", {"dt": dt, "fieldname": f["fieldname"]}), f["fieldname"])
-		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 11)
+		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 12)
 
 	def test_after_migrate_runs_twice_and_is_wired_to_install_too(self):
 		self.assertTrue(punch_fix.after_migrate() and punch_fix.after_migrate())
@@ -1011,7 +1011,10 @@ class Confirm(PunchFixCase):
 
 	def test_a_filed_set_aside_has_no_time_and_not_right_just_declines(self):
 		att, names = self.held_three()
-		req = self.fix(aside=[names[1]], by=self.hr, note="wrong scan")
+		# Today only Administrator can file a set-aside for somebody (validate refuses it from HR and managers), so the
+		# Confirm flag is set by hand to reach the screen's "set-aside, no time" branch.
+		req = self.fix(aside=[names[1]], note="wrong scan")
+		frappe.db.set_value(REQUEST, req, "alvoraa_needs_confirm", 1)
 		out = self.not_right(req, "that scan was right", "")
 		self.assertIsNone(out["replacement"])
 		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_review_status"), "Declined")

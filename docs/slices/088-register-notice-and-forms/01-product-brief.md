@@ -115,3 +115,10 @@ Also for Surbhi: should 088 ship alone, with Grace still waiting on 088b? [Rec: 
 
 ## Kill criteria
 Stop if: counsel requires one photo per employee for all staff and rejects page batching (storage cost changes the slice); counsel says a thumb print needs biometric-class handling we cannot yet provide; or an HR run at Grace takes over 5 minutes per notice.
+
+## Brief gate — Surbhi's decision, 21 Nov 2026
+
+**Build it, with every recommendation taken:**
+- 088 is the monthly change notice only. It ships alone.
+- Grace waits for 088b, the statutory forms, which starts once the official layouts arrive.
+- Surbhi gets the layouts of Forms IX, C, D and Delhi G/H from counsel, and sends counsel the open questions.

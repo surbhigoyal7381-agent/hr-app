@@ -235,7 +235,9 @@ def validate(doc, method=None):
 		return
 	before = None if doc.is_new() else doc.get_doc_before_save()
 	if before is not None:
-		doc.alvoraa_for_held_day = cint(before.get("alvoraa_for_held_day"))
+		# An edit keeps the stored value, unless it is no longer a punch fix: a held-day draft
+		# edited into an ordinary request is an ordinary request and counts (085 F4).
+		doc.alvoraa_for_held_day = cint(before.get("alvoraa_for_held_day")) if is_punch_fix(doc) else 0
 	else:
 		doc.alvoraa_for_held_day = 1 if (is_punch_fix(doc) and str(doc.from_date) == str(doc.to_date)
 		                                 and held_day._held_row(doc.employee, doc.from_date)) else 0

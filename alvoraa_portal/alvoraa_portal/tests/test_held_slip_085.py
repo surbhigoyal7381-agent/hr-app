@@ -210,13 +210,17 @@ class ReleaseAndTheSlip(RealSlip):
 		slip.submit()  # a real submit, so validate runs (review B-1)
 		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "payment_days"), before)
 		hr = self._hr()
-		frappe.flags.held_slip = None
 		frappe.set_user(hr)
 		try:
 			from alvoraa_portal import punch_fix
-			out = ac.decide(req, approve=1, seen=punch_fix.seen_token(frappe.get_doc("Attendance Request", req)))
+			# Slice 087 (SEC-5, AC-33): a day on a final slip is refused at approval, in words, and
+			# nothing is written. 085 released it and told HR; the intent that the submitted slip is
+			# never touched (AC-18, Q4) holds, and the day is not released either.
+			with self.assertRaises(frappe.ValidationError) as cm:
+				ac.decide(req, approve=1, seen=punch_fix.seen_token(frappe.get_doc("Attendance Request", req)))
+			self.assertIn("already final", str(cm.exception))
 		finally:
 			frappe.set_user("Administrator")
-		self.assertTrue(out["slip_final"])
-		self.assertEqual(frappe.db.get_value("Attendance", att, "alvoraa_release_how"), "HR decision")
+		self.assertEqual(frappe.db.get_value("Attendance", att, "status"), "Held")
+		self.assertFalse(frappe.db.get_value("Attendance", att, "alvoraa_release_how"))
 		self.assertEqual(frappe.db.get_value("Salary Slip", slip.name, "payment_days"), before)

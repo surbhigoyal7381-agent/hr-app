@@ -16,6 +16,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, get_datetime, nowdate
 
 from alvoraa_portal import attendance_correction as ac
+import hrms.alvoraa_hr_core.access as access
 from alvoraa_portal import held_day, punch_fix
 from alvoraa_portal.tests import test_held_day_085 as hd
 
@@ -550,6 +551,17 @@ class WhoMayDecide(PunchFixCase):
 			frappe.set_user("Administrator")
 		# control: another HR person in the same company decides it
 		self.decide(req, by=self.h.hr2)
+
+	def test_the_punch_insert_is_a_lock_of_its_own_when_the_other_two_are_switched_off(self):
+		"""Own day, third lock (SEC-3): with `refuse_own_decision` (decide and the submit hook)
+		doing nothing, the insert as the approver is still refused by the checkin permission rule."""
+		hr_emp = frappe.db.get_value("Employee", {"user_id": self.hr}, "name")
+		att, names = self.day_of([("09:00", "IN")], employee=hr_emp)
+		req = self.fix("18:00", employee=hr_emp)
+		with patch.object(access, "refuse_own_decision", lambda *a, **k: None):
+			with self.assertRaises(frappe.PermissionError):
+				self.decide(req, by=self.hr)
+		self.assertEqual(len(self.added(req)), 0)
 
 	def test_the_raiser_cannot_decide(self):
 		att, names = self.held_three()

@@ -224,7 +224,7 @@ def enforce_monthly_limit(doc, method=None):
 	filters = {
 		"employee": doc.employee, "docstatus": ("!=", 2),
 		"from_date": ("between", [first, last]),
-		"alvoraa_missing_log": ("is", "not set"),
+		"alvoraa_for_held_day": 0,
 		"alvoraa_review_status": ("not in", ["Declined"]),
 	}
 	if not doc.is_new():

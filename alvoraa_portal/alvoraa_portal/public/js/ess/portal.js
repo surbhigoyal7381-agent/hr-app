@@ -6394,22 +6394,25 @@ function acPfPaint() {
     html += '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This day cannot be fixed here</span></div>'
       + '<p class="pfx-sub">' + gpEsc(d.blocked_text) + "</p>";
   } else if (waiting && r.needs_confirm) {
-    /* ALV-419 (new, not in prototype-v2): somebody filed this for the employee, who answers first. */
-    html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>'
-      + (r.filed_by === "HR" ? "HR" : "Your manager") + " sent this for you. Is it right?</span></div>"
-      + '<p class="pfx-sub">It goes to HR only after you confirm. Nothing on your day changes until HR approves it.</p>'
-      + '<div class="pfx-acts"><button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + gpEsc(r.name) + '&quot;,1)">Confirm</button>'
-      + '<button type="button" class="btn" onclick="acPfNotRight(&quot;' + gpEsc(r.name) + '&quot;)">Not right</button></div>'
-      + '<div class="pfx-field" id="pfx-nr" hidden><label class="pfx-fl" for="pfx-nr-text">What is not right? HR will read this.</label>'
-      + '<textarea id="pfx-nr-text" rows="2" required aria-required="true"></textarea>'
-      + '<div class="pfx-err" id="pfx-nr-err" role="alert"></div>'
-      + '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + gpEsc(r.name) + '&quot;,0)">Send</button></div>';
+    /* ALV-419, prototype-v4: somebody filed this for the employee, who answers first. */
+    html += pfxConfirmBlock(r, "pf");
+  } else if (waiting && r.was_filed && r.confirmed_at) {
+    /* V4 P-11: confirmed, so the wait is HR's. It is not the employee's request, so no Withdraw. */
+    html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>You confirmed at ' + gpEsc(r.confirmed_at) + " &middot; Waiting for HR</span></div>"
+      + '<p class="pfx-sub">HR can now decide it. The day stays as it is until then. You will see the answer here.</p>';
   } else if (waiting) {
     html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Sent to HR at ' + gpEsc(r.sent_at) + " &middot; Waiting</span></div>"
-      + '<p class="pfx-sub">The day stays as it is until HR decides. You will see the answer here.</p>';
+      + '<p class="pfx-sub">The day stays as it is until HR decides. You will see the answer here.</p>'
+      + (r.replaces ? '<p class="pfx-sub">This replaces the ' + gpEsc(r.replaces.time || "") + " that " + gpEsc(pfxWho(r.replaces.filed_by, r.replaces.filed_by_name))
+        + " sent. You said it was not right.</p>" : "");
   } else if (r && r.state === "approved") {
     html += '<div class="pfx-sl pfx-ok"><span class="pfx-ic" aria-hidden="true">&#10003;</span><span>Fixed by HR &middot; ' + pfHours(d.hours) + " &middot; "
       + (d.status === "Absent" || d.status === "Held" ? "Not paid" : "Paid") + "</span></div>";
+  } else if (r && r.state === "declined" && r.declined_by_you) {
+    /* V4 P-12: the employee wrote this reason, so it is never labelled "from HR". */
+    html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>You said this is not right</span></div>'
+      + '<p class="pfx-sub">HR will not add it, and your day stays as it is.</p>'
+      + (r.hr_note ? '<p class="pfx-sub">Your reason: ' + gpEsc(r.hr_note) + "</p>" : "");
   } else if (r && r.state === "declined") {
     html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>HR did not add this</span></div>'
       + (r.hr_note ? '<p class="pfx-sub">Reason from HR: ' + gpEsc(r.hr_note) + "</p>" : "");
@@ -6444,11 +6447,21 @@ function acPfPaint() {
     var cls = it.k === "aside" ? " aside" : it.k === "add" ? " add" : "";
     var label, sub = "";
     if (it.add) { label = "Added: " + acPf.add.label; sub = "In this request"; }
-    else if (it.ask) { label = (r.log_type === "OUT" ? "Out" : "In") + " &middot; asked for"; sub = "Asked for &middot; waiting for HR"; }
+    else if (it.ask) {
+      label = (r.log_type === "OUT" ? "Out" : "In") + " &middot; asked for";
+      sub = r.needs_confirm ? (r.filed_by === "HR" ? "Added by HR &middot; waiting for you"
+              : "Asked for by " + gpEsc(r.filed_by_name || "your manager") + " &middot; waiting for you")
+        : "Asked for &middot; waiting for HR";
+    }
     else {
       label = (it.p.log_type === "OUT" ? "Out" : "In");
       sub = gpEsc(it.p.source);
-      if (it.p.added) sub = "Added by HR" + (r && r.decided_on ? " on " + gpEsc(acNice(r.decided_on)) : "") + ", from your request.";
+      if (it.p.added) {
+        /* V4 P-13: a request somebody filed for you was not "your request". */
+        sub = "Added by HR" + (r && r.decided_on ? " on " + gpEsc(acNice(r.decided_on)) : "")
+          + (r && r.was_filed ? (r.filed_by === "manager" && r.filed_by_name ? ", asked for by " + gpEsc(r.filed_by_name) : "") + ". You confirmed it."
+                              : ", from your request.");
+      }
       if (it.p.aside) sub = "Set aside by HR" + (r && r.decided_on ? " on " + gpEsc(acNice(r.decided_on)) : "")
         + ", from your request. It stays on record but no longer counts.";
       if (acPf.aside.indexOf(it.p.name) >= 0) sub = "Set aside in this request";
@@ -6463,8 +6476,8 @@ function acPfPaint() {
     html += gapRow(i + 1);
   });
   html += "</ul>";
-  if (r && r.note && (waiting || r.state === "approved")) html += '<p class="pfx-sub">Your note: ' + gpEsc(r.note) + "</p>";
-  if (waiting && !r.needs_confirm) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
+  if (r && r.note && (waiting || r.state === "approved") && !r.needs_confirm) html += '<p class="pfx-sub">Your reason: ' + gpEsc(r.note) + "</p>";
+  if (waiting && !r.was_filed) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
   if (add) html += '<p class="pfx-one">One punch per request. If another is missing, send this first and add the next after HR decides.</p>';
   /* the sticky send bar */
   if (staged && !locked) {
@@ -6609,22 +6622,96 @@ window.acPfSend = async function () {
   } finally { acPf.sending = false; }
 };
 
+function pfxWho(by, name) { return by === "HR" ? "HR" : (name || "your manager"); }
+
+var PFX_KIND_Q = {"Arrival": "What time did you arrive?", "Back in after a break": "What time were you back?",
+                  "Out for a break": "What time did you go out?", "Leaving": "What time did you leave?"};
+
+/* The Confirm block (prototype-v4). `mode` is "pf" on the day sheet and "req" on the older request card:
+   where to reload after the answer. A filed set-aside, or a request with no time, has no time field. */
+function pfxConfirmBlock(r, mode) {
+  var hr = r.filed_by === "HR", nm = r.filed_by_name || "Your manager", it = r.item, n = gpEsc(r.name), m = gpEsc(mode);
+  var h = '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>'
+    + (hr ? "HR sent this for you. Is it right?" : "Your manager " + gpEsc(nm) + " sent this for you. Is it right?") + "</span></div>";
+  if (it) h += '<p class="pfx-sub"><b>' + (it.kind === "add" ? "Add a punch at " + gpEsc(it.time) + " &middot; " + gpEsc(it.label)
+    : "Set aside your punch at " + gpEsc(it.time || "")) + "</b></p>";
+  if (r.filer_reason) h += '<p class="pfx-sub">' + (hr ? "Reason from HR" : "Reason from " + gpEsc(nm)) + ": " + gpEsc(r.filer_reason) + "</p>";
+  h += '<p class="pfx-sub">Press Confirm only if this is what happened. After that HR decides. Nothing on your day changes until then.</p>'
+    + '<div class="pfx-acts" id="pfx-cf-btns"><button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,1,&quot;' + m + '&quot;)">Confirm</button>'
+    + '<button type="button" class="btn" onclick="acPfNotRight()">Not right</button></div>'
+    + '<div id="pfx-nr" hidden>';
+  if (it && it.kind === "add") {
+    h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-time">' + gpEsc(PFX_KIND_Q[it.label] || "What time was it?")
+      + ' <span class="pfx-req">Required</span></label>'
+      + '<input type="time" id="pfx-nr-time" oninput="acPfNrEffect()" data-sent="' + gpEsc(it.time) + '" aria-describedby="pfx-nr-terr">'
+      + '<p class="pfx-sub">' + gpEsc(it.time) + " was sent.</p>"
+      + '<div class="pfx-err" id="pfx-nr-terr" role="alert"></div></div>';
+  }
+  h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-text">What is not right? <span class="pfx-req">Required</span></label>'
+    + '<p class="pfx-sub">HR will read this.</p>'
+    + '<textarea id="pfx-nr-text" rows="2" required aria-required="true" placeholder="e.g. I was back by 14:15, not 14:40"></textarea>'
+    + '<div class="pfx-err" id="pfx-nr-err" role="alert"></div></div>'
+    + '<p class="pfx-sub" id="pfx-nr-eff">HR will not add it, and your day stays as it is.</p>'
+    + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfNrBack()">Back</button>'
+    + '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,0,&quot;' + m + '&quot;)">Send to HR</button></div></div>';
+  return h;
+}
+
 window.acPfNotRight = function () {
-  var box = document.getElementById("pfx-nr"); if (box) { box.hidden = false; var t = document.getElementById("pfx-nr-text"); if (t) t.focus(); }
+  var box = document.getElementById("pfx-nr"), btns = document.getElementById("pfx-cf-btns");
+  if (btns) btns.hidden = true;
+  if (box) { box.hidden = false; var t = document.getElementById("pfx-nr-time") || document.getElementById("pfx-nr-text"); if (t) t.focus(); }
+};
+window.acPfNrBack = function () {
+  var box = document.getElementById("pfx-nr"), btns = document.getElementById("pfx-cf-btns");
+  if (box) box.hidden = true; if (btns) btns.hidden = false;
+};
+/* The line above Send changes as the time is typed (V4-3). */
+window.acPfNrEffect = function () {
+  var t = document.getElementById("pfx-nr-time"), e = document.getElementById("pfx-nr-eff");
+  if (!t || !e) return;
+  e.textContent = t.value ? "HR will not add " + t.getAttribute("data-sent") + ". Your own request for " + t.value
+    + " goes to HR instead, and you do not need to confirm it." : "HR will not add it, and your day stays as it is.";
 };
 
-window.acPfConfirm = async function (name, ok) {
+/* The time checks of the add sheet, against the gap the sent time sits in, plus "that is the time that was sent". */
+function pfxNrTimeError(t, sent) {
+  if (!t) return "Enter the time first.";
+  if (t === sent) return "That is the time that was sent. If it is right, go back and press Confirm.";
+  var counted = ((acPf.data || {}).punches || []).filter(function (p) { return p.counted; }).map(pfM).sort(function (a, b) { return a - b; });
+  var s = pfMin(sent), prev = null, next = null;
+  counted.forEach(function (m) { if (m < s) prev = m; else if (m > s && next === null) next = m; });
+  if (counted.some(function (m) { return m === pfMin(t); })) return "There is already a punch at " + t + ". Check the time.";
+  return pfFit({prev: prev, next: next}, t);
+}
+
+window.acPfConfirm = async function (name, ok, mode) {
   var why = ((document.getElementById("pfx-nr-text") || {}).value || "").trim();
-  if (!ok && !why) {
-    var e = document.getElementById("pfx-nr-err"); if (e) e.textContent = "Say what is not right, so HR knows what to fix.";
-    return;
+  var tEl = document.getElementById("pfx-nr-time"), t = tEl ? tEl.value : "";
+  if (!ok) {
+    var terr = tEl ? pfxNrTimeError(t, tEl.getAttribute("data-sent")) : "";
+    var e = document.getElementById("pfx-nr-err"), te = document.getElementById("pfx-nr-terr");
+    if (te) te.textContent = terr;
+    if (tEl) { tEl.classList.toggle("bad", !!terr); }
+    if (terr) { tEl.focus(); return; }
+    if (!why) {
+      if (e) e.textContent = "Say what is not right, so HR knows what to fix.";
+      var ta = document.getElementById("pfx-nr-text"); if (ta) { ta.classList.add("bad"); ta.focus(); }
+      return;
+    }
   }
   showLoad();
   try {
-    await pfApi("confirm", {name: name, ok: ok ? 1 : 0, reason: why});
-    hideLoad(); toast(ok ? "Confirmed. HR can now decide it." : "Sent back to HR. Nothing was changed.", "ok");
-    await acPfLoad(acPf.date);
-  } catch (err) { hideLoad(); toast(err.message || "Could not send that.", "err"); }
+    await pfApi("confirm", {name: name, ok: ok ? 1 : 0, reason: why, time: t});
+    hideLoad();
+    toast(ok ? "Confirmed. HR can now decide it." : (t ? "Sent to HR. Your own time replaces the one that was sent." : "Sent to HR. Nothing was changed."), "ok");
+    if (mode === "req") { await acLoad(); } else { await acPfLoad(acPf.date); }
+  } catch (err) {
+    hideLoad();
+    var box = document.getElementById("pfx-nr-err");
+    if (box && err && err.server && err.message) box.textContent = err.message;
+    toast(err.message || "Could not send that.", "err");
+  }
 };
 
 window.acPfWithdraw = async function (name) {
@@ -6700,13 +6787,30 @@ window.acPfCard = function (r) {
   if (!c.now) return "";
   var after = c.after, now = c.now, mine = c.own_day, blocked = c.blocked;
   var wrong = (now.punches || []).filter(function (p) { return p.ticked; }).map(function (p) { return p.time; }).join(", ");
-  var says = r.missing_time
-    ? gpEsc(r.employee_name) + " says: " + gpEsc(c.kind || "") + " at " + gpEsc(r.missing_time) + "."
-      + (wrong ? " Also says " + gpEsc(wrong) + " is wrong." : "")
-    : gpEsc(r.employee_name) + " says the punch at " + gpEsc(wrong) + " is wrong.";
+  var f = c.filed, quote = r.explanation;
+  var says;
+  if (f) {
+    /* V4 P-15: a request somebody filed for the employee is the filer's claim, never "{employee} says". */
+    quote = f.reason;
+    var by = gpEsc(f.name) + " (" + gpEsc(f.by) + ")";
+    says = r.missing_time
+      ? by + " asked to add: " + gpEsc(c.kind || "") + " at " + gpEsc(r.missing_time) + "." + (wrong ? " Also asked to set aside " + gpEsc(wrong) + "." : "")
+      : by + " asked to set aside the punch at " + gpEsc(wrong) + ".";
+  } else {
+    says = r.missing_time
+      ? gpEsc(r.employee_name) + " says: " + gpEsc(c.kind || "") + " at " + gpEsc(r.missing_time) + "."
+        + (wrong ? " Also says " + gpEsc(wrong) + " is wrong." : "")
+      : gpEsc(r.employee_name) + " says the punch at " + gpEsc(wrong) + " is wrong.";
+  }
   var h = '<div class="pfx-card"><div class="pfx-hrh"><b>' + gpEsc(r.employee_name) + " &middot; " + (r.missing_time ? "Missing punch" : "Wrong punch")
     + "</b><span>" + gpEsc(r.from_date) + "</span></div><p class=\"pfx-says\">" + says
-    + (r.explanation ? "<q>" + gpEsc(r.explanation) + "</q>" : "") + "</p>"
+    + (quote ? "<q>" + gpEsc(quote) + "</q>" : "") + "</p>"
+    + (c.replaces ? '<p class="pfx-says">Replaces the ' + gpEsc(c.replaces.time || "") + " that " + gpEsc(c.replaces.name) + " (" + gpEsc(c.replaces.by)
+        + ") sent. " + gpEsc(pfFirst(r)) + " said that one was not right.</p>" : "")
+    + (f && c.awaiting_confirm ? '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Waiting for ' + gpEsc(pfFirst(r)) + " to confirm</span></div>"
+        + '<p class="pfx-sub">Filed on ' + gpEsc(acNice(f.on)) + " at " + gpEsc(f.at) + ". You can approve it after " + gpEsc(pfFirst(r)) + " presses Confirm in the app. You can still decline it.</p>" : "")
+    + (f && f.confirmed_on ? '<div class="pfx-sl pfx-ok"><span class="pfx-ic" aria-hidden="true">&#10003;</span><span>' + gpEsc(pfFirst(r)) + " confirmed this in the app on "
+        + gpEsc(acNice(f.confirmed_on[0])) + ", " + gpEsc(f.confirmed_on[1]) + "</span></div>" : "")
     + (c.sets_aside_machine ? '<p class="pfx-says">This asks to set aside a punch from the machine.</p>' : "")
     + '<div class="pfx-ba"><div><h4>Now</h4><p class="num pfx-st">' + gpEsc(now.status) + " &middot; " + now.punches.length + " punches</p>"
     + pfCardStrip(now.shift, now.punches.map(function (p) { return {m: pfM(p), k: p.aside ? "aside" : "io"}; }))
@@ -6724,8 +6828,7 @@ window.acPfCard = function (r) {
   if (mine) {
     foot = '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This is your own day, so you cannot approve it. Another HR person will decide it.</span></div>';
   } else if (c.awaiting_confirm) {
-    foot = '<p class="pfx-sub">Waiting for ' + gpEsc(pfFirst(r)) + " to confirm this in the app. You can approve it after they do. You can still decline it.</p>"
-      + pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
+    foot = pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
   } else if (blocked) {
     foot = '<p class="pfx-sub">' + gpEsc(blocked === "slip"
       ? "Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary."
@@ -6969,6 +7072,12 @@ function acReqCard(r, mine) {
           + '<button type="button" class="ev-link" data-evopen="dayfix" data-name="'
           + gpEsc(r.name) + '">' + gpEsc(drT("View")) + "</button></div>"
         : "");
+  if (mine && r.state === "waiting" && !r.punch_fix && r.alvoraa_needs_confirm && !r.alvoraa_confirmed_on) {
+    /* V4: the same Confirm block on the older request card (one component, shown twice). It has no filer
+       name or time to show, so it carries the words only; "Not right" asks for the reason alone. */
+    return html + '<div class="pfx-block">' + pfxConfirmBlock({name: r.name, filed_by: "HR", item: null,
+      filer_reason: null, filed_by_name: null}, "req").replace("HR sent this for you. Is it right?", "This was sent for you. Is it right?") + "</div></div>";
+  }
   if (mine && r.state === "waiting") {
     html += '<div class="ac-acts"><button class="btn btn-outline" onclick="acWithdraw(&quot;'
       + gpEsc(r.name) + '&quot;)">Withdraw</button></div>';

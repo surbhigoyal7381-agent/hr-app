@@ -614,6 +614,21 @@ def _needs(me, me_row, features, date_):
 			"action": "fix_attendance",
 			"route": "#time/fix",
 		})
+	# Slice 087 (ALV-419, V4 P-19): a request somebody filed for this person waits for their Confirm. One row
+	# each, opening that day. A Held day stays unpaid until it is answered, and nothing else tells them.
+	from alvoraa_portal import punch_fix
+	for r in punch_fix.home_rows(me["employee"]):
+		day = frappe.utils.formatdate(r["date"], "EEE d MMM")
+		who = _("HR") if r["filed_by"] == "HR" else r["filer"]
+		what = _("a punch fix") if r["punch_fix"] else _("a correction")
+		out.append({
+			"id": "confirm_" + r["name"],
+			"kind": "confirm_request",
+			"title": _("{0} sent {1} for {2}. Is it right?").format(who, what, day),
+			"detail": {"date": r["date"]},
+			"action": "open_day",
+			"route": "#time/fix",
+		})
 	review = _self_review(me["employee"])
 	if review:
 		out.append({

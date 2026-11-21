@@ -977,18 +977,123 @@ class Confirm(PunchFixCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_not_right_declines_it_with_the_employees_reason(self):
+	def not_right(self, req, reason="I was back by 12:50", time="12:50"):
+		frappe.set_user(self.emp_user)
+		try:
+			return punch_fix.confirm(req, 0, reason, time)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_not_right_declines_it_and_files_the_employees_own_time_in_its_place(self):
+		att, req = self.filed_by_hr()
+		out = self.not_right(req)
+		row = frappe.db.get_value(REQUEST, req, ["alvoraa_review_status", "alvoraa_review_note", "alvoraa_reviewed_by"], as_dict=True)
+		self.assertEqual((row.alvoraa_review_status, row.alvoraa_review_note, row.alvoraa_reviewed_by),
+		                 ("Declined", "I was back by 12:50", self.emp_user))
+		new = frappe.get_doc(REQUEST, out["replacement"])
+		self.assertEqual((new.employee, new.alvoraa_review_status, str(new.alvoraa_missing_time)[:5], new.alvoraa_replaces,
+		                  new.alvoraa_needs_confirm, new.explanation, new.owner),
+		                 (self.emp, "Waiting", "12:50", req, 0, "I was back by 12:50", self.emp_user))
+		self.assertEqual(self.row(att).status, "Held")
+
+	def test_the_time_is_required_when_one_was_sent_and_must_differ_and_fit(self):
 		att, req = self.filed_by_hr()
 		frappe.set_user(self.emp_user)
 		try:
-			self.refused(lambda: punch_fix.confirm(req, 0, " "), "Say what is not right")
-			punch_fix.confirm(req, 0, "I was not there then")
+			self.refused(lambda: punch_fix.confirm(req, 0, "wrong", ""), "Enter the time first")
+			self.refused(lambda: punch_fix.confirm(req, 0, "wrong", "12:40"), "time that was sent")
+			self.refused(lambda: punch_fix.confirm(req, 0, "wrong", "12:01"), "within 2 minutes")
+			self.refused(lambda: punch_fix.confirm(req, 0, " ", "12:50"), "Say what is not right")
 		finally:
 			frappe.set_user("Administrator")
-		row = frappe.db.get_value(REQUEST, req, ["alvoraa_review_status", "alvoraa_review_note", "alvoraa_reviewed_by"], as_dict=True)
-		self.assertEqual((row.alvoraa_review_status, row.alvoraa_review_note, row.alvoraa_reviewed_by),
-		                 ("Declined", "I was not there then", self.emp_user))
-		self.assertEqual(self.row(att).status, "Held")
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_review_status"), "Waiting")  # every refusal left it alone
+		self.assertEqual(frappe.db.count(REQUEST, {"alvoraa_replaces": req}), 0)
+
+	def test_a_filed_set_aside_has_no_time_and_not_right_just_declines(self):
+		att, names = self.held_three()
+		req = self.fix(aside=[names[1]], by=self.hr, note="wrong scan")
+		out = self.not_right(req, "that scan was right", "")
+		self.assertIsNone(out["replacement"])
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_review_status"), "Declined")
+
+	def test_decline_and_replacement_are_one_transaction(self):
+		att, req = self.filed_by_hr()
+		frappe.db.savepoint("t087nr")
+		with patch.object(punch_fix, "_replacement", side_effect=RuntimeError("boom")):
+			with self.assertRaises(RuntimeError):
+				self.not_right(req)
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_review_status"), "Waiting")  # the decline was undone
+		frappe.db.rollback(save_point="t087nr")
+
+	def test_the_replacement_does_not_count_against_the_monthly_limit_and_the_link_is_the_servers(self):
+		att, req = self.filed_by_hr()
+		held_day_ = self.day
+		# the employee's own, counted request on another ordinary day uses the limit of 1
+		self.h.set_switch(1, limit=1)
+		self.h.day = self.day = add_days(held_day_, -1)
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		frappe.set_user(self.emp_user)
+		try:
+			punch_fix.send(self.day, "12:00", None, "my own")
+			with self.assertRaises(frappe.ValidationError):  # control: a second counted request is refused
+				punch_fix.send(self.day, "13:00", None, "second")
+		finally:
+			frappe.set_user("Administrator")
+		self.day = self.h.day = held_day_
+		out = self.not_right(req)  # the replacement is allowed although the limit is used up
+		self.assertTrue(out["replacement"])
+		fake = frappe.new_doc(REQUEST)
+		fake.update({"employee": self.emp, "alvoraa_replaces": req})
+		punch_fix._own_the_confirm_fields(fake, None)  # a client value is dropped
+		self.assertIsNone(fake.alvoraa_replaces)
+
+	def test_the_day_sheet_and_the_card_carry_what_the_v4_screens_say(self):
+		att, req = self.filed_by_hr()
+		frappe.set_user(self.emp_user)
+		try:
+			sheet = punch_fix.day_sheet(self.day)["request"]
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((sheet["item"]["kind"], sheet["item"]["time"], sheet["item"]["label"], sheet["filer_reason"], sheet["filed_by"]),
+		                 ("add", "12:40", "Back in after a break", "HR typed it", "HR"))
+		self.assertIsNone(sheet["filed_by_name"])  # the employee is not told which HR person (decision 7)
+		frappe.set_user(self.hr)
+		try:
+			card = punch_fix.card(frappe.get_doc(REQUEST, req).as_dict())
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((card["filed"]["by"], bool(card["filed"]["name"]), card["filed"]["reason"]), ("HR", True, "HR typed it"))
+		out = self.not_right(req)
+		frappe.set_user(self.emp_user)
+		try:
+			after = punch_fix.day_sheet(self.day)["request"]
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((after["name"], after["replaces"]["time"], after["replaces"]["filed_by"]), (out["replacement"], "12:40", "HR"))
+		frappe.set_user(self.hr)
+		try:
+			card2 = punch_fix.card(frappe.get_doc(REQUEST, out["replacement"]).as_dict())
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((card2["replaces"]["time"], card2["replaces"]["by"], card2["awaiting_confirm"]), ("12:40", "HR", False))
+
+	def test_the_declined_request_reads_as_the_employees_own_words(self):
+		att, req = self.filed_by_hr()
+		self.not_right(req, "I was not there")
+		frappe.set_user(self.emp_user)
+		try:
+			# the replacement is newest; look at the old one through the same field the sheet uses
+			rows = frappe.get_all(REQUEST, filters={"name": req}, fields=["alvoraa_reviewed_by"])
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(rows[0].alvoraa_reviewed_by, self.emp_user)
+
+	def test_home_lists_a_request_waiting_for_the_employee_and_stops_after_the_answer(self):
+		att, req = self.filed_by_hr()
+		rows = punch_fix.home_rows(self.emp)
+		self.assertEqual([(r["name"], r["filed_by"], r["punch_fix"]) for r in rows], [(req, "HR", True)])
+		self.confirm_as_employee(req)
+		self.assertEqual(punch_fix.home_rows(self.emp), [])
 
 	def test_only_the_employee_can_confirm_and_not_twice_and_not_their_own_request(self):
 		att, req = self.filed_by_hr()

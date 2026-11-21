@@ -793,3 +793,14 @@ All five as recommended:
 3. Requests already waiting before the migrate carry no Confirm flag. There is no backfill.
 4. An ordinary request without a time keeps its reason from the existing dropdown, with free text only for "Other". This meets counsel's reason condition.
 5. The Confirm block and the reason box in the send bar are new screens, not in prototype-v2. Surbhi reviewed the local build on 21 Nov. Her yes on the new screens is asked once they can be seen working.
+
+## Surbhi's decisions on prototype-v4, 21 Nov 2026
+
+Prototype-v4 (`prototype-v4.html`; 01b "v3" and "v4"; parity rows P-1 to P-19 and V4-1 to V4-6) is approved, with these:
+
+1. **On "Not right", the time is REQUIRED** (not optional as v4 drew it), when the filed request carried an added time. A filed set-aside has no time field. **AC-108** Without a time, Not right is refused ("Enter the time first."). The time is checked like the add sheet (before, after, between, within 2 minutes) plus "That is the time that was sent. If it is right, go back and press Confirm." (**AC-109**).
+2. **The reason stays REQUIRED on "Not right"**, with the required time. It is not a switch: counsel's condition (ALV-418) stands and the earlier note that the reason may be optional is dropped.
+3. **Not right with a time files the employee's own request in its place** (`alvoraa_replaces` links it to the filed one), in the same transaction as the decline (both or neither). It needs no Confirm (the employee filed it), and **does not count against the monthly limit** (recommended, taken as approved). **AC-110**.
+4. **Home "Needs you" gets one row per request waiting for the employee's Confirm** (P-19, recommended, approved with v4): "HR sent a punch fix for Thu 13 Nov. Is it right?" with Check. **AC-111**.
+5. **The Confirm block also shows on the older (non-punch) request card** (recommended, approved). It carries words only (no filer name or time) and "Not right" asks for the reason alone. **AC-112**.
+6. **The four wrong sentences the designer found are fixed** (P-9 the truth line, P-12 the employee's own decline reason, P-13 "Added by HR ... You confirmed it", P-15 the HR card names the filer and never says "{employee} says"), together with the rest of P-1 to P-18 except P-18's HR "Decided" list, which has no screen in the product to put it on.

@@ -64,6 +64,7 @@
       goals: __("Your goals"),
       celebrations: __("Today"),
       fix: __("Fix"),
+      check: __("Check"),
       checkIn: __("Check in"),
       checkOut: __("Check out"),
       /* A whole phrase with a placeholder, never "Checked in at " + time:
@@ -150,6 +151,12 @@
         extra += '<button type="button" class="nf-btn nf-btn-small nf-fix"'
           + ' data-from="' + esc(item.detail.from_date) + '"'
           + ' data-to="' + esc(item.detail.to_date) + '">' + esc(SAY.fix) + "</button>";
+      }
+      if (item.kind === "confirm_request" && item.detail) {
+        /* Slice 087 (V4 P-19): somebody filed a fix for this person; Check opens that day. */
+        extra = '<button type="button" class="nf-btn nf-btn-small nf-fix"'
+          + ' data-from="' + esc(item.detail.date) + '"'
+          + ' data-to="' + esc(item.detail.date) + '">' + esc(SAY.check) + "</button>";
       }
       body += '<li class="nf-need"><span class="nf-need-title">' + esc(item.title)
         + "</span>" + extra + "</li>";

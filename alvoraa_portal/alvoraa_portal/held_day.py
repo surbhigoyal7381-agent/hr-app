@@ -201,7 +201,9 @@ def enforce_monthly_limit(doc, method=None):
 	087): a punch fix on an ordinary day carries a time too, and must count. A
 	request HR files is never refused and never counted: only the employee's own
 	and a manager's on behalf are (the filer is the request's owner)."""
-	if doc.get("alvoraa_for_held_day") or doc.docstatus:
+	# A replacement the employee files after saying "Not right" to a request filed for them was not their
+	# choice, so it neither counts nor is refused (slice 087, V4).
+	if doc.get("alvoraa_for_held_day") or doc.get("alvoraa_replaces") or doc.docstatus:
 		return
 	company = frappe.db.get_value("Employee", doc.employee, "company")
 	try:
@@ -224,7 +226,7 @@ def enforce_monthly_limit(doc, method=None):
 	filters = {
 		"employee": doc.employee, "docstatus": ("!=", 2),
 		"from_date": ("between", [first, last]),
-		"alvoraa_for_held_day": 0,
+		"alvoraa_for_held_day": 0, "alvoraa_replaces": ("is", "not set"),
 		"alvoraa_review_status": ("not in", ["Declined"]),
 	}
 	if not doc.is_new():

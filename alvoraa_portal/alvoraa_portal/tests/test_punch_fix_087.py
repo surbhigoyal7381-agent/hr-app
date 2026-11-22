@@ -1427,8 +1427,15 @@ class V5(PunchFixCase):
 		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import salary_components_and_workings as rpt
 		self.assertIn("unconfirmed", [c["fieldname"] for c in rpt._columns()])
 
-	def test_the_register_seam_is_declared_and_not_available_yet(self):
-		self.refused(lambda: punch_fix.record_register_signature(["HR-ARQ-X"], "NOTICE-X"), "not available yet")
+	def test_the_register_seam_refuses_a_notice_that_does_not_exist(self):
+		"""Slice 088 part 1 implemented this seam, so it no longer says "not available yet".
+
+		What 087 needs to keep proving is that the seam is WIRED and is not a no-op: handed a
+		notice that does not exist it refuses, rather than quietly marking the days as signed
+		for a page nobody ever printed. The marking itself is proved in
+		`test_register_notice_088`, which owns the notice record."""
+		self.refused(lambda: punch_fix.record_register_signature(["HR-ARQ-X"], "NOTICE-X"),
+		             "does not exist")
 
 	def test_the_printed_reason_hint_is_on_every_reason_box_and_has_a_hindi_line(self):
 		js = open(os.path.join(PKG, "public/js/ess/portal.js")).read()

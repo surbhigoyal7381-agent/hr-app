@@ -5617,7 +5617,8 @@ async function acLoad() {
     acBar();
     acPaint();
     acMine();
-    if (d.can_review) { acReviewQueue(); acPrepay(); }
+    if (d.can_review) { acReviewQueue(); acPrepay(); rnLoad(); }
+    rnMine();
   }
   try {
     await show(await acApi("month", {year: acState.year, month: acState.month,
@@ -6826,6 +6827,492 @@ window.acPrepayWithdraw = async function (name) {
   catch (e) { hideLoad(); toast(e.message || "Could not withdraw that.", "err"); }
 };
 
+/* ── Slice 088: the monthly change notice ─────────────────────────────────────
+   Three surfaces: HR's month card, the A4 print preview, and the record dialog.
+
+   **Every word is the approved prototype's own string** (prototype-v1.html, English
+   column). The parity rule binds: changing a word needs Surbhi's yes, not a
+   developer's judgement. Two departures, both agreed and both in the spec:
+
+     * no Hindi. The prototype draws a Hindi line under every English one; she decided
+       on 21 Nov 2026 that Hindi is not built, so the paper is English only.
+     * the sheet names a MANAGER and prints only "HR" for an HR filing (her OQ-1
+       decision, matching 087 decision 7). The server sends it that way; this code is
+       never given the HR person's name, so it could not print one.
+
+   **The server owns every rule.** Which days a notice covers, who may record it,
+   whether a page is the latest, whether a photo is reused - none of that is decided
+   here. A button this file hides is never the reason an action is refused; the
+   endpoint refuses it too, and the 088 tests prove that separately. */
+
+/* Translation when Frappe's `__` is on the page, plain English otherwise, with the
+   placeholders filled in ONE place so no sentence is built from pieces. The same shape
+   as `drT` in the data-review panel, written out rather than shared: these two panels
+   do not otherwise know about each other. */
+function rnT(text, args) {
+  var out = (typeof window.__ === "function") ? window.__(text) : text;
+  (args || []).forEach(function (a, i) { out = out.split("{" + i + "}").join(String(a)); });
+  return out;
+}
+
+function rnApi(fn, args) { return window.gpFetch("alvoraa_portal.register_notice." + fn, args || {}); }
+
+var rnState = {month: null, rows: [], total: 0, done: 0, waiting: 0, sel: {}, phase: "load"};
+
+function rnThisMonth() {
+  var d = new Date();
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-01";
+}
+
+function rnMonthWords(iso) {
+  var p = String(iso || "").split("-");
+  if (p.length < 2) return "";
+  var names = ["January", "February", "March", "April", "May", "June", "July",
+               "August", "September", "October", "November", "December"];
+  return (names[(+p[1]) - 1] || "") + " " + p[0];
+}
+
+function rnShiftMonth(iso, by) {
+  var p = String(iso).split("-"), d = new Date(+p[0], (+p[1]) - 1 + by, 1);
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-01";
+}
+
+function rnNice(iso) { return iso ? acNice(String(iso).slice(0, 10)) : ""; }
+
+function rnPicked() {
+  return Object.keys(rnState.sel).filter(function (k) { return rnState.sel[k]; });
+}
+
+/* ── HR's month card ──────────────────────────────────────────────────────── */
+
+async function rnLoad(month) {
+  var host = document.getElementById("rn-card");
+  if (!host) {
+    var w = document.getElementById("ac-review-wrap");
+    if (!w || !w.parentNode) return;
+    host = document.createElement("section");
+    host.id = "rn-card";
+    /* Straight after 087's "before payroll" card, which is about the same people:
+       that one says whose pay is held, this one says whose paper is outstanding. */
+    var pre = document.getElementById("ac-prepay");
+    w.parentNode.insertBefore(host, pre ? pre.nextSibling : w);
+  }
+  rnState.month = month || rnState.month || rnThisMonth();
+  rnState.sel = {};
+  rnState.phase = "load";
+  rnDraw();
+  try {
+    var res = await rnApi("list_people", {month: rnState.month, start: 0});
+    rnState.rows = (res && res.rows) || [];
+    rnState.total = (res && res.total) || 0;
+    rnState.done = (res && res.done) || 0;
+    rnState.waiting = (res && res.waiting) || 0;
+    rnState.phase = "ok";
+  } catch (e) {
+    /* A refusal hides the card rather than showing an error: a user with no HR role
+       is not having a problem, they simply have no business here (AC-9). Anything
+       else is an error, and the words are ours - a server refusal can name a rule
+       id, which the person reading this cannot act on (AC-6).
+
+       `isDenied` is ALV-350's own helper and the only honest test: it reads Frappe's
+       `exc_type` and treats a bare 403 as the same answer. My first version invented
+       `e.kind === "permission"`, which `gpErr` never produces - every refusal comes
+       back as kind "refused" - so the card stayed on screen for a user with no HR
+       role. The browser test caught it. */
+    rnState.phase = isDenied(e) ? "hide" : "err";
+  }
+  rnDraw();
+}
+
+async function rnMore() {
+  try {
+    var res = await rnApi("list_people", {month: rnState.month, start: rnState.rows.length});
+    rnState.rows = rnState.rows.concat((res && res.rows) || []);
+    rnState.total = (res && res.total) || rnState.total;
+    rnDraw();
+  } catch (e) { toast(rnT("Could not load the list. Nothing was changed."), "err"); }
+}
+
+function rnOpened(r) {
+  return rnT("Print opened on {0} by {1}. Waiting for the signature.",
+             [rnNice(r.printed_at), r.printed_by || ""]);
+}
+
+function rnRowNote(r) {
+  if (r.state === "done") {
+    return '<span class="rn-note rn-ok">' + gpEsc(r.recorded_on
+      ? rnT("Signed on the register on {0}. Recorded by {1}.", [rnNice(r.recorded_on), r.recorded_by || ""])
+      : rnT("Confirmed in the app.")) + "</span>";
+  }
+  if (r.state === "not_printed") {
+    return '<span class="rn-note">' + gpEsc(rnT("Not printed yet")) + "</span>";
+  }
+  if (r.state === "changed_after_print") {
+    return '<span class="rn-note rn-warn">' + gpEsc(rnOpened(r)) + "<small>"
+      + gpEsc(rnT("{0} change added after the page was printed. It is not on that page. Print again.",
+                  [r.uncovered])) + "</small></span>";
+  }
+  if (r.state === "not_right") {
+    return '<span class="rn-note rn-warn">' + gpEsc(
+        rnT("{0} says it is not right (told HR on {1}, recorded by {2}).",
+            [(r.employee_name || "").split(" ")[0], rnNice(r.recorded_on), r.recorded_by || ""]))
+      + "<small>" + gpEsc(r.said || "") + "</small></span>";
+  }
+  if (r.state === "filer") {
+    return '<span class="rn-note">' + gpEsc(rnOpened(r)) + '<small class="rn-filer">'
+      + gpEsc(rnT("You filed a change on this page, so another HR person records the signature."))
+      + "</small></span>";
+  }
+  return '<span class="rn-note">' + gpEsc(rnOpened(r)) + "</span>";
+}
+
+function rnRow(r) {
+  var acts = [];
+  if (r.state === "not_printed") {
+    acts.push('<button type="button" class="btn btn-primary" onclick="rnPreview([&quot;'
+      + gpEsc(r.employee) + '&quot;])">' + gpEsc(rnT("Print notice")) + "</button>");
+  } else if (r.state !== "done") {
+    if (r.can_record) {
+      acts.push('<button type="button" class="btn '
+        + (r.state === "printed" ? "btn-primary" : "btn-outline")
+        + '" onclick="rnOpenRecord(&quot;' + gpEsc(r.notice) + '&quot;)">'
+        + gpEsc(rnT("Signed on the register")) + "</button>");
+    }
+    acts.push('<button type="button" class="btn btn-outline" onclick="rnPreview([&quot;'
+      + gpEsc(r.employee) + '&quot;])">' + gpEsc(rnT("Print again")) + "</button>");
+  }
+  var days = r.changed_days === 1 ? rnT("1 changed day")
+                                  : rnT("{0} changed days", [r.changed_days]);
+  var box = r.can_tick
+    ? '<label><input type="checkbox" aria-label="'
+      + gpEsc(rnT("Select {0}", [r.employee_name || ""])) + '" '
+      + (rnState.sel[r.employee] ? "checked" : "")
+      + ' onchange="rnTick(&quot;' + gpEsc(r.employee) + '&quot;,this.checked)"></label>'
+    : "<span></span>";
+  return "<li>" + box
+    + '<div><div class="rn-nm">' + gpEsc(r.employee_name || "") + '</div><div class="rn-meta">'
+    + gpEsc([r.employee_number, r.branch, days].filter(Boolean).join(" · ")) + "</div></div>"
+    + '<div class="rn-acts">' + acts.join("") + "</div>"
+    + rnRowNote(r) + "</li>";
+}
+
+function rnDraw() {
+  var host = document.getElementById("rn-card");
+  if (!host) return;
+  if (rnState.phase === "hide") { host.innerHTML = ""; return; }
+
+  var body;
+  if (rnState.phase === "load") {
+    body = '<div aria-busy="true" aria-label="' + gpEsc(rnT("Loading the list"))
+      + '"><div class="rn-sk"></div><div class="rn-sk"></div><div class="rn-sk"></div></div>';
+  } else if (rnState.phase === "err") {
+    body = '<div class="rn-empty"><p class="rn-err" role="alert">'
+      + gpEsc(rnT("Could not load the list. Nothing was changed.")) + "</p>"
+      + '<button type="button" class="btn btn-outline" onclick="rnLoad()">'
+      + gpEsc(rnT("Try again")) + "</button></div>";
+  } else if (!rnState.rows.length) {
+    body = '<div class="rn-empty"><b>'
+      + gpEsc(rnT("No changed days in {0}", [rnMonthWords(rnState.month)])) + "</b><span>"
+      + gpEsc(rnT("A notice is only for a person whose day someone else changed and that still "
+                  + "needs to be confirmed. Nobody needs one this month.")) + "</span></div>";
+  } else {
+    var tickable = rnState.rows.filter(function (r) { return r.can_tick; }).length;
+    var picked = rnPicked().length;
+    body = '<p class="rn-sub">' + gpEsc(rnT(
+        "{0} people have changed days in {1}. {2} are done. {3} still need a signature or a confirmation.",
+        [rnState.total, rnMonthWords(rnState.month), rnState.done, rnState.waiting])) + "</p>"
+      + '<div class="rn-tools"><label><input type="checkbox" '
+      + (picked && picked === tickable ? "checked" : "")
+      + ' onchange="rnTickAll(this.checked)">' + gpEsc(rnT("Select all {0}", [tickable]))
+      + "</label>"
+      + (picked ? '<button type="button" class="btn btn-primary" onclick="rnPreview(null)">'
+          + gpEsc(rnT("Print selected ({0})", [picked])) + "</button>" : "")
+      + "</div>"
+      + '<ul class="rn-list">' + rnState.rows.map(rnRow).join("") + "</ul>"
+      + (rnState.rows.length < rnState.total
+          ? '<button type="button" class="btn btn-outline" onclick="rnMore()">'
+            + gpEsc(rnT("Showing {0} of {1}", [rnState.rows.length, rnState.total]))
+            + "</button>" : "")
+      + '<p class="rn-logline">' + gpEsc(rnT(
+          "Every time a notice is opened for print, we keep your name, the date and the person."))
+      + "</p>";
+  }
+
+  host.innerHTML = '<div class="pfx-card rn-card"><h3>' + gpEsc(rnT("Change notices")) + "</h3>"
+    + '<p class="rn-sub">' + gpEsc(rnT("For people who do not use the app. Print the page, read it "
+        + "out if you need to, and record the signature.")) + "</p>"
+    + '<div class="rn-mbar"><button type="button" aria-label="' + gpEsc(rnT("Earlier month"))
+    + '" onclick="rnLoad(rnShiftMonth(rnState.month,-1))">‹</button><b>'
+    + gpEsc(rnMonthWords(rnState.month)) + '</b><button type="button" aria-label="'
+    + gpEsc(rnT("Later month")) + '"'
+    + (rnState.month === rnThisMonth() ? " disabled" : "")
+    + ' onclick="rnLoad(rnShiftMonth(rnState.month,1))">›</button></div>'
+    + body + "</div>";
+}
+
+/* Reachable from outside for two reasons, in this order: the month view calls
+   `rnLoad` and `rnMine` when it finishes drawing, and the browser test drives these
+   screens the way a person does - press the button, then assert what went to the
+   server. A screen that can only be tested by reading its HTML is a screen whose
+   payload nobody has ever checked. */
+window.rnLoad = rnLoad;
+window.rnMine = rnMine;
+window.rnShiftMonth = rnShiftMonth;
+window.rnState = rnState;
+
+window.rnTick = function (employee, on) { rnState.sel[employee] = !!on; rnDraw(); };
+window.rnTickAll = function (on) {
+  rnState.sel = {};
+  if (on) rnState.rows.forEach(function (r) { if (r.can_tick) rnState.sel[r.employee] = true; });
+  rnDraw();
+};
+
+/* ── the print preview ────────────────────────────────────────────────────────
+   One A4 sheet per person per page, drawn from what the server returned. The
+   server decided which change is on which page and already wrote the record, so
+   by the time anything appears here the print is logged whether or not paper
+   comes out. `window.print()` is the browser's own dialog; nothing waits on it. */
+
+function rnSheetHtml(s) {
+  var rows = (s.changes || []).map(function (c) {
+    return "<tr><td>" + gpEsc(c.day) + "</td><td>"
+      + (c.what || []).map(gpEsc).join("<br>")
+      + (c.counts ? '<div class="rn-cnt">' + gpEsc(rnT("This day now counts {0}.", [c.counts])) + "</div>" : "")
+      + "</td><td>" + gpEsc(c.filed_by ? c.filed_by + " · " + rnT("Manager") : rnT("HR"))
+      + "<br>" + gpEsc(rnNice(c.filed_on)) + "</td><td>" + gpEsc(c.why || "") + "</td></tr>";
+  }).join("");
+  return '<section class="rn-a4" aria-label="' + gpEsc(s.employee_name || "") + '">'
+    + '<div class="rn-top"><span><b>' + gpEsc(s.company || "") + "</b></span><span>"
+    + gpEsc(rnT("Ref {0}", [s.ref]) + " · " + rnT("No. {0}", [s.print_no])) + "</span></div>"
+    + "<h2>" + gpEsc(rnT("Changes to your attendance") + " · " + rnMonthWords(s.month)) + "</h2>"
+    + '<div class="rn-who"><div class="rn-nm">' + gpEsc(s.employee_name || "") + "</div><div>"
+    + gpEsc(rnT("Employee no. {0} · {1}", [s.employee_number || s.employee, s.branch || ""]))
+    + "</div></div>"
+    + '<p class="rn-intro">' + gpEsc(rnT(
+        "Someone else changed these days in your attendance. Please read each one.")) + "</p>"
+    + "<table><thead><tr><th>" + gpEsc(rnT("Day")) + "</th><th>" + gpEsc(rnT("What changed"))
+    + "</th><th>" + gpEsc(rnT("Who filed it")) + "</th><th>" + gpEsc(rnT("Why"))
+    + "</th></tr></thead><tbody>" + rows + "</tbody></table>"
+    + '<div class="rn-rule">' + gpEsc(rnT(
+        "If something here is not right, tell HR before you sign.")) + "</div>"
+    /* D-7: only where THIS page holds a change that actually holds pay. A page of
+       manager additions would be telling the worker something untrue. The server
+       decides it per sheet and sends `pay_line`. */
+    + (s.pay_line ? '<div class="rn-rule rn-hold">' + gpEsc(rnT(
+        "Your salary slip for this month waits until each change is confirmed.")) + "</div>" : "")
+    + '<p class="rn-read">' + gpEsc(rnT("I have read the changes on this page.")) + "</p>"
+    + '<div class="rn-boxes"><div class="rn-box">' + gpEsc(rnT("Signature or thumb print"))
+    + '</div><div class="rn-box rn-dt">' + gpEsc(rnT("Date")) + "</div></div>"
+    + '<div class="rn-foot">' + gpEsc(rnT("Printed by {0} on {1}. Page {2} of {3}.",
+        [rnWho(), rnNice(rnToday()), s.page_no, s.pages]))
+    + " " + gpEsc(rnT("This page is only about you. Keep it private.")) + "</div></section>";
+}
+
+function rnToday() {
+  var d = new Date();
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+}
+
+function rnWho() {
+  return (window.frappe && frappe.boot && frappe.boot.user && frappe.boot.user.full_name)
+    || (window.frappe && frappe.session && frappe.session.user) || "";
+}
+
+window.rnPreview = async function (employees) {
+  var who = employees || rnPicked();
+  if (!who.length) return;
+  showLoad();
+  var res;
+  try {
+    res = await rnApi("open_notices", {employees: who, month: rnState.month});
+  } catch (e) {
+    hideLoad();
+    /* AC-12: the server writes the record before it returns anything, so a failure
+       here means nothing was printed - and that is what the message says. */
+    toast(e && e.message ? e.message : rnT("Could not open the notices. Nothing was printed."), "err");
+    return;
+  }
+  hideLoad();
+  var sheets = (res && res.sheets) || [];
+  if (!sheets.length) { toast(rnT("Could not open the notices. Nothing was printed."), "err"); return; }
+
+  var pv = document.createElement("div");
+  pv.className = "rn-pv";
+  pv.id = "rn-pv";
+  pv.innerHTML = '<div class="rn-pvbar rn-noprint">'
+    + '<button type="button" class="btn btn-outline" onclick="rnClosePreview()">‹ '
+    + gpEsc(rnT("Back to the list")) + "</button>"
+    + '<button type="button" class="btn btn-primary" onclick="window.print()">'
+    + gpEsc(sheets.length === 1 ? rnT("Print 1 sheet") : rnT("Print {0} sheets", [sheets.length]))
+    + "</button>"
+    + '<span class="rn-pvnote">' + gpEsc(rnT(
+        "Preview at A4. One person on each page. Only hours that were counted are shown. "
+        + "Printing is logged: {0}, {1}.", [rnWho(), rnNice(rnToday())])) + "</span></div>"
+    + '<div class="rn-pvwrap">' + sheets.map(rnSheetHtml).join("") + "</div>";
+  document.body.appendChild(pv);
+  rnFit();
+  window.addEventListener("resize", rnFit);
+  /* The notice has been opened, so every row's state has changed. */
+  rnLoad(rnState.month);
+};
+
+window.rnClosePreview = function () {
+  var pv = document.getElementById("rn-pv");
+  if (pv && pv.parentNode) pv.parentNode.removeChild(pv);
+  window.removeEventListener("resize", rnFit);
+};
+
+/* An A4 page is 794 px wide at 96 dpi, which is wider than a phone. Zoomed to fit so
+   HR can read it on the screen; printing ignores the zoom because the print rules set
+   the width back to the paper's. */
+function rnFit() {
+  var wrap = document.querySelector("#rn-pv .rn-pvwrap");
+  if (!wrap) return;
+  var z = Math.min(1, (wrap.clientWidth - 24) / 794);
+  Array.prototype.forEach.call(wrap.querySelectorAll(".rn-a4"), function (a) {
+    a.style.transform = z < 1 ? "scale(" + z + ")" : "";
+    a.style.transformOrigin = "top left";
+    a.style.marginBottom = z < 1 ? (-1123 * (1 - z) + 16) + "px" : "";
+  });
+}
+
+/* ── the record dialog ────────────────────────────────────────────────────────
+   Two actions on one sheet, as the prototype draws it: "Record signature" with one
+   photo per printed page, and "Says it is not right" with the worker's words.
+
+   The photos never touch `localStorage`, IndexedDB or a cache (PRIV-1): they live in
+   this object until the call succeeds, and if it fails they stay here so HR can press
+   the button again without photographing the page a second time. */
+
+var rnReg = null;
+
+window.rnOpenRecord = function (notice) {
+  var row = rnState.rows.filter(function (r) { return r.notice === notice; })[0];
+  if (!row) return;
+  rnReg = {notice: notice, row: row, photos: [], thumbs: [], err: "", sending: false};
+  rnDrawRecord();
+};
+
+window.rnCloseRecord = function () {
+  if (rnReg) rnReg.thumbs.forEach(function (u) { URL.revokeObjectURL(u); });
+  rnReg = null;
+  var s = document.getElementById("rn-scrim");
+  if (s && s.parentNode) s.parentNode.removeChild(s);
+};
+
+function rnDrawRecord() {
+  var s = document.getElementById("rn-scrim");
+  if (!rnReg) { if (s && s.parentNode) s.parentNode.removeChild(s); return; }
+  if (!s) {
+    s = document.createElement("div");
+    s.id = "rn-scrim";
+    s.className = "rn-scrim";
+    s.addEventListener("click", function (ev) { if (ev.target === s) window.rnCloseRecord(); });
+    s.addEventListener("keydown", function (ev) { if (ev.key === "Escape") window.rnCloseRecord(); });
+    document.body.appendChild(s);
+  }
+  var r = rnReg.row;
+  var first = (r.employee_name || "").split(" ")[0];
+  var pages = r.pages || 1;
+  s.innerHTML = '<div class="rn-sheet" role="dialog" aria-modal="true" aria-labelledby="rn-rgt">'
+    + '<h3 id="rn-rgt">' + gpEsc(rnT("Signed on the register")) + "</h3>"
+    + "<p>" + gpEsc(pages > 1
+        ? rnT("Record this only if {0} signed or gave a thumb print on every page of this notice ({1} pages).", [first, pages])
+        : rnT("Record this only if {0} signed or gave a thumb print on this notice.", [first])) + "</p>"
+    + (r.uncovered ? "<p>" + gpEsc(rnT(
+        "{0} change added after printing is not covered. It stays open.", [r.uncovered])) + "</p>" : "")
+    + '<label for="rn-ph">' + gpEsc(rnT("One photo of each signed page ({0} pages)", [pages]))
+    + '<span class="rn-hint">' + gpEsc(rnT(
+        "Take the whole page, with the signature box. The page has only {0}'s own details, "
+        + "nobody else's.", [first])) + "</span></label>"
+    + '<input id="rn-ph" type="file" accept="image/*" capture="environment" multiple '
+    + 'onchange="rnPickPhotos(this)">'
+    + '<div class="rn-thumbs">' + rnReg.thumbs.map(function (u) {
+        return '<img src="' + u + '" alt="">'; }).join("") + "</div>"
+    + (rnReg.thumbs.length ? '<p class="rn-hint">' + gpEsc(rnT(
+        "Look at the photo. Can you read the signature or thumb print? If not, take it again."))
+        + "</p>" : "")
+    + '<p class="rn-hint">' + gpEsc(rnT("Your name, today's date and the photo are kept with these "
+        + "changes. Only HR can open the photo.")) + "</p>"
+    + '<label for="rn-nr">' + gpEsc(rnT("What did {0} say is not right?", [first]))
+    + '<span class="rn-hint">' + gpEsc(rnT(
+        "These changes stay open. HR decides what to do next.")) + "</span></label>"
+    + '<textarea id="rn-nr" rows="2"></textarea>'
+    + '<div class="rn-err" role="alert">' + gpEsc(rnReg.err || "") + "</div>"
+    + '<div class="rn-foot">'
+    + '<button type="button" class="btn btn-primary"' + (rnReg.sending ? " disabled" : "")
+    + ' onclick="rnSend(&quot;Signed&quot;)">' + gpEsc(rnT("Record signature")) + "</button>"
+    + '<button type="button" class="btn btn-outline"' + (rnReg.sending ? " disabled" : "")
+    + ' onclick="rnSend(&quot;Not right&quot;)">' + gpEsc(rnT("Says it is not right")) + "</button>"
+    + '<button type="button" class="btn btn-outline" onclick="rnCloseRecord()">'
+    + gpEsc(rnT("Cancel")) + "</button></div></div>";
+}
+
+window.rnPickPhotos = function (input) {
+  var files = Array.prototype.slice.call(input.files || []);
+  rnReg.thumbs.forEach(function (u) { URL.revokeObjectURL(u); });
+  rnReg.photos = [];
+  rnReg.thumbs = files.map(function (f) { return URL.createObjectURL(f); });
+  rnReg.err = "";
+  var left = files.length;
+  if (!left) { rnDrawRecord(); return; }
+  files.forEach(function (f, i) {
+    var fr = new FileReader();
+    fr.onload = function () {
+      rnReg.photos[i] = String(fr.result);
+      if (--left === 0) rnDrawRecord();
+    };
+    fr.onerror = function () {
+      rnReg.err = rnT("Could not read that photo. Try again.");
+      if (--left === 0) rnDrawRecord();
+    };
+    fr.readAsDataURL(f);
+  });
+};
+
+window.rnSend = async function (outcome) {
+  if (!rnReg || rnReg.sending) return;
+  var why = ((document.getElementById("rn-nr") || {}).value || "").trim();
+  var pages = rnReg.row.pages || 1;
+  if (outcome === "Not right" && !why) {
+    rnReg.err = rnT("Write what they said is not right.");
+    rnDrawRecord(); return;
+  }
+  if (outcome === "Signed") {
+    if (!rnReg.photos.length) {
+      rnReg.err = rnT("Add the photo of the signed notice first.");
+      rnDrawRecord(); return;
+    }
+    if (rnReg.photos.length !== pages) {
+      rnReg.err = rnT("Add {0} photos, one for each page. You added {1}.",
+                      [pages, rnReg.photos.length]);
+      rnDrawRecord(); return;
+    }
+  }
+  rnReg.sending = true; rnReg.err = ""; rnDrawRecord();
+  showLoad();
+  try {
+    await rnApi("record", {notice: rnReg.notice, outcome: outcome,
+                           photos: outcome === "Signed" ? rnReg.photos : null,
+                           reason: outcome === "Not right" ? why : null});
+    hideLoad();
+    toast(outcome === "Signed"
+      ? rnT("Recorded. The salary slip no longer waits for these changes.")
+      : rnT("Recorded. The changes stay open."), "ok");
+    window.rnCloseRecord();
+    await rnLoad(rnState.month);
+    /* 087's own card counts the same changes, so it has to be redrawn too. */
+    if (typeof acPrepay === "function") acPrepay();
+  } catch (e) {
+    hideLoad();
+    rnReg.sending = false;
+    /* The photos are still in `rnReg`, so "Try again" means pressing the button -
+       not photographing the page a second time (AC-38). */
+    rnReg.err = (e && e.message) ? e.message : rnT("Not saved yet. Try again.");
+    rnDrawRecord();
+  }
+};
+
 window.acPfWithdraw = async function (name) {
   showLoad();
   try { await acApi("withdraw", {name: name}); hideLoad(); toast("Withdrawn.", "ok"); await acPfLoad(acPf.date); }
@@ -7234,6 +7721,68 @@ async function acMine() {
   } catch (e) {
     wrap.style.display = "none";
   }
+}
+
+
+/* ── the employee's own small view (US-7) ─────────────────────────────────────
+   One line on their month, and the days behind it. It opens 087's day sheet, which
+   already carries Confirm and "Not right" - this slice adds no second way to answer,
+   because the employee who HAS the app already had one. The whole point of 088 is the
+   person who does not. */
+
+/* "See the day" goes to 087's own day sheet, which already carries Confirm and
+   "Not right". `acPfLoad` is NOT a standalone opener - it fills an element the month
+   view has already drawn (`pfx-<date>`), so calling it for a day that is not on
+   screen does nothing at all. My first version did exactly that: a button that
+   looked like it worked and silently did not. If the day is not drawn, this says so
+   instead of pretending. */
+window.rnSeeDay = function (date) {
+  var el = document.getElementById("pfx-" + date);
+  if (!el) {
+    toast(rnT("Open that day from your month list to answer it."), "info");
+    return;
+  }
+  el.scrollIntoView({behavior: "smooth", block: "center"});
+  if (typeof acPfLoad === "function") acPfLoad(date);
+};
+
+async function rnMine() {
+  var host = document.getElementById("rn-mine");
+  if (!host) {
+    var wrap = document.getElementById("ac-mine-wrap");
+    if (!wrap || !wrap.parentNode) return;
+    host = document.createElement("section");
+    host.id = "rn-mine";
+    wrap.parentNode.insertBefore(host, wrap);
+  }
+  var res;
+  try {
+    res = await rnApi("my_changes", {month: rnState.month || rnThisMonth()});
+  } catch (e) { host.innerHTML = ""; return; }
+  var days = (res && res.days) || [];
+  if (!days.length) { host.innerHTML = ""; return; }
+  var said = {
+    waiting: rnT("Not confirmed by you yet."),
+    confirmed: rnT("You confirmed it."),
+    signed: rnT("You signed for it on the register."),
+    shown: rnT("Shown to you. Say if it is not right.")
+  };
+  host.innerHTML = '<div class="pfx-card rn-card"><h3>' + gpEsc(
+      res.changed === 1 ? rnT("1 day this month was changed by someone else.")
+                        : rnT("{0} days this month were changed by someone else.", [res.changed]))
+    + "</h3><ul class=\"rn-list\">" + days.map(function (d) {
+      return "<li><span></span><div><div class=\"rn-nm\">" + gpEsc(d.day) + "</div>"
+        + "<div class=\"rn-meta\">" + (d.what || []).map(gpEsc).join(", ")
+        + (d.counts ? " \u00b7 " + gpEsc(rnT("This day now counts {0}.", [d.counts])) : "")
+        + "</div>"
+        + (d.why ? "<div class=\"rn-meta\">" + gpEsc(d.why) + "</div>" : "")
+        + "</div>"
+        + '<div class="rn-acts"><button type="button" class="btn btn-outline" onclick="rnSeeDay(&quot;'
+        + gpEsc(d.date) + '&quot;)">' + gpEsc(rnT("See the day")) + "</button></div>"
+        + '<span class="rn-note">' + gpEsc(said[d.state] || "")
+        + (d.filed_by ? " " + gpEsc(rnT("Changed by {0}.", [d.filed_by]))
+                      : " " + gpEsc(rnT("Changed by HR."))) + "</span></li>";
+    }).join("") + "</ul></div>";
 }
 
 /* HR's side. Approving submits the request, and it is that submit which

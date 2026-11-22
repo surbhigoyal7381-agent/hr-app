@@ -9,15 +9,14 @@ inputs: [01a-ux-opportunities.md, 01-product-brief.md (with Surbhi's decisions, 
 
 # 089 · Manager reports a leaver; managers see and change a little more
 
-**Prototype v3 (current, after Surbhi's rounds 1 and 2):** `docs/slices/089-manager-profile-edits/prototype-v3.html`; v1 and v2 are kept beside it. Add `#example,reported,profile` to the address to open straight on the dialog. Copies in `/Users/mac/hrlocal-data/prototypes/089-manager-profile-edits/`. **I have no Artifact tool, so I could not publish it.** The coordinator session publishes it. Open the file in any browser. It holds only invented data, each tagged "Sample".
+**Prototype v4 (current, after Surbhi's round 3):** `docs/slices/089-manager-profile-edits/prototype-v4.html`; v1 to v3 are kept beside it. Add `#example,reported,scorecard` to the address to open straight on the Scorecard. (The published link in the gate record is v3.) Copies in `/Users/mac/hrlocal-data/prototypes/089-manager-profile-edits/`. **I have no Artifact tool, so I could not publish it.** The coordinator session publishes it. Open the file in any browser. It holds only invented data, each tagged "Sample".
 
 **Risk tier (my view): 1.** Who can change what, personal data, and a date that stops pay.
 
 ## 0. What I looked at, and what I did not
 
 - **Proven:** I read `team.html`, `team_api.ACTION_MATRIX`, `org-settings.html` (the 078 card), `people_fields.py` (`POSITIONS_PROFILE_FIELDS`, `MY_PROFILE_WRITE_FIELDS`, `NEVER`) in this worktree at 16c68b2f.
-- **Not checked: I did not open the running portal or Desk.** No login, no tenant, no screenshots. The Team screen, the "Details" button and the Desk screens are drawn from code and from how Frappe Desk usually looks. The prototype page itself I rendered once in Chrome (desktop). I did not measure it on a phone and did not test 200% text.
-- **Not checked:** what the existing "open record" action (`ACT_OPEN_RECORD`) opens today in Team. I drew a "Details" button for it. The BA must confirm.
+- **Not checked: I did not open the running portal or Desk.** No login, no tenant, no screenshots. The Team card, the Scorecard page and the Desk screens are drawn from code and from how Frappe Desk usually looks. The prototype page itself I rendered once in Chrome (desktop). I did not measure it on a phone and did not test 200% text.
 
 ## 1. Frame
 
@@ -44,10 +43,12 @@ A store manager, on a shared or low-end phone, reports that a person has left, i
 
 ### 4.1 Manager reports (phone, 360 px)
 
-1. Team View. Each direct report's card shows the **name as the tap target** (opens the person's dialog, see 4.6) and a **small exit icon beside it** (22 px icon, no border, no fill, grey; a 44 × 44 px tap target; accessible label and hover tip "Report that Ravi left", with the name so four cards never share one label). There is **no Details link** (round 2). Presence is plain words under the name ("Sales Associate · Present today"). When a report is open, one grey line "⏳ Reported, not yet confirmed" shows under the name and the icon is gone.
+1. **Team View (round 3).** Each direct report's card shows avatar, name, job and presence in plain words, and nothing else. **The whole card opens the Scorecard page, as it does today** (`openEmpScorecard`, read in `portal.js`). There is no icon, no button and no Details link on the card. When a report is open, one grey line "⏳ Reported, not yet confirmed" shows under the name.
+
+   **The report icon lives on the Scorecard page,** a small exit icon beside the person's name in the page header (22 px icon, no border, no fill, grey; a 44 × 44 px target; label and hover tip "Report that Ravi left"). *Coordinator's reading of Surbhi's words "there itself you can show the employee left icon": the icon MOVES there, so the Team card stays clean. Confirm at the gate.* The icon is gone while a report is open.
 2. Tap: a bottom sheet, `role=dialog`, focus on the date. Title "Ravi Kumar left?". Field **Last working day** (date, today by default, 16 px). A preview line: "You are reporting: Ravi Kumar · last working day 22 Nov 2026." Then: "This is sent for confirmation. Until it is confirmed, nothing changes for Ravi: Ravi stays on your team and is shown as working." Button **Report that Ravi left**. Link **Not now**.
 3. Sent: "✓ **Sent for confirmation.** You reported this on 22 Nov 2026. Ravi shows as working until it is confirmed. Wrong person or date? Ask HR." Button **Done**.
-4. The row now shows one grey line: "⏳ Reported, not yet confirmed" (words and a clock mark, no colour block). The icon is gone from that row (no second report). The last working day and the reported date are in the dialog (4.6).
+4. The Team card now shows one grey line "⏳ Reported, not yet confirmed". On the Scorecard the icon is gone and the "Reported, not yet confirmed" note (4.6) shows at the top, with the last working day and the reported date.
 5. Confirmed: Ravi drops off the Team list, and the manager sees a plain line "✓ Confirmed: Ravi Kumar left on 30 Nov 2026" (see ⚠ DECISION 3).
 6. Closed without confirming: the row returns to normal and a line says "The report about Ravi was closed without being confirmed, on 24 Nov 2026. Ravi stays on your team. Ask HR why."
 
@@ -92,26 +93,28 @@ One new card: **What managers can see and change about their team**. Same tag-li
 | Managers can change | Tags. Empty: "None. Managers change nothing." | Change what managers change |
 | Leaver notices are confirmed by | A role list, default **HR Manager**; "2 enabled people hold HR Manager" | (the list saves on pick) |
 
-- **"See" dialog:** four ticks: Personal phone, Personal email, Home address, Emergency contact. Each hint: "Staff can already correct this on My profile." The sentence: "Pay, bank, ID numbers and date of birth are never offered." Summary line live, and the Save button names the effect: "Save — managers see 2 details about 45 people". (The 45 is a Sample count; the build uses the real count.)
+- **"See" dialog:** three ticks: Personal phone, Home address, Emergency contact. **Personal email is never offered (decision D2).** Each hint: "Staff can already correct this on My profile." The sentence: "Personal email, pay, bank, ID numbers and date of birth are never offered." Summary line live, and the Save button names the effect: "Save — managers see 2 details about 45 people". (The 45 is a Sample count; the build uses the real count.)
 - **"Change" dialog:** one tick, Emergency contact. The sentence: "A manager can change only what they can also see. Personal phone and home address can never be changed by a manager." Ticking it when it is not in the "see" list adds it, and the summary says "Managers will also be able to see it." Removing it from "see" also removes it from "change", and says so.
 - **Role row:** a role no enabled user holds is refused: "Nobody holds Accounts team, so nobody would be told. Pick a role that someone holds. Nothing was saved."
 - A line under the card: "Changed by <name> on <date>" (the 078 `ocs-changed` pattern).
 - This card is **new**. The 078 card (work details) stays as is. The "see" list here is only the personal details, because those six are on `NEVER` for the 078 Positions list. A separate allow-list is needed: ⚠ DECISION 2.
 
-### 4.6 The person's dialog (the "see" and "change" half, and the reported line)
+### 4.6 The Scorecard page (round 3: "Scorecard only")
 
-**What opens today (proven, read in `portal.js`, `drawers.html`, `panels.css` at this worktree):** the 078 mini profile, `mpfOpen` → `mpfPaint`, in the shared `#emp-drawer`: a side drawer 480 px wide (full width at 360 px), `role=dialog`, `aria-modal`. Header: round avatar with initials, name, "Job role · Branch", a Close button. Body: an optional "leaves on {date}" note, a list of the ticked work rows (Job role, Department, Branch, Reports to, In the company since and so on), the promise line, and a Documents section that is absent unless the organisation ticked document types. Today it is opened from Positions (`data-pos-who`) only.
+**What it is today (proven, read in `portal.js` `openEmpScorecard` / `renderScorecard`, `appraisals.html`, `panels.css`, `hr_api.py` at this worktree; not opened on a running site):** a full page, `#panel-scorecard`. Header: Back button, round initials avatar, name, "Job role • Department", a "Joined {date}" badge. Body: a four-figure row (Present, Absent, On Leave, Average hours per day); a Pending Requests card when there are some (with Approve and Reject); then a grid of four cards (Attendance last 6 months, Goals progress, Leave balances, Appraisal history); one column under 800 px.
 
-**Round 2: the new information goes inside this dialog, and there is no new link.** Tapping a name in Team opens it. Inside it:
+**Who can open it today, and which call feeds it (proven in code, `hr_api.get_employee_scorecard`):** the call checks that the caller's own Employee record is the person's `reports_to` (via `get_effective_manager`, which returns `reports_to`, or the HR Manager employee when the person has no manager), or that the caller holds HR Manager, HR User or Administrator (and, for HR, is scoped to the company). **It does not need Read on Alvoraa Position.** So a plain store manager can open the Scorecard of a person who reports to them. I did **not** try it with a real store-manager login. Surbhi's earlier "dialog without Position read" choice (1a) is **moot**: the Scorecard has no such gate, and the 078 dialog is not touched by this slice.
 
-1. **Reported line**, at the top, only while a report is open. It reuses the existing amber-edged note style (`.mpf-left`, the same note the dialog already uses for a leaving date): "Reported, not yet confirmed. You reported on 22 Nov 2026 that Ravi's last working day is 30 Nov 2026. Ravi stays on your team until it is confirmed." It is not written to `relieving_date`, so the dialog's own "leaves on" sentence is not triggered by it.
-2. **Personal rows**, added to the same list as extra rows (Personal phone, Home address, Emergency contact and so on), only for what the Administrator ticked. None ticked: no rows, nothing drawn.
-3. **Change emergency contact**, one outlined 44 px button under the list, only when "change" is ticked and no report is open. It opens the three fields **in place**, in the dialog (Name, Relation, Phone, all labelled, 16 px), with "Save emergency contact for Ravi" and Cancel. It is not a second dialog. After saving, the dialog stays open and a toast says "Saved. Ravi will see that you changed it."
-4. **The promise line must change.** Today it says personal contact details "are never shown here" (`mpfPromise`, read). That becomes false the moment a manager can see them. When any personal row is ticked it reads: "These are the details your organisation chose to show. Personal contact details are shown here only because your organisation chose them. Pay, bank details, identity numbers and date of birth are never shown here." When none is ticked, today's sentence stays. This is a copy change in existing code and needs a test.
+**New on this page, and nothing else:**
 
-**⚠ DECISION 6, a conflict with what Team does today (proven in `portal.js`, `renderTeamPanel`: the Team card's `onclick` is `openEmpScorecard`):** tapping a Team card opens the **Scorecard page**, not this dialog. Surbhi's round-2 words ("the current dialog ... when clicking on employee name") ask for the dialog. I drew that. If the name now opens the dialog, **the managers lose their quickest way to the Scorecard**. Options: (A) the name opens the dialog and the Scorecard is reached from inside it by one existing-style button (it is a link, which round 2 asked me not to add, so this is hers to allow); (B) the name keeps opening the Scorecard and the new rows go into the Scorecard's header (not "the dialog"); (C) the name opens the dialog and the Scorecard is dropped from Team (a loss for managers, I advise against it). **Recommendation: A.** Owner: Surbhi. Not drawn in v3.
+1. **The report icon** beside the name in the header (4.1).
+2. **The reported note**, at the top of the body, only while a report is open. It reuses the dialog's existing note style (`.mpf-left`): "Reported, not yet confirmed. You reported on 22 Nov 2026 that Ravi's last working day is 30 Nov 2026. Ravi stays on your team until it is confirmed." It is not written to `relieving_date`.
+3. **A "Personal details" card, last on the page, full width,** in the page's own card style. It exists only if the Administrator ticked something; otherwise nothing is drawn. Caption: "Your organisation lets managers see these. Only you and HR can see them. Staff can see that you can." Rows: the ticked ones of Personal phone, Home address, Emergency contact (personal email is never offered, decision D2).
+4. **Change emergency contact**, an outlined 44 px button in that card, only when "change" is ticked and no report is open. It opens Name, Relation and Phone **in place** in the card (labelled, 16 px) with "Save emergency contact for Ravi" and Cancel. After saving the page stays, and a toast says "Saved. Ravi will see that you changed it."
 
-**Risk, P1 for the build: the dialog is not open to a plain manager today.** `get_positions_profile` calls `_guard`, which needs `may_view()` (Frappe Read on Alvoraa Position) and `employee_in_scope` (read in `positions_profile.py` and `register.py`). A store manager may not hold Read on Alvoraa Position (the permission table was **not checked**; it is site data). So "name opens the dialog" needs a server change: let a direct manager read their own report's profile. That is a permission change and goes to `hrms-security-privacy-engineer`.
+**Not changed:** the 078 mini profile and its promise line stay as they are (the "never shown here" sentence stays true, because the personal rows are not added there). The Team card still opens the Scorecard.
+
+**⚠ COMPLIANCE, found while reading (P2, for the security engineer): today the Scorecard call already sends a report's personal phone, personal email and company email, and gender, to the manager's browser, and the page draws none of them.** (`get_employee_scorecard` reads `cell_number`, `personal_email`, `company_email`, `gender` into `emp` and returns the whole of `emp`; `renderScorecard` uses none of them. Proven in code, not checked on the wire.) Personal email is "never offered" under D2, so the build should stop sending it, and should send phone and address only when ticked. This is a new ⚠ DECISION 7.
 
 ## 5. Findings table (current state, from code)
 
@@ -122,8 +125,8 @@ One new card: **What managers can see and change about their team**. Same tag-li
 | T3 | Medium | Fix | S | P2 | The leaving date reaches a manager only as a sentence from `relieving_date` (read in `positions_profile`). A reported date must not be written there. |
 | T4 | Medium | Keep | – | – | 078 card pattern and mini-profile component exist; reused. |
 | T5 | Medium | New | S | P3 | Words: the product uses "manager" and "supervisor" in places (ux-learnings MA2). Use "manager". |
-| T7 | High | Fix | S | P2 | `mpfPromise` says personal contact details are "never shown here". It must change when managers can see them (4.6). |
-| T8 | High | Fix | M | P1 | A Team tap opens the Scorecard, and the profile dialog is gated by Read on Alvoraa Position. See 4.6. |
+| T7 | High | Fix | S | P2 | `get_employee_scorecard` sends a report's personal phone, personal email, company email and gender to the manager's browser; the page draws none (4.6). |
+| T8 | Medium | Keep | – | – | A plain manager can open the Scorecard of a direct report today (no Position read needed). The Team tap already opens it. |
 | T6 | High | Fix | S | P2 | A ToDo for a role nobody holds fails silently. The role setting refuses an empty role. |
 
 ## 5a. Round 1 feedback (Surbhi, 22 Nov 2026) and what v2 changes
@@ -138,8 +141,8 @@ Every row below is built exactly as drawn, unless it says otherwise. The viewer 
 
 | Drawn | Built as drawn? |
 |---|---|
-| A small icon (44 px target, label "Report that Ravi left") beside the name; the name opens the dialog; one grey status line when reported | Yes. No Details link |
-| The person's dialog: header, work rows, personal rows, the reported line, in-place emergency contact form, the changed promise line | Yes, subject to ⚠ DECISION 6 and the permission risk above. Documents and the photo are the existing parts and are not drawn |
+| The whole Team card opens the Scorecard (as today); one grey status line when reported; no icon on the card | Yes. No Details link |
+| Scorecard page: the report icon beside the name, the reported note, the Personal details card, the in-place emergency contact form | Yes. The stats and the four cards are today's page, simplified and Sample, and are not changed |
 | Report sheet, preview line, failure sentences | Yes |
 | Hindi strings for the manager and employee words | Machine draft. **Needs native review before store use** |
 | Desk ToDo, timeline line, auto-close | Yes (the Desk look is Frappe's own, not ours) |
@@ -174,14 +177,14 @@ Withdraw or undo · a reason box when closing · a bell line to the manager on c
 
 ## 11. For the business analyst: turn these into acceptance criteria
 
-0. Team: the name opens the 078 dialog (4.6) for a direct report; no Details link; no new screen. The reported line, personal rows and the Change button are rows in that dialog. The promise line changes as in 4.6. A direct manager may read a direct report's profile on the server; nobody else gains access.
+0. Team: the card opens the Scorecard as today; no Details link, no new screen. The report icon, the reported note, the Personal details card and the Change button are on the Scorecard (4.6). The Scorecard call returns personal phone and address only when ticked, never personal email.
 
 1. "Report that {name} left" appears only on a direct report's row, never on HR-covered rows, never for oneself, never for a person already reported or already Left. The server refuses the same cases with the sentences in 4.2.
 2. Sending writes **no** change to Status or Relieving Date. It creates one ToDo per enabled user holding the setting's role, and one timeline line on the Employee. No new DocType.
 3. "Reported, not yet confirmed" = an open ToDo of this kind. It reads for the reporting manager, the confirmer and the employee only. It never feeds the Positions leaving flag.
 4. Saving the Employee as Left with a Relieving Date closes the ToDo. Closing the ToDo unconfirmed shows the manager the "closed" line. HR setting Left first closes the ToDo.
 5. The role setting defaults to HR Manager and refuses a role no enabled user holds. A manager who is the reporter is not the only possible confirmer of their own report's exit.
-6. Both lists default empty. The "see" candidates: personal phone, personal email, home address, emergency contact. The "change" candidates: emergency contact only. Phone and address are never in the change list. Change implies see. Pay, bank, ID, date of birth stay on `NEVER`.
+6. Both lists default empty. The "see" candidates: personal phone, home address, emergency contact (never personal email). The "change" candidates: emergency contact only. Phone and address are never in the change list. Change implies see. Pay, bank, ID, date of birth stay on `NEVER`.
 7. A manager's save of the emergency contact passes ALV-266 only through `MANAGER_EDITABLE`, only for a direct report, writes a Version row, and shows "Changed by your manager" to the employee.
 8. The two settings Save buttons name the effect and the real count.
 9. Every string above exists in English; the Hindi strings are marked for native review before store use.
@@ -201,7 +204,7 @@ Withdraw or undo · a reason box when closing · a bell line to the manager on c
 
 | # | Question | Owner | Blocks |
 |---|---|---|---|
-| 1 | What does "open record" in Team open today? Is "Details" the right door to the mini profile? | BA / engineer | Section 4.6 |
+| 1 | ~~What does "open record" open?~~ Answered in round 3: the Scorecard page. | – | – |
 | 2 | Retention of the ToDo and timeline line (brief Q4, open for counsel) | Surbhi, counsel | Release |
 | 3 | Does the bell show this kind of notification? | engineer | DECISION 3 |
 | 4 | A leaver's own reports: what happens to Reports To? (brief Q5, dry run) | engineer | Build |
@@ -230,3 +233,10 @@ For the BA and the security engineer: the one rule that matters most is that **s
 - **D3:** tell the manager the outcome (confirmed, or closed without confirming) with one bell line.
 - **D4 last working day:** not before the joining date, no more than 31 days back and no more than 60 days ahead.
 - **D5:** "Not right? Speak to HR" stays plain text, with no button.
+
+**Round 3 (Surbhi, 22 Nov 2026).** She chose "Scorecard only": the Scorecard page shows the employee's profile fields. Design change in prototype v4 (`01b` §4.1 and §4.6): a Team card tap opens the Scorecard as today, with no 078 dialog and no Scorecard button; the personal details, "Change emergency contact" and the "Reported, not yet confirmed" note sit on the Scorecard. Her "show the employee left icon there itself" is drawn as: **the icon moves to the Scorecard header, and the Team card stays clean. This is the coordinator's reading; confirm at the gate.** Her decisions above stand (1a is moot: the Scorecard needs no Position read, checked in code only). **New ⚠ DECISION 7 (security, then Surbhi):** the Scorecard call already sends personal phone and email to a manager's browser without drawing them; recommend the build stops sending personal email and sends phone and address only when ticked.
+
+**Final design gate (Surbhi, 22 Nov 2026): prototype v4 APPROVED.** Published at https://claude.ai/artifact/DLGyV4ejTmxdw3gFnErQbZ (version 5 of that page).
+- The leaver icon is on the Scorecard ONLY. The Team card has no icon.
+- Choice 1a and the Scorecard button are dropped. A card tap opens the Scorecard as it does today, and `get_employee_scorecard` already lets in the person's reports_to.
+- ALV-433 is logged: the Scorecard call sends personal phone, personal email, company email and gender to the manager's browser today, on dev and on main. Slice 089 fixes it.

@@ -60,6 +60,20 @@ class PunchFixCase(FrappeTestCase):
 		self.h = hd.HeldDayCase("test_held_is_a_status_and_the_fields_exist")
 		self.h.setUp()
 		h = self.h
+		# ALV-430. **This suite tests the compliant workflow, so its company has
+		# to choose it.** Asking the employee to confirm a change somebody else
+		# made for them is now a per-company setting and it is OFF by default
+		# (Surbhi, 22 Nov 2026): a tenant that never asked for it gets the
+		# simple workflow. Without this line 23 tests below fail with
+		# `0 != 1` on `alvoraa_needs_confirm` - not because the behaviour broke,
+		# but because the company opted out of it. Restored after each test so
+		# no other suite inherits the choice.
+		self._confirm_was = frappe.db.get_value("Company", h.company,
+		                                        punch_fix.CONFIRM_SWITCH)
+		self.addCleanup(self._put_the_confirm_switch_back, h.company)
+		frappe.db.set_value("Company", h.company, punch_fix.CONFIRM_SWITCH, 1,
+		                    update_modified=False)
+		frappe.clear_cache()
 		self.emp, self.hr, self.day = h.worker, h.hr, h.day
 		self.emp_user = h._login("emp", ())
 		# Linking the login is what gives it the employee role (ERPNext's own hook), so this is
@@ -136,12 +150,24 @@ class PunchFixCase(FrappeTestCase):
 		return text
 
 
+	def _put_the_confirm_switch_back(self, company):
+		"""ALV-430. Leave the company exactly as this suite found it, so a
+		later suite sharing the fixture is not silently switched on."""
+		frappe.db.set_value("Company", company, punch_fix.CONFIRM_SWITCH,
+		                    self._confirm_was, update_modified=False)
+		frappe.clear_cache()
+
+
 class Install(PunchFixCase):
-	def test_the_eighteen_fields_exist(self):
+	def test_the_nineteen_fields_exist(self):
+		"""Eighteen until ALV-430 added the per-company confirm switch on
+		`Company`. **Renamed with the number**: a test called "eighteen" that
+		asserts nineteen is a sentence that lies to the next reader, and the
+		name is what they see first."""
 		for dt, fields in punch_fix.FIELDS.items():
 			for f in fields:
 				self.assertTrue(frappe.db.exists("Custom Field", {"dt": dt, "fieldname": f["fieldname"]}), f["fieldname"])
-		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 18)
+		self.assertEqual(sum(len(v) for v in punch_fix.FIELDS.values()), 19)
 
 	def test_after_migrate_runs_twice_and_is_wired_to_install_too(self):
 		self.assertTrue(punch_fix.after_migrate() and punch_fix.after_migrate())

@@ -487,3 +487,8 @@ Replace AC-105 and AC-107 (approval waits). New criteria: the gate rule (HR file
 | F-7 Salary Workings flag | built as one column |
 | F-8 timeline lines "Added by HR on 21 Nov. Not confirmed by you yet." etc. | built |
 | D-3 hint "This reason is printed on the employee's monthly notice." on every reason box (088) | built, Hindi in `translations/hi.csv` (machine-drafted) |
+
+
+## Parity note, 22 Nov 2026 (CI fix)
+
+Prototype-v3/v4 wording changed on purpose, two places: the label "Your reason" is now **"Reason"** (with "Required" beside it), and "Your reason: ..." on the waiting/declined lines is now **"Reason: ..."**. Test 066 (`test_z1_to_z12`) forbids the phrase "Your reason" anywhere in portal.js (the grooming screen's v3 words), so the label could not stay. 066's rule is a whole-file check and was not written for 087, but one meaning is not worth two word sets. One more line ("Your reason goes to HR") now reads "The reason goes to HR". Sizes and radii in the 087 CSS now use the design-system tokens (`--fs-md`, `--fs-lg`, `--r-full`, `--r-sm`), same sizes as drawn; the sheet's card corner is 6px (token) instead of 8px and the strip bar is a full pill.

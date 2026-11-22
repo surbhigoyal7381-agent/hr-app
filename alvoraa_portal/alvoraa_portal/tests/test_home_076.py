@@ -69,6 +69,8 @@ class TestPartKeys(unittest.TestCase):
 		for key, old in OLD_KEYS.items():
 			with self.subTest(part=key):
 				extra = {"waiting_since"} | ({"document"} if key == "goal_updates" else set())
+				# Slice 087: an attendance fix row carries `punch_fix`, a flag and nothing more (inbox_api.py).
+				extra |= {"punch_fix"} if key == "attendance_fixes" else set()
 				self.assertEqual(set(inbox_api.row_keys(key)), old | extra)
 
 	def test_the_part_list_did_not_change(self):

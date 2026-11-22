@@ -6409,7 +6409,7 @@ function acPfPaint() {
     /* V4 P-12: the employee wrote this reason, so it is never labelled "from HR". */
     html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>You said this is not right</span></div>'
       + '<p class="pfx-sub">HR will not add it, and your day stays as it is.</p>'
-      + (r.hr_note ? '<p class="pfx-sub">Your reason: ' + gpEsc(r.hr_note) + "</p>" : "");
+      + (r.hr_note ? '<p class="pfx-sub">Reason: ' + gpEsc(r.hr_note) + "</p>" : "");
   } else if (r && r.state === "declined") {
     html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>HR did not add this</span></div>'
       + (r.hr_note ? '<p class="pfx-sub">Reason from HR: ' + gpEsc(r.hr_note) + "</p>" : "");
@@ -6478,7 +6478,7 @@ function acPfPaint() {
     html += gapRow(i + 1);
   });
   html += "</ul>";
-  if (r && r.note && (waiting || r.state === "approved") && !r.was_filed) html += '<p class="pfx-sub">Your reason: ' + gpEsc(r.note) + "</p>";
+  if (r && r.note && (waiting || r.state === "approved") && !r.was_filed) html += '<p class="pfx-sub">Reason: ' + gpEsc(r.note) + "</p>";
   if (waiting && !r.was_filed) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
   if (add) html += '<p class="pfx-one">One punch per request. If another is missing, send this first and add the next after HR decides.</p>';
   /* the sticky send bar */
@@ -6492,7 +6492,7 @@ function acPfPaint() {
     /* ALV-418 (counsel, 21 Nov): one required reason box, on a Held day too. The Q3 rule stands:
        the label says HR and the manager read it. */
     html += '<div class="pfx-bar-send"><div class="pfx-sum">' + gpEsc(parts.join(" · ")) + "</div>"
-      + '<div class="pfx-field pfx-reason"><label class="pfx-fl" for="pfx-note">Your reason <span class="pfx-req">Required</span></label>'
+      + '<div class="pfx-field pfx-reason"><label class="pfx-fl" for="pfx-note">Reason <span class="pfx-req">Required</span></label>'
       + '<p class="pfx-sub">HR and your manager can read this.</p>'
       + '<p class="pfx-sub pfx-print">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
       + '<textarea id="pfx-note" rows="1" required aria-required="true" placeholder="e.g. Forgot to scan after lunch" oninput="acPfReasonInput(this)">'
@@ -6660,7 +6660,7 @@ function pfxConfirmBlock(r, mode) {
   if (r.filer_reason) h += '<p class="pfx-sub">' + (hr ? "Reason from HR" : "Reason from " + gpEsc(nm)) + ": " + gpEsc(r.filer_reason) + "</p>";
   if (cs === "disputed") {
     return h + '<p class="pfx-sub">Your day stays as HR approved it until HR decides.</p>'
-      + (r.disputed && r.disputed.reason ? '<p class="pfx-sub">Your reason: ' + gpEsc(r.disputed.reason) + "</p>" : "");
+      + (r.disputed && r.disputed.reason ? '<p class="pfx-sub">Reason: ' + gpEsc(r.disputed.reason) + "</p>" : "");
   }
   if (r.can_confirm) {
     h += '<p class="pfx-sub">Press Confirm only if this is what happened. HR can decide it now. Your salary slip for this month waits until you confirm it, or sign for it on the register.</p>';
@@ -6697,7 +6697,7 @@ function pfxConfirmBlock(r, mode) {
 function pfxNrLine(approved, hasTime, sent, typed) {
   if (approved) {
     return typed ? "HR has already approved this, so your day stays as it is. Your own time, " + gpEsc(typed) + ", goes to HR as a new request."
-      : "HR has already approved this, so your day stays as it is. Your reason goes to HR" + (hasTime ? ", with your own time." : ".");
+      : "HR has already approved this, so your day stays as it is. The reason goes to HR" + (hasTime ? ", with your own time." : ".");
   }
   return typed ? "HR will not add " + gpEsc(sent) + ". Your own request for " + gpEsc(typed) + " goes to HR instead."
     : "HR will not add it, and your day stays as it is.";
@@ -6983,7 +6983,7 @@ function acHeldForm(x, d) {
     + '<input type="time" id="ac-missing-time" required>'
     + (one ? "" : '<label class="form-label" for="ac-missing-log">It was a</label>'
         + '<select id="ac-missing-log"><option value="OUT">Out</option><option value="IN">In</option></select>')
-    + '<label class="form-label" for="ac-held-reason">Your reason <span class="pfx-req">Required</span></label>'
+    + '<label class="form-label" for="ac-held-reason">Reason <span class="pfx-req">Required</span></label>'
     + '<p class="ac-help">HR and your manager can read this.</p>'
     + '<p class="ac-help">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
     + '<textarea id="ac-held-reason" rows="2" required aria-required="true" placeholder="e.g. Forgot to scan after lunch"></textarea>'

@@ -488,3 +488,202 @@ class TheHRList(RegisterNoticeCase):
 
 	def _rows_for_me(self, month=None, user=None):
 		return [r for r in self._list(month, user=user)["rows"] if r["employee"] == self.emp]
+
+
+class ThePrintCall(RegisterNoticeCase):
+	"""US-2, AC-11 to AC-17: the record is written before any content leaves the server."""
+
+	def test_printing_writes_one_notice_then_returns_the_sheet(self):
+		"""AC-11. The row is checked first and the content second, in that order, because
+		that is the order the requirement is about."""
+		name = self.an_approved_hr_change()
+		out = self._print([self.emp])
+		rows = frappe.get_all(NOTICE, filters={"employee": self.emp,
+		                                       "month": str(frappe.utils.get_first_day(self.day))},
+		                      fields=["name", "printed_by", "printed_at", "page_count", "outcome"])
+		self.assertEqual(len(rows), 1, rows)
+		self.assertEqual(rows[0].printed_by, self.hr)
+		self.assertTrue(rows[0].printed_at)
+		self.assertEqual(rows[0].page_count, 1)
+		self.assertEqual(rows[0].outcome, "Printed")
+		covered = frappe.get_all("Alvoraa Register Notice Change",
+		                         filters={"parent": rows[0].name},
+		                         fields=["request", "page_no", "content_hash"])
+		self.assertEqual(len(covered), 1)
+		self.assertEqual(covered[0].request, name)
+		self.assertEqual(covered[0].page_no, 1)
+		self.assertEqual(len(covered[0].content_hash), 64, "the hash is not a SHA-256")
+		self.assertEqual(len(out["sheets"]), 1)
+		self.assertEqual(out["sheets"][0]["notice"], rows[0].name)
+
+	def test_the_sheet_says_the_day_what_changed_and_what_it_now_counts(self):
+		"""US-3's content, as the approved prototype words it."""
+		self.an_approved_hr_change("18:30")
+		sheet = self._print([self.emp])["sheets"][0]
+		change = sheet["changes"][0]
+		self.assertRegex(change["day"], r"^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}$")
+		self.assertEqual(change["what"], ["Out time 18:30 added"])
+		self.assertRegex(change["counts"], r"^\d+ h \d+ m$")
+		self.assertEqual(change["filed_role"], "HR")
+		self.assertIsNone(change["filed_by"],
+		                  "the sheet names the HR person; Surbhi's OQ-1 decision says it "
+		                  "prints HR with no name")
+
+	def test_a_managers_change_is_named_and_hr_is_not(self):
+		"""Surbhi's OQ-1 decision and 087 decision 7, both halves in one test."""
+		mgr = self.h._login("mgrprint", ())
+		self.h._employee("Mgrprint", mgr)
+		self.held_on(self.day)
+		req = self.fix(time="18:30", by=mgr)
+		self.decide(req, 1, by=self.hr)
+		change = self._print([self.emp])["sheets"][0]["changes"][0]
+		self.assertEqual(change["filed_role"], "Manager")
+		self.assertTrue(change["filed_by"], "a manager's change is not named on the sheet")
+
+	def test_the_reason_reaches_the_page_exactly_as_it_is_stored(self):
+		"""Spec 5.2 ("the filer's reason as written, in full") and SEC-9.
+
+		**Measured, and it changes what this test can honestly claim.** Frappe sanitises a
+		Small Text field on insert (`frappe.utils.html_utils.clean_html` via
+		`sanitize_html`), so a reason typed with angle brackets is altered the moment the
+		change is FILED - on 087's surface, before slice 088 ever sees it. My first version
+		of this test asserted the page carries what the filer typed and failed with
+		`<img src=x onerror=...>` stored as `<img src="x">`.
+
+		So what 088 can promise is the thing 088 controls: the page carries exactly what is
+		stored, unaltered, and nothing executable survives to the page. Whether the storage
+		should be changing HR's words at all is a question about 087's field, not this slice,
+		and it is raised separately rather than papered over here.
+		"""
+		self.held_on(self.day)
+		nasty = '<img src=x onerror=window.__x=1> he said he forgot'
+		req = self.fix(time="18:30", by=self.hr, note=nasty)
+		self.decide(req, 1, by=self.h.hr2)
+		stored = frappe.db.get_value(REQUEST, req, "explanation")
+		change = self._print([self.emp])["sheets"][0]["changes"][0]
+		self.assertEqual(change["why"], stored,
+		                 "the page does not carry what is actually on the record")
+		self.assertNotIn("onerror", change["why"], "an event handler reached the page")
+		self.assertIn("he said he forgot", change["why"],
+		              "the filer's actual words were lost on the way to the page")
+
+	def test_the_pay_line_prints_only_where_the_page_holds_a_change_that_holds_pay(self):
+		"""D-7. A page of manager additions must not carry it, because it would be false:
+		a manager's addition does not hold the salary slip (087)."""
+		self.an_approved_hr_change()                     # HR-filed: needs a confirm
+		self.assertTrue(self._print([self.emp])["sheets"][0]["pay_line"])
+
+		mgr = self.h._login("mgrpay", ())
+		self.h._employee("Mgrpay", mgr)
+		other = self.h._login("worker2pay", ())
+		emp2 = self.h._employee("Worker2Pay", other)
+		self._held_for(emp2, self.day)
+		req = self.fix(time="18:30", by=mgr, employee=emp2)
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 0)
+		self.decide(req, 1, by=self.hr)
+		sheet = self._print([emp2])["sheets"][0]
+		self.assertFalse(sheet["pay_line"],
+		                 "a page of manager additions tells the worker their pay is held")
+
+	def test_five_changes_fill_a_page_and_the_sixth_starts_another(self):
+		"""Spec 5.2: five per page, and the SERVER decides which page, not the browser."""
+		for n in range(6):
+			self.an_approved_hr_change("1%d:30" % (n + 2))
+		out = self._print([self.emp])
+		self.assertEqual(len(out["sheets"]), 2)
+		self.assertEqual([len(s["changes"]) for s in out["sheets"]], [5, 1])
+		self.assertEqual([s["page_no"] for s in out["sheets"]], [1, 2])
+		self.assertEqual({s["pages"] for s in out["sheets"]}, {2})
+		notice = frappe.get_doc(NOTICE, out["sheets"][0]["notice"])
+		self.assertEqual(notice.page_count, 2)
+		self.assertEqual(sorted(r.page_no for r in notice.changes), [1, 1, 1, 1, 1, 2],
+		                 "the stored record disagrees with the pages that were printed")
+
+	def test_the_reference_carries_the_month_the_page_and_the_print_number(self):
+		"""Parity P-9, which Surbhi approved: a reprint must be tellable from the page
+		before it."""
+		self.an_approved_hr_change()
+		sheet = self._print([self.emp])["sheets"][0]
+		self.assertTrue(sheet["ref"].endswith("/2026-11/1-1"), sheet["ref"])
+		self.assertTrue(sheet["print_no"].startswith("RN-"), sheet["print_no"])
+		again = self._print([self.emp])["sheets"][0]
+		self.assertNotEqual(again["print_no"], sheet["print_no"],
+		                    "a reprint carries the same print number as the first page")
+
+	def test_more_than_a_hundred_people_is_refused_and_nothing_is_written(self):
+		"""AC-13. The count before and after proves "nothing was written", which a refusal
+		message on its own does not."""
+		self.an_approved_hr_change()
+		before = frappe.db.count(NOTICE)
+		self.refused(lambda: self._print([self.emp] * 2 + ["HR-EMP-%05d" % n for n in range(101)]),
+		             "up to 100 at a time")
+		self.assertEqual(frappe.db.count(NOTICE), before, "a refused batch still wrote rows")
+
+	def test_a_person_who_is_already_done_is_not_printed(self):
+		name = self.an_approved_hr_change()
+		self.confirm_as_employee(name)
+		before = frappe.db.count(NOTICE)
+		self.refused(lambda: self._print([self.emp]), "no changed days waiting")
+		self.assertEqual(frappe.db.count(NOTICE), before,
+		                 "a page with nothing on it still wrote a record saying the employee "
+		                 "was shown something")
+
+	def test_an_employee_and_an_out_of_scope_hr_user_are_refused(self):
+		"""AC-9's share of this story, and US-8."""
+		self.an_approved_hr_change()
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: register_notice.open_notices([self.emp], self.day), "for HR")
+		finally:
+			frappe.set_user("Administrator")
+		outsider = self.h._login("hrfarprint", ("HR Manager",))
+		before = frappe.db.count(NOTICE)
+		self.refused(lambda: self._print([self.emp], user=outsider),
+		             "outside the ones you look after")
+		self.assertEqual(frappe.db.count(NOTICE), before)
+
+	def test_no_reason_no_hours_and_no_change_text_are_stored_on_the_notice(self):
+		"""AC-15 and OPS-20. The record is a log, not a copy of the page."""
+		self.held_on(self.day)
+		req = self.fix(time="18:30", by=self.hr, note="secret words on the record")
+		self.decide(req, 1, by=self.h.hr2)
+		out = self._print([self.emp])
+		doc = frappe.get_doc(NOTICE, out["sheets"][0]["notice"])
+		blob = frappe.as_json(doc.as_dict())
+		for forbidden in ("secret words on the record", "18:30", "Out time"):
+			self.assertNotIn(forbidden, blob, forbidden + " is stored on the notice record")
+
+	def test_the_call_is_rate_limited_to_ten_a_minute_per_user(self):
+		"""AC-17's share: keyed on the user, never the address - a store shares one."""
+		self.assertEqual(register_notice.open_notices.__alvoraa_limit__[1:], ("user", 10, 60))
+
+	def test_the_printed_page_is_written_to_the_security_log(self):
+		from alvoraa_portal.tests.test_punch_fix_087 import security_lines_from_a_fresh_process
+
+		self.an_approved_hr_change()
+		lines = security_lines_from_a_fresh_process(lambda: self._print([self.emp]))
+		self.assertTrue(any("register_notice printed" in l for l in lines),
+		                "no security line for a released page: " + repr(lines))
+
+	# ── helpers ─────────────────────────────────────────────────────────
+	def _print(self, employees, month=None, user=None):
+		frappe.set_user(user or self.hr)
+		try:
+			return register_notice.open_notices(employees, month or self.day)
+		finally:
+			frappe.set_user("Administrator")
+
+	def _held_for(self, employee, day):
+		from alvoraa_portal.tests import test_held_day_085 as hd
+
+		for t, kind in (("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")):
+			frappe.get_doc({"doctype": "Employee Checkin", "employee": employee,
+			                "log_type": kind, "time": "%s %s:00" % (day, t)}
+			               ).insert(ignore_permissions=True)
+		att = frappe.get_doc({"doctype": "Attendance", "employee": employee,
+		                      "company": self.h.company, "attendance_date": day,
+		                      "status": "Present", "shift": hd.SHIFT,
+		                      "in_time": "%s 09:00:00" % day})
+		att.insert(ignore_permissions=True)
+		att.submit()
+		return att.name

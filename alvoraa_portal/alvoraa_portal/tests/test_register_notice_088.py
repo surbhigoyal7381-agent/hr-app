@@ -108,7 +108,23 @@ class RegisterNoticeCase(PunchFixCase):
 			frappe.set_user("Administrator")
 
 	def _rows_for_me(self, month=None, user=None):
-		return [r for r in self._list(month, user=user)["rows"] if r["employee"] == self.emp]
+		"""This person's row, found by WALKING the pages.
+
+		It used to read page one only, and that was fine until the site held more than 25
+		people with changed days - then three tests started failing with IndexError and a
+		paging assertion, because the fixture's worker had drifted onto page two. The list
+		is sorted by name and `log_view` commits (which breaks this suite's per-test
+		rollback), so how many people are ahead of this one is not something a test can
+		assume. Walking the pages also means these tests exercise paging for free."""
+		start, found, guard = 0, [], 0
+		while guard < 40:
+			guard += 1
+			out = self._list(month, start=start, user=user)
+			found += [r for r in out["rows"] if r["employee"] == self.emp]
+			start += out["page"]
+			if found or start >= out["total"]:
+				return found
+		return found
 
 	def an_approved_hr_change(self, time="18:30"):
 		"""One approved, unconfirmed, HR-filed change: exactly what a notice is printed for.
@@ -504,12 +520,16 @@ class TheHRList(RegisterNoticeCase):
 		out = self._list()
 		self.assertEqual(out["page"], 25)
 		self.assertEqual(out["start"], 0)
-		self.assertEqual(out["total"], len(out["rows"]))
+		# A page holds at most 25 and the total is the TRUE number, which is the whole point
+		# of sending both: "Showing 25 of 60" cannot be written from one of them. Asserted
+		# as min(), not as equality - the suite's own site has more than 25 people with
+		# changed days, which is how this assertion was caught being wrong.
+		self.assertEqual(len(out["rows"]), min(out["total"], 25))
 		later = self._list(start=1)
 		self.assertEqual(later["start"], 1)
 		self.assertEqual(later["total"], out["total"],
 		                 "the total changed between pages, so the summary cannot be trusted")
-		self.assertEqual(later["rows"], out["rows"][1:])
+		self.assertEqual(later["rows"][:len(out["rows"]) - 1], out["rows"][1:])
 
 	def test_the_call_is_post_only_and_rate_limited_per_user(self):
 		"""AC-17's share of this story: the limit is on the user, never the address, because
@@ -984,6 +1004,49 @@ class ThePhotoStaysPrivate(RegisterNoticeCase):
 			self.assertFalse(register_notice.notice_has_permission(
 				frappe.get_doc(NOTICE, notice), outsider))
 			self.refused(lambda: register_notice.open_photo(notice, 1), "outside the ones")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_hr_scoped_to_one_branch_cannot_reach_another_branchs_signed_page(self):
+		"""AC-57, and the gap the break-and-restore pass found.
+
+		**This test exists because breaking the branch rule broke nothing.** I dropped
+		`branch` from the scope condition and all 65 tests still passed: the only
+		out-of-scope HR user in the suite had no company permission either, so the filter
+		answered "nobody" for the wrong reason. The spec predicted exactly this - AC-57's
+		"fails first" is "replace the helper with a company-only check and watch the branch
+		test pass wrongly" - and there was no branch test to watch. A store's HR person
+		being able to read another store's signatures is the whole reason the rule is
+		company AND branch.
+		"""
+		notice = self._signed()
+		for b in ("A88A", "A88B"):
+			if not frappe.db.exists("Branch", b):
+				frappe.get_doc({"doctype": "Branch", "branch": b}).insert(ignore_permissions=True)
+		frappe.db.set_value("Employee", self.emp, "branch", "A88B")
+		branch_hr = self.h._login("hrbranch088", ("HR Manager",))
+		frappe.get_doc({"doctype": "User Permission", "user": branch_hr, "allow": "Company",
+		                "for_value": self.h.company, "apply_to_all_doctypes": 1}
+		               ).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "User Permission", "user": branch_hr, "allow": "Branch",
+		                "for_value": "A88A", "apply_to_all_doctypes": 1}
+		               ).insert(ignore_permissions=True)
+		frappe.clear_cache(user=branch_hr)
+
+		# The control: the same user IS in the right company, so a company-only rule would
+		# let them straight in. That is what makes this test able to catch the break.
+		condition = register_notice.notice_query_conditions(branch_hr)
+		self.assertIn("branch", condition,
+		              "the row filter does not mention the branch at all: " + condition)
+		self.assertIn("A88A", condition)
+		self.assertFalse(register_notice.notice_has_permission(
+			frappe.get_doc(NOTICE, notice), branch_hr),
+			"HR scoped to branch A88A can read a branch A88B employee's signed page")
+		frappe.set_user(branch_hr)
+		try:
+			self.refused(lambda: register_notice.open_photo(notice, 1), "outside the ones")
+			self.assertEqual(self._list(user=branch_hr)["rows"], [],
+			                 "another branch's people are on this HR user's list")
 		finally:
 			frappe.set_user("Administrator")
 

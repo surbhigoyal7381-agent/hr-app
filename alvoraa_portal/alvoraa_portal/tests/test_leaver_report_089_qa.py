@@ -79,11 +79,11 @@ class TestWhoCanReadTheNotice(_Base):
 		doc.save()
 		self._as(self.mgr_user)
 		mine = json.dumps(frappe.get_list("Notification Log", fields=["subject"],
-		                                  filters={"document_name": self.rpt}), default=str)
+		                                  filters={"document_type": "ToDo"}), default=str)
 		self.assertIn("Confirmed:", mine)
 		for who in (self.col_user, self.skip_user, self.hr_b_user, self.hr_a_user):
 			self._as(who)
-			self.assertEqual(frappe.get_list("Notification Log", filters={"document_name": self.rpt}), [], who)
+			self.assertEqual(frappe.get_list("Notification Log", filters={"document_type": "ToDo"}), [], who)
 
 
 class TestWhoIsRefusedPersonalDetails(_Base):

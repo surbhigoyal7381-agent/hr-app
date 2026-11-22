@@ -14,7 +14,7 @@ those is something this slice must not do (SEC-7, SEC-11, OPS-19, PRIV-2). A
 plain insert does none of them, and the ToDo carries the person in its own
 field instead of a reference.
 
-The one Custom Field, `alv_leaver_employee` (no index: OPS-21), is both the
+The one Custom Field, `alv_leaver_employee` (indexed, Surbhi 22 Nov: the locking read then touches one person's rows, not the whole ToDo table), is both the
 marker ("this ToDo is a leaver report") and the person. The last working day is
 the ToDo's own Due Date.
 """
@@ -38,7 +38,8 @@ _DATE_FORMAT = "dd MMM yyyy"
 
 LEAVER_FIELD = [
 	{"fieldname": FIELD, "fieldtype": "Data", "label": "Leaver report: employee",
-	 "insert_after": "allocated_to", "hidden": 1, "read_only": 1, "no_copy": 1},
+	 "insert_after": "allocated_to", "hidden": 1, "read_only": 1, "no_copy": 1,
+	 "search_index": 1},
 ]
 
 
@@ -263,12 +264,14 @@ def guard_share(doc, method=None):
 		        None, "docshare.validate")
 
 
-def _tell(user, employee, text):
+def _tell(user, todo, text):
 	"""One bell line. Type "Alert" is in Frappe's `notification_skip_email_types`,
 	so this never sends email (OPS-19). The portal bell lists it because
-	`notices.LEAVER` is "ToDo" (M-1). `text` is already escaped."""
+	`notices.LEAVER` is "ToDo" (M-1). `todo` is the name of one of the reporter's
+	own leaver ToDos, so Desk's bell link opens a real page (r2-2). `text` is
+	already escaped."""
 	frappe.get_doc({"doctype": "Notification Log", "type": "Alert", "for_user": user,
-	                "document_type": "ToDo", "document_name": employee,
+	                "document_type": "ToDo", "document_name": todo,
 	                "subject": text, "email_content": text}).insert(ignore_permissions=True)
 
 
@@ -285,7 +288,7 @@ def on_todo_update(doc, method=None):
 		return
 	try:
 		frappe.db.set_value("ToDo", {FIELD: doc.get(FIELD), "status": "Open"}, "status", "Closed")
-		_tell(doc.assigned_by, doc.get(FIELD), _(
+		_tell(doc.assigned_by, doc.name, _(
 			"The report about {0} was closed without being confirmed on {1}. "
 			"{0} stays on your team. Ask HR why.").format(
 				escape_html(person.employee_name), _day(nowdate())))
@@ -302,12 +305,16 @@ def on_employee_update(doc, method=None):
 		return
 	try:
 		rows = frappe.get_all("ToDo", filters={FIELD: doc.name, "status": "Open"},
-		                      fields=["assigned_by"], limit_page_length=0)
+		                      fields=["name", "assigned_by"], limit_page_length=0)
 		if not rows:
 			return
 		frappe.db.set_value("ToDo", {FIELD: doc.name, "status": "Open"}, "status", "Closed")
-		for reporter in sorted({r.assigned_by for r in rows if r.assigned_by}):
-			_tell(reporter, doc.name, _("Confirmed: {0} left on {1}.").format(
+		first = {}
+		for r in rows:
+			if r.assigned_by:
+				first.setdefault(r.assigned_by, r.name)
+		for reporter, todo in sorted(first.items()):
+			_tell(reporter, todo, _("Confirmed: {0} left on {1}.").format(
 				escape_html(doc.employee_name), _day(doc.relieving_date or nowdate())))
 	except Exception:
 		frappe.log_error(f"leaver report close failed for {doc.name}", "089 leaver report")
@@ -316,8 +323,13 @@ def on_employee_update(doc, method=None):
 def on_employee_trash(doc, method=None):
 	"""Deleting an Employee also deletes its leaver ToDos. Frappe removes ToDos
 	by `reference_type`, which these do not carry, so without this a deleted
-	person's name would stay behind in an orphan row."""
+	person's name would stay behind in an orphan row. The outcome lines in the
+	reporters' bells point at those ToDos, and Frappe's own link clean-up cannot
+	find them once the ToDos are gone, so they go first (r2-1)."""
 	try:
+		todos = frappe.get_all("ToDo", filters={FIELD: doc.name}, pluck="name", limit_page_length=0)
+		if todos:
+			frappe.db.delete("Notification Log", {"document_type": "ToDo", "document_name": ("in", todos)})
 		frappe.db.delete("ToDo", {FIELD: doc.name})
 	except Exception:
 		frappe.log_error(f"leaver report cleanup failed for {doc.name}", "089 leaver report")

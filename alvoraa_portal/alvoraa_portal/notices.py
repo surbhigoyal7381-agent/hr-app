@@ -106,6 +106,12 @@ def notices_feed(see_all=0):
 		         "document_type": ["in", [grooming.MARK, grooming.REVIEW]]},
 		fields=["name", "document_type", "document_name"], limit_page_length=0)
 
+	# A ToDo-typed row is listed only when it is a leaver outcome line (r2-3):
+	# Frappe writes ToDo rows of its own (mentions, shares, rules) and those
+	# are not this page's to show.
+	capped = len(rows) >= READ_CAP
+	leaver = _leaver_lines(user)
+	rows = [r for r in rows if r.document_type != LEAVER or r.name in leaver]
 	# An announcement row is the person's own copy: nothing more to gate.
 	alerts = [r for r in rows if r.document_type not in OWN_COPY]
 	# ONE gate call for both sets. `_readable` asks a fixed number of queries
@@ -121,7 +127,8 @@ def notices_feed(see_all=0):
 
 	unread_total = (
 		frappe.db.count("Notification Log",
-		                {"for_user": user, "document_type": ["in", list(OWN_COPY)], "read": 0})
+		                {"for_user": user, "document_type": ANNOUNCEMENT, "read": 0})
+		+ sum(1 for read in leaver.values() if not read)
 		+ sum(1 for r in open_alerts
 		      if (r.document_type, r.document_name) in allowed))
 
@@ -136,7 +143,7 @@ def notices_feed(see_all=0):
 		# The LIST was cut, not the count. `get_inbox` already returns `cap`,
 		# `shown` and `capped` per part for exactly this reason, so this is the
 		# same honesty on the sibling endpoint, not a new idea.
-		"capped": len(rows) >= READ_CAP,
+		"capped": capped,
 		"any": bool(shown),
 		"can_send": 1 if "Notice Sender" in frappe.get_roles(user) else 0,
 		"items": [{
@@ -149,6 +156,21 @@ def notices_feed(see_all=0):
 			"read": 1 if r.read else 0,
 		} for r in chosen],
 	}
+
+
+def _leaver_lines(user):
+	"""{Notification Log name: read} for the caller's own leaver outcome lines:
+	type "Alert" and pointing at a ToDo that carries the leaver marker."""
+	from alvoraa_portal.leaver_report import FIELD
+
+	mine = frappe.get_all("Notification Log",
+	                      filters={"for_user": user, "document_type": LEAVER, "type": "Alert"},
+	                      fields=["name", "document_name", "read"], limit_page_length=0)
+	if not mine:
+		return {}
+	real = set(frappe.get_all("ToDo", filters={"name": ["in", [r.document_name for r in mine]],
+	                                           FIELD: ["is", "set"]}, pluck="name"))
+	return {r.name: r.read for r in mine if r.document_name in real}
 
 
 @frappe.whitelist(methods=["POST"])

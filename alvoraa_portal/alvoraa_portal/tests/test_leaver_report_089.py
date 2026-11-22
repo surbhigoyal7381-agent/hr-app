@@ -658,11 +658,11 @@ class TestPins(_Base):
 		self.assertEqual(efr.MANAGER_EDITABLE, ())
 		self.assertEqual(org_settings.LEAVER_WRITERS, efr.LEVEL_2_WRITERS)
 
-	def test_the_custom_field_exists_once_and_has_no_index(self):
+	def test_the_custom_field_exists_once_and_is_indexed(self):
 		self.assertEqual(frappe.db.count("Custom Field", {"dt": "ToDo", "fieldname": FIELD}), 1)
 		self.assertTrue(leaver_report.after_migrate())
 		self.assertEqual(frappe.db.count("Custom Field", {"dt": "ToDo", "fieldname": FIELD}), 1)
-		self.assertFalse(frappe.db.get_value("Custom Field", f"ToDo-{FIELD}", "search_index"))
+		self.assertTrue(frappe.db.get_value("Custom Field", f"ToDo-{FIELD}", "search_index"))
 
 	def test_the_endpoint_is_post_only_and_rate_limited(self):
 		fn = leaver_report.send_leaver_report
@@ -856,6 +856,48 @@ class TestRoundTwo(_Base):
 		self._as(self.mgr_user)
 		notices.mark_all_seen()
 		self.assertEqual(notices.notices_feed()["unread"], 0)
+
+	# r2-1: deleting the Employee leaves no outcome line in the reporter's bell.
+	def test_deleting_the_employee_removes_the_outcome_line(self):
+		person = _employee("S089Gone2", company=self.company_a, reports_to=self.mgr)
+		self._as(self.mgr_user)
+		self._send(employee=person)
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Employee", person)
+		doc.status, doc.relieving_date = "Left", nowdate()
+		doc.save()
+		self.assertEqual(frappe.db.count("Notification Log", {"for_user": self.mgr_user, "document_type": "ToDo"}), 1)
+		frappe.delete_doc("Employee", person, force=True)
+		self.assertEqual(frappe.db.count("Notification Log", {"for_user": self.mgr_user, "document_type": "ToDo"}), 0)
+
+	# r2-2: Desk's bell opens /app/todo/<document_name>, so that must be a real ToDo of the reporter's.
+	def test_the_outcome_line_points_at_a_real_todo_the_reporter_can_open(self):
+		self._as(self.mgr_user)
+		self._send()
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Employee", self.rpt)
+		doc.status, doc.relieving_date = "Left", nowdate()
+		doc.save()
+		name = frappe.db.get_value("Notification Log", {"for_user": self.mgr_user, "document_type": "ToDo"},
+		                           "document_name")
+		self.assertTrue(frappe.db.get_value("ToDo", name, FIELD), "it is a leaver ToDo, not an employee id")
+		self._as(self.mgr_user)
+		self.assertTrue(frappe.has_permission("ToDo", "read", doc=name))
+
+	# r2-3: only a leaver outcome line is listed; a ToDo mention or share is not.
+	def test_a_mention_or_share_about_a_todo_is_not_in_the_portal_bell(self):
+		from alvoraa_portal import notices
+		frappe.set_user("Administrator")
+		todo = frappe.get_doc({"doctype": "ToDo", "description": "S089 plain task",
+		                       "allocated_to": self.mgr_user}).insert(ignore_permissions=True)
+		for kind in ("Mention", "Share", "Alert"):
+			frappe.get_doc({"doctype": "Notification Log", "type": kind, "for_user": self.mgr_user,
+			                "document_type": "ToDo", "document_name": todo.name,
+			                "subject": f"S089 {kind} <strong>x</strong>"}).insert(ignore_permissions=True)
+		self._as(self.mgr_user)
+		feed = notices.notices_feed(see_all=1)
+		self.assertEqual([i for i in feed["items"] if "S089" in i["text"]], [])
+		self.assertEqual(feed["unread"], 0)
 
 	# M-2: two requests that overlap: the second must find the first one's rows,
 	# although it took its read snapshot before the first committed.

@@ -928,3 +928,29 @@ class TestRoundTwo(_Base):
 		frappe.db.rollback()
 		frappe.set_user("Administrator")
 		self.assertEqual(len(self._todos()), 1, "exactly one report, one confirmer")
+
+	# r3-1: "mark all seen" clears the leaver line but not a Desk Mention the page never showed.
+	def test_mark_all_seen_leaves_a_todo_mention_unread(self):
+		from alvoraa_portal import notices
+		self._as(self.mgr_user)
+		self._send()
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Employee", self.rpt)
+		doc.status, doc.relieving_date = "Left", nowdate()
+		doc.save()
+		todo = frappe.get_doc({"doctype": "ToDo", "description": "S089 plain task",
+		                       "allocated_to": self.mgr_user}).insert(ignore_permissions=True)
+		mention = frappe.get_doc({"doctype": "Notification Log", "type": "Mention", "for_user": self.mgr_user,
+		                          "document_type": "ToDo", "document_name": todo.name,
+		                          "subject": "S089 Mention"}).insert(ignore_permissions=True)
+		frappe.db.commit()
+		self._as(self.mgr_user)
+		notices.mark_all_seen()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Notification Log", mention.name, "read"), 0)
+		line = frappe.db.get_value("Notification Log", {"for_user": self.mgr_user, "type": "Alert",
+		                                                "document_type": "ToDo"}, "read")
+		self.assertEqual(line, 1)
+		frappe.db.delete("Notification Log", {"name": mention.name})
+		frappe.delete_doc("ToDo", todo.name, force=True, ignore_permissions=True)
+		frappe.db.commit()

@@ -213,6 +213,12 @@ def mark_all_seen():
 	frappe.db.set_value(
 		"Notification Log",
 		{"for_user": user, "read": 0,
-		 "document_type": ["in", list(NOTICE_DOCTYPES)]},
+		 "document_type": ["in", [d for d in NOTICE_DOCTYPES if d != LEAVER]]},
 		"read", 1, update_modified=False)
+	# ToDo rows are not all this page's: only the leaver outcome lines are shown
+	# (r2-3), so only those are cleared, by name. A Desk Mention stays unread (r3-1).
+	unread = [n for n, read in _leaver_lines(user).items() if not read]
+	if unread:
+		frappe.db.set_value("Notification Log", {"name": ["in", unread], "for_user": user},
+		                    "read", 1, update_modified=False)
 	return {"ok": 1}

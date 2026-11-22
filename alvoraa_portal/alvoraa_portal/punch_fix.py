@@ -43,9 +43,19 @@ ASIDE_ON = "alvoraa_fix_aside_on"
 MARKS = (ADDED, ASIDE, ASIDE_BY, ASIDE_ON)
 HR_ROLES = {"HR User", "HR Manager", "System Manager"}
 
+# Slice 088. The notice whose printed page this change was signed on. A SECOND way out of
+# the confirm, for the people who have no app at all: the employee signs the paper and HR
+# records it. Deliberately not `alvoraa_confirmed_*`, because the employee's own screen has
+# to say a different sentence - "You signed for it on the register", not "You confirmed it
+# in the app" - and because the two have different evidence behind them. The field is
+# created by `register_notice.after_migrate`, which owns slice 088's schema; the name lives
+# here because this is the module that reads it.
+SIGNED_NOTICE = "alvoraa_signed_notice"
+
 SERVER_OWNED = ("alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_replaces",
                 "alvoraa_disputed_by", "alvoraa_disputed_on", "alvoraa_dispute_reason",
-                "alvoraa_undone_by", "alvoraa_undone_on", "alvoraa_undone_reason")
+                "alvoraa_undone_by", "alvoraa_undone_on", "alvoraa_undone_reason",
+                SIGNED_NOTICE)
 
 
 # What a Confirm vouches for: the day, the time and kind, the punches to set aside, the words.
@@ -177,6 +187,16 @@ def columns_ready():
 		return bool(frappe.db.has_column(CHECKIN, ASIDE) and frappe.db.has_column(REQUEST, "alvoraa_set_aside")
 		            and frappe.db.has_column(REQUEST, "alvoraa_needs_confirm")
 		            and frappe.db.has_column(REQUEST, "alvoraa_undone_on"))
+	except Exception:
+		return False
+
+
+def signed_column_ready():
+	"""False until slice 088's migrate has run on this site. Kept apart from `columns_ready()`
+	on purpose: that one is 087's gate, and folding this column into it would switch 087's own
+	features off on a site that has 087 but not yet 088."""
+	try:
+		return bool(frappe.db.has_column(REQUEST, SIGNED_NOTICE))
 	except Exception:
 		return False
 
@@ -441,6 +461,9 @@ def _own_the_confirm_fields(doc, before):
 		doc.alvoraa_needs_confirm = 0 if (not asks or filer in ("Administrator", login)
 		                                  or manager_adds) else 1
 		doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
+		# Slice 088: a brand new request has never been on a printed page. Cleared here as well
+		# as owned above, so a client that sends the field on create cannot pre-sign its own change.
+		doc.set(SIGNED_NOTICE, None)
 		doc.alvoraa_disputed_by = doc.alvoraa_disputed_on = doc.alvoraa_dispute_reason = None
 		doc.alvoraa_undone_by = doc.alvoraa_undone_on = doc.alvoraa_undone_reason = None
 		# Only `confirm` sets the link (a process flag a client cannot send), so it cannot be used to
@@ -801,6 +824,15 @@ def _unconfirmed_filters():
 	f = {"alvoraa_needs_confirm": 1, "alvoraa_confirmed_on": ("is", "not set"), "docstatus": ("<", 2),
 	     "alvoraa_undone_on": ("is", "not set"),
 	     "alvoraa_review_status": ("not in", ["Declined", "Withdrawn"])}
+	# Slice 088. Signing the printed register is the other way out, and the only one the staff
+	# this matters to actually have: no app, no screen, a thumb print on paper. Added HERE rather
+	# than at each reader for the reason `confirms_are_on` gives - the slip gate, the
+	# before-payroll list, the Workings column, the day sheet and Home all read this one
+	# function, so they all learn it at once and none of them can learn it differently.
+	# Guarded on the column: between a deploy and its migrate the field does not exist, and a
+	# filter naming a missing column would take the salary slip down rather than let it through.
+	if signed_column_ready():
+		f[SIGNED_NOTICE] = ("is", "not set")
 	return f
 
 
@@ -1024,11 +1056,42 @@ def undo_change(name, reason):
 
 
 def record_register_signature(requests, notice):
-	"""The seam with slice 088 (088's 02-functional-spec section 8.5). 088 implements it: it sets
-	`alvoraa_signed_notice = notice` on each request in the list under a process flag, with no commit,
-	called only from its own transaction. Declared here so 087 and 088 agree the name and the shape.
-	Until 088 lands it refuses in plain words."""
-	frappe.throw(_("Recording a signed register is not available yet."))
+	"""The seam with slice 088 (088 spec section 8.5): these changed days were on a page the
+	employee signed, so the confirm they were waiting for has happened on paper.
+
+	**It writes and it does not decide.** Who may record, whether the page is the latest one,
+	whether the recorder is the filer, whether the content still matches what was printed -
+	every one of those is `register_notice.record`'s to answer, and it answers them before it
+	calls this. The reason for the split is the one the slice exists for: the decision needs
+	the notice, the photo and HR's scope, none of which belong in this module.
+
+	No commit. The caller owns the transaction, so a photo that fails to save takes the
+	signature with it rather than leaving a change marked signed with no evidence behind it.
+
+	It is deliberately quiet about a request it cannot mark: a request that has since been
+	confirmed in the app, withdrawn or undone is simply left alone. The page the employee
+	signed was true when it was printed; a change that has moved on since is `register_notice`'s
+	"changed after printing" state, not an error to throw in HR's face mid-save."""
+	if not signed_column_ready():
+		frappe.throw(_("This site has not been updated for the signed register yet."))
+	if not notice or not frappe.db.exists("Alvoraa Register Notice", notice):
+		frappe.throw(_("That notice does not exist."))
+	marked = []
+	for name in (requests or []):
+		row = frappe.db.get_value(REQUEST, name,
+		                          ["name", "docstatus", "alvoraa_confirmed_on", "alvoraa_undone_on",
+		                           "alvoraa_review_status", SIGNED_NOTICE], as_dict=True)
+		if not row or row.docstatus == 2 or row.get(SIGNED_NOTICE) \
+				or row.alvoraa_confirmed_on or row.alvoraa_undone_on \
+				or row.alvoraa_review_status in ("Declined", "Withdrawn"):
+			continue
+		frappe.db.set_value(REQUEST, name, SIGNED_NOTICE, notice, update_modified=False)
+		marked.append(name)
+	if marked:
+		access.security_logger().info(
+			"punch_fix register signature notice=%s requests=%s user=%s",
+			notice, ",".join(marked), frappe.session.user)
+	return marked
 
 
 @frappe.whitelist(methods=["POST"])

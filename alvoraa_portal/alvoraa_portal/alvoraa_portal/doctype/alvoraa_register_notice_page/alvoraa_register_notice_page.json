@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-11-22 06:00:00.000000",
+ "description": "One photo of one signed page. Added only when HR records the signature. The file is private and its name says nothing about the person (081-PRIV-2).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "page_no",
+  "photo"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "description": "Which printed page this photo shows.",
+   "fieldname": "page_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Page No",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 6,
+   "description": "The signed page. Private, and only reachable through the logged endpoint.",
+   "fieldname": "photo",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Signed Page",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-22 06:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Register Notice Page",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

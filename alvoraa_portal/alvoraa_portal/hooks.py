@@ -789,6 +789,11 @@ after_migrate = [
     # because a site built with `bench install-app` never runs a migrate.
     "alvoraa_portal.held_day.after_migrate",
     "alvoraa_portal.punch_fix.after_migrate",
+    # Slice 088: the link from a changed day to the printed page the employee signed,
+    # for the staff who have no app. AFTER punch_fix, because it is inserted after that
+    # module's `alvoraa_replaces` field, and a Custom Field with an `insert_after` naming
+    # a field that does not exist yet lands at the bottom of the form instead.
+    "alvoraa_portal.register_notice.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
@@ -882,6 +887,11 @@ after_install = [
     # because a site built with `bench install-app` never runs a migrate.
     "alvoraa_portal.held_day.after_migrate",
     "alvoraa_portal.punch_fix.after_migrate",
+    # Slice 088: the link from a changed day to the printed page the employee signed,
+    # for the staff who have no app. AFTER punch_fix, because it is inserted after that
+    # module's `alvoraa_replaces` field, and a Custom Field with an `insert_after` naming
+    # a field that does not exist yet lands at the bottom of the form instead.
+    "alvoraa_portal.register_notice.after_migrate",
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.

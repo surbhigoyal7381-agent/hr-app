@@ -1,0 +1,60 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-11-22 06:00:00.000000",
+ "description": "One changed day that was on a printed notice page. It names the request and the page it was printed on, and a hash of what the request said at that moment, so a later edit can be told apart from the page the employee actually read (088 SEC-3).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "request",
+  "page_no",
+  "content_hash"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "description": "The Attendance Request this line was about.",
+   "fieldname": "request",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Request",
+   "options": "Attendance Request",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "columns": 2,
+   "description": "Which printed page carried it. The server decides this, not the browser.",
+   "fieldname": "page_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Page No",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "description": "SHA-256 of the values of punch_fix.CONFIRMED_CONTENT at print time. Holds no reason text, no time and no hours - only a fingerprint of them (088 OPS-20).",
+   "fieldname": "content_hash",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Content Hash",
+   "length": 64,
+   "read_only": 1,
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-22 06:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Register Notice Change",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

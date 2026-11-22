@@ -3392,7 +3392,7 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
 .pfx-lnk{background:none;border:0;color:var(--primary);font-weight:600;font-size:14px;min-height:44px;padding:0 4px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .pfx-bar-send{position:sticky;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -4px 16px rgba(0,0,0,.08);padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-top:12px}
 .pfx-sum{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.pfx-sum small{display:block;font-weight:400;color:var(--text3);font-size:12px}
-.pfx-scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:300;display:flex;align-items:flex-end;justify-content:center}
+.pfx-scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1170;display:flex;align-items:flex-end;justify-content:center}
 .pfx-sheet{width:100%;max-width:560px;background:var(--surface);border-radius:16px 16px 0 0;padding:16px 16px 24px;max-height:90%;overflow:auto}
 .pfx-sheet h2{margin:0;font-size:var(--fs-lg);line-height:24px}
 .pfx-ctx{font-size:14px;color:var(--text2);margin:4px 0 16px}

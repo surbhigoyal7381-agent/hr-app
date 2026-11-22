@@ -6201,11 +6201,17 @@ function acDetail(x) {
   }
   html += gmBox(x);
 
-  if (d.is_self && x.attendance) {
+  /* Slice 084 still holds on the person's own day: a day older than the employee window that is not Held and
+     has no request yet gets the sentence below, never the timeline (the server would refuse the send). */
+  if (d.is_self && x.attendance && !(x.own_window === "outside" && !x.held && !x.request)) {
     /* Slice 087: the person's own day is the timeline (loaded from `day_sheet`). Today's
        reason form stays one tap away for something that is not about a punch (P15). */
     var other = (x.request && !x.request.punch_fix) ? acReqCard(x.request, true) : (d.can_request ? acForm(x) : "");
     setTimeout(function () { acPfLoad(x.date); }, 0);
+    if (x.own_window === "joining") {
+      html += '<p class="ac-help ac-join" role="status">'
+        + gpEsc(drT("This is your joining day, so you can always ask about it, however long ago it was.")) + "</p>";
+    }
     return html + '<div class="pfx" id="pfx-' + gpEsc(x.date) + '"><p class="ac-help">Loading the day&hellip;</p></div>'
       + (other ? '<p class="ac-help"><button type="button" class="pfx-lnk" onclick="acPfOther(&quot;' + gpEsc(x.date)
         + '&quot;)">Not about a punch? Something else went wrong</button></p><div id="pfx-other-' + gpEsc(x.date) + '" hidden>' + other + "</div>" : "")

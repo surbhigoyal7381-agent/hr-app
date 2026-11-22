@@ -573,7 +573,8 @@ function putForm(reason) {
   const toasts = () => [...doc.querySelectorAll("#toast-wrap .toast")].map(t => t.textContent);
   const putTime = () => {
     const h = doc.createElement("div");
-    h.innerHTML = '<input id="ac-missing-time" value="18:30">';
+    // ALV-418: a reason is required on every request, so the form carries one (the rule is not weakened).
+    h.innerHTML = '<input id="ac-missing-time" value="18:30"><textarea id="ac-held-reason">Forgot to scan out</textarea>';
     doc.body.appendChild(h);
   };
   window.acState.employee = null;

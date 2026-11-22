@@ -101,6 +101,10 @@ class _Base(FrappeTestCase):
 
 	def _clean(self):
 		frappe.db.delete("ToDo", {FIELD: ("is", "set")})
+		# `_assign` is only ever written by Frappe's own ToDo code when a ToDo has
+		# a reference, so a stale value here is left over from a run that broke
+		# that rule on purpose (the break test). Start every test from empty.
+		frappe.db.set_value("Employee", self.rpt, "_assign", None, update_modified=False)
 		users = [self.mgr_user, self.hr_a_user, self.hr_b_user, self.skip_user]
 		frappe.db.delete("Notification Log", {"for_user": ("in", users), "document_type": "Employee"})
 		frappe.db.commit()

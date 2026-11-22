@@ -7071,8 +7071,14 @@ function acForm(x) {
     + '<option value="">Choose a reason&hellip;</option>' + opts + "</select>"
     + '<p class="ac-help" id="ac-reason-help">Pick the one that matches. '
     + "It decides what the day becomes if HR agrees.</p>"
-    + '<label class="form-label">Anything HR should know</label>'
-    + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>'
+    /* ALV-432: filing for somebody else needs a written reason (ALV-418,
+       counsel 21 Nov) and the server refuses one without it - so the form says
+       so. A person's own request is unchanged: the reason picked above is enough. */
+    + (acState.data && acState.data.is_self === false
+        ? '<label class="form-label" for="ac-explain">Reason <span class="pfx-req">Required</span></label>'
+          + '<textarea id="ac-explain" required aria-required="true" placeholder="Say briefly what happened."></textarea>'
+        : '<label class="form-label">Anything HR should know</label>'
+          + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>')
     /* Slice 081: the file block, with its notice ABOVE the two buttons inside
        the same block. Optional, and Send works with nothing attached and says
        nothing about it - there is no confirm, because a confirm on an optional
@@ -7135,6 +7141,14 @@ window.acSubmit = async function (date) {
      in words somebody can act on, instead. */
   if (!date || (acState.data && acState.data.is_self === false && !other)) {
     toast("This page has lost track of whose day this is. Reload it and try again.", "err");
+    return;
+  }
+  /* ALV-432: the same rule the server applies to raise_for_report. Said here,
+     with what was typed left in place, rather than as a refusal after sending. */
+  if (other && !(explain || "").trim()) {
+    toast("Write a reason so HR can decide.", "err");
+    var ex = document.getElementById("ac-explain");
+    if (ex) ex.focus();
     return;
   }
 
@@ -16550,8 +16564,10 @@ function trAskForm(r) {
     + '<label class="form-label">What happened on this day?</label>'
     + '<select id="tr-reason"><option value="">Choose a reason&hellip;</option>'
     + opts + "</select>"
-    + '<label class="form-label">Anything HR should know</label>'
-    + '<textarea id="tr-explain" placeholder="Say briefly what happened."></textarea>'
+    /* ALV-432: always somebody else's day, so a written reason is required
+       (ALV-418), as the server already insists. */
+    + '<label class="form-label" for="tr-explain">Reason <span class="pfx-req">Required</span></label>'
+    + '<textarea id="tr-explain" required aria-required="true" placeholder="Say briefly what happened."></textarea>'
     + '<p class="ac-help">HR decides this. Your name goes on the request, so '
     + "they know you are standing behind it.</p>"
     + '<div class="ac-acts"><button class="btn btn-primary" onclick="trSubmit(&quot;'
@@ -16563,6 +16579,13 @@ window.trSubmit = async function (employee, date) {
   var reason = (document.getElementById("tr-reason") || {}).value;
   var explain = (document.getElementById("tr-explain") || {}).value;
   if (!reason) { toast("Please choose a reason.", "err"); return; }
+  /* ALV-432: a written reason, as the server requires for a report's day. */
+  if (!(explain || "").trim()) {
+    toast("Write a reason so HR can decide.", "err");
+    var ex = document.getElementById("tr-explain");
+    if (ex) ex.focus();
+    return;
+  }
   /* One request per press, and nothing incomplete - the same two rules as
      `acSubmit`, for the same reason. */
   if (acSending) return;

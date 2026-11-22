@@ -134,8 +134,20 @@ def qualifying_changes(month, employees=None, scope=None, with_content=False):
 	**It returns no reason, no time and no hours.** Only what the list and the state need.
 	The sheet reads the request itself, under its own permission check, when it is printed.
 	"""
+	# **The scope is resolved to people, not spread onto the request.** The first version
+	# did `dict(permitted_employee_filters())` straight into these filters, and it worked
+	# only because no test held a Branch permission: Attendance Request has a `company`
+	# column but no `branch` one, so the first time a store's HR person opened the list it
+	# would have died on "Unknown column 'branch'". Found by the branch test that the
+	# break-and-restore pass showed was missing. One extra query returning the permitted
+	# employee ids is the honest cost of a scope with two levels in it.
 	scope = scope if scope is not None else access.permitted_employee_filters()
-	filters = dict(scope)
+	allowed = set(frappe.get_all("Employee", filters=dict(scope), pluck="name",
+	                             ignore_permissions=True))
+	employees = [e for e in (employees or allowed) if e in allowed]
+	if not employees:
+		return []
+	filters = {}
 	# `alvoraa_review_status`, not `status`: Attendance Request has no `status` column at
 	# all. The first version of this query used one, read from the spec's prose rather than
 	# from the table, and every list test died on "Unknown column 'status'". The approval
@@ -143,8 +155,7 @@ def qualifying_changes(month, employees=None, scope=None, with_content=False):
 	filters.update({"docstatus": 1, "alvoraa_review_status": "Approved",
 	                "from_date": ("between", [str(month), str(get_last_day(month))]),
 	                "alvoraa_undone_on": ("is", "not set")})
-	if employees:
-		filters["employee"] = ("in", list(employees))
+	filters["employee"] = ("in", list(employees))
 	fields = ["name", "employee", "owner", "modified", "from_date",
 	          "alvoraa_missing_time", "alvoraa_set_aside",
 	          "alvoraa_confirmed_on", "alvoraa_needs_confirm", SIGNED_NOTICE]

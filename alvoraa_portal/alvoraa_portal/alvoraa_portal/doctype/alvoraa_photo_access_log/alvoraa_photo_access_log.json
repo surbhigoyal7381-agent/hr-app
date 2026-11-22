@@ -67,7 +67,7 @@
   {
    "fieldname": "source",
    "fieldtype": "Select",
-   "options": "Check-in photo\nEmployee document\nExpense bill\nDay-fix evidence\nJoiner export (masked)\nJoiner export (not masked)\nJoiner purge",
+   "options": "Check-in photo\nEmployee document\nExpense bill\nDay-fix evidence\nJoiner export (masked)\nJoiner export (not masked)\nJoiner purge\nRegister signature photo",
    "label": "What was opened",
    "default": "Check-in photo",
    "read_only": 1,

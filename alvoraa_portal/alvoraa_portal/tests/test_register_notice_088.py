@@ -18,6 +18,8 @@ Three habits the earlier slices paid for:
   value. The return value is what the code believes; the row is what payroll will read.
 """
 
+import os
+
 import frappe
 from frappe.utils import now_datetime
 
@@ -27,6 +29,7 @@ from alvoraa_portal.tests.test_punch_fix_087 import PunchFixCase
 
 NOTICE = "Alvoraa Register Notice"
 REQUEST = "Attendance Request"
+PKG = os.path.dirname(os.path.dirname(__file__))
 
 
 def setUpModule():
@@ -73,6 +76,39 @@ class RegisterNoticeCase(PunchFixCase):
 		att.insert(ignore_permissions=True)
 		att.submit()
 		return att.name
+
+	def _print(self, employees, month=None, user=None):
+		frappe.set_user(user or self.hr)
+		try:
+			return register_notice.open_notices(employees, month or self.day)
+		finally:
+			frappe.set_user("Administrator")
+
+	def _held_for(self, employee, day):
+		"""Three punches and a submitted day for somebody other than the fixture's worker."""
+		from alvoraa_portal.tests import test_held_day_085 as hd
+
+		for t, kind in (("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")):
+			frappe.get_doc({"doctype": "Employee Checkin", "employee": employee,
+			                "log_type": kind, "time": "%s %s:00" % (day, t)}
+			               ).insert(ignore_permissions=True)
+		att = frappe.get_doc({"doctype": "Attendance", "employee": employee,
+		                      "company": self.h.company, "attendance_date": day,
+		                      "status": "Present", "shift": hd.SHIFT,
+		                      "in_time": "%s 09:00:00" % day})
+		att.insert(ignore_permissions=True)
+		att.submit()
+		return att.name
+
+	def _list(self, month=None, start=0, user=None):
+		frappe.set_user(user or self.hr)
+		try:
+			return register_notice.list_people(month or self.day, start)
+		finally:
+			frappe.set_user("Administrator")
+
+	def _rows_for_me(self, month=None, user=None):
+		return [r for r in self._list(month, user=user)["rows"] if r["employee"] == self.emp]
 
 	def an_approved_hr_change(self, time="18:30"):
 		"""One approved, unconfirmed, HR-filed change: exactly what a notice is printed for.
@@ -313,8 +349,12 @@ class TheHRList(RegisterNoticeCase):
 		self.assertEqual(mine[0]["changed_days"], 1)
 		self.assertEqual(mine[0]["open_days"], 1)
 		self.assertEqual(mine[0]["state"], "not_printed")
-		self.assertEqual(out["waiting"], 1)
-		self.assertEqual(out["done"], 0)
+		# The summary counts everybody in HR's scope. It cannot be asserted as an absolute
+		# here: `log_view` commits, which breaks this suite's per-test rollback, so rows
+		# from earlier tests are still in the month. Asserted as arithmetic plus this
+		# person's share - which is what the screen actually needs to be right.
+		self.assertEqual(out["done"] + out["waiting"], out["total"])
+		self.assertGreaterEqual(out["waiting"], 1)
 
 	def test_the_employees_own_change_and_a_break_glass_one_are_not_on_the_list(self):
 		"""AC-2, two of its cases. The control is in the test above: an HR-filed change IS listed."""
@@ -479,15 +519,9 @@ class TheHRList(RegisterNoticeCase):
 		self.assertIn("POST", getattr(register_notice.list_people, "methods", ["POST"]))
 
 	# ── helpers ─────────────────────────────────────────────────────────
-	def _list(self, month=None, start=0, user=None):
-		frappe.set_user(user or self.hr)
-		try:
-			return register_notice.list_people(month or self.day, start)
-		finally:
-			frappe.set_user("Administrator")
 
-	def _rows_for_me(self, month=None, user=None):
-		return [r for r in self._list(month, user=user)["rows"] if r["employee"] == self.emp]
+
+
 
 
 class ThePrintCall(RegisterNoticeCase):
@@ -665,25 +699,324 @@ class ThePrintCall(RegisterNoticeCase):
 		self.assertTrue(any("register_notice printed" in l for l in lines),
 		                "no security line for a released page: " + repr(lines))
 
+
+
+def _a_jpeg(colour=None, size=(40, 40)):
+	"""A real JPEG, because 081's decoder reads magic bytes and then asks Pillow. A made-up
+	byte string would be refused for the wrong reason and prove nothing.
+
+	**Every call gives DIFFERENT bytes unless a colour is named**, and that is not a detail.
+	The first version returned the same grey square each time, and thirteen tests died on
+	"That photo was already used" - the SEC-7 reuse check doing its job on a fixture that
+	was lying about the world. Two HR people photographing two signed pages never produce
+	byte-identical files. The reuse test names its colour so it can hand the same photo in
+	twice on purpose."""
+	import base64, io as _io, random
+
+	from PIL import Image
+
+	if colour is None:
+		colour = (random.randrange(256), random.randrange(256), random.randrange(256))
+	buf = _io.BytesIO()
+	Image.new("RGB", size, colour).save(buf, format="JPEG")
+	return base64.b64encode(buf.getvalue()).decode()
+
+
+class RecordingTheSignature(RegisterNoticeCase):
+	"""US-4 and US-5, AC-27 to AC-43."""
+
+	def test_a_second_hr_person_records_signed_and_the_slip_block_lifts(self):
+		"""AC-27, end to end: the stored values, the photo, and the pay gate."""
+		name = self.an_approved_hr_change()
+		out = self._print([self.emp])
+		notice = out["sheets"][0]["notice"]
+		self.assertEqual(punch_fix.unconfirmed_changes([self.emp], self.day, self.day)[0]["name"],
+		                 name, "fixture is wrong: the change is not holding the slip")
+
+		res = self._record(notice, "Signed", photos=[_a_jpeg()], user=self.h.hr2)
+		self.assertEqual(res["marked"], 1)
+		doc = frappe.get_doc(NOTICE, notice)
+		self.assertEqual(doc.outcome, "Signed")
+		self.assertEqual(doc.recorded_by, self.h.hr2)
+		self.assertTrue(doc.recorded_on)
+		self.assertEqual(len(doc.pages), 1)
+		self.assertEqual(frappe.db.get_value(REQUEST, name, punch_fix.SIGNED_NOTICE), notice)
+		self.assertEqual(punch_fix.unconfirmed_changes([self.emp], self.day, self.day), [],
+		                 "the slip is still held after the register was signed")
+
+	def test_one_photo_per_page_is_required_and_the_message_counts_both(self):
+		"""AC-28."""
+		for n in range(6):
+			self.an_approved_hr_change("1%d:30" % (n + 2))
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self.assertEqual(frappe.db.get_value(NOTICE, notice, "page_count"), 2)
+		self.refused(lambda: self._record(notice, "Signed", photos=[_a_jpeg()],
+		                                 user=self.h.hr2), "Add 2 photos", "You added 1")
+		self.assertEqual(frappe.db.get_value(NOTICE, notice, "outcome"), "Printed")
+		res = self._record(notice, "Signed",
+		                   photos=[_a_jpeg((10, 20, 30)), _a_jpeg((40, 50, 60))],
+		                   user=self.h.hr2)
+		self.assertEqual(res["photos"], 2)
+
+	def test_a_change_edited_since_the_print_stays_open_and_is_named_back(self):
+		"""AC-29, the one the spec marks "fails first". The employee signed a page that said
+		something else, so that change is not marked - and the others on the page still are."""
+		first = self.an_approved_hr_change("18:30")
+		second = self.an_approved_hr_change("19:30")
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		frappe.db.set_value(REQUEST, second, "explanation", "HR changed the words after printing")
+
+		res = self._record(notice, "Signed", photos=[_a_jpeg()], user=self.h.hr2)
+		self.assertEqual(res["marked"], 1)
+		self.assertEqual(res["stale"], [second])
+		self.assertEqual(frappe.db.get_value(REQUEST, first, punch_fix.SIGNED_NOTICE), notice)
+		self.assertFalse(frappe.db.get_value(REQUEST, second, punch_fix.SIGNED_NOTICE),
+		                 "a change edited after the print was marked as signed anyway")
+
+	def test_the_caller_cannot_choose_which_days_are_covered(self):
+		"""AC-31. The covered days come from the record; a list in the body is ignored."""
+		name = self.an_approved_hr_change("18:30")
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		other = self.an_approved_hr_change("19:30")      # printed on no page
+		self._record(notice, "Signed", photos=[_a_jpeg()], user=self.h.hr2,
+		             extra={"requests": [other], "changes": [other]})
+		self.assertEqual(frappe.db.get_value(REQUEST, name, punch_fix.SIGNED_NOTICE), notice)
+		self.assertFalse(frappe.db.get_value(REQUEST, other, punch_fix.SIGNED_NOTICE),
+		                 "a day the caller named was marked although it was on no page")
+
+	def test_an_older_notice_cannot_be_recorded_once_a_newer_one_is_printed(self):
+		"""AC-33, D-10: stops an old paper being produced after a reprint."""
+		self.an_approved_hr_change()
+		first = self._print([self.emp])["sheets"][0]["notice"]
+		second = self._print([self.emp])["sheets"][0]["notice"]
+		self.assertNotEqual(first, second)
+		self.refused(lambda: self._record(first, "Signed", photos=[_a_jpeg()],
+		                                 user=self.h.hr2), "A newer notice was printed")
+		self._record(second, "Signed", photos=[_a_jpeg()], user=self.h.hr2)
+
+	def test_a_notice_cannot_be_answered_twice(self):
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self._record(notice, "Signed", photos=[_a_jpeg()], user=self.h.hr2)
+		self.refused(lambda: self._record(notice, "Not right", reason="later", user=self.hr),
+		             "already been answered")
+
+	def test_the_filer_is_refused_on_the_endpoint_and_another_hr_person_succeeds(self):
+		"""AC-58. The screen hides the button; this proves the server refuses it anyway."""
+		self.an_approved_hr_change()                     # filed by self.hr
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self.refused(lambda: self._record(notice, "Signed", photos=[_a_jpeg()], user=self.hr),
+		             "another HR person records")
+		self.assertEqual(frappe.db.get_value(NOTICE, notice, "outcome"), "Printed")
+		res = self._record(notice, "Signed", photos=[_a_jpeg()], user=self.h.hr2)
+		self.assertEqual(res["marked"], 1)
+
+	def test_a_photo_cannot_be_used_twice(self):
+		"""AC-36, SEC-7: one clear photo of one signed page must not stand for a shop."""
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		same = _a_jpeg((7, 8, 9))
+		self._record(notice, "Signed", photos=[same], user=self.h.hr2)
+
+		other = self.h._login("worker2reuse", ())
+		emp2 = self.h._employee("Worker2Reuse", other)
+		self._held_for(emp2, self.day)
+		req = self.fix(time="18:30", by=self.hr, employee=emp2)
+		self.decide(req, 1, by=self.h.hr2)
+		notice2 = self._print([emp2])["sheets"][0]["notice"]
+		self.refused(lambda: self._record(notice2, "Signed", photos=[same], user=self.h.hr2),
+		             "already used")
+
+	def test_a_pdf_and_rubbish_are_refused_and_nothing_is_recorded(self):
+		"""AC-34's share: a PDF is a scan made somewhere else, not a photo of a page
+		somebody just signed."""
+		import base64
+
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		pdf = base64.b64encode(b"%PDF-1.4 not really").decode()
+		self.refused(lambda: self._record(notice, "Signed", photos=[pdf], user=self.h.hr2),
+		             "not a PDF")
+		zip_as_jpg = base64.b64encode(b"PK\x03\x04 pretending").decode()
+		self.refused(lambda: self._record(notice, "Signed", photos=[zip_as_jpg],
+		                                 user=self.h.hr2))
+		self.assertEqual(frappe.db.get_value(NOTICE, notice, "outcome"), "Printed")
+		self.assertEqual(frappe.db.count("File", {"attached_to_name": notice}), 0,
+		                 "a refused photo was stored anyway")
+
+	def test_the_stored_photo_is_private_named_by_us_and_carries_no_exif(self):
+		"""AC-34, AC-35 and AC-44's first half."""
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self._record(notice, "Signed", photos=[_a_jpeg()], user=self.h.hr2)
+		f = frappe.get_doc("File", {"attached_to_doctype": NOTICE, "attached_to_name": notice})
+		self.assertTrue(f.is_private, "the signed page is a public file")
+		self.assertEqual(f.attached_to_doctype, NOTICE,
+		                 "the photo hangs off something the employee can read")
+		name = frappe.db.get_value("Employee", self.emp, "employee_name")
+		self.assertNotIn(name.lower(), f.file_name.lower())
+		self.assertNotIn(self.emp.lower(), f.file_name.lower())
+		self.assertTrue(f.file_name.endswith(".jpg"), f.file_name)
+		self.assertLessEqual(len(f.get_content()), 1024 * 1024)
+
+	def test_says_it_is_not_right_needs_a_reason_keeps_the_block_and_stores_no_photo(self):
+		"""AC-40, AC-41."""
+		name = self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self.refused(lambda: self._record(notice, "Not right", reason="  ", user=self.h.hr2),
+		             "Write what they said")
+		self.assertEqual(frappe.db.get_value(NOTICE, notice, "outcome"), "Printed")
+
+		res = self._record(notice, "Not right", reason="I was there till 7", user=self.h.hr2)
+		self.assertEqual(res["marked"], 0)
+		doc = frappe.get_doc(NOTICE, notice)
+		self.assertEqual(doc.outcome, "Not right")
+		self.assertEqual(doc.dispute_reason, "I was there till 7")
+		self.assertEqual(doc.recorded_by, self.h.hr2)
+		self.assertEqual(len(doc.pages), 0, "a dispute stored a photo")
+		self.assertFalse(frappe.db.get_value(REQUEST, name, punch_fix.SIGNED_NOTICE))
+		self.assertEqual([r["name"] for r in
+		                  punch_fix.unconfirmed_changes([self.emp], self.day, self.day)], [name],
+		                 "the slip stopped being held although the worker objected")
+
+	def test_the_row_then_says_what_the_worker_said(self):
+		"""AC-42: the objection reaches the HR list, as text."""
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self._record(notice, "Not right", reason="I was there till 7", user=self.h.hr2)
+		row = self._rows_for_me(user=self.h.hr2)[0]
+		self.assertEqual(row["state"], "not_right")
+		self.assertEqual(row["said"], "I was there till 7")
+		self.assertEqual(row["recorded_by"], self.h.hr2)
+
+	def test_only_signed_or_not_right_is_accepted(self):
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		for bad in ("signed", "Yes", "", None, "Deleted"):
+			self.refused(lambda b=bad: self._record(notice, b, photos=[_a_jpeg()],
+			                                        user=self.h.hr2),
+			             "signed or not right")
+
+	def test_the_record_call_is_rate_limited_to_twenty_a_minute_per_user(self):
+		self.assertEqual(register_notice.record.__alvoraa_limit__[1:], ("user", 20, 60))
+
 	# ── helpers ─────────────────────────────────────────────────────────
-	def _print(self, employees, month=None, user=None):
-		frappe.set_user(user or self.hr)
+	def _record(self, notice, outcome, photos=None, reason=None, user=None, extra=None):
+		frappe.set_user(user or self.h.hr2)
 		try:
-			return register_notice.open_notices(employees, month or self.day)
+			if extra:
+				frappe.form_dict.update(extra)
+			return register_notice.record(notice, outcome, photos=photos, reason=reason)
+		finally:
+			for k in (extra or {}):
+				frappe.form_dict.pop(k, None)
+			frappe.set_user("Administrator")
+
+
+class ThePhotoStaysPrivate(RegisterNoticeCase):
+	"""US-6, AC-44 to AC-50."""
+
+	def _signed(self):
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		frappe.set_user(self.h.hr2)
+		try:
+			register_notice.record(notice, "Signed", photos=[_a_jpeg()])
+		finally:
+			frappe.set_user("Administrator")
+		return notice
+
+	def test_hr_in_scope_can_open_the_photo_and_one_log_row_is_written(self):
+		"""AC-45."""
+		notice = self._signed()
+		before = frappe.db.count("Alvoraa Photo Access Log")
+		frappe.set_user(self.h.hr2)
+		try:
+			register_notice.open_photo(notice, 1)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(frappe.local.response.get("filecontent"), "no bytes were streamed")
+		rows = frappe.get_all("Alvoraa Photo Access Log",
+		                      filters={"reference_name": notice},
+		                      fields=["source", "viewed_by", "employee"])
+		self.assertEqual(frappe.db.count("Alvoraa Photo Access Log"), before + 1)
+		self.assertEqual(rows[0].source, "Register signature photo")
+		self.assertEqual(rows[0].viewed_by, self.h.hr2)
+		self.assertEqual(rows[0].employee, self.emp)
+
+	def test_an_employee_and_a_manager_cannot_open_the_photo_and_nothing_is_logged(self):
+		"""AC-44's permission half, AC-54."""
+		notice = self._signed()
+		before = frappe.db.count("Alvoraa Photo Access Log")
+		for who in (self.emp_user, self.h._login("mgrphoto", ())):
+			frappe.set_user(who)
+			try:
+				self.refused(lambda: register_notice.open_photo(notice, 1), "for HR")
+			finally:
+				frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count("Alvoraa Photo Access Log"), before,
+		                 "a refused look was logged as a look")
+
+	def test_an_employee_cannot_read_the_notice_record_at_all(self):
+		"""AC-55: no role row, so no list and no single record."""
+		notice = self._signed()
+		frappe.set_user(self.emp_user)
+		try:
+			# Measured: Frappe refuses outright rather than returning an empty list,
+			# because the employee holds no role row on this doctype at all. AC-55 allows
+			# either ("a permission error and the list is empty"); the refusal is the
+			# stronger of the two and it is what actually happens, so that is what is
+			# asserted - not the weaker claim I guessed first.
+			self.refused(lambda: frappe.get_list(NOTICE, ignore_permissions=False),
+			             "Insufficient Permission")
+			self.assertFalse(frappe.has_permission(NOTICE, "read", user=self.emp_user))
 		finally:
 			frappe.set_user("Administrator")
 
-	def _held_for(self, employee, day):
-		from alvoraa_portal.tests import test_held_day_085 as hd
+	def test_hr_outside_the_scope_sees_no_notice_rows_and_cannot_open_one(self):
+		"""AC-57, and the row filter the spec marks "fails first" - a company-only check
+		would let this pass wrongly."""
+		notice = self._signed()
+		outsider = self.h._login("hrfarphoto", ("HR Manager",))
+		frappe.set_user(outsider)
+		try:
+			self.assertEqual(register_notice.notice_query_conditions(outsider), "1=0")
+			self.assertFalse(register_notice.notice_has_permission(
+				frappe.get_doc(NOTICE, notice), outsider))
+			self.refused(lambda: register_notice.open_photo(notice, 1), "outside the ones")
+		finally:
+			frappe.set_user("Administrator")
 
-		for t, kind in (("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")):
-			frappe.get_doc({"doctype": "Employee Checkin", "employee": employee,
-			                "log_type": kind, "time": "%s %s:00" % (day, t)}
-			               ).insert(ignore_permissions=True)
-		att = frappe.get_doc({"doctype": "Attendance", "employee": employee,
-		                      "company": self.h.company, "attendance_date": day,
-		                      "status": "Present", "shift": hd.SHIFT,
-		                      "in_time": "%s 09:00:00" % day})
-		att.insert(ignore_permissions=True)
-		att.submit()
-		return att.name
+	def test_the_photo_access_log_is_scoped_too(self):
+		"""AC-47, SEC-10. The log had no row filter at all before this slice."""
+		self._signed()
+		outsider = self.h._login("hrfarlog", ("HR Manager",))
+		self.assertEqual(register_notice.photo_log_query_conditions(outsider), "1=0")
+		inside = register_notice.photo_log_query_conditions(self.hr)
+		self.assertIn("tabEmployee", inside)
+		self.assertIn("company", inside)
+
+	def test_no_role_can_export_or_delete_and_nothing_in_088_deletes(self):
+		"""AC-46, AC-48, AC-49."""
+		notice = self._signed()
+		for role in ("HR Manager", "HR User", "System Manager"):
+			perm = frappe.get_all("DocPerm", filters={"parent": NOTICE, "role": role},
+			                      fields=["export", "`delete`", "report"])[0]
+			self.assertFalse(perm.export, role + " can export notices")
+			self.assertFalse(perm.get("delete"), role + " can delete notices")
+			self.assertFalse(perm.report, role + " can report on notices")
+		self.refused(lambda: frappe.delete_doc(NOTICE, notice, force=True,
+		                                      ignore_permissions=True), "cannot be deleted")
+		source = open(os.path.join(PKG, "register_notice.py")).read()
+		for forbidden in ("delete_doc", "frappe.db.delete", "DROP ", "TRUNCATE"):
+			self.assertNotIn(forbidden, source, forbidden + " appears in slice 088's code")
+
+	def test_the_notice_stores_the_month_so_a_purge_can_be_worked_out_later(self):
+		"""AC-50: no `retain_until` field, because no period has been decided (D-9)."""
+		notice = self._signed()
+		doc = frappe.get_doc(NOTICE, notice)
+		self.assertTrue(doc.month)
+		self.assertTrue(doc.employee)
+		self.assertIsNone(frappe.get_meta(NOTICE).get_field("retain_until"),
+		                  "a retention date nobody has chosen is stored on the record")
+

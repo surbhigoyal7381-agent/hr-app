@@ -633,6 +633,15 @@ permission_query_conditions = {
     # Permissions - those cannot say "today", and leave a new doctype open.
     "Grooming Mark": "alvoraa_portal.grooming.mark_query_conditions",
     "Grooming Review": "alvoraa_portal.grooming.review_query_conditions",
+    # Slice 088: a signed register page is the most personal thing this product
+    # stores about a shop worker, so the notice is scoped by company AND branch -
+    # not by the company-only helper above, which would let one store's HR person
+    # list every store's signatures.
+    "Alvoraa Register Notice": "alvoraa_portal.register_notice.notice_query_conditions",
+    # 088 SEC-10: this log had NO entry here, so an HR Manager of one company could
+    # list every company's rows in it. Found by the slice's privacy review, and it is
+    # a gap that predates 088.
+    "Alvoraa Photo Access Log": "alvoraa_portal.register_notice.photo_log_query_conditions",
 }
 
 has_permission = {
@@ -647,6 +656,9 @@ has_permission = {
     "Grooming Review": "alvoraa_portal.grooming.review_has_permission",
     # ALV-266: only HR changes someone else's Employee record. See employee_field_rights.py.
     "Employee": "alvoraa_portal.employee_field_rights.employee_has_permission",
+    # Slice 088: the same company-and-branch rule for one notice opened by name or
+    # through the API, so a row filter on the list is not the only thing in the way.
+    "Alvoraa Register Notice": "alvoraa_portal.register_notice.notice_has_permission",
 }
 
 scheduler_events = {

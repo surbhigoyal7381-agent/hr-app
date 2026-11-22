@@ -46,3 +46,58 @@ None. It rests on 078 and ALV-266, so it should not ship alone with 078's field-
 | OPS-5 | Measure the manager's report list at 50 reports. | N+1 | Slow portal on 3G budget | Consider | |
 
 Subtract pass: removed a proposed reminder job and a notification queue; nothing else removed.
+
+## §2 Design (22 Nov 2026)
+
+Read: worktree `.claude/worktrees/089-manager-profile-edits`, branch `slice/089-manager-profile-edits`, SHA 16c68b2f. Files only. No site, container, server or phone was touched. Tier 1.
+
+**Bad news first: I could not measure load time on a 3G phone. Nobody has built the screens yet, so the 2.5 s figure below is an estimate, not a measurement.**
+
+### Page weight (3G phone, nfr-budget 2.5 s)
+
+- **Proven (counted today):** the prototype file is 35,976 bytes raw, 11,365 gzipped, with no images, no external scripts and no external stylesheets. It is a viewer page, not the product, so it is only a ceiling for the real parts.
+- **Proven:** the existing Team part `templates/includes/ess/parts/team.html` is the part that will grow (size counted in this worktree; see the line in the closing note).
+- **Estimate:** the report sheet, the Details personal section and the emergency-contact sheet add a few KB of gzipped HTML/JS to that part. Based on the prototype's 11 KB gzipped for all screens including the Administrator card and Desk mock-ups. At roughly 400 kbit/s effective 3G that is well under 0.1 s of extra transfer. **Inference:** the new parts do not threaten 2.5 s; the existing page and round trips decide it.
+- **Round trips are the real cost.** Estimate: one POST to send a report, one to load Details, one to save an emergency contact. Each is a single call on 3G latency (about 300 to 600 ms, estimate). Keep the report send to **one call that creates the ToDo and the timeline line together**. Do not poll for the result.
+- The Administrator card is desktop-only and System Manager-only: no 3G concern.
+
+### Media
+
+None. No image, photo upload, video or file. **Proven:** the design draws none. No volume growth, no backup growth beyond a few rows per report. If the engineer adds an attachment or an icon font, stop and ask.
+
+### Caching (the trap)
+
+- **Proven (ess_parts.py l.44-55):** ESS HTML parts are cached in Redis per site for 24 h, key `ess_part:<build version>:<name>`. A release changes the build version, so a new image shows new parts. Per-user data never goes in the part (it is a shared template).
+- **Rule:** the part may hold only the markup. Names, dates, "Reported, not yet confirmed", the employee's top line and the Administrator's lists must come from the API call, per user. **Cost of ignoring:** one manager's "Ravi reported" text served to another person for 24 h.
+- **Risk to check at release (not checked):** after `docker cp` onto a running dev site the part will show the OLD text until the build version changes or the key is cleared. Needs `bench clear-cache` (explicit approval, CLAUDE.md §2). A proper image deploy changes the version, so no manual step is expected. Verify on dev by reading the served part, not the deploy log.
+- **Do not cache the API answers** that carry the report state, the see-list or the change-list. They must be live: a confirmed leaver must drop off at once and a removed "see" tick must hide data at once. **Inference:** if the engineer reuses an existing cached team or people call, the cache invalidation has to be added in the same change (CLAUDE.md §2 step 2). The ToDo close on Employee save is the trigger.
+- The Administrator's settings change must take effect on the next request, not 24 h later. Test: tick, save, read as a manager without reloading the server.
+
+### What must never be public
+
+All proven against the design, all inferred for code that is not written yet:
+
+1. The leaver report (name, date, who reported) is never on a guest or website route, never in a search sitemap, never in a public file. Whitelisted methods only, no `allow_guest`.
+2. The ToDo and timeline line are visible only to the reporting manager, the confirmer and the employee. **Not checked:** Frappe's ToDo is readable by the owner and the assigned user by default, but other roles with ToDo read may see it. The security engineer should test that a colleague and a manager of another team cannot read it, through the API and the Desk list.
+3. The "see" fields (personal phone, personal email, home address, emergency contact) are never put in a cached part, a log line, an error message, the notification text or the ToDo description. The ToDo carries name, date and reporter only, nothing else.
+4. Secrets and personal data never travel as job arguments (none needed: no queue job in this slice).
+5. No nginx or route change (OPS-4 stands). Calls post to "/" with `cmd`.
+6. Logs: the refusal sentence may name the employee ID, never the phone, address or emergency contact.
+
+### Run and release notes
+
+- Extra ToDo rows: one per enabled holder of the role per report. At 1,000 to 2,000 employees and a few reports a month, negligible. **Estimate.** If the role has 30 holders, 30 ToDo rows per report; cap or choose a smaller role if so (one query to check on a copy).
+- Retention of ToDo and timeline lines is open for counsel (design Q2). Not an infrastructure blocker; do not add a purge job.
+- No new container, job, queue or volume. Nothing to add to monitoring.
+
+### OPS rows
+
+| ID | Recommendation | Why | Cost of ignoring | Level | Decision |
+|---|---|---|---|---|---|
+| OPS-6 | Keep the ESS part markup free of per-user text; all state comes from the API, uncached. | Parts are cached 24 h in Redis per build | One person's report text shown to others | Recommend, P1 | |
+| OPS-7 | One POST creates ToDo and timeline line together; no polling. | 3G round trips | Slow sheet, half-written state | Recommend, P2 | |
+| OPS-8 | After deploy, read the served Team part on dev and compare with the image; do not trust the deploy log. | Redis part cache and assets volume both go stale | Old screen on a green deploy | Recommend, P2 | |
+| OPS-9 | Test that a colleague, another team's manager and a guest cannot read the ToDo or the report. | ToDo default permissions not read | Leak of a leaver's name and date | Recommend, P1 (security engineer to verify) | |
+| OPS-10 | Measure the Team part on a throttled 3G profile once built, against 2.5 s. | Today's figure is an estimate | Budget missed silently | Consider | |
+
+Subtract pass: removed a proposed per-report CDN/asset review (no media) and a ToDo purge job (counsel open); nothing else removed.

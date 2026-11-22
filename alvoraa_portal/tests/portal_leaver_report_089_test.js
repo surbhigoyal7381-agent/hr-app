@@ -85,6 +85,8 @@ const $ = id => doc.getElementById(id);
   const icon = $("sc-left-btn");
   check(!!icon && icon.getAttribute("aria-label") === "Report that Ravi left" && icon.title === "Report that Ravi left",
         "the exit icon is beside the name, labelled with the person's first name");
+  check(!!icon && icon.parentNode.classList.contains("sc-topbar"),
+        "D-1: the icon sits in the header row beside the name block, not inside it where it was squeezed under the badge");
   SCORECARD = scorecard({ can_report: false });
   window.openEmpScorecard(REPORT, "#123"); await settle(100);
   check(!$("sc-left-btn"), "no icon when the server says can_report is false (no greyed control either)");

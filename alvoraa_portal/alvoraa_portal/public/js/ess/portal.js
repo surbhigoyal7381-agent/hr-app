@@ -14735,8 +14735,10 @@ function lvHeader(d) {
     + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'
     + '<path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
   b.onclick = lvOpen;
-  var ident = document.querySelector("#panel-scorecard .sc-identity");
-  if (ident) ident.appendChild(b);
+  /* A sibling of the name block, before the badge (prototype-v4). Inside the
+     name block it was squeezed under the "Joined" badge at 360 px (D-1). */
+  var bar = document.querySelector("#panel-scorecard .sc-topbar");
+  if (bar) bar.insertBefore(b, document.getElementById("sc-join-badge"));
 }
 
 function lvNote(d) {

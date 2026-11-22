@@ -828,3 +828,75 @@ def photo_log_query_conditions(user=None):
 	The log had no row filter at all before this slice (`hooks.py` had no entry for it),
 	which is the gap 01c found."""
 	return _scope_sql("Alvoraa Photo Access Log", user)
+
+
+# ── the employee's own small view ────────────────────────────────────────────
+
+#: What the employee's row says about where a change has got to (US-7, AC-51 and AC-53).
+#: Returned as a code; the screen owns the words, so they can be translated. The employee's
+#: screen IS translated, unlike the paper.
+MINE_STATES = {
+	"waiting": "Not confirmed by you yet.",
+	"confirmed": "You confirmed it.",
+	"signed": "You signed for it on the register.",
+	"shown": "Shown to you. Say if it is not right.",
+}
+
+
+@frappe.whitelist(methods=["POST"])
+@_limited(SELF_KEY, "user", limit=60, window=60)
+def my_changes(month=None):
+	"""This month's days somebody else changed, for the employee themselves (section 8.6).
+
+	**Own record only, and there is no argument for whose.** The call takes a month and
+	nothing else: the employee is read from the session, so there is no id a caller could
+	swap for a colleague's. That is a stronger guarantee than checking an id and refusing
+	the wrong one, and it is cheaper to keep true.
+
+	Unlike the HR list, this one DOES carry the reason and the times - it is this person's
+	own record, and the whole point is that they can read what was done to their day and
+	say if it is wrong. It carries no photo, no file and no address of one: a signature
+	photo is HR's evidence about the employee, not something to hand back to them through
+	an API (PRIV-5).
+
+	A Left employee gets nothing: `attendance_correction._me()` is Active only.
+	"""
+	import alvoraa_portal.attendance_correction as ac
+
+	me = ac._me()
+	first = _month_of(month)
+	if not columns_ready() or not confirms_are_on(me.company):
+		return {"month": str(first), "days": [], "changed": 0}
+
+	mine = qualifying_changes(first, employees=[me.name],
+	                          scope=dict(access.ALL_EMPLOYEES), with_content=True)
+	days = []
+	for c in mine:
+		if c.alvoraa_confirmed_on:
+			state = "confirmed"
+		elif c.get(SIGNED_NOTICE):
+			state = "signed"
+		elif cint(c.alvoraa_needs_confirm):
+			state = "waiting"
+		else:
+			# A manager's plain addition never waited for a confirm (087), so "not confirmed
+			# by you yet" would be a demand the system is not actually making. AC-53.
+			state = "shown"
+		# `sheet_rows` wants the EMPLOYEE's login, to tell an HR filing from a manager's.
+		# Here the caller is the employee, so it is this session's user - named rather than
+		# passed as `frappe.session.user` inline, because the two being the same is the
+		# reason this works and not a coincidence worth leaving unexplained.
+		my_login = frappe.session.user
+		row = sheet_rows(c, my_login)
+		days.append({
+			"request": c.name,
+			"date": str(c.from_date),
+			"day": row["day"],
+			"what": row["what"],
+			"counts": row["counts"],
+			"filed_role": row["filed_role"],
+			"filed_by": row["filed_by"],
+			"why": row["why"],
+			"state": state,
+		})
+	return {"month": str(first), "days": days, "changed": len({d["date"] for d in days})}

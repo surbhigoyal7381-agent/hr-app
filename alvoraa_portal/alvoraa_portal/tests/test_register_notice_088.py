@@ -355,13 +355,13 @@ class TheHRList(RegisterNoticeCase):
 	def test_a_change_hr_filed_puts_the_person_on_the_list_not_printed_yet(self):
 		"""AC-1."""
 		self.an_approved_hr_change()
-		frappe.set_user(self.hr)
-		try:
-			out = register_notice.list_people(self.day)
-		finally:
-			frappe.set_user("Administrator")
-		mine = [r for r in out["rows"] if r["employee"] == self.emp]
-		self.assertEqual(len(mine), 1, out["rows"])
+		# Through the page-walking helper, not off page one. This test was the last one
+		# still reading `rows` directly, and it failed in two runs back to back once the
+		# site held more than 25 people with changed days - the fixture's worker was on
+		# page two. The same fault I fixed in the helper, left behind in one caller.
+		mine = self._rows_for_me()
+		out = self._list()
+		self.assertEqual(len(mine), 1, "this person is not in the month list at all")
 		self.assertEqual(mine[0]["changed_days"], 1)
 		self.assertEqual(mine[0]["open_days"], 1)
 		self.assertEqual(mine[0]["state"], "not_printed")
@@ -1023,14 +1023,24 @@ class ThePhotoStaysPrivate(RegisterNoticeCase):
 		for b in ("A88A", "A88B"):
 			if not frappe.db.exists("Branch", b):
 				frappe.get_doc({"doctype": "Branch", "branch": b}).insert(ignore_permissions=True)
-		frappe.db.set_value("Employee", self.emp, "branch", "A88B")
+		# **Everything this test changes is put back.** `log_view` commits, which defeats
+		# this suite's per-test rollback, so a branch left on the shared fixture worker and
+		# two User Permissions left on a login outlive the test and change what the NEXT
+		# run sees. That is not hypothetical: the run straight after this test was written
+		# failed on restored, correct code, purely on the state it had left behind. A suite
+		# whose result depends on what ran before it is not evidence of anything.
+		was_branch = frappe.db.get_value("Employee", self.emp, "branch")
+		self.addCleanup(lambda: frappe.db.set_value("Employee", self.emp, "branch",
+		                                            was_branch, update_modified=False))
+		frappe.db.set_value("Employee", self.emp, "branch", "A88B", update_modified=False)
 		branch_hr = self.h._login("hrbranch088", ("HR Manager",))
-		frappe.get_doc({"doctype": "User Permission", "user": branch_hr, "allow": "Company",
-		                "for_value": self.h.company, "apply_to_all_doctypes": 1}
-		               ).insert(ignore_permissions=True)
-		frappe.get_doc({"doctype": "User Permission", "user": branch_hr, "allow": "Branch",
-		                "for_value": "A88A", "apply_to_all_doctypes": 1}
-		               ).insert(ignore_permissions=True)
+		for allow, value in (("Company", self.h.company), ("Branch", "A88A")):
+			perm = frappe.get_doc({"doctype": "User Permission", "user": branch_hr,
+			                       "allow": allow, "for_value": value,
+			                       "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)
+			self.addCleanup(frappe.delete_doc, "User Permission", perm.name,
+			                force=True, ignore_permissions=True)
+		self.addCleanup(frappe.clear_cache, user=branch_hr)
 		frappe.clear_cache(user=branch_hr)
 
 		# The control: the same user IS in the right company, so a company-only rule would
@@ -1083,3 +1093,113 @@ class ThePhotoStaysPrivate(RegisterNoticeCase):
 		self.assertIsNone(frappe.get_meta(NOTICE).get_field("retain_until"),
 		                  "a retention date nobody has chosen is stored on the record")
 
+
+
+class TheEmployeesOwnView(RegisterNoticeCase):
+	"""US-7, AC-51 to AC-53: the small list in the app, for the employee who has one."""
+
+	def _mine(self, month=None, user=None):
+		frappe.set_user(user or self.emp_user)
+		try:
+			return register_notice.my_changes(month or self.day)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_the_employee_sees_their_own_changed_days_with_the_reason(self):
+		"""AC-51. Unlike HR's list, this one carries the reason: it is their own record."""
+		self.held_on(self.day)
+		req = self.fix(time="18:30", by=self.hr, note="You forgot to punch out")
+		self.decide(req, 1, by=self.h.hr2)
+		out = self._mine()
+		self.assertEqual(out["changed"], 1)
+		day = out["days"][0]
+		self.assertEqual(day["request"], req)
+		self.assertEqual(day["date"], str(self.day))
+		self.assertEqual(day["what"], ["Out time 18:30 added"])
+		self.assertEqual(day["why"], "You forgot to punch out")
+		self.assertEqual(day["filed_role"], "HR")
+		self.assertEqual(day["state"], "waiting")
+
+	def test_the_state_follows_the_confirm_and_the_signature(self):
+		"""AC-51's three sentences, each from a different real event."""
+		first = self.an_approved_hr_change("18:30")
+		self.assertEqual(self._mine()["days"][0]["state"], "waiting")
+
+		self.confirm_as_employee(first)
+		self.assertEqual(self._mine()["days"][0]["state"], "confirmed")
+
+		second = self.an_approved_hr_change("19:30")
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self._record_as_hr2(notice)
+		states = {d["request"]: d["state"] for d in self._mine()["days"]}
+		self.assertEqual(states[second], "signed")
+		self.assertEqual(states[first], "confirmed",
+		                 "a confirm in the app was relabelled as a register signature")
+
+	def test_a_managers_addition_says_it_was_shown_not_that_it_is_waiting(self):
+		"""AC-53. A manager's plain addition never waited for a confirm, so "not confirmed
+		by you yet" would be a demand the system is not actually making."""
+		mgr = self.h._login("mgrmine", ())
+		self.h._employee("Mgrmine", mgr)
+		self.held_on(self.day)
+		req = self.fix(time="18:30", by=mgr)
+		self.decide(req, 1, by=self.hr)
+		day = self._mine()["days"][0]
+		self.assertEqual(day["state"], "shown")
+		self.assertEqual(day["filed_role"], "Manager")
+		self.assertTrue(day["filed_by"], "the manager who changed the day is not named")
+
+	def test_the_response_carries_no_photo_no_file_and_no_address(self):
+		"""AC-52, PRIV-5. A signature photo is HR's evidence about the employee, not
+		something to hand back through an API."""
+		self.an_approved_hr_change()
+		notice = self._print([self.emp])["sheets"][0]["notice"]
+		self._record_as_hr2(notice)
+		out = self._mine()
+		# Checked as KEYS, not as substrings of the whole payload. The first version looked
+		# for "file" anywhere in the JSON and failed on `filed_by` and `filed_role` - a
+		# test finding its own carelessness rather than a leak.
+		keys = set(out) | {k for d in out["days"] for k in d}
+		for forbidden in ("photo", "file", "url", "notice", "content_hash", "pages"):
+			self.assertNotIn(forbidden, keys, forbidden + " is a key in the employee's view")
+		blob = frappe.as_json(out)
+		for forbidden in ("/private/", "/files/", notice, ".jpg"):
+			self.assertNotIn(forbidden, blob, forbidden + " reached the employee's own view")
+
+	def test_the_employee_cannot_ask_for_anybody_else(self):
+		"""AC-52. There is no id to swap: the person is read from the session."""
+		import inspect
+
+		self.an_approved_hr_change()
+		args = inspect.signature(register_notice.my_changes).parameters
+		self.assertEqual(list(args), ["month"],
+		                 "my_changes takes something other than a month, so a caller can "
+		                 "ask about somebody else")
+		other = self.h._login("peerview", ())
+		self.h._employee("Peerview", other)
+		self.assertEqual(self._mine(user=other)["days"], [],
+		                 "a colleague saw this person's changed days")
+
+	def test_somebody_with_no_employee_record_is_refused(self):
+		self.an_approved_hr_change()
+		nobody = self.h._login("noemp088", ())
+		self.refused(lambda: self._mine(user=nobody), "not linked to an employee")
+
+	def test_the_view_is_empty_where_the_organisation_asks_for_no_confirmations(self):
+		"""The same ALV-430 departure as the HR list, asserted both ways round."""
+		self.an_approved_hr_change()
+		self.assertEqual(self._mine()["changed"], 1, "fixture is wrong: nothing to hide")
+		frappe.db.set_value("Company", self.h.company, punch_fix.CONFIRM_SWITCH, 0,
+		                    update_modified=False)
+		frappe.clear_cache()
+		self.assertEqual(self._mine()["days"], [])
+
+	def test_the_call_is_rate_limited_per_user(self):
+		self.assertEqual(register_notice.my_changes.__alvoraa_limit__[1:], ("user", 60, 60))
+
+	def _record_as_hr2(self, notice):
+		frappe.set_user(self.h.hr2)
+		try:
+			return register_notice.record(notice, "Signed", photos=[_a_jpeg()])
+		finally:
+			frappe.set_user("Administrator")

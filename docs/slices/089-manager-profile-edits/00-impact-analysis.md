@@ -254,3 +254,11 @@ Everything else follows the spec as decided on 22 Nov.
 ## Subtract pass
 
 Removed from my first plan: a second Custom Field (the date uses ToDo's own); an `assign_to` wrapper (not needed once the insert is plain); a custom rate limiter (reuse, Q5); a Team-list edit in `team_api.py` and `next-team.js` (wrong screen); a "change" endpoint and its limiter (deferred); any cache; any scheduled check for a role that loses its holders (the send-time refusal covers it). Kept, because removing it fails an SEC item: the ToDo guard hook, the Employee hook, the row lock and the cap check. Nothing else could go.
+
+## Strategy gate: Surbhi, 22 Nov 2026
+
+**APPROVED, with all recommendations.** This approves implementation on the local stack only. It does not approve any push or deploy.
+- Q1-Q6: yes as recommended (classic Team screen; one Custom Field with the date in Due Date; HR gets none of the ticked fields; Employee on_trash; accept `_limited`'s wording; own `alv089-*` stack with migrate there).
+- **No index** on `alv_leaver_employee` (DevOps OPS-21).
+- Q7: slice 088 (branch slice/088-register-signature) added 22 lines to `alvoraa_portal/hooks.py` at about 23:20 IST on 22 Nov. Rebase onto origin/dev before each commit.
+- OPS-22 stands: before main, a migration and set-Left dry run on a copy of real data.

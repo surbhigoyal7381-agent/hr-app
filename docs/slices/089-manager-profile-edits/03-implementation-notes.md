@@ -200,3 +200,21 @@ Side effects: `test_notices_076.test_the_two_doctype_sets_stay_disjoint` pins th
 Runs: `test_leaver_report_089` 43 OK; `test_leaver_report_089_qa` 10 OK; `test_portal_security_010` 45 OK; `test_notices_076` 30 OK (after the pin); DOM runner 27 run, 0 failed; Chromium layout 12 passed, 0 failed; `check_app_integrity.py` 1016 checks, OK.
 
 Not changed (waiting for Surbhi): "already reported" wording, ToDo index, confirmer cap scope, Hindi strings, `get_employee_detail_for_manager`.
+
+## Fix round 3 (05-review r2-1 to r2-4; 06-security-review F3, F4), 22 Nov 2026
+
+Worktree `.claude/worktrees/089-manager-profile-edits`, branch `slice/089-manager-profile-edits`. Rebased first onto `origin/dev` (9 incoming commits, all slice 088: register notice doctypes and screens, plus a `punch_fix` seam test). Two conflicts, both "two blocks appended at the same place", both resolved by keeping both: `panels.css` and `scripts/run_dom_tests.js` (browser-test count is now 28: 088's file plus 089's). Code commits `d79cba1e` and the follow-up (the Notification Log read uses `get_list`, which the 076 pin test requires).
+
+| Item | What changed | Test (and break test) |
+|---|---|---|
+| 1 (r2-1, F3) | `on_employee_trash` deletes the Notification Log rows for that Employee's leaver ToDos before the ToDos | `test_deleting_the_employee_removes_the_outcome_line`. Break: delete line removed, fails `1 != 0` |
+| 3 (r2-2) | The outcome row now carries the reporter's own leaver ToDo as `document_name` (was the Employee id), so Desk's link `/app/todo/<name>` opens a real page the reporter may read (they are `assigned_by`). `_tell(user, todo, text)` | `test_the_outcome_line_points_at_a_real_todo_the_reporter_can_open`. Break: Employee id written again, fails |
+| 2 (r2-3, F4) | `notices._leaver_lines`: a ToDo-typed row is listed and counted only if type is "Alert" and its ToDo carries the leaver marker. Two extra reads (one when the user has no such rows). `capped` still comes from the unfiltered read | `test_a_mention_or_share_about_a_todo_is_not_in_the_portal_bell` (Mention, Share, and an Alert about an ordinary ToDo). Break: filter removed, fails |
+| 4 (r2-4) | `search_index` 1 on the Custom Field. `create_custom_fields` default `update=True` applies it to existing tenants at migrate. The pin test now asserts the index. | Migrated `test_site`: `show index` lists `alv_leaver_employee_index`; `EXPLAIN` of the locking read's shape (`alv_leaver_employee = X and status = 'Open' for update`) shows type `ref`, key `alv_leaver_employee_index`, rows 1 |
+| 6 | Both sentences kept (Surbhi). DOM check no longer calls the timeout words "the approved sentence". Recorded in 02 (decisions 6 to 8), 01b parity notes and 00 gate record | none needed |
+
+**Migrate effect on a large ToDo table.** Adding a secondary index is an online `ALTER TABLE ... ADD INDEX` in MariaDB (InnoDB), but it still reads the whole table once. On a tenant with a very large ToDo table, run migrate in a quiet hour. Row counts per tenant: **not checked**. Part of the OPS-22 dry run before main.
+
+**Item 5 NOT DONE (stopped, as told).** `get_employee_detail_for_manager` has callers: tests in other slices (`test_leave_ledger_035.py:124`, `test_numbers_match_035.py:384`, `test_review_outside_010d.py:553`) and the 089 tests; in `portal.js` only `openEmpDrawer` (line 13881) calls it, and `openEmpDrawer(` has no caller anywhere else in `alvoraa_portal` (grep). So the drawer looks dead, but the API is pinned by three other slices' tests and exists on `origin/dev`. Needs Surbhi's word.
+
+Known side effect, not changed: `mark_all_seen` still clears the caller's own ToDo-typed rows of any type (it filters on `NOTICE_DOCTYPES`). Marking one's own Mention rows read is harmless; noted only.

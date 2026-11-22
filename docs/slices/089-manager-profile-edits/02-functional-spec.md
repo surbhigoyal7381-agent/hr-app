@@ -580,3 +580,9 @@ Removed from my own first draft: a per-story "dashboard of leavers", a "reminder
 5. **The human-checked items are accepted** as release-time checks: the success measures, "under a minute", the usability test and OPS-10 timing. With this, the Definition of Ready passes.
 
 Still open: PRIV-4 / OPS-17, retention of the notice. Counsel decides. It blocks main, not the build.
+
+## Surbhi's round 3 decisions, 22 Nov 2026
+
+6. **The "already reported" sentence stays without the person's name.** (Kept as built.)
+7. **The new timeout words stay:** "It may not have been sent. We kept your date. Check your team list before you try again."
+8. **An index is added** on the ToDo field `alv_leaver_employee` (she reversed her earlier "no index"), so the locking read in the send touches one person's rows.

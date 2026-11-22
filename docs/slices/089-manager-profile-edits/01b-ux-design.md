@@ -240,3 +240,5 @@ For the BA and the security engineer: the one rule that matters most is that **s
 - The leaver icon is on the Scorecard ONLY. The Team card has no icon.
 - Choice 1a and the Scorecard button are dropped. A card tap opens the Scorecard as it does today, and `get_employee_scorecard` already lets in the person's reports_to.
 - ALV-433 is logged: the Scorecard call sends personal phone, personal email, company email and gender to the manager's browser today, on dev and on main. Slice 089 fixes it.
+
+**Parity notes, round 3 (Surbhi, 22 Nov 2026).** Two sentences differ from prototype v4 and she keeps both: (1) the "already reported" refusal no longer names the person; (2) the timeout sentence now reads "It may not have been sent. We kept your date. Check your team list before you try again." Both are her decisions, not drift.

@@ -163,7 +163,7 @@ def _leaver_lines(user):
 	type "Alert" and pointing at a ToDo that carries the leaver marker."""
 	from alvoraa_portal.leaver_report import FIELD
 
-	mine = frappe.get_all("Notification Log",
+	mine = frappe.get_list("Notification Log",
 	                      filters={"for_user": user, "document_type": LEAVER, "type": "Alert"},
 	                      fields=["name", "document_name", "read"], limit_page_length=0)
 	if not mine:

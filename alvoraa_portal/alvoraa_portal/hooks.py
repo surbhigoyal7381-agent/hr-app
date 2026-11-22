@@ -594,7 +594,8 @@ doc_events = {
         "on_update": "alvoraa_portal.leaver_report.on_todo_update",
     },
     "DocShare": {
-        "validate": "alvoraa_portal.grooming.refuse_side_record",
+        "validate": ["alvoraa_portal.grooming.refuse_side_record",
+                     "alvoraa_portal.leaver_report.guard_share"],
     },
     # Slice 066, 25 Oct (security verification B2): no file, no tag on a mark.
     "File": {

@@ -133,7 +133,7 @@ const $ = id => doc.getElementById(id);
   /* 6. no signal: the exact words, the date kept, Try again */
   SEND = "offline";
   $("lv-send").click(); await settle(80);
-  check($("lv-err").textContent === "Not sent. We kept your date. Try again when you have signal.", "offline words are the approved sentence");
+  check($("lv-err").textContent === "It may not have been sent. We kept your date. Check your team list before you try again.", "offline words are the approved sentence");
   check($("lv-send").textContent === "Try again" && $("lv-date").value === "2026-11-25", "Try again is offered and the date is kept");
 
   /* 7. Escape closes and focus returns to the icon */

@@ -140,8 +140,10 @@ def send_leaver_report(employee: str | None = None, last_working_day: str | None
 	# Two taps at once: lock the person's row, then look, then write. The
 	# second request waits here and then finds the first one's ToDos.
 	frappe.db.get_value("Employee", employee, "name", for_update=True)
-	open_rows = frappe.get_all("ToDo", filters={FIELD: employee, "status": "Open"},
-	                           fields=["assigned_by", "creation"], limit_page_length=0)
+	# A locking read: a plain read here would use the snapshot taken before the
+	# wait and miss the first request's committed ToDos (REPEATABLE READ).
+	open_rows = frappe.db.get_values("ToDo", {FIELD: employee, "status": "Open"},
+	                                 ["assigned_by", "creation"], as_dict=True, for_update=True)
 	if open_rows:
 		mine = [r for r in open_rows if r.assigned_by == frappe.session.user]
 		if mine:
@@ -187,12 +189,13 @@ def _recipients(row):
 		return []
 	return [u for u in holders
 	        if u not in (frappe.session.user, row.user_id)
-	        and row.company in permitted_companies(u)]
+	        and row.company in permitted_companies(u)
+	        and frappe.has_permission("Employee", "write", doc=row.name, user=u)]
 
 
 # ── what the screens read ────────────────────────────────────────────────────
 
-def open_reports_by(employee_ids, user=None):
+def open_reports_by(employee_ids):
 	"""{employee: {"last_day", "reported_on"}} for the open reports this user
 	made, in ONE query whatever the number of people (AC-52)."""
 	ids = [e for e in dict.fromkeys(employee_ids or []) if e]
@@ -200,7 +203,7 @@ def open_reports_by(employee_ids, user=None):
 		return {}
 	rows = frappe.get_all(
 		"ToDo", filters={FIELD: ("in", ids), "status": "Open",
-		                 "assigned_by": user or frappe.session.user},
+		                 "assigned_by": frappe.session.user},
 		fields=[FIELD, "date", "creation"], order_by="creation desc", limit_page_length=0)
 	out = {}
 	for r in rows:
@@ -248,12 +251,24 @@ def guard_todo(doc, method=None):
 		        "089-SEC-9", before.get(FIELD), "todo.validate")
 
 
+def guard_share(doc, method=None):
+	"""doc_events `validate` on DocShare (SEC-9, SEC-10): a leaver ToDo is never
+	shared, with one login or with everyone. Role `All` holds the share right on
+	ToDo and the reporter owns these rows, so without this a manager could open
+	the notice to the whole tenant, or give someone write on it. Nothing in 089
+	shares a ToDo (no assign_to), so there is no role that needs the exception.
+	Every other share costs one attribute read."""
+	if doc.share_doctype == "ToDo" and frappe.db.get_value("ToDo", doc.share_name, FIELD):
+		_refuse(_("A leaver report cannot be shared. Ask HR."), "089-SEC-10",
+		        None, "docshare.validate")
+
+
 def _tell(user, employee, text):
 	"""One bell line. Type "Alert" is in Frappe's `notification_skip_email_types`,
-	so this never sends email (OPS-19). The row carries the Employee, so
-	deleting the Employee deletes it. `text` is already escaped."""
+	so this never sends email (OPS-19). The portal bell lists it because
+	`notices.LEAVER` is "ToDo" (M-1). `text` is already escaped."""
 	frappe.get_doc({"doctype": "Notification Log", "type": "Alert", "for_user": user,
-	                "document_type": "Employee", "document_name": employee,
+	                "document_type": "ToDo", "document_name": employee,
 	                "subject": text, "email_content": text}).insert(ignore_permissions=True)
 
 

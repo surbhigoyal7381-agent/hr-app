@@ -39,7 +39,13 @@ from alvoraa_portal.field_app_limits import SELF_KEY, _limited
 
 # The kinds of document a notice may be about.
 ANNOUNCEMENT = "Announcement"
-NOTICE_DOCTYPES = (grooming.MARK, grooming.REVIEW, ANNOUNCEMENT)
+# Slice 089: the outcome line a manager gets about a leaver report. It is the
+# person's own copy, like an announcement, so it needs no gate. It is written
+# with document_type "ToDo" (see leaver_report._tell) because "Employee" is what
+# Desk's own notices use (DTC has 902 unread) and must stay out of this feed.
+LEAVER = "ToDo"
+OWN_COPY = (ANNOUNCEMENT, LEAVER)
+NOTICE_DOCTYPES = (grooming.MARK, grooming.REVIEW, ANNOUNCEMENT, LEAVER)
 
 CARD_ROWS = 5        # what the Home card shows (design 4.2)
 READ_CAP = 100       # the most rows one call reads
@@ -101,13 +107,13 @@ def notices_feed(see_all=0):
 		fields=["name", "document_type", "document_name"], limit_page_length=0)
 
 	# An announcement row is the person's own copy: nothing more to gate.
-	alerts = [r for r in rows if r.document_type != ANNOUNCEMENT]
+	alerts = [r for r in rows if r.document_type not in OWN_COPY]
 	# ONE gate call for both sets. `_readable` asks a fixed number of queries
 	# whatever the row count - longer IN lists, not more queries - and it keys
 	# on (doctype, name), so the overlap between the two sets costs nothing.
 	gate = alerts + open_alerts
 	allowed = grooming._readable(user, gate) if gate else set()
-	shown = [r for r in rows if r.document_type == ANNOUNCEMENT
+	shown = [r for r in rows if r.document_type in OWN_COPY
 	         or (r.document_type, r.document_name) in allowed]
 	# Pinned first, then newest first (the sort keeps creation order inside each).
 	shown.sort(key=lambda r: r.document_type != ANNOUNCEMENT)
@@ -115,13 +121,13 @@ def notices_feed(see_all=0):
 
 	unread_total = (
 		frappe.db.count("Notification Log",
-		                {"for_user": user, "document_type": ANNOUNCEMENT, "read": 0})
+		                {"for_user": user, "document_type": ["in", list(OWN_COPY)], "read": 0})
 		+ sum(1 for r in open_alerts
 		      if (r.document_type, r.document_name) in allowed))
 
 	chosen = (sorted(shown, key=lambda r: bool(r.read)) if see_all else unread[:CARD_ROWS])
 	# Grooming links open the day only while grooming is on (as the old bell did).
-	on = grooming.is_on() if any(r.document_type != ANNOUNCEMENT for r in chosen) else False
+	on = grooming.is_on() if any(r.document_type not in OWN_COPY for r in chosen) else False
 	sent = [r.document_name for r in chosen if r.document_type == ANNOUNCEMENT]
 	senders = dict(frappe.get_all(ANNOUNCEMENT, filters={"name": ["in", sent]},
 	                              fields=["name", "sender_label"], as_list=True)) if sent else {}
@@ -137,7 +143,7 @@ def notices_feed(see_all=0):
 			"name": r.name,
 			"kind": "announcement" if r.document_type == ANNOUNCEMENT else "alert",
 			"from": senders.get(r.document_name) if r.document_type == ANNOUNCEMENT else None,
-			"text": html.unescape(r.subject or "") if r.document_type == ANNOUNCEMENT else r.subject,
+			"text": html.unescape(r.subject or "") if r.document_type in OWN_COPY else r.subject,
 			"link": r.link if on and str(r.link or "").startswith("/hrms-employee?grooming=") else None,
 			"when": str(r.creation),
 			"read": 1 if r.read else 0,

@@ -14824,7 +14824,7 @@ function lvPaint() {
           "This is sent for confirmation. Until it is confirmed, nothing changes for {0}: {0} stays on your team and is shown as working.",
           [first])) + "</p>"
       + '<div class="pfx-err" id="lv-err" role="alert">'
-      + esc(s.offline ? drT("Not sent. We kept your date. Try again when you have signal.") : (s.err || "")) + "</div>"
+      + esc(s.offline ? drT("It may not have been sent. We kept your date. Check your team list before you try again.") : (s.err || "")) + "</div>"
       + '<div class="pfx-acts"><button type="button" class="btn" onclick="lvClose()">' + esc(drT("Not now")) + "</button>"
       + '<button type="button" class="btn btn-primary" id="lv-send" onclick="lvSend()"'
       + (s.sending ? " disabled" : "") + ">"
@@ -14854,9 +14854,9 @@ function lvSend() {
     lvPaint();
   }, function (e) {
     s.sending = false;
-    /* No answer is "Not sent" (the approved words) and Try again is safe even
-       if the first send did land: the server refuses a second report with
-       "You already reported this person on ...", which tells the truth. */
+    /* No answer may mean the report landed, so the words say "may not have been
+       sent" and ask for a look first. A second send is still safe: the server
+       refuses it with "You already reported this person on ...". */
     if (e && e.server) s.err = e.message;
     else s.offline = true;
     lvPaint();

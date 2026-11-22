@@ -106,7 +106,7 @@ class _Base(FrappeTestCase):
 		# that rule on purpose (the break test). Start every test from empty.
 		frappe.db.set_value("Employee", self.rpt, "_assign", None, update_modified=False)
 		users = [self.mgr_user, self.hr_a_user, self.hr_b_user, self.skip_user]
-		frappe.db.delete("Notification Log", {"for_user": ("in", users), "document_type": "Employee"})
+		frappe.db.delete("Notification Log", {"for_user": ("in", users), "document_type": "ToDo"})
 		frappe.db.commit()
 
 	def _as(self, user):
@@ -376,7 +376,7 @@ class TestGuard(_Base):
 		_save(self.todo, status="Closed")
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("ToDo", self.todo, "status"), "Closed")
-		bells = frappe.get_all("Notification Log", filters={"for_user": self.mgr_user, "document_type": "Employee"},
+		bells = frappe.get_all("Notification Log", filters={"for_user": self.mgr_user, "document_type": "ToDo"},
 		                       fields=["type", "subject"])
 		self.assertEqual(len(bells), 1)
 		self.assertEqual(bells[0].type, "Alert", "Alert is the type Frappe never emails")
@@ -425,7 +425,7 @@ class TestEmployeeSave(_Base):
 		emp.save()
 		frappe.set_user("Administrator")
 		self.assertEqual({r.status for r in self._todos()}, {"Closed"})
-		bells = frappe.get_all("Notification Log", filters={"for_user": self.mgr_user, "document_type": "Employee"},
+		bells = frappe.get_all("Notification Log", filters={"for_user": self.mgr_user, "document_type": "ToDo"},
 		                       fields=["subject", "type"])
 		self.assertEqual(len(bells), 1)
 		self.assertIn("Confirmed:", bells[0].subject)
@@ -763,3 +763,126 @@ class TestARealRequest(_Base):
 			# the counter lives in Redis; leave nothing behind for the next run
 			for k in frappe.cache.get_keys("rl:*send_leaver_report*"):
 				frappe.cache.delete(k)
+
+
+# ── fix round 2 (05-review M-1, M-2; 06-security-review F1, F2) ──────────────
+
+class TestRoundTwo(_Base):
+
+	def _rate_reset(self):
+		for k in frappe.cache.get_keys("rl:*send_leaver_report*"):
+			frappe.cache.delete(k)
+
+	def tearDown(self):
+		self._rate_reset()
+		super().tearDown()
+
+	# F1: the reporter cannot share the notice with one login or with everyone.
+	def test_the_reporter_cannot_share_the_notice(self):
+		self._as(self.mgr_user)
+		self._send()
+		todo = self._as_admin_todos()[0].name
+		self._as(self.mgr_user)
+		import frappe.share
+		for label, kw in (("one login", {"user": self.col_user, "write": 1}),
+		                  ("everyone", {"everyone": 1})):
+			with self.assertRaises(frappe.PermissionError, msg=label):
+				frappe.share.add("ToDo", todo, **kw)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count("DocShare", {"share_doctype": "ToDo", "share_name": todo}), 0)
+		# an ordinary ToDo can still be shared: the guard looks only at the marker
+		plain = frappe.get_doc({"doctype": "ToDo", "description": "S089 plain task",
+		                        "allocated_to": self.mgr_user}).insert(ignore_permissions=True)
+		try:
+			frappe.share.add("ToDo", plain.name, user=self.col_user)
+			self.assertEqual(frappe.db.count("DocShare", {"share_doctype": "ToDo",
+			                                               "share_name": plain.name}), 1)
+		finally:
+			frappe.db.delete("DocShare", {"share_doctype": "ToDo", "share_name": plain.name})
+			frappe.delete_doc("ToDo", plain.name, force=True, ignore_permissions=True)
+			frappe.db.commit()
+
+	# F2: a confirmer whose branch scope does not cover the person is not told.
+	def test_a_branch_limited_confirmer_from_another_branch_is_not_a_confirmer(self):
+		branches = []
+		for b in ("S089 Branch X", "S089 Branch Y"):
+			if not frappe.db.exists("Branch", b):
+				frappe.get_doc({"doctype": "Branch", "branch": b}).insert()
+			branches.append(b)
+		x, y = branches
+		hra2_user = _login("hra2", (ROLE, "HR User", "Employee"))
+		hra2 = _employee("S089HrA2", company=self.company_a, user=hra2_user)
+		frappe.db.set_value("Employee", self.rpt, "branch", x, update_modified=False)
+		perm = frappe.get_doc({"doctype": "User Permission", "user": self.hr_a_user,
+		                       "allow": "Branch", "for_value": y}).insert(ignore_permissions=True)
+		frappe.db.commit()
+		try:
+			self._as(self.mgr_user)
+			self._send()
+			got = {r.allocated_to for r in self._as_admin_todos()}
+			self.assertEqual(got, {hra2_user}, "the other-branch HR must not be a confirmer")
+			self._as(self.hr_a_user)
+			self.assertEqual(frappe.get_list("ToDo", filters={FIELD: self.rpt}), [])
+			self._as(hra2_user)
+			self.assertEqual(len(frappe.get_list("ToDo", filters={FIELD: self.rpt})), 1)
+		finally:
+			frappe.set_user("Administrator")
+			frappe.delete_doc("User Permission", perm.name, force=True, ignore_permissions=True)
+			frappe.db.set_value("Employee", self.rpt, "branch", None, update_modified=False)
+			frappe.get_doc("User", hra2_user).remove_roles(ROLE)
+			frappe.db.commit()
+
+	# M-1: the manager's portal bell lists the outcome line; nobody else's does.
+	def test_the_portal_bell_lists_the_outcome_for_the_reporter_only(self):
+		from alvoraa_portal import notices
+		self._as(self.mgr_user)
+		self._send()
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc("Employee", self.rpt)
+		doc.status, doc.relieving_date = "Left", nowdate()
+		doc.save()
+		frappe.db.commit()
+		self._as(self.mgr_user)
+		feed = notices.notices_feed(see_all=1)
+		lines = [i["text"] for i in feed["items"] if "Confirmed:" in i["text"]]
+		self.assertEqual(len(lines), 1)
+		self.assertNotIn("&lt;", lines[0])
+		self.assertEqual(feed["unread"], 1)
+		for who in (self.col_user, self.skip_user, self.hr_a_user, self.hr_b_user):
+			self._as(who)
+			self.assertEqual([i for i in notices.notices_feed(see_all=1)["items"]
+			                  if "Confirmed:" in i["text"]], [], who)
+		# and "mark all seen" clears it, like every other portal notice
+		self._as(self.mgr_user)
+		notices.mark_all_seen()
+		self.assertEqual(notices.notices_feed()["unread"], 0)
+
+	# M-2: two requests that overlap: the second must find the first one's rows,
+	# although it took its read snapshot before the first committed.
+	def test_an_overlapping_second_report_is_refused(self):
+		import threading
+		site = frappe.local.site
+
+		def first():
+			frappe.init(site=site)
+			frappe.connect()
+			try:
+				frappe.set_user(self.mgr_user)
+				self._send()
+				frappe.db.commit()
+			finally:
+				frappe.destroy()
+
+		self._as(self.mgr_user)
+		frappe.db.commit()
+		# fix this connection's snapshot BEFORE the first request commits
+		frappe.db.get_value("ToDo", {FIELD: self.rpt, "status": "Open"}, "name")
+		t = threading.Thread(target=first)
+		t.start()
+		t.join(60)
+		self.assertFalse(t.is_alive())
+		with self.assertRaises(frappe.PermissionError):
+			self._send()
+		frappe.db.rollback()
+		frappe.set_user("Administrator")
+		self.assertEqual(len(self._todos()), 1, "exactly one report, one confirmer")

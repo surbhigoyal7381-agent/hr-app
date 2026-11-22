@@ -666,3 +666,96 @@ class TestPins(_Base):
 			if hasattr(fn, "__alvoraa_limit__") else None
 		self.assertIn(fn, frappe.whitelisted)
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[fn], ["POST"])
+
+
+class TestARealRequest(_Base):
+	"""SEC-12 and OPS-12 over real HTTP, through `frappe.app.application`.
+
+	A direct Python call skips the CSRF check, the method check and the rate
+	limit, which are exactly what these assert. The request tears down the
+	connection this test holds, so the context is rebuilt afterwards.
+	"""
+
+	PASSWORD = "S089-Pass-7391-xyz"
+	URL = "/api/method/alvoraa_portal.leaver_report.send_leaver_report"
+
+	def _session(self):
+		from werkzeug.test import Client
+
+		from frappe.app import application
+		from frappe.utils.password import update_password
+
+		update_password(self.mgr_user, self.PASSWORD)
+		# a member of staff who has chosen their own password (ALV-242 first-use lock)
+		frappe.db.set_value("User", self.mgr_user, "last_password_reset_date", nowdate())
+		frappe.cache.hdel("alvoraa_password_chosen", self.mgr_user)
+		frappe.db.commit()
+		self.site = frappe.local.site
+		self.client = Client(application)
+		r = self.client.post("/api/method/login", json={"usr": self.mgr_user, "pwd": self.PASSWORD},
+		                     headers={"Host": self.site})
+		self.assertEqual(r.status_code, 200, "the test login must work or nothing below means anything")
+		import re
+		# Frappe does not SAVE a minted token while `frappe.in_test` is set
+		# (`sessions.generate_csrf_token`), so without this the session carries no
+		# token, the check is skipped, and a "refused" assertion could never pass.
+		# A real portal session has the token saved; this makes this one so.
+		with patch.object(frappe, "in_test", False):
+			page = self.client.get("/hrms-employee", headers={"Host": self.site}).get_data(as_text=True)
+		found = re.search(r'frappe\.csrf_token\s*=\s*"([^"]+)"', page)
+		self.assertTrue(found, "the portal page carries the session's token")
+		self.token = found.group(1)
+
+	def _post(self, token=None, employee=None, method="POST"):
+		headers = {"Host": self.site}
+		if token:
+			headers["X-Frappe-CSRF-Token"] = token
+		body = {"employee": employee or self.rpt, "last_working_day": nowdate()}
+		if method == "GET":
+			return self.client.get(self.URL, query_string=body, headers=headers)
+		return self.client.post(self.URL, json=body, headers=headers)
+
+	def _rebuild(self):
+		site = self.site
+		frappe.destroy()
+		frappe.init(site=site)
+		frappe.connect()
+		frappe.set_user("Administrator")
+
+	def test_without_the_token_nothing_is_written_and_with_it_the_report_works(self):
+		self._session()
+		try:
+			no_token = self._post(token=None)
+			wrong = self._post(token="not-the-token")
+			self.assertEqual(no_token.status_code, 400, no_token.get_data(as_text=True)[:200])
+			self.assertEqual(wrong.status_code, 400)
+			self._rebuild()
+			self.assertEqual(self._todos(), [], "a forged POST wrote something")
+			ok = self._post(token=self.token)
+			self.assertEqual(ok.status_code, 200, ok.get_data(as_text=True)[:300])
+		finally:
+			self._rebuild()
+		self.assertEqual(len(self._todos()), 1)
+
+	def test_a_get_is_refused(self):
+		"""Break test 3: make the method GET-able and this fails."""
+		self._session()
+		try:
+			r = self._post(token=self.token, method="GET")
+			self.assertEqual(r.status_code, 403, r.get_data(as_text=True)[:200])
+		finally:
+			self._rebuild()
+		self.assertEqual(self._todos(), [])
+
+	def test_the_eleventh_report_in_an_hour_is_refused(self):
+		self._session()
+		try:
+			codes = [self._post(token=self.token, employee="HR-EMP-NOPE-089").status_code for _ in range(10)]
+			self.assertNotIn(200, codes)
+			last = self._post(token=self.token, employee="HR-EMP-NOPE-089")
+			self.assertIn("Too many tries", last.get_data(as_text=True))
+		finally:
+			self._rebuild()
+			# the counter lives in Redis; leave nothing behind for the next run
+			for k in frappe.cache.get_keys("rl:*send_leaver_report*"):
+				frappe.cache.delete(k)

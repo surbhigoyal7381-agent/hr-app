@@ -3542,3 +3542,14 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
 .rn-thumbs img{width:88px;height:88px;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--border)}
 .rn-sheet .rn-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
 .rn-sheet .rn-foot .btn{min-height:48px;flex:1 1 auto}
+
+/* Slice 089: leaver report, quiet on purpose (design v2: not loud). */
+.lv-icon{background:none;border:0;color:var(--text3);min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border-radius:var(--r-sm)}
+.lv-icon:hover,.lv-icon:focus-visible{color:var(--text);background:var(--surface2)}
+.lv-note,.lv-emp-note{margin:0 0 12px;padding:2px 0 2px 12px;border-left:3px solid var(--border2);color:var(--text2);font-size:var(--fs-base)}
+.lv-state{margin-top:8px;font-size:var(--fs-xs);color:var(--text3)}
+.lv-dl{margin:0;display:grid;grid-template-columns:minmax(0,40%) minmax(0,60%);gap:8px 14px;align-items:start}
+.lv-dl dt{margin:0;font-size:var(--fs-xs);color:var(--text3)}
+.lv-dl dd{margin:0;font-size:var(--fs-base);overflow-wrap:anywhere}
+.lv-personal{grid-column:1/-1}
+@media (max-width:600px){.lv-dl{grid-template-columns:1fr;gap:2px}.lv-dl dd{margin-bottom:8px}}

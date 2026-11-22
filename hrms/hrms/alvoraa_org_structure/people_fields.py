@@ -77,6 +77,20 @@ MY_PROFILE_WRITE_FIELDS = (
 	"emergency_phone_number",
 )
 
+# ── what a direct manager may see of a team member (slice 089) ───────────────
+#
+# Five details, ticked in three groups on the screen: personal phone, home
+# address, emergency contact (three fields). Personal email and the permanent
+# address are NOT here and never offered. "See" only: a manager changes
+# nothing through this list (that half of slice 089 is deferred).
+MANAGER_SEES_FIELDS = (
+	"cell_number",
+	"current_address",
+	"person_to_be_contacted",
+	"relation",
+	"emergency_phone_number",
+)
+
 # ── what no tick may ever reach ──────────────────────────────────────────────
 #
 # This is belt and braces: nothing here is on either list above, so the lists
@@ -139,6 +153,7 @@ def is_denied(fieldname):
 LIST_KEYS = {
 	"alvoraa_positions_profile_fields": POSITIONS_PROFILE_FIELDS,
 	"alvoraa_my_profile_fields": MY_PROFILE_WRITE_FIELDS,
+	"alvoraa_manager_sees_team_details": MANAGER_SEES_FIELDS,
 	# Slice 079. All three are the SAME SIX as My Profile, by identity rather
 	# than by copy (079 AC-104), so a third candidate list cannot appear and
 	# drift away from the one the code actually allows.

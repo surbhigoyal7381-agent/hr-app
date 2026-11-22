@@ -9087,7 +9087,7 @@ function mypPaintPicture() {
     : '<button type="button" class="btn btn-primary myp-b" data-myp="camera">' + esc(drT("Take a photo")) + '</button>'
       + '<button type="button" class="btn btn-outline myp-b" data-myp="pick">' + esc(drT("Choose a file")) + '</button>';
 
-  hmEl("myp-pic").innerHTML = '<div class="nc-box myp-card">'
+  hmEl("myp-pic").innerHTML = lvEmployeeLine(d) + '<div class="nc-box myp-card">'
     + '<h3 class="nc-h3" style="margin-top:0">' + esc(drT(has ? "Your picture" : "Add your picture")) + '</h3>'
     + '<div class="myp-pic-row">' + circle
     + '<p class="myp-said">' + esc(has
@@ -9482,6 +9482,8 @@ function ocsLoad() {
     OCS.data = d;
     ocsPaint();
     card.style.display = "";
+    var lvc = hmEl("org-managers-card");
+    if (lvc) { lvc.style.display = ""; lvAdminPaint(d); }
   }, function () {
     /* Not a System Manager: not theirs to see, so the card is not there. */
     card.style.display = "none";
@@ -14676,6 +14678,329 @@ document.addEventListener("click", function (e) {
   if (who) mpfOpen(who, t);
 });
 
+/* ── Slice 089: a manager reports that a direct report left ─────────────────
+   Everything here DRAWS what the server decided. The icon appears only when
+   `can_report` is true, the personal card holds only the keys the server sent,
+   and every refusal sentence is the server's own. Nothing from the server
+   reaches innerHTML unescaped. "Change" (emergency contact) is not built. */
+var LV = {api: "alvoraa_portal.leaver_report.", emp: null, sheet: null, opener: null, dlg: null};
+var LV_SEES_KEY = "alvoraa_manager_sees_team_details";
+var LV_ROLE_KEY = "alvoraa_leaver_confirm_role";
+var LV_GROUPS = [
+  {k: "phone", fields: ["cell_number"], label: "Personal phone",
+   hint: "Staff can already correct this on My profile."},
+  {k: "addr", fields: ["current_address"], label: "Home address",
+   hint: "Staff can already correct this on My profile."},
+  {k: "emg", fields: ["person_to_be_contacted", "relation", "emergency_phone_number"],
+   label: "Emergency contact", hint: "Name, relation and phone. Staff can already correct these."}
+];
+
+function lvIso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+function lvAdd(iso, n) { var d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return lvIso(d); }
+function lvFirst(n) { return String(n || "").split(" ")[0]; }
+
+function lvHost(html) {
+  var host = document.getElementById("lv-host");
+  if (!html) { if (host) host.remove(); return; }
+  if (!host) { host = document.createElement("div"); host.id = "lv-host"; host.className = "pfx"; document.body.appendChild(host); }
+  host.innerHTML = html;
+}
+
+/* Tab stays inside the open sheet or dialog; Escape closes it. */
+function lvKeys(e, close) {
+  if (e.key === "Escape") { close(); return; }
+  if (e.key !== "Tab") return;
+  var box = e.currentTarget;
+  var f = box.querySelectorAll("button:not([disabled]), input:not([disabled]), select, a[href]");
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+
+/* the Scorecard header, note and card ------------------------------------- */
+
+function lvHeader(d) {
+  var emp = d.employee || {};
+  LV.emp = {id: emp.name, name: emp.employee_name || ""};
+  var old = document.getElementById("sc-left-btn");
+  if (old) old.remove();
+  if (!d.can_report) return;
+  var first = lvFirst(emp.employee_name);
+  var label = drT("Report that {0} left", [first]);
+  var b = document.createElement("button");
+  b.type = "button"; b.id = "sc-left-btn"; b.className = "lv-icon";
+  b.setAttribute("aria-label", label); b.title = label;
+  b.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'
+    + '<path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
+  b.onclick = lvOpen;
+  var ident = document.querySelector("#panel-scorecard .sc-identity");
+  if (ident) ident.appendChild(b);
+}
+
+function lvNote(d) {
+  var r = d.open_report;
+  if (!r) return "";
+  var first = lvFirst((d.employee || {}).employee_name);
+  return '<p class="lv-note" role="note"><b>' + esc(drT("Reported, not yet confirmed.")) + "</b> "
+    + esc(drT("You reported on {0} that {1}'s last working day is {2}. {1} stays on your team until it is confirmed.",
+              [fmtDate(r.reported_on), first, fmtDate(r.last_day)])) + "</p>";
+}
+
+function lvPersonal(d) {
+  var p = d.personal || {}, emp = d.employee || {};
+  if (emp.status !== "Active") return "";
+  var rows = LV_GROUPS.filter(function (g) {
+    return g.fields.some(function (f) { return f in p; });
+  }).map(function (g) {
+    var v = g.fields.map(function (f) { return p[f]; }).filter(Boolean).join(", ");
+    return "<dt>" + esc(drT(g.label)) + "</dt><dd>" + esc(v || drT("Not set")) + "</dd>";
+  });
+  if (!rows.length) return "";
+  return '<div class="sc-card lv-personal"><div class="sc-card-hdr">' + esc(drT("Personal details")) + "</div>"
+    + '<div class="sc-card-body"><p class="gp-hint" style="margin:0 0 8px">'
+    + esc(drT("Your organisation lets managers see these. Only you and HR can see them. Staff can see that you can."))
+    + '</p><dl class="lv-dl">' + rows.join("") + "</dl></div></div>";
+}
+
+/* the Team card ------------------------------------------------------------ */
+
+function lvTeamLine(reported, id) {
+  return (reported && reported[id])
+    ? '<div class="lv-state">&#9203; ' + esc(drT("Reported, not yet confirmed")) + "</div>" : "";
+}
+
+/* My profile: what the person is told ------------------------------------- */
+
+function lvEmployeeLine(d) {
+  var r = d && d.leaver_report;
+  if (!r) return "";
+  return '<p class="lv-emp-note" role="note">' + esc(drT(
+    "Your manager {0} reported that your last working day is {1}. It has not been confirmed yet. "
+    + "Nothing about your pay or sign-in has changed. Not right? Speak to HR.",
+    [r.by, fmtDate(r.last_day)])) + "</p>";
+}
+
+/* the report sheet ---------------------------------------------------------- */
+
+function lvOpen() {
+  if (!LV.emp) return;
+  LV.opener = document.getElementById("sc-left-btn");
+  LV.sheet = {date: lvIso(new Date()), err: "", sending: false, offline: false, done: null};
+  lvPaint();
+}
+
+function lvClose() {
+  LV.sheet = null; lvHost("");
+  var o = document.getElementById("sc-left-btn") || LV.opener;
+  if (o && o.focus) o.focus();
+}
+
+function lvPaint() {
+  var s = LV.sheet;
+  if (!s) { lvHost(""); return; }
+  var first = lvFirst(LV.emp.name), today = lvIso(new Date());
+  var h = '<div class="pfx-scrim" onclick="if(event.target===this)lvClose()"><div id="lv-sheet" class="pfx-sheet"'
+    + ' role="dialog" aria-modal="true" aria-labelledby="lv-t" onkeydown="lvKeys(event,lvClose)">';
+  if (s.done) {
+    h += '<h2 id="lv-t">' + esc(drT("{0} left?", [LV.emp.name])) + "</h2>"
+      + '<p class="pfx-ctx"><b>&#10003; ' + esc(drT("Sent for confirmation")) + "</b><br>"
+      + esc(drT("You reported this on {0}. {1} shows as working until it is confirmed. Wrong person or date? Ask HR.",
+                [fmtDate(s.done.reported_on), first])) + "</p>"
+      + '<div class="pfx-acts"><button type="button" class="btn btn-primary" id="lv-first" onclick="lvDone()">'
+      + esc(drT("Done")) + "</button></div>";
+  } else {
+    h += '<h2 id="lv-t">' + esc(drT("{0} left?", [LV.emp.name])) + "</h2>"
+      + '<div class="pfx-field"><label class="pfx-fl" for="lv-date">' + esc(drT("Last working day")) + "</label>"
+      + '<input type="date" id="lv-date" value="' + esc(s.date) + '" min="' + lvAdd(today, -31) + '" max="'
+      + lvAdd(today, 60) + '" oninput="lvDate(this.value)" aria-describedby="lv-hint lv-prev">'
+      + '<p class="pfx-ctx" id="lv-hint">' + esc(drT("The last day {0} worked, or will work.", [first])) + "</p></div>"
+      + '<p class="pfx-ctx" id="lv-prev" role="status">'
+      + esc(drT("You are reporting: {0} · last working day {1}.", [LV.emp.name, fmtDate(s.date)])) + "</p>"
+      + '<p class="pfx-ctx">' + esc(drT(
+          "This is sent for confirmation. Until it is confirmed, nothing changes for {0}: {0} stays on your team and is shown as working.",
+          [first])) + "</p>"
+      + '<div class="pfx-err" id="lv-err" role="alert">'
+      + esc(s.offline ? drT("Not sent. We kept your date. Try again when you have signal.") : (s.err || "")) + "</div>"
+      + '<div class="pfx-acts"><button type="button" class="btn" onclick="lvClose()">' + esc(drT("Not now")) + "</button>"
+      + '<button type="button" class="btn btn-primary" id="lv-send" onclick="lvSend()"'
+      + (s.sending ? " disabled" : "") + ">"
+      + esc(s.sending ? drT("Sending…") : s.offline ? drT("Try again") : drT("Report that {0} left", [first]))
+      + "</button></div>";
+  }
+  lvHost(h + "</div></div>");
+  var f = document.getElementById(s.done ? "lv-first" : (s.err || s.offline ? "lv-send" : "lv-date"));
+  if (f) f.focus();
+}
+
+function lvDate(v) {
+  if (!LV.sheet) return;
+  LV.sheet.date = v;
+  var p = document.getElementById("lv-prev");
+  if (p) p.textContent = drT("You are reporting: {0} · last working day {1}.", [LV.emp.name, fmtDate(v)]);
+}
+
+function lvSend() {
+  var s = LV.sheet;
+  if (!s || s.sending) return;
+  s.sending = true; s.err = ""; s.offline = false; lvPaint();
+  gpFetch(LV.api + "send_leaver_report", {employee: LV.emp.id, last_working_day: s.date},
+          {lostAnswerHandled: true}).then(function (r) {
+    s.sending = false;
+    s.done = {reported_on: (r && r.reported_on) || lvIso(new Date()), last_day: (r && r.last_working_day) || s.date};
+    lvPaint();
+  }, function (e) {
+    s.sending = false;
+    if (e && e.server) s.err = e.message;
+    else if (mayHaveGone(e)) s.err = drT("No answer from the office. It may have gone through. Close this and look at the Team list before you send it again.");
+    else s.offline = true;
+    lvPaint();
+  });
+}
+
+/* Done: the icon goes and the note appears, from what the server just said. */
+function lvDone() {
+  var s = LV.sheet, r = s && s.done;
+  LV.sheet = null; lvHost("");
+  var b = document.getElementById("sc-left-btn");
+  if (b) b.remove();
+  var body = document.getElementById("sc-body");
+  if (r && body) {
+    var tmp = document.createElement("div");
+    tmp.innerHTML = lvNote({employee: {employee_name: LV.emp.name},
+                            open_report: {reported_on: r.reported_on, last_day: r.last_day}});
+    if (tmp.firstChild) body.insertBefore(tmp.firstChild, body.firstChild);
+  }
+  var back = document.querySelector("#panel-scorecard .sc-back-btn");
+  if (back) back.focus();
+}
+
+/* the Administrator card ----------------------------------------------------- */
+
+function lvTicked(d) {
+  var have = d.manager_sees_fields || [];
+  return LV_GROUPS.filter(function (g) { return g.fields.every(function (f) { return have.indexOf(f) >= 0; }); })
+    .map(function (g) { return g.k; });
+}
+
+function lvAdminPaint(d) {
+  var box = hmEl("lv-admin-body");
+  if (!box) return;
+  var ticked = lvTicked(d);
+  var chips = ticked.length
+    ? '<div class="ocs-chips">' + LV_GROUPS.filter(function (g) { return ticked.indexOf(g.k) >= 0; }).map(function (g) {
+        return '<span class="ocs-chip">' + esc(drT(g.label)) + "</span>"; }).join("") + "</div>"
+    : '<p class="gp-hint">' + esc(drT("None. Managers see no personal details of their team.")) + "</p>";
+  var role = d.leaver_confirm_role || "HR Manager";
+  var roles = (d.leaver_confirm_roles || []).slice();
+  if (roles.indexOf(role) < 0) roles.unshift(role);
+  box.innerHTML = '<div class="ocs-sec"><h4 class="ocs-h">' + esc(drT("Managers can see")) + "</h4>" + chips
+    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" id="lv-see-btn" data-lv="see">'
+    + esc(drT("Change what managers see")) + "</button></div></div>"
+    + '<div class="ocs-sec"><h4 class="ocs-h"><label for="lv-role">' + esc(drT("Leaver notices are confirmed by")) + "</label></h4>"
+    + '<select class="gp-input" id="lv-role" data-lv="role" aria-describedby="lv-role-hint lv-role-err">'
+    + roles.map(function (r) {
+        return "<option" + (r === role ? " selected" : "") + ">" + esc(r) + "</option>"; }).join("") + "</select>"
+    + '<p class="gp-hint" id="lv-role-hint">' + esc(drT(
+        "When a manager reports that someone left, everyone with this role gets a to-do in Desk and confirms it there. "
+        + "Only they set a person to Left. {0} enabled people hold {1}.", [d.leaver_confirm_holders || 0, role])) + "</p>"
+    + '<div class="pfx-err" id="lv-role-err" role="alert"></div></div>';
+  hmEl("lv-admin-changed").textContent = d.last_changed && d.last_changed.by
+    ? drT("Changed by {0} on {1}", [d.last_changed.by, fmtDate(d.last_changed.on)]) : "";
+}
+
+function lvSeeDialog() {
+  var d = OCS.data || {};
+  LV.dlg = {tick: lvTicked(d), people: d.manager_sees_people || 0};
+  var box = document.createElement("div");
+  box.className = "ocs-back"; box.id = "lv-dlg";
+  box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true" aria-labelledby="lv-dlg-h" tabindex="-1">'
+    + '<div class="ocs-dlg-hd"><h3 id="lv-dlg-h">' + esc(drT("Managers can see")) + "</h3>"
+    + '<button type="button" class="ocs-x" data-lv="cancel" aria-label="' + esc(drT("Cancel")) + '">&times;</button></div>'
+    + '<div class="ocs-dlg-bd"><p class="oc2-lead">' + esc(drT(
+        "Tick the personal details a manager may see about the people who report to them. "
+        + "Personal email, pay, bank, ID numbers and date of birth are never offered.")) + "</p>"
+    + LV_GROUPS.map(function (g) {
+        return '<label class="ocs-opt"><input type="checkbox" data-lv="tick" value="' + g.k + '"'
+          + (LV.dlg.tick.indexOf(g.k) >= 0 ? " checked" : "") + '><span><b>' + esc(drT(g.label)) + "</b>"
+          + '<span class="gp-hint" style="display:block">' + esc(drT(g.hint)) + "</span></span></label>";
+      }).join("")
+    + '<p class="lv-err pfx-err" id="lv-dlg-err" role="alert"></p></div>'
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="lv-sum" role="status"></p><div class="ocs-ft-b oc2-ft-b">'
+    + '<button type="button" class="btn btn-outline ocs-b" data-lv="cancel">' + esc(drT("Cancel")) + "</button>"
+    + '<button type="button" class="btn btn-primary ocs-b oc2-ok" data-lv="save" id="lv-save"></button></div></div></div>';
+  box.addEventListener("keydown", function (e) { lvKeys(e, lvDlgClose); });
+  document.body.appendChild(box);
+  lvDlgSum();
+  box.querySelector("input").focus();
+}
+
+function lvDlgSum() {
+  var n = LV.dlg.tick.length, p = LV.dlg.people;
+  hmEl("lv-sum").textContent = n
+    ? drT("Managers will see {0} of these about {1} people who have a manager.", [n, p])
+    : drT("Managers will see none of these.");
+  hmEl("lv-save").textContent = n
+    ? drT("Save — managers see {0} details about {1} people", [n, p])
+    : drT("Save — managers see none of these");
+}
+
+function lvDlgClose() {
+  var b = document.getElementById("lv-dlg");
+  if (b) b.remove();
+  LV.dlg = null;
+  var o = document.getElementById("lv-see-btn");
+  if (o) o.focus();
+}
+
+function lvSave(key, value, done, fail) {
+  gpFetch(OCS_API + "set_people_setting", {key: key, value: value}, {lostAnswerHandled: true}).then(done, fail);
+}
+
+document.addEventListener("click", function (e) {
+  var t = e.target.closest && e.target.closest("[data-lv]");
+  if (!t) return;
+  var what = t.getAttribute("data-lv");
+  if (what === "see") lvSeeDialog();
+  else if (what === "cancel") lvDlgClose();
+  else if (what === "save" && LV.dlg) {
+    var fields = [];
+    LV_GROUPS.forEach(function (g) { if (LV.dlg.tick.indexOf(g.k) >= 0) fields = fields.concat(g.fields); });
+    var btn = t; btn.disabled = true;
+    lvSave(LV_SEES_KEY, fields.join(","), function () {
+      lvDlgClose(); ocsLoad(); toast(drT("Saved."), "ok");
+    }, function (err) {
+      btn.disabled = false;
+      var m = hmEl("lv-dlg-err");
+      if (m) m.textContent = mayHaveGone(err)
+        ? drT("No answer from the office. It may have gone through. Close this and look before you save it again.")
+        : (err && err.message) || drT("Could not save that. Try again.");
+    });
+  }
+});
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!t || !t.getAttribute) return;
+  var what = t.getAttribute("data-lv");
+  if (what === "tick" && LV.dlg) {
+    var i = LV.dlg.tick.indexOf(t.value);
+    if (t.checked && i < 0) LV.dlg.tick.push(t.value);
+    if (!t.checked && i >= 0) LV.dlg.tick.splice(i, 1);
+    lvDlgSum();
+  } else if (what === "role") {
+    var err = hmEl("lv-role-err");
+    if (err) err.textContent = "";
+    lvSave(LV_ROLE_KEY, t.value, function () { ocsLoad(); toast(drT("Saved."), "ok"); }, function (x) {
+      if (err) err.textContent = mayHaveGone(x)
+        ? drT("No answer from the office. It may have gone through. Look before you save it again.")
+        : (x && x.message) || drT("Could not save that. Try again.");
+      var cur = (OCS.data || {}).leaver_confirm_role;
+      if (cur) t.value = cur;
+    });
+  }
+});
+
 /* ── Employee Scorecard ──────────────────────────── */
 var _scBackPanel = "team";
 var _scBackNavEl = null;
@@ -14684,6 +15009,8 @@ function openEmpScorecard(empId, color) {
   _scBackPanel = document.querySelector(".panel.active") ? (document.querySelector(".panel.active").id || "team").replace("panel-", "") : "team";
   _scBackNavEl = document.querySelector(".nav-item.active");
   switchPanel("scorecard");
+  var _lvOld = document.getElementById("sc-left-btn");
+  if (_lvOld) _lvOld.remove();
   var av = document.getElementById("sc-avatar");
   av.style.background = color || "var(--primary)";
   av.textContent = "…";
@@ -14712,6 +15039,7 @@ function renderScorecard(d, color) {
   document.getElementById("sc-emp-name").textContent = emp.employee_name || "";
   document.getElementById("sc-emp-role").textContent = [emp.designation, emp.department].filter(Boolean).join(" • ");
   document.getElementById("sc-join-badge").textContent = emp.date_of_joining ? "Joined " + fmtDate(emp.date_of_joining) : "";
+  lvHeader(d);
 
   var att     = d.month_att_summary || {};
   var present = (att["Present"] || 0) + Math.round((att["Half Day"] || 0) * 0.5);
@@ -14846,6 +15174,7 @@ function renderScorecard(d, color) {
 
   // Assemble body
   document.getElementById("sc-body").innerHTML =
+    lvNote(d) +
     statsHtml +
     pendHtml +
     '<div class="sc-grid">' +
@@ -14865,6 +15194,7 @@ function renderScorecard(d, color) {
         '<div class="sc-card-hdr">Appraisal History</div>' +
         '<div class="sc-card-body">' + apprHtml + '</div>' +
       '</div>' +
+      lvPersonal(d) +
     '</div>';
 }
 
@@ -15118,7 +15448,7 @@ function renderTeamData(d) {
         const status = todayAtt[m.name] || "—";
         const cls    = statusCss[status] || "badge-gray";
         const color  = TEAM_COLORS[i % TEAM_COLORS.length];
-        return '<div class="team-card" onclick="openEmpScorecard(\'' + m.name + '\',\'' + color + '\')"><div class="team-avatar" style="background:' + color + '">' + initials(m.employee_name) + '</div><div class="team-card-name" title="' + esc(m.employee_name) + '">' + esc(m.employee_name) + '</div><div class="team-card-role" title="' + esc(m.designation||"") + '">' + esc(m.designation||"—") + '</div><div class="team-card-status"><span class="badge ' + cls + '">' + status + '</span></div></div>';
+        return '<div class="team-card" onclick="openEmpScorecard(\'' + m.name + '\',\'' + color + '\')"><div class="team-avatar" style="background:' + color + '">' + initials(m.employee_name) + '</div><div class="team-card-name" title="' + esc(m.employee_name) + '">' + esc(m.employee_name) + '</div><div class="team-card-role" title="' + esc(m.designation||"") + '">' + esc(m.designation||"—") + '</div><div class="team-card-status"><span class="badge ' + cls + '">' + status + '</span></div>' + lvTeamLine(d.reported, m.name) + '</div>';
       }).join("");
 
   // On leave today

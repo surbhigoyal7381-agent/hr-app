@@ -319,6 +319,11 @@ doc_events = {
             "alvoraa_portal.manager_scope.on_employee_update",
             # ALV-249: a staff login sees its own record and nobody else's.
             "alvoraa_portal.own_record_permission.on_employee_update",
+            # Slice 089: a person saved as Left closes the open leaver reports
+            # and tells each reporter. Returns at once unless the status just
+            # became Left, and cannot fail the save. Before the photo handler,
+            # which must stay last.
+            "alvoraa_portal.leaver_report.on_employee_update",
             # Slice 078 (OPS-12, OPS-13): derive the 48 px copy of a changed
             # photograph. LAST in the chain and guarded on
             # has_value_changed("image"), so the four handlers above are
@@ -327,7 +332,9 @@ doc_events = {
             # employee, payroll work included.
             "alvoraa_portal.employee_photo.on_employee_update",
         ],
-        "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+        "on_trash":  ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
+                      # Slice 089: no orphan leaver ToDo naming a deleted person.
+                      "alvoraa_portal.leaver_report.on_employee_trash"],
         # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank
         # field on their own record, HR included. See employee_field_rights.py.
         "validate": ["alvoraa_portal.employee_field_rights.refuse_own_locked_change",
@@ -576,8 +583,15 @@ doc_events = {
     "Comment": {
         "validate": "alvoraa_portal.grooming.refuse_side_record",
     },
+    # Slice 089 (SEC-9): a leaver report is a ToDo carrying one marker field.
+    # The guard refuses the reporter's edit or delete and a hand-made marked
+    # ToDo; the update handler tells the reporter when a confirmer declines.
+    # Every other ToDo passes through each of them on one attribute read.
     "ToDo": {
-        "validate": "alvoraa_portal.grooming.refuse_side_record",
+        "validate": ["alvoraa_portal.grooming.refuse_side_record",
+                     "alvoraa_portal.leaver_report.guard_todo"],
+        "on_trash": "alvoraa_portal.leaver_report.guard_todo",
+        "on_update": "alvoraa_portal.leaver_report.on_todo_update",
     },
     "DocShare": {
         "validate": "alvoraa_portal.grooming.refuse_side_record",
@@ -815,6 +829,8 @@ after_migrate = [
     # Slice 080: the "Alternative number" field. Before the line below, so the
     # field exists by the time field rights are applied. See alternative_number.py.
     "alvoraa_portal.alternative_number.after_migrate",
+    # Slice 089: the one Custom Field on ToDo (writes only what is missing).
+    "alvoraa_portal.leaver_report.after_migrate",
     # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
     # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
     # reset in Role Permission Manager is put right. See employee_field_rights.py.
@@ -912,6 +928,8 @@ after_install = [
     # Slice 080: same as after_migrate, and this is the half that matters - a
     # patch would never run here, so a new tenant would not have the field.
     "alvoraa_portal.alternative_number.after_migrate",
+    # Slice 089: the one Custom Field on ToDo (writes only what is missing).
+    "alvoraa_portal.leaver_report.after_migrate",
     # ALV-215: same as after_migrate - a new tenant must not start open.
     "alvoraa_portal.employee_field_rights.apply",
     # Slice 076: the Notice Sender role without desk access. Frappe makes it

@@ -174,4 +174,4 @@ Read my own diff asking what could go. **Removed:** a second Custom Field (date 
 
 ## Commits (local, not pushed)
 
-COMMITS_PLACEHOLDER
+On `slice/089-manager-profile-edits` after `d56823b2` (the strategy gate): `62a1a9dc` the feature and its tests; `eca18b47` tests over real HTTP; `8c6cccaa` the DOM test; `661e1e27` these notes and the test cleanup. This notes file is in the last commit. Nothing was pushed. Stack `alv089-*` was stopped, not removed (`docker start alv089-db alv089-redis alv089-bench` brings it back).

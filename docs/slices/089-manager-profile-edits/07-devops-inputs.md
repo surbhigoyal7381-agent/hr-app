@@ -193,3 +193,123 @@ No nginx gate (`check_nginx_parses.sh`) is needed because nginx is untouched. If
 Release time still owes: per-tenant counts of ToDo `Custom DocPerm`, `Notification` and `Assignment Rule` rows on ToDo (the engineer's list), role-holder counts for the cap, and the Redis part-cache read on dev (OPS-8/15). All on a copy or by read, with Surbhi's approval. Nothing here is a deploy command; those come in §5.
 
 Subtract pass: removed the search index (OPS-21) from the plan; added no new check beyond what the engineer already listed. Left behind: nothing created; only this file edited.
+
+## §5 Release readiness (22 Nov 2026)
+
+Read: worktree `.claude/worktrees/089-manager-profile-edits`, branch `slice/089-manager-profile-edits`, HEAD `bc8450be`, rebased on `origin/dev` `c472f179` (fetched today; `origin/main` is `f68f2333`, 2 commits behind dev). Files and git only. **No site, container, server or phone was touched.** Every command below is **quoted from the runbook or written for you; none was run.** Every one is **FOR SURBHI TO APPROVE**. Tier 1.
+
+### Verdict: ready for dev after CI; NOT ready for main
+
+**Bad news first. Four things block main, and none of them can be closed from the bench:**
+
+1. **P1: the set-Left dry run on a copy of real data (OPS-16 / OPS-22) has not been run.** The local stack has a tiny ToDo table and no leavers. A green local migrate is not "safe on DTC".
+2. **P1: PRIV-4 (how long the notice lives) has no answer from counsel.** There is no purge job and I advise none; the backups keep these rows for the backup's own life.
+3. **P2: the per-tenant read-only counts (ToDo Custom DocPerm, Notification, Assignment Rule on ToDo, confirmer role holders) are not done.** Needs a read on each tenant.
+4. **P2: 3G timing (OPS-10) is not measured.** The 2.5 s figure is still an estimate.
+
+**P2 for dev too: `test_security_log_alv391` failed in quarter 4 of the full suite (D-6) and is unsettled.** The test report's verdict "Fail" (D-1) was written before commit `e35fdb6f`; the engineer measured D-1 fixed in Chromium, but **no tester has re-issued the verdict**. Proven: `a627e0a5` (the ALV-391 logger fix) is already an ancestor of `origin/main`, so AC-60 is met: refusals are observable on main.
+
+### Rollout, local to dev to main
+
+| Step | Gate | Who says go |
+|---|---|---|
+| 0. Local | Tester re-runs the layout test and re-issues the verdict (D-1). Run `node alvoraa_portal/tests/portal_leaver_report_089_layout_chrome.js` by hand. `python3 scripts/check_app_integrity.py`, read its own exit code. | Surbhi |
+| 1. Rebase | `git fetch origin dev && git rebase origin/dev`. **088 clash:** `slice/088-register-signature` also edits `hooks.py` (adds `Alvoraa Register Notice` query and permission lines, and `register_notice.after_migrate` in both `after_migrate` and `after_install`). Whoever lands second re-reads: the `Employee` `on_update` and `on_trash` lists, the `ToDo` block, and one line in each of `after_migrate` and `after_install`. Both add to different keys, so a text clash is likely small, but a silent drop is the danger. `TestPins.test_the_three_todo_validate_handlers_all_still_run` fails loudly if a merge loses a ToDo handler. **Order matters in `after_migrate`:** 088's comment says its hook must come AFTER `punch_fix`; mine only needs to be anywhere after `alternative_number`. Keep both. | engineer |
+| 2. Dev | **Surbhi says "push to dev".** Wait for the last dev CI to finish green, not cancelled (memory: a cancelled run leaves commits unscanned). Push once, then do not push again until it ends. | Surbhi |
+| 3. Dev proof | The post-deploy checks below, on ppj.dev, DTC and Grace dev tenants as they exist on dev. | Surbhi |
+| 4. Rehearsal | Dry run on a copy of real data (next section). | Surbhi |
+| 5. Main | **Surbhi says "push to main"**, only 00:30 to 05:30 IST, after dev testing and every blocker above is closed. A release is a merge into main (`Release <date>: dev <sha> into main`), `git config merge.ours.driver true` first, then confirm `demo/`, `deploy/` and `.github/` show no diff against the old main (one nginx serves dev and production). | Surbhi, each time |
+
+**Secret scan warning (22 Nov release): main's gitleaks reads the whole range, dev reads one push.** This slice's docs list many test module names and ids. Before main, run the same pinned gitleaks over `origin/main..dev` in a container with the repo read-only (what worked on 22 Nov). Otherwise a false positive blocks the night window. **Recommend (P2).**
+
+### Migration dry run on a copy (REHEARSAL.md, adapted)
+
+**Caution: REHEARSAL.md §6a and §6b are the Alvox-to-Alvoraa rename.** They do not apply. Use §3 to §5 (dump, rehearsal stack with only `configurator` and `backend`, restore) and then migrate. **Unknown: whether `rehearsal-*` still builds today** (I did not check). A `bench backup` on the live stack is a write on production's volume (a file), so even the dump needs your word. If a recent nightly backup exists, restore that instead `[not checked]`.
+
+Copies wanted, one per tenant, because role holders, ToDo rules and leavers differ: **DTC** (442 people, the largest), **Grace**. PPJ is a demo; ppj.dev is enough.
+
+On each copy, record before and after (stdout and stderr captured, lesson 8; **not `bench execute`**, use `env/bin/python` with `frappe.init` as the memory on console piping says):
+
+| Check | Before migrate | After migrate | Expect |
+|---|---|---|---|
+| Pending jobs per queue (Frappe's own `bench doctor`) | count | count | no growth. **The 5 Nov trap:** 1,780 permission deletes filled the queue and stopped DTC's migrate midway. This slice writes **no Custom DocPerm**, so expect flat; if it grows, stop |
+| `tabToDo` row count | n | n | unchanged |
+| Custom Field `ToDo-alv_leaver_employee` | 0 | **1** | one row, `varchar(140)`, **no index** (OPS-21) |
+| Second migrate | | | still one row, exit 0 |
+| `after_migrate` order with 088 on the same copy | | | both fields present |
+| Migrate wall time | | seconds | report it; compare with last release's |
+| Sites finished vs sites that exist | | | counted, not "all migrated" |
+
+Then the **set-Left dry run (OPS-16, AC-56)**, on the copy only, three cases: **(a)** an employee with a login, a field phone, direct reports and open leave; **(b)** one with no login; **(c)** a tenant or role where the confirmer role is empty. For each read: the ToDo closed, one bell for the reporter, `block_devices_for_leaver` ran once, the Reports To of the leaver's reports (the engineer says ERPNext refuses Left while Active people report to the leaver, so expect a refusal and an open ToDo, not a change), the user enabled or not, and the save time. **Then run the nightly draft-slip job and check it did not roll back** (Grace, 18 Nov: five leavers rolled back the whole batch silently; `last_execution` is not proof of work, count the slips).
+
+Read-only counts per tenant (SEC-10, AC-58, OPS-11). **Written for you, not run, not verified against a site:**
+
+```python
+# env/bin/python script with frappe.init(site=...); frappe.connect(); read only
+import frappe
+print("custom docperm on ToDo", frappe.db.count("Custom DocPerm", {"parent": "ToDo"}))
+print("assignment rules on ToDo", frappe.db.count("Assignment Rule", {"document_type": "ToDo"}))
+print("notifications on ToDo", frappe.db.count("Notification", {"document_type": "ToDo"}))
+print("ToDo rows", frappe.db.count("ToDo"))
+```
+
+Confirmer role holders: the engineer's `eligible_confirmers` in `hrms/.../settings.py` is the one count to trust (it applies the cap of 10 and the company scope). **Surbhi still owes OPS-11: confirm 10 as the cap.**
+
+### Deploy commands (FOR SURBHI TO APPROVE; quoted, not run)
+
+Nothing new in the image, Compose, Dockerfile or nginx. **Proven by the diff list** (`git diff --stat origin/dev...HEAD`: no `deploy/`, `Dockerfile`, `.github/`, apps list). No `docker cp`, no `bench build`, no `clear-cache` is planned. The deploy is the normal pipeline.
+
+| # | Step | Command | Marker |
+|---|---|---|---|
+| D1 | Push to dev. Never hand-list services. | `git push origin slice/089-manager-profile-edits:dev` after rebase and a green last CI | **FOR SURBHI TO APPROVE** |
+| D2 | Watch the automatic deploy. It runs **main's** `deploy.yml` (lesson 14); if it fails the way 18 Sep did, hand-dispatch: `gh workflow run Deploy --ref dev -f environment=dev -f image_tag=<the new dev-<sha>> -f run_migrations=true` | **FOR SURBHI TO APPROVE** |
+| D3 | Backup first, before main only: `for SITE in <every site>; do docker exec compose-backend-1 bash -lc "cd /home/frappe/frappe-bench && bench --site $SITE backup --with-files"; done`, then look at each file's size (runbook §5.1) | **FOR SURBHI TO APPROVE** |
+| D4 | Disk headroom read before the image pull (lesson 16): `df -h` on the server | **FOR SURBHI TO APPROVE** (read) |
+| D5 | Main: merge, push in the window; production is a manual dispatch or the approval gate (memory says the gate is real since 20 Nov; **read the environment's rules, do not assume**). Migrations on. | **FOR SURBHI TO APPROVE** |
+
+**Install order inside the release:** code lands, `bench migrate` writes the Custom Field via `after_migrate`, app restarts. A new tenant gets it from `after_install`. If code runs before migrate, the hooks log once and do not fail an Employee save (engineer's note, tested only on a fresh site).
+
+### Post-deploy checks, per tenant
+
+For **every** stack: the pin file, the container, and a file only the new commit has are all three read (lesson 3, 19; a green run of an old tag proves nothing). On dev: `deploy/compose/.image.dev.env` names the new tag; `docker inspect devstack-backend-1` runs it; `grep -c leaver_report` on `hooks.py` inside the container is 1+. On main the same with `.image.env` and `compose-backend-1`. All app containers on one tag (workers included, lesson 2). nginx restarted after the backend is replaced (lesson 4).
+
+| Tenant | Read-only checks |
+|---|---|
+| **ppj.dev** (demo, the place to click) | Custom Field count = 1. As a manager: Team grey line, report icon on a direct report, send a report, read one ToDo for the confirmer. Set the person Left as HR; read ToDo closed, one bell. Scorecard JSON as a manager: the four old fields (personal email, company email, gender, ...) absent; ticked ones present (OPS-14, read the JSON, not the screen). A colleague, another team's manager and a guest read nothing (OPS-9). Set Left on a person with Active reports: refused, ToDo stays open |
+| **DTC** | Custom Field count = 1. ToDo Custom DocPerm count unchanged from the pre-read. **Do not send a test report on a real person.** Read Error Log rows since deploy (below). 442 staff, so the Team query count stays flat (spy test says 1 query for 51 ids; wall time for a 50-report manager is **not measured**) |
+| **Grace** | Same as DTC. Draft-slip job still produces slips after the first leaver (count, not last_execution) |
+| Every tenant | The served Team and Scorecard ESS parts read from the container: markup only, no person's text (OPS-6/8/15; Redis part key changes with the build). **`assets.json` in the sites volume against the image** (lesson, sites-volume-assets-stale; the Team and Scorecard JS and `panels.css` are assets). If it is stale, that is a `docker cp` and `assets.json` bump, which needs your approval |
+
+### Rollback: revert only (lesson 20, memory release 13 Nov)
+
+**DEPLOYMENT_RUNBOOK §7 describes restore-from-backup for the rename era; it does not fit this release.** This release has no rename and no destructive migration, so:
+
+1. Write a revert commit on `dev` (or main); wait for CI; deploy it. **Or** dispatch the previous image tag with migrations **off**: `gh workflow run Deploy --ref dev -f environment=<env> -f image_tag=<previous tag> -f run_migrations=false`. **FOR SURBHI TO APPROVE.** The tag must exist **in `alvoraa-app`**; read the package's tag list before the release and write the tag here. **I could not check that today.**
+2. **What stays behind, harmless:** the Custom Field `alv_leaver_employee` on ToDo (an unused column), and any open leaver ToDos, which become ordinary ToDos with no guard (the reporter could then edit or delete theirs; a confirmer can still close). Nothing is destroyed. A column drop is a one-way step and not needed.
+3. **Real rollback time is not known.** Lesson 22: the deploy loop wastes about 7 minutes on `bench version`. Plan for 7 to 10 minutes; **estimate from the 22 Sep run logs, not measured for this release.**
+4. A DB restore is only for a failed migrate, per §7. Not expected: no permission-row or rename churn.
+
+### Monitoring (OPS-18; add nothing)
+
+First hour and first working day after each stage, read-only: Error Log rows naming `send_leaver_report`, `get_employee_scorecard`, the ToDo guard, `leaver_report` hooks, and the Employee hooks (`block_devices_for_leaver`, `manager_scope`, `own_record_permission`); `RateLimitExceededError` counts (the report limit is 10 an hour per user); the confirmer's open leaver ToDos older than 2 working days (a leaver still on payroll); **`security.log` is non-empty after a refusal** (ALV-391 is on main, but read it: it was 0 bytes on production for a month); Left-save timing on DTC; Deploy pause refuses biometric posts for about 1 minute (memory), so main stays in the window.
+
+### The new Chromium layout test: wire it into CI?
+
+**Recommend: no (Consider, P3).** Basis: the test lays out the template's own markup and the real CSS in a page, so it needs a Chromium, but no site. It guards one bug (D-1) already pinned in CI by the one-line DOM check that asserts the icon's parent is `.sc-topbar`. A browser in CI is a new dependency to patch, and CI has already failed once on an apt source for a package we did not use. Cost of leaving it out: a CSS-only regression passes CI. **Instead: run it by hand at each release that touches `panels.css` or `lvHeader`, and keep it named `*_chrome.js`** so the DOM runner does not pick it up (that runner counts `EXPECTED_BROWSER_TESTS = 27`). Revisit if a second layout-only defect appears. Whether the GitHub runner image already has Chromium is **not checked**.
+
+### OPS items: where each stands
+
+| State | Items |
+|---|---|
+| **Met (code and tests, read from 03 and 04)** | OPS-2 (ToDo, no DocType), 4/13 (no nginx or route; diff list), 5 (one ToDo query for 1 and 51 people), 7 (one POST), 11 (cap, real 11-user test), 12 (POST, CSRF, 11th POST refused over real HTTP), 14 (four fields cut, JSON read), 19 (no email), 20 (empty role refused), 21 (no index), 23 (integrity 1015 checks OK), 24 (`leaver_report.py: 1`), 25 (pin plus DOM test), 26 (4 + 8 break tests), 6/15 (static: no person text in parts), 9 (colleague, other team, guest, other company) |
+| **Still need a human before main** | **OPS-1/16/22** set-Left dry run on a copy; **OPS-10** 3G timing; **SEC-10 / AC-58** per-tenant ToDo permission counts; **OPS-11** the cap number (Surbhi); **OPS-17 / PRIV-4** retention (Surbhi and counsel); **OPS-8** served-part and `assets.json` read on dev; **OPS-18** watch plan agreed; rollback tag confirmed in `alvoraa-app`; OPS-3 role presence per tenant (answered by the holder count) |
+| **Not code, never was** | AC-62 on a real phone (200% font, tap with a finger after D-1): human; **D-6** settle by CI |
+
+### Open for you
+
+1. **Settle D-6.** `test_security_log_alv391` passes alone and 12 of 12 in four parallel copies; it fails only after the quarter's process state. 089 does not touch `access.refuse` or the logger. Recommend: push to dev, let CI decide; one re-run if quarter 4 fails; if it fails twice, it is an old flaky test (ALV-235 class) and **not** to be quietly skipped, so open a ticket before main. **Surbhi decides.**
+2. OPS-11 cap, PRIV-4 retention, and Decision 7 (done in code; confirm).
+
+### Subtract pass
+
+Removed: a plan to wire Chromium into CI, a separate scorecard timing harness, and a purge job for old ToDos. Kept: nothing new to build. Added no new gate beyond the gitleaks range read, which reuses the 22 Nov method. Left behind: nothing created. Only this file edited.

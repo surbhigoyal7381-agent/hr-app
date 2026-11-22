@@ -135,3 +135,61 @@ All read-only counts and the dry run belong in §5, on a copy, for the user to a
 OPS-11 (fan-out cap number), OPS-14 (Decision 7, Scorecard answer cut), OPS-17 (retention of ToDo and timeline lines, with counsel).
 
 Subtract pass: removed a proposed Redis cache for the Scorecard, a purge job for old ToDos, a new alert dashboard and an email notice; nothing else removed.
+
+## §4 Strategy (22 Nov 2026)
+
+Read: worktree `.claude/worktrees/089-manager-profile-edits`, branch `slice/089-manager-profile-edits`, HEAD 27eeb574 (origin/dev now 4df25095, not rebased yet). Files only: the engineer's `00-impact-analysis.md`, my §1-3, `scripts/` and `alternative_number.py` (greps). No site, container or server was touched. Tier 1.
+
+### Where I disagree with the engineer (first)
+
+| ID | Recommendation | Why | Cost of ignoring | Level | Decision |
+|---|---|---|---|---|---|
+| OPS-21 | **Drop `search_index=1` on `alv_leaver_employee`.** Keep the Custom Field. | No row count or timing is shown for `tabToDo` at any tenant, so the index is a cache-on-suspicion (no-over-engineering rule). It adds an index build on every tenant's ToDo table at migrate. Add it later only if a count on a copy shows ToDo past roughly 100k rows `[ASSUMPTION]` or a measured query misses the budget. | A table rebuild on the migrate path for no measured gain | Recommend, P3 | |
+| OPS-22 | **The alv089 stack is a code test, not the migrate rehearsal.** Keep it, but do OPS-16 and the migrate timing on a copy of real data per REHEARSAL.md as a separate step. | A fresh test site has a tiny ToDo table and no leavers; it proves nothing about migrate time or Left side effects | A green local migrate read as "safe on DTC" | Recommend, P1 for main | |
+
+### Where I agree
+
+- **Plain ToDo insert, no `assign_to`.** Agree. Fewer side effects (no share, email, comment), no new moving part.
+- **Alert-type bell.** Agree. Never emails, so OPS-19 holds.
+- **Settings through `ACCESS_GRANTING`, one new file, ToDo guard, Employee hooks.** Agree: rung is "new code on existing doctypes". The Employee `on_trash` (Q4) also agrees: it stops a leaver's name staying behind in an orphan row. Two lines.
+- **ALV-433 field cut.** Agree. Check it by calling the method and reading the JSON, not the screen (OPS-14).
+- **Own `alv089-*` stack.** Agree, with conditions below.
+
+### Install order, image, Compose
+
+1. Rebase on origin/dev first (two portal.js commits, other regions; engineer has read them).
+2. Order inside one release: code lands, then `bench migrate` creates the Custom Field via `after_migrate`/`after_install` (same way as slice 080's `create_custom_fields`, which writes only what is missing, proven in `alternative_number.py`), then the app restarts. Code that reads `alv_leaver_employee` before migrate would fail on that query: the guard and the ToDo query must treat a missing column as an error logged once, not a crash of Employee saves (the engineer already wraps the Employee hook).
+3. **Image and Compose: no change.** No new app, dependency, container, volume, queue, scheduler job or nginx file. Check the diff has none of `deploy/compose/*`, `Dockerfile`, apps list, `deploy/nginx.conf`.
+4. **Version pinning: nothing to pin.** The engineer read Frappe 16.33.1; dev and production running the same version is **not checked**. The `ToDo`, `assign_to` and Notification Log behaviour the plan leans on is version-specific, so the check belongs in §5.
+
+### Migration risk
+
+- **Low, not zero.** One Custom Field, no `Custom DocPerm` change, so the 5 Nov failure (1,780 queued deletes stopping the DTC migrate) does not apply by cause. Inference: adding a column to a small table is quick. Not measured; MariaDB version and `tabToDo` row counts per tenant are **not checked**.
+- Still apply the standing rule before main: read the job queue length before the migrate, and after it count the sites that finished against the sites that exist (scope words are claims).
+- `after_migrate` runs on every tenant on every migrate. It is safe because it writes only what is missing; a test should run migrate twice and show one field.
+- One more `doc_events` handler on every Employee save and every ToDo save. Cost is near zero (first line returns unless status became Left). The dry run (OPS-16) is what proves it.
+
+### CI gates to add (all small, none new tools)
+
+| ID | Recommendation | Why | Level | Decision |
+|---|---|---|---|---|
+| OPS-23 | `python scripts/check_app_integrity.py` before commit (lesson 7). No Frappe or ERPNext doctype redefined; the Custom Field is on ToDo, not a stub. | Standing rule | Recommend, P2 | |
+| OPS-24 | Raise the `ignore_permissions` ceiling test deliberately, by the counted 2 in `leaver_report.py`, with the reason in the test. I found no ceiling script in `scripts/`; the engineer names `test_portal_security_010` for `hr_api.py`. Confirm which test also covers new files. | A ceiling that is quietly raised is no gate | Recommend, P2 | |
+| OPS-25 | Hook pin test: all three `ToDo.validate` handlers still run, and it names 089. Register the new DOM test in `scripts/run_dom_tests.js`. | Hot-file merge safety | Recommend, P2 | |
+| OPS-26 | Break tests (engineer's four) committed first, each shown failing then restored. | A gate that cannot fail | Recommend, P1 | |
+
+No nginx gate (`check_nginx_parses.sh`) is needed because nginx is untouched. If the diff touches it, stop.
+
+### The local test stack
+
+- **Disk first (lesson 16):** read free disk and `docker stats` before starting a sixth stack (about 975 MB each, from `parallel-work.md`). Stop it when finished.
+- **Image gap:** the stack uses image `dev-3830ed3` with the three apps bind-mounted from this worktree. Bind-mounted code does not bring new pip dependencies or built assets. 089 adds none, but the base is older than origin/dev, so say the image tag in every test report.
+- **Fresh site built the way CI builds one (lesson 6).** The engineer says how `alv396` was seeded is not checked. Do not copy that unknown; build `test_site` as CI does, so a missing setup step shows here.
+- Run `bench migrate` on this stack twice (idempotence), capture stdout and stderr (lesson 8). It touches only `alv089-*`. Needs Surbhi's yes (Q6).
+- Restart the stack's bench after any site switch (lesson 12).
+
+### Leftover risk to name
+
+Release time still owes: per-tenant counts of ToDo `Custom DocPerm`, `Notification` and `Assignment Rule` rows on ToDo (the engineer's list), role-holder counts for the cap, and the Redis part-cache read on dev (OPS-8/15). All on a copy or by read, with Surbhi's approval. Nothing here is a deploy command; those come in §5.
+
+Subtract pass: removed the search index (OPS-21) from the plan; added no new check beyond what the engineer already listed. Left behind: nothing created; only this file edited.

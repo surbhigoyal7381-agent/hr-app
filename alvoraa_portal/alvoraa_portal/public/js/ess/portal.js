@@ -25783,7 +25783,10 @@ window.pfRatingLabel = function(value, scale) {
 
 /* ── Sidebar collapse ───────────────────────────── */
 function initSbCollapse() {
-  var pinned = localStorage.getItem("sb-pinned") === "1";
+  /* Open by default (Surbhi, 22 Nov 2026): a folded sidebar hid the nav words
+     and the name that opens My profile. Only a person who unpinned it ("0")
+     starts folded. Sign-out clears the key, so it opens again after sign-in. */
+  var pinned = localStorage.getItem("sb-pinned") !== "0";
   if (!pinned) document.body.classList.add("sb-collapsed");
   var btn = document.getElementById("sb-pin-btn");
   if (btn) btn.title = pinned ? "Unpin sidebar" : "Pin sidebar open";

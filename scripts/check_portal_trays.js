@@ -108,6 +108,15 @@ const INVENTORY = {
   // page does not fit a 480 px drawer.
   ".mpf-dv":              { page: "portal", kind: "dialog", open: "script" },
   "#cal-signoff-modal":   { page: "portal", kind: "dialog", open: "style" },
+  // Slice 088: the change-notice print preview, and the backdrop of the sheet
+  // that records a signature. Both are built by script when a button is pressed
+  // and appended to <body>, like 076's sheets and 087's punch-fix scrim, so no
+  // panel can be their frame. `.rn-pv` covers the window because it is what the
+  // printer sees: the @media print block in panels.css hides every other child
+  // of <body> and makes `.rn-pv` static, so the A4 sheets print on their own.
+  // A tap outside `.rn-scrim`, or Escape, closes it and writes nothing.
+  ".rn-pv":               { page: "portal", kind: "dialog", open: "script" },
+  ".rn-scrim":            { page: "portal", kind: "dialog", open: "script" },
   // The -next page (a separate document; left rail and bottom sheet only)
   ".nf-rail":             { page: "next", kind: "shell" },
   ".nf-scrim":            { page: "next", kind: "scrim" },

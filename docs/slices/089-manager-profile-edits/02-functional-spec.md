@@ -570,3 +570,13 @@ Removed from my own first draft: a per-story "dashboard of leavers", a "reminder
 | Open questions owned; none blocks day one | **Pass**: O-1 to O-7 all have a default; PRIV-4 blocks main only |
 
 **Verdict: FAIL on the strict reading of the Ready list, by one box (traceability), with two partial boxes.** Not soft: the five items under "Gaps to fix before build" are named. The one that matters for correctness (AC-65) is already written here. The rest need Surbhi's decision (accept "no AC for a human test") or a reader to check ToDo / `assign_to` in Frappe source. **Per the rule "more than two boxes fail, the slice goes back" it is not triggered (one fail, two partial).** Build may start once Surbhi answers O-4 (the prototype row P-12) and accepts or rejects the five named gaps.
+
+## Surbhi's spec decisions, 22 Nov 2026: all recommendations
+
+1. **Defer the "change" half** (US-10, US-11, 7 points). Ship "see" only first, the fallback she approved at the brief.
+2. **No Employee timeline comment** (P-12 is not built). Only the ToDo is created. She accepts this one difference from prototype v4.
+3. **OPS-11:** at most 10 ToDos per report. A confirming role held by more enabled users than that is refused.
+4. **OPS-14 / ALV-433:** the Scorecard, and `get_employee_detail_for_manager`, stop sending personal email, company email and gender. Phone and address are sent only when ticked in "Managers can see".
+5. **The human-checked items are accepted** as release-time checks: the success measures, "under a minute", the usability test and OPS-10 timing. With this, the Definition of Ready passes.
+
+Still open: PRIV-4 / OPS-17, retention of the notice. Counsel decides. It blocks main, not the build.

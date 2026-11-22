@@ -4,7 +4,7 @@ artifact: 06-security-review
 author: hrms-security-privacy-engineer
 date: 2026-11-22
 risk tier: 1
-verdict: NO BLOCKER. Two Major (P2) findings to fix or accept in writing. NOT READY FOR MAIN (PRIV-4 retention, P1, counsel).
+verdict: NO BLOCKER (re-review after round 2, 3f792c29). F1 and F2 closed. One new Major (P2, F3 erasure of the outcome bell). NOT READY FOR MAIN (PRIV-4, P1, counsel).
 ---
 
 # 089 · Security and privacy review
@@ -132,3 +132,61 @@ I am not a lawyer. The retention and notice rows need counsel.
 ## Subtract pass
 
 Removed: a finding on the confirmer editing the description (HR is trusted, and a Version row exists, so it is a note); a separate finding on the confirmer IDs the reporter can see (PRIV-2 does not cover the reporter); a re-statement of the AC table (it is in `04`). Kept: F1 and F2. Each names an actor, a door and the data.
+
+---
+
+# Re-review after round 2 (22 Nov 2026)
+
+**What I read.** Same worktree and branch, HEAD `3f792c29`. Diff `git diff 0cfdb0c3..HEAD` (fixes `83198828`, `3f792c29`). Branch is local only: `git branch -r --contains 0cfdb0c3` is empty, so no leaver ToDo, share or bell exists on any tenant. Frappe source read inside `alv089-bench` (16.33.1). **I ran no tests.** Another session was running `test_leaver_report_089` on `test_site` while I worked, and two runs on one site break each other. Test results are **their run** (`03` round 2 table, with break tests), not mine.
+
+**Same person again (lesson 6).** I wrote `01c` and the first review. The second reader for SEC-7, SEC-9 and SEC-10 is still owed; this section does not replace it.
+
+## Bad news first
+
+1. **F3 (Major, P2, new): deleting an Employee no longer deletes the outcome bell.** The fix moved the bell to `document_type "ToDo"` with `document_name` = the Employee ID (`leaver_report.py:271`). Frappe deletes bells by that pair (`model/delete_doc.py:509`), and `on_employee_trash` (`leaver_report.py:316`) deletes ToDos only. So: HR deletes Ravi's Employee to honour an erasure request; Meena's row "Confirmed: Ravi left on ..." stays in her bell until Log Settings clears it (method default 180 days, `notification_log.py:71`; per-tenant setting **not checked**). The reader is the reporter, who already knew, so this is not a Blocker. It is an erasure regression and it feeds PRIV-4. **Fix:** one more delete in `on_employee_trash`: Notification Log where `document_type = "ToDo"` and `document_name = doc.name`. Test: delete the Employee, count the bells. Also P4: Desk's bell links that row to `/app/todo/<employee id>`, which opens "not found".
+2. **PRIV-4 is still not met** (counsel). Unchanged; F3 adds to it.
+
+## Round-1 findings
+
+| Finding | Now | Evidence |
+|---|---|---|
+| **F1** share door | **closed** | `guard_share` on DocShare `validate` (`leaver_report.py:254`, `hooks.py:596-598`). Code: every Frappe write path I found runs `validate`. `share.add` always does `doc.save(ignore_permissions=True)` (`share.py` ~79), and `flags={"ignore_share_permission": 1}` only skips `check_share_permission`, not `validate`. `set_permission` saves too. Desk's Share dialog calls `share.add`. Desk's Assign on a leaver ToDo (`assign_to._add`) shares with any assignee who cannot read it, so the guard refuses and the request rolls back; an assignee who can already read it (System Manager) needs no share. `frappe.client.insert` / `set_value` on DocShare save, so `validate` runs. No `db_insert` or SQL on DocShare in `alvoraa_portal` or `hrms` (grep, tests excluded). Shares made before the guard: none can exist (branch never left this machine; the ToDo names are new on each send). Their run: `test_the_reporter_cannot_share_the_notice` (one login with write, and everyone), break-tested. Not covered by the guard, and fine: raw SQL by a System Manager in a console. |
+| **F2** branch scope | **closed** | `_recipients` adds `frappe.has_permission("Employee", "write", doc=row.name, user=u)` (`leaver_report.py:193`). Code (Frappe `permissions.py` 81-275, 353+): it uses `u`'s own roles, `u`'s User Permissions (Company, Branch, any link, applied when the row covers Employee), and the controller hook with `user=u`. That hook (`employee_field_rights.py:307-327`) returns True only for Administrator, `HR User` / `HR Manager` / `System Manager`, or the person's own record; anyone else gets False on an unchanged record. So: **Branch UP** - scoped (their run, break-tested). **Company UP** - scoped twice (this check and `permitted_companies`). **System Manager** - included only if their role row on Employee gives write and their UPs cover the person [not checked: the role row on any tenant]. **HR user with no UPs** - passes this check; `permitted_companies` (`hrms/alvoraa_hr_core/access.py`) then limits them to their own Active Employee's company, or nothing. A UP row limited to another doctype (DTC's narrow pattern) does not scope Employee, so that person gets the notice and can also open the Employee: the notice follows who can act, which is what SEC-7 asks. `print_logs` only writes to a flag list; the reporter sees no message about who was skipped. |
+| **M-1** bell text | **safe from injection** | Write: `escape_html` on the employee name and the reporter name; the dates come from `_day(...)` on server dates, never from the caller (`leaver_report.py:156-158`, 288-292, 310-311). Read: `notices_feed` unescapes (`notices.py:146`) and all portal renderers escape again with `esc()` (`portal.js` 7988 `ntRowHtml`, used by the card and the page; 8034 detail; `esc` at 265 covers `& < > "`). Desk's bell shows the stored text, which is escaped. Who reads the rows: Notification Log query condition is `for_user = user` except Administrator (`notification_log.py:104-117`); System Manager gets no wider read. Their run: the reporter sees the line, four others do not. |
+| **M-2** double send | **closed** | `get_values(..., for_update=True)` after the Employee row lock (`leaver_report.py:142-146`). A locking read sees committed rows, so the second request finds the first one's ToDos. Their run: `test_an_overlapping_second_report_is_refused`, break-tested. Inferred: the test shows the snapshot problem with the first request committed before the second sends, not two requests both waiting on the lock; the same current-read mechanism covers both. |
+
+## New minor findings
+
+- **F4 (Minor, P3): the portal bell now shows every ToDo-typed notice ungated, not just the outcome line.** `OWN_COPY` (`notices.py:46-47`) matches any Notification Log with `document_type "ToDo"`. Frappe writes these for share notices, assignments on a ToDo, mentions and tenant Notification rules, and the ToDo title is its description (`todo.json:200`). Scenario: any login makes a ToDo saying "Confirmed: Ravi left on 30 Nov", shares it with Meena with `notify=1`; her portal bell shows "X shared a document ToDo Confirmed: Ravi left ..." as text (escaped, so no script, and the sender is named). Before round 2, ToDo rows never reached the portal bell. **Fix:** count a ToDo row as own copy only when `type == "Alert"`. Not checked: whether any tenant has a Notification rule on ToDo.
+- **F5 (Minor, P3, availability, Inferred): the locking read runs on a column with no index** (`alv_leaver_employee`, "no index: OPS-21", `leaver_report.py:17`). InnoDB locks every row it scans, so until the send commits, every ToDo write on the tenant waits, and a confirmer closing a leaver ToDo at the same moment can deadlock (one request fails and rolls back). Not measured. The ToDo index already waiting for Surbhi removes it; I now recommend it.
+
+## Requirement status (changed rows only; all others as in section 2)
+
+| Req | Was | Now |
+|---|---|---|
+| SEC-7 | partial (F2) | **met** (`leaver_report.py:191-193`) |
+| SEC-9 | partial (F1) | **met** (`guard_todo` + `guard_share`) |
+| SEC-10 | partial (F1); tenant read owed | **met in code; tenant read still owed** (Custom DocPerm on ToDo per tenant) |
+| SEC-11 | met | **met**, re-checked for the bell (M-1 row) |
+| SEC-5 | met in code; observability not settled | unchanged (`04` D-6 not re-run) |
+| PRIV-4 | NOT MET | **NOT MET**, plus F3 |
+
+## Residual risk (none accepted yet)
+
+| Risk | Kind | Owner | Accepted? |
+|---|---|---|---|
+| F1, F2 | closed | - | - |
+| F3: bell outlives the Employee's deletion | **temporary debt** (one delete in `on_employee_trash`) | Surbhi: fix before main | not yet |
+| F4: ToDo-typed notices ungated in the portal bell | temporary debt (one filter) | Surbhi | not yet |
+| F5: lock on an unindexed column | temporary debt (the index) | Surbhi, with DevOps | not yet |
+| PRIV-4 | **dangerous debt: escalate now** (P1 for main) | counsel via Surbhi | - |
+| Section 7 rows not named above | unchanged | Surbhi | not yet |
+
+## Verdict
+
+**No Blocker.** F1 and F2 are closed in code, with break-tested tests from the engineer. The bell text cannot carry HTML or script.
+
+- **For dev:** acceptable once Surbhi has F3 in front of her. My recommendation: fix F3 and F4 first (one line each, one test each).
+- **For main: not ready.** Needs PRIV-4 from counsel, F3 fixed, the second reader on SEC-7/9/10, `test_security_log_alv391` green in CI, the per-tenant reads in section 6, and a rebase on `origin/dev`.
+
+**Subtract pass.** Removed: a note that `permitted_companies` is now redundant beside `has_permission` (it is a second fail-closed check and costs nothing; deleting it is not my call); a note on Frappe's `<b>` tags showing as text in share notices (cosmetic, inside F4). Kept F3, F4, F5: each names an actor, a path and what is seen or lost.

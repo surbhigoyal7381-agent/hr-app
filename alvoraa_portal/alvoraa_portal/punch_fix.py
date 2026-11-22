@@ -29,6 +29,12 @@ from alvoraa_portal.payroll_rules_apply import shift_day  # the one working-day 
 REQUEST = "Attendance Request"
 ATTENDANCE = "Attendance"
 CHECKIN = "Employee Checkin"
+COMPANY = "Company"
+
+# ALV-430. Whether this organisation asks the employee to agree to a change
+# somebody else made for them. Off is the simple workflow: HR approves and the
+# change counts. On is what counsel required of DTC and Grace.
+CONFIRM_SWITCH = "alvoraa_employee_confirms_changes"
 
 ADDED = "alvoraa_fix_added_request"
 ASIDE = "alvoraa_fix_aside_request"
@@ -92,7 +98,65 @@ FIELDS = {
 		{"fieldname": "alvoraa_undone_reason", "fieldtype": "Small Text", "read_only": 1,
 		 "label": "Undone Reason", "insert_after": "alvoraa_undone_on"},
 	],
+	# ALV-430. The organisation's own choice, on the organisation's own record -
+	# the same place and the same shape as the held-day switches next to it
+	# (`held_day.FIELDS[COMPANY]`), because an HR Manager setting up a tenant
+	# should find every attendance choice in one section rather than two.
+	COMPANY: [
+		{"fieldname": CONFIRM_SWITCH, "fieldtype": "Check", "default": "0",
+		 "label": "Employees Confirm Changes Made For Them",
+		 "insert_after": "alvoraa_limit_exempt_roles",
+		 "description": "On: a change to someone's attendance that they did not ask "
+		                "for waits for them to confirm it - in the app, or by signing "
+		                "the monthly register - and their salary slip cannot be "
+		                "submitted until they do. Off: an approved change simply "
+		                "counts. A change already waiting keeps waiting if this is "
+		                "switched off."},
+	],
 }
+
+
+def confirms_are_on(company):
+	"""ALV-430. Does this organisation ask the employee to agree to a change
+	somebody else made for them?
+
+	**Read in exactly one place.** `_own_the_confirm_fields` is the only
+	function that sets `alvoraa_needs_confirm`, so gating it there is enough:
+	the slip gate, the before-payroll list, the employee's day sheet and slice
+	088's notice list all read that flag and go quiet by themselves. Putting a
+	company check at each of those instead would be the same rule written
+	seven times, and wrong the first time somebody adds an eighth reader.
+
+	**A missing column answers YES, not no, and that is deliberate.** Between a
+	deploy and its migrate the column does not exist yet, and the behaviour
+	that is already live on that site is 087's: every change made for somebody
+	waits for them. Answering "off" in that window would quietly drop the
+	confirm - and at DTC the confirm is the condition counsel cleared them on.
+	So the gap behaves exactly as the day before, and the switch only starts
+	deciding once there is something to read. The same reasoning is why
+	`columns_ready()` is left alone: it is 087's gate, and adding this column
+	to it would make a missing switch turn 087's own features off.
+
+	An unknown or empty company answers no: that is the default everywhere, and
+	a request we cannot place must not take the save down.
+	"""
+	try:
+		if not frappe.db.has_column(COMPANY, CONFIRM_SWITCH):
+			return True
+		if not company:
+			return False
+		return bool(cint(frappe.get_cached_value(COMPANY, company, CONFIRM_SWITCH)))
+	except Exception:
+		# Never the reason a save fails. The column exists or it does not; a
+		# lookup that throws is a database problem, not an answer about policy.
+		return False
+
+
+def _company_of(employee):
+	try:
+		return frappe.db.get_value("Employee", employee, "company")
+	except Exception:
+		return None
 
 
 def after_migrate():
@@ -371,7 +435,11 @@ def _own_the_confirm_fields(doc, before):
 		# here from the session, never from the client.
 		manager_adds = (filer != login and not held_day._filed_by_hr(filer, login)
 		                and held_day._has_time(doc) and not aside_names(doc))
-		doc.alvoraa_needs_confirm = 0 if (filer in ("Administrator", login) or manager_adds) else 1
+		# ALV-430: the organisation's choice, asked once, here. Off means the
+		# simple workflow and nothing downstream has to know about it.
+		asks = confirms_are_on(_company_of(doc.employee))
+		doc.alvoraa_needs_confirm = 0 if (not asks or filer in ("Administrator", login)
+		                                  or manager_adds) else 1
 		doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
 		doc.alvoraa_disputed_by = doc.alvoraa_disputed_on = doc.alvoraa_dispute_reason = None
 		doc.alvoraa_undone_by = doc.alvoraa_undone_on = doc.alvoraa_undone_reason = None
@@ -386,8 +454,12 @@ def _own_the_confirm_fields(doc, before):
 		login = frappe.db.get_value("Employee", doc.employee, "user_id")
 		adds_cut = bool(set(aside_names(doc)) - set(aside_names(before)))
 		moves_time = HR_TIME_EDIT_REASKS_CONFIRM and doc.has_value_changed("alvoraa_missing_time")
+		# ALV-430: an edit that would newly ASK for a confirm is the organisation's
+		# choice too. A confirm already asked for is NOT - see `SERVER_OWNED` above,
+		# which puts the stored value back before this runs, so switching a company
+		# off never clears a change the employee has already been shown as waiting.
 		if (not cint(doc.alvoraa_needs_confirm) and frappe.session.user not in ("Administrator", login)
-				and (adds_cut or moves_time)):
+				and (adds_cut or moves_time) and confirms_are_on(_company_of(doc.employee))):
 			doc.alvoraa_needs_confirm = 1
 			doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
 		# SEC-7 (from 086's review): a Confirm is for what the employee saw. If the filer changes what the
@@ -743,9 +815,26 @@ def _what(r):
 	return _(", ").join(bits) or _("a correction")
 
 
-def unconfirmed_changes(employees=None, start=None, end=None, limit=100):
+def unconfirmed_changes(employees=None, start=None, end=None, limit=100, respect_switch=True):
 	"""The unconfirmed changes (see `_unconfirmed_filters`) with their day in [start, end], for the given
-	employees or everybody. Plain facts: employee, day, what, who filed it, whether HR has approved."""
+	employees or everybody. Plain facts: employee, day, what, who filed it, whether HR has approved.
+
+	**ALV-430: a company that does not ask for confirmations has no unconfirmed changes.**
+	Gating the READER as well as the writer is not belt and braces, it closes a real dead end,
+	and the first version of this switch had it. A row flagged while the company was ON keeps
+	its flag when the company goes OFF - deliberately, because a flag is a fact about a change
+	the employee was already shown as waiting, not a setting. But `withdraw_filed` refuses an
+	APPROVED request, and the other two exits are the app (which the staff this matters to do
+	not have) and the signed register (slice 088, paused). So an approved, unconfirmed change
+	at a company that has switched off would have held that person's salary slip **for ever,
+	with no exit** - the same shape of fault 088 exists to remove. Found by the 087 session
+	reviewing this change, 22 Nov 2026.
+
+	Nothing is falsified by passing them over: `alvoraa_confirmed_on` stays empty and the flag
+	stays 1, so the history still says plainly that nobody confirmed. Only the block lifts, and
+	the block is the one thing the switch governs. `respect_switch=False` asks the same question
+	ignoring the switch, which is how the slip gate counts what it is letting through.
+	"""
 	filters = _unconfirmed_filters()
 	if employees is not None:
 		filters["employee"] = ("in", list(employees) or [""])
@@ -756,8 +845,17 @@ def unconfirmed_changes(employees=None, start=None, end=None, limit=100):
 		fields=["name", "employee", "employee_name", "from_date", "owner", "docstatus", "alvoraa_review_status",
 		        "alvoraa_missing_time", "alvoraa_set_aside", "alvoraa_disputed_on", "alvoraa_reviewed_on"])
 	logins = {}
+	asks = {}
 	out = []
 	for r in rows:
+		if respect_switch:
+			# Cached per company, not per row: a payroll run reads hundreds of
+			# rows and they share a handful of companies (NFR, query count).
+			company = _company_of(r.employee)
+			if company not in asks:
+				asks[company] = confirms_are_on(company)
+			if not asks[company]:
+				continue
 		login = logins.setdefault(r.employee, frappe.db.get_value("Employee", r.employee, "user_id"))
 		kind, who = _filer(r.owner, login)
 		out.append({"name": r.name, "employee": r.employee, "employee_name": r.employee_name,
@@ -785,6 +883,26 @@ def refuse_slip_while_unconfirmed(doc, method=None):
 	         if r["approved"] and r["reviewed"] and str(doc.start_date) <= r["reviewed"] <= str(doc.end_date)
 	         and held_day.is_in_final_slip(doc.employee, r["date"])]
 	if not rows:
+		# ALV-430. The gate is about to let this slip through. If the company
+		# has switched confirmations off and there ARE unconfirmed changes in
+		# the period, say so once, here: an auditor asking "was this person
+		# paid on changes they never agreed to" deserves an answer, and the
+		# absence of a refusal is not one. Only asked when the switch is off
+		# and only when the gate would otherwise pass, so an ordinary payroll
+		# run at a company that never switched it on costs nothing.
+		if not confirms_are_on(_company_of(doc.employee)):
+			passed = unconfirmed_changes([doc.employee], doc.start_date, doc.end_date,
+			                             limit=20, respect_switch=False)
+			if passed:
+				# **Ids and a count, and nothing else** (087 PRIV rule, and the
+				# 06-security-review check): no reason text, no punch times, no
+				# names. The slip's own id is logged rather than its period, so
+				# the line carries no date at all and still points an auditor at
+				# exactly one document.
+				access.security_logger().warning(
+					"punch_fix slip allowed with %s unconfirmed change(s) slip=%s "
+					"employee=%s reason=company_confirmations_off",
+					len(passed), doc.name, doc.employee)
 		return
 	first = (doc.employee_name or "").split(" ")[0] or _("the employee")
 	lines = "; ".join(_("{0}: {1}, sent by {2} ({3})").format(_day_label(r["date"]), r["what"], r["filer"], r["filed_by"])

@@ -7249,7 +7249,13 @@ function rnDrawRecord() {
 }
 
 window.rnPickPhotos = function (input) {
-  var files = Array.prototype.slice.call(input.files || []);
+  /* The dialog may already be gone: a file input can fire its change event after
+     a successful save has closed it, and reading `rnReg.thumbs` then threw. Found
+     while breaking the photo-count guard on purpose - the guard's absence let the
+     save succeed, the dialog closed, and the next pick crashed. A stray event is
+     not an error worth a stack trace. */
+  if (!rnReg) return;
+  var files = Array.prototype.slice.call((input && input.files) || []);
   rnReg.thumbs.forEach(function (u) { URL.revokeObjectURL(u); });
   rnReg.photos = [];
   rnReg.thumbs = files.map(function (f) { return URL.createObjectURL(f); });

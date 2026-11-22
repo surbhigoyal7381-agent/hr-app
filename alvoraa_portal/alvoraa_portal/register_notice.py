@@ -560,3 +560,260 @@ def _write_the_notice(employee_row, month, pages):
 		return doc
 	finally:
 		frappe.flags.in_register_notice = False
+
+
+# ── recording what came back ─────────────────────────────────────────────────
+
+def _latest_for(employee, month):
+	"""The newest notice for this person and month, by `printed_at`."""
+	rows = frappe.get_all(NOTICE, filters={"employee": employee, "month": str(month)},
+	                      fields=["name"], order_by="printed_at desc, creation desc",
+	                      limit=1, ignore_permissions=True)
+	return rows[0].name if rows else None
+
+
+def _still_the_same(change_row):
+	"""Is the request still saying what it said when the page was printed?
+
+	SEC-3, and the reason the hash exists. A change whose confirmed content has been edited
+	since the print is NOT marked signed: the employee put their thumb on a page describing
+	something else. It is left open and named back to HR, who print again. Nothing is
+	refused and nothing is lost - the other changes on the page are still marked, because
+	they are still true.
+	"""
+	stored = frappe.db.get_value(REQUEST, change_row.request,
+	                             list(punch_fix.CONFIRMED_CONTENT), as_dict=True)
+	if not stored:
+		return False
+	return _content_hash(stored) == change_row.content_hash
+
+
+def _photo_bytes(payload):
+	"""081's decoder and 081's caps, called and not copied (spec section 3).
+
+	A PDF is refused here although 081 accepts one: this is a photograph of a page
+	somebody signed, taken on a phone in a shop. A PDF would be a scan made somewhere
+	else, which is a different claim about what happened.
+	"""
+	from alvoraa_portal import expense_evidence as ev
+
+	blob, is_pdf = ev._decode(payload)
+	if is_pdf:
+		frappe.throw(_("Add a photo of the signed page, not a PDF."), frappe.ValidationError)
+	return ev._shrink_to_cap(blob)
+
+
+def _refuse_a_reused_photo(blob):
+	"""SEC-7: the same picture cannot stand for two pages, two people or two months.
+
+	Frappe stores a `content_hash` on every File, so this is one indexed lookup rather
+	than a scan. It is the cheapest honest check available: without it one clear photo of
+	one signed page could be submitted for a whole shop.
+	"""
+	import hashlib
+
+	digest = hashlib.md5(blob).hexdigest()           # Frappe's own File.content_hash
+	clash = frappe.get_all("File", filters={"content_hash": digest,
+	                                        "attached_to_doctype": NOTICE},
+	                       fields=["name"], limit=1, ignore_permissions=True)
+	if clash:
+		frappe.throw(_("That photo was already used."), frappe.ValidationError)
+	return digest
+
+
+def _save_the_photo(notice, page_no, payload):
+	"""One private File per signed page, attached to the notice and to nothing else.
+
+	**Attached to the NOTICE and never to the Attendance Request**, which is what keeps the
+	employee and their line manager out: a request is readable by both of them, so a photo
+	hanging off it would be fetchable by both (SEC-8). The notice has no role row for
+	either. AC-44 is the test, and the way to break it is to attach it to the request.
+	"""
+	from alvoraa_portal import expense_evidence as ev
+
+	blob = _photo_bytes(payload)
+	_refuse_a_reused_photo(blob)
+	doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": ev._stored_name(NOTICE, False),
+		"attached_to_doctype": NOTICE,
+		"attached_to_name": notice,
+		"is_private": 1,
+		"content": blob,
+		"decode": False,
+	})
+	doc.save(ignore_permissions=True)
+	access.security_logger().info(
+		"register_notice photo stored notice=%s page=%d bytes=%d user=%s",
+		notice, page_no, len(blob), frappe.session.user)
+	return doc.file_url
+
+
+@frappe.whitelist(methods=["POST"])
+@_limited(SELF_KEY, "user", limit=20, window=60)
+def record(notice, outcome, photos=None, reason=None):
+	"""Record what came back from the paper: signed, or the worker says it is not right
+	(spec section 8.3, US-4 and US-5).
+
+	**All or nothing.** One transaction: the notice, the photos and the marks on the changes
+	go together. A half-written record would leave a change marked signed with no photo
+	behind it, or a photo of a signature that marks nothing - and the first of those is the
+	shape of fault this whole slice exists to remove.
+
+	**The covered changes come from the record, never from the caller.** The caller sends a
+	notice name and nothing else about which days it covers (SEC-3, AC-31). A list of change
+	ids in the body is ignored, because a caller who could choose them could mark a day the
+	employee never saw.
+
+	**Nobody records their own, and nobody records a change they filed.** Two different
+	rules: `refuse_own_decision` keeps an HR person who is also this employee out, and the
+	filer rule keeps out whoever typed the change. The filer is read from the database
+	`owner`, never from the screen.
+	"""
+	_hr_or_refuse("register_notice.record")
+	if outcome not in ("Signed", "Not right"):
+		frappe.throw(_("Say whether it was signed or not right."))
+	doc = frappe.get_doc(NOTICE, notice)
+	if not access.employee_in_scope(doc.employee):
+		access.refuse(_("That person is outside the ones you look after."),
+		              "088-SEC-1", "register_notice.record", NOTICE, notice)
+	access.refuse_own_decision(doc.employee, NOTICE, notice, "register_notice.record")
+	if doc.outcome in ("Signed", "Not right"):
+		frappe.throw(_("This notice has already been answered."))
+	if _latest_for(doc.employee, doc.month) != doc.name:
+		frappe.throw(_("A newer notice was printed. Use the newer one."))
+
+	covered = list(doc.changes or [])
+	mine = [c for c in covered
+	        if frappe.db.get_value(REQUEST, c.request, "owner") == frappe.session.user]
+	if mine:
+		access.refuse(_("You filed a change on this page, so another HR person records "
+		                "the signature."),
+		              "088-SEC-4", "register_notice.record", NOTICE, notice)
+
+	if outcome == "Not right":
+		if not (reason or "").strip():
+			frappe.throw(_("Write what they said is not right."))
+		return _write_the_answer(doc, "Not right", reason=reason.strip())
+
+	photos = frappe.parse_json(photos) if isinstance(photos, str) else (photos or [])
+	if not isinstance(photos, list):
+		photos = [photos]
+	photos = [p for p in photos if p]
+	if len(photos) != cint(doc.page_count):
+		# The number is in the message both ways round, because "wrong number of photos"
+		# does not tell HR what to do next.
+		frappe.throw(_("Add {0} photos, one for each page. You added {1}.").format(
+			cint(doc.page_count), len(photos)))
+	return _write_the_answer(doc, "Signed", photos=photos)
+
+
+def _write_the_answer(doc, outcome, photos=None, reason=None):
+	"""The one write. Photos first, then the marks, then the notice - so that a refused
+	photo stops the whole thing before any change is marked signed."""
+	pages = []
+	for page_no, payload in enumerate(photos or [], start=1):
+		pages.append({"page_no": page_no, "photo": _save_the_photo(doc.name, page_no, payload)})
+
+	marked, stale = [], []
+	if outcome == "Signed":
+		for c in (doc.changes or []):
+			(marked if _still_the_same(c) else stale).append(c.request)
+		if marked:
+			punch_fix.record_register_signature(marked, doc.name)
+
+	frappe.flags.in_register_notice = True
+	try:
+		doc.outcome = outcome
+		doc.recorded_by = frappe.session.user
+		doc.recorded_on = frappe.utils.now_datetime()
+		if reason:
+			doc.dispute_reason = reason
+		for page in pages:
+			doc.append("pages", page)
+		doc.save(ignore_permissions=True)
+	finally:
+		frappe.flags.in_register_notice = False
+
+	access.security_logger().info(
+		"register_notice recorded notice=%s outcome=%s marked=%d stale=%d photos=%d user=%s",
+		doc.name, outcome, len(marked), len(stale), len(pages), frappe.session.user)
+	return {"notice": doc.name, "outcome": outcome, "marked": len(marked),
+	        "stale": stale, "photos": len(pages)}
+
+
+@frappe.whitelist(methods=["POST"])
+@_limited(SELF_KEY, "user", limit=60, window=60)
+def open_photo(notice, page):
+	"""Stream one signed page to HR in scope, and write one line saying who looked.
+
+	There is no screen for this in slice 088 (Surbhi's P-14 decision). It exists so that
+	the one way to see a signature is a way that gets logged: without it an HR person with
+	the file address would open it unlogged, which is the question an employee is entitled
+	to have answered."""
+	_hr_or_refuse("register_notice.open_photo")
+	from alvoraa_portal import expense_evidence as ev
+
+	doc = frappe.get_doc(NOTICE, notice)
+	if not access.employee_in_scope(doc.employee):
+		access.refuse(_("That person is outside the ones you look after."),
+		              "088-SEC-8", "register_notice.open_photo", NOTICE, notice)
+	row = next((p for p in (doc.pages or []) if cint(p.page_no) == cint(page)), None)
+	if not row or not row.photo:
+		frappe.throw(_("There is no photo for that page."))
+	ev.log_view(NOTICE, doc.name)
+	frappe.local.response.filename = row.photo.split("/")[-1]
+	frappe.local.response.filecontent = frappe.get_doc(
+		"File", {"file_url": row.photo}).get_content()
+	frappe.local.response.type = "download"
+
+
+# ── who may see a notice at all ──────────────────────────────────────────────
+
+def _scope_sql(table, user=None):
+	"""`permitted_employee_filters` as a SQL condition on a table that links Employee.
+
+	Company AND branch, because the helper answers both. A company-only filter would let a
+	store's HR person list every store's signed pages, and AC-57's "fails first" is exactly
+	that substitution."""
+	filters = access.permitted_employee_filters(user)
+	if filters.get("name") == ["!=", ""]:
+		return ""                                     # everybody
+	if filters.get("name") == ["in", []]:
+		return "1=0"                                  # nobody
+	# The helper returns only these two keys, and the names are checked against this list
+	# rather than escaped, because a column name is not a value: escaping one as a value
+	# produces a quoted string, not an identifier. Anything unexpected means the helper has
+	# changed shape, and the safe answer to that is nobody.
+	allowed_fields = ("company", "branch")
+	wheres = []
+	for field, (op, values) in filters.items():
+		if field not in allowed_fields or op != "in":
+			return "1=0"
+		if not values:
+			return "1=0"
+		allowed = ", ".join(frappe.db.escape(v) for v in values)
+		wheres.append("`tabEmployee`.`%s` in (%s)" % (field, allowed))
+	if not wheres:
+		return "1=0"
+	return ("`tab%s`.employee in (select name from `tabEmployee` where %s)"
+	        % (table, " and ".join(wheres)))
+
+
+def notice_query_conditions(user=None):
+	"""Row filter for the notice: HR sees only the people they look after (SEC-1)."""
+	return _scope_sql(NOTICE, user)
+
+
+def notice_has_permission(doc, user=None, permission_type=None):
+	"""The same rule for one record opened by name or through the API."""
+	if not doc.get("employee"):
+		return False
+	return bool(access.employee_in_scope(doc.employee, user))
+
+
+def photo_log_query_conditions(user=None):
+	"""SEC-10, AC-47: company-A HR must not list company-B's rows in the photo access log.
+	The log had no row filter at all before this slice (`hooks.py` had no entry for it),
+	which is the gap 01c found."""
+	return _scope_sql("Alvoraa Photo Access Log", user)

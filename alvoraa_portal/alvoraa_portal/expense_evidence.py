@@ -94,8 +94,16 @@ REQUEST = "Attendance Request"
 KINDS: dict[str, str] = {"bill": CLAIM, "dayfix": REQUEST}
 
 ACCESS_LOG = "Alvoraa Photo Access Log"
-SOURCE = {CLAIM: "Expense bill", REQUEST: "Day-fix evidence"}
-NAME_PREFIX = {CLAIM: "bill", REQUEST: "dayfix"}
+# Slice 088 adds the signed register page. Two dictionary entries rather than a second
+# copy of `_decode`, `_shrink_to_cap`, `_stored_name` and `log_view`: the caps, the strip
+# and the access log are the same rules about the same kind of thing, and a second copy is
+# a second place for them to drift. `NOTICE` is named as a string here so this module does
+# not import slice 088's, which imports `punch_fix`, which would be a wider dependency
+# than two labels are worth.
+NOTICE = "Alvoraa Register Notice"
+SOURCE = {CLAIM: "Expense bill", REQUEST: "Day-fix evidence",
+          NOTICE: "Register signature photo"}
+NAME_PREFIX = {CLAIM: "bill", REQUEST: "dayfix", NOTICE: "register"}
 
 # Only the two rules a REFUSAL quotes. The others were declared and never used
 # - the subtract pass took them, along with an unused `hashlib` import.

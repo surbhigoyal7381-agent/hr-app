@@ -1,0 +1,27 @@
+# Findings the secret scan raised that are NOT secrets.
+#
+# One line per finding, and each line is a FINGERPRINT:
+#
+#     <commit>:<file>:<rule>:<line>
+#
+# That is as narrow as this file gets. It silences that one rule, on that one
+# line, of that one file, in that one commit - and nothing else. A new secret on
+# the next line of the same file still fails the build. Never add a bare path or
+# a rule name here: either would switch the scanner off for everything it covers.
+#
+# Before adding a line, read the flagged line in the source and say in the
+# comment WHY it is not a secret. "gitleaks is noisy" is not a reason; somebody
+# has to be able to check your answer later without re-running anything.
+#
+# ALV-435, 22 Nov 2026. gitleaks 8.30.1, rule `generic-api-key`, entropy 3.88.
+# The match is a comma-separated list of TEST MODULE NAMES in slice 085's
+# regression notes - "...frame_endpoint_registry_034, frappe_api_calls,
+# alv291_attendance_fix." The rule saw the word `api` followed by a token with
+# enough entropy and called it a key. It is a developer's note about which test
+# modules passed, in `docs/`, which ships nothing.
+#
+# This blocked the 22 Nov release to main: dev scans only the commits of each
+# push (1 commit that day), main scanned all 172 at once, so nothing had ever
+# looked at this line until the release. Rewording the sentence would NOT fix
+# it - the scan reads history, and the commit below keeps its content for ever.
+27c4439f47c93873dea7e60e24c6d248a0929af6:docs/slices/085-held-odd-punch-days/03-implementation-notes.md:generic-api-key:163

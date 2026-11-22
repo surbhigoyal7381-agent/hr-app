@@ -277,7 +277,7 @@ class TestTheTrueUnreadCount(Case):
 		self.assertEqual(set(notices.NOTICE_DOCTYPES) & inbox_doctypes, set())
 		self.assertEqual(
 			set(notices.NOTICE_DOCTYPES),
-			{"Grooming Mark", "Grooming Review", "Announcement"},
+			{"Grooming Mark", "Grooming Review", "Announcement", "ToDo"},
 			"the notice kinds changed - check the badge is not double counting")
 		self.assertEqual(len(inbox_api.ROW_KEYS), 7,
 		                 "a new inbox part - check it against NOTICE_DOCTYPES by hand")

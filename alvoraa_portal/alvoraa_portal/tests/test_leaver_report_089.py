@@ -680,7 +680,9 @@ class TestARealRequest(_Base):
 	connection this test holds, so the context is rebuilt afterwards.
 	"""
 
-	PASSWORD = "S089-Pass-7391-xyz"
+	# Made fresh each run, so no password is written in the repository (the CI
+	# secret scan flagged the fixed one on 22 Nov 2026).
+	PASSWORD = "S089-" + __import__("secrets").token_hex(8)
 	URL = "/api/method/alvoraa_portal.leaver_report.send_leaver_report"
 
 	def _session(self):

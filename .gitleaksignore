@@ -25,3 +25,6 @@
 # looked at this line until the release. Rewording the sentence would NOT fix
 # it - the scan reads history, and the commit below keeps its content for ever.
 27c4439f47c93873dea7e60e24c6d248a0929af6:docs/slices/085-held-odd-punch-days/03-implementation-notes.md:generic-api-key:163
+# Slice 089: a made-up password for a throwaway local test login, in a commit already on
+# dev. The test now makes a fresh one each run; this line only clears the old commit.
+047d4f9d2e11099595c0731f9b6403b250e2ffcb:alvoraa_portal/alvoraa_portal/tests/test_leaver_report_089.py:generic-api-key:679

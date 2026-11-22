@@ -218,3 +218,7 @@ Worktree `.claude/worktrees/089-manager-profile-edits`, branch `slice/089-manage
 **Item 5 NOT DONE (stopped, as told).** `get_employee_detail_for_manager` has callers: tests in other slices (`test_leave_ledger_035.py:124`, `test_numbers_match_035.py:384`, `test_review_outside_010d.py:553`) and the 089 tests; in `portal.js` only `openEmpDrawer` (line 13881) calls it, and `openEmpDrawer(` has no caller anywhere else in `alvoraa_portal` (grep). So the drawer looks dead, but the API is pinned by three other slices' tests and exists on `origin/dev`. Needs Surbhi's word.
 
 Known side effect, not changed: `mark_all_seen` still clears the caller's own ToDo-typed rows of any type (it filters on `NOTICE_DOCTYPES`). Marking one's own Mention rows read is harmless; noted only.
+
+## Round 3 follow-up: r3-1 (22 Nov 2026)
+
+`notices.mark_all_seen` no longer marks every ToDo-typed bell row as read (this also retires the "known side effect" above). The bulk UPDATE leaves "ToDo" out; a second statement marks only the caller's unread leaver outcome lines (from `_leaver_lines`) by name, still with `for_user`. A Desk Mention on a ToDo stays unread (AC-31). Test: `test_mark_all_seen_leaves_a_todo_mention_unread` in `test_leaver_report_089.py`; break-tested (old code fails the suite with 1 failure). The AC-33 statement bound in `test_notices_076.py` moved from 2 to 3 because the lookup adds one SELECT; still a fixed number, not one per row.

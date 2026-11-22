@@ -6385,7 +6385,7 @@ function pfStrip(shift, times, marks) {
 
 function acPfPaint() {
   var el = document.getElementById("pfx-" + acPf.date), d = acPf.data;
-  if (!el || !d) return;
+  if (!el || !d) { acPfHost(""); return; }
   var r = d.request, html = "", add = acPf.add, staged = !!(add || acPf.aside.length);
   var locked = !!d.blocked, waiting = r && r.state === "waiting";
   var status = d.status === "Held" ? "held" : "ok";
@@ -6501,8 +6501,9 @@ function acPfPaint() {
       + '<div class="pfx-barrow"><small>Nothing changes until HR approves.</small>'
       + '<button type="button" class="btn btn-primary" onclick="acPfSend()">Send to HR</button></div></div>';
   }
-  el.innerHTML = html + acPfSheet();
-  var first = el.querySelector("#pfx-time, #pfx-sheet .btn-primary");
+  el.innerHTML = html;
+  acPfHost(acPfSheet());
+  var first = document.querySelector("#pfx-time, #pfx-sheet .btn-primary");
   if (acPf.sheet && first) first.focus();
 }
 
@@ -6520,6 +6521,18 @@ window.acPfOther = function (date) {
 };
 
 /* the bottom sheet: add a punch, or set one aside. A real dialog: focus goes in, Escape closes it. */
+/* The sheet is position:fixed, so it lives in one host on <body>, never inside a
+   panel: an ancestor with a transform would make it open against the panel, not
+   the window (scripts/check_portal_trays.js). The host carries `pfx` so the
+   sheet keeps its styles. Leaving the page closes it. */
+function acPfHost(html) {
+  var host = document.getElementById("pfx-host");
+  if (!html) { if (host) host.innerHTML = ""; return; }
+  if (!host) { host = document.createElement("div"); host.id = "pfx-host"; host.className = "pfx"; document.body.appendChild(host); }
+  host.innerHTML = html;
+}
+window.addEventListener("hashchange", function () { if (acPf.sheet) { acPf.sheet = null; } acPfHost(""); });
+
 function acPfSheet() {
   var s = acPf.sheet, d = acPf.data;
   if (!s) return "";

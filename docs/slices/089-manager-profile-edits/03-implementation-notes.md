@@ -175,3 +175,10 @@ Read my own diff asking what could go. **Removed:** a second Custom Field (date 
 ## Commits (local, not pushed)
 
 On `slice/089-manager-profile-edits` after `d56823b2` (the strategy gate): `62a1a9dc` the feature and its tests; `eca18b47` tests over real HTTP; `8c6cccaa` the DOM test; `661e1e27` these notes and the test cleanup. This notes file is in the last commit. Nothing was pushed. Stack `alv089-*` was stopped, not removed (`docker start alv089-db alv089-redis alv089-bench` brings it back).
+
+## Fix round 1: D-1 (report icon under the Joined badge at 360 px)
+
+Cause: `lvHeader` put the icon inside `.sc-identity`, the name block (`flex:1; min-width:0`). Next to the 120 px badge that block shrank to a few pixels, so the icon overflowed it and the badge was drawn on top.
+Fix (portal.js `lvHeader`, panels.css): the icon is now a child of `.sc-topbar`, before the badge, as in prototype-v4. Up to 480 px the bar gets a 10 px gap and the name block a 150 px basis, so the badge drops to its own row. Desktop is unchanged. The side effect is that on a phone the Joined badge also drops to its own row for people with no icon.
+Measured in real Chromium on the real portal (before, then after): 360 px, icon box 244,112 and top element the badge; then 284,107, top element the icon, 44 x 44. 390 px and 1280 px: top element the icon, 44 x 44, no sideways scroll.
+Tests: new `portal_leaver_report_089_layout_chrome.js` (12 checks at 360, 390, 1280). Named `_chrome.js` because CI has no Chromium and the DOM runner runs every `_test.js`, so CI does not run it; run it by hand. A one-line pin in `portal_leaver_report_089_test.js` (icon's parent is `.sc-topbar`) does run in CI. Break-tested: with the old JS and CSS restored, the Chromium test failed at 360 and 390 ("top is DIV.sc-join-badge") and the pin failed; both pass again after the restore.

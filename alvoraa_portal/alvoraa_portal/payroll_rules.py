@@ -92,6 +92,7 @@ exactly as before. Surbhi, 2026-11-11: nothing company-specific in code.
   Greens and the late window still read the real first and last punch.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -183,14 +184,22 @@ def break_gaps(times: list) -> list:
 	return [(times[k], times[k + 1]) for k in range(1, len(times) - 1, 2)]
 
 
-def punch_minutes(times) -> list:
+def punch_minutes(times, day=None) -> list:
 	"""A day's punch times as whole minutes from midnight, repeat scans folded.
 
 	Seconds are dropped (ALV-326, D3: 10:36:40 reads as 10:36). The engine and
 	the break shown on screen (ALV-328) both start here, so the two cannot count
 	one day differently. `times` are datetimes, in any order.
+
+	`day` is the working day the punches belong to. A punch on a later calendar
+	date runs on past 1440: leaving at 00:00:42 after a 20:30 shift end is
+	minute 1440, the last punch out, not the first punch in (ALV-402).
 	"""
-	return collapse_duplicate_punches([t.hour * 60 + t.minute for t in times])
+	def minute(t):
+		late = (t.date() - day).days * 1440 if day else 0
+		return late + t.hour * 60 + t.minute
+
+	return collapse_duplicate_punches([minute(t) for t in times])
 
 
 def minutes_on_break(gaps, start: float, end: float) -> float:
@@ -434,6 +443,12 @@ def leave_credits_for_month(days_present, period_days, credit_per_period,
 	return min(earned, cap) if cap > 0 else earned
 
 
+def round_percent(percent) -> float:
+	"""A day's percentage as the band lookup reads it: one decimal, .05 upwards
+	(ALV-401). The portal's ladder uses this too, so the two cannot disagree."""
+	return math.floor(float(percent) * 10 + 0.5) / 10
+
+
 def find_slab(slabs, percent):
 	"""The one row covering this percentage.
 
@@ -445,7 +460,13 @@ def find_slab(slabs, percent):
 	attendance would match nothing. The rule set controller has already
 	refused to save a table with a gap or an overlap, so exactly one row
 	matches and returning the first is not a tie-break.
+
+	The percentage is rounded to one decimal, .05 upwards, before the lookup
+	(ALV-401, Surbhi, 20 Nov 2026): DTC reads 534 of 540 minutes (98.89%) as
+	98.9, which is the no-red band. Only the lookup rounds; callers keep the
+	exact figure. Not Python's round(), which sends some .x5 values down.
 	"""
+	percent = round_percent(percent)
 	ordered = sorted(slabs, key=lambda r: float(r.percent_from))
 	for row in ordered:
 		lo, hi = float(row.percent_from), float(row.percent_to)

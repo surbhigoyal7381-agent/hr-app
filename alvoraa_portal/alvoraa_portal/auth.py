@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, cstr
 from werkzeug.exceptions import HTTPException
 
 from alvoraa_portal.subscription import has_feature
@@ -17,6 +17,17 @@ _DESK_ROLES = frozenset({
 # controller and the settings layer behind it.
 JOINER_ROLE = "Alvoraa Joiner"
 JOINING_PAGE = "/joining"
+# Where HR's "Signs in with" value lives. Named here for the same reason as
+# the role above: `auth` is on the front door of every request and must not
+# drag the submission controller in behind it.
+JOINER_SUBMISSION = "Alvoraa Joiner Submission"
+# The three statuses that mean this invite is over. Named here rather than
+# imported from the submission controller for the reason above - and kept in
+# step with `TERMINAL` in
+# `alvoraa_portal/doctype/alvoraa_joiner_submission/alvoraa_joiner_submission.py`,
+# which is the definition. The five statuses are Invited, Submitted, Made an
+# employee, Expired and Cancelled.
+JOINER_TERMINAL = frozenset({"Made an employee", "Expired", "Cancelled"})
 
 
 def home_page_for(user):
@@ -448,6 +459,12 @@ _JOINER_MAY_REACH = (
     "/alvoraa-login",
     "/assets/",
     "/favicon.ico",
+    # **ALV-422.** `/logout` is a Frappe web page and pulls this in, so a
+    # joiner's sign-out screen was served a redirect to the joining form where
+    # a script was expected. `_FIRST_USE_MAY_REACH` has allowed it from the
+    # start, and its comment says that list was built by watching what that
+    # same screen actually loads. This one was written without the measurement.
+    "/website_script.js",
     # Sign-in and sign-out themselves. Frappe completes the login inside
     # `init_request`, which is also where this hook runs - so by the time we are
     # called the session is ALREADY the joiner. Leave `/api/method/login` out
@@ -470,13 +487,34 @@ _JOINER_MAY_REACH = (
     "/api/method/alvoraa_portal.joiner_public.",
 )
 
-# **Empty, and that is not an oversight.** The joining page uses `fetch` to
-# /api/method/<dotted>, never a website-page `frappe.call`, so there is no
-# legitimate `cmd` for a joiner at all. The set exists so that the check on "/"
-# exists: honouring a `cmd` the allow-list does not name would hand over the
-# key, and a POST to "/" with `cmd=frappe.client.get_list` is a door a path
-# check cannot see. This product has paid for the missing-`cmd` half twice.
-_JOINER_MAY_CALL = frozenset()
+# **One name, and the reason it is not none is ALV-422.**
+#
+# This set was empty, and the comment here argued that it could stay empty:
+# *the joining page uses `fetch` to /api/method/<dotted>, never a website-page
+# `frappe.call`, so there is no legitimate `cmd` for a joiner at all.* That is
+# true of the joining page. **It is false of `/logout`**, which this gate
+# deliberately lets a joiner reach and which is not our page at all.
+#
+# `/logout` is Frappe's own. It calls `frappe.logout()`, which is
+# `frappe.call({method: "logout"})`, and `frappe.call` with a bare method name
+# posts to **"/" with `cmd=logout`** - `frappe.request.url = "/"`
+# (`request.js:8`), used at `:260`. So the one address a joiner is given as the
+# way out made the one kind of call this set refused: the sign-out became a
+# redirect back to the joining form and the person stayed signed in. Reported
+# from dev on 21 Nov 2026 and reproduced in a browser.
+#
+# **The reasoning that keeps it to one name is unchanged.** The set exists so
+# that the check on "/" exists: honouring a `cmd` the allow-list does not name
+# would hand over the key, and a POST to "/" with `cmd=frappe.client.get_list`
+# is a door a path check cannot see. This product has paid for the missing-`cmd`
+# half twice. An allow-list widened by an exact name is still an allow-list -
+# `logout` needs no permissions (`allow_guest=True`), is POST-only, returns no
+# data and ends only the caller's own session.
+#
+# `_FIRST_USE_MAY_CALL` below has listed `"logout"` since it was written, for
+# exactly this reason. Two gates in one file disagreed about the same page, and
+# the one with the measurement behind it was right.
+_JOINER_MAY_CALL = frozenset({"logout"})
 
 # "Has this account got the joiner role?" Remembered per user, in one hash.
 # Keeping it off the database is the whole of NFR-3: this gate must add no
@@ -649,6 +687,232 @@ def _refuse(path):
         # no doctype, no page, no count.
         raise frappe.PermissionError(_(_ONE_PAGE))
     raise _GoToTheJoiningPage
+
+
+def let_the_joiner_type_what_hr_gave_them(login_manager=None):
+    """Frappe `before_login` hook. ALV-394.
+
+    A joiner is told to sign in with the number or email HR reached them on.
+    That value is on no account anywhere: slice 079 gives the joiner an opaque,
+    non-routable login id on purpose (079-SEC-1), and `make_sign_in` copies what
+    HR typed onto `User.mobile_no` **only when it is a telephone number**. So an
+    email invite had nothing for Frappe to match, `find_by_credentials` returned
+    no row, and the page - which turns every refusal it does not recognise into
+    the wrong-password wording - told the joiner to check a password that was
+    never read. Invited by email, nobody could ever get in.
+
+    This swaps what they typed for the login id that exists, before Frappe looks
+    anything up. The opaque id stays opaque; nothing new is returned to the
+    browser.
+
+    **`before_login`, and NOT `before_request`.** The first shape of this fix
+    was a `before_request` hook and it never ran: `frappe/app.py:242` builds
+    `HTTPRequest()`, which constructs a `LoginManager`, which signs the person
+    in and raises - all **before** the `before_request` loop two lines below at
+    :244. Sixteen tests passed against a hook that was never reached, because
+    they called it by hand with a fake request instead of driving a real one.
+    `run_trigger("before_login")` is the first line of `LoginManager.login()`
+    (`frappe/auth.py:147`), eight lines ahead of `authenticate()`, which reads
+    `frappe.form_dict.usr` (`:261`) once `get_cached_user_pass()` comes back
+    empty - and it does, unless two-factor is mid-flight.
+
+    Two things fall out of being here rather than there. Nothing runs on an
+    ordinary request at any tenant any more. And `cmd=login` on "/" - the other
+    way into `login()` (`frappe/auth.py:130`) - is covered, which a path check
+    would have missed.
+
+    **It is not an oracle (US-4).** There is no new endpoint and no new wording.
+    A stranger guessing an address gets the same refusal as before, because the
+    only thing that changes is which row Frappe fails to authenticate against.
+
+    **It makes `allow_login_using_mobile_number` unnecessary for joiners.** That
+    setting is tenant-wide: turning it on let every employee at that tenant sign
+    in with their mobile number too, a side effect accepted by name in 079
+    decision 6b. Mobile invites now work without it.
+
+    **Fails open.** Every failure leaves what was typed alone, so the worst case
+    is the refusal that happens today - never a tenant locked out of its login.
+
+    `login_manager` is passed by `run_trigger` and is not used; the parameter is
+    there because `on_login` below takes it the same way.
+    """
+    try:
+        form = getattr(frappe.local, "form_dict", None)
+        if not form:
+            return
+        typed = cstr(form.get("usr") or "").strip()
+        if not typed:
+            return
+
+        # A real account: leave it alone. This is also what keeps every member
+        # of staff out of the lookup below - they cost nothing extra, because a
+        # successful sign-in never reaches the next line.
+        if frappe.db.exists("User", typed):
+            return
+
+        hidden = _the_sign_in_hr_made_for(typed)
+        if hidden:
+            form["usr"] = hidden
+    except Exception:
+        # No user detail: what was typed may be somebody's real address.
+        _quietly("Joiner sign-in could not be resolved")
+
+
+def _the_sign_in_hr_made_for(typed):
+    """The opaque login id behind what HR wrote in "Signs in with", or None.
+
+    `login_id` is **not unique** on the submission - only `user` is - so one
+    address can appear on more than one row once an invite has been cancelled
+    and another made. The order here is deliberate rather than left to the
+    database:
+
+    1. exactly one **live** row - its account enabled AND its status not one of
+       the three in `JOINER_TERMINAL` - so a re-invited joiner reaches the one
+       that works;
+    2. more than one live row - nothing, and a security-log line. Choosing
+       between two working accounts would sign the joiner into somebody
+       else's record;
+    3. no live row - the newest **closed** account, so an ended sign-in
+       resolves to something rather than to nothing and the joiner is told
+       their sign-in is over rather than that they typed it wrong;
+    4. terminal rows whose accounts are all still OPEN - nothing, and a
+       security-log line. Handing one back would sign a cancelled joiner in.
+
+    Steps 2 and 4 both go through `_refuse_and_log`.
+
+    **Why it takes both the account and the status.** Status alone was the first
+    shape and it was wrong: `joiner_housekeeping.expire_the_dead_sign_ins`
+    calls `doc.save`, which bumps `modified`, so the nightly job can make a
+    DEAD row the newest one. A joiner re-invited after an expiry would then be
+    sent to the expired account and told their password was wrong - the very
+    failure this fix exists to remove.
+
+    `User.enabled` alone was the second shape, and that was wrong too, caught
+    by `test_the_live_invite_wins_over_a_cancelled_one`. **Cancelling an invite
+    does not necessarily disable its account** - only `end_the_sign_in` does
+    that, and the status can be set without it - so an ordinary
+    cancel-then-reinvite left two enabled accounts on one address and step 2
+    refused a sign-in that was never ambiguous.
+
+    So: the account says whether the sign-in still works, the status says
+    whether anyone still means it to, and a row has to pass both.
+
+    `ignore_permissions` because the caller is Guest and has no read on the
+    submission. It returns a login id and nothing else: no name, no status, and
+    nothing reaches the browser.
+    """
+    rows = frappe.get_all(
+        JOINER_SUBMISSION,
+        filters={"login_id": typed},
+        fields=["user", "status"],
+        order_by="modified desc",
+        ignore_permissions=True,
+    )
+
+    with_an_account = []
+    for row in rows:
+        enabled = frappe.db.get_value("User", row.get("user"), "enabled") \
+            if row.get("user") else None
+        if enabled is None:
+            continue
+        with_an_account.append((row, cint(enabled)))
+
+    if not with_an_account:
+        return None
+
+    # **Live means both things, and it took a regression to learn that.**
+    # Keying on `User.enabled` alone refused a case that is not ambiguous: an
+    # invite can be cancelled by a path that does not disable its account - the
+    # status is set directly, and only `end_the_sign_in` disables the User - so
+    # a plain cancel-then-reinvite left two ENABLED accounts and this branch
+    # turned a working sign-in into a refusal. Status alone is no good either,
+    # for the `modified` reason in the docstring above. It has to be both.
+    live = [row for row, enabled in with_an_account
+            if enabled and cstr(row.get("status")) not in JOINER_TERMINAL]
+
+    # **Two working accounts on one address: refuse, do not choose.** Neither
+    # this fix nor ALV-396's guard can clean up data that predates them, and a
+    # tenant invited on the same address twice before either landed has two
+    # enabled accounts for one `login_id`. Picking the newest would sign the
+    # joiner into SOMEBODY ELSE'S record - the worst outcome available here, and
+    # the hardest to notice, because both parties see a screen that works.
+    #
+    # Returning None leaves what was typed alone, so Frappe refuses exactly as
+    # it does today. The joiner is no worse off than before this fix existed,
+    # and HR gets a line in the security log instead of nobody getting anything.
+    #
+    # Once ALV-396 is in, this branch should be unreachable for NEW invites: the
+    # guard refuses a second invite while the first is live and has a sign-in.
+    # If it fires on fresh data, that guard has a hole.
+    if len(live) > 1:
+        _refuse_and_log(
+            "joiner_sign_in_matched_more_than_one_live_account", live)
+        return None
+
+    if live:
+        return live[0]["user"]
+
+    # No live row, so fall back to the ended sign-in. That is on purpose: Frappe
+    # answers "User disabled or missing" for a closed account, which the page
+    # turns into "this sign-in has finished its job" (079 decision 4a), instead
+    # of sending the joiner back to try a password that was never the problem.
+    #
+    # **Only ever an account that is genuinely CLOSED**, which is why this reads
+    # `enabled` again rather than reusing the row's status.
+    closed = [row for row, enabled in with_an_account if not enabled]
+    if closed:
+        return closed[0]["user"]
+
+    # Left over: every row is terminal and yet its account is still OPEN.
+    #
+    # That is the silent close failure. `joiner_invite.end_the_sign_in` catches
+    # every exception, writes an Error Log and returns False, and `on_update`
+    # discards the answer
+    # (`alvoraa_portal/doctype/alvoraa_joiner_submission/
+    #   alvoraa_joiner_submission.py:99`) - so the save succeeds, HR's screen
+    # reads Cancelled, and the login still works.
+    #
+    # **Resolving one of these would sign a cancelled joiner in.** Before
+    # ALV-394 nothing mapped an emailed address to that account, so the fault
+    # sat there unreachable; this hook is exactly what would turn it into a
+    # working door. Refusing leaves it shut and puts a line where HR can find
+    # it. The underlying fault is its own ticket, not this one's to fix.
+    _refuse_and_log(
+        "joiner_sign_in_closed_invite_still_has_an_open_account",
+        [row for row, _enabled in with_an_account])
+    return None
+
+
+def _refuse_and_log(event, rows):
+    """Record a refusal to resolve, and never get in its way.
+
+    **No personal data in the line** (079-PRIV-7). What the joiner typed is
+    somebody's real email address or mobile number, so it is not written here;
+    the login ids are, because 079 makes those opaque and non-routable by
+    design, and they are what HR needs in order to find the two rows.
+
+    `security_logger` rather than `frappe.logger("security")`: the plain logger
+    sits at ERROR in every one of our images, so a `.warning` line is thrown
+    away silently. That was ALV-391, and it had made every security line this
+    product ever wrote disappear. The helper turns this one logger down to INFO.
+
+    Wrapped, and then `_quietly` as well, because a sign-in must never fail on
+    its own audit trail - and because the Error Log row is the copy that
+    survives the security log's 2 MB of rotation.
+    """
+    try:
+        import json
+
+        from hrms.alvoraa_hr_core.access import security_logger
+        security_logger().warning(json.dumps({
+            "event": event,
+            "at": str(frappe.utils.now_datetime()),
+            "count": len(rows),
+            "accounts": sorted(cstr(row.get("user")) for row in rows),
+        }))
+    except Exception:
+        pass
+    _quietly("Joiner sign-in matched more than one live account")
 
 
 def _quietly(title):

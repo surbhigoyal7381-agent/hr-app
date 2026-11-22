@@ -5617,7 +5617,7 @@ async function acLoad() {
     acBar();
     acPaint();
     acMine();
-    if (d.can_review) acReviewQueue();
+    if (d.can_review) { acReviewQueue(); acPrepay(); }
   }
   try {
     await show(await acApi("month", {year: acState.year, month: acState.month,
@@ -5894,12 +5894,13 @@ function acPaint() {
     {n: tt.present, l: "Days present"},
     {n: tt.hours_worked + "h", l: "Hours worked"},
     {n: tt.short_days, l: "Days short", warn: tt.short_days > 0},
-    {n: tt.missing_punches, l: "Missing punches", warn: tt.missing_punches > 0},
+    acHeldOn(d) ? {n: tt.held, l: "Held days", held: true, warn: tt.held > 0}
+                : {n: tt.missing_punches, l: "Missing punches", warn: tt.missing_punches > 0},
     {n: tt.late_days, l: "Late arrivals", warn: tt.late_days > 0},
     {n: tt.leave, l: "On leave"}
   ];
-  var html = gmReview() + '<div class="ac-tiles">' + tiles.map(function (x) {
-    return '<div class="ac-tile' + (x.warn ? " warn" : "") + '">'
+  var html = gmReview() + acHeldBanner(d) + '<div class="ac-tiles">' + tiles.map(function (x) {
+    return '<div class="ac-tile' + (x.warn ? " warn" : "") + (x.held && x.warn ? " held" : "") + '">'
       + '<div class="n">' + gpEsc(x.n) + '</div><div class="l">' + gpEsc(x.l) + "</div></div>";
   }).join("") + gmTile() + "</div>";
 
@@ -5957,12 +5958,14 @@ function acRow(x) {
   else if (x.leave_type) label = '<span class="ac-tag">' + gpEsc(x.leave_type) + "</span>";
   else if (x.state === "future") label = '<span class="ac-tag">To come</span>';
   else if (!x.attendance) label = '<span class="ac-tag">No record</span>';
+  else if (x.held) label = '<span class="ac-tag held">&#9888; Held</span>';
   else label = '<span class="ac-tag' + (x.status === "Absent" ? " warn" : "") + '">'
-    + gpEsc(x.status) + "</span>";
+    + gpEsc(x.status) + "</span>"
+    + (x.released ? '<span class="ac-tag ok">&#10003; Was held, pay restored</span>' : "");
 
-  if (x.missing_punch) label += '<span class="ac-tag warn">Missing punch</span>';
+  if (x.missing_punch && !acHeldOn(acState.data)) label += '<span class="ac-tag warn">Missing punch</span>';
   label += gmTag(x);
-  if (x.request) label += '<span class="ac-tag' + (x.request.state === "approved" ? " ok" : "")
+  if (x.request && !(x.held && x.request.state === "waiting")) label += '<span class="ac-tag' + (x.request.state === "approved" ? " ok" : "")
     + '">' + gpEsc(acSay(x.request.state)) + "</span>";
 
   var arrival = "—";
@@ -5980,7 +5983,10 @@ function acRow(x) {
      cells are hidden on a phone. An openable day is a real button, so it can
      be reached and opened from the keyboard; its click reaches the row. */
   var line2 = [];
-  if (x.attendance) {
+  if (x.held) {
+    line2.push(gpEsc(x.held_punches + (x.held_punches === 1 ? " punch" : " punches")));
+    (x.punches || []).forEach(function (m) { line2.push(gpEsc(m.at)); });
+  } else if (x.attendance) {
     if (x.in_time) line2.push(gpEsc(drT("In {0}", [x.in_time])));
     if (x.out_time) line2.push(gpEsc(drT("Out {0}", [x.out_time])));
     if (x.hours !== null && x.hours !== undefined) line2.push(gpEsc(drT("{0}h worked", [x.hours])));
@@ -6171,7 +6177,7 @@ function acDetail(x) {
       + "— only the totals on the attendance record.</p>";
   }
 
-  if (x.missing_punch) {
+  if (x.missing_punch && !acHeldOn(d)) {
     html += '<p class="ac-help"><b>One punch never registered.</b> That is the '
       + "commonest reason a day looks short, and it is what the correction "
       + "below is for.</p>";
@@ -6195,8 +6201,30 @@ function acDetail(x) {
   }
   html += gmBox(x);
 
+  /* Slice 084 still holds on the person's own day: a day older than the employee window that is not Held and
+     has no request yet gets the sentence below, never the timeline (the server would refuse the send). */
+  if (d.is_self && x.attendance && !(x.own_window === "outside" && !x.held && !x.request)) {
+    /* Slice 087: the person's own day is the timeline (loaded from `day_sheet`). Today's
+       reason form stays one tap away for something that is not about a punch (P15). */
+    var other = (x.request && !x.request.punch_fix) ? acReqCard(x.request, true) : (d.can_request ? acForm(x) : "");
+    setTimeout(function () { acPfLoad(x.date); }, 0);
+    if (x.own_window === "joining") {
+      html += '<p class="ac-help ac-join" role="status">'
+        + gpEsc(drT("This is your joining day, so you can always ask about it, however long ago it was.")) + "</p>";
+    }
+    return html + '<div class="pfx" id="pfx-' + gpEsc(x.date) + '"><p class="ac-help">Loading the day&hellip;</p></div>'
+      + (other ? '<p class="ac-help"><button type="button" class="pfx-lnk" onclick="acPfOther(&quot;' + gpEsc(x.date)
+        + '&quot;)">Not about a punch? Something else went wrong</button></p><div id="pfx-other-' + gpEsc(x.date) + '" hidden>' + other + "</div>" : "")
+      + "</div></td></tr>";
+  }
+  html += acHeldBox(x, d);
+
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
+  } else if (x.held && d.can_request) {
+    /* A held day is never outside the filing window: a day somebody worked
+       must not be lost for ever (slice 085, US-18). */
+    html += acHeldForm(x, d);
   } else if (d.is_self && x.own_window === "outside") {
     /* Slice 084: the person's OWN day, older than the employee window. The
        server worked the flag out with the same call its guard uses, so this
@@ -6287,6 +6315,752 @@ function ownOldText(from, basis, joined) {
   return s;
 }
 
+/* ── Held days (slice 085, ALV-392) ───────────────────────────────────
+   A day with an odd number of punches is Held: not paid until HR has looked.
+   Shown when the company has the hold on, or while any day is still held. */
+function acHeldOn(d) {
+  return !!(d && (d.hold_on || (d.totals && d.totals.held > 0)));
+}
+
+function acHeldBanner(d) {
+  if (!acHeldOn(d)) return "";
+  var h = d.totals.held;
+  if (!h) return '<div class="ac-banner ok">&#10003; No held days. Every day this month is paid.</div>';
+  return '<div class="ac-banner held">&#9888; ' + h + (h === 1 ? " day is " : " days are ") + "Held. "
+    + (d.is_self ? "Not paid until fixed. Tap a held day and send the missing time to HR."
+                 : gpEsc(d.employee_name) + "'s held days are not paid until fixed. You can send a time to HR for them.")
+    + "</div>";
+}
+
+/* ── Slice 087: the day as a timeline, and the one punch fix ─────────────────
+   The employee taps a gap to add a punch, or a punch to set it aside, sees what
+   will be sent, and sends it. Nothing changes until HR approves. The server
+   works out In or Out and every refusal; the kind shown here is only a preview
+   of the same rule (`punch_fix.derive`). */
+var acPf = {date: null, data: null, add: null, aside: [], note: "", sheet: null, sending: false};
+
+function pfApi(fn, args) { return gpFetch("alvoraa_portal.punch_fix." + fn, args || {}); }
+function pfMin(hhmm) { var p = String(hhmm || "").split(":"); return p.length < 2 ? NaN : (+p[0]) * 60 + (+p[1]); }
+/* Minutes from the start of the day; the server sends `m` (over 1440 after midnight on the shift day). */
+function pfM(p) { return p.m != null ? p.m : pfMin(p.time); }
+function pfHM(mins) { return Math.floor(mins / 60) + "h " + ("0" + Math.round(mins % 60)).slice(-2) + "m"; }
+function pfHours(h) { return pfHM(Math.round((+h || 0) * 60)); }
+
+/* The kind of a punch added at `t`, from the punches that still count before it (01b v2.2).
+   Same rule as the server: none before = Arrival; even before = In, odd = Out. */
+window.acKind = function (counted, t) {
+  var before = counted.filter(function (m) { return m < t; }).length;
+  var after = counted.length - before, log = before % 2 === 0 ? "IN" : "OUT";
+  var label = !before ? "Arrival"
+    : log === "OUT" ? (after ? "Out for a break" : "Leaving") : "Back in after a break";
+  return {log: log, label: label};
+};
+
+function pfCounted(excludeAside) {
+  var d = acPf.data;
+  return (d.punches || []).filter(function (p) {
+    return p.counted && acPf.aside.indexOf(p.name) < 0;
+  }).map(function (p) { return pfM(p); }).sort(function (a, b) { return a - b; });
+}
+
+window.acPfLoad = async function (date) {
+  var el = document.getElementById("pfx-" + date);
+  if (!el) return;
+  if (acPf.date !== date) { acPf = {date: date, data: null, add: null, aside: [], note: "", sheet: null, sending: false}; }
+  try {
+    acPf.data = await pfApi("day_sheet", {date: date});
+    acPfPaint();
+  } catch (e) { el.innerHTML = '<p class="ac-help" role="alert">' + gpEsc(e.message || "This day could not load. Try again.") + "</p>"; }
+};
+
+function pfStrip(shift, times, marks) {
+  /* A shift band, the worked bars between pairs of counted punches, and the dots. aria-hidden:
+     everything it shows is also in the list below it, in words. */
+  if (!shift) return "";
+  var s = pfMin(shift.start), e = pfMin(shift.end), lo = Math.min(s, times.length ? times[0].m : s) - 30,
+      hi = Math.max(e, times.length ? times[times.length - 1].m : e) + 30, span = hi - lo || 1;
+  function pos(m) { return Math.max(0, Math.min(100, (m - lo) / span * 100)); }
+  var h = '<div class="pfx-strip" aria-hidden="true"><div class="pfx-band" style="left:' + pos(s) + "%;width:" + (pos(e) - pos(s)) + '%"></div>';
+  var c = times.filter(function (t) { return t.k !== "aside"; });
+  for (var i = 0; i + 1 < c.length; i += 2) {
+    h += '<div class="pfx-bar" style="left:' + pos(c[i].m) + "%;width:" + (pos(c[i + 1].m) - pos(c[i].m)) + '%"></div>';
+  }
+  times.forEach(function (t) { h += '<span class="pfx-pt ' + t.k + '" style="left:' + pos(t.m) + '%"></span>'; });
+  return h + '</div><div class="pfx-strip-cap" aria-hidden="true"><span>' + gpEsc(shift.start) + "</span><span>" + gpEsc(shift.end) + "</span></div>";
+}
+
+function acPfPaint() {
+  var el = document.getElementById("pfx-" + acPf.date), d = acPf.data;
+  if (!el || !d) { acPfHost(""); return; }
+  var r = d.request, html = "", add = acPf.add, staged = !!(add || acPf.aside.length);
+  var locked = !!d.blocked, waiting = r && r.state === "waiting";
+  var status = d.status === "Held" ? "held" : "ok";
+  /* one status line */
+  if (locked) {
+    html += '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This day cannot be fixed here</span></div>'
+      + '<p class="pfx-sub">' + gpEsc(d.blocked_text) + "</p>";
+  } else if (waiting && r.was_filed) {
+    /* V5: filed for the employee; HR can decide it now, so the status line says it is HR's. */
+    html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Waiting for HR</span></div>'
+      + '<p class="pfx-sub">HR can decide this now. The day stays as it is until then. You will see the answer here.</p>';
+  } else if (waiting) {
+    html += '<div class="pfx-sl pfx-wait"><span class="pfx-ic" aria-hidden="true">&#9719;</span><span>Sent to HR at ' + gpEsc(r.sent_at) + " &middot; Waiting</span></div>"
+      + '<p class="pfx-sub">The day stays as it is until HR decides. You will see the answer here.</p>'
+      + (r.replaces ? '<p class="pfx-sub">This replaces the ' + gpEsc(r.replaces.time || "") + " that " + gpEsc(pfxWho(r.replaces.filed_by, r.replaces.filed_by_name))
+        + " sent. You said it was not right.</p>" : "");
+  } else if (r && r.state === "approved") {
+    html += '<div class="pfx-sl pfx-ok"><span class="pfx-ic" aria-hidden="true">&#10003;</span><span>Fixed by HR &middot; ' + pfHours(d.hours) + " &middot; "
+      + (d.status === "Absent" || d.status === "Held" ? "Not paid" : "Paid") + "</span></div>";
+  } else if (r && r.state === "declined" && r.declined_by_you) {
+    /* V4 P-12: the employee wrote this reason, so it is never labelled "from HR". */
+    html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>You said this is not right</span></div>'
+      + '<p class="pfx-sub">HR will not add it, and your day stays as it is.</p>'
+      + (r.hr_note ? '<p class="pfx-sub">Reason: ' + gpEsc(r.hr_note) + "</p>" : "");
+  } else if (r && r.state === "declined") {
+    html += '<div class="pfx-sl pfx-held"><span class="pfx-ic" aria-hidden="true">!</span><span>HR did not add this</span></div>'
+      + (r.hr_note ? '<p class="pfx-sub">Reason from HR: ' + gpEsc(r.hr_note) + "</p>" : "");
+  } else {
+    html += '<div class="pfx-sl pfx-' + status + '"><span class="pfx-ic" aria-hidden="true">' + (d.held ? "!" : "&#10003;") + "</span><span>"
+      + (d.held ? "Held &middot; not paid until fixed" : gpEsc(d.status) + " &middot; " + pfHours(d.hours)) + "</span></div>";
+  }
+  if (r && r.was_filed && !locked && (r.can_not_right || r.confirm_state)) html += '<div class="pfx-block">' + pfxConfirmBlock(r, "pf") + "</div>";
+  if (d.shift) {
+    html += '<p class="pfx-muted">Shift ' + gpEsc(d.shift.start) + "&ndash;" + gpEsc(d.shift.end) + " &middot; Expected " + pfHM(Math.round(d.shift.expected * 60)) + "</p>";
+  }
+  /* strip + timeline */
+  var items = (d.punches || []).map(function (p) {
+    var isAside = p.aside || acPf.aside.indexOf(p.name) >= 0;
+    return {m: pfM(p), t: p.time, p: p, k: isAside ? "aside" : p.added ? "add" : p.counted ? "io" : "aside"};
+  });
+  if (add) items.push({m: add.m, t: add.time, add: true, k: "add"});
+  if (waiting && r.time) items.push({m: pfM(r), t: r.time, ask: true, k: "add"});
+  items.sort(function (a, b) { return a.m - b.m; });
+  html += pfStrip(d.shift, items);
+  if (!locked && !staged && !waiting) {
+    html += '<p class="pfx-hint">Something missing? Tap a gap. Something wrong? Tap that punch.</p>';
+  }
+  html += '<ul class="pfx-tl">';
+  var canTap = !locked && !waiting && !(add) ;
+  function gapRow(i) {
+    return canTap ? '<li><button type="button" class="pfx-b pfx-g" onclick="acPfGap(' + i + ')"><span class="pfx-tm"></span>'
+      + '<span class="pfx-rail"><span class="pfx-gdot" aria-hidden="true">+</span></span>'
+      + '<span class="pfx-gl">Add a missing punch here</span><span></span></button></li>' : "";
+  }
+  html += gapRow(0);
+  items.forEach(function (it, i) {
+    var cls = it.k === "aside" ? " aside" : it.k === "add" ? " add" : "";
+    var label, sub = "";
+    if (it.add) { label = "Added: " + acPf.add.label; sub = "In this request"; }
+    else if (it.ask) {
+      label = (r.log_type === "OUT" ? "Out" : "In") + " &middot; asked for";
+      sub = r.was_filed ? (r.filed_by === "HR" ? "Added by HR &middot; sent for you"
+              : "Asked for by " + gpEsc(r.filed_by_name || "your manager") + " &middot; sent for you")
+        : "Asked for &middot; waiting for HR";
+    }
+    else {
+      label = (it.p.log_type === "OUT" ? "Out" : "In");
+      sub = gpEsc(it.p.source);
+      if (it.p.added) {
+        /* V4 P-13: a request somebody filed for you was not "your request". */
+        sub = "Added by HR" + (r && r.decided_on ? " on " + gpEsc(acNice(r.decided_on)) : "")
+          + (r && r.was_filed
+              ? (r.filed_by === "manager" && r.filed_by_name ? ", asked for by " + gpEsc(r.filed_by_name) : "")
+                + (r.confirm_state === "signed" ? ". You signed for it on the register."
+                  : r.confirm_state === "confirmed" ? ". You confirmed it."
+                  : r.needs_confirm ? ". Not confirmed by you yet." : ".")
+              : ", from your request.");
+      }
+      if (it.p.aside) sub = "Set aside by HR" + (r && r.decided_on ? " on " + gpEsc(acNice(r.decided_on)) : "")
+        + ", from your request. It stays on record but no longer counts.";
+      if (acPf.aside.indexOf(it.p.name) >= 0) sub = "Set aside in this request";
+    }
+    var inner = '<span class="pfx-tm num">' + gpEsc(it.t) + '</span><span class="pfx-rail"><span class="pfx-dot ' + it.k + (it.ask ? " pend" : "") + '"></span></span>'
+      + '<span class="pfx-lb"><span class="pfx-lbt">' + (it.add || it.ask ? label : gpEsc(label)) + '</span><span class="pfx-sb">' + sub + "</span></span><span></span>";
+    var tap = it.p && it.p.counted && !it.p.aside && canTap;
+    var tapAside = it.p && acPf.aside.indexOf(it.p.name) >= 0 && !waiting;
+    html += '<li>' + (tap || tapAside
+      ? '<button type="button" class="pfx-b pfx-p' + cls + '" onclick="acPfPunch(&quot;' + gpEsc(it.p.name) + '&quot;)">' + inner + "</button>"
+      : '<div class="pfx-s pfx-p' + cls + '">' + inner + "</div>") + "</li>";
+    html += gapRow(i + 1);
+  });
+  html += "</ul>";
+  if (r && r.note && (waiting || r.state === "approved") && !r.was_filed) html += '<p class="pfx-sub">Reason: ' + gpEsc(r.note) + "</p>";
+  if (waiting && !r.was_filed) html += '<p><button type="button" class="btn btn-outline" onclick="acPfWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button></p>';
+  if (add) html += '<p class="pfx-one">One punch per request. If another is missing, send this first and add the next after HR decides.</p>';
+  /* the sticky send bar */
+  if (staged && !locked) {
+    var parts = [];
+    if (add) parts.push("+" + add.time + " " + (add.log === "OUT" ? "Out" : "In"));
+    acPf.aside.forEach(function (n) {
+      var p = (d.punches || []).filter(function (x) { return x.name === n; })[0];
+      if (p) parts.push(p.time + " set aside");
+    });
+    /* ALV-418 (counsel, 21 Nov): one required reason box, on a Held day too. The Q3 rule stands:
+       the label says HR and the manager read it. */
+    html += '<div class="pfx-bar-send"><div class="pfx-sum">' + gpEsc(parts.join(" · ")) + "</div>"
+      + '<div class="pfx-field pfx-reason"><label class="pfx-fl" for="pfx-note">Reason <span class="pfx-req">Required</span></label>'
+      + '<p class="pfx-sub">HR and your manager can read this.</p>'
+      + '<p class="pfx-sub pfx-print">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
+      + '<textarea id="pfx-note" rows="1" required aria-required="true" placeholder="e.g. Forgot to scan after lunch" oninput="acPfReasonInput(this)">'
+      + gpEsc(acPf.note || "") + "</textarea></div>"
+      + '<div class="pfx-err" id="pfx-refusal" role="alert" hidden></div>'
+      + '<div class="pfx-barrow"><small>Nothing changes until HR approves.</small>'
+      + '<button type="button" class="btn btn-primary" onclick="acPfSend()">Send to HR</button></div></div>';
+  }
+  el.innerHTML = html;
+  acPfHost(acPfSheet());
+  var first = document.querySelector("#pfx-time, #pfx-sheet .btn-primary");
+  if (acPf.sheet && first) first.focus();
+}
+
+/* The reason box grows from one line to three; typing clears the error and the red border (V3 P-3, P-4). */
+window.acPfReasonInput = function (el) {
+  acPf.note = el.value;
+  el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 96) + "px";
+  el.classList.remove("bad");
+  var e = document.getElementById("pfx-refusal"); if (e) e.hidden = true;
+};
+
+window.acPfOther = function (date) {
+  var o = document.getElementById("pfx-other-" + date);
+  if (o) o.hidden = !o.hidden;
+};
+
+/* the bottom sheet: add a punch, or set one aside. A real dialog: focus goes in, Escape closes it. */
+/* The sheet is position:fixed, so it lives in one host on <body>, never inside a
+   panel: an ancestor with a transform would make it open against the panel, not
+   the window (scripts/check_portal_trays.js). The host carries `pfx` so the
+   sheet keeps its styles. Leaving the page closes it. */
+function acPfHost(html) {
+  var host = document.getElementById("pfx-host");
+  if (!html) { if (host) host.innerHTML = ""; return; }
+  if (!host) { host = document.createElement("div"); host.id = "pfx-host"; host.className = "pfx"; document.body.appendChild(host); }
+  host.innerHTML = html;
+}
+window.addEventListener("hashchange", function () { if (acPf.sheet) { acPf.sheet = null; } acPfHost(""); });
+
+function acPfSheet() {
+  var s = acPf.sheet, d = acPf.data;
+  if (!s) return "";
+  var h = '<div class="pfx-scrim" onclick="if(event.target===this)acPfClose()"><div id="pfx-sheet" class="pfx-sheet" role="dialog" aria-modal="true" aria-labelledby="pfx-sh" onkeydown="if(event.key===&quot;Escape&quot;)acPfClose()">';
+  if (s.type === "add") {
+    h += '<h2 id="pfx-sh">Add the missing punch</h2><p class="pfx-ctx">' + gpEsc(s.ctx) + "</p>"
+      + '<div class="pfx-field"><label class="pfx-fl" for="pfx-time">Time</label>'
+      + '<input type="time" id="pfx-time" value="' + gpEsc(s.time || "") + '" oninput="acPfTime(this.value)" aria-describedby="pfx-infer pfx-err">'
+      + '<p class="pfx-infer" id="pfx-infer" aria-live="polite">' + (s.kind ? "It will be added as: <b>" + gpEsc(s.kind.label) + "</b>." : "") + "</p>"
+      + '<div class="pfx-err" id="pfx-err" role="alert">' + (s.err ? gpEsc(s.err) : "") + "</div></div>"
+      + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
+      + '<button type="button" class="btn btn-primary" onclick="acPfAdd()">Add to request</button></div>';
+  } else {
+    var p = (d.punches || []).filter(function (x) { return x.name === s.name; })[0] || {time: ""};
+    var on = acPf.aside.indexOf(s.name) >= 0;
+    h += '<h2 id="pfx-sh">' + (on ? "Keep this punch" : "This punch is wrong") + "</h2>"
+      + '<p class="pfx-ctx">' + (on ? "It will count again. Nothing is sent for it."
+        : "It stays on record, crossed out, and stops counting once HR approves.") + "</p>"
+      + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfClose()">Cancel</button>'
+      + '<button type="button" class="btn btn-primary" onclick="acPfToggleAside(&quot;' + gpEsc(s.name) + '&quot;)">'
+      + (on ? "Keep " + gpEsc(p.time) : "Set " + gpEsc(p.time) + " aside") + "</button></div>";
+  }
+  return h + "</div></div>";
+}
+
+window.acPfClose = function () { acPf.sheet = null; acPfPaint(); };
+
+window.acPfGap = function (i) {
+  /* bounds: the counted punches either side of this position in the list */
+  var all = (acPf.data.punches || []).slice().sort(function (a, b) { return pfM(a) - pfM(b); });
+  var prev = all[i - 1], next = all[i];
+  var pm = prev ? pfM(prev) : null, nm = next ? pfM(next) : null;
+  var ctx = prev && next ? "Between " + prev.time + " and " + next.time + "." : prev ? "After " + prev.time + "." : next ? "Before " + next.time + "." : "";
+  acPf.sheet = {type: "add", prev: pm, next: nm, ctx: ctx, time: "", kind: null, err: ""};
+  acPfPaint();
+};
+
+window.acPfPunch = function (name) { acPf.sheet = {type: "aside", name: name}; acPfPaint(); };
+
+window.acPfToggleAside = function (name) {
+  var i = acPf.aside.indexOf(name);
+  if (i >= 0) acPf.aside.splice(i, 1); else acPf.aside.push(name);
+  if (acPf.add) { var k = acKind(pfCounted(), acPf.add.m); acPf.add.log = k.log; acPf.add.label = k.label; }
+  acPf.sheet = null; acPfPaint();
+};
+
+/* The sentence for a time that does not fit its gap (AC-3). The server refuses a time within two
+   minutes of a counted punch with its own sentence; the gap sentences exist only here. */
+function pfFit(s, t) {
+  var m = pfMin(t);
+  if (isNaN(m)) return "Enter the time first.";
+  if (s.prev === null && s.next !== null && !(m < s.next)) return t + " is not before " + pfHH(s.next) + ". Check the time.";
+  if (s.next === null && s.prev !== null && !(m > s.prev)) return t + " is not after " + pfHH(s.prev) + ". Check the time.";
+  if (s.prev !== null && s.next !== null && !(m > s.prev && m < s.next)) return t + " is not between " + pfHH(s.prev) + " and " + pfHH(s.next) + ". Check the time.";
+  return "";
+}
+function pfHH(m) { return ("0" + Math.floor(m / 60)).slice(-2) + ":" + ("0" + (m % 60)).slice(-2); }
+
+window.acPfTime = function (v) {
+  var s = acPf.sheet; if (!s) return;
+  s.time = v;
+  var m = pfMin(v), k = isNaN(m) ? null : acKind(pfCounted(), m);
+  var inf = document.getElementById("pfx-infer");
+  if (inf) inf.innerHTML = k ? "It will be added as: <b>" + gpEsc(k.label) + "</b>." : "";
+  s.kind = k;
+};
+
+window.acPfAdd = function () {
+  var s = acPf.sheet, t = (document.getElementById("pfx-time") || {}).value;
+  s.time = t;
+  var err = pfFit(s, t);
+  if (!err && (acPf.data.punches || []).some(function (p) { return p.counted && p.time === t; })) {
+    err = "There is already a punch at " + t + ". Check the time.";
+  }
+  if (err) {
+    s.err = err;
+    var box = document.getElementById("pfx-err"), inp = document.getElementById("pfx-time");
+    if (box) box.textContent = err;
+    if (inp) { inp.classList.add("bad"); inp.focus(); }
+    return;
+  }
+  var k = acKind(pfCounted(), pfMin(t));
+  acPf.add = {time: t, m: pfMin(t), log: k.log, label: k.label};
+  acPf.sheet = null; acPfPaint();
+};
+
+window.acPfSend = async function () {
+  if (acPf.sending) return;
+  var box = document.getElementById("pfx-refusal");
+  /* Exactly four things leave this page: the day, the time, the punches set aside, the note. */
+  var note = ((document.getElementById("pfx-note") || {}).value || acPf.note || "").trim();
+  if (!note) {
+    if (box) { box.innerHTML = '<span aria-hidden="true">! </span>' + "Write a reason so HR can decide."; box.hidden = false; }
+    var nb = document.getElementById("pfx-note"); if (nb) { nb.classList.add("bad"); nb.focus(); }
+    return;
+  }
+  var body = {date: acPf.date, time: acPf.add ? acPf.add.time : "", set_aside: JSON.stringify(acPf.aside), note: note};
+  acPf.sending = true; showLoad();
+  try {
+    await pfApi("send", body);
+    hideLoad(); toast("Sent to HR.", "ok");
+    var date = acPf.date; acPf.add = null; acPf.aside = []; acPf.note = "";
+    await acPfLoad(date);
+  } catch (e) {
+    hideLoad();
+    if (e && e.server && e.message) {
+      /* The server's own sentence, beside the button, kept after the toast goes; what was typed stays. */
+      if (box) { box.textContent = e.message; box.hidden = false; }
+      toast(e.message, "err");
+    } else {
+      toast("It may have gone through. Checking with the office.", "err");
+      await acPfLoad(acPf.date);
+    }
+  } finally { acPf.sending = false; }
+};
+
+function pfxWho(by, name) { return by === "HR" ? "HR" : (name || "your manager"); }
+
+var PFX_KIND_Q = {"Arrival": "What time did you arrive?", "Back in after a break": "What time were you back?",
+                  "Out for a break": "What time did you go out?", "Leaving": "What time did you leave?"};
+
+/* The Confirm block (prototype-v4). `mode` is "pf" on the day sheet and "req" on the older request card:
+   where to reload after the answer. A filed set-aside, or a request with no time, has no time field. */
+function pfxConfirmBlock(r, mode) {
+  /* V5: a request filed for the employee, pending or already approved. HR-filed or a cut: Confirm and Not
+     right. A manager's addition: Not right only. After Confirm the block stays. Approval never waits. */
+  var hr = r.filed_by === "HR", nm = r.filed_by_name || "Your manager", it = r.item, n = gpEsc(r.name), m = gpEsc(mode);
+  var ap = !!r.approved, cs = r.confirm_state, who = hr ? "HR" : "Your manager " + gpEsc(nm);
+  var head = cs === "disputed" ? "You told HR this is not right"
+    : cs === "signed" ? "You signed for it on the register"
+    : cs === "confirmed" ? "You confirmed this at " + gpEsc(r.confirmed_at || "")
+    : ap ? (hr ? "HR added this for you and has approved it. Is it right?" : who + " added this for you and HR has approved it. Is it right?")
+         : (hr ? "HR sent this for you. Is it right?" : who + " sent this for you. Is it right?");
+  var h = '<div class="pfx-sl ' + (cs === "confirmed" || cs === "signed" ? "pfx-ok" : cs === "disputed" ? "pfx-wait" : "pfx-held") + '"><span class="pfx-ic" aria-hidden="true">'
+    + (cs === "confirmed" || cs === "signed" ? "&#10003;" : cs === "disputed" ? "&#9719;" : "!") + "</span><span>" + head + "</span></div>";
+  if (it) h += '<p class="pfx-sub"><b>' + (it.kind === "add" ? "Add a punch at " + gpEsc(it.time) + " &middot; " + gpEsc(it.label)
+    : "Set aside your punch at " + gpEsc(it.time || "")) + "</b></p>";
+  if (r.filer_reason) h += '<p class="pfx-sub">' + (hr ? "Reason from HR" : "Reason from " + gpEsc(nm)) + ": " + gpEsc(r.filer_reason) + "</p>";
+  if (cs === "disputed") {
+    return h + '<p class="pfx-sub">Your day stays as HR approved it until HR decides.</p>'
+      + (r.disputed && r.disputed.reason ? '<p class="pfx-sub">Reason: ' + gpEsc(r.disputed.reason) + "</p>" : "");
+  }
+  if (r.can_confirm) {
+    h += '<p class="pfx-sub">Press Confirm only if this is what happened. HR can decide it now. Your salary slip for this month waits until you confirm it, or sign for it on the register.</p>';
+  } else if (cs === "confirmed") {
+    h += '<p class="pfx-sub">You can still say it is not right.</p>';
+  } else if (cs !== "signed" && !r.needs_confirm) {
+    h += '<p class="pfx-sub">' + (ap ? "HR has approved this. If it is not right, say so and give your own time."
+      : "HR decides this. Nothing on your day changes until then. If it is not right, say so and give your own time.") + "</p>";
+  }
+  if (!r.can_not_right) return h;
+  h += '<div class="pfx-acts" id="pfx-cf-btns-' + n + '">'
+    + (r.can_confirm ? '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,1,&quot;' + m + '&quot;)">Confirm</button>' : "")
+    + '<button type="button" class="btn" onclick="acPfNotRight(&quot;' + n + '&quot;)">Not right</button></div>'
+    + '<div id="pfx-nr-' + n + '" hidden>';
+  if (it && it.kind === "add") {
+    h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-time-' + n + '">' + gpEsc(PFX_KIND_Q[it.label] || "What time was it?")
+      + ' <span class="pfx-req">Required</span></label>'
+      + '<input type="time" id="pfx-nr-time-' + n + '" oninput="acPfNrEffect(&quot;' + n + '&quot;)" data-sent="' + gpEsc(it.time) + '" data-approved="' + (ap ? 1 : 0) + '" aria-describedby="pfx-nr-terr-' + n + '">'
+      + '<p class="pfx-sub">' + gpEsc(it.time) + " was sent.</p>"
+      + '<div class="pfx-err" id="pfx-nr-terr-' + n + '" role="alert"></div></div>';
+  }
+  h += '<div class="pfx-field"><label class="pfx-fl" for="pfx-nr-text-' + n + '">What is not right? <span class="pfx-req">Required</span></label>'
+    + '<p class="pfx-sub">HR will read this.</p>'
+    + '<p class="pfx-sub pfx-print">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
+    + '<textarea id="pfx-nr-text-' + n + '" rows="2" required aria-required="true" placeholder="e.g. I was back by 14:15, not 14:40"></textarea>'
+    + '<div class="pfx-err" id="pfx-nr-err-' + n + '" role="alert"></div></div>'
+    + '<p class="pfx-sub" id="pfx-nr-eff-' + n + '" data-approved="' + (ap ? 1 : 0) + '">' + pfxNrLine(ap, it && it.kind === "add", "", "") + "</p>"
+    + '<div class="pfx-acts"><button type="button" class="btn" onclick="acPfNrBack(&quot;' + n + '&quot;)">Back</button>'
+    + '<button type="button" class="btn btn-primary" onclick="acPfConfirm(&quot;' + n + '&quot;,0,&quot;' + m + '&quot;)">Send to HR</button></div></div>';
+  return h;
+}
+
+/* The consequence line above Send, before the button (V5): which of the three things happens. */
+function pfxNrLine(approved, hasTime, sent, typed) {
+  if (approved) {
+    return typed ? "HR has already approved this, so your day stays as it is. Your own time, " + gpEsc(typed) + ", goes to HR as a new request."
+      : "HR has already approved this, so your day stays as it is. The reason goes to HR" + (hasTime ? ", with your own time." : ".");
+  }
+  return typed ? "HR will not add " + gpEsc(sent) + ". Your own request for " + gpEsc(typed) + " goes to HR instead."
+    : "HR will not add it, and your day stays as it is.";
+}
+
+window.acPfNotRight = function (n) {
+  var box = document.getElementById("pfx-nr-" + n), btns = document.getElementById("pfx-cf-btns-" + n);
+  if (btns) btns.hidden = true;
+  if (box) { box.hidden = false; var t = document.getElementById("pfx-nr-time-" + n) || document.getElementById("pfx-nr-text-" + n); if (t) t.focus(); }
+};
+window.acPfNrBack = function (n) {
+  var box = document.getElementById("pfx-nr-" + n), btns = document.getElementById("pfx-cf-btns-" + n);
+  if (box) box.hidden = true; if (btns) btns.hidden = false;
+};
+/* The line above Send changes as the time is typed (V4-3). */
+window.acPfNrEffect = function (n) {
+  var t = document.getElementById("pfx-nr-time-" + n), e = document.getElementById("pfx-nr-eff-" + n);
+  if (!t || !e) return;
+  var te = document.getElementById("pfx-nr-terr-" + n); if (te) te.textContent = "";
+  t.classList.remove("bad");
+  e.textContent = pfxNrLine(e.getAttribute("data-approved") === "1", true, t.getAttribute("data-sent"), t.value).replace(/&[a-z]+;/g, "");
+};
+
+/* The time checks of the add sheet, against the gap the sent time sits in, plus "that is the time that was sent". */
+function pfxNrTimeError(t, sent) {
+  if (!t) return "Enter the time first.";
+  if (t === sent) return "That is the time that was sent. If it is right, go back and press Confirm.";
+  var counted = ((acPf.data || {}).punches || []).filter(function (p) { return p.counted; }).map(pfM).sort(function (a, b) { return a - b; });
+  var s = pfMin(sent), prev = null, next = null;
+  counted.forEach(function (m) { if (m < s) prev = m; else if (m > s && next === null) next = m; });
+  if (counted.some(function (m) { return m === pfMin(t); })) return "There is already a punch at " + t + ". Check the time.";
+  return pfFit({prev: prev, next: next}, t);
+}
+
+window.acPfConfirm = async function (name, ok, mode) {
+  var why = ((document.getElementById("pfx-nr-text-" + name) || {}).value || "").trim();
+  var tEl = document.getElementById("pfx-nr-time-" + name), t = tEl ? tEl.value : "";
+  if (!ok) {
+    var terr = tEl ? pfxNrTimeError(t, tEl.getAttribute("data-sent")) : "";
+    var e = document.getElementById("pfx-nr-err-" + name), te = document.getElementById("pfx-nr-terr-" + name);
+    if (te) te.textContent = terr;
+    if (tEl) { tEl.classList.toggle("bad", !!terr); }
+    if (terr) { tEl.focus(); return; }
+    if (!why) {
+      if (e) e.textContent = "Say what is not right, so HR knows what to fix.";
+      var ta = document.getElementById("pfx-nr-text-" + name); if (ta) { ta.classList.add("bad"); ta.focus(); }
+      return;
+    }
+  }
+  showLoad();
+  try {
+    await pfApi("confirm", {name: name, ok: ok ? 1 : 0, reason: why, time: t});
+    hideLoad();
+    var effEl = document.getElementById("pfx-nr-eff-" + name), apr = !!effEl && effEl.getAttribute("data-approved") === "1";
+    toast(ok ? "Confirmed. Thank you." : apr ? (t ? "Sent to HR as a new request. Your day stays as it is until HR decides." : "Sent to HR. Your day stays as it is until HR decides.")
+      : (t ? "Sent to HR. Your own time replaces the one that was sent." : "Sent to HR. Nothing was changed."), "ok");
+    if (mode === "req") { await acLoad(); } else { await acPfLoad(acPf.date); }
+  } catch (err) {
+    hideLoad();
+    var box = document.getElementById("pfx-nr-err-" + name);
+    if (box && err && err.server && err.message) box.textContent = err.message;
+    toast(err.message || "Could not send that.", "err");
+  }
+};
+
+/* ── HR's list before payroll (V5) ─────────────────────────────────────────
+   Changes HR or a manager filed that need the employee's confirmation before pay is locked, and have not
+   had it. A card at the top of the HR page; "Not yet", and Withdraw only while a change is still pending. */
+async function acPrepay() {
+  var host = document.getElementById("ac-prepay");
+  if (!host) {
+    var w = document.getElementById("ac-review-wrap"); if (!w || !w.parentNode) return;
+    host = document.createElement("section"); host.id = "ac-prepay"; w.parentNode.insertBefore(host, w);
+  }
+  var res;
+  try { res = await pfApi("before_payroll", {}); } catch (e) { host.innerHTML = ""; return; }
+  var rows = (res && res.rows) || [];
+  if (!rows.length) { host.innerHTML = ""; return; }
+  host.innerHTML = '<div class="pfx-card pfx-prepay"><h3>' + gpEsc(rows.length === 1 ? "1 change not yet confirmed this month" : rows.length + " changes not yet confirmed this month") + "</h3>"
+    + '<p class="pfx-sub">A salary slip cannot be submitted for these people until each change is confirmed, signed on the register, or withdrawn.</p>'
+    + '<ul class="pfx-pre">' + rows.map(function (r) {
+      return '<li><span class="pfx-pre-main"><b>' + gpEsc(r.employee_name) + "</b> &middot; " + gpEsc(acNice(r.date)) + "<br>"
+        + gpEsc(r.what) + " &middot; sent by " + gpEsc(r.filer) + " (" + gpEsc(r.filed_by) + ")"
+        + (r.approved ? " &middot; approved" : "") + "<br>"
+        + '<span class="pfx-quiet">' + (r.disputed ? "Says it is not right" : "Not yet") + "</span>"
+        + (r.instead ? '<br><span class="pfx-quiet">' + gpEsc(r.employee_name) + " sent their own time, " + gpEsc(r.instead.time) + ". Approve that request instead.</span>" : "")
+        + (r.can_undo ? '<div hidden id="pfx-undo-' + gpEsc(r.name) + '"><label class="pfx-fl" for="pfx-undo-text-' + gpEsc(r.name) + '">Why are you undoing it? <span class="pfx-req">Required</span></label>'
+            + '<textarea id="pfx-undo-text-' + gpEsc(r.name) + '" rows="2" required aria-required="true"></textarea>'
+            + '<div class="pfx-err" id="pfx-undo-err-' + gpEsc(r.name) + '" role="alert"></div>'
+            + '<button type="button" class="btn btn-primary" onclick="acPrepayUndo(&quot;' + gpEsc(r.name) + '&quot;)">Undo this change</button></div>' : "")
+        + "</span>"
+        + (r.can_withdraw ? '<button type="button" class="btn btn-outline" onclick="acPrepayWithdraw(&quot;' + gpEsc(r.name) + '&quot;)">Withdraw</button>' : "")
+        + (r.can_undo ? '<button type="button" class="btn btn-outline" onclick="document.getElementById(&quot;pfx-undo-' + gpEsc(r.name) + '&quot;).hidden=false;this.hidden=true">Undo this change</button>' : "")
+        + "</li>";
+    }).join("") + "</ul></div>";
+}
+window.acPrepayUndo = async function (name) {
+  var why = ((document.getElementById("pfx-undo-text-" + name) || {}).value || "").trim();
+  if (!why) { var e = document.getElementById("pfx-undo-err-" + name); if (e) e.textContent = "Say why you are undoing this change."; return; }
+  showLoad();
+  try { await pfApi("undo_change", {name: name, reason: why}); hideLoad(); toast("Undone. The day follows the punches again and the change no longer holds the salary slip.", "ok"); await acLoad(); }
+  catch (e) { hideLoad(); var b = document.getElementById("pfx-undo-err-" + name); if (b) b.textContent = e.message || ""; toast(e.message || "Could not undo that.", "err"); }
+};
+window.acPrepayWithdraw = async function (name) {
+  showLoad();
+  try { await pfApi("withdraw_filed", {name: name}); hideLoad(); toast("Withdrawn. It no longer holds the salary slip.", "ok"); await acLoad(); }
+  catch (e) { hideLoad(); toast(e.message || "Could not withdraw that.", "err"); }
+};
+
+window.acPfWithdraw = async function (name) {
+  showLoad();
+  try { await acApi("withdraw", {name: name}); hideLoad(); toast("Withdrawn.", "ok"); await acPfLoad(acPf.date); }
+  catch (e) { hideLoad(); toast(e.message || "Could not withdraw that.", "err"); }
+};
+
+/* ── HR's card: Now beside If approved ─────────────────────────────────────── */
+function pfCardTimes(list, mode) {
+  return (list || []).map(function (p) {
+    var t = gpEsc(p.time);
+    if (mode === "now") return p.aside ? '<s class="pfx-x">' + t + "</s>" : t;
+    return p.added ? '<b class="pfx-a">+' + t + "</b>" : p.aside ? '<s class="pfx-x">' + t + "</s>" : t;
+  }).join(" &middot; ");
+}
+
+function pfFirst(r) { return String(r.employee_name || "").split(" ")[0] || "the employee"; }
+function pfNoteBox(r) {
+  return '<div class="pfx-notebox" id="pfx-note-' + gpEsc(r.name) + '" hidden><label class="pfx-fl" for="pfx-note-text-' + gpEsc(r.name)
+    + '">Note for ' + gpEsc(pfFirst(r)) + ' (optional)</label>'
+    + '<textarea id="pfx-note-text-' + gpEsc(r.name) + '" rows="2"></textarea>'
+    + '<div class="pfx-err" id="pfx-note-err-' + gpEsc(r.name) + '" role="alert"></div></div>';
+}
+
+function pfCardStrip(shift, items) {
+  items.sort(function (a, b) { return a.m - b.m; });
+  return pfStrip(shift, items);
+}
+
+/* HR's decision from the card. The note is the box on the card, not a browser prompt. A decline
+   needs a reason: no reason sends nothing, opens the box and puts the cursor in it (AC-30). */
+window.acPfNote = function (name) {
+  var box = document.getElementById("pfx-note-" + name);
+  if (box) { box.hidden = false; var t = box.querySelector("textarea"); if (t) t.focus(); }
+};
+
+window.acPfDecide = async function (name, approve, seen, first) {
+  var ta = document.getElementById("pfx-note-text-" + name), note = ta ? ta.value.trim() : "";
+  if (!approve && !note) {
+    var err = document.getElementById("pfx-note-err-" + name);
+    acPfNote(name);
+    var lbl = document.querySelector("#pfx-note-" + name + " label");
+    if (lbl) lbl.textContent = "Why not? " + (first || "The employee") + " will see this.";
+    if (ta) { ta.classList.add("bad"); ta.setAttribute("aria-invalid", "true"); }
+    if (err) err.textContent = "Write a reason so " + (first || "the employee") + " knows what to do next.";
+    return;
+  }
+  showLoad();
+  try {
+    var res = await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note, seen: seen || ""});
+    hideLoad();
+    var said = "Declined. The employee will see your reason.";
+    if (approve) {
+      var card = (acPfCards[name] || {});
+      var row = card.row || {}, c = card.card || {};
+      var status = (res && res.day_status) || "";
+      var added = row.missing_time, aside = ((c.now || {}).punches || []).filter(function (p) { return p.aside; })[0];
+      said = "Approved. "
+        + (added ? added + " was added. " : aside ? aside.time + " was set aside. " : "")
+        + (status === "Held" ? "The day stays Held." : "The day is now " + status + ".");
+      if (res && res.slip_final) said += " The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it.";
+    }
+    toast(said, "ok");
+    await acLoad();
+  } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
+};
+var acPfCards = {};
+
+window.acPfCard = function (r) {
+  acPfCards[r.name] = {row: r, card: r.card};
+  var c = r.card || {};
+  if (!c.now) return "";
+  var after = c.after, now = c.now, mine = c.own_day, blocked = c.blocked;
+  var wrong = (now.punches || []).filter(function (p) { return p.ticked; }).map(function (p) { return p.time; }).join(", ");
+  var f = c.filed, quote = r.explanation;
+  var says;
+  if (f) {
+    /* V4 P-15: a request somebody filed for the employee is the filer's claim, never "{employee} says". */
+    quote = f.reason;
+    var by = gpEsc(f.name) + " (" + gpEsc(f.by) + ")";
+    says = r.missing_time
+      ? by + " asked to add: " + gpEsc(c.kind || "") + " at " + gpEsc(r.missing_time) + "." + (wrong ? " Also asked to set aside " + gpEsc(wrong) + "." : "")
+      : by + " asked to set aside the punch at " + gpEsc(wrong) + ".";
+  } else {
+    says = r.missing_time
+      ? gpEsc(r.employee_name) + " says: " + gpEsc(c.kind || "") + " at " + gpEsc(r.missing_time) + "."
+        + (wrong ? " Also says " + gpEsc(wrong) + " is wrong." : "")
+      : gpEsc(r.employee_name) + " says the punch at " + gpEsc(wrong) + " is wrong.";
+  }
+  var h = '<div class="pfx-card"><div class="pfx-hrh"><b>' + gpEsc(r.employee_name) + " &middot; " + (r.missing_time ? "Missing punch" : "Wrong punch")
+    + "</b><span>" + gpEsc(r.from_date) + "</span></div><p class=\"pfx-says\">" + says
+    + (quote ? "<q>" + gpEsc(quote) + "</q>" : "") + "</p>"
+    + (c.replaces ? '<p class="pfx-says">Replaces the ' + gpEsc(c.replaces.time || "") + " that " + gpEsc(c.replaces.name) + " (" + gpEsc(c.replaces.by)
+        + ") sent. " + gpEsc(pfFirst(r)) + " said that one was not right.</p>" : "")
+    + (f && f.needs_confirm && f.state === "not_yet" ? '<p class="pfx-sub pfx-quiet">Needs ' + gpEsc(pfFirst(r)) + "'s confirmation before pay is locked &middot; Not yet</p>" : "")
+    + (f && f.state === "confirmed" && f.confirmed_on ? '<div class="pfx-sl pfx-ok"><span class="pfx-ic" aria-hidden="true">&#10003;</span><span>' + gpEsc(pfFirst(r)) + " confirmed this in the app on "
+        + gpEsc(acNice(f.confirmed_on[0])) + ", " + gpEsc(f.confirmed_on[1]) + "</span></div>" : "")
+    + (f && f.state === "signed" ? '<p class="pfx-sub pfx-quiet">Signed on the register</p>' : "")
+    + (c.sets_aside_machine ? '<p class="pfx-says">This asks to set aside a punch from the machine.</p>' : "")
+    + '<div class="pfx-ba"><div><h4>Now</h4><p class="num pfx-st">' + gpEsc(now.status) + " &middot; " + now.punches.length + " punches</p>"
+    + pfCardStrip(now.shift, now.punches.map(function (p) { return {m: pfM(p), k: p.aside ? "aside" : "io"}; }))
+    + '<p class="pfx-tms num">' + pfCardTimes(now.punches, "now") + "</p></div>"
+    + '<div class="pfx-arr" aria-hidden="true">&rarr;</div>';
+  if (after) {
+    h += '<div><h4>If approved</h4><p class="num pfx-st" id="pfx-after-' + gpEsc(r.name) + '">'
+      + (after.still_held ? "Still held &middot; " + after.punches.length + " punches &middot; not paid"
+        : gpEsc(after.status) + " &middot; " + pfHours(after.hours) + (after.status === "Absent" ? " &middot; not paid" : " &middot; paid"))
+      + "</p>" + pfCardStrip(now.shift, after.punches.map(function (p) { return {m: pfM(p), k: p.added ? "add" : p.aside ? "aside" : "io"}; }))
+      + '<p class="pfx-tms num">' + pfCardTimes(after.punches, "after") + "</p></div>";
+  } else { h += "<div></div>"; }
+  h += "</div>";
+  var foot = "";
+  if (mine) {
+    foot = '<div class="pfx-sl pfx-lock"><span class="pfx-ic" aria-hidden="true">&#9679;</span><span>This is your own day, so you cannot approve it. Another HR person will decide it.</span></div>';
+  } else if (blocked) {
+    foot = '<p class="pfx-sub">' + gpEsc(blocked === "slip"
+      ? "Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary."
+      : blocked === "left" ? "This person has left, so no punch can be added. Decline it and say why."
+      : "This day can no longer be fixed. Decline it and say why.") + "</p>"
+      + pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button></div>';
+  } else if (r.can_decide !== false) {
+    var seen = gpEsc(c.seen || "");
+    foot = pfNoteBox(r) + '<div class="pfx-foot"><button class="btn btn-primary" aria-describedby="pfx-after-' + gpEsc(r.name) + '" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,1,&quot;' + seen + '&quot;)">Approve</button>'
+      + '<button class="btn btn-outline" onclick="acPfDecide(&quot;' + gpEsc(r.name) + '&quot;,0,&quot;&quot;,&quot;' + gpEsc(pfFirst(r)) + '&quot;)">Decline</button>'
+      + '<button type="button" class="pfx-lnk" onclick="acPfNote(&quot;' + gpEsc(r.name) + '&quot;)">Add a note for ' + gpEsc(pfFirst(r)) + "</button>"
+      + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button></div>'
+      + (r.missing_time ? '<p class="pfx-legend">Approving adds ' + gpEsc(r.missing_time) + " (" + (c.after && c.kind ? "" : "") + (r.missing_log === "OUT" ? "Out" : "In")
+        + "), marked &ldquo;added by HR&rdquo;. It is never deleted.</p>" : "");
+  }
+  var legend = now.shift ? '<p class="pfx-legend">Shaded band: shift ' + gpEsc(now.shift.start) + "&ndash;" + gpEsc(now.shift.end) + ". Dots: punches.</p>" : "";
+  return h + foot + legend + "</div>";
+};
+
+function acHeldBox(x, d) {
+  var html = "";
+  if (x.held) {
+    var one = x.held_punches === 1;
+    html += '<div class="ac-heldbox"><h3>&#9888; Held. '
+      + (one ? "One punch on this day." : x.held_punches + " punches on this day.") + "</h3>"
+      + '<div class="ac-punches">' + (x.punches || []).map(function (m) {
+          return '<span class="ac-punch">' + gpEsc(m.at) + "</span>"; }).join("") + "</div>"
+      + "<p><b>Not paid until fixed.</b> "
+      + (one ? "" : "One punch is missing, so nobody can tell which time is right. ")
+      + "HR looks at held days at the end of the month, before pay.</p>";
+    var r = x.request;
+    if (r && r.state === "waiting") {
+      html += "<p>Sent to HR at " + gpEsc(String(r.creation || "").slice(11, 16))
+        + (x.held_sent_by_you ? " by you" : "") + ". The day stays Held and is not paid until HR decides."
+        + (d.is_self ? " You will see the answer here." : "")
+        + (r.missing_time ? " Time given: " + gpEsc(r.missing_time) : "") + "</p>";
+    }
+    html += "</div>";
+  } else if (x.released) {
+    var q = x.released;
+    html += '<div class="ac-okbox"><h3>&#10003; Held, now ' + gpEsc(x.status) + ". Pay restored.</h3>"
+      + "<p>" + (q.how === "Machine punch"
+          ? "The missing punch arrived from the machine at " + gpEsc(q.time || "") + ", so the day released itself."
+          : "HR approved the time " + gpEsc(q.time || "") + ".")
+      + " This day is paid again."
+      + (x.released_after_final_slip
+          ? " It was released after your salary slip was made final, so the slip was not changed. HR will tell you how it is paid."
+          : " It counts on your salary slip.")
+      + "</p></div>";
+  }
+  return html;
+}
+
+function acHeldForm(x, d) {
+  var one = x.held_punches === 1, who = d.is_self ? "you" : gpEsc(d.employee_name);
+  var ask = one
+    ? (x.held_single_is_out ? "What time did " + who + " arrive?" : "What time did " + who + " leave?")
+    : "What time was the missing punch?";
+  return '<div class="ac-form">'
+    + '<label class="form-label" for="ac-missing-time">' + ask + "</label>"
+    + '<input type="time" id="ac-missing-time" required>'
+    + (one ? "" : '<label class="form-label" for="ac-missing-log">It was a</label>'
+        + '<select id="ac-missing-log"><option value="OUT">Out</option><option value="IN">In</option></select>')
+    + '<label class="form-label" for="ac-held-reason">Reason <span class="pfx-req">Required</span></label>'
+    + '<p class="ac-help">HR and your manager can read this.</p>'
+    + '<p class="ac-help">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
+    + '<textarea id="ac-held-reason" rows="2" required aria-required="true" placeholder="e.g. Forgot to scan after lunch"></textarea>'
+    + '<p class="ac-help">HR sees your punches, this time and your reason, and decides.</p>'
+    + '<div class="ac-acts"><button class="btn btn-primary" onclick="acHeldSubmit(&quot;' + x.date + '&quot;,'
+    + (one ? (x.held_single_is_out ? 1 : 0) + "" : "null") + ')">'
+    + (d.is_self ? "Send to HR" : "Send to HR for " + gpEsc((d.employee_name || "").split(" ")[0])) + "</button></div></div>";
+}
+
+/* The payload is the day, the time, In/Out and the required reason. Counsel's
+   ALV-418 (21 Nov 2026) reversed PRIV-2: every request, a held day included,
+   carries a reason, which HR and the manager can read. */
+window.acHeldSubmit = async function (date, singleIsOut) {
+  var t = (document.getElementById("ac-missing-time") || {}).value;
+  var logEl = document.getElementById("ac-missing-log");
+  var log = logEl ? logEl.value : (singleIsOut ? "IN" : "OUT");
+  if (!t) { toast("Enter the time first.", "err"); return; }
+  var why = ((document.getElementById("ac-held-reason") || {}).value || "").trim();
+  if (!why) { toast("Write a reason so HR can decide.", "err"); return; }
+  if (acSending) return;
+  var other = (acState.data && acState.data.is_self === false)
+    ? (acState.employee || (acState.data && acState.data.employee)) : null;
+  acSending = true;
+  showLoad();
+  try {
+    var body = {from_date: date, missing_time: t, missing_log: log, explanation: why};
+    if (other) { body.employee = other; await acApi("raise_for_report", body); }
+    else await acApi("raise_correction", body);
+    hideLoad();
+    toast("Sent to HR.", "ok");
+    acState.open = null;
+    await acLoad();
+  } catch (e) {
+    hideLoad();
+    if (mayHaveGone(e)) {
+      /* AC-30: the answer was lost, so the request may be saved. Ask the office
+         before offering a second send. If it is saved the sheet now says so;
+         if not, the form comes back with the typed time put back in it. */
+      toast("It may have gone through. Checking with the office.", "err");
+      acSending = false;
+      await acLoad();
+      var again = document.getElementById("ac-missing-time");
+      if (again) {
+        again.value = t;
+        var lg = document.getElementById("ac-missing-log");
+        if (lg) lg.value = log;
+        var rs = document.getElementById("ac-held-reason");
+        if (rs) rs.value = why;
+      }
+      return;
+    }
+    /* Kept in the box, so nothing typed is lost. */
+    toast((e.message ? e.message + " " : "") + "Not sent. Your time is saved on this phone. Try again.", "err");
+  } finally {
+    acSending = false;
+  }
+};
+
 function acForm(x) {
   var opts = (acState.reasons || []).map(function (r) {
     return '<option value="' + gpEsc(r.value) + '">' + gpEsc(r.value) + "</option>";
@@ -6297,8 +7071,14 @@ function acForm(x) {
     + '<option value="">Choose a reason&hellip;</option>' + opts + "</select>"
     + '<p class="ac-help" id="ac-reason-help">Pick the one that matches. '
     + "It decides what the day becomes if HR agrees.</p>"
-    + '<label class="form-label">Anything HR should know</label>'
-    + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>'
+    /* ALV-432: filing for somebody else needs a written reason (ALV-418,
+       counsel 21 Nov) and the server refuses one without it - so the form says
+       so. A person's own request is unchanged: the reason picked above is enough. */
+    + (acState.data && acState.data.is_self === false
+        ? '<label class="form-label" for="ac-explain">Reason <span class="pfx-req">Required</span></label>'
+          + '<textarea id="ac-explain" required aria-required="true" placeholder="Say briefly what happened."></textarea>'
+        : '<label class="form-label">Anything HR should know</label>'
+          + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>')
     /* Slice 081: the file block, with its notice ABOVE the two buttons inside
        the same block. Optional, and Send works with nothing attached and says
        nothing about it - there is no confirm, because a confirm on an optional
@@ -6363,6 +7143,14 @@ window.acSubmit = async function (date) {
     toast("This page has lost track of whose day this is. Reload it and try again.", "err");
     return;
   }
+  /* ALV-432: the same rule the server applies to raise_for_report. Said here,
+     with what was typed left in place, rather than as a refusal after sending. */
+  if (other && !(explain || "").trim()) {
+    toast("Write a reason so HR can decide.", "err");
+    var ex = document.getElementById("ac-explain");
+    if (ex) ex.focus();
+    return;
+  }
 
   acSending = true;
   showLoad();
@@ -6413,6 +7201,12 @@ function acReqCard(r, mine) {
           + '<button type="button" class="ev-link" data-evopen="dayfix" data-name="'
           + gpEsc(r.name) + '">' + gpEsc(drT("View")) + "</button></div>"
         : "");
+  if (mine && r.state === "waiting" && !r.punch_fix && r.alvoraa_needs_confirm && !r.alvoraa_confirmed_on) {
+    /* V4: the same Confirm block on the older request card (one component, shown twice). It has no filer
+       name or time to show, so it carries the words only; "Not right" asks for the reason alone. */
+    return html + '<div class="pfx-block">' + pfxConfirmBlock({name: r.name, filed_by: "HR", item: null,
+      filer_reason: null, filed_by_name: null}, "req").replace("HR sent this for you. Is it right?", "This was sent for you. Is it right?") + "</div></div>";
+  }
   if (mine && r.state === "waiting") {
     html += '<div class="ac-acts"><button class="btn btn-outline" onclick="acWithdraw(&quot;'
       + gpEsc(r.name) + '&quot;)">Withdraw</button></div>';
@@ -6453,11 +7247,14 @@ async function acReviewQueue() {
     if (!rows || !rows.length) { wrap.style.display = "none"; return; }
     wrap.style.display = "";
     el.innerHTML = rows.map(function (r) {
+      /* Slice 087: a punch fix is read and decided on the card (Now beside If approved). */
+      if (r.punch_fix && r.card && r.card.now) return acPfCard(r);
       return '<div class="ac-req waiting">'
         + '<div class="h">' + gpEsc(r.employee_name) + " · " + gpEsc(r.reason) + "</div>"
         + '<div class="m">' + gpEsc(r.from_date)
         + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
         + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "")
+        + acHeldHrLines(r)
         /* Approve and Decline only when the server says this caller may
            decide it today (`can_decide`, from the same function `decide`
            asks). Otherwise its own sentence says who has it and until when -
@@ -6480,14 +7277,33 @@ async function acReviewQueue() {
         + '<div class="ac-acts">'
         + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
         + (r.can_decide === false ? "" :
-            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">Approve</button>'
-          + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>')
+            /* Slice 087: a punch fix is approved on what the card showed, so the token goes back. */
+            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1,&quot;'
+              + gpEsc((r.card && r.card.seen) || "") + '&quot;)">'
+              + (r.held_preview ? "Approve: day becomes " + gpEsc(r.held_preview.status) : "Approve") + "</button>"
+          + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">'
+              + (r.held_preview ? "Decline: stays Held" : "Decline") + "</button>")
         + "</div></div>";
     }).join("");
   } catch (e) { wrap.style.display = "none"; }
 }
 
-window.acDecide = async function (name, approve) {
+/* A request for a held day: the punches, the missing punch, and what approving
+   will do, worked out by the same function approval runs (Q3). */
+function acHeldHrLines(r) {
+  var h = r.held_preview;
+  if (!r.missing_time || !h) return "";
+  var hrs = Math.floor(h.working_hours), mins = Math.round((h.working_hours - hrs) * 60);
+  var paid = h.status === "Absent" ? " It stays unpaid." : " and is paid on the slip.";
+  return '<div class="note"><span class="ac-tag held">&#9888; Held</span> Punches: '
+    + gpEsc((h.punches || []).join(", ")) + ". The missing punch was " + gpEsc(r.missing_time) + ".</div>"
+    + '<div class="note">If you approve: this day becomes ' + gpEsc(h.status) + ", " + hrs + "h " + mins + "m"
+    + (h.status === "Absent" ? "." + paid : paid) + "</div>"
+    + (h.slip_final ? '<div class="note">This day is in a slip that is already final. The slip will not be changed. '
+        + "To pay this day, add an Additional Salary for it.</div>" : "");
+}
+
+window.acDecide = async function (name, approve, seen) {
   var note = "";
   if (!approve) {
     /* A bare refusal tells the employee nothing about what to do next, so
@@ -6500,9 +7316,11 @@ window.acDecide = async function (name, approve) {
   }
   showLoad();
   try {
-    await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note});
+    var res = await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note, seen: seen || ""});
     hideLoad();
-    toast(approve ? "Approved — the day has been corrected." : "Declined.", "ok");
+    var said = approve ? "Approved — the day has been corrected." : "Declined.";
+    if (approve && res && res.slip_final) said += " The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it.";
+    toast(said, "ok");
     await acLoad();
   } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
 };
@@ -11873,6 +12691,12 @@ function loadSalary() {
           '<span>Paid days <b>' + esc(d.payment_days) + '</b></span>' +
           (d.leave_without_pay ? '<span>Unpaid leave <b>' + esc(d.leave_without_pay) + '</b></span>' : '') +
         '</div>' +
+        /* Slice 085 (AC-6): days that were Held, in words, with the dates. Not "this slip updates by itself": a slip shown here is already final. */
+        ((d.held_dates || []).length
+          ? '<div class="ac-banner held" style="margin-top:12px">&#9888; Held days, not paid: ' + d.held_dates.length +
+            '<div style="font-weight:400;margin-top:4px">' + d.held_dates.map(function (x) { return esc(lpShort(x)); }).join(", ") +
+            '. These days were not paid on this slip. HR decides them. If one is released after this slip, HR will tell you how it is paid.</div></div>'
+          : '') +
         table("Earnings", d.earnings, d.gross_pay, false) +
         table("Deductions", d.deductions, d.total_deduction, true) +
         ytd +
@@ -15740,8 +16564,10 @@ function trAskForm(r) {
     + '<label class="form-label">What happened on this day?</label>'
     + '<select id="tr-reason"><option value="">Choose a reason&hellip;</option>'
     + opts + "</select>"
-    + '<label class="form-label">Anything HR should know</label>'
-    + '<textarea id="tr-explain" placeholder="Say briefly what happened."></textarea>'
+    /* ALV-432: always somebody else's day, so a written reason is required
+       (ALV-418), as the server already insists. */
+    + '<label class="form-label" for="tr-explain">Reason <span class="pfx-req">Required</span></label>'
+    + '<textarea id="tr-explain" required aria-required="true" placeholder="Say briefly what happened."></textarea>'
     + '<p class="ac-help">HR decides this. Your name goes on the request, so '
     + "they know you are standing behind it.</p>"
     + '<div class="ac-acts"><button class="btn btn-primary" onclick="trSubmit(&quot;'
@@ -15753,6 +16579,13 @@ window.trSubmit = async function (employee, date) {
   var reason = (document.getElementById("tr-reason") || {}).value;
   var explain = (document.getElementById("tr-explain") || {}).value;
   if (!reason) { toast("Please choose a reason.", "err"); return; }
+  /* ALV-432: a written reason, as the server requires for a report's day. */
+  if (!(explain || "").trim()) {
+    toast("Write a reason so HR can decide.", "err");
+    var ex = document.getElementById("tr-explain");
+    if (ex) ex.focus();
+    return;
+  }
   /* One request per press, and nothing incomplete - the same two rules as
      `acSubmit`, for the same reason. */
   if (acSending) return;
@@ -23611,11 +24444,73 @@ window.pfRatingLabel = function(value, scale) {
       orgLoadOnBehalf(canEdit);
       orgLoadEmployeeWindow();
       orgLoadFilingWindow();
+      orgLoadHeld();
       if (card) card.style.display = "";
     }).catch(function() {
       /* Not HR for this site: the card simply is not there. */
       if (card) card.style.display = "none";
     });
+  };
+
+  /* ── Held days (slice 085, ALV-392) ──
+     The card is drawn only when the server returns a company this caller looks
+     after. Who may change it is the server's rule (a Company validate hook);
+     the disabled controls are a courtesy. Switching on holds days marked from
+     then on, never past ones, so the Save button makes no promise about a count. */
+  var orgHeld = {rows: []};
+
+  window.orgLoadHeld = function() {
+    var card = document.getElementById("org-held-card");
+    window.gpFetch("alvoraa_portal.held_day.held_settings", {}).then(function(rows) {
+      orgHeld.rows = rows || [];
+      if (!orgHeld.rows.length) { if (card) card.style.display = "none"; return; }
+      var sel = document.getElementById("org-held-company");
+      sel.innerHTML = orgHeld.rows.map(function(r) {
+        return '<option value="' + gpEsc(r.company) + '">' + gpEsc(r.company) + "</option>";
+      }).join("");
+      document.getElementById("org-held-company-field").style.display = orgHeld.rows.length > 1 ? "" : "none";
+      orgHeldPick();
+      card.style.display = "";
+    }).catch(function() { if (card) card.style.display = "none"; });
+  };
+
+  function orgHeldRow() {
+    var name = (document.getElementById("org-held-company") || {}).value;
+    return orgHeld.rows.filter(function(r) { return r.company === name; })[0];
+  }
+
+  window.orgHeldPick = function() {
+    var r = orgHeldRow();
+    if (!r) return;
+    document.getElementById("org-held-on").checked = !!r.hold;
+    document.getElementById("org-held-limit").value = r.limit;
+    document.getElementById("org-held-roles").value = r.roles || "";
+    ["org-held-on", "org-held-limit", "org-held-roles", "org-held-save"].forEach(function(id) {
+      document.getElementById(id).disabled = !r.can_edit;
+    });
+    pfSetHtml("org-held-msg", r.can_edit ? "" : '<span style="color:var(--text3)">' +
+      gpEsc("Only an HR Manager of this company can change these.") + "</span>");
+    document.getElementById("org-held-save").textContent = "Save for " + r.company;
+  };
+
+  window.orgHeldSave = function() {
+    var r = orgHeldRow();
+    if (!r) return;
+    var btn = document.getElementById("org-held-save");
+    btn.disabled = true;
+    window.gpFetch("alvoraa_portal.held_day.save_settings", {
+      company: r.company,
+      hold: document.getElementById("org-held-on").checked ? 1 : 0,
+      limit: document.getElementById("org-held-limit").value || 0,
+      roles: document.getElementById("org-held-roles").value
+    }).then(function(res) {
+      r.hold = res.hold; r.limit = res.limit; r.roles = res.roles;
+      toast("Saved for " + r.company + ".", "ok");
+      orgHeldPick();
+      pfSetHtml("org-held-msg", gpEsc("Saved. If an older script also limits requests, switch it off, " +
+        "so two limits never run together."));
+    }).catch(function(e) { toast(e.message || "Could not save that. Check the roles and try again.", "err"); })
+      .then(function() { btn.disabled = !r.can_edit; });
   };
 
   /* ── May a manager ask on behalf, and how far back (slice 060, SEC-9a) ──
@@ -24911,7 +25806,10 @@ window.pfRatingLabel = function(value, scale) {
 
 /* ── Sidebar collapse ───────────────────────────── */
 function initSbCollapse() {
-  var pinned = localStorage.getItem("sb-pinned") === "1";
+  /* Open by default (Surbhi, 22 Nov 2026): a folded sidebar hid the nav words
+     and the name that opens My profile. Only a person who unpinned it ("0")
+     starts folded. Sign-out clears the key, so it opens again after sign-in. */
+  var pinned = localStorage.getItem("sb-pinned") !== "0";
   if (!pinned) document.body.classList.add("sb-collapsed");
   var btn = document.getElementById("sb-pin-btn");
   if (btn) btn.title = pinned ? "Unpin sidebar" : "Pin sidebar open";

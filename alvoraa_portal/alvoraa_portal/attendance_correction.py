@@ -40,6 +40,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, getdate, nowdate
 
+import alvoraa_portal.punch_fix as punch_fix
+from alvoraa_portal.held_day import _switch_on, is_in_final_slip, preview
 from alvoraa_portal.call_cache import close_cache, holiday_list_for, is_open, once, open_cache
 from alvoraa_portal.grooming import month_lines
 # ALV-315. The one definition of "these two punches are the same event" lives
@@ -48,7 +50,7 @@ from alvoraa_portal.grooming import month_lines
 # stop agreeing, and this screen disagreeing with the engine about a day is the
 # bug being fixed.
 from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES, punch_minutes
-from alvoraa_portal.payroll_rules_apply import breaks_by_day
+from alvoraa_portal.payroll_rules_apply import breaks_by_day, shift_day
 from alvoraa_portal.shift_standard import STANDARD as _SHIFT_STANDARD
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
@@ -326,6 +328,12 @@ def _scope_conditions():
 	branches = permitted_branches()
 	if branches is not None:
 		return [["branch", "in", branches]]
+	# Slice 085 (SEC-4): an HR login with no company and no branch looks after
+	# nobody. It used to get None here, which reads as "no limit" - everybody.
+	# A caller who is not HR (a Shift Supervisor given the submit right, W1D-14)
+	# keeps the old answer on purpose.
+	if {"HR Manager", "HR User"} & set(frappe.get_roles()):
+		return [["name", "in", []]]
 	return None
 
 
@@ -518,7 +526,9 @@ def month(year=None, month=None, employee=None):
 		fields=["name", "attendance_date", "status", "working_hours", "shift",
 		        "in_time", "out_time", "late_entry", "early_exit", "leave_type",
 		        # ALV-328: why the pay rules judged the day as they did, and when.
-		        "alvoraa_rules_why", "alvoraa_evaluated_on"],
+		        "alvoraa_rules_why", "alvoraa_evaluated_on"]
+		       # Slice 085: how a held day ended. Absent until the site is migrated.
+		       + (["alvoraa_release_how"] if frappe.db.has_column("Attendance", "alvoraa_release_how") else []),
 		limit_page_length=0)
 
 	leaves = frappe.get_list(
@@ -538,8 +548,8 @@ def month(year=None, month=None, employee=None):
 	# one attendance day. Only punches with no link fall back to their own date.
 	punches = {}
 	by_attendance = {}
-	# ALV-328: the same punches by CALENDAR date, for the break. The engine counts
-	# a day's break that way, whatever attendance row a punch is linked to.
+	# ALV-328: the same punches by working day, for the break, as the engine
+	# counts them (ALV-402: a punch after midnight belongs to its shift's day).
 	times_by_date = {}
 	# ALV-210. A punch HR typed in carries the person's own badge number as its
 	# "device" (HR-EMP-00171 on 14 Oct showed "830"), which reads as a machine
@@ -552,19 +562,26 @@ def month(year=None, month=None, employee=None):
 			filters={"employee": me.name,
 			         "time": ("between", [start + " 00:00:00",
 			                              frappe.utils.add_days(end, 1) + " 23:59:59"])},
-			fields=["name", "log_type", "time", "attendance", "device_id", "owner"],
+			fields=["name", "log_type", "time", "attendance", "device_id", "owner", "shift_start"]
+			       + (["alvoraa_fix_added_request", "alvoraa_fix_aside_request"]
+			          if punch_fix.columns_ready() else []),
 			order_by="time asc", limit_page_length=0):
-		by_hand = ((c.device_id and c.device_id == own.get("attendance_device_id"))
+		by_hand = (c.get("alvoraa_fix_added_request")
+		           or (c.device_id and c.device_id == own.get("attendance_device_id"))
 		           or (c.owner not in ("Administrator", own.get("user_id"))
 		               and not (c.owner or "").startswith(MACHINE_OWNERS)))
 		mark = {"log_type": c.log_type, "at": str(c.time)[11:16],
 		        "where": _("added by HR") if by_hand else c.device_id,
 		        "on": str(c.time)[:10]}
+		if c.get("alvoraa_fix_aside_request"):
+			# Slice 087: still shown, in words, but it does not count: no break is drawn from it.
+			mark["set_aside"] = True
+		else:
+			times_by_date.setdefault(shift_day(c), []).append(get_datetime(c.time))
 		if c.attendance:
 			by_attendance.setdefault(c.attendance, []).append(mark)
 		else:
-			punches.setdefault(str(c.time)[:10], []).append(mark)
-		times_by_date.setdefault(str(c.time)[:10], []).append(get_datetime(c.time))
+			punches.setdefault(shift_day(c), []).append(mark)
 
 	# `weekly_off` tells a Sunday apart from Diwali (043 AC-1). Both arrive as
 	# Holiday rows on the same list and only this flag says which is which, so
@@ -622,6 +639,7 @@ def month(year=None, month=None, employee=None):
 		days.append(_day(date, att, holidays, leave_days, claimed, me,
 		                 shift_cache, tolerance, today,
 		                 marks or punches.get(date, []), weekly_offs))
+		_held_flags(days[-1], att, me)
 
 	# ALV-328: the break the pay rules count, on the days they would count one.
 	# Worked out from the punches read above, so a caller who may not read this
@@ -674,6 +692,7 @@ def month(year=None, month=None, employee=None):
 		"late_grace_mins": org_late_grace(),
 		"days": days,
 		"totals": _totals(days),
+		"hold_on": _switch_on(me.company),
 		"is_self": is_self,
 		"can_review": _may_review(),
 		# Who may ask HR to fix a day on this record: the person themselves, or
@@ -981,6 +1000,30 @@ def _minutes(hhmm):
 		return None
 
 
+def _held_flags(day, att, me):
+	"""Slice 085: what the sheet needs to say about a Held day, or about a day
+	that was Held and has been released. Words only: no reason is read or sent."""
+	if not att:
+		return
+	if att.status == "Held":
+		day["held"] = True
+		day["state"] = "held"
+		day["missing_punch"] = False
+		marks = day["punches"]
+		day["held_punches"] = len(marks)
+		day["held_single_is_out"] = len(marks) == 1 and marks[0].get("log_type") == "OUT"
+		req = day.get("request")
+		if req and req.get("state") == "waiting":
+			day["held_sent_by_you"] = frappe.db.get_value(REQUEST, req["name"], "owner") == frappe.session.user
+	elif att.get("alvoraa_release_how"):
+		how = att.alvoraa_release_how
+		req = day.get("request")
+		day["released"] = {"how": how, "time": (
+			(day["out_time"] or "") if how == "Machine punch"
+			else (req or {}).get("missing_time") or day["out_time"] or "")}
+		day["released_after_final_slip"] = is_in_final_slip(me.name, day["date"])
+
+
 def _totals(days):
 	def count(*states):
 		return len([d for d in days if d["state"] in states])
@@ -994,6 +1037,7 @@ def _totals(days):
 		"short_days": len([d for d in days if d["short_by"] > 0]),
 		"hours_short": round(sum(d["short_by"] for d in days), 1),
 		"missing_punches": len([d for d in days if d["missing_punch"]]),
+		"held": count("held"),
 		# Only days past the grace period. A day inside it is on time as far as
 		# the organisation's policy is concerned, and counting it here is what
 		# made this total disagree with the deduction card beside it.
@@ -1022,12 +1066,23 @@ def request_fields():
 	Asking the schema costs one cached lookup and means the queue degrades to
 	"capacity not recorded" instead of to an error page.
 	"""
+	fields = list(REQUEST_FIELDS)
 	try:
 		if frappe.db.has_column(REQUEST, "alvoraa_decided_as"):
-			return REQUEST_FIELDS + ["alvoraa_decided_as"]
+			fields.append("alvoraa_decided_as")
+		# Slice 085: the missing time a held-day request carries.
+		if frappe.db.has_column(REQUEST, "alvoraa_missing_time"):
+			fields += ["alvoraa_missing_time", "alvoraa_missing_log"]
+		# Slice 087: which punches a fix would set aside. Read to tell a punch fix from an
+		# ordinary request; `_shape` turns it into one flag and sends no punch name.
+		if frappe.db.has_column(REQUEST, "alvoraa_set_aside"):
+			fields.append("alvoraa_set_aside")
+		# ALV-419: a request waiting on the employee's Confirm, for the rows that offer Approve.
+		if frappe.db.has_column(REQUEST, "alvoraa_needs_confirm"):
+			fields += ["alvoraa_needs_confirm", "alvoraa_confirmed_on"]
 	except Exception:
 		pass
-	return list(REQUEST_FIELDS)
+	return fields
 
 
 def _state(row):
@@ -1099,6 +1154,11 @@ def _shape(row, evidence=None):
 	# field existed, and guessing backwards would put a claim in the record
 	# that nobody made.
 	row["decided_as"] = row.get("alvoraa_decided_as") or None
+	row["missing_time"] = (frappe.utils.get_time(row["alvoraa_missing_time"]).strftime("%H:%M")
+	                       if row.get("alvoraa_missing_time") else None)
+	row["missing_log"] = row.get("alvoraa_missing_log") or None
+	set_aside = (row.pop("alvoraa_set_aside", None) or "").strip()
+	row["punch_fix"] = bool(row["missing_time"] or set_aside)
 	return row
 
 
@@ -1122,9 +1182,10 @@ def my_requests(limit=20):
 	return [_shape(r, evidence) for r in rows]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def raise_correction(from_date, to_date=None, reason=None, explanation=None,
-                     half_day=0, half_day_date=None, file_id=None):
+                     half_day=0, half_day_date=None, file_id=None,
+                     missing_time=None, missing_log=None):
 	"""Ask HR to fix a day.
 
 	Always for the caller's own employee record. The employee is never taken
@@ -1148,11 +1209,19 @@ def raise_correction(from_date, to_date=None, reason=None, explanation=None,
 	if getdate(from_date) > getdate(nowdate()):
 		frappe.throw(_("You cannot raise a correction for a day that has not happened yet."))
 
-	allowed = {r["value"] for r in reasons()}
-	if reason not in allowed:
-		frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
-	if reason == "Other" and not (explanation or "").strip():
-		frappe.throw(_("Please say what happened, so HR can act on it."))
+	held = _held_request_fields(missing_time, missing_log, from_date, to_date)
+	if held:
+		# ALV-418 (counsel, 21 Nov): a held day needs a reason too. The reason value is still
+		# picked from In or Out; what the person writes goes in the explanation.
+		reason = held.pop("reason")
+		if not (explanation or "").strip():
+			frappe.throw(_("Say why, so HR can decide. A reason is needed on every request."))
+	else:
+		allowed = {r["value"] for r in reasons()}
+		if reason not in allowed:
+			frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
+		if reason == "Other" and not (explanation or "").strip():
+			frappe.throw(_("Please say what happened, so HR can act on it."))
 
 	# Claimed before the request is created, for the same reason as a claim's
 	# bill: the loser of two taps is refused before it has inserted anything.
@@ -1171,6 +1240,7 @@ def raise_correction(from_date, to_date=None, reason=None, explanation=None,
 		"half_day": cint(half_day),
 		"half_day_date": half_day_date if cint(half_day) else None,
 		"alvoraa_review_status": "Waiting",
+		**held,
 	})
 	# No ignore_permissions. The Employee role holds create on Attendance
 	# Request, so this is a real permission check and not a formality.
@@ -1179,7 +1249,27 @@ def raise_correction(from_date, to_date=None, reason=None, explanation=None,
 	return _shape(doc.as_dict())
 
 
-@frappe.whitelist()
+def _held_request_fields(missing_time, missing_log, from_date, to_date):
+	"""The extra fields of a request for a Held day, or {} for an ordinary one.
+
+	A held day asks for the time and In or Out, and nothing else (PRIV-2): the
+	reason is one of the existing ones, chosen here from which punch is missing.
+	Whether the day really is Held is the document's own validate."""
+	if not missing_time:
+		return {}
+	if missing_log not in ("IN", "OUT"):
+		frappe.throw(_("Say whether the missing punch was in or out."))
+	if str(to_date or from_date) != str(from_date):
+		frappe.throw(_("A held day is one day. Send each held day on its own."))
+	try:
+		missing_time = frappe.utils.get_time(missing_time).strftime("%H:%M:%S")
+	except Exception:
+		frappe.throw(_("That time was not understood. Enter it like 18:30."))
+	return {"reason": "Forgot to Punch Out" if missing_log == "OUT" else "Forgot to Punch In",
+	        "alvoraa_missing_time": missing_time, "alvoraa_missing_log": missing_log}
+
+
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def withdraw(name):
 	"""Take back a request HR has not decided yet.
 
@@ -1525,6 +1615,14 @@ def refuse_own_day_outside_window(doc, method=None):
 		return
 	if employee_filing_window_days() is None:
 		return
+	# Slice 085 (AC-69): a held-day request carries the missing time; a day somebody
+	# worked is never shut out by the window. `validate_missing_time` runs first in
+	# the hook list and refuses a time on a day that is not Held.
+	# Slice 087: keyed on the server's own flag, not on "carries a time": a punch fix on an
+	# ordinary day carries a time too and is held to the window.
+	# "Not right" replacements are not the employee's choice either (review M1), as in the monthly limit.
+	if doc.get("alvoraa_for_held_day") or doc.get("alvoraa_replaces"):
+		return
 	from hrms.alvoraa_hr_core.access import is_own_record
 
 	if not is_own_record(doc.employee):
@@ -1728,6 +1826,11 @@ def not_yours_yet(doc, capacity, user=None):
 	user = user or frappe.session.user
 	if doc.get("owner") and doc.get("owner") == user:
 		return _("You raised this request, so someone else decides it.")
+	# Slice 087: a punch fix is decided by HR only, and HR need not wait for a manager.
+	if doc.get("punch_fix") or punch_fix.is_punch_fix(doc):
+		if not punch_fix.HR_ROLES & set(frappe.get_roles(user)):
+			return _("Only HR decides a punch fix.")
+		return None
 	# **The wait applies only where there is a manager who could act.**
 	#
 	# 045 AC-81, the no-manager clause. The two working days exist to give
@@ -1843,13 +1946,23 @@ def to_review(limit=50):
 		[r for r in (_shape(x, _evidence) for x in rows) if r["state"] == "waiting"])
 	# Read only to decide who raised it. The raiser's login is not part of
 	# the row, so it is not sent.
+	cards = punch_fix.card_context(rows)
 	for r in rows:
 		r.pop("owner", None)
+		# Slice 087: Now, If approved and the token the approval needs, from the same
+		# function the approval runs. Never cached.
+		if r.get("punch_fix"):
+			r["card"] = punch_fix.card(r, cards)
+		# Slice 085: what approving a held day's request will do (Q3). Only the old screen reads it,
+		# and only when the card could not be made (a site that has not migrated yet).
+		if r.get("missing_time") and not r.get("card"):
+			r["held_preview"] = preview(r["employee"], r["from_date"], r["missing_time"],
+			                            r["missing_log"])
 	return rows
 
 
-@frappe.whitelist()
-def decide(name, approve, note=None):
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
+def decide(name, approve, note=None, seen=None):
 	"""Approve or decline one request.
 
 	Approving submits it, and the submit is what makes Frappe HR write the
@@ -1860,7 +1973,8 @@ def decide(name, approve, note=None):
 	if not _may_review():
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
 
-	doc = frappe.get_doc(REQUEST, name)
+	# Locked, so two people pressing Approve at once decide it once (slice 087, SEC-7).
+	doc = frappe.get_doc(REQUEST, name, for_update=True)
 	# **TWO QUESTIONS, BECAUSE ONE OF THEM IS NOT ENOUGH (ALV-269).**
 	#
 	# `get_doc` above makes no read check, and `db_set` on the decline path
@@ -1927,11 +2041,23 @@ def decide(name, approve, note=None):
 		stamp["alvoraa_decided_as"] = capacity
 
 	if cint(approve):
+		if punch_fix.is_punch_fix(doc):
+			# The one door (SEC-1): approved on exactly what the card showed, and only here.
+			if not seen or seen != punch_fix.seen_token(doc):
+				frappe.throw(_("This day changed after you opened it. Open it again."))
+			doc.flags.punch_fix_decided = True
 		doc.update(stamp)
 		# submit() runs its own permission check, so _may_review() above is a
 		# clear message rather than the only thing standing in the way.
 		doc.submit()
-		return _shape(frappe.get_doc(REQUEST, name).as_dict())
+		result = _shape(frappe.get_doc(REQUEST, name).as_dict())
+		# A held day released after its slip was final: HR is told in words (Q4).
+		result["slip_final"] = frappe.flags.get("held_slip") == "final"
+		if result.get("punch_fix"):
+			# The real status, so HR's toast can say what happened (slice 087, N3).
+			result["day_status"] = frappe.db.get_value(
+				"Attendance", {"employee": doc.employee, "attendance_date": doc.from_date, "docstatus": 1}, "status")
+		return result
 
 	if not (note or "").strip():
 		frappe.throw(_("Please say why, so the employee knows what to do next."))
@@ -2018,9 +2144,9 @@ def _punches_by_day(people_ids, from_date, to_date):
 		return days
 	for p in frappe.get_all(
 			"Employee Checkin",
-			filters={"employee": ("in", people_ids),
+			filters=punch_fix.counting_only({"employee": ("in", people_ids),
 			         "time": ("between", [str(from_date) + " 00:00:00",
-			                              str(to_date) + " 23:59:59"])},
+			                              str(to_date) + " 23:59:59"])}),
 			fields=["employee", "time", "shift_start"], limit_page_length=0):
 		days.setdefault((p.employee, str(p.time)[:10]), []).append(p)
 	return days
@@ -2257,9 +2383,10 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
-                     explanation=None, half_day=0, half_day_date=None):
+                     explanation=None, half_day=0, half_day_date=None,
+                     missing_time=None, missing_log=None):
 	"""A manager asks HR to fix a day for somebody who reports to them.
 
 	Surbhi, 15 Oct 2026: "let's get the manager request the changes and the HR
@@ -2298,7 +2425,8 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 	if is_self:
 		# Their own day: the ordinary endpoint, with its ordinary rules.
 		return raise_correction(from_date, to_date, reason, explanation,
-		                        half_day, half_day_date)
+		                        half_day, half_day_date,
+		                        missing_time=missing_time, missing_log=missing_log)
 
 	# ── ACTING STOPS AT THE DIRECT REPORTS ───────────────────────────────────
 	#
@@ -2332,11 +2460,15 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 		frappe.throw(_("You cannot raise a correction for a day that has not "
 		               "happened yet."))
 
-	allowed = {r["value"] for r in reasons()}
-	if reason not in allowed:
-		frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
-	if reason == "Other" and not (explanation or "").strip():
-		frappe.throw(_("Please say what happened, so HR can act on it."))
+	held = _held_request_fields(missing_time, missing_log, from_date, to_date)
+	if held:
+		reason = held.pop("reason")
+	else:
+		allowed = {r["value"] for r in reasons()}
+		if reason not in allowed:
+			frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
+		if reason == "Other" and not (explanation or "").strip():
+			frappe.throw(_("Please say what happened, so HR can act on it."))
 
 	# The tenant's two settings (SEC-9a). Checked AFTER the shape of the
 	# request, so a manager who got the reason wrong is told about the reason,
@@ -2350,8 +2482,15 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 		frappe.throw(_("Your organisation does not let a manager ask for somebody "
 		               "else's attendance to be fixed. Ask HR to correct this day."),
 		             frappe.PermissionError)
-	_refuse_outside_filing_window(subject.name, from_date)
+	# A held day is never outside the window: a day somebody worked must not be
+	# lost for ever (slice 085, US-18).
+	if not held:
+		_refuse_outside_filing_window(subject.name, from_date)
 
+	# ALV-418 (counsel, 21 Nov): a reason on every request somebody files for another person, held
+	# days included. Asked after the permission and window checks, so those refusals still come first.
+	if not (explanation or "").strip():
+		frappe.throw(_("Say why, so HR can decide. A reason is needed on every request."))
 	me = _employee_for(frappe.session.user)
 	note = (explanation or "").strip()
 	if me:
@@ -2371,6 +2510,7 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 		"half_day": cint(half_day),
 		"half_day_date": half_day_date if cint(half_day) else None,
 		"alvoraa_review_status": "Waiting",
+		**held,
 	})
 	# No ignore_permissions. A manager raising this for a report is allowed by
 	# the permission system itself: `manager_scope` holds one User Permission

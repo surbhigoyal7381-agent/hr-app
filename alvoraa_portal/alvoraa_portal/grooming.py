@@ -37,6 +37,7 @@ from frappe.utils import add_days, add_months, cint, flt, get_first_day, get_las
 from frappe.utils.caching import request_cache
 
 import hrms.alvoraa_hr_core.access as access
+import alvoraa_portal.punch_fix as punch_fix
 from alvoraa_portal.payroll_rules_apply import rule_set_for
 
 MARK = "Grooming Mark"
@@ -330,9 +331,9 @@ def _facts(employees, from_date, to_date, user, locking=False):
 
 	f.punches = {}
 	for p in frappe.get_all("Employee Checkin",
-	                        filters={"employee": ("in", ids),
+	                        filters=punch_fix.counting_only({"employee": ("in", ids),
 	                                 "time": ("between", [str(from_date) + " 00:00:00",
-	                                                      str(to_date) + " 23:59:59"])},
+	                                                      str(to_date) + " 23:59:59"])}),
 	                        fields=["employee", "time"], order_by="time asc"):
 		f.punches.setdefault((p.employee, str(p.time)[:10]), str(p.time)[11:16])
 

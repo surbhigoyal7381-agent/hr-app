@@ -1020,7 +1020,7 @@ class WhoMayAskFromSomebodyElsesMonth(CorrectionCase):
 		"""
 		req = self.as_boss(
 			lambda: ac.raise_for_report(self.report, self.recent(),
-			                            reason="On Duty"))
+			                            reason="On Duty", explanation="Worked at the other site"))
 		self.assertEqual(frappe.db.get_value("Attendance Request", req["name"],
 		                                     "employee"), self.report)
 
@@ -1412,7 +1412,7 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		frappe.set_user(self.boss_email)
 		try:
 			out = ac.raise_for_report(self.report, self.recent(),
-			                          reason="On Duty")
+			                          reason="On Duty", explanation="Worked at the other site")
 		finally:
 			frappe.set_user("Administrator")
 		doc = frappe.get_doc("Attendance Request", out["name"])
@@ -1425,7 +1425,7 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		frappe.set_user(self.boss_email)
 		try:
 			out = ac.raise_for_report(self.report, self.recent(),
-			                          reason="On Duty")
+			                          reason="On Duty", explanation="Worked at the other site")
 		finally:
 			frappe.set_user("Administrator")
 		doc = frappe.get_doc("Attendance Request", out["name"])
@@ -1447,7 +1447,7 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		somebody's behalf."""
 		frappe.set_user(self.report_email)
 		try:
-			out = ac.raise_for_report(self.report, self.d(1), reason="On Duty")
+			out = ac.raise_for_report(self.report, self.d(1), reason="On Duty", explanation="Worked at the other site")
 		finally:
 			frappe.set_user("Administrator")
 		doc = frappe.get_doc("Attendance Request", out["name"])
@@ -1532,7 +1532,7 @@ class TheManagersFilingWindow(CorrectionCase):
 	def file_for(self, date, employee=None):
 		frappe.set_user(self.boss_email)
 		try:
-			return ac.raise_for_report(employee or self.report, date, reason="On Duty")
+			return ac.raise_for_report(employee or self.report, date, reason="On Duty", explanation="Worked at the other site")
 		finally:
 			frappe.set_user("Administrator")
 

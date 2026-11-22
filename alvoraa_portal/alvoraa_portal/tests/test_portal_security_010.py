@@ -748,6 +748,8 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "notices.py"): 0,
 		# Slice 063 (new file): DTC's leave rules read and notify; none needed.
 		("alvoraa_portal", "leave_rules.py"): 0,
+		# Slice 085: one deliberate bypass, the slip re-save after a release (F6).
+		("alvoraa_portal", "held_day.py"): 1,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
 		# is proven for them too, not only for files already listed.
 		("alvoraa_portal", "org_figures.py"): 0,
@@ -940,12 +942,55 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# delete (HR and System Manager read only), so the insert needs the
 		# bypass by design. It runs after _require_hr() and stores a submission
 		# name, never a value.
-		("alvoraa_portal", "joiner_invite.py"): 4,
+		#
+		# ALV-396: FOUR to FIVE, decided by Surbhi 20 Nov 2026. The
+		# duplicate-guard read above is now TWO reads of the same question,
+		# because asking it of `User` alone could not answer it. An email
+		# invite is written to no `User` column - `make_sign_in` fills
+		# `mobile_no` only for a number - so two live invites could share one
+		# address, the second took the account, and the first joiner was told
+		# their correct password was wrong for ever with nothing reaching HR.
+		# The second read asks the submission row, on `login_id`.
+		#
+		# It needs the bypass for the SAME reason already recorded for the
+		# first: the guard has to see rows the caller may not. An HR Manager's
+		# own query is narrowed by any User Permission the tenant has set -
+		# DTC sets several - and a narrowed query finds nothing, so the guard
+		# would pass silently and let HR create the duplicate it exists to
+		# prevent. Failing open here means two people on one credential.
+		#
+		# It returns a boolean and never a name, status or row to the caller,
+		# and it runs after `_require_hr()`, like the other four.
+		("alvoraa_portal", "joiner_invite.py"): 5,
 		# ALV-319: auth.py holds the joiner gate and the cache-forget that
 		# releases an account when its roles change. **ZERO**, and pinned here so
 		# that a bypass in the one file every single request passes through has
 		# to be argued for in this dict first.
-		("alvoraa_portal", "auth.py"): 0,
+		#
+		# ALV-394: ZERO to ONE, and this is that argument. The `before_login`
+		# hook reads `Alvoraa Joiner Submission.login_id` to turn what HR gave
+		# the joiner into the opaque login id their account actually carries.
+		# The caller is **Guest** - there is no session yet, by definition, so
+		# there is no permission to check and nothing to scope the read to.
+		#
+		# What makes it narrow enough to allow:
+		#   * two fields, `user` and `status`, on an exact match of a value the
+		#     visitor typed themselves. No name, no contact detail, no document.
+		#   * nothing reaches the browser. The return value is used to rewrite
+		#     `form_dict["usr"]` and is never rendered or returned, so this
+		#     cannot answer "is this address invited" any more than the old
+		#     refusal already did (079-SEC-1, US-4: not an oracle).
+		#   * it is not even reached unless what was typed is NOT an existing
+		#     `User`, so no member of staff signing in ever touches it.
+		#   * on more than one match it refuses and logs, rather than choosing.
+		#
+		# **The honest alternative was worse.** A raw `frappe.db.sql` or
+		# `frappe.qb` read bypasses permissions just the same and does not
+		# contain the word, so it would pass this gate while giving up the one
+		# thing the gate is for: a bypass you can find by grepping. This dict
+		# exists to make bypasses argued, not hidden. One, stated, beats one
+		# disguised.
+		("alvoraa_portal", "auth.py"): 1,
 		# joiner_public.py: FIVE to THREE, and this is the file 079-SEC-7 was
 		# written about. Four of the five existed only because the caller was
 		# **Guest** and held no permission on anything; with a session and a

@@ -42,6 +42,8 @@ const OUTSIDER = "Nehal Verma";
 const calls = [];
 const REVIEW_ROWS = [];
 let ATT_WINDOW = null;        // what get_requests_history says about the employee window
+let LOSE_RAISE = false;       // the answer to raise_correction never arrives (slice 085, AC-30)
+let REFUSE_RAISE = null;      // a sentence the server refuses raise_correction with
 let REFUSE_REQUEST = null;    // a sentence the server refuses submit_attendance_request with
 function reply(url, body) {
   const m = /attendance_correction\.(\w+)|hr_api\.(\w+)/.exec(url) || [];
@@ -90,7 +92,14 @@ const dom = new JSDOM(html, {
   runScripts: "dangerously", pretendToBeVisual: true,
   url: "http://grace.localhost/hrms-employee",
   beforeParse(w) {
-    w.fetch = (url, opts) => Promise.resolve({
+    w.fetch = (url, opts) => LOSE_RAISE && /raise_correction/.test(String(url))
+      ? Promise.reject(new Error("net"))
+      : REFUSE_RAISE && /raise_correction/.test(String(url))
+      ? Promise.resolve({ ok: false, status: 417,
+          json: () => Promise.resolve({ exc_type: "ValidationError",
+            _server_messages: JSON.stringify([JSON.stringify({ message: REFUSE_RAISE })]) }),
+          text: () => Promise.resolve("") })
+      : Promise.resolve({
       ok: true, status: 200,
       json: () => Promise.resolve({ message: reply(String(url), opts && opts.body) }),
       text: () => Promise.resolve(""),
@@ -180,6 +189,91 @@ function putForm(reason) {
   calls.find(c => c.fn === "raise_for_report")
     ? bad("my own day was sent on-behalf, which names me as my own manager")
     : ok("my own day is not sent on-behalf");
+
+  // ── ALV-432: a written reason when filing for somebody else ────────
+  // ALV-418 made the server refuse raise_for_report without an explanation.
+  // The form must say so and stop an empty one before sending; a person's
+  // own request still goes with the list reason alone.
+  const freshForm = (explanation) => {
+    ["ac-reason", "ac-explain", "tr-reason", "tr-explain"].forEach(id => {
+      let n; while ((n = doc.getElementById(id))) n.parentElement.remove();
+    });
+    const host = doc.createElement("div");
+    host.innerHTML =
+      '<select id="ac-reason"><option value="Marked Absent by Mistake" selected>r</option></select>' +
+      '<textarea id="ac-explain"></textarea>';
+    host.querySelector("#ac-explain").value = explanation;
+    doc.body.appendChild(host);
+  };
+  const toastWords = () => [...doc.querySelectorAll("#toast-wrap .toast")].map(t => t.textContent).join(" | ");
+
+  freshForm("   ");
+  window.acState.employee = REPORT;
+  window.acState.data = { employee: REPORT, employee_name: "Neha Kumar",
+                          is_self: false, can_request: true, days: [] };
+  calls.length = 0;
+  window.acSubmit("2026-10-14");
+  await settle(250);
+  calls.some(c => c.fn === "raise_for_report")
+    ? bad("ALV-432: a report's day with no written reason was sent anyway")
+    : ok("ALV-432: a report's day with no written reason is not sent");
+  /Write a reason so HR can decide/.test(toastWords())
+    ? ok("ALV-432: the manager is told to write a reason")
+    : bad("ALV-432: no 'Write a reason' message: " + toastWords());
+
+  freshForm("");
+  window.acState.employee = null;
+  window.acState.data = { employee: ME, employee_name: "Rahul Sharma",
+                          is_self: true, can_request: true, days: [] };
+  calls.length = 0;
+  window.acSubmit("2026-10-14");
+  await settle(250);
+  calls.some(c => c.fn === "raise_correction")
+    ? ok("ALV-432: my own day with no written reason is still sent")
+    : bad("ALV-432: my own day was stopped for having no written reason");
+
+  if (typeof window.acForm === "function") {
+    window.acState.data = { employee: REPORT, is_self: false, days: [] };
+    const other = window.acForm({});
+    window.acState.data = { employee: ME, is_self: true, days: [] };
+    const mine = window.acForm({});
+    /Reason <span class="pfx-req">Required<\/span>/.test(other) && /id="ac-explain" required/.test(other)
+      ? ok("ALV-432: the form for a report's day marks the reason Required")
+      : bad("ALV-432: the form for a report's day does not mark the reason Required");
+    /Anything HR should know/.test(mine) && !/pfx-req/.test(mine)
+      ? ok("ALV-432: my own form keeps the optional box")
+      : bad("ALV-432: my own form changed");
+  } else {
+    bad("ALV-432: acForm is not reachable from the page");
+  }
+
+  if (typeof window.trSubmit === "function" && typeof window.trAskForm === "function") {
+    /Reason <span class="pfx-req">Required<\/span>/.test(window.trAskForm({ employee: REPORT, date: "2026-10-14" }))
+      ? ok("ALV-432: the team page's form marks the reason Required")
+      : bad("ALV-432: the team page's form does not mark the reason Required");
+    ["ac-reason", "ac-explain"].forEach(id => { const n = doc.getElementById(id); if (n) n.parentElement.remove(); });
+    const host = doc.createElement("div");
+    host.innerHTML = '<select id="tr-reason"><option value="Marked Absent by Mistake" selected>r</option></select>'
+      + '<textarea id="tr-explain"></textarea>';
+    doc.body.appendChild(host);
+    calls.length = 0;
+    await window.trSubmit(REPORT, "2026-10-14");
+    await settle(250);
+    calls.some(c => c.fn === "raise_for_report")
+      ? bad("ALV-432: the team page sent a report's day with no written reason")
+      : ok("ALV-432: the team page does not send a report's day with no written reason");
+    doc.getElementById("tr-explain").value = "Forgot to scan out.";
+    calls.length = 0;
+    await window.trSubmit(REPORT, "2026-10-14");
+    await settle(250);
+    calls.some(c => c.fn === "raise_for_report")
+      ? ok("ALV-432: with a written reason, the team page sends it")
+      : bad("ALV-432: the team page did not send even with a reason");
+    host.remove();
+  } else {
+    bad("ALV-432: trSubmit or trAskForm is not reachable from the page");
+  }
+  putForm("Marked Absent by Mistake");
 
   // ── One press, one request (18 Oct 2026) ───────────────────────────
   // The error log held two calls 35ms apart, and the second arrived with no
@@ -559,6 +653,63 @@ function putForm(reason) {
   (doc.querySelector("#ac-body").textContent.indexOf("To come") < 0)
     ? ok("no day still to come is drawn")
     : bad("a future day is still on screen");
+
+  // ── Held day, slice 085: the screen gaps ─────────────────────────────
+  const toasts = () => [...doc.querySelectorAll("#toast-wrap .toast")].map(t => t.textContent);
+  const putTime = () => {
+    const h = doc.createElement("div");
+    // ALV-418: a reason is required on every request, so the form carries one (the rule is not weakened).
+    h.innerHTML = '<input id="ac-missing-time" value="18:30"><textarea id="ac-held-reason">Forgot to scan out</textarea>';
+    doc.body.appendChild(h);
+  };
+  window.acState.employee = null;
+  window.acState.data = { employee: ME, employee_name: "Rahul Sharma", is_self: true,
+                          can_request: true, days: [] };
+
+  // AC-30, a lost answer: it may have gone through, so the server is asked first
+  // and no second request is sent.
+  putTime();
+  LOSE_RAISE = true;
+  calls.length = 0;
+  doc.querySelector("#toast-wrap").innerHTML = "";
+  window.acHeldSubmit("2026-10-14", 1);
+  await settle(300);
+  LOSE_RAISE = false;
+  toasts().some(t => /may have gone through/i.test(t))
+    ? ok("a lost answer says it may have gone through")
+    : bad("a lost answer did not say so: " + JSON.stringify(toasts()));
+  calls.filter(c => c.fn === "month").length >= 1
+    ? ok("a lost answer asks the server before offering a second send")
+    : bad("the server was not asked after a lost answer");
+  calls.filter(c => c.fn === "raise_correction").length === 0
+    ? ok("a lost answer is not sent twice")
+    : bad("a lost answer was re-sent");
+
+  // AC-30, a refusal: the server's words, then "Not sent. Your time is saved on this phone."
+  putTime();
+  REFUSE_RAISE = "You have used your 3 requests this month.";
+  doc.querySelector("#toast-wrap").innerHTML = "";
+  window.acHeldSubmit("2026-10-14", 1);
+  await settle(300);
+  REFUSE_RAISE = null;
+  toasts().some(t => /Not sent\. Your time is saved on this phone\. Try again\./.test(t))
+    ? ok("a refused send says the time is saved on this phone")
+    : bad("a refused send said: " + JSON.stringify(toasts()));
+
+  // The row of a held day carries one tag, not a second "Sent to HR" one.
+  window.acState.data = { employee: ME, employee_name: "Rahul Sharma", is_self: true,
+    year: 2026, month: 10, tolerance_mins: 15, hold_on: 1,
+    days: [{ date: "2026-10-14", weekday: "Wednesday", state: "past", attendance: "ATT-1", status: "Held", held: true,
+             held_punches: 1, punches: [{ at: "09:00" }],
+             request: { state: "waiting", creation: "2026-10-15 10:00:00" } }],
+    totals: { present: 0, hours_worked: 0, short_days: 0, missing_punches: 0, late_days: 0,
+              leave: 0, held: 1 } };
+  window.acPaint();
+  const rowText = doc.querySelector("#ac-body").textContent;
+  /Held/.test(rowText) ? ok("the held day is drawn") : bad("the held day is not on screen");
+  doc.querySelector("#ac-body .ac-tag.wait") === null
+    ? ok("no second Sent to HR tag on the row")
+    : bad("the Sent to HR tag is still on the row");
 
   console.log(`### correction DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

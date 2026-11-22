@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>088 Monthly change notice - prototype v1 (all names, times and numbers are Sample)</title>
+<style>
+/* Tokens copied from 087 prototype v5, which copied templates/includes/design_system.html (light and dark). */
+:root,:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--on-primary:#FFFFFF;--green:#1B7F5A;--red:#B3261E;--amber:#94600F;--sh1:0 1px 2px rgba(0,0,0,.06);--sh3:0 12px 32px rgba(0,0,0,.16);--r:10px;--r-sm:6px;--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--on-primary:#1A1815;--green:#5DBF97;--red:#F08A82;--amber:#E0A94A;--sh1:0 1px 2px rgba(0,0,0,.4);--sh3:0 12px 32px rgba(0,0,0,.6)}
+input[type=file]{font:inherit;font-size:16px}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.5}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+.ic{flex:none;vertical-align:-3px}
+/* ---- review scaffolding, not product ---- */
+#demo{position:sticky;top:0;z-index:80;background:var(--surface2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:13px}
+#demo .g{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#demo .g>span{color:var(--text3);font-weight:700;font-size:12px;margin-right:2px}
+#demo button{border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-sm);padding:4px 8px;min-height:32px}
+#demo button[aria-pressed=true]{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+#demo .sample{border:1px solid var(--amber);color:var(--amber);border-radius:var(--r-sm);padding:2px 8px;font-weight:700;font-size:12px}
+/* ---- stage ---- */
+#stage{margin:16px auto;position:relative;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+#stage.phone{width:390px;max-width:100%;height:min(800px,calc(100vh - 150px));min-height:560px;border:10px solid #2a2a2e;border-radius:30px;box-shadow:var(--sh3)}
+#stage.desktop{max-width:1040px;padding:0 16px;overflow:visible}
+#stage.desktop.emp{max-width:560px;height:min(800px,calc(100vh - 150px));border:1px solid var(--border);border-radius:var(--r);overflow:hidden;padding:0}
+@media(max-width:460px){#stage.phone{border:0;border-radius:0;width:100%;margin:0}}
+.scroll{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.app-h{background:var(--surface);border-bottom:1px solid var(--border);padding:16px}
+.app-h b{font-size:18px;line-height:24px;display:block}.app-h small{font-size:13px;color:var(--text3)}
+.pad{padding:16px 16px 24px}
+.desktop:not(.emp) .app-h{background:none;border:0;padding:16px 0 8px}
+.desktop:not(.emp) .pad{padding:8px 0 24px}
+.sub{font-size:14px;color:var(--text2);margin:4px 0 0}
+.muted{color:var(--text3);font-size:13px}
+.hint{font-size:13px;color:var(--text3);margin:8px 0 0}
+.sl{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:20px;font-weight:600}
+.sl .ic{margin-top:1px}
+.sl-ok .ic{color:var(--green)}.sl-held .ic{color:var(--amber)}.sl-wait .ic{color:var(--primary)}.sl-info .ic{color:var(--text3)}
+.sl small{display:block;font-weight:400;color:var(--text2);font-size:13px}
+.btn{min-height:48px;padding:8px 20px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);font-weight:600;font-size:15px}
+.btn-primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-h)}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.btn-sm{min-height:44px;padding:6px 14px;font-size:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;box-shadow:var(--sh1);margin-bottom:16px}
+.card h2{font-size:16px;margin:0 0 4px}
+.stub{font-size:14px;display:flex;gap:8px;align-items:center;color:var(--text2)}
+/* ---- HR: change notices ---- */
+.mbar{display:flex;align-items:center;gap:8px;margin:12px 0}
+.mbar b{min-width:150px;text-align:center;font-size:16px}
+.mbar button{width:44px;height:44px;border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-sm);font-size:18px}
+.mbar button[disabled]{opacity:.4;cursor:not-allowed}
+.tools{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0}
+.selall{display:flex;align-items:center;min-height:44px;gap:4px;font-weight:600;font-size:14px}
+.cb{width:44px;height:44px;display:grid;place-items:center;cursor:pointer}
+.cb input{width:22px;height:22px;accent-color:var(--primary)}
+.list{container-type:inline-size}
+.row{display:grid;grid-template-columns:44px 1fr auto;gap:4px 8px;align-items:center;padding:8px 16px 8px 4px;border:1px solid var(--border);background:var(--surface);border-radius:var(--r);margin-top:8px}
+.row .nm{font-weight:700;font-size:15px}
+.row .meta{font-size:13px;color:var(--text2)}
+.row .acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.row .note{grid-column:2/4;font-size:13px;color:var(--text2)}
+@container (max-width:600px){.row{grid-template-columns:44px 1fr}.row .acts{grid-column:2;justify-content:flex-start}.row .note{grid-column:2}}
+.sk{height:72px;border-radius:var(--r);background:linear-gradient(90deg,var(--surface2),var(--surface),var(--surface2));margin-top:8px;border:1px solid var(--border)}
+.empty{background:var(--surface);border:1px dashed var(--border2);border-radius:var(--r);padding:24px 16px;margin-top:8px}
+.empty b{display:block;font-size:16px;margin-bottom:4px}
+.err{display:flex;gap:8px;color:var(--red);font-weight:600;font-size:14px;margin:8px 0}
+.logline{font-size:13px;color:var(--text3);margin:16px 0 0;display:flex;gap:8px}
+/* ---- dialog (the 087 v5 "Signed on the register" sheet, reused) ---- */
+#scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:flex-end}
+#stage.desktop:not(.emp) #scrim{position:fixed;align-items:center;justify-content:center}
+#sheet{width:100%;background:var(--surface);border-radius:16px 16px 0 0;padding:8px 16px 24px;box-shadow:var(--sh3);max-height:90%;overflow:auto}
+#stage.desktop:not(.emp) #sheet{width:min(540px,92vw);border-radius:16px}
+#sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 16px}
+#sheet h2{margin:0;font-size:18px;line-height:24px}
+#sheet .ctx{font-size:14px;color:var(--text2);margin:4px 0 12px}
+#sheet ul{margin:0 0 16px;padding-left:20px;font-size:14px}
+.fl{display:block;font-weight:600;font-size:14px;margin:0 0 4px}
+.field{margin-bottom:16px}
+#sheet img{display:block;max-width:100%;max-height:200px;border:1px solid var(--border2);border-radius:var(--r-sm);margin-top:8px}
+.acts2{display:flex;gap:8px;margin-top:8px}.acts2 .btn{flex:1}
+/* ---- print preview toolbar ---- */
+.pvbar{position:sticky;top:0;z-index:10;background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pvbar .t{flex:1;min-width:200px;font-size:13px;color:var(--text2)}
+.tag{display:inline-block;border:1px solid var(--amber);color:var(--amber);border-radius:var(--r-sm);padding:2px 8px;font-weight:700;font-size:12px}
+.pvwrap{background:var(--surface2);padding:16px 0;display:flex;flex-direction:column;align-items:center;gap:16px}
+/* ---- the A4 sheet. Paper: always black on white, no colour needed, so a black-and-white printer is fine ---- */
+.a4{width:210mm;height:297mm;background:#fff;color:#000;padding:11mm 14mm 9mm;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--sh3);font-family:"Noto Sans Devanagari","Nirmala UI",var(--font);font-size:11pt;line-height:1.3;flex:none}
+.a4 .hi{display:block;font-size:10pt;color:#222}
+.a4 .top{display:flex;justify-content:space-between;font-size:9.5pt;border-bottom:1.5pt solid #000;padding-bottom:2mm}
+.a4 h2{font-size:19pt;margin:4mm 0 1mm;line-height:1.2}
+.a4 h2 .hi{font-size:14pt;font-weight:700}
+.a4 .who{border:1.5pt solid #000;padding:2mm 3mm;margin:3mm 0}
+.a4 .who .nm{font-size:16pt;font-weight:700}
+.a4 .intro{margin:0 0 3mm}
+.a4 table{width:100%;border-collapse:collapse;table-layout:fixed}
+.a4 th{font-size:9.5pt;text-align:left;border-bottom:1.5pt solid #000;padding:1mm 2mm 1mm 0;vertical-align:bottom}
+.a4 th .hi{font-weight:400}
+.a4 td{vertical-align:top;border-bottom:.75pt solid #777;padding:2mm 2mm 2mm 0;font-size:10.5pt}
+.a4 td.d{font-weight:700;font-size:12pt}
+.a4 td .hi{font-size:9.5pt}
+.a4 td .cnt{margin-top:1mm;font-weight:700}
+.a4 .signblk{margin-top:auto}
+.a4 .read{font-weight:700;font-size:12pt;margin:0 0 2mm}
+.a4 .boxes{display:flex;gap:4mm;margin-top:2mm}
+.a4 .box{border:1.5pt solid #000;height:26mm;padding:1mm 2mm;font-size:9.5pt}
+.a4 .box.s{flex:1}.a4 .box.dt{width:44mm}
+.a4 .rule{border:1pt solid #000;padding:1.5mm 3mm;margin:2mm 0;font-weight:700}
+.a4 .rule.l{font-weight:400;border-style:dashed}
+.a4 .foot{font-size:8.5pt;margin-top:3mm;border-top:.75pt solid #000;padding-top:1.5mm;color:#222}
+@media print{
+ @page{size:A4;margin:0}
+ body{background:#fff}
+ #demo,.noprint,#toast,#scrim{display:none!important}
+ #stage{margin:0;border:0;box-shadow:none;width:auto!important;max-width:none!important;height:auto!important;min-height:0;overflow:visible;padding:0;border-radius:0;display:block}
+ .scroll{overflow:visible}.pvwrap{background:none;padding:0;display:block}
+ .a4{zoom:1!important;box-shadow:none;margin:0;break-after:page;page-break-after:always}
+}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 16px;border-radius:var(--r);box-shadow:var(--sh3);z-index:90;max-width:92vw;display:none;font-size:14px}
+</style></head><body>
+<div id="demo">
+ <span class="sample">Sample data. Prototype v1, not the product.</span>
+ <div class="g" id="g-show"><span>Show</span></div>
+ <div class="g" id="g-who"><span>HR login</span></div>
+ <div class="g" id="g-st"><span>List state</span></div>
+ <div class="g" id="g-dev"><span>Device</span></div>
+ <div class="g" id="g-lang"><span>Screen language</span></div>
+ <div class="g" id="g-th"><span>Theme</span></div>
+</div>
+<div id="stage" class="desktop"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+/* ---------- words: [English, Hindi]. Hindi is MACHINE-DRAFTED and needs a native reader before any print. ---------- */
+const W={
+ title:["Change notices","बदलाव की सूचनाएँ"],
+ place:["Sits on the HR Attendance page, under “Before payroll”.","HR की हाज़िरी वाले पन्ने पर, “वेतन से पहले” के नीचे।"],
+ stub:["Before payroll: {0} changes are not yet confirmed (from slice 087)","वेतन से पहले: {0} बदलाव की अभी पुष्टि नहीं हुई (स्लाइस 087 से)"],
+ intro:["One page for each person whose attendance someone else changed. Print it, let the person read it and sign or give a thumb print, then record it here.","हर उस व्यक्ति के लिए एक पन्ना जिसकी हाज़िरी किसी और ने बदली। इसे छापें, व्यक्ति पढ़कर दस्तख़त या अंगूठा लगाए, फिर यहाँ दर्ज करें।"],
+ sum:["{0} people have changed days in {1}. {2} are done. {3} still need a signature or a confirmation.","{1} में {0} लोगों के दिन बदले गए हैं। {2} पूरे हो गए। {3} को अभी दस्तख़त या पुष्टि चाहिए।"],
+ prev:["Earlier month","पिछला महीना"],next:["Later month","अगला महीना"],
+ selall:["Select all {0}","सभी {0} चुनें"],
+ sel:["Select {0}","{0} को चुनें"],
+ printsel:["Print selected ({0})","चुने हुए छापें ({0})"],
+ printone:["Print notice","सूचना छापें"],printagain:["Print again","फिर से छापें"],
+ ch1:["1 changed day","1 दिन बदला"],chn:["{0} changed days","{0} दिन बदले"],
+ st_new:["Not printed yet","अभी छपी नहीं"],
+ st_pr:["Print opened on {0} by {1}. Waiting for the signature.","{0} को {1} ने प्रिंट खोला। दस्तख़त का इंतज़ार।"],
+ st_sg:["Signed on the register on {0}. Recorded by {1}.","{0} को रजिस्टर पर दस्तख़त हुए। {1} ने दर्ज किया।"],
+ st_ap:["Confirmed in the app on {0}.","{0} को ऐप में पुष्टि हुई।"],
+ st_af:["{0} change added after the page was printed. It is not on that page. Print again.","पन्ना छपने के बाद {0} बदलाव जुड़ा। वह उस पन्ने पर नहीं है। फिर से छापें।"],
+ st_nw:["Not printed yet","अभी छपी नहीं"],
+ reg:["Signed on the register","रजिस्टर पर दस्तख़त हुए"],
+ filer:["You filed a change on this page, so another HR person records the signature.","इस पन्ने का एक बदलाव आपने किया था, इसलिए दस्तख़त कोई दूसरा HR व्यक्ति दर्ज करेगा।"],
+ logline:["Every time a notice is opened for print, we keep your name, the date and the person.","जब भी कोई सूचना छापने के लिए खुलती है, हम आपका नाम, तारीख़ और व्यक्ति दर्ज रखते हैं।"],
+ e_h:["No changed days in {0}","{0} में कोई दिन नहीं बदला"],
+ e_p:["A notice is only for a person whose day someone else changed and that still needs to be confirmed. Nobody needs one this month.","सूचना केवल उसके लिए है जिसका दिन किसी और ने बदला और जिसकी पुष्टि बाकी है। इस महीने किसी को ज़रूरत नहीं।"],
+ er_h:["Could not load the list. Nothing was changed.","सूची नहीं खुल सकी। कुछ नहीं बदला।"],retry:["Try again","फिर कोशिश करें"],
+ loading:["Loading the list","सूची खुल रही है"],
+ /* preview */
+ back:["Back to the list","सूची पर वापस"],
+ pv_print:["Print {0} sheets","{0} पन्ने छापें"],pv_print1:["Print 1 sheet","1 पन्ना छापें"],
+ pv_note:["Preview at A4. One person on each page. Only hours that were counted are shown. Printing is logged: {0}, {1}.","A4 पर पूर्वावलोकन। हर पन्ने पर एक ही व्यक्ति। केवल गिने गए घंटे दिखते हैं। प्रिंट दर्ज होता है: {0}, {1}।"],
+ pv_hi:["Hindi lines: machine draft, not yet read by a Hindi speaker","हिंदी पंक्तियाँ: मशीन से बनाया मसौदा, अभी किसी हिंदी पाठक ने नहीं पढ़ा"],
+ pv_tog:["Salary-slip line on the sheet","सैलरी स्लिप वाली पंक्ति"],
+ /* sheet */
+ company:["Sample Retail Pvt Ltd (Sample)","सैंपल रिटेल प्रा. लि. (सैंपल)"],
+ s_title:["Changes to your attendance","आपकी हाज़िरी में बदलाव"],
+ s_emp:["Employee no. {0} · {1}","कर्मचारी क्र. {0} · {1}"],
+ s_intro:["Someone else changed these days in your attendance. Please read each one.","आपकी हाज़िरी के इन दिनों को किसी और ने बदला है। कृपया हर एक पढ़ें।"],
+ c_day:["Day","दिन"],c_what:["What changed","क्या बदला"],c_who:["Who filed it","किसने किया"],c_why:["Why","कारण"],
+ k_out:["Out time {0} added","बाहर जाने का समय {0} जोड़ा गया"],
+ k_in:["In time {0} added","आने का समय {0} जोड़ा गया"],
+ k_brk:["Back after break at {0} added","ब्रेक के बाद वापसी {0} जोड़ी गई"],
+ k_aside:["Scan at {0} not counted","{0} का स्कैन नहीं गिना गया"],
+ cnt:["This day now counts {0}.","इस दिन के {0} गिने जाएँगे।"],
+ hr:["HR","HR"],mgr:["Manager","मैनेजर"],
+ s_nr:["If something here is not right, tell HR before you sign.","अगर यहाँ कुछ ठीक नहीं है, तो दस्तख़त से पहले HR को बताएँ।"],
+ s_hold:["Your salary slip for this month waits until each change is confirmed.","जब तक हर बदलाव की पुष्टि नहीं होती, इस महीने की आपकी सैलरी स्लिप रुकी रहेगी।"],
+ s_read:["I have read the changes on this page.","मैंने इस पन्ने के बदलाव पढ़ लिए हैं।"],
+ s_sign:["Signature or thumb print","दस्तख़त या अंगूठे का निशान"],s_date:["Date","तारीख़"],
+ s_foot:["Printed by {0} on {1}. Page {2} of {3}.","{1} को {0} ने छापा। पन्ना {2} / {3}।"],
+ s_priv:["This page is only about you. Keep it private.","यह पन्ना केवल आपके बारे में है। इसे निजी रखें।"],
+ s_ref:["Ref {0}","संदर्भ {0}"],
+ /* dialog */
+ rg_p:["Record this only if {0} signed or gave a thumb print on this notice.","इसे तभी दर्ज करें जब {0} ने इस सूचना पर दस्तख़त या अंगूठा लगाया हो।"],
+ rg_pn:["Record this only if {0} signed or gave a thumb print on every page of this notice ({1} pages).","इसे तभी दर्ज करें जब {0} ने इस सूचना के हर पन्ने ({1} पन्ने) पर दस्तख़त या अंगूठा लगाया हो।"],
+ rg_photos:["One photo of each signed page ({0} pages)","हर दस्तख़त वाले पन्ने की एक फ़ोटो ({0} पन्ने)"],
+ rg_err2:["Add {0} photos, one for each page. You added {1}.","{0} फ़ोटो जोड़ें, हर पन्ने की एक। आपने {1} जोड़ीं।"],
+ rg_cov:["This records {0} changes as signed:","यह {0} बदलाव को दस्तख़त वाला दर्ज करेगा:"],
+ rg_cov1:["This records 1 change as signed:","यह 1 बदलाव को दस्तख़त वाला दर्ज करेगा:"],
+ rg_later:["{0} change added after printing is not covered. It stays open.","छपने के बाद जुड़ा {0} बदलाव शामिल नहीं है। वह खुला रहेगा।"],
+ rg_photo:["Photo of the signed notice","दस्तख़त वाली सूचना की फ़ोटो"],
+ rg_ph_h:["Take the whole page, with the signature box. The page has only {0}'s own details, nobody else's.","पूरा पन्ना लें, दस्तख़त वाले डिब्बे समेत। पन्ने पर केवल {0} की अपनी जानकारी है, किसी और की नहीं।"],
+ rg_check:["Look at the photo. Can you read the signature or thumb print? If not, take it again.","फ़ोटो देखें। क्या दस्तख़त या अंगूठे का निशान पढ़ा जा रहा है? नहीं तो दोबारा लें।"],
+ rg_keep:["Your name, today's date and the photo are kept with these changes. Only HR can open the photo.","आपका नाम, आज की तारीख़ और फ़ोटो इन बदलावों के साथ रखे जाएंगे। फ़ोटो केवल HR खोल सकता है।"],
+ rg_err:["Add the photo of the signed notice first.","पहले दस्तख़त वाली सूचना की फ़ोटो जोड़ें।"],
+ nr_btn:["Says it is not right","कहते हैं कि यह ठीक नहीं है"],
+ nr_l:["What did {0} say is not right?","{0} ने क्या ठीक नहीं बताया?"],
+ nr_h:["These changes stay open. HR decides what to do next.","ये बदलाव खुले रहेंगे। आगे क्या करना है, यह HR तय करेगा।"],
+ nr_err:["Write what {0} said is not right.","लिखें कि {0} ने क्या ठीक नहीं बताया।"],
+ nr_ok:["Record that it is not right","दर्ज करें कि यह ठीक नहीं है"],
+ nr_back:["Back","वापस"],
+ nr_note:["{0} says it is not right (told HR on {1}, recorded by {2}). The changes stay open: {3}","{0} का कहना है कि यह ठीक नहीं (HR को {1} को बताया, {2} ने दर्ज किया)। बदलाव खुले हैं: {3}"],
+ toast_nr:["Recorded for HR to decide: {0} says it is not right. {1} changes stay open.","HR के फ़ैसले के लिए दर्ज: {0} का कहना है कि यह ठीक नहीं। {1} बदलाव खुले हैं।"],
+ rg_ok:["Record signature","दस्तख़त दर्ज करें"],cancel:["Cancel","रद्द करें"],
+ toast_reg:["Signature recorded for {0}. {1} changes are now confirmed.","{0} के दस्तख़त दर्ज हुए। {1} बदलाव की पुष्टि हो गई।"],
+ toast_pr:["Print opened and logged: {0}, {1} people, {2} sheets.","प्रिंट खुला और दर्ज हुआ: {0}, {1} लोग, {2} पन्ने।"],
+ /* employee with the app */
+ ea_h:["Time","समय"],
+ ea_l:["{0} days this month were changed by someone else.","इस महीने {0} दिन किसी और ने बदले।"],
+ ea_b:["See them","देखें"],ea_x:["Hide","छिपाएँ"],
+ ea_by:["{0} ({1})","{0} ({1})"],
+ ea_n:["Not confirmed by you yet.","आपने अभी पुष्टि नहीं की।"],ea_a:["You confirmed it.","आपने पुष्टि की थी।"],ea_s:["You signed for it on the register.","आपने रजिस्टर पर दस्तख़त किए।"],
+ ea_tip:["Tap a day to confirm it or say it is not right.","किसी दिन को छूकर पुष्टि करें या बताएँ कि यह ठीक नहीं है।"],
+ ea_open:["Opens the day sheet from slice 087.","स्लाइस 087 का दिन वाला पन्ना खुलता है।"],
+ ea_rest:["The rest of the month view is unchanged.","महीने का बाकी दृश्य वैसा ही है।"]
+};
+let LANG="en";
+const t=(k,...a)=>{let s=(W[k]||[k,k])[LANG==="hi"?1:0];a.forEach((v,i)=>s=s.split("{"+i+"}").join(v));return s};
+const te=(k,...a)=>{let s=W[k][0];a.forEach((v,i)=>s=s.split("{"+i+"}").join(v));return s};
+const th=(k,...a)=>{let s=W[k][1];a.forEach((v,i)=>s=s.split("{"+i+"}").join(v));return s};
+const bi=(k,...a)=>`${te(k,...a)}<span class="hi" lang="hi">${th(k,...a)}</span>`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ICONS={check:'<path d="M4 10.5l4 4 8-9"/>',alert:'<path d="M10 3l8 14H2L10 3zM10 8v4M10 14.5v.5"/>',clock:'<circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10l3 2"/>',info:'<circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/>',warn:'<circle cx="10" cy="10" r="7.5"/><path d="M10 6v5M10 13.5v.5"/>'};
+const ic=n=>`<svg class="ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+/* ---------- data (all Sample) ---------- */
+const NOW="21 Nov 2026",MON=["Oct","Nov"],MFULL=["October 2026","November 2026"],MHI=["अक्टूबर 2026","नवंबर 2026"];
+const WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],WDH=["रवि","सोम","मंगल","बुध","गुरु","शुक्र","शनि"];
+const wd=d=>new Date(2026,10,d).getDay();
+const hm=m=>[Math.floor(m/60),m%60];
+const fh=m=>{const[h,mm]=hm(m);return LANG==="hi"?`${h} घं ${mm} मि`:`${h} h ${mm} m`};
+const fhe=m=>{const[h,mm]=hm(m);return`${h} h ${mm} m`},fhh=m=>{const[h,mm]=hm(m);return`${h} घं ${mm} मि`};
+const C=(d,k,tm,min,by,role,on,why)=>({d,k,tm,min,by,role,on,why,st:"open"});
+const ANIL="Anil Sample",SUN="Sunita Rao",KAV="Kavita Sample";
+const meena=[];for(let i=0;i<14;i++){const d=3+i,k=["out","in","brk","aside"][i%4];meena.push(C(d,k,["14:40","09:10","14:15","11:00"][i%4],480-(i%3)*15,i%3?ANIL:SUN,i%3?"hr":"mgr",(d+1)+" Nov",["Forgot to punch out.","Machine missed the scan.","Break scan missed.","Repeat scan."][i%4]))}
+const P=[
+ {id:"e1",name:"Ravi Sample",code:"EMP-0123",br:"Store A (Sample)",ch:[C(7,"brk","14:15",470,ANIL,"hr","8 Nov","Break scan missed on the machine."),C(10,"aside","11:00",475,SUN,"mgr","11 Nov","Repeat scan, two minutes after the first."),C(13,"out","14:40",500,ANIL,"hr","14 Nov","Forgot to punch out. Shift lead confirmed 14:40.")],printed:null},
+ {id:"e2",name:"Meena Sample",code:"EMP-0207",br:"Store A (Sample)",ch:meena,printed:null},
+ {id:"e3",name:"Joginder Sample",code:"EMP-0311",br:"Store B (Sample)",ch:[C(12,"in","09:05",485,ANIL,"hr","13 Nov","Arrived on time, machine was down.")],printed:{by:KAV,on:"19 Nov",ids:[0],pages:1}},
+ {id:"e4",name:"Pooja Sample",code:"EMP-0045",br:"Store B (Sample)",ch:[Object.assign(C(4,"out","18:00",540,ANIL,"hr","5 Nov","Forgot to punch out."),{st:"signed",sig:{by:KAV,on:"20 Nov"}}),Object.assign(C(11,"aside","13:02",480,SUN,"mgr","12 Nov","Repeat scan."),{st:"signed",sig:{by:KAV,on:"20 Nov"}})],printed:null},
+ {id:"e5",name:"Harpreet Sample",code:"EMP-0190",br:"Store A (Sample)",ch:[C(5,"out","17:30",510,ANIL,"hr","6 Nov","Forgot to punch out."),C(9,"in","09:00",480,ANIL,"hr","10 Nov","Machine missed the scan."),C(17,"brk","14:20",470,ANIL,"hr","18 Nov","Break scan missed.")],printed:{by:KAV,on:"18 Nov",ids:[0,1],pages:1}},
+ {id:"e6",name:"Sunil Sample",code:"EMP-0402",br:"Store C (Sample)",ch:[C(14,"out","19:10",600,ANIL,"hr","15 Nov","Late close, shift lead confirmed."),C(16,"in","09:00",480,SUN,"mgr","17 Nov","Machine missed the scan.")],printed:null},
+ {id:"e7",name:"Lakhbir Sample",code:"EMP-0066",br:"Store C (Sample)",ch:[Object.assign(C(6,"in","09:00",480,ANIL,"hr","7 Nov","Machine missed the scan."),{st:"app"})],printed:null}
+];
+const CAP=5; /* changes per sheet: ASSUMPTION, check by printing dummy sheets for three people */
+const open=p=>p.ch.map((c,i)=>({c,i})).filter(x=>x.c.st==="open");
+const status=p=>{const o=open(p);if(!o.length)return p.ch.some(c=>c.st==="signed")?"sg":"ap";if(!p.printed)return"nw";return o.some(x=>!p.printed.ids.includes(x.i))?"af":"pr"};
+const done=p=>!open(p).length;
+const sheets=p=>{const o=open(p).map(x=>x.c).sort((a,b)=>a.d-b.d),r=[];for(let i=0;i<o.length;i+=CAP)r.push(o.slice(i,i+CAP));return r};
+const kindTxt=(c,l)=>{const f=l==="hi"?th:te;return f({out:"k_out",in:"k_in",brk:"k_brk",aside:"k_aside"}[c.k],c.tm)};
+const roleTxt=(c,l)=>(l==="hi"?th:te)(c.role);
+const dayTxt=(c,l)=>l==="hi"?`${WDH[wd(c.d)]} ${c.d} नव`:`${WD[wd(c.d)]} ${c.d} Nov`;
+/* ---------- state ---------- */
+let VIEW="list",WHO="kav",DEV="desktop",THEME="light",LST="ok",MI=1,SEL=new Set(),PV=[],REG=null,EAOPEN=false,HOLD=true;
+const meName=()=>WHO==="anil"?ANIL:KAV;
+const $=id=>document.getElementById(id);
+function toast(m){const e=$("toast");e.textContent=m;e.style.display="block";clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display="none",4000)}
+/* ---------- HR: change notices ---------- */
+function rowHtml(p){
+ const st=status(p),o=open(p),n=p.ch.length,cnt=n===1?t("ch1"):t("chn",n);
+ const cov=p.printed?o.filter(x=>p.printed.ids.includes(x.i)):[];
+ const mine=cov.some(x=>x.c.by===meName());
+ let acts="",note="";
+ const regBtn=cov.length?(mine?`<span class="muted" style="max-width:300px">${t("filer")}</span>`:`<button class="btn btn-sm${st==="pr"?" btn-primary":""}" onclick="openReg('${p.id}')">${t("reg")}</button>`):"";
+ if(st==="nw")acts=`<button class="btn btn-sm btn-primary" onclick="openPv(['${p.id}'])">${t("printone")}</button>`;
+ else if(st==="pr")acts=regBtn+`<button class="btn btn-sm" onclick="openPv(['${p.id}'])">${t("printagain")}</button>`;
+ else if(st==="af")acts=`<button class="btn btn-sm btn-primary" onclick="openPv(['${p.id}'])">${t("printagain")}</button>`+regBtn;
+ const pr=p.printed?t("st_pr",p.printed.on,p.printed.by):"";
+ if(st==="nw")note=`<span class="sl sl-info">${ic("info")}<span>${t("st_nw")}</span></span>`;
+ if(st==="pr")note=`<span class="sl sl-wait">${ic("clock")}<span>${pr}</span></span>`;
+ if(st==="af")note=`<span class="sl sl-held">${ic("alert")}<span>${pr}<small>${t("st_af",o.filter(x=>!p.printed.ids.includes(x.i)).length)}</small></span></span>`;
+ if(st==="sg"){const s=p.ch.find(c=>c.st==="signed").sig;note=`<span class="sl sl-ok">${ic("check")}<span>${t("st_sg",s.on,s.by)}</span></span>`}
+ if(st==="ap")note=`<span class="sl sl-ok">${ic("check")}<span>${t("st_ap","8 Nov")}</span></span>`;
+ if(p.dispute&&o.length)note+=`<div class="sl sl-held" style="margin-top:4px">${ic("alert")}<span>${t("nr_note",esc(p.name.split(" ")[0]),p.dispute.on,p.dispute.by,esc(p.dispute.why))}</span></div>`;
+ const cb=o.length?`<label class="cb"><input type="checkbox" aria-label="${esc(t("sel",p.name))}" ${SEL.has(p.id)?"checked":""} onchange="togSel('${p.id}',this.checked)"></label>`:`<span></span>`;
+ return`<div class="row">${cb}<div><div class="nm">${esc(p.name)}</div><div class="meta">${p.code} · ${esc(p.br)} · ${cnt}</div></div><div class="acts">${acts}</div><div class="note">${note}</div></div>`}
+function hrView(){
+ const people=MI===1?P:[],todo=people.filter(p=>open(p).length);
+ let body="";
+ if(LST==="load")body=`<div aria-busy="true" aria-label="${t("loading")}"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>`;
+ else if(LST==="err")body=`<div class="empty" role="alert"><div class="err" style="margin:0 0 12px">${ic("warn")}<span>${t("er_h")}</span></div><button class="btn btn-sm" onclick="setLst('ok')">${t("retry")}</button></div>`;
+ else if(!people.length)body=`<div class="empty"><b>${t("e_h",LANG==="hi"?MHI[MI]:MFULL[MI])}</b><span class="sub">${t("e_p")}</span></div>`;
+ else{
+  const dn=people.filter(done).length;
+  body=`<p class="sub" style="margin:0 0 8px">${t("sum",people.length,LANG==="hi"?MHI[MI]:MFULL[MI],dn,people.length-dn)}</p>
+  <div class="tools"><label class="selall"><span class="cb"><input type="checkbox" ${SEL.size&&SEL.size===todo.length?"checked":""} onchange="selAll(this.checked)"></span>${t("selall",todo.length)}</label>${SEL.size?`<button class="btn btn-primary" onclick="openPv([...SEL])">${t("printsel",SEL.size)}</button>`:""}</div>
+  <div class="list">${people.map(rowHtml).join("")}</div>
+  <p class="logline">${ic("info")}<span>${t("logline")}</span></p>`}
+ return`<div class="scroll"><div class="app-h"><b>${t("title")}</b><small class="muted">Prototype note: ${te("place")}</small></div><div class="pad">
+ <div class="card"><div class="stub">${ic("clock")}<span>${t("stub",P.reduce((a,p)=>a+open(p).length,0))}</span></div></div>
+ <div class="card"><h2>${t("title")}</h2><p class="sub" style="margin:0">${t("intro")}</p>
+ <div class="mbar"><button aria-label="${t("prev")}" ${MI===0?"disabled":""} onclick="setMon(-1)">‹</button><b>${LANG==="hi"?MHI[MI]:MFULL[MI]}</b><button aria-label="${t("next")}" ${MI===1?"disabled":""} onclick="setMon(1)">›</button></div>
+ ${body}</div></div></div>`}
+function setLst(v){LST=v;render()}
+function setMon(d){MI=Math.max(0,Math.min(1,MI+d));SEL.clear();render()}
+function togSel(id,on){on?SEL.add(id):SEL.delete(id);render()}
+function selAll(on){SEL.clear();if(on)P.filter(p=>open(p).length).forEach(p=>SEL.add(p.id));render()}
+/* ---------- print preview ---------- */
+function openPv(ids){PV=ids.slice();VIEW="preview";render()}
+function sheetHtml(p,rows,pg,pages){
+ const ref=`${p.code}/2026-11/${pg}-${pages}`;
+ const tr=rows.map(c=>`<tr><td class="d">${dayTxt(c,"en")}<span class="hi" lang="hi">${dayTxt(c,"hi")}</span></td>
+  <td>${kindTxt(c,"en")}<span class="hi" lang="hi">${kindTxt(c,"hi")}</span><div class="cnt">${te("cnt",fhe(c.min))}<span class="hi" lang="hi" style="font-weight:400">${th("cnt",fhh(c.min))}</span></div></td>
+  <td>${esc(c.by)}<br>${c.role==="hr"?"HR":roleTxt(c,"en")+" / <span lang=\"hi\">"+roleTxt(c,"hi")+"</span>"} \u00b7 ${c.on}</td>
+  <td>${esc(c.why)}</td></tr>`).join("");
+ return`<section class="a4" aria-label="${esc(p.name)}, page ${pg} of ${pages}">
+ <div class="top"><span><b>${bi("company").replace(/<span.*$/,"")}</b></span><span>${te("s_ref",ref)}</span></div>
+ <h2>${te("s_title")} · ${MFULL[MI]}<span class="hi" lang="hi">${th("s_title")} · ${MHI[MI]}</span></h2>
+ <div class="who"><div class="nm">${esc(p.name)}</div><div>${te("s_emp",p.code,esc(p.br))}</div></div>
+ <p class="intro">${bi("s_intro")}</p>
+ <table><colgroup><col style="width:28mm"><col style="width:66mm"><col style="width:36mm"><col></colgroup>
+ <thead><tr><th>${te("c_day")}<span class="hi" lang="hi">${th("c_day")}</span></th><th>${te("c_what")}<span class="hi" lang="hi">${th("c_what")}</span></th><th>${te("c_who")}<span class="hi" lang="hi">${th("c_who")}</span></th><th>${te("c_why")}<span class="hi" lang="hi">${th("c_why")}</span></th></tr></thead><tbody>${tr}</tbody></table>
+ <div class="signblk"><div class="rule">${bi("s_nr")}</div>${HOLD?`<div class="rule l">${bi("s_hold")}</div>`:""}
+ <p class="read">${bi("s_read")}</p>
+ <div class="boxes"><div class="box s">${te("s_sign")} / <span lang="hi">${th("s_sign")}</span></div><div class="box dt">${te("s_date")} / <span lang="hi">${th("s_date")}</span></div></div></div>
+ <div class="foot">${te("s_foot",meName(),NOW,pg,pages)} ${bi("s_priv")}</div></section>`}
+function pvView(){
+ const ps=PV.map(id=>P.find(p=>p.id===id)),all=[];
+ ps.forEach(p=>{const sh=sheets(p);sh.forEach((rows,i)=>all.push(sheetHtml(p,rows,i+1,sh.length)))});
+ const n=all.length;
+ return`<div class="scroll" id="pvscroll"><div class="pvbar noprint"><button class="btn btn-sm" onclick="VIEW='list';render()">‹ ${t("back")}</button><button class="btn btn-primary btn-sm" onclick="doPrint()">${n===1?t("pv_print1"):t("pv_print",n)}</button>
+ <label style="display:flex;align-items:center;gap:6px;font-size:13px;min-height:44px"><input type="checkbox" ${HOLD?"checked":""} onchange="HOLD=this.checked;render()" style="width:20px;height:20px">${t("pv_tog")} <span class="tag">review</span></label>
+ <div class="t">${t("pv_note",meName(),NOW)}<br><span class="tag">${t("pv_hi")}</span></div></div>
+ <div class="pvwrap" id="pvwrap">${all.join("")}</div></div>`}
+function doPrint(){
+ const ps=PV.map(id=>P.find(p=>p.id===id));let sh=0;
+ ps.forEach(p=>{const o=open(p);sh+=sheets(p).length;p.printed={by:meName(),on:"21 Nov",ids:o.map(x=>x.i),pages:sheets(p).length}});
+ toast(te("toast_pr",NOW,ps.length,sh));
+ setTimeout(()=>window.print(),60);
+}
+function fit(){const w=$("pvwrap");if(!w)return;const sc=$("pvscroll");const avail=sc.clientWidth-24,z=Math.min(1,avail/794);w.querySelectorAll(".a4").forEach(a=>a.style.zoom=z)}
+/* ---------- record the signature (the 087 v5 dialog, reused) ---------- */
+function openReg(id){REG={id,files:[],err:""};render()}
+function regHtml(){
+ const p=P.find(x=>x.id===REG.id),o=open(p),cov=o.filter(x=>p.printed.ids.includes(x.i)),later=o.length-cov.length,pages=p.printed.pages||1,first=p.name.split(" ")[0];
+ const li=cov.map(x=>`<li>${dayTxt(x.c,LANG)}: ${kindTxt(x.c,LANG)}</li>`).join("");
+ return`<div id="scrim" onclick="if(event.target===this){REG=null;render()}"><div id="sheet" role="dialog" aria-modal="true" aria-labelledby="rgT" onkeydown="if(event.key==='Escape'){REG=null;render()}"><div class="grab"></div>
+ <h2 id="rgT">${t("reg")}</h2><p class="ctx">${pages>1?t("rg_pn",esc(first),pages):t("rg_p",esc(first))}</p>
+ <p class="sub" style="margin:0 0 4px;font-weight:600">${cov.length===1?t("rg_cov1"):t("rg_cov",cov.length)}</p><ul>${li}</ul>${later?`<p class="hint" style="margin:-8px 0 16px">${t("rg_later",later)}</p>`:""}
+ <div class="field"><label class="fl" for="f-ph">${pages>1?t("rg_photos",pages):t("rg_photo")}</label><input type="file" id="f-ph" accept="image/*" capture="environment" ${pages>1?"multiple":""} style="width:100%;min-height:44px" aria-describedby="ph-h" onchange="regFiles(this)">
+ <p class="hint" id="ph-h">${t("rg_ph_h",esc(first))}</p>${REG.err?`<div class="err" role="alert">${ic("warn")}<span>${REG.err}</span></div>`:""}
+ ${REG.files.length?`<p class="hint" style="color:var(--text2)">${t("rg_check")}</p>`+REG.files.map(u=>`<img src="${u}" alt="Your photo of the signed notice">`).join(""):""}</div>
+ <p class="sub" style="margin:0 0 16px">${t("rg_keep")}</p>
+ ${REG.nr?`<div class="field"><label class="fl" for="f-nr">${t("nr_l",esc(first))}</label><textarea id="f-nr" rows="3" style="width:100%;font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text)" aria-describedby="nr-h" oninput="REG.why=this.value">${esc(REG.why||"")}</textarea><p class="hint" id="nr-h">${t("nr_h")}</p>${REG.nerr?`<div class="err" role="alert">${ic("warn")}<span>${REG.nerr}</span></div>`:""}</div>
+ <div class="acts2"><button class="btn" onclick="REG.nr=false;REG.nerr='';render()">${t("nr_back")}</button><button class="btn btn-primary" onclick="doNr()">${t("nr_ok")}</button></div>`:`<div class="acts2"><button class="btn" onclick="REG=null;render()">${t("cancel")}</button><button class="btn btn-primary" onclick="doReg()">${t("rg_ok")}</button></div>
+ <button class="btn" style="width:100%;margin-top:8px" onclick="REG.nr=true;render()">${t("nr_btn")}</button>`}</div></div>`}
+function doNr(){
+ const p=P.find(x=>x.id===REG.id);
+ if(!(REG.why||"").trim()){REG.nerr=t("nr_err",esc(p.name.split(" ")[0]));render();return}
+ const n=open(p).filter(x=>p.printed.ids.includes(x.i)).length;
+ p.dispute={by:meName(),on:"21 Nov",why:REG.why.trim()};
+ toast(te("toast_nr",p.name.split(" ")[0],n));REG=null;render();
+}
+function regFiles(inp){REG.files=[...inp.files].map(f=>URL.createObjectURL(f));REG.err="";render();const e=$("f-ph");if(e)e.focus()}
+function doReg(){
+ const p=P.find(x=>x.id===REG.id),pages=p.printed.pages||1;
+ if(!REG.files.length){REG.err=t("rg_err");render();return}
+ if(REG.files.length!==pages){REG.err=t("rg_err2",pages,REG.files.length);render();return}
+ const cov=open(p).filter(x=>p.printed.ids.includes(x.i));
+ cov.forEach(x=>{x.c.st="signed";x.c.sig={by:meName(),on:"21 Nov"}});
+ if(open(p).length)p.printed=null;
+ toast(te("toast_reg",p.name,cov.length));REG=null;render();
+}
+/* ---------- employee with the app ---------- */
+function empView(){
+ const p=P[0],n=p.ch.length,s=p.ch.slice().sort((a,b)=>a.d-b.d);
+ const stt=c=>c.st==="signed"?"ea_s":c.st==="app"?"ea_a":"ea_n";
+ const rows=EAOPEN?`<div style="margin-top:12px">`+s.map(c=>`<button class="row" style="display:block;width:100%;text-align:left;padding:12px 16px;min-height:56px" onclick="toast(te('ea_open'))"><div class="nm">${dayTxt(c,LANG)}: ${kindTxt(c,LANG)}</div><div class="meta">${t("ea_by",esc(c.by),roleTxt(c,LANG))}, ${c.on}</div><div class="meta" style="font-weight:600;color:var(--text)">${t(stt(c))}</div></button>`).join("")+`<p class="hint">${t("ea_tip")}</p></div>`:"";
+ return`<div class="scroll"><div class="app-h"><b>${t("ea_h")} · ${LANG==="hi"?MHI[1]:MFULL[1]}</b><small>Ravi Sample (Sample), signed in with the app</small></div><div class="pad">
+ <div class="card"><div class="sl sl-wait">${ic("info")}<span>${t("ea_l",n)}</span></div><button class="btn btn-sm" style="margin-top:8px" aria-expanded="${EAOPEN}" onclick="EAOPEN=!EAOPEN;render()">${EAOPEN?t("ea_x"):t("ea_b")}</button>${rows}</div>
+ <p class="muted">Prototype note: ${te("ea_rest")}</p></div></div>`}
+/* ---------- shell ---------- */
+function render(){
+ const st=$("stage");st.className=(DEV==="phone"||VIEW==="emp"&&false?"phone":"desktop")+(VIEW==="emp"?" emp":"");
+ if(VIEW==="emp"&&DEV==="phone")st.className="phone emp";
+ document.documentElement.setAttribute("data-theme",THEME);document.documentElement.lang=LANG==="hi"?"hi":"en";
+ st.innerHTML=(VIEW==="list"?hrView():VIEW==="preview"?pvView():empView())+(REG&&VIEW==="list"?regHtml():"");
+ buildDemo();
+ const d=document.documentElement.dataset;d.overflow=[...document.querySelectorAll(".a4")].map(a=>a.scrollHeight>a.clientHeight+1?"OVER":"ok").join(",");
+ d.wide=document.documentElement.scrollWidth>document.documentElement.clientWidth?"WIDE":"ok";
+ fit();
+ d.small=[...document.querySelectorAll("#stage button,#stage .cb")].filter(e=>e.offsetHeight<44&&e.offsetHeight>0).length;
+}
+function show(v){VIEW=v;REG=null;if(v==="emp"&&DEV==="desktop"){}render()}
+function jump(k){
+ if(k==="list"){VIEW="list";LST="ok";MI=1}
+ else if(k==="pv1"){PV=["e1"];VIEW="preview"}
+ else if(k==="pv2"){PV=["e2"];VIEW="preview"}
+ else if(k==="reg"){VIEW="list";LST="ok";MI=1;WHO="kav";REG={id:"e3",files:[],err:""}}
+ else if(k==="emp"){VIEW="emp"}
+ render();
+}
+function buildDemo(){
+ const g=(id,items)=>{const e=$(id),lab=e.firstElementChild.outerHTML;e.innerHTML=lab+items.map(([l,on,fn])=>`<button aria-pressed="${on}" onclick="${fn}">${l}</button>`).join("")};
+ g("g-show",[["1 HR list",VIEW==="list"&&!REG,"jump('list')"],["2 A4 notice, 3 changes",VIEW==="preview"&&PV[0]==="e1","jump('pv1')"],["3 A4 notice, 14 changes (3 pages)",VIEW==="preview"&&PV[0]==="e2","jump('pv2')"],["4 Record signature",!!REG,"jump('reg')"],["5 Employee with the app",VIEW==="emp","jump('emp')"]]);
+ g("g-who",[["Kavita (HR)",WHO==="kav","WHO='kav';render()"],["Anil (HR, filed Ravi's changes)",WHO==="anil","WHO='anil';render()"]]);
+ g("g-st",[["Normal",LST==="ok","setLst('ok')"],["Loading",LST==="load","setLst('load')"],["Error",LST==="err","setLst('err')"]]);
+ g("g-dev",[["Laptop",DEV==="desktop","DEV='desktop';render()"],["Phone 390",DEV==="phone","DEV='phone';render()"]]);
+ g("g-lang",[["English",LANG==="en","LANG='en';render()"],["हिंदी (machine draft)",LANG==="hi","LANG='hi';render()"]]);
+ g("g-th",[["Light",THEME==="light","THEME='light';render()"],["Dark",THEME==="dark","THEME='dark';render()"]]);
+}
+addEventListener("resize",fit);
+location.hash.slice(1).split(",").forEach(h=>{if(h==="hi")LANG="hi";if(h==="phone")DEV="phone";if(h==="dark")THEME="dark";if(["list","pv1","pv2","reg","emp"].includes(h))jump(h)});
+render();
+</script></body></html>

@@ -14,6 +14,15 @@ required_apps = ["frappe/erpnext"]
 # leaves what an employee sees exactly as it was.
 app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
 
+# ── ALV-394: what the joiner types is not what their account is called ───
+# 079 gives a joiner an opaque login id, so the number or email HR reached
+# them on matches nothing. This swaps one for the other.
+#
+# `before_login`, not `before_request`: the login happens inside
+# `HTTPRequest()` (frappe/app.py:242), which is TWO LINES BEFORE the
+# before_request loop (:244). A hook there never runs on a sign-in at all.
+before_login = ["alvoraa_portal.auth.let_the_joiner_type_what_hr_gave_them"]
+
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = ["alvoraa_portal.auth.on_login",
             # ALV-249 D-3: a login linked by a direct database write, or whose
@@ -139,6 +148,8 @@ doctype_js = {
 # seen" column on purpose.
 doctype_list_js = {
     "Alvoraa Field Device": "public/js/alvoraa_field_device_list.js",
+    # Slice 085 (AC-8): the Held chip on the Attendance list.
+    "Attendance": "public/js/attendance_list_held.js",
 }
 
 doc_events = {
@@ -148,17 +159,48 @@ doc_events = {
     # its own errors: a slip that cannot be produced is a person who cannot
     # be paid.
     "Salary Slip": {
-        "validate": "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+        "validate": [
+            "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+            # Slice 085: Held is not a status stock Frappe reads, so it would be
+            # paid. Wired AFTER the engine's hook; does nothing for a rule-set company.
+            "alvoraa_portal.held_day.deduct_held_days",
+        ],
         # Slice 067: the notes the validate hook leaves for HR (held days, red
         # and green lines not applied). A new slip is not in the database yet
         # during validate, so a comment on it is refused; it is posted here.
         "on_update": "alvoraa_portal.payroll_slip.post_slip_notes",
         # Slice 066 (SEC-9, D2): a slip is not submitted with a stale grooming
         # line or one above the legal limit. Does nothing without a rule set.
-        "before_submit": "alvoraa_portal.payroll_slip.check_grooming_before_submit",
+        "before_submit": [
+            "alvoraa_portal.payroll_slip.check_grooming_before_submit",
+            # Slice 087 (V5): not while an HR-filed or cut change in the period is unconfirmed.
+            "alvoraa_portal.punch_fix.refuse_slip_while_unconfirmed",
+        ],
     },
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+        # Slice 085 (R5): approving is scoped to the HR login's companies, on every door.
+        # An HR login does not submit a draft of its own day either, whoever made it (SEC-2).
+        "before_submit": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+        ],
+        # Slice 085 (SEC-2): nobody confirms, cancels, deletes or makes their OWN
+        # attendance, on any door. See attendance_doors.py.
+        # Slice 085: the doors first, then the hold, which writes Held before the first save.
+        "validate": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_new",
+            "alvoraa_portal.held_day.hold_odd_punch_day",
+        ],
+        "before_update_after_submit": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+        ],
+        "before_cancel": [
+            "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+        ],
+        "on_trash": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
         # ALV-351: shows HR the held-day confirm fields on a missing-punch day.
         "onload": "alvoraa_portal.payroll_rules_apply.attendance_onload",
     },
@@ -177,17 +219,46 @@ doc_events = {
     # document, not the portal endpoint, because the Desk is the other half of
     # where these get decided.
     "Attendance Request": {
-        "on_submit": "alvoraa_portal.attendance_correction.on_submit",
+        # Slice 085: after stock has written its row, the Held day is released
+        # from the corrected time, by the shift's own thresholds.
+        # Slice 087: `punch_fix.apply` replaces 085's `release_by_hr`: it adds the real
+        # punch, sets the ticked ones aside, judges the day and writes the release.
+        "on_submit": [
+            "alvoraa_portal.attendance_correction.on_submit",
+            "alvoraa_portal.punch_fix.apply",
+        ],
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
+        "before_cancel": [
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+            "alvoraa_portal.punch_fix.refuse_cancel",
+        ],
+        "before_update_after_submit": "alvoraa_portal.attendance_doors.refuse_outside_company",
+        # Both validates are kept: 085's missing-time rule and 084's own-day window.
+        "validate": [
+            # Slice 087: first, so `alvoraa_for_held_day` and the derived In/Out are
+            # set before the limit and the window read them.
+            "alvoraa_portal.punch_fix.validate",
+            "alvoraa_portal.held_day.validate_missing_time",
+            # Slice 085: the monthly limit, on every door and on every draft edit (a
+            # held-day draft edited into an ordinary request is counted); held-day
+            # requests are outside it.
+            "alvoraa_portal.held_day.enforce_monthly_limit",
+            "alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
+        ],
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
-        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        # Slice 085 (SEC-3): and nobody decides a request they raised.
+        "before_submit": [
+            "hrms.alvoraa_hr_core.access.refuse_own_submit",
+            "alvoraa_portal.attendance_doors.refuse_raiser_submit",
+            "alvoraa_portal.attendance_doors.refuse_outside_company",
+            "alvoraa_portal.punch_fix.before_submit",
+            "alvoraa_portal.held_day.note_held_day",
+        ],
         # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
         # half-day leave day at a company with an enabled pay rule set.
-        "before_insert": "alvoraa_portal.leave_rules.prepare_half_day_correction",
-        # Slice 084: how far back a person may raise their OWN day. On validate,
-        # not before_insert, because an employee may edit a draft's dates after
-        # creating it - and it must hold on the Desk and the REST API too.
-        "validate": "alvoraa_portal.attendance_correction.refuse_own_day_outside_window",
+        "before_insert": [
+            "alvoraa_portal.leave_rules.prepare_half_day_correction",
+        ],
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────
@@ -220,7 +291,15 @@ doc_events = {
         # ALV-338: a person's own punch must be made near their own branch. On
         # validate, after Frappe HR has set the punch's shift. Machine punches and
         # punches HR adds are never measured. See branch_geofence.py.
-        "validate": "alvoraa_portal.branch_geofence.check_phone_punch",
+        "validate": [
+            "alvoraa_portal.branch_geofence.check_phone_punch",
+            # Slice 087: the four marks on a punch are written by an approval only.
+            "alvoraa_portal.punch_fix.guard_marks",
+        ],
+        "on_trash": "alvoraa_portal.punch_fix.guard_marks",
+        # Slice 085: a late machine punch releases a Held day. Machine account
+        # only; the slip refresh is queued after commit, with ids only.
+        "after_insert": "alvoraa_portal.held_day.release_on_machine_punch",
     },
 
     "Employee": {
@@ -385,7 +464,11 @@ doc_events = {
     "Company": {
         "after_insert": "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
         "on_update":    "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
-        "validate":     "alvoraa_portal.expense_accounts.validate_expense_claim_payable_account",
+        "validate":     [
+            "alvoraa_portal.expense_accounts.validate_expense_claim_payable_account",
+            # Slice 085 (SEC-6): who may change the held-day settings.
+            "alvoraa_portal.held_day.guard_company_settings",
+        ],
     },
     # The other half of the same gap. A claim needs an expense account on its
     # TYPE as well. ALV-178 fills that, but only when a COMPANY is saved - so a
@@ -702,6 +785,10 @@ after_migrate = [
     # noticed because both its hooks return early on a company with no rule
     # set - which, until DTC's exists, is every company. See payroll_fields.py.
     "alvoraa_portal.payroll_fields.after_migrate",
+    # Slice 085 (ALV-392): the Held status and the fields behind it. Both lists,
+    # because a site built with `bench install-app` never runs a migrate.
+    "alvoraa_portal.held_day.after_migrate",
+    "alvoraa_portal.punch_fix.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
@@ -791,6 +878,10 @@ after_install = [
     # noticed because both its hooks return early on a company with no rule
     # set - which, until DTC's exists, is every company. See payroll_fields.py.
     "alvoraa_portal.payroll_fields.after_migrate",
+    # Slice 085 (ALV-392): the Held status and the fields behind it. Both lists,
+    # because a site built with `bench install-app` never runs a migrate.
+    "alvoraa_portal.held_day.after_migrate",
+    "alvoraa_portal.punch_fix.after_migrate",
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
@@ -832,4 +923,6 @@ override_whitelisted_methods = {
 # fix this and `override_doctype_class` is the right mechanism instead.
 override_doctype_class = {
     "CRM Invitation": "alvoraa_portal.overrides.crm_invitation.AlvoraCRMInvitation",
+    # Slice 087: three stock blocks a punch fix cannot get past (see the file).
+    "Attendance Request": "alvoraa_portal.overrides.attendance_request.AlvoraAttendanceRequest",
 }

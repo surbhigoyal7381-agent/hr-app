@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>087 Attendance follows the punches - prototype v5, Confirm redesigned (all names and times are Sample)</title>
+<style>
+/* Tokens copied from templates/includes/design_system.html (light and dark). --on-primary is added here: white text on the dark theme's light purple fails contrast (ux-learnings, 6 Nov). */
+:root,:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--on-primary:#FFFFFF;--green:#1B7F5A;--red:#B3261E;--amber:#94600F;--sh1:0 1px 2px rgba(0,0,0,.06);--sh3:0 12px 32px rgba(0,0,0,.16);--r:10px;--r-sm:6px;--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--on-primary:#1A1815;--green:#5DBF97;--red:#F08A82;--amber:#E0A94A;--sh1:0 1px 2px rgba(0,0,0,.4);--sh3:0 12px 32px rgba(0,0,0,.6)}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.5}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.ic{flex:none;vertical-align:-3px}
+/* ---- review scaffolding, not product ---- */
+#demo{position:sticky;top:0;z-index:80;background:var(--surface2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:13px}
+#demo .g{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#demo .g>span{color:var(--text3);font-weight:700;font-size:12px;margin-right:2px}
+#demo button{border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-sm);padding:4px 8px;min-height:32px}
+#demo button[aria-pressed=true]{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+#demo .sample{border:1px solid var(--amber);color:var(--amber);border-radius:var(--r-sm);padding:2px 8px;font-weight:700;font-size:12px}
+/* ---- stage: a phone frame with its own scroll, so the bar and the sheet sit where they do on a phone ---- */
+#stage{margin:16px auto;position:relative;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+#stage.phone{width:390px;max-width:100%;height:min(800px,calc(100vh - 150px));min-height:560px;border:10px solid #2a2a2e;border-radius:30px;box-shadow:var(--sh3)}
+#stage.phone.p360{width:360px}
+#stage.desktop{max-width:1040px;padding:0 16px;overflow:visible}
+#stage.desktop.emp{max-width:560px;height:min(800px,calc(100vh - 150px));border:1px solid var(--border);border-radius:var(--r);overflow:hidden;padding:0}
+@media(max-width:460px){#stage.phone{border:0;border-radius:0;width:100%;margin:0}}
+.scroll{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.app-h{background:var(--surface);border-bottom:1px solid var(--border);padding:16px;display:flex;flex-direction:column;gap:0}
+.app-h b{font-size:18px;line-height:24px}.app-h small{font-size:13px;color:var(--text3)}
+.pad{padding:16px 16px 24px}
+.desktop:not(.emp) .app-h{background:none;border:0;padding:16px 0 8px}
+.desktop:not(.emp) .pad{padding:8px 0 24px}
+.has-bar .pad{padding-bottom:112px}
+/* ---- one status line with an icon, instead of coloured panels ---- */
+.sl{display:flex;gap:8px;align-items:flex-start;font-weight:600;font-size:15px;line-height:24px}
+.sl .ic{margin-top:3px}
+.sl-ok .ic{color:var(--green)}.sl-held .ic{color:var(--amber)}.sl-wait .ic{color:var(--primary)}.sl-lock .ic,.sl-info .ic{color:var(--text3)}
+.sl span{min-width:0}
+.sub{font-size:13px;color:var(--text2);line-height:20px;margin:4px 0 0}
+.muted{color:var(--text3);font-size:13px}
+/* ---- day list ---- */
+.dayrow{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:56px;padding:8px 16px;border:1px solid var(--border);background:var(--surface);border-radius:var(--r);margin-top:8px}
+.dayrow:first-child{margin-top:0}
+.dayrow[aria-expanded=true]{border-color:var(--primary)}
+.dayrow .d{font-weight:700}.dayrow .s{font-size:13px;color:var(--text2);display:flex;gap:6px;align-items:center;text-align:right}
+.dayrow .s .ic{width:16px;height:16px}
+.s-ok .ic{color:var(--green)}.s-held .ic{color:var(--amber)}.s-wait .ic{color:var(--primary)}.s-lock .ic{color:var(--text3)}
+.day{border:1px solid var(--primary);border-top:0;background:var(--surface);border-radius:0 0 var(--r) var(--r);padding:16px;margin-bottom:8px;margin-top:-6px;padding-top:22px}
+/* ---- the day as a timeline ---- */
+.strip{position:relative;height:28px;margin:16px 0 4px}
+.strip .band{position:absolute;top:0;bottom:0;background:var(--primary-lt);border-radius:6px}
+.strip .bar{position:absolute;top:11px;height:6px;background:var(--primary);border-radius:3px}
+.strip .pt{position:absolute;top:7px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--surface);border:3px solid var(--text2)}
+.strip .pt.add{background:var(--green);border-color:var(--green)}
+.strip .pt.aside{background:var(--surface2);border-color:var(--border2)}
+.strip-cap{font-size:12px;color:var(--text3);display:flex;justify-content:space-between}
+.tl{list-style:none;margin:12px -4px 0;padding:0}
+.tl li{margin:0}
+.tl-b,.tl-s{display:grid;grid-template-columns:56px 24px 1fr auto;align-items:center;column-gap:8px;width:100%;text-align:left;background:none;border:0;padding:0 4px;border-radius:8px}
+.tl-b:hover{background:var(--surface2)}
+.tl-p{min-height:56px}.tl-g{min-height:44px}
+.tm{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.tl-g .tm{font-weight:400;color:var(--text3);font-size:13px}
+.tl-g .gl{font-size:14px;color:var(--primary);font-weight:600;padding:8px 0}
+.tl-p .lb{font-size:15px;font-weight:600;line-height:22px}
+.tl-p .sb{font-size:13px;color:var(--text2);line-height:20px}
+.rail{position:relative;align-self:stretch}
+.rl{position:absolute;left:11px;width:2px}
+.rl.up{top:0;bottom:50%}.rl.dn{top:50%;bottom:0}
+.s-work{left:10px;width:4px;background:var(--primary)}
+.s-brk{background:repeating-linear-gradient(to bottom,var(--border2) 0 4px,transparent 4px 8px)}
+.s-unk{background:var(--border2)}.s-none{display:none}
+.dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:var(--surface);border:3px solid var(--text2)}
+.dot.io{border-color:var(--primary)}
+.dot.add{background:var(--green);border-color:var(--green)}
+.dot.pend{border-style:dashed}
+.dot.aside{background:var(--surface2);border-color:var(--border2)}
+.gdot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:var(--surface);border:2px dashed var(--primary);color:var(--primary);display:grid;place-items:center}
+.gdot .ic{width:14px;height:14px;margin:0}
+.tl-p.aside .tm{text-decoration:line-through;text-decoration-thickness:2px;color:var(--text3)}
+.tl-p.aside .lb{color:var(--text3)}
+.tl-p.add .tm{color:var(--green)}
+.lnk{background:none;border:0;color:var(--primary);font-weight:600;font-size:14px;min-height:44px;padding:0 4px;text-decoration:underline;text-underline-offset:3px}
+.hint{font-size:13px;color:var(--text3);margin:8px 0 0}
+.one{font-size:13px;color:var(--text2);margin:8px 0 0}
+.facts{font-size:13px;color:var(--text3);margin:2px 0 0}
+/* ---- sticky send bar and bottom sheet (inside the phone frame) ---- */
+#bar{position:absolute;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -4px 16px rgba(0,0,0,.08);padding:12px 16px;display:flex;gap:16px;align-items:center}
+#bar .sum{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}
+#bar .sum small{display:block;font-weight:400;color:var(--text3);font-size:12px}
+#scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:flex-end}
+#sheet{width:100%;background:var(--surface);border-radius:16px 16px 0 0;padding:8px 16px 24px;box-shadow:var(--sh3);max-height:90%;overflow:auto}
+#sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 16px}
+#sheet h2{margin:0;font-size:18px;line-height:24px}
+#sheet .ctx{font-size:14px;color:var(--text2);margin:4px 0 16px}
+.fl{display:block;font-weight:600;font-size:14px;margin:0 0 4px}
+input[type=time],textarea{font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);width:100%;min-height:48px}
+input[type=time]{max-width:200px;font-variant-numeric:tabular-nums}
+textarea{min-height:48px;height:48px;resize:vertical}
+.field{margin-bottom:16px}
+.infer{font-size:14px;color:var(--text2);margin:8px 0 0;min-height:20px}
+.infer b{color:var(--text)}
+.err{display:flex;gap:8px;color:var(--red);font-weight:600;font-size:14px;margin:8px 0}
+input.bad{border-color:var(--red);border-width:2px}
+.acts{display:flex;gap:8px;margin-top:8px}
+.btn{min-height:48px;padding:8px 20px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);font-weight:600;font-size:15px}
+.btn-primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-h)}
+#sheet .acts .btn{flex:1}
+.other{display:block;margin-top:16px}
+/* ---- HR card ---- */
+.hrcard{container-type:inline-size;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 24px 8px;margin-bottom:16px;box-shadow:var(--sh1)}
+@container (max-width:560px){.hrcard{padding:16px}}
+.hrh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.hrh b{font-size:16px}.hrh span{font-size:13px;color:var(--text3)}
+.says{font-size:14px;color:var(--text2);margin:4px 0 0}
+.says q{display:block;margin-top:4px;padding-left:12px;border-left:2px solid var(--border2);quotes:none;font-size:14px}
+.ba{display:grid;grid-template-columns:1fr 24px 1fr;gap:0 16px;align-items:start;margin-top:16px}
+.ba .arr{color:var(--text3);padding-top:30px}
+.ba h4{margin:0;font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.04em;text-transform:uppercase}
+.ba .strip{margin-top:8px}
+.tms{font-size:14px;font-variant-numeric:tabular-nums;margin:4px 0 8px;color:var(--text2)}
+.tms .a{color:var(--green);font-weight:700}.tms .x{text-decoration:line-through;color:var(--text3)}
+@container (max-width:560px){.ba{grid-template-columns:1fr;gap:8px}.ba .arr{display:none}}
+.hrfoot{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:8px 0 0;padding-top:8px;border-top:1px solid var(--border)}
+.hrfoot .grow{flex:1}
+.hrcard .btn{min-height:44px}
+.noteBox{margin:8px 0 0}
+.legend{font-size:12px;color:var(--text3);margin:8px 0 0}
+.sec{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:24px 0 8px}
+.done{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--border);font-size:14px}
+.empty{color:var(--text2);padding:16px 0}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 16px;border-radius:var(--r);box-shadow:var(--sh3);z-index:90;max-width:92vw;display:none;font-size:14px}
+
+/* ---- v3: counsel's two conditions (ALV-418 reason on every request, ALV-419 employee Confirm). Same tokens as v2. ---- */
+#bar{flex-direction:column;align-items:stretch;gap:8px;padding:12px 16px}
+.has-bar .pad{padding-bottom:240px}
+#bar .sum{flex:none}
+.lblrow{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.req{font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap}
+.fl .why{display:block;font-weight:400;font-size:12px;color:var(--text3);line-height:16px}
+#bar .rsn{margin:0}
+#bar textarea,.cf-nr textarea{resize:none;overflow:hidden;max-height:120px}
+textarea.bad{border-color:var(--red);border-width:2px}
+#bar .err,.cf-nr .err{margin:8px 0 0}
+#bar .go{display:flex;align-items:center;gap:12px}
+#bar .go small{flex:1;min-width:0;font-size:12px;color:var(--text3);line-height:16px}
+#bar .go .btn{flex:none}
+::placeholder{color:var(--text3);opacity:1}
+.sl-ask .ic{color:var(--primary)}
+.fact{margin:12px 0 0;font-weight:700;font-size:15px;line-height:22px;display:flex;gap:8px;align-items:flex-start}
+.fact .ic{color:var(--green);margin-top:2px}
+.q{margin:8px 0 0;padding-left:12px;border-left:2px solid var(--border2);font-size:14px;line-height:20px}
+.q small{display:block;color:var(--text3);font-size:12px;line-height:16px}
+.cf-acts{display:flex;gap:8px;margin-top:16px}.cf-acts .btn{flex:1}
+.cf-nr{margin-top:16px}
+.cf-acts+.facts,.cf-nr+.facts{margin-top:16px}
+.hcard{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;box-shadow:var(--sh1)}
+.hcard h2{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.need{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--border);font-size:15px}
+.need>span{flex:1;min-width:0}
+.need .btn{min-height:44px;padding:8px 16px}
+.revnote{font-size:12px;color:var(--text3);margin:16px 0 0}
+
+/* ---- v5: Confirm redesigned (Surbhi, 21 Nov): approval never waits; confirmation gates pay ---- */
+#stage.desktop:not(.emp) #scrim{position:fixed;z-index:70;align-items:center;justify-content:center}
+#stage.desktop:not(.emp) #sheet{border-radius:16px;max-width:520px}
+.cfq{font-size:13px;color:var(--text2);display:flex;gap:8px;align-items:flex-start;margin:8px 0 0;line-height:20px}
+.cfq .ic{margin-top:1px;color:var(--text3)}
+.cfq b{color:var(--text)}
+.regrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 0}
+.regrow .sub{margin:0;flex:1;min-width:200px}
+.ppc .says{margin-bottom:8px}
+.pp{display:grid;grid-template-columns:1fr auto;gap:8px 16px;padding:12px 0;border-top:1px solid var(--border);align-items:center}
+.pp .w{font-size:14px;line-height:20px}.pp .w b{font-size:15px}.pp .st{font-size:13px;color:var(--text2)}
+.pp .a{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.pp .a .btn{min-height:44px;padding:8px 14px}
+@media(max-width:700px){.pp{grid-template-columns:1fr}.pp .a{justify-content:flex-start}}
+.refuse{display:flex;gap:8px;color:var(--red);font-size:14px;line-height:20px;margin-top:12px}
+.refuse ul{margin:4px 0 0;padding-left:18px;color:var(--text)}
+.okline{display:flex;gap:8px;color:var(--green);font-weight:600;font-size:14px;margin-top:12px}
+.swt{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+.swt th,.swt td{text-align:left;padding:8px 12px 8px 0;border-top:1px solid var(--border);vertical-align:top}
+.swt th{font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.flagc{color:var(--amber);font-weight:700}
+input[type=file]{font:inherit;font-size:16px;min-height:44px;padding:8px 0}
+.tagn{display:inline-block;font-size:12px;font-weight:700;color:var(--amber);border:1px solid var(--amber);border-radius:6px;padding:0 6px;margin-left:8px}
+</style></head><body>
+<div id="demo" role="toolbar" aria-label="Review controls (not part of the product)">
+  <span class="sample">Review controls. Every name, time and rule figure is Sample.</span>
+  <div class="g"><span>Person</span>
+    <button data-p="emp" aria-pressed="true">Employee: Ravi Sample</button>
+    <button data-p="hr1" aria-pressed="false">HR: Anil Sample</button>
+    <button data-p="hr2" aria-pressed="false">HR: Kavita Sample</button></div>
+  <div class="g"><span>Device</span>
+    <button data-d="phone" aria-pressed="true">Phone 390</button>
+    <button data-d="p360" aria-pressed="false">Phone 360</button>
+    <button data-d="desktop" aria-pressed="false">Desktop</button></div>
+  <div class="g"><span>Language</span>
+    <button data-l="en" aria-pressed="true">English</button>
+    <button data-l="hi" aria-pressed="false">हिन्दी (machine draft)</button></div>
+  <div class="g"><span>Theme</span>
+    <button data-t="light" aria-pressed="true">Light</button>
+    <button data-t="dark" aria-pressed="false">Dark</button></div>
+  <div class="g"><span>Show</span>
+    <button data-sc="1">1 Reason on a Held day</button>
+    <button data-sc="2">2 Confirm: HR filed</button>
+    <button data-sc="3">3 Confirm: manager filed</button>
+    <button data-sc="4">4 Home nudge</button>
+    <button data-sc="5">5 Cut by manager</button><button data-sc="6">6 HR: before payroll</button></div>
+  <div class="g"><button id="reset">Start again</button></div>
+</div>
+<div id="stage" class="phone"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+/* words: [English, Hindi (machine draft, needs native review)] */
+const T={
+ tag_you_hr:["Added by HR · sent for you","HR ने जोड़ा · आपके लिए भेजा"],
+ cf_h_appr_hr:["HR added this for you and has approved it. Is it right?","HR ने यह आपके लिए जोड़ा और मंज़ूर कर दिया है। क्या यह सही है?"],
+ cf_h_appr_m:["HR approved this change that {0} sent for you. Is it right?","{0} ने आपके लिए जो बदलाव भेजा था, HR ने उसे मंज़ूर कर दिया है। क्या यह सही है?"],
+ cf_truth_p:["Press Confirm only if this is what happened. HR can decide it now. Your salary slip for this month waits until you confirm it, or sign for it on the register.","यही हुआ था तभी पुष्टि करें दबाएं। HR अभी फ़ैसला कर सकता है। जब तक आप पुष्टि नहीं करते या रजिस्टर पर दस्तख़त नहीं करते, इस महीने की आपकी वेतन पर्ची रुकी रहेगी।"],
+ cf_truth_a:["Press Confirm only if this is what happened. Your salary slip for this month waits until you confirm it, or sign for it on the register. If it is not right, say so and HR will look again.","यही हुआ था तभी पुष्टि करें दबाएं। जब तक आप पुष्टि नहीं करते या रजिस्टर पर दस्तख़त नहीं करते, इस महीने की वेतन पर्ची रुकी रहेगी। सही नहीं है तो बताएं, HR फिर देखेगा।"],
+ cf_truth_m:["HR decides this. Nothing on your day changes until then. If it is not right, say so and give your own time.","HR इस पर फ़ैसला करेगा। तब तक आपके दिन में कुछ नहीं बदलता। सही नहीं है तो बताएं और अपना समय दें।"],
+ cf_truth_ma:["HR approved this on 21 Nov. If it is not right, say so and give your own time.","HR ने इसे 21 नव को मंज़ूर किया। सही नहीं है तो बताएं और अपना समय दें।"],
+ cf_done_app:["You confirmed this at {0}","आपने {0} बजे इसकी पुष्टि की"],cf_done_reg:["You signed for this on the register on {0}","आपने {0} को रजिस्टर पर इसके लिए दस्तख़त किए"],
+ cf_done_p:["You can still say it is not right.","आप अब भी कह सकते हैं कि यह सही नहीं है।"],
+ nr_p_aside:["HR will not set it aside, and your day stays as it is.","HR इसे अलग नहीं रखेगा, और आपका दिन जैसा है वैसा रहेगा।"],
+ nr_eff_ap:["Your own request for {1} goes to HR as a new request. Your day stays as HR approved it until HR decides.","आपका अपना {1} का अनुरोध नए अनुरोध के रूप में HR को जाएगा। HR के फ़ैसले तक दिन वैसा ही रहेगा जैसा HR ने मंज़ूर किया।"],
+ nr_ap:["Your reason goes to HR. Your day stays as HR approved it until HR decides.","आपका कारण HR को जाएगा। HR के फ़ैसले तक दिन वैसा ही रहेगा जैसा HR ने मंज़ूर किया।"],
+ toast_cf:["Confirmed. Thank you.","पुष्टि हो गई। धन्यवाद।"],
+ toast_own:["Sent to HR. Your day stays as approved until HR decides.","HR को भेज दिया। HR के फ़ैसले तक दिन मंज़ूर जैसा रहेगा।"],
+ own_t:["You sent your own time, {0} · Waiting for HR","आपने अपना समय {0} भेजा · HR की प्रतीक्षा"],
+ own_p:["The day stays as HR approved it until HR decides.","HR के फ़ैसले तक दिन वैसा ही रहेगा जैसा HR ने मंज़ूर किया।"],
+ disp_t:["You told HR this is not right · Waiting for HR","आपने HR को बताया कि यह सही नहीं है · HR की प्रतीक्षा"],
+ disp_p:["The day stays as HR approved it until HR decides.","HR के फ़ैसले तक दिन वैसा ही रहेगा जैसा HR ने मंज़ूर किया।"],
+ added_hr:["Added by HR on {0}.","HR ने {0} को जोड़ा।"],added_mg:["Added by HR on {0}, asked for by {1}.","HR ने {0} को जोड़ा, {1} के कहने पर।"],
+ aside_hr:["Set aside by HR on {0}.","HR ने {0} को अलग रखा।"],aside_mg:["Set aside by HR on {0}, asked for by {1}.","HR ने {0} को अलग रखा, {1} के कहने पर।"],
+ aside_tail:["It stays on record but no longer counts.","यह रिकॉर्ड में रहता है पर अब गिना नहीं जाता।"],
+ ct_no:["Not confirmed by you yet.","आपने अभी पुष्टि नहीं की।"],ct_app:["You confirmed it.","आपने पुष्टि की थी।"],ct_reg:["You signed for it on the register.","आपने रजिस्टर पर दस्तख़त किए।"],ct_disp:["You said it is not right.","आपने कहा कि यह सही नहीं है।"],
+ says_asked_aside:["{0} asked to set aside the punch at {1}.","{0} ने {1} का पंच अलग रखने को कहा।"],
+ hr_needs:["Needs {0}'s confirmation before pay is locked","वेतन पक्का होने से पहले {0} की पुष्टि चाहिए"],
+ hr_cs_no:["Not yet","अभी नहीं"],hr_cs_app:["Confirmed in the app on {0}","{0} को ऐप में पुष्टि की"],hr_cs_reg:["Signed on the register on {0}, recorded by {1} (photo kept)","{0} को रजिस्टर पर दस्तख़त, {1} ने दर्ज किया (फ़ोटो रखी गई)"],hr_cs_disp:["{0} says it is not right","{0} कहता है कि यह सही नहीं है"],
+ reg_btn:["Signed on the register","रजिस्टर पर दस्तख़त हुए"],
+ reg_you:["You filed this, so another HR person records the signature.","यह आपने दर्ज किया है, इसलिए दस्तख़त कोई दूसरा HR व्यक्ति दर्ज करेगा।"],
+ rg_h:["Signed on the register","रजिस्टर पर दस्तख़त हुए"],
+ rg_p:["Record this only if {0} signed next to this change on the printed register: {1}.","इसे तभी दर्ज करें जब {0} ने छपे रजिस्टर में इस बदलाव के आगे दस्तख़त किए हों: {1}।"],
+ rg_photo:["Photo of the signed page","दस्तख़त वाले पन्ने की फ़ोटो"],rg_ph_h:["Show only this person's line if you can. Other people's names are on the page.","हो सके तो केवल इसी व्यक्ति की पंक्ति दिखाएं। पन्ने पर दूसरों के नाम हैं।"],
+ rg_keep:["Your name, today's date and the photo are kept with the request.","आपका नाम, आज की तारीख़ और फ़ोटो अनुरोध के साथ रखे जाएंगे।"],
+ rg_err:["Add the photo of the signed page first.","पहले दस्तख़त वाले पन्ने की फ़ोटो जोड़ें।"],rg_ok:["Record signature","दस्तख़त दर्ज करें"],
+ toast_reg:["Recorded. {0} no longer blocks the salary slip.","दर्ज हो गया। {0} अब वेतन पर्ची को नहीं रोकता।"],
+ pp_h:["{0} changes not yet confirmed this month","इस महीने {0} बदलाव अभी पुष्ट नहीं हुए"],pp_h1:["1 change not yet confirmed this month","इस महीने 1 बदलाव अभी पुष्ट नहीं हुआ"],
+ pp_p:["A salary slip cannot be submitted for these people until each change is confirmed, signed on the register, or withdrawn.","जब तक हर बदलाव की पुष्टि, रजिस्टर पर दस्तख़त या वापसी नहीं होती, इन लोगों की वेतन पर्ची जमा नहीं हो सकती।"],
+ pp_added:["Added {0}","{0} जोड़ा"],pp_aside:["Set aside {0}","{0} अलग रखा"],
+ pp_by:["sent by {0}","{0} ने भेजा"],pp_pend:["waiting for HR to decide","HR के फ़ैसले की प्रतीक्षा"],pp_appr:["approved on {0}","{0} को मंज़ूर"],
+ pp_wd:["Withdraw","वापस लें"],pp_none:["Nothing is waiting for a confirmation.","किसी पुष्टि की प्रतीक्षा नहीं है।"],
+ toast_wd:["Withdrawn. It no longer blocks the salary slip.","वापस लिया। यह अब वेतन पर्ची को नहीं रोकता।"],
+ sl_btn:["Try to submit Ravi's November slip","रवि की नवंबर की वेतन पर्ची जमा करके देखें"],
+ sl_no:["The salary slip for Ravi Sample, Nov 2026, cannot be submitted. {0} not confirmed:","रवि सैंपल की नवंबर 2026 की वेतन पर्ची जमा नहीं हो सकती। पुष्टि नहीं हुई:"],
+ sl_how:["Ask Ravi to confirm in the app, record the signed register, or withdraw the change.","रवि से ऐप में पुष्टि करने को कहें, दस्तख़त वाला रजिस्टर दर्ज करें, या बदलाव वापस लें।"],
+ sl_ok:["Submitted. Nothing is waiting for a confirmation.","जमा हो गई। किसी पुष्टि की प्रतीक्षा नहीं।"],
+ sw_h:["Salary Workings (DTC)","सैलरी वर्किंग्स (DTC)"],sw_note:["Note-only frame. The report keeps its columns. One extra flag, with the same words as the list above.","केवल नोट। रिपोर्ट के कॉलम वही रहते हैं। एक अतिरिक्त निशान, ऊपर की सूची जैसे शब्दों में।"],
+ sw_flag:["Unconfirmed change: {0}","अपुष्ट बदलाव: {0}"],sw_clear:["No unconfirmed change","कोई अपुष्ट बदलाव नहीं"],
+ nt_arrival:["What time did you arrive?","आप कितने बजे पहुँचे?"],nt_back:["What time were you back?","आप कितने बजे वापस आए?"],
+ nt_outb:["What time did you go out?","आप कितने बजे बाहर गए?"],nt_leaving:["What time did you leave?","आप कितने बजे निकले?"],
+ opt:["Optional","वैकल्पिक"],
+ nt_why:["{0} was sent. Give the real time.","{0} भेजा गया था। असली समय दें।"],
+ e_same:["That is the time that was sent. If it is right, go back and press Confirm.","यही समय भेजा गया था। सही है तो वापस जाकर पुष्टि करें दबाएं।"],
+ nr_eff:["HR will not add {0}. Your own request for {1} goes to HR instead, and you do not need to confirm it.","HR {0} नहीं जोड़ेगा। इसके बदले आपका अपना {1} का अनुरोध HR को जाएगा, और आपको पुष्टि नहीं करनी।"],
+ toast_nr2:["Sent to HR. Your own time replaces the one that was sent.","HR को भेज दिया। आपका अपना समय भेजे गए समय की जगह लेगा।"],
+ sent_repl:["This replaces the {0} that {1} sent. You said it was not right.","यह {1} के भेजे {0} की जगह लेता है। आपने कहा था कि वह सही नहीं था।"],
+ hr_repl:["Replaces the {1} that {0} sent. {2} said that one was not right.","{0} के भेजे {1} की जगह लेता है। {2} ने कहा वह सही नहीं था।"],
+ hr_nr_t:["{0} sent {1} instead.","{0} ने इसके बदले {1} भेजा।"],
+ reason_l:["Your reason","आपका कारण"],req:["Required","ज़रूरी"],
+ reason_why:["HR and your manager can read this.","HR और आपके मैनेजर इसे पढ़ सकते हैं।"],
+ reason_ph:["e.g. Forgot to scan after lunch","जैसे: लंच के बाद स्कैन करना भूल गया"],
+ e_reason:["Write a reason so HR can decide.","कारण लिखें ताकि HR फ़ैसला कर सके।"],
+ your_reason:["Your reason: {0}","आपका कारण: {0}"],
+ cf_h_hr:["HR sent this for you. Is it right?","HR ने यह आपके लिए भेजा है। क्या यह सही है?"],
+ cf_h_mgr:["Your manager {0} sent this for you. Is it right?","आपके मैनेजर {0} ने यह आपके लिए भेजा है। क्या यह सही है?"],
+ cf_add:["Add a punch at {0} · {1}","{0} पर पंच जोड़ें · {1}"],
+ cf_aside:["Set aside your punch at {0}","{0} का आपका पंच अलग रखें"],
+ cf_why_hr:["Reason from HR","HR का कारण"],cf_why_mgr:["Reason from {0}","{0} का कारण"],
+ cf_truth:["Press Confirm only if this is what happened. After that HR decides. Nothing on your day changes until then.","यही हुआ था तभी पुष्टि करें दबाएं। उसके बाद HR फ़ैसला करेगा। तब तक आपके दिन में कुछ नहीं बदलता।"],
+ confirm:["Confirm","पुष्टि करें"],notright:["Not right","सही नहीं"],
+ nr_l:["What is not right?","क्या सही नहीं है?"],nr_read:["HR will read this.","HR इसे पढ़ेगा।"],
+ nr_ph:["e.g. I was back by 14:15, not 14:40","जैसे: मैं 14:15 तक लौट आया था, 14:40 नहीं"],
+ nr_p:["HR will not add it, and your day stays as it is.","HR इसे नहीं जोड़ेगा, और आपका दिन जैसा है वैसा रहेगा।"],
+ nr_back:["Back","वापस"],nr_send:["Send to HR","HR को भेजें"],
+ e_nr:["Say what is not right, so HR knows what to fix.","बताएं क्या सही नहीं है, ताकि HR जान सके क्या ठीक करना है।"],
+ toast_cf:["Confirmed. HR can now decide it.","पुष्टि हो गई। अब HR फ़ैसला कर सकता है।"],
+ toast_nr:["Sent to HR. Nothing was changed.","HR को भेज दिया। कुछ नहीं बदला।"],
+ cf_done_t:["You confirmed at {0} · Waiting for HR","आपने {0} बजे पुष्टि की · HR की प्रतीक्षा"],
+ cf_done_p:["HR can now decide it. The day stays as it is until then. You will see the answer here.","अब HR फ़ैसला कर सकता है। तब तक दिन जैसा है वैसा रहेगा। जवाब यहीं दिखेगा।"],
+ nr_t:["You said this is not right","आपने कहा कि यह सही नहीं है"],
+ 
+ tag_you_mgr:["Asked for by {0}","{0} ने माँगा"],
+ tag_aside_you:["Set aside · sent for you","अलग रखा · आपके लिए भेजा"],
+ added_cf:["Added by HR on {0}. You confirmed it.","HR ने {0} को जोड़ा। आपने पुष्टि की थी।"],
+ added_cf_m:["Added by HR on {0}, asked for by {1}. You confirmed it.","HR ने {0} को जोड़ा, {1} के कहने पर। आपने पुष्टि की थी।"],
+ says_f_add:["{0} asked to add: {1} at {2}.","{0} ने जोड़ने को कहा: {1}, {2} पर।"],
+ says_f_aside:["{0} asked to set aside the punch at {1}.","{0} ने {1} का पंच अलग रखने को कहा।"],
+ hr_wait:["Waiting for {0} to confirm","{0} की पुष्टि की प्रतीक्षा"],
+ hr_wait_p:["Filed on {1} at {2}. You can approve it after {0} presses Confirm in the app. You can still decline it.","{1} को {2} बजे दर्ज हुआ। {0} के ऐप में पुष्टि दबाने के बाद आप इसे मंज़ूर कर सकते हैं। अस्वीकार अभी भी कर सकते हैं।"],
+ hr_conf:["{0} confirmed this in the app on {1}","{0} ने {1} को ऐप में पुष्टि की"],
+ hr_nr:["Declined by {0}","{0} ने अस्वीकार किया"],
+ home_t:["Home","होम"],needs:["Needs you","आपके लिए"],
+ nd_hr:["HR sent a punch fix for {0}. Is it right?","HR ने {0} के लिए पंच सुधार भेजा है। क्या यह सही है?"],
+ nd_m:["{0} sent a punch fix for {1}. Is it right?","{0} ने {1} के लिए पंच सुधार भेजा है। क्या यह सही है?"],
+ check:["Check","देखें"],clear:["All clear.","सब ठीक है।"],
+ home_note:["Review note, not product: only the Needs you card is drawn. Check In and the other Home cards are unchanged.","समीक्षा नोट, उत्पाद नहीं: केवल “आपके लिए” कार्ड दिखाया है। बाकी होम जैसा है वैसा।"],
+ title_emp:["My attendance","मेरी उपस्थिति"],title_hr:["Attendance: fixes to decide","उपस्थिति: तय करने वाले सुधार"],
+ shift:["Shift {0}","शिफ्ट {0}"],expected:["Expected {0}","अपेक्षित {0}"],
+ Present:["Present","उपस्थित"],Held:["Held","रोका हुआ"],Leave:["On leave","छुट्टी पर"],
+ st_pres:["Present · {0} · Paid","उपस्थित · {0} · भुगतान होगा"],
+ st_pres_late:["Present · {0} · {1} min late · Paid","उपस्थित · {0} · {1} मिनट देरी · भुगतान होगा"],
+ st_held:["Held · {0} · Not paid until fixed","रोका हुआ · {0} · ठीक होने तक भुगतान नहीं"],
+ In:["In","अंदर"],Out:["Out","बाहर"],
+ k_arrival:["Arrival","आगमन"],k_back:["Back in after a break","ब्रेक के बाद वापसी"],k_outb:["Out for a break","ब्रेक के लिए बाहर"],k_leaving:["Leaving","जाना"],
+ portal_ci:["Check In on this portal","इस पोर्टल पर चेक इन"],machine:["Machine","मशीन"],
+ gap_before:["Add a punch before {0}","{0} से पहले पंच जोड़ें"],
+ gap_between:["Add a punch between {0} and {1}","{0} और {1} के बीच पंच जोड़ें"],
+ gap_after:["Add a punch after {0}","{0} के बाद पंच जोड़ें"],
+ hint:["Something missing? Tap a gap. Something wrong? Tap that punch.","कुछ छूटा है? खाली जगह दबाएं। कुछ गलत है? वह पंच दबाएं।"],
+ one:["One punch per request. If another is missing, send this first and add the next after HR decides.","एक अनुरोध में एक पंच। दूसरा छूटा हो तो पहले इसे भेजें, HR के फ़ैसले के बाद अगला जोड़ें।"],
+ sh_add:["Add the missing punch","छूटा पंच जोड़ें"],
+ ctx_before:["Before {0}","{0} से पहले"],ctx_between:["Between {0} and {1}","{0} और {1} के बीच"],ctx_after:["After {0}","{0} के बाद"],
+ f_time:["What time was it?","कितने बजे था?"],f_note:["Note for HR (optional)","HR के लिए नोट (वैकल्पिक)"],
+ infer0:["It will be added as: {0}.","यह जुड़ेगा: {0}।"],
+ sh_add_btn:["Add to request","अनुरोध में जोड़ें"],cancel:["Cancel","रद्द करें"],
+ sh_as:["This punch is wrong","यह पंच गलत है"],
+ sh_as_p:["It stays on record, crossed out, and stops counting once HR approves.","यह रिकॉर्ड में कटा हुआ रहेगा और HR के मंज़ूर करने पर गिना जाना बंद होगा।"],
+ sh_as_btn:["Set {0} aside","{0} अलग रखें"],sh_keep_t:["Keep this punch","यह पंच रखें"],sh_keep_btn:["Keep {0}","{0} रखें"],
+ e_time:["Enter the time first.","पहले समय भरें।"],
+ e_before:["{0} is not before {1}. Check the time.","{0}, {1} से पहले नहीं है। समय जाँचें।"],
+ e_after:["{0} is not after {1}. Check the time.","{0}, {1} के बाद नहीं है। समय जाँचें।"],
+ e_between:["{0} is not between {1} and {2}. Check the time.","{0}, {1} और {2} के बीच नहीं है। समय जाँचें।"],
+ e_dup:["There is already a punch at {0}. Check the time.","{0} पर पहले से पंच है। समय जाँचें।"],
+ tag_new:["New · not sent yet","नया · अभी भेजा नहीं"],tag_asked:["Asked for · waiting for HR","माँगा गया · HR की प्रतीक्षा"],
+ tag_aside_new:["Set aside · not sent yet","अलग रखा · अभी भेजा नहीं"],tag_aside_asked:["Set aside · waiting for HR","अलग रखा · HR की प्रतीक्षा"],
+ remove:["Remove","हटाएं"],
+ bar_add:["+{0} {1}","+{0} {1}"],bar_aside:["{0} set aside","{0} अलग रखा"],bar_help:["Nothing changes until HR approves.","HR के मंज़ूर करने तक कुछ नहीं बदलता।"],
+ send:["Send to HR","HR को भेजें"],toast_sent:["Sent to HR.","HR को भेज दिया।"],
+ sent_t:["Sent to HR at {0} · Waiting","HR को {0} बजे भेजा · प्रतीक्षा में"],
+ sent_p:["The day stays as it is until HR decides. You will see the answer here.","HR के फ़ैसले तक दिन जैसा है वैसा रहेगा। जवाब यहीं दिखेगा।"],
+ your_note:["Your note: {0}","आपका नोट: {0}"],withdraw:["Withdraw","वापस लें"],
+ ok_t:["Fixed by HR · {0} · Paid","HR ने ठीक किया · {0} · भुगतान होगा"],
+ added_line:["Added by HR on {0}, from your request.","HR ने {0} को जोड़ा, आपके अनुरोध पर।"],
+ aside_line:["Set aside by HR on {0}, from your request. It stays on record but no longer counts.","HR ने {0} को आपके अनुरोध पर अलग रखा। यह रिकॉर्ड में रहता है पर अब गिना नहीं जाता।"],
+ dec_t:["HR did not add this","HR ने यह नहीं जोड़ा"],dec_p:["Reason from HR: {0}","HR का कारण: {0}"],
+ lock_t:["This day cannot be fixed here","यह दिन यहाँ ठीक नहीं हो सकता"],
+ r_slip:["It is on a salary slip that is already final, so its punches cannot be changed here. Tell HR which day it was and what happened. HR can pay the difference with an Additional Salary.","यह अंतिम हो चुकी वेतन पर्ची में है, इसलिए यहाँ इसके पंच नहीं बदले जा सकते। HR को बताएं कौन-सा दिन था और क्या हुआ। HR अंतर का भुगतान अतिरिक्त वेतन से कर सकता है।"],
+ r_leave:["It is covered by approved leave, so punches do not change it. If you worked that day, ask HR to cancel the leave first.","यह मंज़ूर छुट्टी में आता है, इसलिए पंच इसे नहीं बदलते। उस दिन काम किया था तो पहले HR से छुट्टी रद्द करवाएं।"],
+ r_hand:["HR marked this day by hand on {0}, so punches do not change it. If it is wrong, ask HR to look at it.","HR ने इस दिन को {0} को हाथ से चिह्नित किया, इसलिए पंच इसे नहीं बदलते। गलत हो तो HR से देखने को कहें।"],
+ s_hand:["Marked by hand","हाथ से चिह्नित"],s_slip:["On a final slip","अंतिम पर्ची में"],
+ other:["Not about a punch? Something else went wrong","पंच का मामला नहीं? कुछ और गलत हुआ"],
+ h_missing:["Missing punch","छूटा पंच"],h_wrong:["Wrong punch","गलत पंच"],
+ now:["Now","अभी"],after:["If approved","मंज़ूर होने पर"],
+ h_held:["Held · {0}","रोका हुआ · {0}"],h_pres:["Present · {0}{1} · paid","उपस्थित · {0}{1} · भुगतान होगा"],
+ h_still:["Still held · {0} · not paid","अब भी रोका हुआ · {0} · भुगतान नहीं"],
+ late_m:[" · {0} min late"," · {0} मिनट देरी"],
+ says_add:["{0} says: {1} at {2}.","{0} के अनुसार: {1}, {2} पर।"],
+ says_aside:["{0} says the punch at {1} is wrong.","{0} के अनुसार {1} का पंच गलत है।"],
+ says_also:["Also says {0} is wrong.","साथ में कहा: {0} गलत है।"],
+ hr_note:["Note from {0}: {1}","{0} का नोट: {1}"],
+ approve:["Approve","मंज़ूर करें"],decline:["Decline","अस्वीकार करें"],month:["See their month","उनका महीना देखें"],
+ add_note:["Add a note for {0}","{0} के लिए नोट जोड़ें"],
+ note_lbl:["Note for {0} (optional)","{0} के लिए नोट (वैकल्पिक)"],
+ dec_lbl:["Why not? {0} will see this.","क्यों नहीं? {0} यह देखेगा।"],
+ need_reason:["Write a reason so {0} knows what to do next.","कारण लिखें ताकि {0} जाने आगे क्या करना है।"],
+ marks:["Approving adds {0}, marked “added by HR”. It is never deleted.","मंज़ूर करने पर {0} जुड़ता है, “HR ने जोड़ा” के निशान के साथ। इसे कभी मिटाया नहीं जाता।"],
+ legend:["Shaded band: shift {0}. Dots: punches.","छायादार पट्टी: शिफ्ट {0}। बिंदु: पंच।"],
+ own_you:["This is your own day, so you cannot approve it. Another HR person will decide it.","यह आपका अपना दिन है, इसलिए आप इसे मंज़ूर नहीं कर सकते। कोई दूसरा HR व्यक्ति तय करेगा।"],
+ slip_hr:["Since this was sent, the day went onto a salary slip that is final. Its punches cannot be changed. Decline it and say why, or add an Additional Salary.","भेजे जाने के बाद दिन अंतिम वेतन पर्ची में चला गया। इसके पंच नहीं बदले जा सकते। कारण बताकर अस्वीकार करें, या अतिरिक्त वेतन जोड़ें।"],
+ toast_ap:["Approved. {0} was added. The day is now Present.","मंज़ूर हुआ। {0} जोड़ा गया। दिन अब उपस्थित है।"],
+ toast_ap2:["Approved. {0} was set aside. The day is now Present.","मंज़ूर हुआ। {0} अलग रखा गया। दिन अब उपस्थित है।"],
+ toast_ap3:["Approved. The day stays Held.","मंज़ूर हुआ। दिन रोका हुआ ही रहेगा।"],
+ toast_dec:["Declined. The employee will see your reason.","अस्वीकार किया। कर्मचारी आपका कारण देखेगा।"],
+ done_h:["Decided","तय हुआ"],queue_empty:["Nothing waiting for you.","आपके लिए कुछ प्रतीक्षा में नहीं।"],
+ waiting:["Waiting for HR","HR की प्रतीक्षा"],approved:["Approved","मंज़ूर"],declined:["Declined","अस्वीकार"]
+};
+let REG=null,VIEW="time",LANG="en",DEV="phone",WHO="emp",THEME="light",OPEN="d20",DRAFT=null,SHEET=null,S,HRUI={};
+const t=(k,...a)=>{let s=T[k][LANG==="hi"?1:0];a.forEach((v,i)=>{s=s.split("{"+i+"}").join(v)});return s};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+const DAYN={d10:["Mon 10 Nov","सोम 10 नव"],d13:["Thu 13 Nov","गुरु 13 नव"],d15:["Sat 15 Nov","शनि 15 नव"],d17:["Mon 17 Nov","सोम 17 नव"],d18:["Tue 18 Nov","मंगल 18 नव"],d19:["Wed 19 Nov","बुध 19 नव"],d20:["Thu 20 Nov","गुरु 20 नव"],d12:["Wed 12 Nov","बुध 12 नव"]};
+const dn=k=>DAYN[k][LANG==="hi"?1:0], ON=()=>LANG==="hi"?"21 नव":"21 Nov";
+const SHIFT=["10:30","19:30"];
+const ICONS={check:'<path d="M4 10.5l4 4 8-9"/>',alert:'<path d="M10 3l8 14H2L10 3zM10 8v4M10 14.5v.5"/>',clock:'<circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10l3 2"/>',lock:'<rect x="4" y="9" width="12" height="8" rx="2"/><path d="M7 9V6.5a3 3 0 016 0V9"/>',plus:'<path d="M10 4v12M4 10h12"/>',info:'<circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/>',arrow:'<path d="M3 10h13M11 5l5 5-5 5"/>',ask:'<circle cx="10" cy="10" r="7.5"/><path d="M8 8a2 2 0 114 0c0 1.5-2 1.5-2 3M10 13.6v.4"/>',warn:'<circle cx="10" cy="10" r="7.5"/><path d="M10 6v5M10 13.5v.5"/>'};
+const ic=n=>`<svg class="ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+const sl=(k,txt,extra="")=>`<div class="sl sl-${k}" role="status">${ic({ok:"check",held:"alert",wait:"clock",lock:"lock",info:"info",ask:"ask"}[k])}<span>${txt}</span></div>${extra}`;
+/* ---------- data (Sample) ---------- */
+function fresh(){S={
+ d15:{kind:"hand",by:"16 Nov",p:[{t:"11:00",src:"machine"},{t:"19:00",src:"machine"}]},
+ d17:{kind:"slip",p:[{t:"10:05",src:"machine"},{t:"18:30",src:"machine"}]},
+ d18:{kind:"leave",p:[]},
+ d19:{kind:"fix",stage:"confirm",conf:"na",by:{role:"mgr",who:"Sunita Rao"},req:{add:"10:20",set:[],note:"The gate machine was down when Ravi came in. I saw him at 10:20.",at:"09:05"},p:[{t:"19:30",src:"machine"}]},
+ d20:{kind:"fix",stage:"open",p:[{t:"10:30",src:"machine"},{t:"14:00",src:"machine"},{t:"19:30",src:"machine"}]},
+ d10:{kind:"fix",stage:"confirm",conf:"no",by:{role:"mgr",who:"Sunita Rao"},req:{add:null,set:["11:00"],note:"The 11:00 scan was a test from the gate tablet. Ravi was already inside.",at:"09:20"},p:[{t:"10:30",src:"machine"},{t:"11:00",src:"portal"},{t:"19:30",src:"machine"}]},
+ d13:{kind:"fix",stage:"confirm",conf:"no",by:{role:"hr",who:"Anil Sample"},req:{add:"14:40",set:[],note:"Forgot to scan when back from lunch. Told HR by phone on 21 Nov.",at:"09:12"},p:[{t:"10:30",src:"machine"},{t:"14:00",src:"machine"},{t:"19:30",src:"machine"}]},
+ hr:{}};VIEW="time";OPEN="d20";DRAFT=null;SHEET=null;HRUI={}}
+fresh();
+const HRQ=[
+ {id:"rk",who:"Kavita Sample",first:"Kavita",dk:"d12",p:[{t:"10:00",src:"machine"}],add:"18:45",own:"hr2"},
+ {id:"rp",who:"Preet Sample",first:"Preet",dk:"d17",p:[{t:"18:30",src:"machine"}],add:"09:55",slip:true}];
+/* ---------- the one calculation (stands in for the server function approval runs) ---------- */
+const mins=h=>+h.slice(0,2)*60+ +h.slice(3);
+const hm=m=>Math.floor(m/60)+"h "+(m%60<10?"0":"")+(m%60)+"m";
+function compose(p,ch){const set=ch.set||[];const it=p.map(x=>({t:x.t,src:x.src,st:(x.aside||set.includes(x.t))?"aside":(x.src==="HR"?"add":"n"),real:!!x.aside,pend:!x.aside&&set.includes(x.t)}));
+ if(ch.add)it.push({t:ch.add,src:"HR",st:"add",pend:true});return it.sort((a,b)=>a.t<b.t?-1:1)}
+const eff=it=>it.filter(x=>x.st!=="aside");
+function judge(it){const a=eff(it);let w=0;for(let i=0;i+1<a.length;i+=2)w+=mins(a[i+1].t)-mins(a[i].t);
+ return{n:a.length,held:a.length%2===1,work:w,late:a.length?Math.max(0,mins(a[0].t)-mins(SHIFT[0])):0}}
+function roles(it){const a=eff(it);if(a.length%2)return null;const m={};a.forEach((x,i)=>m[x.t]=i%2?"OUT":"IN");return m}
+function kindFor(p,set,time){const nb=p.filter(x=>!x.aside&&!set.includes(x.t));const before=nb.filter(x=>x.t<time).length,after=nb.filter(x=>x.t>time).length;
+ if(before===0)return"arrival";const r=before%2===0?"IN":"OUT";if(after===0&&r==="OUT")return"leaving";return r==="IN"?"back":"outb"}
+const pn=n=>LANG==="hi"?n+" पंच":(n===1?"1 punch":n+" punches");
+const kname=k=>t("k_"+k);
+const stText=j=>j.held?t("st_held",pn(j.n)):(j.late>0?t("st_pres_late",hm(j.work),j.late):t("st_pres",hm(j.work)));
+/* ---------- shared pieces ---------- */
+function strip(it){const S0=540,W=660,x=v=>Math.max(0,Math.min(100,(mins(v)-S0)/W*100));
+ let h=`<div class="strip" aria-hidden="true"><i class="band" style="left:${x(SHIFT[0])}%;width:${x(SHIFT[1])-x(SHIFT[0])}%"></i>`;
+ const a=eff(it);if(a.length%2===0)for(let i=0;i<a.length;i+=2)h+=`<i class="bar" style="left:${x(a[i].t)}%;width:${x(a[i+1].t)-x(a[i].t)}%"></i>`;
+ it.forEach(p=>h+=`<i class="pt ${p.st==="add"?"add":p.st==="aside"?"aside":""}" style="left:${x(p.t)}%"></i>`);return h+"</div>"}
+function toggleTheme(){}
+/* ALV: an HR-filed change, or any cut, needs the employee's confirmation before pay is locked. A manager's addition needs none. */
+const needsConf=d=>!!(d.by&&d.req&&(d.by.role==="hr"||(d.req.set&&d.req.set.length)));
+const awaitsYou=k=>{const d=S[k];return !!d.by&&((d.stage==="confirm")||(d.stage==="approved"&&needsConf(d)&&d.conf==="no"&&!d.repl2&&!d.dispute))};
+const who=d=>d.by.role==="hr"?"HR":d.by.who;
+function confTxt(d){if(!needsConf(d))return"";return t({app:"ct_app",register:"ct_reg",disputed:"ct_disp"}[d.conf]||"ct_no")}
+function addedLine(d){if(!d.by)return t("added_line",d.on||ON());return(d.by.role==="hr"?t("added_hr",d.on||ON()):t("added_mg",d.on||ON(),d.by.who))+" "+confTxt(d)}
+function asideLine(d){return(d.by.role==="hr"?t("aside_hr",d.on||ON()):t("aside_mg",d.on||ON(),d.by.who))+" "+confTxt(d)+" "+t("aside_tail")}
+function ownLines(d){if(d.repl2)return sl("wait",t("own_t",d.repl2.add),`<p class="sub">${t("own_p")}</p><p class="sub">${t("your_reason",esc(d.repl2.note))}</p>`);
+ if(d.dispute)return sl("wait",t("disp_t"),`<p class="sub">${t("disp_p")}</p><p class="sub">${t("your_reason",esc(d.dispute.note))}</p>`);return""}
+function chgTxt(d){const r=d.req;return r.add?t("pp_added",r.add):t("pp_aside",r.set.join(", "))}
+const unconf=()=>["d13","d10","d19"].filter(k=>{const d=S[k];return d.by&&needsConf(d)&&["no","disputed"].includes(d.conf)&&["confirm","approved"].includes(d.stage)});
+function grow(el){el.style.height='auto';el.style.height=Math.min(Math.max(el.scrollHeight+2,48),120)+'px'}
+/* ---------- render ---------- */
+function render(){const st=document.getElementById("stage");const keep=st.querySelector(".scroll");const top=keep?keep.scrollTop:0;
+ st.className=(DEV==="desktop"?"desktop":"phone"+(DEV==="p360"?" p360":""))+(WHO==="emp"?" emp":"");
+ document.documentElement.setAttribute("data-theme",THEME);document.documentElement.lang=LANG==="hi"?"hi":"en";
+ const bar=WHO==="emp"?barHtml():"";st.classList.toggle("has-bar",!!bar);
+ st.innerHTML=(WHO==="emp"?empView():hrView())+bar+(WHO==="emp"&&SHEET?sheetHtml():"")+(WHO!=="emp"&&REG?regHtml():"");
+ st.querySelectorAll("textarea").forEach(grow);const sc=st.querySelector(".scroll");if(sc)sc.scrollTop=top;
+ document.querySelectorAll("#demo button[data-p]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.p===WHO));
+ document.querySelectorAll("#demo button[data-d]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.d===DEV));
+ document.querySelectorAll("#demo button[data-l]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.l===LANG));
+ document.querySelectorAll("#demo button[data-t]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===THEME));
+ if(SHEET){const f=document.getElementById("f-time")||document.getElementById("sh-ok");if(f&&!SHEET.noFocus)f.focus();SHEET.noFocus=true}}
+/* ---------- employee ---------- */
+function empView(){if(VIEW==="home")return homeView();let h=`<div class="app-h"><b>${t("title_emp")}</b><small>Ravi Sample · Nov 2026</small></div><div class="scroll"><div class="pad">`;
+ ["d20","d19","d18","d17","d15","d13","d10"].forEach(k=>h+=dayRow(k));return h+"</div></div>"}
+function dayLine(k){const d=S[k];
+ if(d.kind==="leave")return["lock",t("Leave")];if(d.kind==="hand")return["lock",t("Present")+" · "+t("s_hand")];if(d.kind==="slip")return["lock",t("Present")+" · "+t("s_slip")];
+ const j=judge(compose(d.p,{}));
+ if(d.stage==="sent"||d.stage==="ready")return["wait",t("waiting")];
+ if(d.stage==="approved")return["ok",t("Present")];
+ return j.held?["held",t("Held")]:["ok",t("Present")]}
+function dayRow(k){const d=S[k],o=OPEN===k,[kind,txt]=dayLine(k);
+ return`<button class="dayrow" aria-expanded="${o}" onclick="toggle('${k}')"><span class="d">${dn(k)}</span><span class="s s-${kind}">${ic({ok:"check",held:"alert",wait:"clock",lock:"lock"}[kind])}<span>${txt}</span></span></button>`+(o?sheetDay(k):"")}
+function toggle(k){OPEN=OPEN===k?null:k;SHEET=null;if(DRAFT&&DRAFT.k!==k&&!(DRAFT.add||DRAFT.set.length))DRAFT=null;render()}
+function chOf(k){const d=S[k];if(d.stage==="confirm")return{add:d.req.add,set:d.req.set,pending:"ask_you",by:d.by};if(d.stage==="ready")return{add:d.req.add,set:d.req.set,pending:"asked"};if(d.stage==="sent")return{add:d.req.add,set:d.req.set,pending:"asked"};
+ if(DRAFT&&DRAFT.k===k)return{add:DRAFT.add,set:DRAFT.set,pending:"new"};return{add:null,set:[],pending:""}}
+function sheetDay(k){const d=S[k];let h='<div class="day">';
+ if(d.kind==="leave")return h+sl("lock",t("lock_t"),`<p class="sub">${t("r_leave")}</p>`)+"</div>";
+ const it0=compose(d.p,{});
+ if(d.kind==="slip")return h+sl("lock",t("lock_t"),`<p class="sub">${t("r_slip")}</p>`)+timeline(k,it0,{mode:"ro"})+"</div>";
+ if(d.kind==="hand")return h+sl("lock",t("lock_t"),`<p class="sub">${t("r_hand",d.by)}</p>`)+timeline(k,it0,{mode:"ro"})+"</div>";
+ const ch=chOf(k),it=compose(d.p,ch),j=judge(compose(d.p,{}));
+ if(d.stage==="confirm")return h+confirmBlock(k)+`<p class="facts">${t("shift",SHIFT[0]+"–"+SHIFT[1])}</p>`+timeline(k,it,{mode:"ro",ch,d})+"</div>";
+ if(d.stage==="approved"){const jj=judge(it);
+  h+=sl("ok",t("ok_t",hm(jj.work)))+ownLines(d)+(awaitsYou(k)?'<div style="height:16px"></div>'+confirmBlock(k):"")+`<p class="facts">${t("shift",SHIFT[0]+"–"+SHIFT[1])} · ${t("expected","9h 00m")}</p>`+timeline(k,it,{mode:"ro",ch,d})+"</div>";return h}
+ if(d.stage==="sent"){
+  h+=sl("wait",t("sent_t",d.req.at),`<p class="sub">${t("sent_p")}</p>`+(d.repl?`<p class="sub">${t("sent_repl",d.repl.filed,esc(d.repl.lbl))}</p>`:"")+(d.req.note?`<p class="sub">${t("your_reason",esc(d.req.note))}</p>`:""));
+  return h+`<p class="facts">${t("shift",SHIFT[0]+"–"+SHIFT[1])}</p>`+timeline(k,it,{mode:"ro",ch,d})+`<button class="lnk" onclick="withdraw('${k}')">${t("withdraw")}</button></div>`}
+ if(d.stage==="declined")h+=sl("info",t("dec_t"),`<p class="sub">${t("dec_p",esc(d.dnote))}</p>`)+'<div style="height:16px"></div>';
+ if(d.stage==="notright")h+=sl("info",t("nr_t"),`<p class="sub">${t("nr_p")}</p><p class="sub">${t("your_reason",esc(d.nrText))}</p>`)+'<div style="height:16px"></div>';
+ h+=sl(j.held?"held":"ok",stText(j))+`<p class="facts">${t("shift",SHIFT[0]+"–"+SHIFT[1])} · ${t("expected","9h 00m")}</p>`;
+ h+=timeline(k,it,{mode:"edit",ch,d});
+ h+=ch.add?`<p class="one">${t("one")}</p>`:`<p class="hint">${t("hint")}</p>`;
+ return h+`<button class="lnk other" onclick="toast('Sample: opens today’s reason form, unchanged.')">${t("other")}</button></div>`}
+function timeline(k,it,o){const ch=o.ch||{add:null,set:[],pending:""},r=roles(it),edit=o.mode==="edit"&&!ch.add,d=o.d||S[k];
+ const segType=(i)=>{if(!r)return"unk";const a=it[i],b=it[i+1];if(!a||!b||!r[a.t]||!r[b.t])return"unk";return r[a.t]==="IN"&&r[b.t]==="OUT"?"work":r[a.t]==="OUT"&&r[b.t]==="IN"?"brk":"unk"};
+ let h=strip(it)+`<div class="strip-cap"><span>${t("shift",SHIFT[0])}</span><span>${SHIFT[1]}</span></div><ol class="tl">`;
+ const gap=(i,lo,hi,up,dn)=>`<li><button class="tl-b tl-g" onclick="openAdd('${k}',${i})"><span class="tm"></span><span class="rail"><i class="rl up s-${up}"></i><i class="rl dn s-${dn}"></i><i class="gdot">${ic("plus")}</i></span><span class="gl">${lo&&hi?t("gap_between",lo,hi):hi?t("gap_before",hi):t("gap_after",lo)}</span></button></li>`;
+ if(edit)h+=gap(0,"",it[0]&&it[0].t,"none","unk");
+ it.forEach((p,i)=>{
+  const up=i===0?(edit?"unk":"none"):segType(i-1),dn=i===it.length-1?(edit?"unk":"none"):segType(i);
+  const isNew=p.st==="add"&&p.pend,tappable=edit&&p.st!=="add"&&!p.real&&o.mode==="edit";
+  let lb="",sb="";
+  if(p.st==="add"){lb=kname(kindFor(d.p,ch.set||[],p.t));sb=p.pend?(ch.pending==="asked"?t("tag_asked"):ch.pending==="ask_you"?(ch.by.role==="hr"?t("tag_you_hr"):t("tag_you_mgr",ch.by.who)):t("tag_new")):addedLine(d)}
+  else{const role=r&&r[p.t];lb=p.st==="aside"?"":(role?t(role==="IN"?"In":"Out"):"");
+   sb=p.src==="portal"?t("portal_ci"):p.src==="machine"?t("machine"):"";
+   if(p.real||(p.st==="aside"&&!p.pend)){sb=d.by?asideLine(d):t("aside_line",d.on||ON())+(d.req&&d.req.note?" "+t("your_reason",esc(d.req.note)):"")}
+   else if(p.pend)sb=(ch.pending==="asked"?t("tag_aside_asked"):ch.pending==="ask_you"?t("tag_aside_you"):t("tag_aside_new"))}
+  const cls=`tl-p ${p.st==="aside"?"aside":""} ${p.st==="add"?"add":""}`;
+  const dot=`<span class="rail"><i class="rl up s-${up}"></i><i class="rl dn s-${dn}"></i><i class="dot ${p.st==="add"?"add":p.st==="aside"?"aside":"io"} ${p.pend?"pend":""}"></i></span>`;
+  const body=`<span class="tm">${p.t}</span>${dot}<span><span class="lb">${lb}</span><span class="sb" style="display:block">${sb}</span></span>`;
+  if(tappable)h+=`<li><button class="tl-b ${cls}" onclick="openAside('${k}','${p.t}')">${body}<span></span></button></li>`;
+  else h+=`<li><div class="tl-s ${cls}">${body}${isNew&&ch.pending==="new"?`<button class="lnk" onclick="removeAdd()">${t("remove")}</button>`:"<span></span>"}</div></li>`;
+  if(edit&&i<it.length-1)h+=gap(i+1,p.t,it[i+1].t,segType(i),segType(i));
+ });
+ if(edit&&it.length)h+=gap(it.length,it[it.length-1].t,"","unk","none");
+ if(edit&&!it.length)h+=gap(0,"","","none","none");
+ return h+"</ol>"}
+/* ---------- the bottom sheet ---------- */
+function bounds(d,i){const p=compose(d.p,{});return[i>0?p[i-1].t:"",i<p.length?p[i].t:""]}
+function openAdd(k,i){SHEET={type:"add",k,gap:i,time:"",note:DRAFT?DRAFT.note:"",err:""};render()}
+function openAside(k,tm){SHEET={type:"aside",k,t:tm,note:DRAFT?DRAFT.note:""};render()}
+function sheetHtml(){const s=SHEET,d=S[s.k];let h='<div id="scrim" onclick="if(event.target===this)closeSheet()"><div id="sheet" role="dialog" aria-modal="true" aria-labelledby="shT"><div class="grab"></div>';
+ if(s.type==="add"){const[lo,hi]=bounds(d,s.gap),set=DRAFT&&DRAFT.k===s.k?DRAFT.set:[];
+  /* the kind is worked out from the gap, before any time is typed */
+  const gk=gapKind(d,s.gap,set);
+  h+=`<h2 id="shT">${t("sh_add")}</h2><p class="ctx">${lo&&hi?t("ctx_between",lo,hi):hi?t("ctx_before",hi):t("ctx_after",lo)}</p>
+  <div class="field"><label class="fl" for="f-time">${t("f_time")}</label><input type="time" id="f-time" class="${s.err?"bad":""}" value="${s.time}" aria-describedby="infer" oninput="SHEET.time=this.value;SHEET.err='';inferUpd()">
+  <p class="infer" id="infer" aria-live="polite">${t("infer0","<b>"+kname(gk)+"</b>")}</p>${s.err?`<div class="err" role="alert">${ic("warn")}<span>${s.err}</span></div>`:""}</div>
+  
+  <div class="acts"><button class="btn" onclick="closeSheet()">${t("cancel")}</button><button class="btn btn-primary" id="sh-ok" onclick="confirmAdd()">${t("sh_add_btn")}</button></div>`}
+ else{const on=DRAFT&&DRAFT.k===s.k&&DRAFT.set.includes(s.t),src=d.p.find(x=>x.t===s.t).src;
+  h+=`<h2 id="shT">${on?t("sh_keep_t"):t("sh_as")}</h2><p class="ctx num">${s.t} · ${src==="portal"?t("portal_ci"):t("machine")}</p>`;
+  if(!on)h+=`<p class="sub" style="margin:0 0 16px">${t("sh_as_p")}</p>`;
+  h+=`<div class="acts"><button class="btn" onclick="closeSheet()">${t("cancel")}</button><button class="btn btn-primary" id="sh-ok" onclick="confirmAside()">${on?t("sh_keep_btn",s.t):t("sh_as_btn",s.t)}</button></div>`}
+ return h+"</div></div>"}
+function gapKind(d,i,set){const p=compose(d.p,{});/* count the punches that still count before this gap, and after it */
+ const nb=(x)=>!x.aside&&!set.includes(x.t);const before=p.slice(0,i).filter(nb).length,after=p.slice(i).filter(nb).length;
+ if(before===0)return"arrival";const r=before%2===0?"IN":"OUT";if(after===0&&r==="OUT")return"leaving";return r==="IN"?"back":"outb"}
+function inferUpd(){/* the kind comes from the gap, so typing does not change it; nothing to redraw */}
+function closeSheet(){SHEET=null;render()}
+function confirmAdd(){const s=SHEET,d=S[s.k];const tm=document.getElementById("f-time").value;s.time=tm;
+ const[lo,hi]=bounds(d,s.gap);let e="";
+ if(!tm)e=t("e_time");else if(d.p.some(x=>x.t===tm))e=t("e_dup",tm);
+ else if(lo&&hi&&!(tm>lo&&tm<hi))e=t("e_between",tm,lo,hi);else if(!lo&&hi&&!(tm<hi))e=t("e_before",tm,hi);else if(lo&&!hi&&!(tm>lo))e=t("e_after",tm,lo);
+ if(e){s.err=e;s.noFocus=false;render();return}
+ DRAFT=DRAFT&&DRAFT.k===s.k?DRAFT:{k:s.k,add:null,set:[],note:""};DRAFT.add=tm;SHEET=null;render()}
+function confirmAside(){const s=SHEET;DRAFT=DRAFT&&DRAFT.k===s.k?DRAFT:{k:s.k,add:null,set:[],note:""};
+ const i=DRAFT.set.indexOf(s.t);if(i>-1)DRAFT.set.splice(i,1);else{DRAFT.set.push(s.t)}
+ if(!DRAFT.add&&!DRAFT.set.length&&!DRAFT.note)DRAFT=null;SHEET=null;render()}
+function removeAdd(){DRAFT.add=null;if(!DRAFT.set.length)DRAFT=null;render()}
+function barHtml(){if(!DRAFT||!(DRAFT.add||DRAFT.set.length)||OPEN!==DRAFT.k||SHEET)return"";const d=S[DRAFT.k],parts=[],bad=DRAFT.err;
+ if(DRAFT.add)parts.push(t("bar_add",DRAFT.add,t(["arrival","back"].includes(kindFor(d.p,DRAFT.set,DRAFT.add))?"In":"Out")));
+ DRAFT.set.forEach(x=>parts.push(t("bar_aside",x)));
+ return`<div id="bar"><div class="sum num">${parts.join(" · ")}</div>
+ <div class="rsn"><label class="fl" for="f-reason"><span class="lblrow"><span>${t("reason_l")}</span><span class="req">${t("req")}</span></span><span class="why">${t("reason_why")}</span></label>
+ <textarea id="f-reason" rows="1" required aria-required="true" class="${bad?"bad":""}" ${bad?'aria-invalid="true" aria-describedby="e-reason"':""} placeholder="${esc(t("reason_ph"))}" oninput="reasonTyped(this)">${esc(DRAFT.note||"")}</textarea>
+ ${bad?`<div class="err" id="e-reason" role="alert">${ic("warn")}<span>${t("e_reason")}</span></div>`:""}</div>
+ <div class="go"><small>${t("bar_help")}</small><button class="btn btn-primary" onclick="sendReq()">${t("send")}</button></div></div>`}
+function reasonTyped(el){DRAFT.note=el.value;DRAFT.err=false;el.classList.remove("bad");el.removeAttribute("aria-invalid");const e=document.getElementById("e-reason");if(e)e.remove();grow(el)}
+function sendReq(){const d=S[DRAFT.k];const v=((document.getElementById("f-reason")||{}).value||"").trim();DRAFT.note=v;
+ if(!v){DRAFT.err=true;render();const f=document.getElementById("f-reason");if(f)f.focus();return}
+ d.req={add:DRAFT.add,set:DRAFT.set.slice(),note:v,at:"09:12"};d.stage="sent";DRAFT=null;toast(t("toast_sent"));render()}
+function withdraw(k){S[k].stage="open";S[k].req=null;S[k].repl=null;render()}
+/* ---------- ALV-419: the employee's Confirm ---------- */
+function confirmBlock(k){const d=S[k],r=d.req,by=d.by,hr=by.role==="hr",appr=d.stage==="approved",need=needsConf(d),ui=d.cf||(d.cf={nr:false,text:"",err:false,time:"",terr:""});
+ const fact=r.add?t("cf_add",r.add,kname(kindFor(d.p.filter(x=>!(appr&&x.t===r.add&&x.src==="HR")),[],r.add))):t("cf_aside",r.set[0]);
+ let h;
+ if(need&&d.conf!=="no")h=sl("wait",d.conf==="register"?t("cf_done_reg",d.reg.on):t("cf_done_app",d.cfAt));
+ else h=sl("ask",appr?(hr?t("cf_h_appr_hr"):t("cf_h_appr_m",esc(by.who))):(hr?t("cf_h_hr"):t("cf_h_mgr",esc(by.who))));
+ h+=`<p class="fact">${ic(r.add?"plus":"arrow")}<span class="num">${fact}</span></p>`;
+ h+=`<p class="q"><small>${hr?t("cf_why_hr"):t("cf_why_mgr",esc(by.who))}</small>${esc(r.note)}</p>`;
+ const canC=need&&d.conf==="no";
+ h+=`<p class="sub">${canC?(appr?t("cf_truth_a"):t("cf_truth_p")):need?t("cf_done_p"):(appr?t("cf_truth_ma"):t("cf_truth_m"))}</p>`;
+ if(!ui.nr)return h+`<div class="cf-acts">${canC?`<button class="btn btn-primary" onclick="doConfirm('${k}')">${t("confirm")}</button>`:""}<button class="btn" onclick="openNR('${k}')">${t("notright")}</button></div>`;
+ const tf=r.add?`<div class="field"><label class="fl" for="f-nt"><span class="lblrow"><span>${t("nt_"+kindFor(d.p.filter(x=>!(appr&&x.t===r.add&&x.src==="HR")),[],r.add))}</span><span class="req">${t("req")}</span></span><span class="why">${t("nt_why",r.add)}</span></label>
+ <input type="time" id="f-nt" class="${ui.terr?"bad":""}" value="${ui.time}" ${ui.terr?'aria-invalid="true" aria-describedby="e-nt"':""} oninput="ntTyped('${k}',this)">
+ ${ui.terr?`<div class="err" id="e-nt" role="alert">${ic("warn")}<span>${ui.terr}</span></div>`:""}</div>`:"";
+ return h+`<div class="cf-nr">${tf}<label class="fl" for="f-nr"><span class="lblrow"><span>${t("nr_l")}</span><span class="req">${t("req")}</span></span><span class="why">${t("nr_read")}</span></label>
+ <textarea id="f-nr" rows="2" required aria-required="true" class="${ui.err?"bad":""}" ${ui.err?'aria-invalid="true" aria-describedby="e-nr"':""} placeholder="${esc(t("nr_ph"))}" oninput="nrTyped('${k}',this)">${esc(ui.text)}</textarea>
+ ${ui.err?`<div class="err" id="e-nr" role="alert">${ic("warn")}<span>${t("e_nr")}</span></div>`:""}
+ <p class="sub" id="nr-eff" aria-live="polite">${effTxt(d)}</p>
+ <div class="cf-acts"><button class="btn" onclick="closeNR('${k}')">${t("nr_back")}</button><button class="btn btn-primary" onclick="doNR('${k}')">${t("nr_send")}</button></div></div>`}
+function effTxt(d){const ui=d.cf,r=d.req,appr=d.stage==="approved";
+ if(appr)return ui.time&&r.add?t("nr_eff_ap",r.add,ui.time):t("nr_ap");
+ return ui.time&&r.add?t("nr_eff",r.add,ui.time):(r.add?t("nr_p"):t("nr_p_aside"))}
+function nrTyped(k,el){const ui=S[k].cf;ui.text=el.value;ui.err=false;el.classList.remove("bad");el.removeAttribute("aria-invalid");const e=document.getElementById("e-nr");if(e)e.remove();grow(el)}
+function ntTyped(k,el){const d=S[k],ui=d.cf;ui.time=el.value;ui.terr="";el.classList.remove("bad");el.removeAttribute("aria-invalid");const e=document.getElementById("e-nt");if(e)e.remove();
+ const p=document.getElementById("nr-eff");if(p)p.textContent=effTxt(d)}
+/* the same checks as the add sheet: before, after, between, duplicate */
+function chkTime(d,r,tm){const base=d.p.filter(x=>!(d.stage==="approved"&&x.t===r.add&&x.src==="HR"));const i=compose(base,{}).filter(x=>x.t<r.add).length;const lo=i>0?compose(base,{})[i-1].t:"",hi=i<base.length?compose(base,{})[i].t:"";
+ if(tm===r.add)return t("e_same");if(base.some(x=>x.t===tm))return t("e_dup",tm);
+ if(lo&&hi&&!(tm>lo&&tm<hi))return t("e_between",tm,lo,hi);if(!lo&&hi&&!(tm<hi))return t("e_before",tm,hi);if(lo&&!hi&&!(tm>lo))return t("e_after",tm,lo);return""}
+function doConfirm(k){const d=S[k];d.conf="app";d.cfAt="09:40";d.cfOn=ON()+", 09:40";toast(t("toast_cf"));render()}
+function openNR(k){S[k].cf.nr=true;render();const f=document.getElementById("f-nr");if(f)f.focus()}
+function closeNR(k){S[k].cf.nr=false;S[k].cf.err=false;render()}
+function doNR(k){const d=S[k],ui=d.cf,r=d.req,appr=d.stage==="approved",v=((document.getElementById("f-nr")||{}).value||"").trim(),tm=r.add?((document.getElementById("f-nt")||{}).value||""):"";
+ ui.text=v;ui.time=tm;ui.err=!v;ui.terr=tm?chkTime(d,r,tm):(r.add?t("e_time"):"");
+ if(ui.err||ui.terr){render();const f=document.getElementById(ui.terr?"f-nt":"f-nr");if(f)f.focus();return}
+ ui.nr=false;
+ if(appr){/* HR already approved: the day stays as approved; the employee's own time becomes a NEW request */
+  d.conf="disputed";if(tm)d.repl2={add:tm,note:v,filed:r.add,at:"09:40"};else d.dispute={note:v};toast(t("toast_own"));render();return}
+ if(tm){d.repl={full:by_full(d),lbl:who(d),filed:r.add,time:tm,reason:v};d.req={add:tm,set:[],note:v,at:"09:40"};d.by=null;d.stage="sent";toast(t("toast_nr2"));render();return}
+ d.stage="notright";d.nrText=v;toast(t("toast_nr"));render()}
+function by_full(d){return d.by.who+(d.by.role==="hr"?" (HR)":" (manager)")}
+/* ---------- Home: one new row in the existing Needs you card ---------- */
+function homeView(){const rows=["d13","d10","d19"].filter(awaitsYou);
+ let h=`<div class="app-h"><b>${t("home_t")}</b><small>Ravi Sample</small></div><div class="scroll"><div class="pad"><section class="hcard" aria-labelledby="hn"><h2 id="hn">${t("needs")}</h2>`;
+ if(!rows.length)h+=`<p class="muted" style="margin:0">${t("clear")}</p>`;
+ rows.forEach(k=>{const by=S[k].by;h+=`<div class="need"><span>${by.role==="hr"?t("nd_hr",dn(k)):t("nd_m",esc(by.who),dn(k))}</span><button class="btn" onclick="goDay('${k}')">${t("check")}</button></div>`});
+ return h+`</section><p class="revnote">${t("home_note")}</p></div></div>`}
+function goDay(k){VIEW="time";OPEN=k;SHEET=null;render();seeOpen()}
+function seeOpen(){const e=document.querySelector(".dayrow[aria-expanded=true]");if(e)e.scrollIntoView({block:"start"})}
+function scen(n){WHO="emp";if(DEV==="desktop")DEV="phone";SHEET=null;REG=null;
+ if(n==="4")VIEW="home";else if(n==="6"){WHO="hr2";DEV="desktop";VIEW="time"}else{VIEW="time";OPEN={1:"d20",2:"d13",3:"d19",5:"d10"}[n]}render();if(n!=="4"&&n!=="6")seeOpen()}
+/* ---------- HR ---------- */
+function hrList(){const c=[];["d13","d10","d19","d20"].forEach(k=>{const d=S[k];if(["sent","confirm"].includes(d.stage))c.push({id:k,who:"Ravi Sample",first:"Ravi",dk:k,p:d.p,add:d.req.add,set:d.req.set,note:d.req.note,d,filedBy:d.by||null,repl:d.repl||null,filedAt:d.req.at,needs:needsConf(d)})});
+ HRQ.forEach(q=>{if(!S.hr[q.id])c.push(Object.assign({set:[]},q))});return c}
+function hrView(){const me=WHO==="hr2"?"Kavita":"Anil";
+ let h=`<div class="app-h"><b>${t("title_hr")}</b><small>${me} Sample · HR</small></div><div class="scroll"><div class="pad">`;const l=hrList();
+ h+=ppHtml();l.forEach(c=>h+=hrCard(c,me));if(!l.length)h+=`<p class="empty">${t("queue_empty")}</p>`;
+ const done=["d13","d10","d19","d20"].filter(k=>["approved","declined","notright"].includes(S[k].stage)||(S[k].repl&&S[k].stage==="sent"));
+ if(done.length){h+=`<div class="sec">${t("done_h")}</div>`;done.forEach(k=>h+=`<div class="done"><span>Ravi Sample · ${dn(k)}${S[k].stage==="notright"?`<br><span class="muted">“${esc(S[k].nrText)}”</span>`:""}${S[k].repl&&S[k].stage==="sent"?`<br><span class="muted">“${esc(S[k].repl.reason)}” ${t("hr_nr_t","Ravi",S[k].repl.time)}</span>`:""}</span><span>${S[k].stage==="approved"?t("approved"):(S[k].stage==="notright"||S[k].repl)?t("hr_nr","Ravi"):t("declined")}</span></div>`)}
+ return h+swHtml()+"</div></div>"}
+function tmsLine(it){return`<p class="tms">`+it.map(p=>p.st==="add"?`<span class="a">+${p.t}</span>`:p.st==="aside"?`<span class="x">${p.t}</span>`:p.t).join(" · ")+"</p>"}
+function hrCard(c,me){const before=compose(c.p,{}),after=compose(c.p,{add:c.add,set:c.set});
+ const jb=judge(before),ja=judge(after),own=c.own&&c.own===WHO,u=HRUI[c.id]||(HRUI[c.id]={open:false,note:"",err:false});
+ const kind=c.add?kname(kindFor(c.p,c.set,c.add)):"";
+ const addTxt=c.add?c.add+" ("+t(["arrival","back"].includes(kindFor(c.p,c.set,c.add))?"In":"Out")+")":"";
+ let h=`<section class="hrcard" aria-label="${c.who}"><div class="hrh"><b>${c.who} · ${t(c.add?"h_missing":"h_wrong")}</b><span>${dn(c.dk)}</span></div>`;
+ const fn=c.filedBy?c.filedBy.who+(c.filedBy.role==="hr"?" (HR)":" (manager)"):"";
+ h+=`<p class="says">${c.filedBy?(c.add?t("says_f_add",fn,kind,c.add):t("says_f_aside",fn,c.set.join(", "))):(c.add?t("says_add",c.first,kind,c.add):t("says_aside",c.first,c.set.join(", ")))}${!c.filedBy&&c.add&&c.set.length?" "+t("says_also",c.set.join(", ")):""}`+(c.note?`<q>${esc(c.note)}</q>`:"")+"</p>";
+ if(c.repl)h+=`<p class="sub">${t("hr_repl",c.repl.full,c.repl.filed,c.first)}</p>`;
+ if(c.needs)h+=cfLine(c);
+ const nowL=jb.held?sl("held",t("h_held",pn(jb.n))):sl("ok",t("h_pres",hm(jb.work),jb.late>0?t("late_m",jb.late):""));
+ const aftL=ja.held?sl("held",t("h_still",pn(ja.n))):sl("ok",t("h_pres",hm(ja.work),ja.late>0?t("late_m",ja.late):""));
+ h+=`<div class="ba"><div><h4>${t("now")}</h4>${strip(before)}${tmsLine(before)}${nowL}</div>`;
+ if(own||c.slip){h+=`<div class="arr"></div><div></div></div>${sl("lock",own?t("own_you"):t("slip_hr"))}`;
+  if(c.slip&&!own)h+=actions(c,u,false,addTxt);else h+="";return h+`<p class="legend">${t("legend",SHIFT[0]+"–"+SHIFT[1])}</p></section>`}
+ h+=`<div class="arr">${ic("arrow")}</div><div id="res-${c.id}"><h4>${t("after")}</h4>${strip(after)}${tmsLine(after)}${aftL}</div></div>`;
+ return h+actions(c,u,true,addTxt)+regRow(c)+`<p class="legend">${t("legend",SHIFT[0]+"–"+SHIFT[1])}</p></section>`}
+function cfState(d){return d.conf==="app"?t("hr_cs_app",d.cfOn||ON()):d.conf==="register"?t("hr_cs_reg",d.reg.on,esc(d.reg.by)):d.conf==="disputed"?t("hr_cs_disp","Ravi"):t("hr_cs_no")}
+function cfLine(c){const d=S[c.id];return`<p class="cfq">${ic("info")}<span><b>${t("hr_needs",c.first)}</b> · ${cfState(d)}</span></p>`}
+const meHR=()=>WHO==="hr2"?"Kavita Sample":"Anil Sample";
+function regRow(c){const d=S[c.id];if(!c.needs||d.conf!=="no")return"";
+ if(d.by.who===meHR())return`<div class="regrow"><p class="sub">${t("reg_you")}</p></div>`;
+ return`<div class="regrow"><button class="btn" onclick="openReg('${c.id}')">${t("reg_btn")}</button></div>`}
+function openReg(id){REG={id,photo:"",err:""};render()}
+function regHtml(){const d=S[REG.id];return`<div id="scrim" onclick="if(event.target===this){REG=null;render()}"><div id="sheet" role="dialog" aria-modal="true" aria-labelledby="rgT" onkeydown="if(event.key==='Escape'){REG=null;render()}"><h2 id="rgT">${t("rg_h")}</h2><p class="ctx">${t("rg_p","Ravi",chgTxt(d)+", "+dn(REG.id))}</p>
+ <div class="field"><label class="fl" for="f-ph">${t("rg_photo")}</label><input type="file" id="f-ph" accept="image/*" capture="environment" style="width:100%" aria-describedby="ph-h" onchange="REG.photo=this.files[0]?this.files[0].name:'';REG.err=''"><p class="hint" id="ph-h">${t("rg_ph_h")}</p>${REG.err?`<div class="err" role="alert">${ic("warn")}<span>${REG.err}</span></div>`:""}${REG.photo?`<p class="hint">${esc(REG.photo)}</p>`:""}</div>
+ <p class="sub" style="margin:0 0 16px">${t("rg_keep")}</p>
+ <div class="acts"><button class="btn" onclick="REG=null;render()">${t("cancel")}</button><button class="btn btn-primary" onclick="doReg()">${t("rg_ok")}</button></div></div></div>`}
+function doReg(){if(!REG.photo){REG.err=t("rg_err");render();return}const d=S[REG.id];d.conf="register";d.reg={by:meHR(),on:ON(),photo:REG.photo};toast(t("toast_reg",dn(REG.id)));REG=null;render()}
+function withdrawCh(k){const d=S[k];if(d.stage==="confirm"){d.stage="declined";d.dnote="HR withdrew this change.";d.req=null}toast(t("toast_wd"));render()}
+let SLIP=null;
+function trySlip(){const l=unconf();SLIP=l.length?{no:l}:{ok:true};render()}
+function ppHtml(){const l=unconf(),n=l.length;
+ let h=`<section class="hrcard ppc" aria-label="${t(n===1?"pp_h1":"pp_h",n)}"><div class="hrh"><b>${n===0?t("pp_none"):n===1?t("pp_h1"):t("pp_h",n)}</b><span>Nov 2026</span></div>`;
+ if(n)h+=`<p class="says">${t("pp_p")}</p>`;
+ l.forEach(k=>{const d=S[k],mine=d.by.who===meHR(),st=d.stage==="approved"?t("pp_appr",d.on||ON()):t("pp_pend");
+  h+=`<div class="pp"><div class="w"><b>Ravi Sample · ${dn(k)}</b><br>${chgTxt(d)} · ${t("pp_by",esc(by_full(d)))}<div class="st">${st} · ${cfState(d)}</div></div><div class="a">`
+   +(d.conf==="no"&&!mine?`<button class="btn" onclick="openReg('${k}')">${t("reg_btn")}</button>`:"")
+   +(d.stage==="confirm"?`<button class="btn" onclick="withdrawCh('${k}')">${t("pp_wd")}</button>`:"")+`</div></div>`});
+ h+=`<div class="hrfoot"><button class="btn" onclick="trySlip()">${t("sl_btn")}</button></div>`;
+ if(SLIP&&SLIP.no)h+=`<div class="refuse" role="alert">${ic("warn")}<div>${t("sl_no",SLIP.no.length===1?"1 change is":SLIP.no.length+" changes are")}<ul>${SLIP.no.map(k=>`<li>${dn(k)}: ${chgTxt(S[k]).toLowerCase()}, ${t("pp_by",esc(by_full(S[k])))}</li>`).join("")}</ul>${t("sl_how")}</div></div>`;
+ if(SLIP&&SLIP.ok)h+=`<div class="okline" role="status">${ic("check")}<span>${t("sl_ok")}</span></div>`;
+ return h+"</section>"}
+function swHtml(){const l=unconf();return`<div class="sec">${t("sw_h")}<span class="tagn">Note only</span></div><p class="legend" style="margin-top:0">${t("sw_note")}</p><table class="swt"><thead><tr><th>Employee</th><th>Pay days</th><th>Unconfirmed</th></tr></thead><tbody><tr><td>Ravi Sample</td><td class="num">20</td><td>${l.length?`<span class="flagc">${ic("alert")} ${t("sw_flag",l.map(k=>dn(k)+" "+chgTxt(S[k]).toLowerCase()).join("; "))}</span>`:t("sw_clear")}</td></tr></tbody></table>`}
+function actions(c,u,canApprove,addTxt){
+ let h=`<div class="hrfoot">`;
+ if(canApprove)h+=`<button class="btn btn-primary" aria-describedby="res-${c.id}" onclick="doApprove('${c.id}')">${t("approve")}</button>`;
+ h+=`<button class="btn" onclick="doDecline('${c.id}')">${t("decline")}</button>`;
+ if(!u.open)h+=`<button class="lnk" onclick="HRUI['${c.id}'].open=true;render();document.getElementById('hn-${c.id}')&&document.getElementById('hn-${c.id}').focus()">${t("add_note",c.first)}</button>`;
+ h+=`<span class="grow"></span><button class="lnk" onclick="toast('Sample: opens ${c.first}’s month')">${t("month")}</button></div>`;
+ if(u.open)h+=`<div class="noteBox"><label class="fl" for="hn-${c.id}">${u.dec?t("dec_lbl",c.first):t("note_lbl",c.first)}</label><textarea id="hn-${c.id}" ${u.err?'class="bad" aria-invalid="true"':""} oninput="HRUI['${c.id}'].note=this.value">${esc(u.note)}</textarea>${u.err?`<div class="err" role="alert">${ic("warn")}<span>${t("need_reason",c.first)}</span></div>`:""}</div>`;
+ if(canApprove&&addTxt)h+=`<p class="legend" style="margin-bottom:8px">${t("marks",addTxt)}</p>`;
+ return h}
+function doApprove(id){const c=hrList().find(x=>x.id===id),d=S[id];
+ if(d){const j=judge(compose(d.p,{add:c.add,set:c.set}));
+  if(c.add)d.p.push({t:c.add,src:"HR"});d.p.forEach(x=>{if(c.set.includes(x.t))x.aside=true});d.stage="approved";d.on=ON();
+  toast(j.held?t("toast_ap3"):c.add?t("toast_ap",c.add):t("toast_ap2",c.set.join(", ")))}
+ else{S.hr[id]=true;toast(t("toast_ap",c.add))}render()}
+function doDecline(id){const u=HRUI[id]||(HRUI[id]={open:false,note:"",err:false});
+ if(!u.note.trim()){u.open=true;u.dec=true;u.err=true;render();const e=document.getElementById("hn-"+id);if(e)e.focus();return}
+ if(S[id]){S[id].stage="declined";S[id].dnote=u.note.trim();S[id].req=null}else S.hr[id]=true;toast(t("toast_dec"));render()}
+function toast(m){const e=document.getElementById("toast");e.textContent=m;e.style.display="block";clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display="none",3500)}
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&SHEET)closeSheet()});
+document.getElementById("demo").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+ if(b.id==="reset"){fresh();render();return}
+ if(b.dataset.sc){scen(b.dataset.sc);return}
+ if(b.dataset.p){WHO=b.dataset.p;if(WHO!=="emp")DEV="desktop";if(WHO==="emp"&&DEV==="desktop")DEV="phone"}
+ if(b.dataset.d)DEV=b.dataset.d;if(b.dataset.l)LANG=b.dataset.l;if(b.dataset.t)THEME=b.dataset.t;render()});
+render();
+</script></body></html>

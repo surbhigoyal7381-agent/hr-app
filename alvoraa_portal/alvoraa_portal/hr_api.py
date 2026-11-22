@@ -9,6 +9,7 @@ from alvoraa_portal.attendance_correction import (EMPLOYEE_FILING_WINDOW_KEY,
                                                  MANAGER_FILING_WINDOW_KEY,
                                                  MANAGER_ON_BEHALF_KEY,
                                                  employee_filing_from)
+from alvoraa_portal.held_day import held_dates
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.payroll_rules import label_punches
 from alvoraa_portal.subscription import requires_feature
@@ -1209,6 +1210,7 @@ def get_employee_scorecard(employee_id):
             "month_label": dt.strftime("%b"),
             "present": counts.get("Present", 0) + round(counts.get("Half Day", 0) * 0.5),
             "absent": counts.get("Absent", 0),
+            "held": counts.get("Held", 0),
             "on_leave": counts.get("On Leave", 0),
             "wfh": counts.get("Work From Home", 0),
             "avg_hours": round(sum(hrs) / len(hrs), 1) if hrs else 0,
@@ -1471,6 +1473,7 @@ def get_team_scorecard():
             "designation": m.designation or "",
             "present": att.get("Present", 0) + round(att.get("Half Day", 0) * 0.5),
             "absent": att.get("Absent", 0),
+            "held": att.get("Held", 0),
             "on_leave": att.get("On Leave", 0),
             "wfh": att.get("Work From Home", 0),
             "avg_hours": round(sum(hrs_list) / len(hrs_list), 1) if hrs_list else 0,
@@ -2160,6 +2163,9 @@ def _payslip_payload(slip):
         "gross_year_to_date": flt(slip.get("gross_year_to_date")),
         "earnings": lines(slip.earnings),
         "deductions": lines(slip.deductions),
+        # Slice 085 (AC-6): the days in this slip that were Held and so not paid.
+        # Dates only, for the slip's own employee (ownership is checked above).
+        "held_dates": [str(d) for d in held_dates(slip.employee, slip.start_date, slip.end_date)],
     }
 
 

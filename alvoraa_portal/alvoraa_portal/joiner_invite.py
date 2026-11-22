@@ -28,11 +28,18 @@ the largest subtraction in the slice and it is what pays for the gate in
 | **`send_welcome_email = 0`** | Frappe's welcome mail carries a password link, and that does not belong in a stranger's inbox by accident |
 | **No `Employee` row** | No seat, no headcount, no org chart - and no `Attendance`, which is the trap this project has already paid for once at DTC |
 
-**The number the joiner types is `User.mobile_no`**, which Frappe resolves
-through `System Settings.allow_login_using_mobile_number`
-(`frappe/core/doctype/user/user.py:831-843`, read 1 Nov 2026 on v16.33.1). That
-setting is **site-wide**: turning it on lets every employee at that tenant sign
-in with their mobile number too. Surbhi accepted that with the side effect named
+**While the invite is live, the number the joiner types is `User.mobile_no`**,
+which Frappe resolves through `System Settings.allow_login_using_mobile_number`
+(`User.find_by_credentials` - named rather than cited by line, because the line
+had already drifted and a line number in prose stops being checkable the moment
+anybody edits the file). That setting is **site-wide**: turning it on lets every
+employee at that tenant sign in with their mobile number too.
+
+**Once the invite is closed the number is not there any more** (ALV-399 - see
+`end_the_sign_in`), so Frappe's own lookup finds nothing and resolution rests
+entirely on ALV-394's `before_login` hook, which keys on `login_id` on the
+submission row instead. Either way the joiner is then refused, because closing
+also destroys the password; which of the two refusals they read is ALV-397. Surbhi accepted that with the side effect named
 (decision 6b), and **we do not patch it** - `make_sign_in` refuses a mobile login
 id while it is off and says which setting to change.
 
@@ -61,6 +68,7 @@ from frappe.utils import add_to_date, cint, cstr, now, today
 
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_joiner_submission.alvoraa_joiner_submission import (
 	JOINER_FIELDS,
+	TERMINAL,
 	erase,
 )
 from alvoraa_portal.field_app_limits import HR_KEY, _limited
@@ -386,6 +394,39 @@ def _login_id():
 	return f"joiner-{frappe.generate_hash(length=18)}@{LOGIN_DOMAIN}"
 
 
+def _plain_url():
+	"""This site's address, without a port number that means nothing. ALV-428.
+
+	`frappe.utils.get_url()` builds the address from the `Host` header
+	(`get_host_name_from_request`), so whatever the proxy in front of us put
+	there is what a joiner is told to type. On 21 Nov 2026 the invite box at
+	ppj.dev read `https://ppj.dev.alvoraa.co:443/joining`.
+
+	**The `:443` is correct and still wrong.** It is the default port for https,
+	so the link works - but this address goes into a message a joiner is told to
+	keep and may retype by hand onto a phone, and an address with a port on it
+	reads like something has gone wrong. This slice exists to serve frontline
+	staff on their first contact with an employer; that is the worst audience
+	for a URL that looks malformed.
+
+	**Fixed here rather than in nginx, deliberately.** The repository's own
+	config already forwards `Host $host`, which carries no port, so the port is
+	being added by the proxy actually in front of the site - and one nginx
+	serves both dev and production, so changing it to tidy a string would put a
+	live site's front door at risk for a cosmetic gain. Trimming the default
+	port where we build the message costs nothing and is right whatever sits in
+	front of us tomorrow.
+
+	Only `:443` on https and `:80` on http are removed. Any other port is real -
+	a bench on `:8010` has to keep it or the address stops working.
+	"""
+	url = cstr(frappe.utils.get_url()).rstrip("/")
+	for scheme, default in (("https://", ":443"), ("http://", ":80")):
+		if url.startswith(scheme) and url.endswith(default):
+			return url[: -len(default)]
+	return url
+
+
 def _looks_like_a_number(value):
 	"""Is what HR typed a telephone number rather than an email address?
 
@@ -395,23 +436,69 @@ def _looks_like_a_number(value):
 
 
 def _already_a_login(typed):
-	"""Does that number or email already belong to ANY `User`?
+	"""Does that number or email already belong to a LIVE sign-in here?
 
 	AC-9, and it is ALV-242's lesson: one credential per person, never a batch.
 	It covers a member of staff's real login, a re-hire's old account and
-	another joiner's, because all three resolve through the same two columns
-	Frappe searches (`User.name` and `User.mobile_no`).
+	another joiner's.
+
+	**ALV-396.** It could not see an email invite at all, so two live invites
+	could share one address: the second silently took the account and the first
+	joiner was told, for ever, that their correct password was wrong. Nothing
+	reached HR. The second query below is that fix.
+
+	**ALV-399 is NOT fixed here, and the attempt to fix it here was wrong.**
+	HR could not re-invite somebody whose invite had been cancelled. It looked
+	like this guard counting dead accounts, so the first fix taught it to ignore
+	them - and the tests showed that merely moved the refusal: `mobile_no` is a
+	UNIQUE column, so the database threw a duplicate-key error at HR instead.
+	The cause was never the question being asked here. It was that closing an
+	invite never gave the number back, and it is fixed in `end_the_sign_in`.
+	A closed account now carries no number, so it matches nothing below and
+	needs no special case. (Its `username` is Frappe's to deal with, and it
+	already does - see the note in `end_the_sign_in`.)
+
+	**The row HR is inviting cannot match, and needs no exclusion.**
+	`make_sign_in` refuses a row that already has a sign-in before it reaches
+	here, and the second query requires `user` to be set - which Frappe compiles
+	to `!= ""`, excluding NULL too. An earlier version of this took an
+	`ignore_submission` argument to be safe; it could never fire, so it is gone.
 	"""
 	typed = cstr(typed).strip()
 	if not typed:
 		return False
-	# `ignore_permissions` because the guard has to see rows the caller may not:
-	# Frappe ships `User` read to System Manager, so an HR Manager's own query
-	# would be narrowed to their own row and the duplicate check would pass
-	# silently every time. It returns a boolean and never a name.
-	return bool(frappe.get_all("User", or_filters=[
+	# `ignore_permissions` on both queries because the guard has to see rows the
+	# caller may not: Frappe ships `User` read to System Manager, so an HR
+	# Manager's own query would be narrowed to their own row and the duplicate
+	# check would pass silently every time. It returns a boolean, never a name.
+	#
+	# **Any match blocks, with no exception for a switched-off account.** The
+	# unique index on `mobile_no` means a number that is still on ANY `User` row
+	# cannot be given to a second one, so waving HR past such a row would only
+	# move the refusal from a sentence they can act on to a duplicate-key error.
+	# A properly closed invite holds no number at all (`end_the_sign_in`), so
+	# the only row left here with a number on it is one that genuinely still
+	# holds it - including an account a close failed to reach, which is a
+	# defect worth its own refusal rather than a quiet pass.
+	if frappe.get_all("User", or_filters=[
 		{"name": typed}, {"email": typed}, {"mobile_no": typed},
-	], pluck="name", limit_page_length=1, ignore_permissions=True))
+	], pluck="name", limit_page_length=1, ignore_permissions=True):
+		return True
+
+	# ALV-396. An email invite writes what HR typed to NO `User` column -
+	# `make_sign_in` fills `mobile_no` only for a number - so the loop above is
+	# blind to it and AC-9 was unenforceable for email. HR's own entry is on the
+	# row itself, in `login_id`, so ask there too.
+	#
+	# **Only a row that is live AND already has a sign-in counts.** Two rows HR
+	# has typed but not invited yet are not two sign-ins; counting them would
+	# refuse the first invite as well as the second, and HR could invite nobody
+	# on that address at all.
+	return bool(frappe.get_all(DOCTYPE, filters={
+		"login_id": typed,
+		"status": ["not in", TERMINAL],
+		"user": ["is", "set"],
+	}, pluck="name", limit_page_length=1, ignore_permissions=True))
 
 
 # ── making one (US-1) ───────────────────────────────────────────────────────
@@ -532,7 +619,7 @@ def make_sign_in(submission=None):
 		"password": password,
 		"expires_on": str(expires),
 		"access_days": days,
-		"address": f"{frappe.utils.get_url()}/joining",
+		"address": f"{_plain_url()}/joining",
 		"contact": hr_contact(),
 	}
 
@@ -588,7 +675,55 @@ def end_the_sign_in(doc, why):
 		from frappe.sessions import clear_sessions
 		from frappe.utils.password import delete_all_passwords_for
 
-		frappe.db.set_value("User", name, "enabled", 0, update_modified=False)
+		# **The number is GIVEN BACK, not just switched off - ALV-399.**
+		# `mobile_no` is a UNIQUE column on `User`. Leaving it on a closed
+		# account meant the database itself refused the re-invite, before any
+		# check of ours was reached, with a duplicate-key error on the screen.
+		# Switching an account off is not the same as giving the person their
+		# number back, and the second is what HR needs in order to invite them
+		# again. Frappe stores it as NULL rather than "", so any number of
+		# closed accounts coexist under the unique index.
+		#
+		# **Does releasing it cost the joiner a worse message? No - measured.**
+		# Frappe's only login lookup finds a typed number through `mobile_no`
+		# alone (`User.find_by_credentials`), so with the number gone the lookup
+		# finds nothing and `authenticate` answers "Invalid login credentials"
+		# rather than "User disabled or missing". That looked like a regression
+		# and was written up here as one, with a release-ordering constraint
+		# against ALV-394 attached to it. **Both were wrong**, and the measured
+		# answer is that this write changes nothing anybody reads:
+		#
+		#   closed invite, correct old password, number KEPT
+		#     -> found, is_authenticated=False, enabled=0
+		#     -> "Invalid login credentials"
+		#   closed invite, correct old password, number RELEASED
+		#     -> not found
+		#     -> "Invalid login credentials"
+		#
+		# Identical, because closing also destroys the password and
+		# `authenticate` tests `is_authenticated` BEFORE `enabled`. There never
+		# was a correct password to type, so the "disabled or missing" branch
+		# was unreachable for a properly closed invite with or without this
+		# write. That is ALV-397, and it dissolves the concern rather than
+		# answering it. A live invite is untouched: it keeps its number.
+		#
+		# What remains true, and is smaller than it was claimed to be: the
+		# number is no longer what RESOLVES a closed invite, so that job rests
+		# on ALV-394's `before_login` hook keying on `login_id`.
+		# `test_a_closed_MOBILE_invite_still_resolves_to_its_own_account` pins
+		# it. Resolution is worth keeping - it decides which account an attempt
+		# is attributed to - but it is not what the joiner reads.
+		#
+		# **`username` is unique too and is deliberately left alone.** Frappe
+		# blanks a duplicate itself - `User.validate_username` sets it to ""
+		# for a Website User, and `get_valid_dict` stores "" on a unique field
+		# as NULL - so re-inviting the same person under the same name already
+		# works. Releasing it was code that bought nothing, and a test run with
+		# it removed proved that.
+		frappe.db.set_value("User", name, {
+			"enabled": 0,
+			"mobile_no": None,
+		}, update_modified=False)
 		frappe.db.delete("Has Role", {"parent": name, "parenttype": "User"})
 		clear_sessions(user=name, force=True)
 		delete_all_passwords_for("User", name)

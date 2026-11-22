@@ -163,7 +163,7 @@ appears and the same credentials still work, so nothing breaks if the hint is lo
 | 3 | "Email / Username", placeholder `you@company.com` | **"The phone number or email HR sent the message to"**, no placeholder | Name the thing the person is holding, not the thing our database calls it |
 | 4 | Field text 15.2 px | **16 px** | Under 16 px, iOS zooms on focus and pushes the button off screen |
 | 5 | "Password" | **"Your password"** → *"Three words and two numbers, like `tiger-lamp-74`. Type it exactly as it is written, dashes and all."* | The hint is the format, because the format is unusual |
-| 6 | ~28 px eye icon in the corner | **A full-width 44 px "Show the password" button** under the field | The mistype is the likeliest failure in the journey and the reveal is the smallest target on the page |
+| 6 | ~28 px eye icon in the corner | ~~A full-width 44 px "Show the password" button under the field~~ **Superseded 20 Nov 2026 (ALV-394): the eye stays, the button is removed** | The mistype is the likeliest failure in the journey and the reveal is the smallest target on the page. **What shipped kept BOTH**, so the screen carried two controls doing one job; Surbhi chose the eye. **The 44 px requirement stands and is now met by the eye itself** — her decision the same day — so this row's reasoning survives the control it named |
 | 7 | "Sign In" | **"Sign in and open my form"** | Says what happens |
 | 8 | "Forgot password?" → emails a link · "Need help?" → `mailto:` | **"I cannot sign in"** → an in-page block ending at the employer's own phone number | **Both of today's escape routes are dead ends for a person with no email address** |
 | 9 | — | A grey footer: *"PP Jewellers asked for these details. Alvora only runs the software they use."* | Counsel's ruling 1 in plain words, at the moment the stranger is deciding whether to trust the page |
@@ -173,15 +173,29 @@ appears and the same credentials still work, so nothing breaks if the hint is lo
 Four screens. All four carry a **code for HR** — the pattern slices 013 and 064 settled,
 because the code is the only thing a person who reads slowly can still show somebody.
 
-**That did not work** (`JOIN-BADPASS`)
-> **That did not work.** Check the password against Arjun Bhatia's message — a dash or a
-> letter is easy to miss. Press **Show the password** to see what you have typed.
-> **2 more tries** before this sign-in locks for 30 minutes.
+**This sign-in did not open** (`JOIN-REFUSED`) — **superseded the `JOIN-BADPASS` screen on
+20 Nov 2026, ALV-397**
+> **This sign-in did not open.** The password may be mistyped, or this sign-in may already
+> be finished. Check the password once, letter by letter. The eye beside the box shows what
+> you typed. **If it still does not open, stop. More tries can lock it.** Ring the person
+> who sent you the message and ask them to check.
 
-It does not say *which* of the two was wrong — that would tell a stranger whether a given
-phone number belongs to a joiner at PP Jewellers. It **counts down out loud**, because
-hitting a silent lock is the single most likely way we lose a real joiner. *(The number of
-tries and the lock length are Frappe's `System Settings`; ⚠ D4b — confirm, do not guess.)*
+~~**That did not work.** Check the password against Arjun Bhatia's message — a dash or a
+letter is easy to miss. **2 more tries** before this sign-in locks for 30 minutes.~~
+
+**Why it changed.** The old screen told the joiner the password was the problem — and it
+was the ONLY screen a joiner whose access had ended could ever reach, because
+`end_the_sign_in` destroys the password, so Frappe can no longer tell the two states apart
+(see `JOIN-ENDED` below and ⚠ D4). Naming the real cause would need the server to answer
+an ungated question about a typed address, which is the oracle US-4 forbids. So one screen
+now covers both and **resolves neither — the ambiguity is the privacy control.**
+
+It still does not say *which* of the two was wrong, for the original reason as well: it
+would tell a stranger whether a given phone number belongs to a joiner at PP Jewellers.
+**The countdown is gone**, and it was never built: the page shows the lock length from
+Frappe's `System Settings` when the lock bites, but no screen ever counted tries remaining
+(⚠ D4b was confirmed for the lock, not for the count). "More tries can lock it" does that
+job without a number that would have to be kept true.
 
 **I cannot sign in** (`JOIN-NOSIGNIN`)
 > **Arjun Bhatia's message has both things you need**
@@ -211,6 +225,26 @@ correct yesterday and being told it is wrong will try again, lock themselves out
 to say the system is broken. Whether the page *can* tell the two apart is ⚠ **D4** — an
 engineering and security question, not a wording one. I have drawn the screen we need
 either way.
+
+**⚠ D4's answer came back NO, on 20 Nov 2026 (ALV-397), and this screen was never once
+shown on any tenant.** `end_the_sign_in` destroys the password
+(`end_the_sign_in`'s `delete_all_passwords_for`), so a closed account fails on "not authenticated" before Frappe
+ever checks "disabled" (`frappe/auth.py:282-288`). The page only ever saw
+`"Invalid login credentials"` — which means **the one thing this section said must never
+happen is exactly what happened, every time, from the day the slice shipped.** The
+reasoning behind the "yes" was sound about Frappe and wrong about our own code, and only a
+test that drove the page could have caught it.
+
+**What replaces it:** `JOIN-REFUSED` above, one screen for both states. Surbhi's decision,
+option B. The purpose of this section is kept — do not send a joiner into a lock-out
+retyping a password that cannot work — by saying *stop*, saying *why*, and making the next
+step a phone call.
+
+**This screen is KEPT and is not dead.** `enabled = 0` is written before the password is
+destroyed, inside one try block whose failure is swallowed (ALV-406). A partly-failed
+close leaves a disabled account with its password intact, Frappe then really does answer
+"User disabled or missing", and these are the right words for it. Rare, and correct when
+it fires.
 
 ---
 
@@ -710,7 +744,7 @@ office joiner, one person who reads slowly, one on a borrowed phone.
 | Task | Success | What would change the design |
 |---|---|---|
 | You got this text message. Fill in your details | Signs in and reaches the first question **unaided, in under 2 minutes** | 2+ of 5 fail → the password format or the field labels change |
-| (Password pre-mistyped) Something is wrong — fix it | Finds **Show the password** and corrects it | Nobody uses the reveal → it is in the wrong place |
+| (Password pre-mistyped) Something is wrong — fix it | Finds **the eye beside the box** and corrects it | Nobody uses the reveal → it is in the wrong place. The eye is a full 44 px target since ALV-394, so a failure here is about where it is, not how big |
 | You filled some in yesterday. Carry on | Knows **what was kept** without asking | Cannot say what was kept → the strip or the step words are wrong |
 | You have no Aadhaar card with you | Reaches "I will bring it" or another document **without stopping** | Anyone stalls → the refusal's three ways out are not readable |
 | What happens to this if you do not join? | Can say "they delete it", roughly when, and who to ring | Cannot → the notice is in the wrong place |

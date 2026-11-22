@@ -34,7 +34,8 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, add_months, cint, flt, get_datetime, getdate, nowdate
 
-from alvoraa_portal.payroll_rules_apply import breaks_by_day
+import alvoraa_portal.punch_fix as punch_fix
+from alvoraa_portal.payroll_rules_apply import breaks_by_day, shift_day
 
 # The tolerance before a day counts as short is an ORGANISATION's decision, not
 # ours. The same data gives 12.9% of days at no tolerance and 4.4% at an hour;
@@ -308,7 +309,7 @@ def _analyse(employees, start, end, tolerance):
 
 	shift_cache = {}
 	default_shift = _default_shift_of(employees)
-	per = {e: {"present": 0, "absent": 0, "leave": 0, "half": 0, "short_days": 0,
+	per = {e: {"present": 0, "absent": 0, "held": 0, "leave": 0, "half": 0, "short_days": 0,
 	           "hours_short": 0.0, "hours_worked": 0.0, "late": 0, "early": 0,
 	           "expected_days": 0, "leave_by_type": {}, "short_dates": []}
 	      for e in employees}
@@ -353,6 +354,10 @@ def _analyse(employees, start, end, tolerance):
 				p["leave_by_type"][r.leave_type] = p["leave_by_type"].get(r.leave_type, 0) + 1
 		elif r.status == "Absent":
 			p["absent"] += 1
+			p["expected_days"] += 1
+		elif r.status == "Held":
+			# Slice 085: an unpaid day waiting for HR. Expected, not absent.
+			p["held"] += 1
 			p["expected_days"] += 1
 
 	return per, by_weekday, by_month
@@ -648,11 +653,12 @@ def person(employee, date_from=None, date_to=None):
 	times_by_date = {}
 	for c in (frappe.get_list(
 			"Employee Checkin",
-			filters={"employee": employee,
-			         "time": ("between", [f"{start} 00:00:00", f"{end} 23:59:59"])},
-			fields=["time"], order_by="time asc", limit_page_length=0)
+			filters=punch_fix.counting_only({"employee": employee,
+			         "time": ("between", [f"{start} 00:00:00", f"{add_days(end, 1)} 23:59:59"])}),
+			fields=["time", "shift_start"], order_by="time asc", limit_page_length=0)
 			if frappe.has_permission("Employee Checkin", "read") else ()):
-		times_by_date.setdefault(str(c.time)[:10], []).append(get_datetime(c.time))
+		# ALV-402: by working day, so a punch after midnight joins its shift's day.
+		times_by_date.setdefault(shift_day(c), []).append(get_datetime(c.time))
 	_allowance, breaks = breaks_by_day(
 		employee, subject.company,
 		{str(r.attendance_date): (r.status, r.shift or default_shift) for r in rows},

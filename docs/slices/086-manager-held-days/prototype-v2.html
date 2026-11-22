@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>086 Whole team: held days, prototype v2 (all names and times are Sample)</title>
+<style>
+/* Tokens copied from templates/includes/design_system.html (light and dark). --on-primary is added here: white text on the dark theme's light purple fails contrast (ux-learnings, 6 Nov). */
+:root,:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--on-primary:#FFFFFF;--green:#1B7F5A;--red:#B3261E;--amber:#94600F;--sh1:0 1px 2px rgba(0,0,0,.06);--sh3:0 12px 32px rgba(0,0,0,.16);--r:10px;--r-sm:6px;--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--on-primary:#1A1815;--green:#5DBF97;--red:#F08A82;--amber:#E0A94A;--sh1:0 1px 2px rgba(0,0,0,.4);--sh3:0 12px 32px rgba(0,0,0,.6)}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.5}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.ic{flex:none;vertical-align:-3px}
+/* ---- review scaffolding, not product ---- */
+#demo{position:sticky;top:0;z-index:80;background:var(--surface2);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:13px}
+#demo .g{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#demo .g>span{color:var(--text3);font-weight:700;font-size:12px;margin-right:2px}
+#demo button{border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-sm);padding:4px 8px;min-height:32px}
+#demo button[aria-pressed=true]{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+#demo .sample{border:1px solid var(--amber);color:var(--amber);border-radius:var(--r-sm);padding:2px 8px;font-weight:700;font-size:12px}
+/* ---- stage: a phone frame with its own scroll, so the bar and the sheet sit where they do on a phone ---- */
+#stage{margin:16px auto;position:relative;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+#stage.phone{width:390px;max-width:100%;height:min(800px,calc(100vh - 150px));min-height:560px;border:10px solid #2a2a2e;border-radius:30px;box-shadow:var(--sh3)}
+#stage.phone.p360{width:360px}
+#stage.desktop{max-width:1040px;padding:0 16px;overflow:visible}
+#stage.desktop.emp{max-width:560px;height:min(800px,calc(100vh - 150px));border:1px solid var(--border);border-radius:var(--r);overflow:hidden;padding:0}
+@media(max-width:460px){#stage.phone{border:0;border-radius:0;width:100%;margin:0}}
+.scroll{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.app-h{background:var(--surface);border-bottom:1px solid var(--border);padding:16px;display:flex;flex-direction:column;gap:0}
+.app-h b{font-size:18px;line-height:24px}.app-h small{font-size:13px;color:var(--text3)}
+.pad{padding:16px 16px 24px}
+.desktop:not(.emp) .app-h{background:none;border:0;padding:16px 0 8px}
+.desktop:not(.emp) .pad{padding:8px 0 24px}
+.has-bar .pad{padding-bottom:112px}
+/* ---- one status line with an icon, instead of coloured panels ---- */
+.sl{display:flex;gap:8px;align-items:flex-start;font-weight:600;font-size:15px;line-height:24px}
+.sl .ic{margin-top:3px}
+.sl-ok .ic{color:var(--green)}.sl-held .ic{color:var(--amber)}.sl-wait .ic{color:var(--primary)}.sl-lock .ic,.sl-info .ic{color:var(--text3)}
+.sl span{min-width:0}
+.sub{font-size:13px;color:var(--text2);line-height:20px;margin:4px 0 0}
+.muted{color:var(--text3);font-size:13px}
+/* ---- day list ---- */
+.dayrow{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:56px;padding:8px 16px;border:1px solid var(--border);background:var(--surface);border-radius:var(--r);margin-top:8px}
+.dayrow:first-child{margin-top:0}
+.dayrow[aria-expanded=true]{border-color:var(--primary)}
+.dayrow .d{font-weight:700}.dayrow .s{font-size:13px;color:var(--text2);display:flex;gap:6px;align-items:center;text-align:right}
+.dayrow .s .ic{width:16px;height:16px}
+.s-ok .ic{color:var(--green)}.s-held .ic{color:var(--amber)}.s-wait .ic{color:var(--primary)}.s-lock .ic{color:var(--text3)}
+.day{border:1px solid var(--primary);border-top:0;background:var(--surface);border-radius:0 0 var(--r) var(--r);padding:16px;margin-bottom:8px;margin-top:-6px;padding-top:22px}
+/* ---- the day as a timeline ---- */
+.strip{position:relative;height:28px;margin:16px 0 4px}
+.strip .band{position:absolute;top:0;bottom:0;background:var(--primary-lt);border-radius:6px}
+.strip .bar{position:absolute;top:11px;height:6px;background:var(--primary);border-radius:3px}
+.strip .pt{position:absolute;top:7px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--surface);border:3px solid var(--text2)}
+.strip .pt.add{background:var(--green);border-color:var(--green)}
+.strip .pt.aside{background:var(--surface2);border-color:var(--border2)}
+.strip-cap{font-size:12px;color:var(--text3);display:flex;justify-content:space-between}
+.tl{list-style:none;margin:12px -4px 0;padding:0}
+.tl li{margin:0}
+.tl-b,.tl-s{display:grid;grid-template-columns:56px 24px 1fr auto;align-items:center;column-gap:8px;width:100%;text-align:left;background:none;border:0;padding:0 4px;border-radius:8px}
+.tl-b:hover{background:var(--surface2)}
+.tl-p{min-height:56px}.tl-g{min-height:44px}
+.tm{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.tl-g .tm{font-weight:400;color:var(--text3);font-size:13px}
+.tl-g .gl{font-size:14px;color:var(--primary);font-weight:600;padding:8px 0}
+.tl-p .lb{font-size:15px;font-weight:600;line-height:22px}
+.tl-p .sb{font-size:13px;color:var(--text2);line-height:20px}
+.rail{position:relative;align-self:stretch}
+.rl{position:absolute;left:11px;width:2px}
+.rl.up{top:0;bottom:50%}.rl.dn{top:50%;bottom:0}
+.s-work{left:10px;width:4px;background:var(--primary)}
+.s-brk{background:repeating-linear-gradient(to bottom,var(--border2) 0 4px,transparent 4px 8px)}
+.s-unk{background:var(--border2)}.s-none{display:none}
+.dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:var(--surface);border:3px solid var(--text2)}
+.dot.io{border-color:var(--primary)}
+.dot.add{background:var(--green);border-color:var(--green)}
+.dot.pend{border-style:dashed}
+.dot.aside{background:var(--surface2);border-color:var(--border2)}
+.gdot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:var(--surface);border:2px dashed var(--primary);color:var(--primary);display:grid;place-items:center}
+.gdot .ic{width:14px;height:14px;margin:0}
+.tl-p.aside .tm{text-decoration:line-through;text-decoration-thickness:2px;color:var(--text3)}
+.tl-p.aside .lb{color:var(--text3)}
+.tl-p.add .tm{color:var(--green)}
+.lnk{background:none;border:0;color:var(--primary);font-weight:600;font-size:14px;min-height:44px;padding:0 4px;text-decoration:underline;text-underline-offset:3px}
+.hint{font-size:13px;color:var(--text3);margin:8px 0 0}
+.one{font-size:13px;color:var(--text2);margin:8px 0 0}
+.facts{font-size:13px;color:var(--text3);margin:2px 0 0}
+/* ---- sticky send bar and bottom sheet (inside the phone frame) ---- */
+#bar{position:absolute;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -4px 16px rgba(0,0,0,.08);padding:12px 16px;display:flex;gap:16px;align-items:center}
+#bar .sum{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}
+#bar .sum small{display:block;font-weight:400;color:var(--text3);font-size:12px}
+#scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:flex-end}
+#sheet{width:100%;background:var(--surface);border-radius:16px 16px 0 0;padding:8px 16px 24px;box-shadow:var(--sh3);max-height:90%;overflow:auto}
+#sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 16px}
+#sheet h2{margin:0;font-size:18px;line-height:24px}
+#sheet .ctx{font-size:14px;color:var(--text2);margin:4px 0 16px}
+.fl{display:block;font-weight:600;font-size:14px;margin:0 0 4px}
+input[type=time],textarea{font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);width:100%;min-height:48px}
+input[type=time]{max-width:200px;font-variant-numeric:tabular-nums}
+textarea{min-height:48px;height:48px;resize:vertical}
+.field{margin-bottom:16px}
+.infer{font-size:14px;color:var(--text2);margin:8px 0 0;min-height:20px}
+.infer b{color:var(--text)}
+.err{display:flex;gap:8px;color:var(--red);font-weight:600;font-size:14px;margin:8px 0}
+input.bad{border-color:var(--red);border-width:2px}
+.acts{display:flex;gap:8px;margin-top:8px}
+.btn{min-height:48px;padding:8px 20px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);font-weight:600;font-size:15px}
+.btn-primary{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-h)}
+#sheet .acts .btn{flex:1}
+.other{display:block;margin-top:16px}
+/* ---- HR card ---- */
+.hrcard{container-type:inline-size;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 24px 8px;margin-bottom:16px;box-shadow:var(--sh1)}
+@container (max-width:560px){.hrcard{padding:16px}}
+.hrh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.hrh b{font-size:16px}.hrh span{font-size:13px;color:var(--text3)}
+.says{font-size:14px;color:var(--text2);margin:4px 0 0}
+.says q{display:block;margin-top:4px;padding-left:12px;border-left:2px solid var(--border2);quotes:none;font-size:14px}
+.ba{display:grid;grid-template-columns:1fr 24px 1fr;gap:0 16px;align-items:start;margin-top:16px}
+.ba .arr{color:var(--text3);padding-top:30px}
+.ba h4{margin:0;font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.04em;text-transform:uppercase}
+.ba .strip{margin-top:8px}
+.tms{font-size:14px;font-variant-numeric:tabular-nums;margin:4px 0 8px;color:var(--text2)}
+.tms .a{color:var(--green);font-weight:700}.tms .x{text-decoration:line-through;color:var(--text3)}
+@container (max-width:560px){.ba{grid-template-columns:1fr;gap:8px}.ba .arr{display:none}}
+.hrfoot{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:8px 0 0;padding-top:8px;border-top:1px solid var(--border)}
+.hrfoot .grow{flex:1}
+.hrcard .btn{min-height:44px}
+.noteBox{margin:8px 0 0}
+.legend{font-size:12px;color:var(--text3);margin:8px 0 0}
+.sec{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:24px 0 8px}
+.done{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--border);font-size:14px}
+.empty{color:var(--text2);padding:16px 0}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 16px;border-radius:var(--r);box-shadow:var(--sh3);z-index:90;max-width:92vw;display:none;font-size:14px}
+
+/* ---- v3: counsel's two conditions (ALV-418 reason on every request, ALV-419 employee Confirm). Same tokens as v2. ---- */
+#bar{flex-direction:column;align-items:stretch;gap:8px;padding:12px 16px}
+.has-bar .pad{padding-bottom:240px}
+#bar .sum{flex:none}
+.lblrow{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.req{font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap}
+.fl .why{display:block;font-weight:400;font-size:12px;color:var(--text3);line-height:16px}
+#bar .rsn{margin:0}
+#bar textarea,.cf-nr textarea{resize:none;overflow:hidden;max-height:120px}
+textarea.bad{border-color:var(--red);border-width:2px}
+#bar .err,.cf-nr .err{margin:8px 0 0}
+#bar .go{display:flex;align-items:center;gap:12px}
+#bar .go small{flex:1;min-width:0;font-size:12px;color:var(--text3);line-height:16px}
+#bar .go .btn{flex:none}
+::placeholder{color:var(--text3);opacity:1}
+.sl-ask .ic{color:var(--primary)}
+.fact{margin:12px 0 0;font-weight:700;font-size:15px;line-height:22px;display:flex;gap:8px;align-items:flex-start}
+.fact .ic{color:var(--green);margin-top:2px}
+.q{margin:8px 0 0;padding-left:12px;border-left:2px solid var(--border2);font-size:14px;line-height:20px}
+.q small{display:block;color:var(--text3);font-size:12px;line-height:16px}
+.cf-acts{display:flex;gap:8px;margin-top:16px}.cf-acts .btn{flex:1}
+.cf-nr{margin-top:16px}
+.cf-acts+.facts,.cf-nr+.facts{margin-top:16px}
+.hcard{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;box-shadow:var(--sh1)}
+.hcard h2{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.need{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--border);font-size:15px}
+.need>span{flex:1;min-width:0}
+.need .btn{min-height:44px;padding:8px 16px}
+.revnote{font-size:12px;color:var(--text3);margin:16px 0 0}
+
+/* ---- 086 v2: manager page, in 087's visual language. Same tokens. ---- */
+#stage.desktop.mgr{max-width:1040px;height:min(800px,calc(100vh - 150px));min-height:560px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;padding:0}
+#stage.desktop #scrim{align-items:center;justify-content:center}
+#stage.desktop #sheet{border-radius:16px;max-width:520px}
+.desktop.mgr .app-h{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px}
+.desktop.mgr .pad{padding:16px 24px 24px}
+.has-bar .pad{padding-bottom:150px}
+select{font:inherit;font-size:16px;min-height:44px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);max-width:100%}
+.mfil{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;margin-bottom:12px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+.chip{min-height:44px;padding:8px 16px;border-radius:999px;border:1px solid var(--border2);background:var(--surface);font-weight:600;font-size:14px;display:inline-flex;gap:6px;align-items:center}
+.chip[aria-pressed=true]{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}
+.chip .ic{width:16px;height:16px;color:var(--amber)}.chip[aria-pressed=true] .ic{color:var(--on-primary)}
+.line{font-size:15px;font-weight:600;margin:0 0 4px}
+.mr{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-top:12px;container-type:inline-size}
+.mr.nogo{background:var(--surface)}
+.mrh{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.mrh b{font-size:16px}.mrh .dy{font-size:13px;color:var(--text3);display:block;font-weight:400}
+.held{display:inline-flex;gap:4px;align-items:center;font-size:13px;font-weight:700;color:var(--amber);border:1px solid var(--amber);border-radius:999px;padding:1px 10px 1px 6px}
+.held .ic{width:14px;height:14px}
+.rdy{display:inline-flex;gap:4px;align-items:center;font-size:13px;font-weight:700;color:var(--green)}
+.rdy .ic{width:16px;height:16px}
+.need{font-size:13px;color:var(--text3);display:inline-flex;gap:4px;align-items:center}
+.pun{font-size:13px;color:var(--text2);margin:4px 0 0}
+.mr .strip{margin:12px 0 4px}
+.mr .field{margin:16px 0 0}
+.mr input[type=time]{max-width:200px}
+.mgrid{display:block}
+.qrow{display:flex;justify-content:space-between;align-items:center;gap:8px}.qrow .fl{margin:0}
+.strip .pt.ghost{background:var(--surface);border:2px dashed var(--primary)}
+@container (min-width:640px){.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}}
+.lnk2{background:none;border:0;color:var(--primary);font-weight:600;font-size:14px;min-height:44px;padding:0 4px;text-decoration:underline;text-underline-offset:3px;text-align:left}
+.addsum{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;font-weight:700;font-size:15px}
+.addsum .ic{color:var(--green)}
+.mr .tl{margin-top:8px}
+.rerr{display:flex;gap:8px;color:var(--red);font-weight:600;font-size:14px;margin:12px 0 0}
+.nologin{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px;color:var(--text2);line-height:20px}
+.nologin .ic{color:var(--text3);margin-top:1px}
+.sendbar{position:absolute;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -4px 16px rgba(0,0,0,.08);padding:12px 16px}
+.sendbar .row1{display:flex;gap:12px;align-items:center}
+.sendbar .tx{flex:1;min-width:0;font-weight:600;font-size:14px;line-height:20px}
+.sendbar .tx small{display:block;font-weight:400;font-size:12px;color:var(--text3);line-height:16px}
+.sendbar .btn{flex:none}
+.cap{font-size:12px;color:var(--amber);font-weight:600;margin:6px 0 0}
+.ban{display:flex;gap:8px;align-items:flex-start;padding:12px 16px;border:1px solid var(--border);border-left-width:4px;border-radius:var(--r);background:var(--surface);margin-bottom:12px;font-size:14px;line-height:20px}
+.ban .ic{margin-top:1px}.ban.ok{border-left-color:var(--green)}.ban.ok .ic{color:var(--green)}.ban.am{border-left-color:var(--amber)}.ban.am .ic{color:var(--amber)}.ban.rd{border-left-color:var(--red)}.ban.rd .ic{color:var(--red)}
+.ban b{display:block}
+.ban ul{margin:4px 0 0;padding-left:18px}
+.dlist{margin:0 0 16px;padding:0;list-style:none;max-height:180px;overflow:auto;border-top:1px solid var(--border)}
+.dlist li{padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+.dlist .num{font-weight:700}.dlist q{display:block;color:var(--text2);quotes:none;font-size:13px}
+.vA{border:1px dashed var(--amber);border-radius:6px;padding:4px 8px}
+.vtag{display:inline-block;font-size:11px;font-weight:700;color:var(--amber);margin-left:6px;vertical-align:middle}
+.dgrp{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:20px 0 0}
+.empty2{padding:24px 0;color:var(--text2)}
+.empty2 b{display:block;font-size:16px;color:var(--text);margin-bottom:4px}
+#demo .vnote{flex-basis:100%;font-size:12px;color:var(--text2)}
+</style></head><body>
+<div id="demo" role="toolbar" aria-label="Review controls (not part of the product)">
+  <span class="sample">Review controls. Every name, time and reason is Sample.</span>
+  <div class="g"><span>Device</span><button data-d="phone" aria-pressed="true">Phone 390</button><button data-d="p360" aria-pressed="false">Phone 360</button><button data-d="desktop" aria-pressed="false">Desktop</button></div>
+  <div class="g"><span>Language</span><button data-l="en" aria-pressed="true">English</button><button data-l="hi" aria-pressed="false">हिन्दी (machine draft)</button></div>
+  <div class="g"><span>Theme</span><button data-t="light" aria-pressed="true">Light</button><button data-t="dark" aria-pressed="false">Dark</button></div>
+  <div class="g"><span>Counsel</span><button data-c="B" aria-pressed="true">Case B: Confirm applies (default)</button><button data-c="A" aria-pressed="false">Case A: variant</button></div>
+  <div class="g"><span>Send result</span><button data-o="all" aria-pressed="true">All sent</button><button data-o="some" aria-pressed="false">One refused</button><button data-o="off" aria-pressed="false">Offline</button><button data-o="lost" aria-pressed="false">Answer lost</button></div>
+  <div class="g"><span>Load</span><button data-x="cap">55 ready (cap of 50)</button><button id="reset">Start again</button></div>
+  <div class="vnote" id="vnote"></div>
+</div>
+<div id="stage" class="phone"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+const T={
+ title:["Whole team","पूरी टीम"],mgr:["Sunita Rao · Manager","सुनीता राव · मैनेजर"],
+ show:["Show","दिखाएं"],allp:["All days in this period (1 to 20 Nov)","इस अवधि के सभी दिन (1 से 20 नव)"],
+ every:["Everything","सब कुछ"],heldc:["Held {0}","रुका हुआ {0}"],
+ line1:["{0} held days need a time from you.","{0} रुके हुए दिनों के लिए आपसे समय चाहिए।"],
+ line1s:["1 held day needs a time from you.","1 रुके हुए दिन के लिए आपसे समय चाहिए।"],
+ expl:["Held days have a punch missing, so pay for the day is on hold until HR fixes it. Give the missing time and a reason, and HR decides.","रुके हुए दिनों में एक पंच छूटा है, इसलिए HR के ठीक करने तक उस दिन का वेतन रुका है। छूटा समय और कारण दें, HR फ़ैसला करेगा।"],
+ Held:["Held","रुका हुआ"],ready:["Ready","तैयार"],needr:["Add a reason to include this day","इस दिन को शामिल करने के लिए कारण लिखें"],
+ punches:["Punches: {0}","पंच: {0}"],shift:["Shift {0}","शिफ्ट {0}"],
+ q_leave:["What time did {0} leave?","{0} कितने बजे गए?"],q_arrive:["What time did {0} arrive?","{0} कितने बजे पहुँचे?"],
+ q_help:["Type the time you know it was. Nothing is filled in for you.","वह समय लिखें जो आपको पता है। आपके लिए कुछ भरा नहीं गया है।"],
+ to_arr:["Change to arrival","आने का समय करें"],to_leave:["Change to leaving","जाने का समय करें"],
+ where:["Where is the missing punch?","छूटा पंच कहाँ है?"],showp:["Show the punches and tap the gap","पंच देखें और खाली जगह दबाएं"],
+ change:["Change","बदलें"],hide:["Hide punches","पंच छिपाएं"],
+ reason:["Your reason","आपका कारण"],req:["Required","ज़रूरी"],
+ rwhy:["HR and {0} can read this. No health or family details.","HR और {0} इसे पढ़ सकते हैं। स्वास्थ्य या परिवार की जानकारी न लिखें।"],
+ rph:["e.g. Forgot to scan after lunch","जैसे: लंच के बाद स्कैन करना भूल गया"],
+ nologin:["{0} has no login, so this cannot be confirmed in the app. Ask HR to fix this day.","{0} का लॉगिन नहीं है, इसलिए ऐप में इसकी पुष्टि नहीं हो सकती। HR से यह दिन ठीक करने को कहें।"],
+ bar_n:["{0} days ready","{0} दिन तैयार"],bar_1:["1 day ready","1 दिन तैयार"],
+ bar_B:["Each person confirms in the app first. Then HR decides.","हर व्यक्ति पहले ऐप में पुष्टि करता है। फिर HR फ़ैसला करता है।"],
+ bar_A:["Each person is told on their day sheet. HR decides.","हर व्यक्ति को उसकी दिन-शीट पर बताया जाता है। HR फ़ैसला करता है।"],
+ send:["Send {0} to HR","{0} HR को भेजें"],sending:["Sending {0}... please keep this page open","{0} भेज रहे हैं... कृपया यह पेज खुला रखें"],
+ cap:["50 at most in one send. The first 50 go now; {0} stay here for the next send.","एक बार में अधिकतम 50। पहले 50 अभी जाएंगे; {0} अगली बार के लिए यहीं रहेंगे।"],
+ dh:["Send {0} days to HR?","{0} दिन HR को भेजें?"],dh1:["Send 1 day to HR?","1 दिन HR को भेजें?"],
+ d_B:["Your name goes on each request. Each person must confirm in the app before HR can decide. Until HR does, the day stays held.","हर अनुरोध पर आपका नाम जाएगा। HR के फ़ैसले से पहले हर व्यक्ति को ऐप में पुष्टि करनी होगी। तब तक दिन रुका रहेगा।"],
+ d_A:["Your name goes on each request. Each person is told on their day sheet and can say it is not right. HR decides each one. Until HR does, the day stays held.","हर अनुरोध पर आपका नाम जाएगा। हर व्यक्ति को उसकी दिन-शीट पर बताया जाएगा और वह कह सकता है कि यह सही नहीं। HR हर एक पर फ़ैसला करेगा। तब तक दिन रुका रहेगा।"],
+ back:["Go back","वापस जाएं"],
+ left:["left {0}","गए {0}"],arr:["arrived {0}","पहुँचे {0}"],added:["added {0}","जोड़ा {0}"],
+ b_all:["{0} of {0} sent to HR.","{0} में से {0} HR को भेजे गए।"],
+ b_allp:["{0}: HR will decide each one.","{0}: HR हर एक पर फ़ैसला करेगा।"],
+ b_B:["Each person must confirm in the app before HR can decide.","HR के फ़ैसले से पहले हर व्यक्ति को ऐप में पुष्टि करनी होगी।"],
+ b_A:["Each person has been told on their day sheet.","हर व्यक्ति को उसकी दिन-शीट पर बता दिया गया है।"],
+ b_some:["Sent {0} of {1} to HR. {2} not sent.","{1} में से {0} HR को भेजे। {2} नहीं गए।"],
+ b_somep:["The reason is on each one below. The ones that went have left this list.","कारण नीचे हर एक पर है। जो चले गए वे इस सूची से हट गए।"],
+ b_first:["Go to the first one","पहले वाले पर जाएं"],
+ b_off:["Nothing was sent.","कुछ नहीं भेजा गया।"],b_offp:["You are offline. What you typed is still here. Connect, then press Send again.","आप ऑफ़लाइन हैं। जो आपने लिखा वह यहीं है। जुड़ें, फिर दोबारा भेजें दबाएं।"],
+ b_lost:["We did not get an answer from the office.","हमें दफ़्तर से जवाब नहीं मिला।"],b_lostp:["Some days may have gone through. Checking now, please do not send again.","कुछ दिन चले गए हो सकते हैं। अभी जाँच रहे हैं, कृपया दोबारा न भेजें।"],
+ b_chk:["Checked with the office.","दफ़्तर से जाँच हो गई।"],
+ e_gone:["This day is no longer held. A machine punch or HR may have fixed it. Reload the page to see where it stands.","यह दिन अब रुका हुआ नहीं है। मशीन पंच या HR ने इसे ठीक किया होगा। स्थिति देखने के लिए पेज दोबारा खोलें।"],
+ e_fit:["{0} does not fit the punches. A leaving time has to come after the last punch ({1}).","{0} पंच के साथ नहीं बैठता। जाने का समय आख़िरी पंच ({1}) के बाद होना चाहिए।"],
+ notsent:["Not sent.","भेजा नहीं गया।"],notsent2:["Change what is needed and send again.","ज़रूरी बदलाव करके दोबारा भेजें।"],
+ empty_h:["Nothing is held on {0}.","{0} को कुछ रुका हुआ नहीं है।"],empty_p:["No held day without a request is waiting for you. When somebody forgets to punch, the day shows up here.","बिना अनुरोध वाला कोई रुका दिन आपका इंतज़ार नहीं कर रहा। कोई पंच भूले तो दिन यहाँ दिखेगा।"],
+ empty_go:["Show {0}","{0} दिखाएं"],empty_all:["See everything","सब कुछ देखें"],
+ k_arrival:["Arrival","आगमन"],k_back:["Back in after a break","ब्रेक के बाद वापसी"],k_outb:["Out for a break","ब्रेक के लिए बाहर"],k_leaving:["Leaving","जाना"],
+ gap_before:["Add a punch before {0}","{0} से पहले पंच जोड़ें"],gap_between:["Add a punch between {0} and {1}","{0} और {1} के बीच पंच जोड़ें"],gap_after:["Add a punch after {0}","{0} के बाद पंच जोड़ें"],
+ sh_add:["Add the missing punch","छूटा पंच जोड़ें"],ctx_before:["Before {0}","{0} से पहले"],ctx_between:["Between {0} and {1}","{0} और {1} के बीच"],ctx_after:["After {0}","{0} के बाद"],
+ f_time:["What time was it?","कितने बजे था?"],infer0:["It will be added as: {0}.","यह जुड़ेगा: {0}।"],sh_btn:["Use this time","यह समय रखें"],cancel:["Cancel","रद्द करें"],
+ e_time:["Enter the time first.","पहले समय भरें।"],e_before:["{0} is not before {1}. Check the time.","{0}, {1} से पहले नहीं है। समय जाँचें।"],e_after:["{0} is not after {1}. Check the time.","{0}, {1} के बाद नहीं है। समय जाँचें।"],e_between:["{0} is not between {1} and {2}. Check the time.","{0}, {1} और {2} के बीच नहीं है। समय जाँचें।"],e_dup:["There is already a punch at {0}. Check the time.","{0} पर पहले से पंच है। समय जाँचें।"],
+ In:["In","अंदर"],Out:["Out","बाहर"],machine:["Machine","मशीन"],
+ vnA:["Case A variant, only if counsel says a manager's request counts as the request itself. Four differences, outlined in amber: a person with no login gets a time box; the bar line; the confirm sentence; the banner line. Nothing else changes.","केस A, केवल तब जब वकील कहें कि मैनेजर का अनुरोध ही अनुरोध माना जाएगा। चार अंतर, एम्बर में: बिना लॉगिन वाले को समय बॉक्स; बार की पंक्ति; पुष्टि का वाक्य; बैनर की पंक्ति।"],
+ vnB:["Case B (default until counsel answers): every request waits for the person's Confirm, so a person with no login gets no time box.","केस B (वकील के जवाब तक): हर अनुरोध व्यक्ति की पुष्टि का इंतज़ार करता है, इसलिए बिना लॉगिन वाले को समय बॉक्स नहीं।"]
+};
+let LANG="en",DEV="phone",THEME="light",CASE="B",OUT="all",SEL="d20",S;
+const t=(k,...a)=>{let s=T[k][LANG==="hi"?1:0];a.forEach((v,i)=>{s=s.split("{"+i+"}").join(v)});return s};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+const DAYN={d20:["Thu 20 Nov","गुरु 20 नव"],d19:["Wed 19 Nov","बुध 19 नव"],d17:["Mon 17 Nov","सोम 17 नव"]};
+const dn=k=>DAYN[k][LANG==="hi"?1:0];
+const SHIFT=["10:30","19:30"],CAP=50;
+const ICONS={check:'<path d="M4 10.5l4 4 8-9"/>',alert:'<path d="M10 3l8 14H2L10 3zM10 8v4M10 14.5v.5"/>',plus:'<path d="M10 4v12M4 10h12"/>',warn:'<circle cx="10" cy="10" r="7.5"/><path d="M10 6v5M10 13.5v.5"/>',info:'<circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/>',lock:'<rect x="4" y="9" width="12" height="8" rx="2"/><path d="M7 9V6.5a3 3 0 016 0V9"/>'};
+const ic=n=>`<svg class="ic" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+const P=(t,src)=>({t,src:src||"machine"});
+function fresh(){S={rows:[
+ {id:"r1",name:"Ravi Kumar",first:"Ravi",day:"d20",p:[P("10:30")],login:true},
+ {id:"r2",name:"Anita Mehta",first:"Anita",day:"d20",p:[P("10:30"),P("14:00"),P("19:30")],login:true},
+ {id:"r3",name:"Imran Khan",first:"Imran",day:"d20",p:[P("10:25")],login:false},
+ {id:"r4",name:"Preet Sandhu",first:"Preet",day:"d20",p:[P("19:30")],login:true},
+ {id:"r5",name:"Ravi Kumar",first:"Ravi",day:"d19",p:[P("10:40")],login:true},
+ {id:"r6",name:"Anita Mehta",first:"Anita",day:"d19",p:[P("19:25")],login:true},
+ {id:"r7",name:"Imran Khan",first:"Imran",day:"d17",p:[P("10:20")],login:false}
+ ].map(r=>Object.assign(r,{time:"",why:"",add:null,open:false,err:""})),banner:null,sheet:null,confirm:false,sending:false};SEL="d20"}
+fresh();
+const mins=h=>+h.slice(0,2)*60+ +h.slice(3);
+const KN={arrival:"k_arrival",back:"k_back",outb:"k_outb",leaving:"k_leaving"};
+/* one punch: which end is missing (the shift's first half = the arrival is there) */
+const missing1=r=>{const k=mins(r.p[0].t)<mins("15:00")?"leave":"arrive";return r.flip?(k==="leave"?"arrive":"leave"):k};
+const multi=r=>r.p.length>1;
+const needsBox=r=>r.login||CASE==="A";
+function gapKind(r,i){const before=i,after=r.p.length-i;if(before===0)return"arrival";const k=before%2===0?"IN":"OUT";if(after===0&&k==="OUT")return"leaving";return k==="IN"?"back":"outb"}
+function isReady(r){if(!needsBox(r)||r.err||!r.why.trim())return false;return multi(r)?!!r.add:!!r.time}
+function visible(){return S.rows.filter(r=>SEL==="all"||r.day===SEL)}
+function readyRows(){return visible().filter(isReady)}
+function sub(){/* the day names that still hold rows, newest first */return["d20","d19","d17"].filter(k=>S.rows.some(r=>r.day===k))}
+function strip(r){const S0=540,W=660,x=v=>Math.max(0,Math.min(100,(mins(v)-S0)/W*100));
+ let h=`<div class="strip" aria-hidden="true"><i class="band" style="left:${x(SHIFT[0])}%;width:${x(SHIFT[1])-x(SHIFT[0])}%"></i>`;
+ r.p.forEach(p=>h+=`<i class="pt" style="left:${x(p.t)}%"></i>`);if(!multi(r)&&!r.time&&needsBox(r))h+=`<i class="pt ghost" style="left:${x(missing1(r)==="leave"?SHIFT[1]:SHIFT[0])}%"></i>`;if(r.add)h+=`<i class="pt add" style="left:${x(r.add.t)}%"></i>`;if(r.time)h+=`<i class="pt add" style="left:${x(r.time)}%"></i>`;return h+"</div>"}
+/* ---------- render ---------- */
+function render(){const st=document.getElementById("stage"),keep=st.querySelector(".scroll"),top=keep?keep.scrollTop:0;
+ st.className=DEV==="desktop"?"desktop mgr":"phone"+(DEV==="p360"?" p360":"");
+ document.documentElement.setAttribute("data-theme",THEME);document.documentElement.lang=LANG==="hi"?"hi":"en";
+ const rows=visible(),has=readyRows().length>0;st.classList.toggle("has-bar",has||S.sending);
+ st.innerHTML=head()+`<div class="scroll"><div class="pad">${filters()}${banner()}${listHtml(rows)}</div></div><div id="sbw">${sendbar()}</div>`+(S.sheet?sheetHtml():"")+(S.confirm?dialog():"");
+ st.querySelectorAll("textarea").forEach(grow);const sc=st.querySelector(".scroll");if(sc)sc.scrollTop=top;
+ ["d","l","t","c","o"].forEach(a=>{const cur={d:DEV,l:LANG,t:THEME,c:CASE,o:OUT}[a];document.querySelectorAll(`#demo button[data-${a}]`).forEach(b=>b.setAttribute("aria-pressed",b.dataset[a]===cur))});
+ document.getElementById("vnote").textContent=t(CASE==="A"?"vnA":"vnB");
+ const f=S.confirm?document.getElementById("cf-ok"):S.sheet?document.getElementById("f-time"):null;if(f&&!S.noFocus)f.focus();}
+function grow(el){el.style.height='auto';el.style.height=Math.min(Math.max(el.scrollHeight+2,48),120)+'px'}
+function head(){return`<div class="app-h"><b>${t("title")}</b><small>${t("mgr")}</small></div>`}
+function filters(){const days=sub(),n=visible().length;
+ let o=days.map(k=>`<option value="${k}" ${SEL===k?"selected":""}>${dn(k)}</option>`).join("")+`<option value="all" ${SEL==="all"?"selected":""}>${t("allp")}</option>`;
+ if(SEL!=="all"&&!days.includes(SEL))o=`<option value="${SEL}" selected>${dn(SEL)}</option>`+o;
+ return`<div class="mfil"><div><label class="fl" for="sel">${t("show")}</label><select id="sel" onchange="SEL=this.value;S.banner=S.banner;render()">${o}</select></div></div>
+ <div class="chips"><button class="chip" aria-pressed="false" onclick="toast('Sample: the Whole team page as it is today')">${t("every")}</button><button class="chip" aria-pressed="true">${ic("alert")}${t("heldc",S.rows.filter(r=>SEL==="all"||r.day===SEL).length)}</button></div>
+ `+(n?`<p class="line" id="cnt">${n===1?t("line1s"):t("line1",n)}</p><p class="sub" style="margin:0 0 4px">${t("expl")}</p>`:"")}
+function listHtml(rows){if(!rows.length){const other=sub().find(k=>k!==SEL);const lbl=SEL==="all"?"":dn(SEL);
+  return`<div class="empty2"><b>${t("empty_h",lbl||"this period")}</b>${t("empty_p")}<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">${other?`<button class="btn btn-primary" onclick="SEL='${other}';render()">${t("empty_go",dn(other))}</button>`:""}<button class="btn" onclick="toast('Sample: the Whole team page as it is today')">${t("empty_all")}</button></div></div>`}
+ let h="",last="";rows.forEach(r=>{if(SEL==="all"&&r.day!==last){h+=`<div class="dgrp">${dn(r.day)}</div>`;last=r.day}h+=rowHtml(r)});return h}
+function ptxt(r){return r.p.map(p=>p.t).join(" · ")}
+function rowHtml(r){const bx=needsBox(r);
+ let h=`<article class="mr" id="${r.id}" aria-label="${esc(r.name)}, ${dn(r.day)}"><div class="mrh"><div><b>${esc(r.name)}</b>${SEL==="all"?"":""}<span class="dy">${dn(r.day)}</span></div><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="held">${ic("alert")}${t("Held")}</span><span id="rd-${r.id}">${rdy(r)}</span></div></div>`;
+ h+=strip(r)+`<p class="pun num">${t("punches",ptxt(r))} · ${t("shift",SHIFT[0]+"–"+SHIFT[1])}</p>`;
+ if(!bx)return h+`<p class="nologin">${ic("lock")}<span>${t("nologin",esc(r.first))}</span></p></article>`;
+ h+=`<div class="mgrid"><div>`;
+ if(!multi(r)){const k=missing1(r);h+=`<div class="field"><div class="qrow"><label class="fl" for="t-${r.id}">${t(k==="leave"?"q_leave":"q_arrive",esc(r.first))}</label><button class="lnk2" aria-label="${t(k==="leave"?"to_arr":"to_leave")}" onclick="flipEnd('${r.id}')">${t("change")}</button></div><input type="time" id="t-${r.id}" value="${r.time}" aria-describedby="th-${r.id}" oninput="setTime('${r.id}',this.value)"><p class="hint" id="th-${r.id}">${t("q_help")}</p></div>`}
+ else{h+=`<div class="field"><span class="fl">${t("where")}</span>`;
+  if(r.add)h+=`<div class="addsum">${ic("plus")}<span class="num">+${r.add.t} · ${t(KN[r.add.kind])}</span><button class="lnk2" onclick="openTl('${r.id}')">${t("change")}</button></div>`;
+  else if(!r.open)h+=`<button class="btn" onclick="openTl('${r.id}')">${t("showp")}</button>`;
+  if(r.open)h+=tl(r)+`<button class="lnk2" onclick="openTl('${r.id}')">${t("hide")}</button>`;
+  h+=`</div>`}
+ h+=`</div><div><div class="field"><label class="fl" for="w-${r.id}"><span class="lblrow"><span>${t("reason")}</span><span class="req">${t("req")}</span></span><span class="why">${t("rwhy",esc(r.first))}</span></label><textarea id="w-${r.id}" rows="1" required aria-required="true" placeholder="${esc(t("rph"))}" oninput="setWhy('${r.id}',this)">${esc(r.why)}</textarea></div></div></div>`;
+ if(r.err)h+=`<div class="rerr" role="alert">${ic("warn")}<span><b>${t("notsent")}</b> ${esc(r.err)} ${t("notsent2")}</span></div>`;
+ return h+"</article>"}
+function rdy(r){if(isReady(r))return`<span class="rdy">${ic("check")}${t("ready")}</span>`;
+ const filled=multi(r)?!!r.add:!!r.time;return filled&&!r.why.trim()?`<span class="need">${ic("info")}${t("needr")}</span>`:""}
+function tl(r){let h=`<ol class="tl">`;const n=r.p.length;
+ const gap=(i,lo,hi)=>`<li><button class="tl-b tl-g" onclick="openGap('${r.id}',${i})"><span class="tm"></span><span class="rail"><i class="rl up s-${i===0?"none":"unk"}"></i><i class="rl dn s-${i===n?"none":"unk"}"></i><i class="gdot">${ic("plus")}</i></span><span class="gl">${lo&&hi?t("gap_between",lo,hi):hi?t("gap_before",hi):t("gap_after",lo)}</span></button></li>`;
+ h+=gap(0,"",r.p[0].t);
+ r.p.forEach((p,i)=>{const role=i%2===0?"In":"Out";h+=`<li><div class="tl-s tl-p"><span class="tm">${p.t}</span><span class="rail"><i class="rl up s-${i===0?"none":"unk"}"></i><i class="rl dn s-${i===n-1?"none":"unk"}"></i><i class="dot io"></i></span><span><span class="lb">${t(role)}</span><span class="sb" style="display:block">${t("machine")}</span></span><span></span></div></li>`;
+  if(i<n-1)h+=gap(i+1,p.t,r.p[i+1].t)});
+ h+=gap(n,r.p[n-1].t,"");return h+"</ol>"}
+/* ---------- row actions (typing never redraws the page) ---------- */
+function R(id){return S.rows.find(r=>r.id===id)}
+function after(id){const r=R(id);const m=document.getElementById("rd-"+id);if(m)m.innerHTML=rdy(r);const b=document.getElementById("sbw");if(b)b.innerHTML=sendbar();document.getElementById("stage").classList.toggle("has-bar",readyRows().length>0||S.sending)}
+function clearErr(r){if(r.err){r.err="";const a=document.querySelector("#"+r.id+" .rerr");if(a)a.remove()}}
+function setTime(id,v){const r=R(id);r.time=v;clearErr(r);const s=document.querySelector("#"+id+" .strip");if(s)s.outerHTML=strip(r);after(id)}
+function setWhy(id,el){const r=R(id);r.why=el.value;clearErr(r);grow(el);after(id)}
+function flipEnd(id){const r=R(id);r.flip=!r.flip;r.time="";clearErr(r);render();const i=document.getElementById("t-"+id);if(i)i.focus()}
+function openTl(id){const r=R(id);r.open=!r.open;render()}
+function openGap(id,i){const r=R(id);S.sheet={id,gap:i,time:"",err:""};S.noFocus=false;render()}
+function sheetHtml(){const s=S.sheet,r=R(s.id),i=s.gap,lo=i>0?r.p[i-1].t:"",hi=i<r.p.length?r.p[i].t:"",gk=gapKind(r,i);
+ return`<div id="scrim" onclick="if(event.target===this){S.sheet=null;render()}"><div id="sheet" role="dialog" aria-modal="true" aria-labelledby="shT"><div class="grab"></div><h2 id="shT">${t("sh_add")}</h2><p class="ctx">${lo&&hi?t("ctx_between",lo,hi):hi?t("ctx_before",hi):t("ctx_after",lo)}</p>
+ <div class="field"><label class="fl" for="f-time">${t("f_time")}</label><input type="time" id="f-time" class="${s.err?"bad":""}" value="${s.time}" oninput="S.sheet.time=this.value">
+ <p class="infer">${t("infer0","<b>"+t(KN[gk])+"</b>")}</p>${s.err?`<div class="err" role="alert">${ic("warn")}<span>${s.err}</span></div>`:""}</div>
+ <div class="acts"><button class="btn" onclick="S.sheet=null;render()">${t("cancel")}</button><button class="btn btn-primary" onclick="useGap()">${t("sh_btn")}</button></div></div></div>`}
+function useGap(){const s=S.sheet,r=R(s.id),tm=document.getElementById("f-time").value,i=s.gap,lo=i>0?r.p[i-1].t:"",hi=i<r.p.length?r.p[i].t:"";let e="";
+ if(!tm)e=t("e_time");else if(r.p.some(x=>x.t===tm))e=t("e_dup",tm);
+ else if(lo&&hi&&!(tm>lo&&tm<hi))e=t("e_between",tm,lo,hi);else if(!lo&&hi&&!(tm<hi))e=t("e_before",tm,hi);else if(lo&&!hi&&!(tm>lo))e=t("e_after",tm,lo);
+ if(e){s.time=tm;s.err=e;S.noFocus=false;render();return}
+ r.add={t:tm,kind:gapKind(r,i)};r.open=false;clearErr(r);S.sheet=null;render()}
+/* ---------- the send bar, the confirm, the result ---------- */
+function sendbar(){const rd=readyRows(),n=rd.length;if(S.sending)return`<div class="sendbar"><div class="row1"><div class="tx">${t("sending",Math.min(n,CAP))}</div><button class="btn btn-primary" disabled style="opacity:.6">...</button></div></div>`;
+ if(!n)return"";const go=Math.min(n,CAP),va=CASE==="A"?' class="vA"':"";
+ return`<div class="sendbar"><div class="row1"><div class="tx">${n===1?t("bar_1"):t("bar_n",n)}<small${va}>${t(CASE==="A"?"bar_A":"bar_B")}${CASE==="A"?'<span class="vtag">Case A</span>':""}</small></div><button class="btn btn-primary" id="sendbtn" onclick="openConfirm()">${t("send",go)}</button></div>${n>CAP?`<p class="cap">${t("cap",n-CAP)}</p>`:""}</div>`}
+function openConfirm(){S.confirm=true;S.banner=null;S.noFocus=false;render()}
+function dialog(){const rd=readyRows().slice(0,CAP),n=rd.length,va=CASE==="A"?' class="vA"':"";
+ const what=r=>multi(r)?t("added",r.add.t):(missing1(r)==="leave"?t("left",r.time):t("arr",r.time));
+ return`<div id="scrim" onclick="if(event.target===this)closeConfirm()"><div id="sheet" role="dialog" aria-modal="true" aria-labelledby="dT" onkeydown="if(event.key==='Escape')closeConfirm()"><div class="grab"></div><h2 id="dT">${n===1?t("dh1"):t("dh",n)}</h2>
+ <p class="ctx"${va}>${t(CASE==="A"?"d_A":"d_B")}${CASE==="A"?'<span class="vtag">Case A</span>':""}</p>
+ <ul class="dlist">${rd.map(r=>`<li><span class="num">${esc(r.name)} · ${dn(r.day)} · ${what(r)}</span><q>${esc(r.why)}</q></li>`).join("")}</ul>
+ <div class="acts"><button class="btn" onclick="closeConfirm()">${t("back")}</button><button class="btn btn-primary" id="cf-ok" onclick="doSend()">${t("send",n)}</button></div></div></div>`}
+function closeConfirm(){S.confirm=false;S.noFocus=true;render();const b=document.getElementById("sendbtn");if(b)b.focus()}
+function doSend(){const rd=readyRows().slice(0,CAP);S.confirm=false;S.noFocus=true;
+ if(OUT==="off"){S.banner={k:"rd",h:t("b_off"),p:t("b_offp")};render();return}
+ S.sending=true;render();
+ setTimeout(()=>{S.sending=false;
+  if(OUT==="lost"){S.banner={k:"am",h:t("b_lost"),p:t("b_lostp")};render();setTimeout(()=>{finish(rd,[],t("b_chk")+" ");},2200);return}
+  const bad=OUT==="some"?[rd[0]]:[];finish(rd,bad,"")},900)}
+function finish(rd,bad,pre){const ok=rd.filter(r=>!bad.includes(r));
+ bad.forEach(r=>{r.err=(!multi(r)&&missing1(r)==="leave"&&r.time<=r.p[r.p.length-1].t)?t("e_fit",r.time,r.p[r.p.length-1].t):t("e_gone")});
+ S.rows=S.rows.filter(r=>!ok.includes(r));
+ const names=ok.map(r=>esc(r.first)+(SEL==="all"?" ("+dn(r.day)+")":"")).join(", ");
+ const va=CASE==="A"?' class="vA"':"";
+ const tail=`<span${va}>${t(CASE==="A"?"b_A":"b_B")}${CASE==="A"?'<span class="vtag">Case A</span>':""}</span>`;
+ if(!bad.length)S.banner={k:"ok",h:pre+t("b_all",ok.length),p:t("b_allp",names)+" "+tail};
+ else S.banner={k:"am",h:t("b_some",ok.length,rd.length,bad.length),p:t("b_somep")+(ok.length?" "+tail:""),first:true};
+ if(SEL!=="all"&&!S.rows.some(r=>r.day===SEL)){}
+ render()}
+function banner(){const b=S.banner;if(!b)return"";return`<div class="ban ${b.k}" role="status">${ic(b.k==="ok"?"check":b.k==="rd"?"warn":"alert")}<div><b>${b.h}</b>${b.p}${b.first?`<div><button class="lnk2" onclick="gotoErr()">${t("b_first")}</button></div>`:""}</div></div>`}
+function gotoErr(){const e=document.querySelector(".rerr");if(e)e.scrollIntoView({block:"center"})}
+function toast(m){const e=document.getElementById("toast");e.textContent=m;e.style.display="block";clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display="none",3000)}
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&S.sheet){S.sheet=null;render()}});
+document.getElementById("demo").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+ if(b.id==="reset"){fresh();render();return}
+ if(b.dataset.x==="cap"){fresh();for(let i=1;i<=55;i++)S.rows.push({id:"g"+i,name:"Sample Person "+i,first:"Person"+i,day:"d20",p:[P("10:30")],login:true,time:"18:30",why:"Forgot to scan after lunch",add:null,open:false,err:""});render();return}
+ if(b.dataset.d)DEV=b.dataset.d;if(b.dataset.l)LANG=b.dataset.l;if(b.dataset.t)THEME=b.dataset.t;if(b.dataset.c){CASE=b.dataset.c}if(b.dataset.o)OUT=b.dataset.o;render()});
+render();
+</script></body></html>

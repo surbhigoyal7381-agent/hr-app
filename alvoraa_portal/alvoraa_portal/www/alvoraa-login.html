@@ -244,18 +244,36 @@ html, body {
 .kx-pw-wrap {
   position: relative;
 }
+/* 44 px, and the icon does not move (ALV-394, 20 Nov 2026).
+
+   079 asked for a 44 px reveal because mistyping a dashed password is the
+   likeliest real failure on the one screen used by somebody who cannot ring
+   our helpdesk. It got that as a separate full-width button, which was removed
+   on 20 Nov - so the argument came back to the eye, and the eye was an 18 px
+   SVG with 4 px of padding: a 26 px target.
+
+   The box is now 44 x 44 and the icon is centred in it. `right` drops from
+   12 px to 3 px precisely so the icon's centre stays where it was: 3 + 22 is
+   the same 25 px from the edge as 12 + 4 + 9. Nothing moves on screen; the
+   part you can hit trebles in area.
+
+   It cannot overflow the field: .kx-input is 11 px padding twice, 16 px text
+   and 1.5 px borders twice - about 44 px - and this is centred on it. */
 .kx-pw-toggle {
   position: absolute;
-  right: 12px;
+  right: 3px;
   top: 50%;
   transform: translateY(-50%);
   background: none;
   border: none;
   cursor: pointer;
   color: var(--text3);
-  padding: 4px;
+  padding: 0;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 .kx-pw-toggle:hover { color: var(--primary); }
 
@@ -372,19 +390,15 @@ html, body {
    sign-in button off the screen - which is a silent failure on the one screen
    in this product used by somebody who cannot ring our helpdesk.
 
-   44px on the reveal: mistyping a dashed password is the likeliest real failure
-   in this journey, and the eye icon it replaces is the smallest target on the
-   page. It is full width and it has WORDS on it, because nothing on this screen
-   may depend on an icon.
+   The reveal: 079 added a full-width 44px "Show the password" button here,
+   because mistyping a dashed password is the likeliest real failure in this
+   journey and an eye icon is the smallest target on the page. The eye it was
+   meant to REPLACE was never removed, so the screen carried two controls doing
+   one job. Surbhi chose which to keep on 20 November 2026 (ALV-394): the eye
+   stays, the button goes. The refusal wording points at the eye to match.
 
    No marketing panel, so there is nothing to scroll past. */
 .kx-input { font-size: 16px; }
-.kx-reveal {
-  width: 100%; min-height: 44px; margin: 10px 0 4px;
-  font: inherit; font-size: 15px; font-weight: 600;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--surface); color: inherit; cursor: pointer;
-}
 .kx-joiner-hint { display: block; font-size: 13px; opacity: .75; margin: 2px 0 6px; }
 .kx-cannot { font-size: 14px; }
 .kx-cannot summary { min-height: 44px; display: flex; align-items: center;
@@ -530,9 +544,7 @@ html, body {
           </div>
         </div>
 
-        {%- if joiner %}
-        <button type="button" class="kx-reveal" id="kx-reveal">{{ _("Show the password") }}</button>
-        {%- else %}
+        {%- if not joiner %}
         <div class="kx-forgot">
           <a href="/update-password">Forgot password?</a>
         </div>
@@ -597,7 +609,11 @@ html, body {
      {{ lock_seconds or 0 }} seconds here, not "30 minutes". A joiner told the
      wrong number rings to say the system is broken. */
   const JOINER = {{ "true" if joiner else "false" }};
-  const BADPASS_WORDS = {{ _("That did not work. Check the password against the message — a dash or a letter is easy to miss. Press “Show the password” to see what you have typed. Code for HR: JOIN-BADPASS") | tojson }};
+  /* ALV-397. One message for both refusals, because the server cannot tell
+     them apart and must not be made to. See `refusalWords` below for why.
+     Deliberately shorter than what it replaced: it is read on a phone, by
+     somebody who may not read English first. */
+  const REFUSED_WORDS = {{ _("This sign-in did not open. The password may be mistyped, or this sign-in may already be finished. Check the password once, letter by letter. The eye beside the box shows what you typed. If it still does not open, stop. More tries can lock it. Ring the person who sent you the message and ask them to check. Code for HR: JOIN-REFUSED") | tojson }};
   const LOCKED_WORDS = {{ _("Locked for {0} seconds. The password was wrong too many times, so this sign-in is closed for a moment. That is there to protect your details. Nothing you have already filled in is lost — it is saved with your employer. Code for HR: JOIN-LOCKED").format(lock_seconds or 0) | tojson }};
   const ENDED_WORDS = {{ _("This sign-in has finished its job. Either you have already sent your form, or your employer has closed it. Nothing is wrong, and nothing you sent is lost. If you still need to send something, ring the person who sent you the message. Code for HR: JOIN-ENDED") | tojson }};
 
@@ -753,9 +769,11 @@ html, body {
     }
   });
 
-  /* ── What a refused sign-in says (slice 079, US-3 and US-4) ────────────
-     Frappe already tells these three apart, and I read its own code rather
-     than assuming (frappe/auth.py:282-289, v16.33.1):
+  /* ── What a refused sign-in says (slice 079 US-3 and US-4; ALV-397) ─────
+     **The comment that was here was wrong, and it was wrong from the day the
+     slice shipped.** It said Frappe tells a wrong password from a closed
+     account, so design ⚠ D4 was "yes, with no server change at all". Frappe
+     does tell them apart - but only when there is a password to check:
 
        a wrong password            -> "Invalid login credentials"
        a CORRECT password on a
@@ -763,24 +781,41 @@ html, body {
        too many tries              -> "Your account has been locked and will
                                        resume after N seconds"
 
-     **That answers design ⚠ D4, which was marked "P1 if the answer is no".**
-     The answer is yes, with no server change at all.
+     `end_the_sign_in` DESTROYS the password when access ends
+     (`end_the_sign_in`'s `delete_all_passwords_for`). With nothing stored, `find_by_credentials` sets
+     `is_authenticated = False` (`user.py:849-855`) and `authenticate` tests
+     THAT before `enabled` (`frappe/auth.py:282-288`). So a closed account
+     answers "Invalid login credentials", and the second line above was never
+     reached on any tenant.
 
-     Why it matters more than it looks: a joiner typing the password that
-     worked yesterday and being told it is WRONG will try again, lock
-     themselves out, and ring to say the system is broken. So an account whose
-     access has ended gets its own words - "this sign-in has finished its job"
-     - and never "Invalid credentials".
+     **AC-17 cannot be met as written.** It promises the ended wording to
+     "the correct password", and that is what kept the disclosure to people HR
+     handed a credential to. After a close there IS no correct password, so no
+     gate can exist. The two halves of 079 contradict each other.
 
-     **The trade is recorded in decision 4a and is not rediscovered here:** this
-     does tell somebody holding the credential that an account existed and has
-     ended. That is a small disclosure about a person HR already chose to
-     contact, by a credential HR handed over by hand.
+     **Why the server is not simply asked.** With no password to check,
+     anything the server answers about a typed address is ungated: type any
+     email, learn whether that person was invited by this employer. That is
+     exactly the oracle US-4 forbids. So the page says one honest thing that
+     covers both states and resolves neither - the ambiguity IS the privacy
+     control. Surbhi's decision, 20 Nov 2026, option B of ALV-397.
 
-     A wrong password NEVER says which of the two was wrong - that would tell a
-     stranger whether a phone number belongs to a joiner at this employer
-     (US-4) - and the tries and the lock length are read from System Settings
-     on the server, not guessed. */
+     The harm decision 4a was written about is a joiner retyping a password
+     that cannot work until they lock themselves out. REFUSED_WORDS names one
+     careful check, then says stop, says why ("more tries can lock it"), and
+     makes the next action a phone call rather than another try.
+
+     **ENDED_WORDS and the `disabled or missing` branch are KEPT, and they are
+     not dead code.** `end_the_sign_in` sets `enabled = 0` before it destroys
+     the password, inside one try block whose failure is swallowed
+     (ALV-406). If the password delete fails after the disable lands, the
+     account is closed with its password intact - and then Frappe really does
+     say "User disabled or missing", and the ended wording is the right answer.
+     Rare, and correct when it fires.
+
+     The lock branch is unaffected: that one never depended on a stored
+     password, and the tries and seconds are still read from System Settings on
+     the server rather than guessed. */
   function refusalWords(said) {
     said = String(said || '');
     if (!JOINER) return 'Incorrect email or password. Please try again.';
@@ -790,7 +825,7 @@ html, body {
     if (/disabled or missing/i.test(said)) {
       return ENDED_WORDS;
     }
-    return BADPASS_WORDS;
+    return REFUSED_WORDS;
   }
 
   // ── CSRF helper ─────────────────────────────────────────────
@@ -806,19 +841,6 @@ html, body {
   [emailEl, passwordEl].forEach(el => {
     el.addEventListener('input', clearError);
   });
-
-  // The reveal, with words on it. It toggles the type and says what it will do
-  // next, so it is never a state somebody has to infer from an icon.
-  const revealEl = $('kx-reveal');
-  if (revealEl) {
-    revealEl.addEventListener('click', function () {
-      const showing = passwordEl.type === 'text';
-      passwordEl.type = showing ? 'password' : 'text';
-      revealEl.textContent = showing
-        ? {{ _("Show the password") | tojson }}
-        : {{ _("Hide the password") | tojson }};
-    });
-  }
 
   // Auto-focus email field
   emailEl.focus();

@@ -654,7 +654,7 @@ contents, and location outside the moment of a punch.
 | S1 | Tenant separation | Each customer is a separate site with its own database | In place | `deploy/provision_tenant.sh` (`bench new-site` per tenant) |
 | S2 | Tenant separation | Automated test that proves one tenant cannot read another's data | Not built | Compliance feature map I2 |
 | S3 | Access control | Role-based permissions (Employee, manager, HR User, HR Manager, System Manager) from the Frappe framework | In place | Framework |
-| S4 | Access control | Check-in records and photos: an employee sees their own; a manager sees their direct reports'; HR sees all; a user with no employee record sees none | In code, not released | `field_checkin.py` `checkin_query_conditions`, `checkin_has_permission` |
+| S4 | Access control | Check-in records and photos: an employee sees their own; a manager sees their direct reports' (or whole reporting line, if the organisation turns that on); HR sees the employees of the companies, and where set the branches, it may act for, plus its own and its line; a System Manager sees all; a user with no employee record and no HR scope sees none | In code, not released (ALV-412, 20 Nov 2026) | `field_app_access.py` `checkin_query_conditions`, `checkin_has_permission` |
 | S5 | Access control | Performance reviews: stage rules, no self-rating or self-approval, pay amounts hidden from managers | In code, not released (partly local only) | Slice 010 |
 | S6 | Access control | Leader totals only, with small groups hidden so individuals cannot be picked out | Local only | Slice 012 |
 | S7 | Access control | Two-factor sign-in | Not verified (the framework supports it; I could not confirm it is on) | — |

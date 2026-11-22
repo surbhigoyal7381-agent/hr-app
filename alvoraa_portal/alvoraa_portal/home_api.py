@@ -232,10 +232,15 @@ def _punches_today(employee, date_):
 
 	# Labelled in order where the reader sent no In/Out (DTC), so the banner's
 	# "checked in" agrees with the check-in button.
+	# ALV-402: a punch just after midnight that ends yesterday's shift is
+	# yesterday's, not the first punch of today.
+	from alvoraa_portal.payroll_rules_apply import shift_day
+
 	return label_punches([{"time": str(r.time), "log_type": r.log_type} for r in frappe.get_all(
 		"Employee Checkin",
 		filters={"employee": employee, "time": [">=", str(date_) + " 00:00:00"]},
-		fields=["log_type", "time"], order_by="time asc", limit_page_length=0)])
+		fields=["log_type", "time", "shift_start"], order_by="time asc", limit_page_length=0)
+		if shift_day(r) == str(getdate(date_))])
 
 
 # ── The attendance-gap rule (042 section 11) ─────────────────────────────────
@@ -607,6 +612,22 @@ def _needs(me, me_row, features, date_):
 			           "from_date": min(shown), "to_date": max(shown),
 			           "capped": len(gaps) > len(shown)},
 			"action": "fix_attendance",
+			"route": "#time/fix",
+		})
+	# Slice 087 (ALV-419, V4 P-19): a request somebody filed for this person waits for their Confirm. One row
+	# each, opening that day. A Held day stays unpaid until it is answered, and nothing else tells them.
+	from alvoraa_portal import punch_fix
+	for r in punch_fix.home_rows(me["employee"]):
+		day = frappe.utils.formatdate(r["date"], "EEE d MMM")
+		who = _("HR") if r["filed_by"] == "HR" else r["filer"]
+		what = _("a punch fix") if r["punch_fix"] else _("a correction")
+		out.append({
+			"id": "confirm_" + r["name"],
+			"kind": "confirm_request",
+			"title": (_("{0} added {1} for {2} and HR has approved it. Is it right?") if r["approved"]
+			          else _("{0} sent {1} for {2}. Is it right?")).format(who, what, day),
+			"detail": {"date": r["date"]},
+			"action": "open_day",
 			"route": "#time/fix",
 		})
 	review = _self_review(me["employee"])

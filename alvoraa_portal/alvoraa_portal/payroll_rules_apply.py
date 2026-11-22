@@ -24,7 +24,7 @@ The monthly roll-up and the salary slip read these figures later.
 """
 
 import frappe
-from frappe.utils import get_datetime, getdate, now
+from frappe.utils import add_days, get_datetime, getdate, now
 
 from alvoraa_portal.payroll_rules import break_gaps, evaluate_day, minutes_on_break, punch_minutes
 
@@ -362,6 +362,17 @@ def day_rules_on(employee: str, date, rule_set, shift_grace=None) -> dict:
 	        "break_allowance_minutes": flags["break_allowance_minutes"]}
 
 
+def shift_day(punch):
+	"""The working day a punch belongs to, as "YYYY-MM-DD" (ALV-402).
+
+	The date of its `shift_start` where Frappe matched it to a shift, so leaving
+	at 00:00 after a 20:30 shift end belongs to the day before. A punch with no
+	shift keeps its calendar date. Every reader that groups punches by day uses
+	this, so the engine, the reports and the screens put a punch on one day.
+	"""
+	return str(getdate(punch.get("shift_start") or punch.get("time")))
+
+
 def _punches(employee, date):
 	"""First and last punch of the day, how many there were, and the gaps
 	between them that may be breaks (`break_gaps`).
@@ -375,16 +386,29 @@ def _punches(employee, date):
 	present days record zero hours while only 186 genuinely lack a check-out.
 	Trusting that field would hold five times as many days as it should.
 	"""
-	rows = frappe.get_all("Employee Checkin",
-	                      filters={"employee": employee, "time": ("between", [
-		                      "{0} 00:00:00".format(date), "{0} 23:59:59".format(date)])},
-	                      pluck="time", order_by="time asc")
-	if not rows:
+	# ALV-402: a punch belongs to the day its shift started, as Frappe matched it
+	# (`shift_start`), not to its calendar date. Leaving at 00:00:42 after a
+	# 20:30 shift end is the last punch of the day before; filed by the calendar
+	# it made both days odd and held them both. A punch with no shift keeps its
+	# calendar date. So read this day and the next, and keep what is this day's.
+	date = getdate(date)
+	filters = {"employee": employee, "time": ("between", [
+		"{0} 00:00:00".format(date), "{0} 23:59:59".format(add_days(date, 1))])}
+	# Slice 087: a punch HR has set aside no longer counts. Read on this one field only
+	# (not `skip_auto_attendance`, which also marks repeat scans and filed-away punches),
+	# and only where the column exists, so an image that is deployed before its migrate
+	# judges every day exactly as it did.
+	if frappe.db.has_column("Employee Checkin", "alvoraa_fix_aside_request"):
+		filters["alvoraa_fix_aside_request"] = ("is", "not set")
+	rows = frappe.get_all("Employee Checkin", filters=filters,
+	                      fields=["time", "shift_start"], order_by="time asc")
+	times = [get_datetime(r.time) for r in rows if shift_day(r) == str(date)]
+	if not times:
 		return None, None, 0, []
 	# A reader that scans twice in a second has not recorded a working day of
 	# one second. Collapse before counting, or ATT-06 never sees the day as the
 	# single punch it really is.
-	distinct = punch_minutes(map(get_datetime, rows))
+	distinct = punch_minutes(times, day=date)
 	if not distinct:
 		return None, None, 0, []
 	return distinct[0], distinct[-1], len(distinct), break_gaps(distinct)
@@ -395,7 +419,7 @@ def breaks_by_day(employee: str, company: str | None, days: dict, times_by_date:
 
 	`days` maps "YYYY-MM-DD" to (status, shift) for the person's submitted
 	Attendance rows; `times_by_date` maps the same dates to that calendar day's
-	punch datetimes, already read by the caller with `get_list` - so a caller
+	punch datetimes (grouped with `shift_day`), already read by the caller with `get_list` - so a caller
 	who may not read this person's punches passes none and gets no break.
 
 	Returns (allowance, {date: values}). Values hold only keys that have one:
@@ -424,7 +448,7 @@ def breaks_by_day(employee: str, company: str | None, days: dict, times_by_date:
 		# shift ending after midnight), and deducts nothing for an approved leave.
 		if status == "On Leave" or not shift or shift[1] <= shift[0]:
 			continue
-		distinct = punch_minutes(times_by_date.get(date) or ())
+		distinct = punch_minutes(times_by_date.get(date) or (), day=getdate(date))
 		if len(distinct) <= 2:
 			continue
 		if len(distinct) % 2:

@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Slice 086 prototype v1: Whole team, Held days</title>
+<style>
+/* Tokens copied from alvoraa_portal/templates/includes/design_system.html (light and dark).
+   Component rules (.tr-*, .btn, .ac-*) copied from public/css/ess/panels.css. New rules are prefixed ho- . Review scaffolding is prefixed rv- . */
+:root,:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;--sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--r-full:999px;--fs-xs:11px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60)}
+*{box-sizing:border-box}
+body{margin:0;background:#d9d5cf;font-family:var(--font);color:var(--text);font-size:var(--fs-base)}
+:root[data-theme="dark"] body{background:#0e0d0b}
+button{font-family:inherit}
+
+/* ── review scaffolding (not part of the product) ── */
+.rv{background:#2D2622;color:#fff;padding:8px 12px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;font-size:13px}
+.rv b{font-weight:700}
+.rv label{display:flex;gap:6px;align-items:center}
+.rv select,.rv button{font:inherit;font-size:13px;padding:5px 8px;border-radius:6px;border:1px solid #6b635b;background:#3d3631;color:#fff;cursor:pointer}
+.rv .tag{background:#F8EDBE;color:#2D2622;padding:2px 8px;border-radius:999px;font-weight:700}
+.rv-note{padding:8px 14px;font-size:13px;color:var(--text2);max-width:1180px;margin:0 auto}
+.stage{display:flex;justify-content:center;padding:10px 10px 40px}
+
+/* ── the app frame. Desktop = wide, phone = 390 px. Overlay is absolute inside it, so it is pinned to the frame, not the browser ── */
+.app{position:relative;background:var(--bg);width:100%;max-width:1180px;height:min(860px,calc(100vh - 120px));min-height:620px;display:flex;overflow:hidden;border:1px solid var(--border2);border-radius:12px;box-shadow:var(--sh3)}
+.app.ph{width:390px;max-width:100%;height:780px;flex-direction:column}
+.side{width:200px;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;flex:none}
+.app.ph .side{display:none}
+.side .logo{font-weight:800;color:var(--primary);margin-bottom:14px;font-size:15px}
+.side .nv{padding:9px 10px;border-radius:var(--r-sm);color:var(--text2);font-size:var(--fs-base)}
+.side .nv.on{background:var(--primary-lt);color:var(--primary);font-weight:700}
+.side .ph-note{font-size:11px;color:var(--text3);margin-top:14px;line-height:1.4}
+.col{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:0 14px;height:52px;align-items:center;font-weight:700;flex:none}
+.app.ph .topbar{display:flex}
+.main{flex:1;overflow:auto;padding:22px 26px 0;position:relative}
+.app.ph .main{padding:14px 14px 0}
+.botnav{display:none;flex:none;height:56px;background:var(--surface);border-top:1px solid var(--border);align-items:center;justify-content:center;font-size:12px;color:var(--text3)}
+.app.ph .botnav{display:flex}
+
+.page-title{font-size:var(--fs-xl);font-weight:700;letter-spacing:-.03em;line-height:1.2;margin:0}
+.page-sub{font-size:var(--fs-base);color:var(--text2);margin:5px 0 14px}
+.app.ph .page-title{font-size:20px}
+.ac-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.ac-pick-lbl{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;color:var(--text3);font-weight:700;margin-right:6px}
+.ac-pickbox{font:inherit;font-size:var(--fs-sm);padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);min-width:200px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--r-sm);font-size:var(--fs-base);font-weight:600;cursor:pointer;border:none;white-space:nowrap}
+.btn-primary{background:var(--primary);color:var(--surface);box-shadow:var(--sh2)}
+.btn-primary:hover{background:var(--primary-h)}
+.btn-primary:disabled{opacity:.6;cursor:default}
+.btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}
+.btn-outline:hover{background:var(--primary-lt)}
+.btn-sm{padding:6px 13px;font-size:var(--fs-sm)}
+.btn:focus-visible,.tr-chip:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+.tr-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
+.tr-f{display:flex;flex-direction:column;gap:3px}
+.tr-f>span{font-size:var(--fs-xs);color:var(--text3);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.tr-f .form-control{font:inherit;font-size:var(--fs-sm);padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
+.tr-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.tr-chip{font:inherit;font-size:var(--fs-xs);font-weight:600;padding:4px 11px;border-radius:var(--r-full);border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;line-height:1.3}
+.tr-chip b{font-weight:700}
+.tr-chip.on{background:var(--primary);border-color:var(--primary);color:var(--surface)}
+.tr-chip.bad:not(.on){border-color:var(--red);color:var(--red)}
+.tr-chip.warn:not(.on){border-color:var(--amber);color:var(--amber)}
+.tr-chip.ok:not(.on){border-color:var(--green);color:var(--green)}
+.tr-group{border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:10px;background:var(--surface);overflow:hidden}
+.tr-group-hdr{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;padding:9px 14px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.tr-group-name{font-size:var(--fs-base);font-weight:700}
+.tr-group-sub{font-size:var(--fs-xs);color:var(--text3)}
+.tr-group-n{margin-left:auto;font-size:var(--fs-xs);color:var(--text3)}
+.tr-day{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)}
+.tr-day:last-child{border-bottom:0}
+.tr-day-main{flex:1;min-width:0}
+.tr-day-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:var(--fs-sm)}
+.tr-day-sub{font-size:var(--fs-xs);color:var(--text3);margin-top:3px}
+.tr-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:7px}
+.tr-dot.bad{background:var(--red)}.tr-dot.warn{background:var(--amber)}.tr-dot.ok{background:var(--green)}
+.tr-status{font-size:var(--fs-xs);color:var(--text3)}
+.tr-need{font-size:var(--fs-xs);font-weight:700;padding:2px 8px;border-radius:var(--r-full)}
+.tr-need.bad{background:var(--red-lt);color:var(--red)}.tr-need.warn{background:var(--amber-lt);color:var(--amber)}.tr-need.ok{background:var(--green-lt);color:var(--green)}
+.tr-ask{flex-shrink:0;white-space:nowrap}
+.tr-open{font:inherit;font-weight:700;color:var(--text);background:none;border:0;padding:0;cursor:pointer;text-align:left;text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}
+.tr-pager{display:flex;align-items:center;gap:8px;margin:12px 0}
+.tr-count{font-size:var(--fs-xs);color:var(--text3);margin-right:auto}
+.ac-empty{padding:26px 22px;text-align:center;color:var(--text3);font-size:var(--fs-base);line-height:1.6}
+.ac-empty b{display:block;color:var(--text);font-size:var(--fs-md);margin-bottom:4px}
+.ac-help{font-size:var(--fs-xs);color:var(--text3);margin:5px 0 10px;line-height:1.5}
+.form-label{display:block;font-size:var(--fs-xs);font-weight:700;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.07em}
+
+/* ── NEW in 086 (prefix ho-) ── */
+.tr-chip.held:not(.on){border-color:var(--amber);color:var(--amber);background:var(--amber-lt)}
+.ho-why{font-size:var(--fs-sm);color:var(--text2);margin:0 0 10px;line-height:1.5}
+.ho-split{font-size:var(--fs-sm);color:var(--text2);margin:0 0 12px}
+.ho-split b{color:var(--text)}
+.ho-entry{flex:none;width:270px;display:flex;flex-direction:column;gap:6px}
+.ho-entry input[type=time]{font:inherit;font-size:var(--fs-base);padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);width:100%;min-height:36px}
+.ho-seg{display:flex;gap:6px}
+.ho-seg label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:1.5px solid var(--border2);border-radius:var(--r-sm);padding:7px 8px;font-size:var(--fs-sm);font-weight:600;color:var(--text2);cursor:pointer;min-height:36px;background:var(--surface)}
+.ho-seg input{position:absolute;opacity:0;pointer-events:none}
+.ho-seg label:has(input:checked){border-color:var(--primary);background:var(--primary-lt);color:var(--primary)}
+.ho-seg label:has(input:focus-visible){outline:2px solid var(--primary);outline-offset:2px}
+.ho-punch{font-size:var(--fs-sm);color:var(--text2);margin-top:4px}
+.ho-punch b{font-variant-numeric:tabular-nums;color:var(--text)}
+.ho-ready{font-size:var(--fs-xs);font-weight:700;color:var(--green)}
+.ho-state{font-size:var(--fs-sm);margin-top:5px;line-height:1.45}
+.ho-state.wait{color:var(--text2)}
+.ho-state.sent{color:var(--green);font-weight:600}
+.ho-state.no{color:var(--text3)}
+.ho-err{font-size:var(--fs-sm);color:var(--red);background:var(--red-lt);border-radius:var(--r-sm);padding:7px 10px;margin-top:6px;line-height:1.45}
+.ho-err b{font-weight:700}
+.tr-day.ready{background:linear-gradient(90deg,var(--green-lt),transparent 40%)}
+.tr-day.done{opacity:.95}
+.ho-banner{border-radius:var(--r-sm);padding:11px 14px;margin:0 0 12px;font-size:var(--fs-base);line-height:1.5;border:1px solid;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ho-banner.ok{background:var(--green-lt);border-color:var(--green);color:var(--text)}
+.ho-banner.warn{background:var(--amber-lt);border-color:var(--amber);color:var(--text)}
+.ho-banner.bad{background:var(--red-lt);border-color:var(--red);color:var(--text)}
+.ho-banner b{font-weight:700}
+.ho-banner .sp{flex:1;min-width:160px}
+.ho-bar{position:sticky;bottom:0;margin:0 -26px;padding:12px 26px;background:var(--surface);border-top:1px solid var(--border2);box-shadow:0 -6px 14px rgba(0,0,0,.06);display:flex;gap:12px;align-items:center;flex-wrap:wrap;z-index:5}
+.app.ph .ho-bar{margin:0 -14px;padding:10px 14px}
+.ho-bar .t{flex:1;min-width:180px;font-size:var(--fs-base);line-height:1.4}
+.ho-bar .t b{font-weight:700}
+.ho-bar .t small{display:block;font-size:var(--fs-xs);color:var(--text3)}
+.ho-hint{font-size:var(--fs-sm);color:var(--text3);margin:0 0 10px}
+.ho-scrim{position:absolute;inset:0;background:rgba(20,16,12,.5);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.app.ph .ho-scrim{align-items:flex-end;padding:0}
+.ho-dlg{background:var(--surface);border-radius:12px;box-shadow:var(--sh3);width:100%;max-width:520px;max-height:100%;overflow:auto;padding:20px}
+.app.ph .ho-dlg{border-radius:14px 14px 0 0;max-width:none}
+.ho-dlg h2{font-size:var(--fs-lg);margin:0 0 6px}
+.ho-list{border:1px solid var(--border);border-radius:var(--r-sm);max-height:200px;overflow:auto;margin:10px 0;font-size:var(--fs-sm)}
+.ho-list div{padding:7px 10px;border-bottom:1px solid var(--border);display:flex;gap:8px}
+.ho-list div:last-child{border-bottom:0}
+.ho-list span:last-child{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700}
+.ho-dlg textarea{font:inherit;font-size:var(--fs-base);width:100%;min-height:64px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);resize:vertical}
+.ho-dlg .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.ho-warn{font-size:var(--fs-sm);color:var(--amber);background:var(--amber-lt);border-radius:var(--r-sm);padding:7px 10px;margin:8px 0}
+.toast{position:absolute;left:50%;bottom:90px;transform:translateX(-50%);background:#2D2622;color:#fff;padding:9px 14px;border-radius:8px;font-size:var(--fs-sm);z-index:30;max-width:90%}
+
+/* phone: the same rules the product would put in @media(max-width:768px) — 16px fields, 44px targets */
+.app.ph{--fs-xs:12px;--fs-sm:13px;--fs-base:15px;--fs-md:16px}
+.app.ph .tr-f{flex:1 1 140px}
+.app.ph .tr-f .form-control,.app.ph .ac-pickbox{font-size:16px;min-height:44px}
+.app.ph .tr-chip{min-height:36px}
+.app.ph .tr-day{flex-wrap:wrap}
+.app.ph .ho-entry{width:100%}
+.app.ph .ho-entry input[type=time]{font-size:16px;min-height:44px}
+.app.ph .ho-seg label{min-height:44px;font-size:15px}
+.app.ph .btn,.app.ph .tr-open{min-height:44px}
+.app.ph .tr-ask{width:100%}
+.app.ph .ho-bar .btn{width:100%}
+.app.ph .ho-dlg textarea{font-size:16px;min-height:88px}
+.app.ph .ho-dlg .btn{flex:1}
+</style></head>
+<body>
+<div class="rv" id="rv">
+  <b>Review bar (not part of the product)</b>
+  <span class="tag">Sample data</span>
+  <label>Page <select id="rv-page"><option value="new">With slice 086</option><option value="before">Today's page (before 086)</option></select></label>
+  <label>Device <select id="rv-dev"><option value="d">Desktop</option><option value="p">Phone 390 px</option></select></label>
+  <label>Theme <select id="rv-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+  <label>Language <select id="rv-lang"><option value="en">English</option><option value="hi">Hindi (machine draft)</option></select></label>
+  <label>Connection on next send <select id="rv-conn"><option value="good">Good</option><option value="drop">Drops: answer lost</option><option value="off">Offline</option></select></label>
+  <button id="rv-reset">Reset</button>
+</div>
+<div class="rv-note" id="rv-note"></div>
+<div class="stage"><div class="app" id="app"></div></div>
+<script>
+"use strict";
+/* ---- Sample data. Invented names, punches and dates. Today in this prototype is 20 Nov 2026, 14:20. Manager = Sakshi Verma. ---- */
+var NOW = "14:20", TODAY = "20 Nov 2026", ME = "Sakshi Verma";
+var ROWS = [
+ {id:1,emp:"Ravi Kumar",sub:"Sales Associate · Sales · Noida",date:"16 Nov 2026",shift:"09:00–18:00",punches:["09:02"],held:true,direct:true},
+ {id:2,emp:"Ravi Kumar",sub:"Sales Associate · Sales · Noida",date:"17 Nov 2026",shift:"09:00–18:00",punches:["09:05"],held:true,direct:true},
+ {id:3,emp:"Anita Devi",sub:"Cashier · Sales · Noida",date:"13 Nov 2026",shift:"09:00–18:00",punches:["18:07"],held:true,direct:true,singleOut:true},
+ {id:4,emp:"Anita Devi",sub:"Cashier · Sales · Noida",date:"16 Nov 2026",shift:"09:00–18:00",punches:["09:00","09:04","18:10"],held:true,direct:true},
+ {id:5,emp:"Mohan Lal",sub:"Stock Keeper · Stores · Noida",date:"12 Nov 2026",shift:"09:00–18:00",punches:["08:58"],held:true,direct:true},
+ {id:6,emp:"Mohan Lal",sub:"Stock Keeper · Stores · Noida",date:"18 Nov 2026",shift:"09:00–18:00",punches:["09:10"],held:true,direct:true},
+ {id:7,emp:"Pooja Singh",sub:"Sales Associate · Sales · Noida",date:"19 Nov 2026",shift:"09:00–18:00",punches:["09:01","09:03","12:58","13:30","18:02"],held:true,direct:true},
+ {id:8,emp:"Pooja Singh",sub:"Sales Associate · Sales · Noida",date:"20 Nov 2026",shift:"09:00–18:00",punches:["09:03"],held:true,direct:true,today:true},
+ {id:9,emp:"Imran Khan",sub:"Security · Admin · Noida",date:"11 Nov 2026",shift:"09:00–18:00",punches:["09:01"],held:true,direct:true,already:true},
+ {id:10,emp:"Imran Khan",sub:"Security · Admin · Noida",date:"14 Nov 2026",shift:"09:00–18:00",punches:["09:04"],held:true,direct:true,waiting:"Sakshi Verma sent 18:15 on 19 Nov 2026. HR will decide.",waitTime:"18:15"},
+ {id:11,emp:"Imran Khan",sub:"Security · Admin · Noida",date:"15 Nov 2026",shift:"09:00–18:00",punches:["08:59"],held:true,direct:true,waiting:"Imran Khan sent 18:05 himself on 19 Nov 2026. HR will decide.",waitTime:"18:05"},
+ {id:12,emp:"Deepak Rao",sub:"Sales Associate · Sales · Noida",date:"17 Nov 2026",shift:"09:00–18:00",punches:["09:12"],held:true,direct:false,mgr:"Meena Joshi"},
+ {id:13,emp:"Kavita Nair",sub:"Cashier · Sales · Noida",date:"18 Nov 2026",shift:"09:00–18:00",punches:["09:07"],held:true,direct:false,mgr:"Meena Joshi"},
+ {id:14,emp:"Mohan Lal",sub:"Stock Keeper · Stores · Noida",date:"10 Nov 2026",shift:"09:00–18:00",punches:[],held:false,direct:true,flag:"absent",status:"Absent"},
+ {id:15,emp:"Pooja Singh",sub:"Sales Associate · Sales · Noida",date:"9 Nov 2026",shift:"09:00–18:00",punches:["09:02","13:10"],held:false,direct:true,flag:"short",status:"Half Day"}
+];
+var S;
+function fresh(){S={page:"new",dev:"d",theme:"light",lang:S?S.lang:"en",conn:S?S.conn:"good",depth:"direct",only:"",group:"person",typed:{},res:{},banner:null,confirm:false,sending:false,sentNow:{},note:"",toast:""};}
+S=null;fresh();
+/* ---- words. English first, Hindi machine-drafted for native review. ---- */
+var HI={"Held":"रुका हुआ","Send {n} to HR":"{n} HR को भेजें","Your name goes on each request.":"हर अनुरोध पर आपका नाम जाएगा।","Waiting for HR":"HR के फ़ैसले का इंतज़ार","Note for HR (optional)":"HR के लिए नोट (वैकल्पिक)","Go back":"वापस जाएँ","Which punch is missing?":"कौन सा पंच छूटा है?","Arrival":"आने का","Leaving":"जाने का","Ready":"तैयार","Nothing is held":"कोई दिन रुका हुआ नहीं है","What time did {x} leave?":"{x} कितने बजे गए?","What time did {x} arrive?":"{x} कितने बजे आए?","Sent":"भेजा गया","Everything":"सब कुछ"};
+function t(k,v){var s=(S.lang==="hi"&&HI[k])||k;if(v)for(var i in v)s=s.split("{"+i+"}").join(v[i]);return s;}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function mins(h){var p=h.split(":");return +p[0]*60+ +p[1];}
+function first(n){return n.split(" ")[0];}
+function visible(){return ROWS.filter(function(r){return S.depth==="all"||r.direct;});}
+/* The row's own state: need (needs a time from the manager), wait (a request is with HR), other (not the manager's to send), plain (not held) */
+function kind(r){
+  var x=S.res[r.id];
+  if(x&&x.state==="sent")return "wait";
+  if(r.waiting||(x&&x.state==="already"))return "wait";
+  if(!r.held)return "plain";
+  if(!r.direct)return "other";
+  return "need";
+}
+function ready(r){if(S.res[r.id]&&S.res[r.id].state==="refused")return false;var v=S.typed[r.id];if(!v||!v.time)return false;if(r.punches.length>1&&!v.log)return false;return kind(r)==="need";}
+function readyRows(){return visible().filter(ready);}
+/* ---- the fake office: the same rules as the real one, as far as the brief says. Real rules are for the engineer to confirm. ---- */
+function office(r,v){
+  var log=r.punches.length===1?(r.singleOut?"IN":"OUT"):v.log, tm=mins(v.time), p=r.punches.map(mins);
+  var lo=mins(r.shift.split("–")[0]),hi=mins(r.shift.split("–")[1]);
+  if(r.already)return{state:"already",msg:"Already waiting with HR. Someone sent a time for this day a moment ago, so nothing more is needed."};
+  if(r.today&&tm>mins(NOW))return{state:"refused",msg:"It is only "+NOW+" now, so "+v.time+" has not happened yet. Enter the time the person really left."};
+  if(log==="OUT"&&tm<=Math.max.apply(null,p))return{state:"refused",msg:v.time+" does not fit the punches. A leaving time has to come after the last punch ("+r.punches[p.indexOf(Math.max.apply(null,p))]+")."};
+  if(log==="IN"&&tm>=Math.min.apply(null,p))return{state:"refused",msg:v.time+" does not fit the punches. An arrival time has to come before the first punch ("+r.punches[p.indexOf(Math.min.apply(null,p))]+")."};
+  if(log==="OUT"&&tm>hi+240)return{state:"refused",msg:v.time+" is more than 4 hours after this shift ends ("+r.shift.split("–")[1]+"). A missing punch for this shift cannot be that late."};
+  if(log==="IN"&&tm<lo-240)return{state:"refused",msg:v.time+" is more than 4 hours before this shift starts ("+r.shift.split("–")[0]+"). A missing punch for this shift cannot be that early."};
+  return{state:"sent",time:v.time};
+}
+/* ---- render ---- */
+function render(){
+  var app=document.getElementById("app");
+  document.documentElement.setAttribute("data-theme",S.theme);
+  app.className="app"+(S.dev==="p"?" ph":"");
+  var scroll=(app.querySelector(".main")||{}).scrollTop||0;
+  var before=S.page==="before";
+  app.innerHTML=
+   '<div class="side"><div class="logo">Alvora</div><div class="nv">Home</div><div class="nv on">Attendance</div><div class="nv">Leave</div><div class="nv">Team</div><div class="ph-note">Sidebar drawn only for context. Not the real menu.</div></div>'
+  +'<div class="col"><div class="topbar">Attendance</div><div class="main" id="main">'
+  +'<h1 class="page-title">Attendance</h1><p class="page-sub">Whole team</p>'
+  +'<div class="ac-bar"><span class="ac-pick-lbl">Showing</span><input class="ac-pickbox" value="Whole team" aria-label="Whose attendance" readonly></div>'
+  +bar()+chips()+body()+pager()+'<div id="sb">'+sendbar()+'</div>'
+  +'</div><div class="botnav">Portal bottom bar sits here (not redrawn)</div></div>'
+  +(S.confirm?dialog():"")+(S.toast?'<div class="toast" role="status">'+esc(S.toast)+'</div>':"");
+  var m=document.getElementById("main");if(m)m.scrollTop=scroll;
+  note();
+}
+function bar(){
+  return '<div class="tr-bar"><label class="tr-f"><span>From</span><input type="date" class="form-control" value="2026-11-07"></label>'
+  +'<label class="tr-f"><span>To</span><input type="date" class="form-control" value="2026-11-20"></label>'
+  +'<label class="tr-f"><span>Person</span><select class="form-control"><option>Everyone</option></select></label>'
+  +'<label class="tr-f"><span>Group by</span><select class="form-control" onchange="S.group=this.value;render()"><option value="person"'+(S.group==="person"?" selected":"")+'>Person</option><option value="date"'+(S.group==="date"?" selected":"")+'>Date</option></select></label>'
+  +'<label class="tr-f"><span>Show</span><select class="form-control" onchange="S.depth=this.value;render()"><option value="direct"'+(S.depth==="direct"?" selected":"")+'>My direct reports</option><option value="all"'+(S.depth==="all"?" selected":"")+'>Everyone below me</option></select></label></div>';
+}
+function counts(){
+  var v=visible(),c={held:0,no_clock_out:0,absent:0,short:0};
+  v.forEach(function(r){if(r.held){c.held++;c.no_clock_out++;}if(r.flag)c[r.flag]++;});
+  return c;
+}
+function chips(){
+  var c=counts(),before=S.page==="before",h='<div class="tr-chips">';
+  h+='<button class="tr-chip'+(S.only?"":" on")+'" onclick="S.only=\'\';render()">'+t("Everything")+'</button>';
+  if(before){ if(c.no_clock_out)h+='<button class="tr-chip bad'+(S.only==="nc"?" on":"")+'" onclick="S.only=\'nc\';render()">No clock-out <b>'+c.no_clock_out+'</b></button>'; }
+  else if(c.held)h+='<button class="tr-chip held'+(S.only==="held"?" on":"")+'" onclick="S.only=\'held\';render()">'+t("Held")+' <b>'+c.held+'</b></button>';
+  if(c.absent)h+='<button class="tr-chip warn">Absent <b>'+c.absent+'</b></button>';
+  if(c.short)h+='<button class="tr-chip warn">Short hours <b>'+c.short+'</b></button>';
+  return h+'</div>';
+}
+function listRows(){
+  var v=visible(),before=S.page==="before";
+  if(S.only==="held"||S.only==="nc")v=v.filter(function(r){return r.held;});
+  var order={need:0,wait:1,other:2,plain:3};
+  v=v.slice().sort(function(a,b){return before?0:order[kind(a)]-order[kind(b)];});
+  return v;
+}
+function body(){
+  var before=S.page==="before",rows=listRows(),h="";
+  if(!before&&S.only==="held"){
+    var c=counts(),w=0,o=0,n=0;
+    visible().forEach(function(r){if(!r.held)return;var k=kind(r);if(k==="need")n++;else if(k==="wait")w++;else o++;});
+    h+='<p class="ho-why"><b>Held days</b> have a punch missing, so pay for the day is on hold until HR fixes it. Give the missing time, and HR decides.</p>';
+    h+='<p class="ho-split"><b>'+n+'</b> need a time from you · <b>'+w+'</b> waiting for HR'+(o?' · <b>'+o+'</b> are another manager\'s to send':'')+'</p>';
+  }
+  if(S.banner)h+=banner();
+  if(!rows.length){
+    return h+'<div class="ac-empty"><b>'+t("Nothing is held")+'</b>No day in this period is waiting for a missing punch. When somebody forgets to punch out, the day shows up here.<br><br><button class="btn btn-outline btn-sm" onclick="S.only=\'\';render()">See everything</button></div>';
+  }
+  var by=S.group==="person",groups=[],idx={};
+  rows.forEach(function(r){var k=by?r.emp:r.date;if(!(k in idx)){idx[k]=groups.length;groups.push({k:k,sub:by?r.sub:"",items:[]});}groups[idx[k]].items.push(r);});
+  return h+groups.map(function(g){
+    return '<div class="tr-group"><div class="tr-group-hdr"><span class="tr-group-name">'+esc(g.k)+'</span>'+(g.sub?'<span class="tr-group-sub">'+esc(g.sub)+'</span>':'')+'<span class="tr-group-n">'+g.items.length+(by?(g.items.length===1?" day":" days"):(g.items.length===1?" person":" people"))+'</span></div>'+g.items.map(function(r){return day(r,by);}).join("")+'</div>';
+  }).join("");
+}
+function day(r,by){
+  var before=S.page==="before",k=kind(r),x=S.res[r.id]||{};
+  var who=by?r.date:r.emp;
+  var need=before?(r.held?["No clock-out","bad"]:r.flag==="absent"?["Absent","warn"]:["Short hours","warn"]):(r.held?["Held","warn"]:r.flag==="absent"?["Absent","warn"]:["Short hours","warn"]);
+  var sub="Shift "+r.shift;
+  var h='<div class="tr-day'+(ready(r)?" ready":"")+'" id="row'+r.id+'"><span class="tr-dot '+need[1]+'"></span><div class="tr-day-main"><div class="tr-day-top"><button class="tr-open">'+esc(who)+'</button><span class="tr-status">'+(before?(r.status||(r.held?"Held":"")):(r.held?"":(r.status||"")))+'</span><span class="tr-need '+need[1]+'">'+t(need[0])+'</span>'+'<span class="ho-ready" id="rd'+r.id+'"'+(ready(r)?'':' hidden')+'>✓ '+t("Ready")+'</span></div>'
+   +'<div class="tr-day-sub">'+(r.punches.length?(r.punches.length===1?"Punch: ":"Punches: ")+"<b>"+esc(r.punches.join(" · "))+"</b> · ":"No punches · ")+esc(sub)+'</div>';
+  if(!before&&r.held){
+    if(k==="wait"){
+      var msg=x.state==="sent"?"You sent "+x.time+" just now. HR will decide. Until then the day stays held.":x.state==="already"?"Already waiting with HR. A request for this day was filed a moment ago.":r.waiting;
+      h+='<div class="ho-state '+(x.state==="sent"?"sent":"wait")+'">'+(x.state==="sent"?"✓ ":"")+'<b>'+t("Waiting for HR")+'.</b> '+esc(msg)+'</div>';
+    } else if(k==="other"){
+      h+='<div class="ho-state no">'+esc(first(r.emp))+' reports to '+esc(r.mgr)+', so '+esc(first(r.mgr))+' sends this one. You can see the punches, but you cannot send a time for this day.</div>';
+    }
+    if(x.state==="refused")h+='<div class="ho-err" role="alert"><b>Not sent.</b> '+esc(x.msg)+' Change the time and send again.</div>';
+  }
+  h+='</div>';
+  if(!before&&r.held&&k==="need")h+=entry(r);
+  else if(before&&r.direct&&(r.held||r.flag))h+='<button class="btn btn-outline btn-sm tr-ask" onclick="toast(\'Unchanged: opens the reason form. It has no time box.\')">Ask HR to fix</button>';
+  else if(!before&&!r.held&&r.direct)h+='<button class="btn btn-outline btn-sm tr-ask" onclick="toast(\'Unchanged: opens the reason form.\')">Ask HR to fix</button>';
+  return h+'</div>';
+}
+function entry(r){
+  var v=S.typed[r.id]||{},one=r.punches.length===1;
+  var ask=one?(r.singleOut?t("What time did {x} arrive?",{x:first(r.emp)}):t("What time did {x} leave?",{x:first(r.emp)})):"What time was the missing punch?";
+  var h='<div class="ho-entry"><label class="form-label" for="ti'+r.id+'">'+esc(ask)+'</label><input type="time" id="ti'+r.id+'" value="'+esc(v.time||"")+'" oninput="setT('+r.id+',this.value)" aria-describedby="hh'+r.id+'">';
+  if(!one){
+    h+='<div role="radiogroup" aria-label="'+t("Which punch is missing?")+'"><div class="form-label" style="margin:2px 0 4px">'+t("Which punch is missing?")+'</div><div class="ho-seg">'
+     +'<label><input type="radio" name="lg'+r.id+'" value="IN"'+(v.log==="IN"?" checked":"")+' onchange="setL('+r.id+',\'IN\')">'+t("Arrival")+'</label>'
+     +'<label><input type="radio" name="lg'+r.id+'" value="OUT"'+(v.log==="OUT"?" checked":"")+' onchange="setL('+r.id+',\'OUT\')">'+t("Leaving")+'</label></div></div>';
+  }
+  return h+'<span class="ac-help" id="hh'+r.id+'" style="margin:0">Type the time you know it was. Nothing is filled in for you.</span></div>';
+}
+function pager(){var n=listRows().length;return n?'<div class="tr-pager"><span class="tr-count">Showing 1–'+n+' of '+n+'</span><button class="btn btn-outline btn-sm" disabled>Previous</button><button class="btn btn-outline btn-sm" disabled>Next</button></div>':'';}
+function sendbar(){
+  if(S.page==="before")return"";
+  var n=readyRows().length;
+  if(!n)return '';
+  var send=Math.min(n,50);
+  return '<div class="ho-bar" role="region" aria-label="Send to HR"><div class="t"><b>'+n+(n===1?" day":" days")+' ready.</b> HR reviews each day. '+t("Your name goes on each request.")
+   +(n>50?'<small>50 at most in one send. The first 50 go now; '+(n-50)+' stay here for the next send.</small>':'<small>Only days with a time typed in are sent. The rest stay as they are.</small>')
+   +'</div><button class="btn btn-primary" id="sendbtn" onclick="openConfirm()">'+t("Send {n} to HR",{n:send})+'</button></div>';
+}
+function dialog(){
+  var rs=readyRows().slice(0,50),n=rs.length;
+  var lines=rs.map(function(r){var v=S.typed[r.id],one=r.punches.length===1,log=one?(r.singleOut?"arrived":"left"):(v.log==="IN"?"arrived":"left");
+    return '<div><span>'+esc(r.emp)+' · '+esc(r.date)+'</span><span>'+log+' '+esc(v.time)+'</span></div>';}).join("");
+  return '<div class="ho-scrim" onclick="if(event.target===this&&!S.sending){S.confirm=false;render();focusSend()}"><div class="ho-dlg" role="dialog" aria-modal="true" aria-labelledby="dt" id="dlg">'
+   +'<h2 id="dt">Send '+n+(n===1?' day':' days')+' to HR?</h2>'
+   +'<p class="ho-why" style="margin:0">'+t("Your name goes on each request.")+' HR decides each one. Until HR does, the day stays held.</p>'
+   +'<div class="ho-list" role="list" aria-label="What you are sending">'+lines+'</div>'
+   +'<label class="form-label" for="note">'+t("Note for HR (optional)")+'</label>'
+   +'<textarea id="note" oninput="S.note=this.value" placeholder="Say briefly why, if it helps HR decide.">'+esc(S.note)+'</textarea>'
+   +'<p class="ac-help">The note goes on all '+n+' requests. HR and the person can read it. Please do not write health or family details.</p>'
+   +'<div class="acts"><button class="btn btn-primary" id="go" onclick="doSend()"'+(S.sending?" disabled":"")+'>'+(S.sending?"Sending "+n+"… please keep this page open":t("Send {n} to HR",{n:n}))+'</button>'
+   +(S.sending?'':'<button class="btn btn-outline" onclick="S.confirm=false;render();focusSend()">'+t("Go back")+'</button>')+'</div></div></div>';
+}
+function banner(){
+  var b=S.banner;
+  if(b.kind==="checking")return '<div class="ho-banner warn" role="status"><span class="sp"><b>We did not get an answer from the office.</b> Some days may have gone through. Checking now, please do not send again.</span></div>';
+  if(b.kind==="off")return '<div class="ho-banner bad" role="alert"><span class="sp"><b>Nothing was sent.</b> You are offline. The times you typed are still here. Connect, then press Send again.</span></div>';
+  var cls=b.bad===0?"ok":(b.ok===0?"bad":"warn"),h='<div class="ho-banner '+cls+'" role="status" aria-live="polite"><span class="sp">';
+  if(b.checked)h+='<b>Checked with the office.</b> ';
+  if(b.bad===0)h+='<b>'+b.ok+' of '+b.total+' sent to HR.</b> HR will decide each one. Until then the days stay held.';
+  else h+='<b>'+(b.ok===0?'Nothing sent.':'Sent '+b.ok+' of '+b.total+' to HR.')+' '+b.bad+' not sent.</b> The reason is on each one below.'+(b.ok?' The '+b.ok+' that went are waiting for HR.':'');
+  h+='</span>';
+  if(b.bad)h+='<button class="btn btn-outline btn-sm" onclick="gotoErr()">Go to the first one</button>';
+  return h+'</div>';
+}
+/* ---- actions ---- */
+function setT(id,val){S.typed[id]=S.typed[id]||{};S.typed[id].time=val;partial(id);}
+function setL(id,val){S.typed[id]=S.typed[id]||{};S.typed[id].log=val;partial(id);}
+/* Typing must not redraw the row under the person's fingers (keyboard focus is kept): only the bar and the ready marks move. */
+/* Typing never redraws the page (a redraw throws the keyboard away): only the ready mark and the send bar move. */
+function partial(id){var r=ROWS.filter(function(x){return x.id===id;})[0],row=document.getElementById("row"+id),mk=document.getElementById("rd"+id);
+  if(S.res[id]&&S.res[id].state==="refused"){delete S.res[id];var er=row&&row.querySelector(".ho-err");if(er)er.remove();}
+  if(row)row.classList.toggle("ready",ready(r));if(mk)mk.hidden=!ready(r);
+  var sb=document.getElementById("sb");if(sb)sb.innerHTML=sendbar();}
+function openConfirm(){S.confirm=true;S.banner=null;render();var d=document.getElementById("note");if(d)d.focus();}
+function focusSend(){var b=document.getElementById("sendbtn");if(b)b.focus();}
+function doSend(){
+  if(S.sending)return;
+  var rs=readyRows().slice(0,50);S.sending=true;render();
+  var conn=document.getElementById("rv-conn").value;
+  setTimeout(function(){
+    S.sending=false;S.confirm=false;
+    if(conn==="off"){S.banner={kind:"off"};render();return;}
+    var ok=0,bad=0;
+    rs.forEach(function(r){var o=office(r,S.typed[r.id]);S.res[r.id]=o;if(o.state==="refused")bad++;else ok++;});
+    var tot=rs.length;
+    if(conn==="drop"){
+      S.banner={kind:"checking"};
+      /* an answer was lost: the office DID save the good ones. Hide results until the check comes back. */
+      var saved=S.res;S.res={};render();
+      setTimeout(function(){S.res=saved;S.banner={kind:"done",ok:ok,bad:bad,total:tot,checked:true};render();},1600);return;
+    }
+    S.banner={kind:"done",ok:ok,bad:bad,total:tot};render();
+    var m=document.getElementById("main");if(m)m.scrollTop=0;
+  },900);
+}
+function gotoErr(){var e=document.querySelector(".ho-err");if(e){e.scrollIntoView({block:"center"});var inp=e.closest(".tr-day").querySelector("input[type=time]");if(inp)inp.focus();}}
+function toast(m){S.toast=m;render();setTimeout(function(){S.toast="";render();},2200);}
+function note(){
+  var el=document.getElementById("rv-note"),before=S.page==="before";
+  el.innerHTML=before?"<b>Today's page (drawn from portal.js lines 15600–15930).</b> The chip is <b>No clock-out</b>, worked out from punches. The only action is <b>Ask HR to fix</b>, which asks for a reason, not the missing time. Switch to 'With slice 086' to see the new page.":
+   "<b>With slice 086.</b> Try it: pick <b>Held</b>, type a time on a few days (try 18:30 on Ravi, 08:00 on Anita's 13 Nov, 18:30 on Pooja's 20 Nov, anything on Imran's 11 Nov), press Send. Change 'Connection' above to see a lost answer. 'Show: Everyone below me' adds two skip-level days with no time box.";
+}
+/* keyboard: Escape closes the dialog; Tab stays inside it */
+document.addEventListener("keydown",function(e){
+  if(!S.confirm)return;
+  if(e.key==="Escape"&&!S.sending){S.confirm=false;render();focusSend();}
+  if(e.key==="Tab"){var f=[].slice.call(document.querySelectorAll("#dlg textarea,#dlg button:not([disabled])"));if(!f.length)return;var i=f.indexOf(document.activeElement);if(e.shiftKey&&i<=0){e.preventDefault();f[f.length-1].focus();}else if(!e.shiftKey&&i===f.length-1){e.preventDefault();f[0].focus();}}
+});
+["rv-page","rv-dev","rv-theme","rv-lang"].forEach(function(id){document.getElementById(id).addEventListener("change",function(){var v=this.value;if(id==="rv-page"){S.page=v;S.only=v==="new"?"held":"";}if(id==="rv-dev")S.dev=v;if(id==="rv-theme")S.theme=v;if(id==="rv-lang")S.lang=v;render();});});
+document.getElementById("rv-reset").onclick=function(){var l=S.lang,th=S.theme,dv=S.dev;fresh();S.lang=l;S.theme=th;S.dev=dv;S.only="held";document.getElementById("rv-page").value="new";render();};
+if(window.innerWidth<700){S.dev="p";document.getElementById("rv-dev").value="p";}
+S.only="held";
+render();
+</script>
+</body></html>

@@ -53,6 +53,11 @@ class WithdrawAfterDeclineCase(FrappeTestCase):
 		# whole site, which is how every HR login on our tenants is set up, so
 		# the decline below is not itself what is under test.
 		self.hr = self._login("Alv275hr%d" % tag, roles=("HR User",))
+		# Slice 085 (US-13): an HR login with no company looks after nobody, so
+		# this one is given the company, as Grace's HR login must be (Q1).
+		frappe.get_doc({"doctype": "User Permission", "user": self.hr, "allow": "Company",
+		                "for_value": self.company, "apply_to_all_doctypes": 1}
+		               ).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")

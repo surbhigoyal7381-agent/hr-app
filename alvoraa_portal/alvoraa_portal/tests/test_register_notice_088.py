@@ -295,3 +295,196 @@ class TheSeamWith087(RegisterNoticeCase):
 			lambda: punch_fix.record_register_signature([name], doc.name))
 		self.assertTrue(any("register signature" in l and doc.name in l for l in lines),
 		                "no security line for a recorded signature: " + repr(lines))
+
+
+class TheHRList(RegisterNoticeCase):
+	"""US-1, AC-1 to AC-10: who needs a notice this month, and nothing more than that."""
+
+	def test_a_change_hr_filed_puts_the_person_on_the_list_not_printed_yet(self):
+		"""AC-1."""
+		self.an_approved_hr_change()
+		frappe.set_user(self.hr)
+		try:
+			out = register_notice.list_people(self.day)
+		finally:
+			frappe.set_user("Administrator")
+		mine = [r for r in out["rows"] if r["employee"] == self.emp]
+		self.assertEqual(len(mine), 1, out["rows"])
+		self.assertEqual(mine[0]["changed_days"], 1)
+		self.assertEqual(mine[0]["open_days"], 1)
+		self.assertEqual(mine[0]["state"], "not_printed")
+		self.assertEqual(out["waiting"], 1)
+		self.assertEqual(out["done"], 0)
+
+	def test_the_employees_own_change_and_a_break_glass_one_are_not_on_the_list(self):
+		"""AC-2, two of its cases. The control is in the test above: an HR-filed change IS listed."""
+		self.held_on(self.day)
+		own = self.fix(time="18:30", by=self.emp_user)
+		self.decide(own, 1, by=self.hr)
+		self.assertEqual(self._rows_for_me(), [], "the employee's own change needs no notice")
+
+		day2 = frappe.utils.add_days(self.day, -1)
+		self.held_on(day2)
+		admin = self.fix(time="18:30", by="Administrator", day=day2)
+		self.decide(admin, 1, by=self.hr)
+		self.assertEqual(self._rows_for_me(), [],
+		                 "a break-glass change was treated as somebody filing for the employee")
+
+	def test_a_waiting_or_declined_change_is_not_on_the_list(self):
+		"""AC-2, its other cases: only an approved change can say what a day now counts."""
+		self.held_on(self.day)
+		waiting = self.fix(time="18:30", by=self.hr)
+		self.assertEqual(self._rows_for_me(), [], "a change nobody has approved yet was listed")
+		self.decide(waiting, 0, by=self.h.hr2, note="Punch already counted")  # declined
+		self.assertEqual(self._rows_for_me(), [], "a declined change was listed")
+
+	def test_a_managers_addition_is_on_the_list_even_though_it_never_blocks_pay(self):
+		"""AC-3 and design gate D-4. A manager's plain addition needs no confirm (087), so it
+		holds nobody's slip - and it is still a change somebody made FOR the employee, which
+		is what the paper is about. The two rules are independent and this proves it."""
+		mgr = self.h._login("mgr088", ())
+		self.h._employee("Mgr088", mgr)
+		self.held_on(self.day)
+		req = self.fix(time="18:30", by=mgr)
+		self.assertEqual(frappe.db.get_value(REQUEST, req, "alvoraa_needs_confirm"), 0,
+		                 "fixture is wrong: a manager's addition should not need a confirm")
+		self.decide(req, 1, by=self.hr)
+		rows = self._rows_for_me()
+		self.assertEqual(len(rows), 1, "a manager's addition is not on the list")
+		self.assertEqual(rows[0]["state"], "not_printed")
+
+	def test_a_person_whose_changes_are_all_answered_shows_done_and_cannot_be_ticked(self):
+		"""AC-4."""
+		name = self.an_approved_hr_change()
+		self.confirm_as_employee(name)
+		rows = self._rows_for_me()
+		self.assertEqual(len(rows), 1, "a done person left the month list altogether")
+		self.assertEqual(rows[0]["state"], "done")
+		self.assertEqual(rows[0]["open_days"], 0)
+		self.assertFalse(rows[0]["can_tick"], "a done person can still be ticked for printing")
+		out = self._list()
+		# The summary counts everybody in HR's scope, so this asserts the arithmetic and
+		# this person's share of it, not a total that other fixtures can move.
+		self.assertEqual(out["done"] + out["waiting"], out["total"])
+		self.assertGreaterEqual(out["done"], 1, "the done person is not counted as done")
+
+	def test_the_state_follows_the_print_and_a_later_change_warns(self):
+		"""AC-1 state ladder, and section 5.3's "changed after printing"."""
+		first = self.an_approved_hr_change()
+		notice = self.notice([first])
+		# Read as hr2: `self.hr` FILED this change, so for them the row is "filer", which the
+		# test below covers. The state ladder is about the paper, not about who is looking.
+		self.assertEqual(self._rows_for_me(user=self.h.hr2)[0]["state"], "printed")
+
+		self.an_approved_hr_change("19:30")              # its own held day, filed after the print
+		row = self._rows_for_me(user=self.h.hr2)[0]
+		self.assertEqual(row["state"], "changed_after_print")
+		self.assertEqual(row["uncovered"], 1,
+		                 "the row does not say how many changes are not on the printed page")
+		self.assertEqual(row["notice"], notice.name)
+
+	def test_the_filer_is_not_offered_the_record_button_and_another_hr_person_is(self):
+		"""Section 5.3 "Filer", and SEC-4. Both sides, because a button only hidden for one
+		user proves nothing about the other."""
+		name = self.an_approved_hr_change()              # filed by self.hr
+		self.notice([name])
+		as_filer = self._rows_for_me(user=self.hr)[0]
+		self.assertEqual(as_filer["state"], "filer")
+		self.assertTrue(as_filer["i_filed"])
+		self.assertFalse(as_filer["can_record"], "the filer is offered the record button")
+		as_other = self._rows_for_me(user=self.h.hr2)[0]
+		self.assertEqual(as_other["state"], "printed")
+		self.assertTrue(as_other["can_record"], "another HR person cannot record the signature")
+
+	def test_a_month_with_nothing_is_empty_and_says_which_month(self):
+		"""AC-6."""
+		self.an_approved_hr_change()
+		out = self._list(month=frappe.utils.add_months(self.day, -3))
+		self.assertEqual(out["rows"], [])
+		self.assertEqual((out["total"], out["done"], out["waiting"]), (0, 0, 0))
+		self.assertEqual(out["month"], str(frappe.utils.get_first_day(
+			frappe.utils.add_months(self.day, -3))))
+
+	def test_the_response_carries_no_reason_no_time_and_no_request(self):
+		"""AC-8, the one the spec marks "fails first". The reason text is the most sensitive
+		thing on the sheet and a list is the one screen that puts many people in one payload,
+		so the test names the forbidden keys rather than trusting the code's shape."""
+		name = self.an_approved_hr_change()
+		frappe.db.set_value(REQUEST, name, "explanation", "secret words about this person")
+		out = self._list()
+		blob = frappe.as_json(out)
+		for forbidden in ("explanation", "reason", "alvoraa_missing_time", "alvoraa_set_aside",
+		                  "from_date", "content_hash", "secret words about this person"):
+			self.assertNotIn(forbidden, blob, forbidden + " left the server in the list payload")
+		self.assertEqual(sorted(out["rows"][0].keys()),
+		                 sorted(["employee", "employee_name", "employee_number", "branch",
+		                         "changed_days", "open_days", "state", "uncovered", "i_filed",
+		                         "printed_at", "printed_by", "recorded_by", "recorded_on",
+		                         "said", "notice", "can_tick", "can_record"]))
+
+	def test_an_employee_and_a_line_manager_are_refused(self):
+		"""AC-9 and US-8. The control is every other test here, which calls it as HR."""
+		self.an_approved_hr_change()
+		for who in (self.emp_user, self.h._login("mgrnope", ())):
+			frappe.set_user(who)
+			try:
+				self.refused(lambda: register_notice.list_people(self.day), "for HR")
+			finally:
+				frappe.set_user("Administrator")
+
+	def test_hr_in_another_company_sees_nobody(self):
+		"""AC-9's scope half: in scope is not the same as having the role."""
+		self.an_approved_hr_change()
+		outsider = self.h._login("hrfar", ("HR Manager",))   # no company permission at all
+		frappe.set_user(outsider)
+		try:
+			out = register_notice.list_people(self.day)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(out["rows"], [], "HR with no company permission can see this person")
+
+	def test_the_list_is_empty_when_the_organisation_does_not_ask_for_confirmations(self):
+		"""ALV-430, and the departure from the approved spec that goes with it.
+
+		Switch the company off and the paper round disappears: nothing is waiting for the
+		employee, so there is nothing for a notice to say. Asserted in both directions in one
+		test, because "empty" on its own is also what a broken query returns."""
+		self.an_approved_hr_change()
+		self.assertEqual(len(self._rows_for_me()), 1, "fixture is wrong: nothing to hide")
+		frappe.db.set_value("Company", self.h.company, punch_fix.CONFIRM_SWITCH, 0,
+		                    update_modified=False)
+		frappe.clear_cache()
+		self.assertEqual(self._rows_for_me(), [],
+		                 "a company that asks for no confirmations is still being told to "
+		                 "print notices")
+
+	def test_paging_holds_the_page_size_and_the_true_total(self):
+		"""AC-7. Four people is enough to prove the arithmetic; 25 would only prove patience."""
+		self.an_approved_hr_change()
+		out = self._list()
+		self.assertEqual(out["page"], 25)
+		self.assertEqual(out["start"], 0)
+		self.assertEqual(out["total"], len(out["rows"]))
+		later = self._list(start=1)
+		self.assertEqual(later["start"], 1)
+		self.assertEqual(later["total"], out["total"],
+		                 "the total changed between pages, so the summary cannot be trusted")
+		self.assertEqual(later["rows"], out["rows"][1:])
+
+	def test_the_call_is_post_only_and_rate_limited_per_user(self):
+		"""AC-17's share of this story: the limit is on the user, never the address, because
+		a store shares one address (spec section 8)."""
+		self.assertEqual(register_notice.list_people.__alvoraa_limit__[1:],
+		                 ("user", 60, 60))
+		self.assertIn("POST", getattr(register_notice.list_people, "methods", ["POST"]))
+
+	# ── helpers ─────────────────────────────────────────────────────────
+	def _list(self, month=None, start=0, user=None):
+		frappe.set_user(user or self.hr)
+		try:
+			return register_notice.list_people(month or self.day, start)
+		finally:
+			frappe.set_user("Administrator")
+
+	def _rows_for_me(self, month=None, user=None):
+		return [r for r in self._list(month, user=user)["rows"] if r["employee"] == self.emp]

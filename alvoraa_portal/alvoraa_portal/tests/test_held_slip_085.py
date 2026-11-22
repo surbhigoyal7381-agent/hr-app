@@ -232,6 +232,20 @@ class SlipRefusedWhileUnconfirmed(RealSlip):
 	def test_a_real_submit_is_refused_then_allowed(self):
 		from alvoraa_portal import punch_fix
 		punch_fix.after_migrate()
+		# ALV-430. **A slip is only held where the company asked for that.**
+		# Confirming a change somebody else made is a per-company choice now,
+		# off by default (Surbhi, 22 Nov 2026), and this test is about the
+		# compliant workflow - so its company chooses it. Without this the slip
+		# goes straight through and the test fails with "ValidationError not
+		# raised", which is the switch working, not the gate breaking. Put back
+		# afterwards so no later test inherits the choice.
+		was = frappe.db.get_value("Company", COMPANY, punch_fix.CONFIRM_SWITCH)
+		self.addCleanup(lambda: (frappe.db.set_value(
+			"Company", COMPANY, punch_fix.CONFIRM_SWITCH, was,
+			update_modified=False), frappe.clear_cache()))
+		frappe.db.set_value("Company", COMPANY, punch_fix.CONFIRM_SWITCH, 1,
+		                    update_modified=False)
+		frappe.clear_cache()
 		emp = self._employee()
 		day = add_days(START, 1)
 		self._present(emp, day)

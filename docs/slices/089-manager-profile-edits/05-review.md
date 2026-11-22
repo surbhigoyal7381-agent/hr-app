@@ -141,3 +141,32 @@ risk tier: 1
 ## Subtract pass
 
 On a second read I removed four things from my own draft: a finding about the 480 px rule moving the Joined badge for everyone (it is disclosed and harmless), a finding about the decline path skipping Frappe hooks (it is by design, and 03 already says so), a nit about the ~100-role picker (03 already lists it), and a repeat of the DevOps release gates.
+
+---
+
+## Re-review after round 2 (22 Nov 2026)
+
+**Verdict: SHIP (ready to present for the dev push; not permission to push).** M-1 and M-2 are fixed, and I proved both by test, M-2 by a break test I ran myself. No P0, P1 or P2 is open from this review. Round 2 added three new P3s below. Main is still held by PRIV-4 (06), which this review does not change.
+
+**Where I looked:** worktree `.claude/worktrees/089-manager-profile-edits`, branch `slice/089-manager-profile-edits` at `3f792c29`, clean. Diff `01b35bae..HEAD`: 9 files, all of them from the slice's own two commits. Nothing came in from anyone else. Bench `alv089-bench` (it mounts this worktree), site `test_site`, DB `alv089-db`.
+
+**I ran (proven):** `run-tests --module` `test_leaver_report_089` gave 43 OK, `test_leaver_report_089_qa` 10 OK and `test_notices_076` 30 OK. `node alvoraa_portal/tests/portal_leaver_report_089_test.js` gave 36 passed, 0 failed. Break test of M-2 with no source edit: I patched `Database.get_values` to drop `for_update` and ran `test_an_overlapping_second_report_is_refused`. As built it passed. Patched, it failed with "PermissionError not raised". No leaver ToDo was left behind (0 open). I did not run `test_portal_security_010`, the Chromium layout test or the integrity script; those figures are the engineer's.
+
+| Item | Result | Evidence |
+|---|---|---|
+| M-1 outcome bell | **fixed** | `_tell` writes `document_type` "ToDo". `notices.LEAVER` is now part of `OWN_COPY` and `NOTICE_DOCTYPES`. The row is the caller's own (`for_user` filter), so skipping the grooming gate is safe. The feed lists the line, the count includes it in the same single `count` statement, and `mark_all_seen` clears it. The new test calls the real `notices_feed` as the manager and as 4 other people. `inbox_api` counts no "ToDo" Notification Log rows (grep), so the badge does not count it twice. The `test_notices_076` pin was updated on purpose. |
+| M-2 double send | **fixed** | `get_values(..., for_update=True)` is a current read under `REPEATABLE-READ` (read on `alv089-db`). The two-connection test is real: it sets the stale snapshot first, then a thread on its own connection commits. It does not test the blocking wait, but the lock on the Employee row already covered that. |
+| Timeout words | **better, approval not recorded** | "It may not have been sent... Check your team list before you try again." The advice works, because the Team card shows open reports. But the words differ from prototype v4 and are not in the admin save's form either. The DOM check still calls them "the approved sentence". Owner: Surbhi (prototype parity). |
+| Removed `user` parameter | **clean** | Proven by grep: no caller passed it. |
+| CSS merge | **clean** | One `.lv-icon` rule. `flex-shrink:0` is kept. |
+
+**New P3s caused by round 2 (proven by reading; impact on tenants not checked):**
+
+- **r2-1 · Deleting an Employee now leaves its outcome lines behind.** Frappe's `delete_dynamic_links` (`frappe/model/delete_doc.py:509`) deletes Notification Log rows by `(document_type, document_name)`. Before this round that matched ("Employee", id). Now the rows are ("ToDo", employee id), so they survive with the leaver's name in the subject until log clean-up removes them. Frappe's `clear_old_logs` defaults to 180 days; I did not check the tenants' Log Settings. Smallest fix: one more line in `on_employee_trash` (`leaver_report.py:321`) that deletes `Notification Log` rows where `document_type` is "ToDo" and `document_name` is `doc.name`.
+- **r2-2 · The Desk bell link for these lines is now broken.** Frappe's `get_item_link` (`notifications.js:388-398`) opens `/app/todo/<employee id>`, and no such ToDo exists. Before, the link opened the Employee. This only matters for managers who use Desk. The same one-line fix does not cover it. Setting `link` on the row would.
+- **r2-3 · The bell now lists any Notification Log row that a person has about a ToDo**, not just 089's rows. Examples are Frappe's own Mention rows for ToDo comments, and any "System Notification" rule set up on ToDo. They are the person's own rows, so nothing leaks. But their subjects carry `<strong>` tags, and `esc(n.text)` (`portal.js:7988, 8034`) shows those tags as literal text. There are 0 such rows on `test_site`; I did not check the tenants. A filter on `type` "Alert" would narrow this.
+- **r2-4 · The locking read scans the whole ToDo table.** `tabToDo` has indexes only on `name`, `creation`, `reference_type` and `reference_name` (read on `test_site`). So the `FOR UPDATE` read locks every ToDo row, and the gaps between them, until the send request commits. Inferred, not measured: every ToDo write on the tenant waits for that request to finish. The wait is short and leaver reports are rare, so this is P3. The index on `alv_leaver_employee`, already waiting for Surbhi (m-3), would narrow the lock to that one person's rows. Owner: DevOps, with m-3.
+
+Still open from the first review, not touched this round: m-1 (duplicate sentence), m-3, m-4 and m-5, plus the nits other than the two fixed here.
+
+**Subtract pass:** I removed a paragraph that restated the engineer's run figures. They are named once, above, as not mine.

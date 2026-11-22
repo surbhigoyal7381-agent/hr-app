@@ -14852,8 +14852,10 @@ function lvSend() {
     lvPaint();
   }, function (e) {
     s.sending = false;
+    /* No answer is "Not sent" (the approved words) and Try again is safe even
+       if the first send did land: the server refuses a second report with
+       "You already reported this person on ...", which tells the truth. */
     if (e && e.server) s.err = e.message;
-    else if (mayHaveGone(e)) s.err = drT("No answer from the office. It may have gone through. Close this and look at the Team list before you send it again.");
     else s.offline = true;
     lvPaint();
   });

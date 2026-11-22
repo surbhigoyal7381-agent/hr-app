@@ -153,3 +153,25 @@ Removed from my own plan: a test for `assign_to.remove` (a no-op by construction
 ## 9. Commits
 
 `67fbca7f` (my test file). This report is in the next commit. Not pushed.
+
+## 10. Re-test after round 1 (22 Nov 2026) — verdict now: Pass with known defects
+
+Code: `bc8450be` (fix `e35fdb6f`). Site `test_site`, schema from this branch (alv089 containers, bind-mounted worktree). Local only. Redis `ess_part:` keys cleared before the browser run.
+
+**D-1 is fixed. Ran it.** Real portal, headless Chromium 1223, logged in as the manager (`s010.089.mgr@example.com`), Scorecard of a direct report with no open report (HR-EMP-00450). Real touch/mouse events (`Input.dispatchTouchEvent` at 360 and 390, `Input.dispatchMouseEvent` at 1280).
+
+| Width | Icon size | elementFromPoint at centre | Overlaps name / badge | Sideways scroll | Name | Press opens `#lv-sheet` |
+|---|---|---|---|---|---|---|
+| 360 | 44 x 44 | the icon | no / no | none | readable, wraps to 2 lines, not cut | yes, 360 wide, in view |
+| 390 | 44 x 44 | the icon | no / no | none | 2 lines, readable | yes, in view |
+| 1280 | 44 x 44 | the icon | no / no | none | 1 line | yes, 560 wide, in view |
+
+Screenshots read: icon visible at the right of the name row at 360; "Joined" badge on its own row below. No-icon case (HR-EMP-00003, already reported, so `can_report` is false): no icon, name on one line, badge below, the "Reported, not yet confirmed" note shows, no sideways scroll.
+
+**Pin test proven (break-test).** `portal_leaver_report_089_layout_chrome.js` on the code before `e35fdb6f` (git archive of `e35fdb6f^`): 10 pass, **2 fail** ("top is DIV.sc-join-badge" at 360 and 390). On `bc8450be`: 12 pass, 0 fail.
+
+**Counts (Ran it, one run each, one at a time):** `test_leaver_report_089` 39 OK; `test_leaver_report_089_qa` 10 OK; `test_portal_security_010` 45 OK plus a second batch of 5 OK (both read); DOM runner 27 run, 0 failed, 0 not run (incl. the new pin in `portal_leaver_report_089_test.js`). Full suite not re-run, as briefed.
+
+**Still open from section 7 (human):** a real phone, 200% system font, 3G timing, set-Left dry run, PRIV-4 with counsel. Not touched by this round.
+
+**Clean-up.** Fixture employee HR-EMP-00450, its ToDo/Notification Log rows and the two Defaults were removed; Employee 284 / Notification Log 4 / User 227 / Company 36 match the start. ToDo went 6 to 7: the extra row has no reference and was not created by my steps (my deletes only matched my employees), so I left it [ASSUMPTION: left by the test modules; harmless]. Temporary socat proxy removed.

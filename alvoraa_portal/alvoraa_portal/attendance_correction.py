@@ -1961,6 +1961,47 @@ def to_review(limit=50):
 	return rows
 
 
+def _refuse_if_workflow_governs():
+	"""ALV-434: an organisation's own Workflow on Attendance Request blocks every approval here.
+
+	The portal approves a draft straight to submitted. A Workflow that expects its own
+	steps (Draft -> Submit for Approval -> Pending Approval -> Approve) refuses that move
+	with "Workflow State transition not allowed from Draft to Approved" - at Grace, from
+	18 Oct to 22 Nov 2026, no portal approval could succeed. Said first, in words the
+	approver can act on, and before anything is written.
+	"""
+	from frappe.model.workflow import get_workflow_name
+
+	workflow = get_workflow_name(REQUEST)
+	if workflow:
+		frappe.throw(
+			_("This request cannot be approved here, because your organisation has its own "
+			  "approval steps switched on for attendance requests (the workflow \"{0}\"). "
+			  "Nothing was changed. Ask your system administrator to switch that workflow "
+			  "off, so requests are approved here.").format(workflow),
+			title=_("Not approved"))
+
+
+def _submit_or_say_why(doc):
+	"""Submit, and never let a refusal reach the approver with no sentence (ALV-434).
+
+	Frappe's own permission check inside `submit()` raises PermissionError with NO
+	message, which the portal can only show as "Something went wrong at the office".
+	A refusal that already carries words (our own hooks, the tenant's scripts) is
+	passed on untouched.
+	"""
+	try:
+		doc.submit()
+	except frappe.PermissionError:
+		if frappe.local.message_log:
+			raise
+		frappe.throw(
+			_("You are not allowed to approve this request. Nothing was changed. "
+			  "Ask an HR Manager of {0} to approve it.").format(
+				frappe.db.get_value("Employee", doc.employee, "company") or _("this company")),
+			frappe.PermissionError, title=_("Not approved"))
+
+
 @frappe.whitelist(methods=["POST"])  # ALV-411: a write; no GET link may change attendance
 def decide(name, approve, note=None, seen=None):
 	"""Approve or decline one request.
@@ -2046,10 +2087,11 @@ def decide(name, approve, note=None, seen=None):
 			if not seen or seen != punch_fix.seen_token(doc):
 				frappe.throw(_("This day changed after you opened it. Open it again."))
 			doc.flags.punch_fix_decided = True
+		_refuse_if_workflow_governs()
 		doc.update(stamp)
 		# submit() runs its own permission check, so _may_review() above is a
 		# clear message rather than the only thing standing in the way.
-		doc.submit()
+		_submit_or_say_why(doc)
 		result = _shape(frappe.get_doc(REQUEST, name).as_dict())
 		# A held day released after its slip was final: HR is told in words (Q4).
 		result["slip_final"] = frappe.flags.get("held_slip") == "final"

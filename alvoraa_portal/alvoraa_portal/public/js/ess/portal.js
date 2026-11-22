@@ -6862,6 +6862,8 @@ window.acPfNote = function (name) {
 };
 
 window.acPfDecide = async function (name, approve, seen, first) {
+  var btn = window.event && window.event.target && window.event.target.closest
+    ? window.event.target.closest("button") : null;
   var ta = document.getElementById("pfx-note-text-" + name), note = ta ? ta.value.trim() : "";
   if (!approve && !note) {
     var err = document.getElementById("pfx-note-err-" + name);
@@ -6889,7 +6891,7 @@ window.acPfDecide = async function (name, approve, seen, first) {
     }
     toast(said, "ok");
     await acLoad();
-  } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
+  } catch (e) { hideLoad(); acSayRefused(btn, e); }
 };
 var acPfCards = {};
 
@@ -7303,7 +7305,39 @@ function acHeldHrLines(r) {
         + "To pay this day, add an Additional Salary for it.</div>" : "");
 }
 
+/* ALV-434: a refused approval is said on the card and stays there.
+   A 3-second toast after a pop-up was all an approver got, and at Grace on
+   22 Nov 2026 "nothing happened" was what HR saw. The server's sentence is
+   shown as plain text (Frappe's own messages carry <strong> tags), and a
+   refusal that came back with no sentence still says what to do. */
+function acPlainWords(msg) {
+  if (!msg) return "";
+  try { return (new DOMParser().parseFromString(String(msg), "text/html").body.textContent || "").trim(); }
+  catch (x) { return String(msg); }
+}
+function acSayRefused(btn, e) {
+  var words = acPlainWords(e && e.message);
+  if (!words || (e && e.kind === "refused" && !e.server)) {
+    words = "This was not saved, and no reason came back. Nothing was changed. "
+      + "Try once more; if it fails again, tell your system administrator which request it was.";
+  }
+  toast(words, "err");
+  var acts = btn && btn.closest ? btn.closest(".ac-acts, .pfx-foot") : null;
+  if (!acts || !acts.parentNode) return;
+  var box = acts.parentNode.querySelector(".ac-refused");
+  if (!box) {
+    box = document.createElement("p");
+    box.className = "ac-refused";
+    box.setAttribute("role", "alert");
+    box.style.cssText = "margin:8px 0;font-size:var(--fs-sm);color:var(--danger,var(--red))";
+    acts.parentNode.insertBefore(box, acts);
+  }
+  box.textContent = words;
+}
+
 window.acDecide = async function (name, approve, seen) {
+  var btn = window.event && window.event.target && window.event.target.closest
+    ? window.event.target.closest("button") : null;
   var note = "";
   if (!approve) {
     /* A bare refusal tells the employee nothing about what to do next, so
@@ -7322,7 +7356,7 @@ window.acDecide = async function (name, approve, seen) {
     if (approve && res && res.slip_final) said += " The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it.";
     toast(said, "ok");
     await acLoad();
-  } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
+  } catch (e) { hideLoad(); acSayRefused(btn, e); }
 };
 
 /* ── Blocks that earn their place ──────────────────────────────────

@@ -170,3 +170,31 @@ On a second read I removed four things from my own draft: a finding about the 48
 Still open from the first review, not touched this round: m-1 (duplicate sentence), m-3, m-4 and m-5, plus the nits other than the two fixed here.
 
 **Subtract pass:** I removed a paragraph that restated the engineer's run figures. They are named once, above, as not mine.
+
+## Re-review after round 3 (22 Nov 2026)
+
+**Verdict: SHIP (ready to present for the dev push; not permission to push).** r2-1, r2-2, r2-3 and r2-4 are fixed and tested. One new P3 (r3-1, below). No P0, P1 or P2 from this review is open. Main is still held by PRIV-4, which this round does not change.
+
+**Security, in one line:** 06's F3 (outcome line outlives an Employee delete) is closed by `on_employee_trash` (`leaver_report.py:329-333`), and I found no new read path, XSS path or permission widening.
+
+**Where I looked:** worktree `.claude/worktrees/089-manager-profile-edits`, branch `slice/089-manager-profile-edits` at `d78a1f52` (code `d79cba1e`), clean. Code diff `e68c641a..HEAD` (5 files, the slice's own two commits). The branch now sits on `origin/dev` `92691aed`: 9 slice-088 commits plus ALV-434/435 came in by rebase (Surbhi's agent account). Bench `alv089-bench` (mounts this worktree), site `test_site`.
+
+**I ran (proven):** `run-tests --module` `test_leaver_report_089` 46 OK, `test_leaver_report_089_qa` 10 OK, `test_notices_076` 30 OK. `SHOW INDEX FROM tabToDo` on `test_site` shows `alv_leaver_employee_index`, so `create_custom_fields` adds the index to a field that already exists. I did not break-test the three new tests. Each one reads as failing on the round-2 code (row count 1; `document_name` was an Employee id, so the ToDo lookup returns None; Mention/Share rows were listed). That is inferred from reading, not run. I did not run the DOM, Chromium or integrity checks.
+
+| Item | Result | Evidence |
+|---|---|---|
+| r2-1 / F3 delete | **fixed** | The bell rows for the person's leaver ToDos are deleted first, then the ToDos. Test `test_deleting_the_employee_removes_the_outcome_line` (count 1, then 0). |
+| r2-2 Desk link | **fixed** | `_tell` now gets a ToDo name. The confirm path picks one of each reporter's own ToDos (`setdefault` per `assigned_by`), and the decline path uses `doc.name`, whose `assigned_by` is the reporter. Frappe `todo.py` `has_permission` lets `assigned_by` read it. `guard_todo` still refuses any change by the reporter, so the link opens a read-only view of their own report. Nobody new can read it. |
+| r2-3 bell filter | **fixed** | `_leaver_lines` uses `get_list` (`for_user` condition applies) with `type` "Alert", then keeps only ToDos that carry the marker. The list and the unread count both use it. Frappe's Mention rows (with `<strong>` in the subject) no longer reach the page. `capped` is taken before the filter, which is correct: it reports the cut read. |
+| r2-4 index | **fixed** | `search_index: 1`. The pin test was turned round on purpose and matches Surbhi's 22 Nov decision in the docstring. |
+| panels.css resolution | **right** | `git diff origin/dev...HEAD` shows additions only: the 480 px `.sc-topbar` rule and the `.lv-*` block. Nothing from 088 was lost. |
+| run_dom_tests.js resolution | **right** | Additions only. 28 `{ file: }` entries, 28 `*_test.js` files on disk, constant 28. |
+| PRIV-4 | **unchanged** | Still NOT MET, counsel pending, blocks main. The delete makes an erasure more complete. It does not set an end date. |
+
+**New P3 (proven by reading):**
+
+- **r3-1 · "Mark all seen" clears rows the page no longer shows.** `mark_all_seen` (`notices.py:213-217`) sets `read = 1` on every `document_type` in `NOTICE_DOCTYPES`, which includes "ToDo". Since r2-3 the page lists only leaver lines. So: a manager has an unread Desk Mention on a ToDo, taps "Mark all seen" in the portal, and that Mention is now read in Desk although the portal never showed it. Its own docstring forbids exactly this (AC-31). Low volume, no leak. Smallest fix: leave "ToDo" out of that UPDATE and mark the names from `_leaver_lines(user)` in a second statement. Owner: hrms-fullstack-engineer.
+
+Still open from earlier rounds: m-1, m-4, m-5 and the remaining nits. The timeout words are now recorded as Surbhi's (DOM check label says so).
+
+**Subtract pass:** I removed a paragraph repeating 06's F1 reasoning. Nothing else.

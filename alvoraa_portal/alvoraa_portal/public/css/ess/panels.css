@@ -3566,6 +3566,10 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
 .hdl-day{font-size:var(--fs-xs);color:var(--text3)}
 .hdl-state{margin-left:auto;font-size:var(--fs-xs);font-weight:700;color:var(--green)}
 .hdl-punches{font-size:var(--fs-xs);color:var(--text2);margin:4px 0 8px}
+.hdl-dgrp{font-size:var(--fs-xs);font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:20px 0 0}
+.hdl-empty{padding:24px 0;color:var(--text2)}
+.hdl-empty b{display:block;font-size:var(--fs-md);color:var(--text);margin-bottom:4px}
+.hdl-empty-go{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
 .hdl-row input[type=time]{max-width:200px;min-height:44px;font-size:16px}
 .hdl-row textarea{width:100%;min-height:48px;font-size:16px}
 .hdl-refused{border:1px solid var(--red);color:var(--red);font-weight:600;font-size:var(--fs-xs);border-radius:var(--r-sm);padding:8px 10px;margin:8px 0 0}

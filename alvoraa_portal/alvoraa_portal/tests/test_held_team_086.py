@@ -276,11 +276,35 @@ class TheSend(HeldTeamCase):
 		self.assertEqual(self.requests(self.a), [])
 		long = self.send([self.row(self.a, reason="x" * 501)])
 		self.assertIn("500 characters", long["results"][0]["sentence"])
+		# ALV-436 (came in with the rebase): a reason with something shaped like a tag is refused, because
+		# Frappe would quietly empty it on save. The manager reads the whole sentence, "< and >" included.
 		script = "<img src=x onerror=alert(1)>"
-		filed = self.send([self.row(self.a, reason=script)])
+		refused = self.send([self.row(self.a, reason=script)])
+		self.assertEqual(refused["sent"], 0, refused)
+		self.assertIn("without < and > around a word", refused["results"][0]["sentence"])
+		self.assertEqual(self.requests(self.a), [])
+		filed = self.send([self.row(self.a, reason="Left at 18:30 <urgent> call")])
+		self.assertEqual(filed["sent"], 0, filed)
+		filed = self.send([self.row(self.a, reason="Left early, 9 > 8 hours")])
 		self.assertEqual(filed["sent"], 1, filed)
-		# Frappe's own text sanitiser strips the handler on save; the screens escape what is left (gpEsc).
-		self.assertNotIn("onerror", self.requests(self.a)[0].explanation)
+
+	def test_a_blank_line_in_the_reason_does_not_cut_what_088_prints(self):
+		"""Security F1: 088 prints only the text before the first blank line, so the manager's own blank
+		lines are collapsed. The "One of n" line still goes after a blank line of its own."""
+		for e in (self.a, self.b):
+			self.hold(e)
+		out = self.send([self.row(self.a, reason="Left at 20:30\n\n  \n\nThen went to the bank"),
+		                 self.row(self.b)])
+		self.assertEqual(out["sent"], 2, out)
+		said = self.requests(self.a)[0].explanation
+		self.assertEqual(punch_fix._reason_of(said), "Left at 20:30\nThen went to the bank")
+		self.assertIn("One of 2 days sent together.", said)
+
+	def test_a_broken_payload_or_day_gets_a_sentence_not_a_traceback(self):
+		"""Security F2: `rows` that is not JSON, and a `day` that is not a date, are refused in words."""
+		self.refused(lambda: self.send("{not json"), "could not be read")
+		self.refused(lambda: self.send('{"a": 1}'), "nothing to send")
+		self.refused(lambda: self.listed(day="not-a-day"), "was not understood")
 
 	def test_a_partial_send_leaves_no_document_for_a_refused_row(self):
 		"""AC-28 and AC-30: row 2 blank reason, row 3 no longer held; rows 1 and 4 filed."""

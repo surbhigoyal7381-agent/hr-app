@@ -17,6 +17,7 @@ const check = (c, m) => (c ? ok(m) : bad(m));
 const ME = "HR-EMP-00003";
 const calls = [];
 let SEND_ANSWER = null;       // what send_held answers
+let EMPTY = false;            // held_days answers "nothing is held" (after the last day was sent)
 const SHIFT = { start: "09:00", end: "18:00" };
 const ROWS = [
   { employee: "HR-EMP-00011", employee_name: "Sunita Devi", date: "2026-11-20", shift: SHIFT,
@@ -29,6 +30,9 @@ const ROWS = [
 function reply(url, body) {
   const m = /held_team\.(\w+)/.exec(url) || [];
   calls.push({ fn: m[1] || "", body });
+  if (m[1] === "held_days" && EMPTY)
+    return { nobody: false, hold_on: true, day: "2026-11-20", days: [{ date: "2026-11-19", count: 1 }],
+             total: 0, start: 0, page_length: 50, rows: [], from: "2026-08-21", to: "2026-11-21" };
   if (m[1] === "held_days")
     return { nobody: false, hold_on: true, day: "2026-11-20", days: [{ date: "2026-11-20", count: 2 }],
              total: 2, start: 0, page_length: 50, rows: ROWS };
@@ -56,7 +60,7 @@ const K1 = "HR-EMP-00011|2026-11-20";
 
 (async function run() {
   await settle(60);
-  for (const id of ["tr-chips", "tr-body", "tr-pager"]) {
+  for (const id of ["tr-bar", "tr-chips", "tr-body", "tr-pager"]) {
     const d = doc.createElement("div"); d.id = id; doc.body.appendChild(d);
   }
   window.trSet("only", "held");
@@ -65,6 +69,12 @@ const K1 = "HR-EMP-00011|2026-11-20";
   check(sent("held_days").length === 1, "opening the Held view asks the server once for the list");
   check(doc.querySelectorAll(".hdl-row").length === 2, "one block per held day");
   check(!doc.getElementById("hdl-bar-host"), "no send bar until a day is ready");
+  const text0 = [...doc.querySelectorAll(".hdl-row")].map(r => r.textContent).join(" ");
+  check(/Punches: 09:02 \(Machine\) \S* ?Shift 09:00\u201318:00/.test(text0.replace(/\s+/g, " ")), "the punches line carries the shift, as in prototype-v2");
+  check(!/Change to leaving|Choose where the missing/.test(text0) && /Where is the missing punch\?/.test(text0)
+        && /Show the punches and tap the gap/.test(text0), "the wording of prototype-v2: Change, Where is the missing punch?");
+  const chg = doc.querySelector(".hdl-row .pfx-lnk");
+  check(chg && chg.textContent === "Change" && /arrival/.test(chg.getAttribute("aria-label")), "Change, with the full words as its label (an arrival at 09:02, so the question is about leaving and Change goes to arrival)");
   check(/What time did Sunita leave\?/.test(doc.body.textContent), "a one-punch day (an arrival) asks when she left, by first name");
 
   type("hdl-t-" + K1, "18:30");
@@ -112,6 +122,19 @@ const K1 = "HR-EMP-00011|2026-11-20";
   await settle(60);
   check(sent("send_held").length === 2 && /1 of 1 sent to HR/.test(doc.body.textContent), "an accepted send says so");
   check(sent("held_days").length >= 3, "after a send the list is asked for again, not guessed");
+
+  /* The last held days are gone: no stale Show box, and the empty state of prototype-v2 is drawn. */
+  EMPTY = true;
+  await window.hdlLoad();
+  await settle(40);
+  const barText = doc.getElementById("tr-bar").textContent;
+  check(!/\(2\)/.test(barText) && /All days in this period \(\d+ \w+ \d{4} to \d+ \w+ \d{4}\)/.test(barText),
+        "the Show box is redrawn from the new answer, with the dates of the period");
+  check(/Nothing is held on/.test(doc.body.textContent) && /When somebody forgets to punch, the day shows up here\./.test(doc.body.textContent),
+        "the empty state says what it is, in prototype-v2's words");
+  const go = [...doc.querySelectorAll(".hdl-empty-go button")].map(b => b.textContent);
+  check(go.length === 2 && /^Show 19 Nov/.test(go[0]) && go[1] === "See everything", "Show {day} and See everything");
+  check(!doc.querySelector(".hdl-line") && !doc.getElementById("hdl-bar-host"), "no count line and no send bar when nothing is held");
 
   console.log("### 086 held view DOM test: " + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);

@@ -100,6 +100,11 @@ class ProofCase(HeldTeamCase):
 				                "the answer says %s was sent but no request exists" % entry["employee"])
 			else:
 				self.assertTrue(entry["sentence"])
+		# AC-32: the row before the fault stays filed, and the faulted row is the only one lost.
+		first, second = sorted(out["results"], key=lambda r: r["employee"])
+		self.assertTrue(first["ok"], out)
+		self.assertTrue(frappe.db.exists(REQUEST, first["request"]))
+		self.assertFalse(second["ok"], out)
 
 	# AC-2: a cancelled request frees the day -------------------------------------------------------
 	def test_a_cancelled_request_brings_the_day_back(self):

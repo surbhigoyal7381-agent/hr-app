@@ -17373,10 +17373,10 @@ function trChips() {
     + '" onclick="trSet(&quot;only&quot;,&quot;&quot;)">Everything</span>';
   /* Slice 086: only where the manager has held days to send, and the hold is on. */
   var hd = hdl.data;
-  if (hd && hd.hold_on && !hd.nobody && hd.total) {
+  if (hd && hd.hold_on && !hd.nobody && (hd.total || trState.only === "held")) {
     html += '<span class="tr-chip warn' + (trState.only === "held" ? " on" : "")
       + '" role="button" tabindex="0" onclick="trSet(&quot;only&quot;,&quot;held&quot;)">'
-      + HDL_WARN + gpEsc(drT("Held")) + " <b>" + hd.total + "</b></span>";
+      + HDL_WARN + gpEsc(drT("Held")) + " <b>" + (hd.total || 0) + "</b></span>";
   }
   TR_FLAGS.forEach(function (f) {
     var n = counts[f[0]] || 0;
@@ -17628,27 +17628,36 @@ function hdlRender() {
     return '<option value="' + gpEsc(x.date) + '"' + (d.day === x.date ? " selected" : "") + ">"
       + gpEsc(fmtDate(x.date)) + " (" + x.count + ")</option>";
   }).join("") + '<option value="all"' + (d.day === "all" ? " selected" : "") + ">"
-    + gpEsc(drT("All days in this period")) + "</option>";
-  if ((d.days || []).length) {
-    /* Prototype-v2: Show, the chips and the list come straight away. The From, To, Person and Group by
-       filters give way to the one Show box while this view is open; trBar() brings them back. */
-    var bar = document.getElementById("tr-bar");
-    if (bar) bar.innerHTML = '<label class="tr-f"><span>' + gpEsc(drT("Show")) + '</span>'
-      + '<select class="form-control" onchange="hdlDay(this.value)">' + opts + "</select></label>";
+    + gpEsc(d.from ? drT("All days in this period ({0} to {1})", [fmtDate(d.from), fmtDate(d.to)]) : drT("All days in this period")) + "</option>";
+  if (d.day && d.day !== "all" && !(d.days || []).some(function (x) { return x.date === d.day; })) {
+    opts = '<option value="' + gpEsc(d.day) + '" selected>' + gpEsc(fmtDate(d.day)) + "</option>" + opts;   /* the day just emptied */
+  }
+  /* Prototype-v2: Show, the chips and the list come straight away, also when nothing is left. The From, To,
+     Person and Group by filters give way to the one Show box while this view is open; trBar() brings them back. */
+  var bar = document.getElementById("tr-bar");
+  if (bar) bar.innerHTML = '<label class="tr-f"><span>' + gpEsc(drT("Show")) + '</span>'
+    + '<select class="form-control" onchange="hdlDay(this.value)">' + opts + "</select></label>";
+  if (d.total) {
     html += '<div class="hdl-top"><p class="hdl-line">' + gpEsc(d.total === 1 ? drT("1 held day needs a time from you.")
           : drT("{0} held days need a time from you.", [d.total])) + "</p>"
       + '<p class="ac-help">' + gpEsc(drT("Held days have a punch missing, so pay for the day is on hold until HR fixes it. Give the missing time and a reason, and HR decides.")) + "</p></div>";
   }
   if (!rows.length) {
-    var next = (d.days || [])[0];
-    html += '<p class="ac-empty">' + gpEsc(drT("Nothing is held on {0}.", [d.day && d.day !== "all" ? fmtDate(d.day) : drT("this period")])) + "</p>"
-      + (next ? '<button class="btn btn-outline" onclick="hdlDay(&quot;' + gpEsc(next.date) + '&quot;)">'
-          + gpEsc(fmtDate(next.date)) + "</button>"
-        : '<button class="btn btn-outline" onclick="trSet(&quot;only&quot;,&quot;&quot;)">' + gpEsc(drT("See everything")) + "</button>");
+    var next = (d.days || []).filter(function (x) { return x.date !== d.day; })[0];
+    html += '<div class="hdl-empty"><b>' + gpEsc(drT("Nothing is held on {0}.", [d.day && d.day !== "all" ? fmtDate(d.day) : drT("this period")])) + "</b>"
+      + gpEsc(drT("No held day without a request is waiting for you. When somebody forgets to punch, the day shows up here.")) + '<div class="hdl-empty-go">'
+      + (next ? '<button class="btn btn-primary" onclick="hdlDay(&quot;' + gpEsc(next.date) + '&quot;)">'
+          + gpEsc(drT("Show {0}", [fmtDate(next.date)])) + "</button>" : "")
+      + '<button class="btn btn-outline" onclick="trSet(&quot;only&quot;,&quot;&quot;)">' + gpEsc(drT("See everything")) + "</button></div></div>";
     body.innerHTML = html;
     return;
   }
-  html += rows.map(hdlRow).join("");
+  var lastDay = "";
+  html += rows.map(function (r) {
+    var head = (d.day === "all" && r.date !== lastDay) ? '<div class="hdl-dgrp">' + gpEsc(fmtDate(r.date)) + "</div>" : "";
+    lastDay = r.date;
+    return head + hdlRow(r);
+  }).join("");
   if (d.total > rows.length + (d.start || 0) || d.start) {
     html += '<div class="tr-pager"><button class="btn btn-outline btn-sm" ' + (d.start ? "" : "disabled")
       + ' onclick="hdlPage(-1)">' + gpEsc(drT("Previous")) + '</button><button class="btn btn-outline btn-sm" '
@@ -17681,23 +17690,24 @@ function hdlRow(r) {
   var k = hdlKey(r), v = hdlVal(r), one = r.punches.length === 1, first = gpEsc(hdlFirst(r));
   var kid = gpEsc(k), said = hdl.said[k];
   var ask = one ? (r.single_is_out !== v.flip ? drT("What time did {0} arrive?", [first]) : drT("What time did {0} leave?", [first]))
-    : drT("What time was the missing punch?");
+    : drT("Where is the missing punch?");
   var pts = r.punches.map(function (p) { return {m: p.m, k: ""}; });
   var real = r.punches.map(function (p) { return gpEsc(p.time) + " (" + gpEsc(p.source) + ")"; }).join(" · ");
   var tid = "hdl-t-" + kid, rid = "hdl-r-" + kid;
   return '<div class="hdl-row" id="hdl-row-' + kid + '" data-k="' + kid + '">'
     + '<div class="hdl-head"><button class="tr-open" onclick="acFromTeam(&quot;' + gpEsc(r.employee) + '&quot;,&quot;' + gpEsc(r.date) + '&quot;)">'
     + gpEsc(r.employee_name || r.employee) + '</button><span class="hdl-day">' + gpEsc(fmtDate(r.date)) + "</span>"
-    + '<span class="tr-need warn">' + gpEsc(drT("Held")) + "</span>"
+    + '<span class="tr-need warn">' + HDL_WARN + gpEsc(drT("Held")) + "</span>"
     + '<span class="hdl-state" id="hdl-st-' + kid + '">' + hdlStateText(r) + "</span></div>"
     + pfStrip(r.shift, pts, null)
-    + '<p class="hdl-punches">' + gpEsc(drT("Punches on this day")) + ": " + (real || gpEsc(drT("none"))) + "</p>"
+    + '<p class="hdl-punches">' + drT("Punches: {0}", [real || gpEsc(drT("none"))])
+    + (r.shift ? " &middot; " + gpEsc(drT("Shift {0}", [r.shift.start + "\u2013" + r.shift.end])) : "") + "</p>"
     + (one ? '<label class="form-label" for="' + tid + '">' + ask + "</label>"
       + '<p class="ac-help">' + gpEsc(drT("Type the time you know it was. Nothing is filled in for you.")) + "</p>"
       + '<input type="time" class="form-control" id="' + tid + '" value="' + gpEsc(v.time) + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;time&quot;,this.value)"'
       + ' onkeydown="if(event.key===&quot;Enter&quot;)event.preventDefault()">'
-      + ' <button type="button" class="pfx-lnk" onclick="hdlChange(&quot;' + kid + '&quot;)">'
-      + gpEsc(r.single_is_out !== v.flip ? drT("Change to leaving") : drT("Change to arrival")) + "</button>"
+      + ' <button type="button" class="pfx-lnk" aria-label="' + gpEsc(r.single_is_out !== v.flip ? drT("Change to leaving") : drT("Change to arrival"))
+      + '" onclick="hdlChange(&quot;' + kid + '&quot;)">' + gpEsc(drT("Change")) + "</button>"
       : hdlGapBlock(r, v, kid, ask))
     + '<label class="form-label" for="' + rid + '">' + gpEsc(drT("Your reason")) + ' <span class="pfx-req">' + gpEsc(drT("Required")) + "</span></label>"
     + '<p class="ac-help">' + gpEsc(drT("HR and {0} can read this. No health or family details.", [hdlFirst(r)])) + "</p>"
@@ -17718,7 +17728,7 @@ function hdlGapBlock(r, v, kid, ask) {
       + '<button type="button" class="pfx-lnk" onclick="hdlGaps(&quot;' + kid + '&quot;)">' + gpEsc(drT("Change")) + "</button></p>";
   } else {
     h += '<button type="button" class="btn btn-outline" onclick="hdlGaps(&quot;' + kid + '&quot;)">'
-      + gpEsc(drT("Choose where the missing punch goes")) + "</button>";
+      + gpEsc(drT("Show the punches and tap the gap")) + "</button>";
   }
   if (!v.open) return h;
   var pts = r.punches.slice().sort(function (a, b) { return a.m - b.m; });
@@ -17840,11 +17850,9 @@ function hdlReadyRows() { return (hdl.data.rows || []).filter(hdlReady); }
 function hdlBar() {
   var ready = hdlReadyRows(), n = ready.length;
   if (!n) { hdlBarHost(""); return; }
-  var go = Math.min(n, 50);
   hdlBarHost('<div class="hdl-sum"><b>' + gpEsc((n === 1 ? drT("1 day ready") : drT("{0} days ready", [n]))) + "</b> "
     + gpEsc(drT("Each person is told on their day sheet. HR decides.")) + "</div>"
-    + (n > 50 ? '<p class="ac-help">' + gpEsc(drT("50 at most in one send. The first 50 go now; {0} stay here for the next send.", [n - 50])) + "</p>" : "")
-    + '<button class="btn btn-primary" id="hdl-send" onclick="hdlAsk()">' + gpEsc(drT("Send {0} to HR", [go])) + "</button>");
+    + '<button class="btn btn-primary" id="hdl-send" onclick="hdlAsk()">' + gpEsc(drT("Send {0} to HR", [n])) + "</button>");
 }
 
 /* The send bar is fixed above the portal's bottom bar (prototype-v2). Position:fixed lives in one host on

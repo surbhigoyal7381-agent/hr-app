@@ -11,6 +11,8 @@ time that cannot be right (not yet happened; In/Out that disagrees with the time
 a double send file one request (SEC-5).
 """
 
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, get_datetime, getdate, now_datetime, nowdate
@@ -78,13 +80,19 @@ def held_days(day=None, start=0):
 	for r in held:
 		counts[str(r.attendance_date)] = counts.get(str(r.attendance_date), 0) + 1
 	days = [{"date": d, "count": n} for d, n in counts.items()]   # latest first, as read
-	chosen = "all" if day == "all" else (str(getdate(day)) if day else (days[0]["date"] if days else None))
+	if day and day != "all":
+		try:
+			day = str(getdate(day))
+		except Exception:
+			frappe.throw(_("That day was not understood. Reload the page and try again."))
+	chosen = "all" if day == "all" else (day if day else (days[0]["date"] if days else None))
 	scope = held if chosen == "all" else [r for r in held if str(r.attendance_date) == chosen]
 	begin = max(0, cint(start))
 	page = scope[begin:begin + MAX_ROWS]
 
 	return {"nobody": False, "hold_on": held_day._switch_on(me.company), "day": chosen, "days": days,
-	        "total": len(scope), "start": begin, "page_length": MAX_ROWS, "rows": _shaped(page)}
+	        "total": len(scope), "start": begin, "page_length": MAX_ROWS, "rows": _shaped(page),
+	        "from": str(add_days(today, -PERIOD_DAYS)), "to": str(today)}
 
 
 def _shaped(page):
@@ -129,7 +137,8 @@ def _shaped(page):
 def _refusal_of(error):
 	"""The words an error already carries, with no markup."""
 	frappe.clear_messages()
-	return frappe.utils.strip_html_tags(str(error)).strip()
+	# Only real tags (`<b>`, `</b>`): the sentence of ALV-436 holds a plain "< and >" that must stay.
+	return re.sub(r"</?[a-zA-Z][^>]*>", "", str(error)).strip()
 
 
 @frappe.whitelist(methods=["POST"])
@@ -140,7 +149,10 @@ def send_held(rows=None):
 	Each row says five things: `employee`, `date`, `time`, `in_or_out`, `reason`. Anything else on a row
 	is not read. Each row runs in its own savepoint, so a refused row leaves no document and the others
 	still go. The answer has one entry per row, with a sentence when it was not sent."""
-	rows = frappe.parse_json(rows) if isinstance(rows, str) else rows
+	try:
+		rows = frappe.parse_json(rows) if isinstance(rows, str) else rows
+	except Exception:
+		frappe.throw(_("The days could not be read. Reload the page and try again."))
 	if not isinstance(rows, list) or not rows:
 		frappe.throw(_("There is nothing to send. Type a time and a reason for at least one day."))
 	if len(rows) > MAX_ROWS:
@@ -176,6 +188,9 @@ def send_held(rows=None):
 			access.log_refusal("SEC-1", "held_team.send_held", "Employee", row["employee"][:140])
 			answer["sentence"] = NOT_YOURS
 			continue
+		# End the transaction BEFORE the day-row lock, so the plain duplicate read below starts a fresh
+		# snapshot and sees any request another manager filed and committed while this send waited.
+		frappe.db.commit()
 		frappe.db.savepoint("held_row")
 		try:
 			answer["request"] = _file_one(row, len(clean))
@@ -236,14 +251,15 @@ def _file_one(row, n):
 	if row["in_or_out"] not in ("IN", "OUT"):
 		frappe.throw(_("Say whether the missing punch was in or out."))
 
-	# THE LOCK (SEC-5). Two sends at once for one day: the second waits here until the first has filed,
-	# then must SEE the first one's request. A plain read can miss it on MariaDB's default isolation, so
-	# the duplicate check is a locking read too. Both are read as the latest committed or own rows.
+	# THE LOCK (SEC-5). Two sends at once for one day: the second waits on the day row until the first has
+	# filed. `send_held` committed just before this row, so the plain duplicate read below starts a fresh
+	# snapshot after the lock and SEES the first one's request. It is not a locking read: on a table with no
+	# index on `employee` a locking read would lock every request on the site and deadlock two managers (M-1).
 	att = punch_fix.day_row(employee, date, for_update=True)
 	if not att or att.status != held_day.HELD:
 		frappe.throw(_("This day is no longer held. A machine punch or HR may have fixed it. "
 		               "Reload the page to see where it stands."))
-	if frappe.db.get_value(REQUEST, _open_filters(employee, date), "name", for_update=True):
+	if frappe.db.get_value(REQUEST, _open_filters(employee, date), "name"):
 		frappe.throw(_("Already waiting with HR."))
 
 	try:
@@ -260,7 +276,9 @@ def _file_one(row, n):
 		frappe.throw(_("{0} fits as {1}, not {2}, next to the punches already on this day. Press Change if the "
 		               "missing punch is the other one.").format(shown, now_is, sent_is))
 
-	reason = row["reason"].strip()
+	# Blank lines are collapsed: 088 prints only the text before the first blank line, so a blank line
+	# in the manager's reason would cut it short on the employee's notice (security F1).
+	reason = re.sub(r"\s*\n\s*", "\n", row["reason"]).strip()
 	# The "One of n" line goes AFTER a blank line, so it is never part of the reason that 088 prints.
 	# A blank reason is passed on as it is: `raise_for_report` refuses it with its own sentence.
 	explanation = (reason + "\n\n" + _("One of {0} days sent together.").format(n)) if reason and n > 1 else reason

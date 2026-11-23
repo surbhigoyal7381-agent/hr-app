@@ -181,3 +181,37 @@ Code-only, so rollback = **redeploy the previous tag with migrations off.** The 
 **Subtract pass:** removed a proposed new CI entry, a send-refuses-if-notices-off check, a background job, a cache, and an nginx change. Nothing else; I added no new moving part.
 
 **Left behind:** this file only (committed locally, not pushed). Nothing deployed; no container or file left anywhere.
+
+
+## §5 Release readiness (2026-11-23)
+Read: worktree `.claude/worktrees/086-manager-held-days`, branch slice/086-manager-held-days at eb8f781f. `git diff 412d5361..HEAD` (names and stat; hooks.py and field_app_limits.py in full), 00-impact-analysis §13, 03 fix round 1, 04 re-test, `_wipe` in `test_held_team_086.py`, `refuse_delete_by_others`. `git fetch` + `gh run list` today. **Nothing run on dev or production; no deploy command run.**
+
+**Verdict: READY WITH CONDITIONS.** The code is releasable. The conditions are release steps, not code.
+
+**Proven (read today):**
+- No migration: the diff has no patch, fixture, Custom Field, DocType JSON; `deploy/`, `Dockerfile`, `.github/` unchanged. Only hooks change is one `on_trash` line.
+- Assets: `portal.js` and `panels.css` changed, so the volume trap applies.
+- origin/main is f68f2333 and has **no** `register_notice.py`; origin/dev has it. So 088 is not on main yet.
+- **origin/dev moved on: 0a181d05 (ALV-436, 3 commits) since base 412d5361.** It touches `punch_fix.py` and `test_punch_fix_087.py`, which this branch also changes. Needs a rebase and a re-run of both 087 tests before the push. Latest dev CI (run 45134843809, 07:57Z) shows success; the 088 push before it ran 51 min.
+- `_wipe` deletes only by this case's random tag (`Hd` + 4 hash chars + slot): Employees by first_name, Users by email pattern, then Requests, Attendance, Check-ins of **those employees only**. Cannot reach other data unless a real person's name starts with that tag (inferred, unlikely). Its `db.rollback()` first throws away only this connection's uncommitted work. Known limit (from 04): a test that makes a person with another name leaks, not wipes. Verdict: safe on a shared CI site.
+- `on_trash` search: no patch deletes Attendance Request (one patch only sets a field).
+
+**Not checked:** tag list in `alvoraa-app`; any server state; `short` worker; real rollback time today; whether CSS in strings passes the design gate on CI.
+
+| ID | Recommendation (all deploy steps: for Surbhi to approve) | Level | Decision |
+|---|---|---|---|
+| OPS-67 | **Release order: 088 first (own night release, 00:30-05:30 IST), switch `alvoraa_print_change_notices` on at DTC and Grace, I read it back; only then 086 in a separate release.** Per OPS-63. Do not call 086 ready to push to main until that read-back is done | P1 Recommend | |
+| OPS-68 | **Before the dev push:** fetch, rebase on origin/dev, name the 3 ALV-436 commits that came in, re-run `test_punch_fix_087`, `test_held_team_086`, `_proof`. Check `gh run list` shows the last dev CI green and no run in progress; then push `git push origin slice/086-manager-held-days:dev`, once, batched | P1 Recommend | |
+| OPS-69 | **CI blast radius:** two new test modules and 087/085 edits sit in the quarter suites. Watch the first dev CI for the review-queue tests (first 50/200 by age) and the Frappe "Throttled" error (60 new Users an hour; was seen locally, set only on the throwaway site). If CI shows Throttled, it is the tests, not the product; tell me before changing anything | P2 Recommend | |
+| OPS-70 | **D-1 for tenants (HR behaviour change).** Tell DTC and Grace HR in one line: "In Attendance Requests, HR can now file a missing-time request only for people who report directly to them; for anyone else, ask that person's manager or use the HR repair route." Also: only HR can edit or delete a request someone else filed (employee withdraws instead). Watch for 7 days: Error Log / refusal counts with words "only HR can delete" and the direct-report refusal; any HR message saying "it won't let me". HR repair runbook (3 Nov) deletes as HR/Administrator: should still work, prove on dev | P2 Recommend | |
+| OPS-71 | **Dev proof before main (read-only on dev, on Surbhi's word):** one 50-row send, a 51-row refusal, a skip-level refusal, same list twice, HR delete of a manager-filed request allowed, employee delete refused, printed reason equals manager's words only. Plus M-1..M-7 on the throwaway DTC-size stack (OPS-66). Re-test numbers so far (442 synthetic people, local): list p95 46 ms, 20 rows 0.76 s, 50 rows 1.97 s: inside 500 ms / 3 s / 10 s. Estimate, synthetic data, not DTC's | P2 Recommend | |
+| OPS-72 | **Deploy (main, night window, after dev test and her word).** Pin the exact SHA, not the branch name (memory 12 Nov). Run Deploy for main; do **not** hand-list services. Migrations: nothing to migrate, but the deploy runs migrate anyway; check the queue first (5 Nov) | P1 Recommend | |
+| OPS-73 | **Prove the landing three ways:** (1) pin file `.image.env` shows the new tag; (2) every app container reports the same tag; `docker top` and `rq:workers` for web, `short`, `long`; (3) `held_team.py` exists in the container and `refuse_delete_by_others` is in `punch_fix.py`. **Then assets:** compare `sites/assets/assets.json` in the volume against the image; if the image's `portal.js` is newer, copy it and bump the `?v=` stamp. Open the portal with cache cleared and check the Held view loads (inferred: without this nobody sees it) | P1 Recommend | |
+| OPS-74 | **Rollback: revert only.** Redeploy the previous tag with migrations off. First read that the tag exists in `alvoraa-app`. Expect about 7 min (lesson 22; not re-measured). Filed requests stay as valid drafts. After rollback compare `assets.json` again: the volume keeps new JS, so the Held view may call `held_days` / `send_held` the old image lacks; effect: a refused call in that view only (estimate) | P1 Recommend | |
+| OPS-75 | **Monitoring, nothing new, first 7 days:** Error Log rows for `send_held` (a deadlock is **expected** 2-3 per busy run and answers "office was busy, send again"; worry only if one has a request name or a 500 appears); count of 429s on `held_days`/`send_held` in nginx log; MariaDB lock waits. Busy-Monday effect (from 04): a manager who loses the race can see all 50 "not sent". Tell the managers: "if it says the office was busy, send again". Count Attendance Requests created per manager per day; ask HR if one is far above team size (OPS-R-1) | P2 Recommend | |
+
+**Conflict named:** speed vs order. Surbhi's order (088 first) is the safe one; I do not recommend shortcuts. No new item is blocking except OPS-67 and OPS-68.
+
+**Subtract pass:** removed a proposed alert, a dashboard, a synthetic DTC-data load on dev, and a second dry run (no schema). Nothing else.
+
+**Left behind:** this section only, committed nowhere yet. Nothing deployed or run.

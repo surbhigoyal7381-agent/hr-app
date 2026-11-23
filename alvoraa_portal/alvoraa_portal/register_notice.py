@@ -22,10 +22,16 @@ What it does NOT own: whether the change counts, whether pay is held, or what th
 sees in the app. All of that is `punch_fix`'s, and this module reaches it through exactly
 one function, `punch_fix.record_register_signature`.
 
-**None of it appears unless the organisation has asked for it.** The switch is ALV-430's
-`punch_fix.CONFIRM_SWITCH` on Company, and it ships off. Off, there is nothing to confirm,
-so there is nothing to print, nothing in the list and no sentence on anybody's screen.
-DTC and Grace will run with it off (Surbhi, 21 Nov 2026).
+**None of it appears unless the organisation has asked for it.** The switch is
+`NOTICE_SWITCH` on Company, and it ships off. Off, there is nothing in the list, nothing to
+print and no sentence on anybody's screen.
+
+**It used to be ALV-430's confirm switch, and that was wrong.** Until 23 Nov 2026 these
+surfaces read `punch_fix.CONFIRM_SWITCH`, so an organisation that does not ask employees to
+confirm got no notices either. DTC and Grace run with confirmations OFF, precisely because
+their staff have no app - which made the one feature built for people without an app
+invisible at the two places that need it. The paper round and the in-app confirm answer two
+different questions, so they get two different switches (Surbhi, 23 Nov 2026).
 """
 
 import frappe
@@ -35,11 +41,17 @@ from frappe.utils import cint, get_first_day, get_last_day, getdate, nowdate
 import hrms.alvoraa_hr_core.access as access
 from alvoraa_portal.field_app_limits import SELF_KEY, _limited
 import alvoraa_portal.punch_fix as punch_fix
-from alvoraa_portal.punch_fix import SIGNED_NOTICE, confirms_are_on, signed_column_ready
+from alvoraa_portal.punch_fix import SIGNED_NOTICE, signed_column_ready
 
 REQUEST = "Attendance Request"
 NOTICE = "Alvoraa Register Notice"
+COMPANY = "Company"
 HR_ROLES = {"HR User", "HR Manager", "System Manager"}
+
+#: Whether this organisation runs the paper round at all. Its own switch, not ALV-430's:
+#: see the module docstring for why reusing the confirm switch hid this feature from the
+#: two tenants it was built for.
+NOTICE_SWITCH = "alvoraa_print_change_notices"
 
 #: How many people one response carries. "Show more" asks for the next page
 #: (spec AC-7). The number is the designer's, not a database limit.
@@ -56,7 +68,44 @@ FIELDS = {
 		                "Set only by slice 088 when HR records the signature. The signer and the "
 		                "date are read from that notice, never copied here."},
 	],
+	# Placed immediately after ALV-430's confirm switch, because an HR Manager setting a
+	# tenant up should find both answers to "how do people learn their day was changed?"
+	# next to each other. `punch_fix.after_migrate` runs first (hooks.py lists it first),
+	# so that field exists by the time this one asks to sit after it.
+	COMPANY: [
+		{"fieldname": NOTICE_SWITCH, "fieldtype": "Check", "default": "0",
+		 "label": "Print Change Notices For People Without The App",
+		 "insert_after": punch_fix.CONFIRM_SWITCH,
+		 "description": "On: HR can print a monthly page for anyone whose attendance was "
+		                "changed for them, have them sign it, and photograph the signed "
+		                "page. For staff who have no app and cannot confirm on a screen. "
+		                "Off: nothing is listed and nothing can be printed."},
+	],
 }
+
+
+def notices_are_on(company):
+	"""Does this organisation run the paper round?
+
+	**A missing column answers NO, which is the opposite of `punch_fix.confirms_are_on`,
+	and the difference is the point.** 087's switch answers YES when its column is missing
+	because the behaviour already live on that site is the confirm, and dropping it in the
+	window between a deploy and its migrate would quietly remove the thing counsel cleared
+	DTC on. This feature is new: before the migrate there is no notice, no record and no
+	screen, so the honest answer in that window is "not yet". Answering yes would offer a
+	print button backed by a table that does not exist.
+
+	An unknown or empty company answers no, and a lookup that throws answers no. Neither is
+	a judgement about policy; both are "we cannot say, so do not offer it".
+	"""
+	try:
+		if not frappe.db.has_column(COMPANY, NOTICE_SWITCH):
+			return False
+		if not company:
+			return False
+		return bool(cint(frappe.get_cached_value(COMPANY, company, NOTICE_SWITCH)))
+	except Exception:
+		return False
 
 
 def after_migrate():
@@ -279,7 +328,7 @@ def list_people(month=None, start=0):
 	kept = []
 	for e in emps:
 		if e.company not in asks:
-			asks[e.company] = confirms_are_on(e.company)
+			asks[e.company] = notices_are_on(e.company)
 		if asks[e.company]:
 			kept.append(e)
 	if not kept:
@@ -514,7 +563,7 @@ def open_notices(employees, month=None):
 	for employee, mine in sorted(people.items(), key=lambda kv: emps[kv[0]].employee_name or ""):
 		e = emps[employee]
 		if e.company not in asks:
-			asks[e.company] = confirms_are_on(e.company)
+			asks[e.company] = notices_are_on(e.company)
 		if not asks[e.company]:
 			continue
 		login = frappe.db.get_value("Employee", employee, "user_id")
@@ -865,7 +914,7 @@ def my_changes(month=None):
 
 	me = ac._me()
 	first = _month_of(month)
-	if not columns_ready() or not confirms_are_on(me.company):
+	if not columns_ready() or not notices_are_on(me.company):
 		return {"month": str(first), "days": [], "changed": 0}
 
 	mine = qualifying_changes(first, employees=[me.name],

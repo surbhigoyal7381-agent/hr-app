@@ -40,6 +40,29 @@ def setUpModule():
 
 
 class RegisterNoticeCase(PunchFixCase):
+	def setUp(self):
+		super().setUp()
+		# **This suite tests the paper round, so its company has to ask for it.** The
+		# notice switch is 088's own (23 Nov 2026) and ships OFF, so without this line
+		# every list, print and employee view below is correctly empty and the whole
+		# suite fails on fixtures rather than on behaviour. The same shape as 087's
+		# confirm switch above it, restored after each test so no other suite inherits
+		# the choice.
+		self._notices_were = frappe.db.get_value("Company", self.h.company,
+		                                         register_notice.NOTICE_SWITCH)
+		self.addCleanup(self._put_the_notice_switch_back, self.h.company)
+		self._set_notices(1)
+
+	def _set_notices(self, on, company=None):
+		frappe.db.set_value("Company", company or self.h.company,
+		                    register_notice.NOTICE_SWITCH, on, update_modified=False)
+		frappe.clear_cache()
+
+	def _put_the_notice_switch_back(self, company):
+		frappe.db.set_value("Company", company, register_notice.NOTICE_SWITCH,
+		                    self._notices_were, update_modified=False)
+		frappe.clear_cache()
+
 	def notice(self, requests, pages=1, employee=None, month=None):
 		"""A notice written the way the module writes one: under its own flag."""
 		frappe.flags.in_register_notice = True
@@ -156,6 +179,36 @@ class TheRecordExists(RegisterNoticeCase):
 			self.assertTrue(meta.get_field(field), "no field " + field)
 		self.assertEqual(meta.get_field("changes").options, "Alvoraa Register Notice Change")
 		self.assertEqual(meta.get_field("pages").options, "Alvoraa Register Notice Page")
+
+	def test_the_notice_switch_is_on_the_company_and_ships_off(self):
+		"""23 Nov 2026. 088's own switch, beside ALV-430's rather than sharing it."""
+		self.assertTrue(frappe.db.has_column("Company", register_notice.NOTICE_SWITCH))
+		field = frappe.get_meta("Company").get_field(register_notice.NOTICE_SWITCH)
+		self.assertEqual(field.fieldtype, "Check")
+		self.assertEqual(field.default, "0", "the paper round must ship off")
+		self.assertNotEqual(register_notice.NOTICE_SWITCH, punch_fix.CONFIRM_SWITCH,
+		                    "the two switches have become one again")
+
+	def test_the_switch_says_no_when_it_cannot_say_yes(self):
+		"""Each refusal for its own reason, because one of them used to be the opposite.
+
+		087's switch answers YES on a missing column, to keep the confirm alive between a
+		deploy and its migrate. This one must answer NO: before the migrate there is no
+		notice table to print into."""
+		self.assertTrue(register_notice.notices_are_on(self.h.company), "the fixture is off")
+		self.assertFalse(register_notice.notices_are_on(None), "an empty company said yes")
+		self.assertFalse(register_notice.notices_are_on("No Such Company Ltd"),
+		                 "an unknown company said yes")
+		real = frappe.db.has_column
+		frappe.db.has_column = lambda dt, col: False if col == register_notice.NOTICE_SWITCH \
+			else real(dt, col)
+		try:
+			self.assertFalse(register_notice.notices_are_on(self.h.company),
+			                 "a site whose migrate has not run yet was offered the print button")
+		finally:
+			frappe.db.has_column = real
+		self.assertTrue(register_notice.notices_are_on(self.h.company),
+		                "the patch was not undone")
 
 	def test_the_signed_notice_column_is_on_the_request(self):
 		self.assertTrue(frappe.db.has_column(REQUEST, punch_fix.SIGNED_NOTICE))
@@ -499,20 +552,30 @@ class TheHRList(RegisterNoticeCase):
 			frappe.set_user("Administrator")
 		self.assertEqual(out["rows"], [], "HR with no company permission can see this person")
 
-	def test_the_list_is_empty_when_the_organisation_does_not_ask_for_confirmations(self):
-		"""ALV-430, and the departure from the approved spec that goes with it.
+	def test_the_list_is_empty_when_the_organisation_does_not_print_notices(self):
+		"""The paper round is a per-company choice, and it ships off.
 
-		Switch the company off and the paper round disappears: nothing is waiting for the
-		employee, so there is nothing for a notice to say. Asserted in both directions in one
-		test, because "empty" on its own is also what a broken query returns."""
+		Asserted in both directions in one test, because "empty" on its own is also what a
+		broken query returns."""
 		self.an_approved_hr_change()
 		self.assertEqual(len(self._rows_for_me()), 1, "fixture is wrong: nothing to hide")
+		self._set_notices(0)
+		self.assertEqual(self._rows_for_me(), [],
+		                 "a company that does not print notices is still being told to")
+
+	def test_the_confirm_switch_does_not_decide_the_paper_round(self):
+		"""23 Nov 2026. The fault this split exists to fix.
+
+		DTC and Grace run with confirmations OFF, because their staff have no app - and
+		until today that is exactly what hid the paper round from them. The two switches
+		now answer two different questions, so turning the confirm off must leave the
+		notice list alone."""
+		self.an_approved_hr_change()
 		frappe.db.set_value("Company", self.h.company, punch_fix.CONFIRM_SWITCH, 0,
 		                    update_modified=False)
 		frappe.clear_cache()
-		self.assertEqual(self._rows_for_me(), [],
-		                 "a company that asks for no confirmations is still being told to "
-		                 "print notices")
+		self.assertEqual(len(self._rows_for_me()), 1,
+		                 "switching confirmations off still empties the notice list")
 
 	def test_paging_holds_the_page_size_and_the_true_total(self):
 		"""AC-7. Four people is enough to prove the arithmetic; 25 would only prove patience."""
@@ -546,6 +609,24 @@ class TheHRList(RegisterNoticeCase):
 
 class ThePrintCall(RegisterNoticeCase):
 	"""US-2, AC-11 to AC-17: the record is written before any content leaves the server."""
+
+	def test_nothing_prints_where_the_organisation_does_not_print_notices(self):
+		"""The gap the first version of the switch left.
+
+		The list and the employee's view each had a test for being switched off; the print
+		call had none, so a reader could have been added here and nobody would have known.
+		It is the one that matters most: printing WRITES a permanent record."""
+		self.an_approved_hr_change()
+		self.assertTrue(self._print([self.emp])["sheets"], "fixture is wrong: nothing to hide")
+		before = frappe.db.count(NOTICE)
+		self._set_notices(0)
+		# It REFUSES rather than returning an empty page, which is the better of the two:
+		# an HR person who reaches this call anyway is told, instead of staring at a blank
+		# screen. The words are deliberately about the days, not about the setting - a
+		# refusal should not read out a tenant's configuration.
+		self.refused(lambda: self._print([self.emp]), "no changed days waiting")
+		self.assertEqual(frappe.db.count(NOTICE), before,
+		                 "a notice record was written for a company that is switched off")
 
 	def test_printing_writes_one_notice_then_returns_the_sheet(self):
 		"""AC-11. The row is checked first and the content second, in that order, because
@@ -1185,14 +1266,21 @@ class TheEmployeesOwnView(RegisterNoticeCase):
 		nobody = self.h._login("noemp088", ())
 		self.refused(lambda: self._mine(user=nobody), "not linked to an employee")
 
-	def test_the_view_is_empty_where_the_organisation_asks_for_no_confirmations(self):
-		"""The same ALV-430 departure as the HR list, asserted both ways round."""
+	def test_the_view_is_empty_where_the_organisation_does_not_print_notices(self):
+		"""The same per-company choice as the HR list, asserted both ways round."""
 		self.an_approved_hr_change()
 		self.assertEqual(self._mine()["changed"], 1, "fixture is wrong: nothing to hide")
+		self._set_notices(0)
+		self.assertEqual(self._mine()["days"], [])
+
+	def test_the_confirm_switch_does_not_decide_the_employees_view(self):
+		"""The employee half of the 23 Nov split: confirmations off, the page still shows."""
+		self.an_approved_hr_change()
 		frappe.db.set_value("Company", self.h.company, punch_fix.CONFIRM_SWITCH, 0,
 		                    update_modified=False)
 		frappe.clear_cache()
-		self.assertEqual(self._mine()["days"], [])
+		self.assertEqual(self._mine()["changed"], 1,
+		                 "switching confirmations off still empties the employee's view")
 
 	def test_the_call_is_rate_limited_per_user(self):
 		self.assertEqual(register_notice.my_changes.__alvoraa_limit__[1:], ("user", 60, 60))

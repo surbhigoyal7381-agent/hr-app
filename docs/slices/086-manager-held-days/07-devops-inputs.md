@@ -88,3 +88,96 @@ All as recommended:
 - **Limits:** 30 sends an hour per login, and 500 characters per reason.
 - **OPS-R-1:** no daily cap per manager.
 - **OPS-R-2:** 087 goes to main and is proved first, then 086. If counsel is late, the list ships without the send bar.
+
+
+## §4 Strategy (2026-11-23)
+Read: worktree `.claude/worktrees/086-manager-held-days`, branch slice/086-manager-held-days at dc0345ae (origin/dev 412d5361, origin/main f68f2333, fetched today). Files: `00-impact-analysis.md` in full, spec §11-13, `attendance_correction.py` (stamp, lines 2530-2550), `punch_fix.py` (`_reason_of`, line 580), `deploy/compose/docker-compose.app.yml` (gunicorn line 261), `.github/workflows/ci.yml` (job steps), `scripts/check_design_system.py` (**run** locally, read only, result below), `scripts/check_portal_trays.js` header. **Nothing run on dev or production, nothing timed, no bench. Every number is an estimate or a pass mark, not a measurement.**
+
+**Answer first.** The engineer's plan is code-only and I agree with it. **P1: do not call the release ready until 088 is on `main` (it is not: `register_notice.py` is absent from origin/main, checked today) and its switch is read back as on at DTC and Grace.** Second catch (P1, one line): the "One of n" text must be joined with a blank line, or the paper notice prints it as part of the manager's reason (below).
+
+### Install order and dependencies (fact, read today)
+| Needs | State | What it means |
+|---|---|---|
+| 087 on main | **Yes.** `punch_fix.py`, `held_day.py`, `overrides/attendance_request.py` all exist on origin/main f68f2333 | Met. Prove on the container again at release: pin file, container, file |
+| 088 on main (for ALV-426, the notice for staff with no login or app) | **No.** `register_notice.py` is not on origin/main. On dev only, switch `alvoraa_print_change_notices` ships **off** | 086 has no code import of 088 [inference: engineer's file list does not touch `register_notice`], so it would **run** without it. It would not be **allowed to** under Surbhi's own rule (21 Nov, OPS-R-2 and counsel's case A): a manager-filed time with no Confirm and no printed notice leaves a person with no login unaware |
+| A worker on queue `short` | Not checked on any server | 086 files drafts only (no slip work); the slip refresh at HR's approval is 087's. Check anyway at release by `rq:workers` and `docker top` |
+
+**Release order I recommend:** (1) 088 to main, in its own night-window release, switch off; (2) Surbhi switches `alvoraa_print_change_notices` on per site (DTC, Grace) and I read it back from outside; (3) 086 to main, a **separate** release, never in the same push as 088 (two slices in one release cannot be told apart if pay goes wrong; same reason as 087/086). If she wants 086 first, the send bar must stay unannounced until step 2. **No code gate is needed to enforce this** (a send-refuses-if-notices-off check is new code and a new coupling; rung: process). Each step is her word, night window IST (memory, 18 Nov).
+
+### Image, Compose, migration, DocPerm
+- **Image and Compose: no change expected.** No new app, dependency, container, volume, queue, env var. `Dockerfile` and `deploy/compose/*.yml` unchanged. Check at review: `git diff origin/dev --stat -- deploy Dockerfile` is empty.
+- **Migration: none.** No Custom Field, patch, fixture, `patches.txt` line, schema change. The migrate-queue trap (5 Nov) does not apply. **Dry run on a copy (`REHEARSAL.md`) is therefore not needed for the schema**, but is needed for the timings below (that is the one reason to build the DTC-size throwaway stack).
+- **New `on_trash` hook on Attendance Request: code, not data.** It runs on every delete of that doctype. Cases to prove in the test: HR deletes (allowed: the 3 Nov attendance repair runbook deletes requests as HR or Administrator); Administrator and `bench execute` scripts (allowed); a manager or the employee deleting a request filed for someone else (refused); the employee deleting their **own** draft (allowed, must not break). **Risk:** a migrate or site-cleanup that deletes these rows as a non-HR user would now fail. Nothing found that does [not searched beyond the engineer's grep of `hooks.py`]; I ask the engineer to grep `patches/` for deletes of this doctype.
+- **DocPerm: no change.** I agree with rejecting a Custom DocPerm. The DocPerm baseline tests (13 Nov release) must stay untouched; if any fails, the plan has drifted.
+- **Assets:** `portal.js` is a new build in the image but the sites volume hides it (memory, 23 Sep). After deploy, compare `assets.json` in the volume with the image, and bump it after a `docker cp`; otherwise nobody sees the Held view. **Rollback twist, new:** rolling the image back does **not** roll the volume's `assets.json` back, so browsers may keep new JS that calls `held_days`/`send_held`, which the old image no longer has. Effect is limited to a refused call in the Held view only (estimate). Compare `assets.json` after a rollback too.
+
+### CI gates (ran `check_design_system.py` locally today: read-only, no bench)
+| Gate | Applies? | Action |
+|---|---|---|
+| `check_portal_trays.js --static` | **Only if the confirm dialog is a new `position:fixed` class.** If it reuses 087's sheet or an existing overlay class, no entry | Add to INVENTORY if new (088 did, `5cf7e418`). The browser half is **not in CI**: run it locally on a throwaway site, once |
+| `check_design_system.py` | **Yes, no headroom.** Fact (run today): `hrms-employee.html` font sizes **7 of 7**, radii **3 of 3**, shadows 1 of 3, colours 0 | The Held view must reuse existing sizes and radii. One new `font-size` or `border-radius` value fails CI. Run it before the first commit. If styles live in `portal.js` strings the gate may not see them [not checked]; reuse anyway |
+| `check_api_paths.py --max 0` | Yes | New `frappe.call` paths must resolve to `held_team.held_days` and `send_held` |
+| `check_portal_handlers.js`, `check_undefined_js.js`, `check_tag_balance.py`, `check_brand_spelling.py` | Yes (JS and strings) | Run locally; no entry. Strings say "Alvora" |
+| `check_scope_traps.py` | Yes | No `dict(permitted_employee_filters(...), name=...)` or `{**...}` in `held_team.py`: the per-row check uses the direct-report set. Wanted by SEC-1 anyway |
+| `check_app_integrity.py` | Yes | CI rejects `from package import submodule`. In `held_team.py` use `import alvoraa_portal.punch_fix as punch_fix`, as `day_sheet` does |
+| ruff, Semgrep | Yes | ORM only, no raw SQL, no `ignore_permissions` |
+| `check_portal_assets_gate.py`, nginx gates | No | No new file the portal loads; no nginx change |
+| **New CI entry** | **None recommended.** The `NoQuietBypass` extension and the tests are in the quarter suite. The two-connection lock test commits real rows: it must clean up after itself, or it pollutes later tests in the same part (FYI to the engineer and test engineer) | |
+
+### Performance budget: what to measure, and the pass mark
+**Where:** a throwaway stack with a DTC-size copy (`REHEARSAL.md`), never dev or production. **Not run; every row below is a plan.** Record date, SHA, rows, queries, ms.
+
+| # | Measure | Pass mark | Based on |
+|---|---|---|---|
+| M-1 | `held_days`: query count at 5 and at 50 rows | Equal counts, about 8 or fewer | `nfr-budget.md`, AC-6 |
+| M-2 | `held_days` p95, 60-person team and 442-person copy (a manager lists only direct reports, so 442 is the stress case) | ≤ 500 ms | `nfr-budget.md` |
+| M-3 | `send_held` at 1, 20, 50 rows: wall time **and queries per row** | 20 rows ≤ 3 s (engineer's number), 50 rows ≤ 10 s (the kill number). **Queries at row 50 within about 1.2 x row 2**: growth means something is walking a growing set | AC-40; engineer's `_subject` N+1 concern |
+| M-4 | Same send, manager with a **deep** reporting line vs a flat one | Deep within 1.5 x flat. If `_subject` is the cost, the engineer's one change (hand it the reports once per request) is justified **by this number only** | engineer 5.1 |
+| M-5 | **Web capacity.** Fact (compose line 261): gunicorn 4 workers x 2 threads, `--timeout 120`. So a backend has **8 threads**; one send holds one for its whole duration. Run 3 sends of 50 at once and time an ordinary list call beside them | Ordinary call p95 ≤ 500 ms during the sends; no 502 or 504 | Estimate: 20 managers at 9 am x up to 10 s could queue other users |
+| M-6 | **Lock contention.** Locks are held to the end of the call (engineer's own inference, not proven): up to 50 Attendance row locks for the send's duration. While a 50-row send runs, write one of its locked days from a second connection | Waits no longer than the send; **no lock-wait error**. Read `innodb_lock_wait_timeout` on the throwaway stack (**not known**; MariaDB default is 50 s, my recollection, unchecked) | Biometric posts write Employee Checkin, and auto-attendance runs on the scheduler (every 3-4 min, memory 25 Sep). Which of them touches the **Attendance row** of a held day I **did not read**: engineer to say |
+| M-7 | Page weight: `portal.js` before and after | Gzip growth ≤ about 8 KB (estimate 6 KB; file now 1,389,551 bytes per the engineer) | OPS-46 |
+
+If M-3 or M-6 fails: stop and bring it back before any job, cache or setting is added.
+
+### Rate-limit sanity
+- **Fact (spec, read):** 30 sends an hour per login (`_limited(SELF_KEY, "user", 30, 3600)`, counted per endpoint name so list and send do not share). nginx `/api/` 120 a minute, burst 30 (OPS-41). **Agree: no nginx change** (lesson 13, one nginx serves dev and prod).
+- 30 sends x 50 rows = 1,500 requests an hour from one login: more than any team holds, so the limit bounds abuse, not honest use. Surbhi chose it; I do not argue.
+- A 429 must read "wait and check Waiting for HR", never "try again" (OPS-59, kept).
+- The limiter's counter lives in the cache: that is a count, not personal data. Fine.
+
+### Rollback
+Code-only, so rollback = **redeploy the previous tag with migrations off.** The tag must exist in the `alvoraa-app` package (lesson 20): **read the tag list before the release; not checked today.** Requests already filed stay (valid 087 drafts with a stamp; HR decides or declines them). Nothing to undo in the data. The guard and `on_trash` disappear with the code (old behaviour returns). **Time:** lesson 22 measured about 7 min per deploy and rollback (6:54 dev, 7:09 production, 22 Sep); **not re-measured today.** Then compare `assets.json` (above).
+
+### Where I agree and disagree with the engineer
+| Item | View | Reason |
+|---|---|---|
+| Rung 4, one file, no DocType, field, patch, queue, cache | **Agree** | Smallest thing that meets the requirement; nothing measured says otherwise |
+| Reuse 087/088 (G8, G13, F5 already built) | **Agree** | Less code to patch and roll back; my §3 OPS-57/58 worries about duplicates are met by 087's override plus the locking read |
+| Synchronous send, one final commit, per-row savepoint | **Agree.** One cost named: single commit holds every lock to the end (M-6) | A killed request (120 s) then rolls back everything, so a retry cannot double-file |
+| F1 (D-1): delete the `_may_review()` guard in `raise_for_report` | **Agree** | One line, no deploy or schema effect, closes ALV-425 in both doors. Release risk: HR logins that used the old door for a non-direct report get refused; engineer's grep says no screen offers it |
+| F2 / D-2: only HR may change or delete a request filed for someone else | **Agree** | Closes the employee edit/delete hole too. Operational check: HR repair runbook still works (above) |
+| Per-row direct-report set computed once | **Agree** | Fewer queries; but `raise_for_report` repeats the check per row, so the saving is partial. Measure (M-3/M-4) |
+| 6.4 two locking reads, rows sorted by (employee, date) | **Agree** | Sorted order avoids deadlock between overlapping sends. The isolation-level claim is **inferred**: accept it only after the two-connection test fails first with the locks removed |
+| D-5: drop the recheck endpoint, reuse `held_days` | **Agree, needs Surbhi** | One endpoint, one rate row, one test fewer. It lowers my own §3 OPS-58 (P1): the page can say "no longer listed" but not "sent". It is acceptable only if the banner wording says so |
+| D-3: "One of n" placed before "Raised by" | **Agree on the order, DISAGREE on the join.** **P1** | Fact (read): `_reason_of` takes the text before the **first blank line**, and `raise_for_report` joins reason and stamp with `"\n\n"`. If `send_held` appends "One of n" to the reason with a single newline, it becomes part of the reason that 088 **prints on paper** and the employee reads. Join it with `"\n\n"` so it sits after the first blank line. Test: the printed reason equals the manager's words only |
+| Comparing the **derived** datetime to now (night shift) | **Agree** | Uses `derive`, which already owns the shift-day rule |
+| Sized ALV-426 as "covered by 088 + switch on" (D-7) | **Agree with the size, DISAGREE that it is "no build"** as a release condition | Covered only once 088 is on main and switched on per site. That is a release step, not build |
+| "Switch the confirm dialog into the trays inventory" | **Agree, conditional** | Only if the dialog is a new fixed class |
+| A lock wait stops the loop; one Error Log entry of counts and ids | **Agree** | Matches OPS-56/60 |
+
+**One thing I would add, small:** a reason that itself contains a blank line makes the rest look like system text (a typed "Raised by Priya on behalf of the employee" after a blank line). The `owner` and `creation` fields are the truth, so this is cosmetic: **P3**, note for the reviewer, nothing to build.
+
+### Open OPS decisions for Surbhi (Decision column blank)
+| ID | Recommendation | Level | Decision |
+|---|---|---|---|
+| OPS-63 | **Release 088 to main first (switch off), switch it on at DTC and Grace, read it back, then release 086 separately.** Or, if 086 goes first, keep the send bar unannounced until the 088 switch is on | P1 Recommend | |
+| OPS-64 | **Accept "the send runs on the existing hold switch, with no switch of its own"** [I did not read whether the list and the send can be separated from it], and use the release order in OPS-63 as the control instead of new code | P2 Consider | |
+| OPS-65 | **Accept D-5** (no recheck endpoint) knowing the banner can say "no longer listed", not "sent" | P3 Consider | |
+| OPS-66 | **Allow one build of the throwaway DTC-size stack** to time M-1 to M-7 before the usability test. If she says no, the 10 s and 500 ms passes stay unproved and I will not call the release ready on speed | P2 Recommend | |
+| (engineer's) | D-1, D-2, D-3 (with the blank-line join), D-4, D-6, D-7 are hers; I have **no objection** to the engineer's recommendations on D-1, D-2, D-7, and ask that D-3 carry the join rule | | |
+
+**Not checked:** any server state; the tag list in `alvoraa-app`; whether the `short` worker is alive; `innodb_lock_wait_timeout`; which job writes Attendance for a held day; `patches/` for deletes of Attendance Request; how the Held view's CSS is counted by the design gate.
+
+**Subtract pass:** removed a proposed new CI entry, a send-refuses-if-notices-off check, a background job, a cache, and an nginx change. Nothing else; I added no new moving part.
+
+**Left behind:** this file only (committed locally, not pushed). Nothing deployed; no container or file left anywhere.

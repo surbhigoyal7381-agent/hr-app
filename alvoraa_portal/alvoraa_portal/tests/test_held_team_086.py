@@ -43,9 +43,28 @@ class HeldTeamCase(FrappeTestCase):
 		self.boss = h._employee("Boss", self.boss_email)
 		self.hr = h.hr
 		self.addCleanup(frappe.set_user, "Administrator")
+		self.addCleanup(self._wipe)
 		self.a = self.report("A")
 		self.b = self.report("B")
 		frappe.set_user("Administrator")
+
+	def _wipe(self):
+		"""`send_held` commits each filed row (fix round 1), and that commit makes every fixture of the test
+		permanent too. Put it all back: this case's people, their days, requests and logins. Without it
+		every run left ~33 waiting requests on the site and the 087 and attendance_correction review-queue
+		tests (first 50 and 200 by age) began to fail."""
+		frappe.db.rollback()
+		tag = self.h.tag
+		emps = frappe.get_all("Employee", filters={"first_name": ["like", tag + "%"]}, pluck="name")
+		users = frappe.get_all("User", filters={"email": ["like", tag.lower() + ".%.hd085@example.com"]}, pluck="name")
+		for dt in (REQUEST, ATT, CHECKIN):
+			frappe.db.delete(dt, {"employee": ["in", emps]})
+		frappe.db.delete("User Permission", {"user": ["in", users]})
+		frappe.db.delete("Employee", {"name": ["in", emps]})
+		for u in users:
+			frappe.db.delete("Has Role", {"parent": u})
+			frappe.db.delete("User", {"name": u})
+		frappe.db.commit()
 
 	# ── fixtures ────────────────────────────────────────────────────────
 	def person(self, first, boss=None):

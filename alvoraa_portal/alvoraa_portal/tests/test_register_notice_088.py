@@ -678,29 +678,35 @@ class ThePrintCall(RegisterNoticeCase):
 	def test_the_reason_reaches_the_page_exactly_as_it_is_stored(self):
 		"""Spec 5.2 ("the filer's reason as written, in full") and SEC-9.
 
-		**Measured, and it changes what this test can honestly claim.** Frappe sanitises a
-		Small Text field on insert (`frappe.utils.html_utils.clean_html` via
-		`sanitize_html`), so a reason typed with angle brackets is altered the moment the
-		change is FILED - on 087's surface, before slice 088 ever sees it. My first version
-		of this test asserted the page carries what the filer typed and failed with
-		`<img src=x onerror=...>` stored as `<img src="x">`.
+		**Rewritten 23 Nov 2026, because the fault it used to describe is fixed.** This test
+		is how ALV-436 was found. Frappe cleans every Small Text field on save, so a reason
+		typed with angle brackets was altered the moment the change was FILED, on 087's
+		surface, before slice 088 ever saw it - `<img src=x onerror=...>` was stored as
+		`<img src="x">`, and `<machine down>` as nothing at all. The test could not honestly
+		claim the page carried the filer's words, so it claimed the smaller true thing and
+		said the question was raised separately rather than papered over.
 
-		So what 088 can promise is the thing 088 controls: the page carries exactly what is
-		stored, unaltered, and nothing executable survives to the page. Whether the storage
-		should be changing HR's words at all is a question about 087's field, not this slice,
-		and it is raised separately rather than papered over here.
+		It was raised, and Surbhi chose the honest refusal: such a reason can no longer be
+		filed at all (`punch_fix.refuse_if_the_words_would_be_lost`). So this test now says
+		both halves - nothing of that shape can get in, and what does get in reaches the page
+		character for character, including the `&` and the apostrophe that used to be the
+		reason to doubt it.
 		"""
 		self.held_on(self.day)
-		nasty = '<img src=x onerror=window.__x=1> he said he forgot'
-		req = self.fix(time="18:30", by=self.hr, note=nasty)
+		# The door is shut upstream now, so the dangerous string never reaches a record.
+		self.refused(lambda: self.fix(time="18:30", by=self.hr,
+		                              note='<img src=x onerror=window.__x=1> he said he forgot'),
+		             "without < and >")
+		words = "he said he forgot & I checked the guard's book"
+		req = self.fix(time="18:30", by=self.hr, note=words)
 		self.decide(req, 1, by=self.h.hr2)
 		stored = frappe.db.get_value(REQUEST, req, "explanation")
+		self.assertEqual(stored, words, "the record no longer holds what the filer typed")
 		change = self._print([self.emp])["sheets"][0]["changes"][0]
 		self.assertEqual(change["why"], stored,
 		                 "the page does not carry what is actually on the record")
-		self.assertNotIn("onerror", change["why"], "an event handler reached the page")
-		self.assertIn("he said he forgot", change["why"],
-		              "the filer's actual words were lost on the way to the page")
+		self.assertEqual(change["why"], words,
+		                 "the filer's actual words were lost on the way to the page")
 
 	def test_the_pay_line_prints_only_where_the_page_holds_a_change_that_holds_pay(self):
 		"""D-7. A page of manager additions must not carry it, because it would be false:

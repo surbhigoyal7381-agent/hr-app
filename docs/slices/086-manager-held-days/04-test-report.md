@@ -173,3 +173,62 @@ I did not run the full suite (instructed). The stack's `throttle_user_limit` is 
 
 ## Clean-up
 Removed my T86 Employees, Users, requests, checkins, attendance, the "Held days send" Error Log rows the tests left, the rate-limit keys; put the assets folder and common config back; removed the proxy container. Left in place: the stack's own test fixtures (Hd* rows from the build suite are rolled back by the tests).
+
+---
+
+## Re-test after fix round 1 (23 Nov 2026, HEAD 58ed719a + one test commit)
+
+**Verdict: PASS WITH KNOWN DEFECTS** (no P0, no P1). Site test_site, schema from this branch, stack alv086-*, one module at a time. The P1 is closed. One new P2 was found and fixed in the test code (below). Not done: nginx, real phone, Hindi, screen reader (see the human list above).
+
+### P1: three managers at once (real HTTP)
+Command: gunicorn 4 workers x 2 threads, 120 s timeout, port 8090; three signed-in managers, 50 rows each, sent at the same moment (a barrier); 4 runs on four different days; synthetic people (3 managers, 150 reports, 4 held days each).
+- **500s: 0 of 12 sends.** All 12 answered 200 in 0.1 to 2.9 s. The deadlock still happens (`QueryDeadlockError` named in the Error Log in each run, 2 or 3 sends a run), but the answer is now a sentence ("Not sent. The office was busy ... send again.").
+- **"Sent" is true:** for every send I compared the rows answered `ok` with `Attendance Request` rows in the database. Said sent but not in the database: **0**. In the database but not said sent: **0**. (Runs: 50/0/2, 50/0/0, 50/0/0, 50/0/0 sent for the managers that were not stopped; stopped sends had their later rows answered "not sent".)
+- **Rows before the fault stay filed:** run 1, one manager got 2 rows filed, then stopped, and those 2 are in the database (AC-32).
+- **One Error Log row per faulted send**, text only: manager id, 50 rows, N sent, first fault name. No name, time or reason.
+- `test_held_team_086_proof`: 11 OK (including the deadlock pin).
+- **Break test (in-process, nothing on disk changed):** with the plain-rollback fallback in `_undo_row` switched off, the same deadlock test fails with `1305 SAVEPOINT held_row does not exist`; as built it passes. Proven.
+- Note for the next reader: managers who lose the race often get all 50 "not sent" (the deadlock hits their first row). The answer is correct and tells them to send again. That is the design (OPS-56), not a fault, but a busy Monday may feel like "nothing went". Not blocking.
+
+### P2: Held chip, headless Chrome 360 / 390 / 1280, manager with 50 held days
+| Check | 360 | 390 | 1280 |
+|---|---|---|---|
+| Held chip height (target 44 phone, 24+ laptop) | 44 | 44 | 26 |
+| "Everything" chip height (same row) | 44 | 44 | 26 |
+| Warning triangle on the chip | yes | yes | yes |
+| First held row top (px from top of the window) | 547 of 780 | 523 of 844 | 457 of 900 |
+| Sideways scroll / script errors | none / none | none / none | none / none |
+Screenshots read (rt-360-team, rt-360-held, rt-360-refused, rt-1280-held, in the scratchpad). Against prototype-v2: the path of the triangle is the same string; the explanation paragraph ("Held days have a punch missing, so pay for the day is on hold ...") is the same words and is shown; on the Held view only the Show box is above the chips, the From/To/Person/Group by block is gone, and it comes back on Everything. The other chip on that page sits level with Held, same height. **Not checked:** the other flag chips (Late, Short hours and so on) were not on screen because the synthetic data had none; they share the same CSS rule only.
+
+### P3 wording, in the browser at 360 px and by HTTP
+- "1 day ready" after one row typed, "2 days ready" after two: seen.
+- Send with one good row and one refused row: banner "Sent 1 of 2 to HR. 1 not sent. ... Go to the first one"; the button is there (44 px high), pressing it moves focus into the refused row's time box; refusal line ends "Change what is needed and send again.": seen.
+- "No clock-out" chip: not on screen with the hold on (only Everything and Held). Inference: the data had no such flag, so this is the DOM test's proof (portal_held_team_086_test.js, 0 failed), not a browser one.
+- 31st send: HTTP 429 `FieldAppRefusal: Too many sends. Please wait a while.` (manager had 4 earlier sends, the 27th more call was refused = the 31st in the hour). Other `_limited` callers keep their own words: the default argument is the old sentence, and `test_leaver_report_089`, which asserts "Too many tries", passes.
+
+### Modules (each once, full output read, both batch summaries read)
+| Module | Result |
+|---|---|
+| test_held_team_086 | 31 OK |
+| test_held_team_086_proof | 11 OK |
+| test_held_day_085 | 45 OK |
+| test_punch_fix_087 | 132 OK (after the clean-up below) |
+| test_punch_fix_087_proof | 11 OK |
+| test_register_notice_088 | 79 OK |
+| test_attendance_correction | 148 OK and 19 OK (two summaries) |
+| test_employee_documents_078, test_field_app_password_signin_128, test_leaver_report_089, test_portal_security_010 (the modules that use `_limited` / field_app_limits) | 20, 59, 47, 45 + 5 OK |
+| test_event_form_082 | **0 ran, 12 skipped** (I did not look into why; the skip is not new code) |
+Static: DOM runner 29 run, 0 failed, exit 0. check_design_system.py exit 0. check_portal_trays.js --static exit 0 (33 fixed elements, 0 problems). check_brand_spelling.py exit 0. check_app_integrity.py exit 0 (1,031 checks). check_scope_traps.py inside the container exit 0, its self-test exit 0.
+
+### New defect found and fixed in test code: P2, "a test must put back what it takes"
+The first full pass had 3 failures in other modules: `test_punch_fix_087 ... test_to_review_gives_the_card_and_no_photo_or_location_key`, `test_punch_fix_087_proof ... test_ac35_fifty_pending_punch_fixes ...` (2.0 to 2.6 s against 1.5 s) and `test_attendance_correction ... test_hr_sees_what_is_waiting`. Cause: since fix round 1, `send_held` commits each row, and a commit makes every fixture of the test permanent. Running only the two 086 modules left **33 waiting requests, 53 Held days and 234 people** on the site (measured). The review queue reads the oldest 50 (and 200), so those three tests stopped seeing their own request. The site also still held 202 requests from my own earlier HTTP runs (also removed).
+Fix: `HeldTeamCase._wipe` in `test_held_team_086.py` (commit 4113d192) deletes the case's people, days, punches, requests and logins at the end. **Proven:** before it, two 086 modules left 33 requests and 287 employees; after it, 0 requests and 53 employees (the baseline) after the same two modules. The three failing tests then passed alone, and 087, 087 proof and attendance_correction passed in full (above). Leftover on the site after those: 0 requests, 53 employees. For the product code this is fine (a request is real once filed). For the build team: any new test that calls `send_held` must use this case.
+Known limit: `_wipe` deletes by the case's name tag. A test that makes a person with another name would leak.
+
+### Still open (P3/P4, no one blocks)
+- P3: the fix agent's own notes say the Held view with no held days still shows the full filter block; I did not look.
+- P3: `test_event_form_082` skipped (12). Owner: whoever owns slice 082.
+- P4: the 31st-send test names the old words; fine.
+
+### Clean-up done
+Removed my synthetic managers, reports, days, requests, Error Log rows; removed the earlier run's 202 requests and 442 T86 people; stopped gunicorn, bench serve and the temporary port forward (alv086-fwd); put the stack's assets folder back as it was; deleted the Chrome profile folders. Nothing pushed, nothing deployed.

@@ -15783,6 +15783,28 @@ function drCard(c, i, manyCompanies) {
       attendance_date: ["between", [c.dates[0], c.dates[n - 1]]] })) + '">' + esc(drT("Open attendance for these days")) + '</a>');
     if (c.can_confirm) acts.push('<button type="button" class="btn btn-outline" onclick="drAsk(' + i + ', this)">' + esc(drT("The absence was real")) + '</button>');
     meta = drT("Found {0} · Checked again every morning", [drWhen(c.found_on)]);
+  } else if (c.kind === "feed") {
+    /* ALV-440: the branch is judged against its OWN normal for that weekday, so
+       the card says what normal is. Never a confirm button - there is nothing
+       here HR could declare correct, and it clears itself once punches arrive. */
+    var fn = c.dates.length;
+    title = drT("{0} may have stopped sending punches", [c.branch]);
+    chip = '<span class="dr-chip warn">' + esc(drT("Punch feed")) + '</span>';
+    lines.push(fn === 1
+      ? drT("On {0}, {1} people punched at {2}. It normally has about {3} on that day of the week.",
+            [drDates(c.dates), c.punched, c.branch, c.normal])
+      : drT("On {0}, no more than {1} people punched at {2}. It normally has about {3} on those days of the week.",
+            [drDates(c.dates), c.punched, c.branch, c.normal]));
+    lines.push(drT("This is almost always a check-in device that has stopped sending, not people staying away. Check the device at this branch."));
+    lines.push(drT("Until it is fixed, these days stay marked absent and will reach pay."));
+    leaders = drT("nothing yet - these days still count as absent in every figure until the data is fixed.");
+    acts.push('<a class="btn btn-primary" target="_blank" rel="noopener" href="' + esc(drDeskUrl("employee-checkin", {
+      alvoraa_branch: c.branch,
+      time: ["between", [c.dates[0], c.dates[fn - 1]]] })) + '">' + esc(drT("Open check-ins for this branch")) + '</a>');
+    acts.push('<a class="btn btn-outline" target="_blank" rel="noopener" href="' + esc(drDeskUrl("attendance", {
+      company: c.company, alvoraa_branch: c.branch,
+      attendance_date: ["between", [c.dates[0], c.dates[fn - 1]]] })) + '">' + esc(drT("Open attendance for these days")) + '</a>');
+    meta = drT("Found {0} · Clears by itself once the branch is punching normally again", [drWhen(c.found_on)]);
   } else if (c.kind === "leave") {
     title = drT("Leave used");
     chip = '<span class="dr-chip review">' + esc(drT("Needs review")) + '</span>';

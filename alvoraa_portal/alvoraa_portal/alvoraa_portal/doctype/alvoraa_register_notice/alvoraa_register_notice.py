@@ -55,7 +55,7 @@ class AlvoraaRegisterNotice(Document):
 		for field in PRINT_OWNED:
 			if self._moved(before, field):
 				access.refuse(_("What was printed cannot be changed. Print the notice again instead."),
-				              "088-SEC-5", "Alvoraa Register Notice " + field,
+				              "088-SEC-5", f"{self.doctype} {field}",
 				              self.doctype, self.name)
 		if before.outcome in ANSWERED:
 			for field in ANSWER_OWNED:
@@ -65,7 +65,7 @@ class AlvoraaRegisterNotice(Document):
 					continue
 				if self._moved(before, field):
 					access.refuse(_("This notice has already been answered, so it cannot be changed."),
-					              "088-SEC-5", "Alvoraa Register Notice " + field,
+					              "088-SEC-5", f"{self.doctype} {field}",
 					              self.doctype, self.name)
 
 	def _moved(self, before, field):

@@ -26,7 +26,7 @@ built on: worktree /Users/mac/hr-app/.claude/worktrees/086-manager-held-days, br
 a03ed628 and 8cea5fc3 (earlier engineer), e80a0491 (DOM test and runner), plus the notes commit that follows this file.
 
 ## Acceptance criteria
-Covered by `test_held_team_086.py` (30 tests: list, send, scope, filer guard, lock, HR and employee side, 088 notice) and the DOM test (20 checks). I did not re-walk all 67 ACs one by one in this step; the reviewer and test stage should trace the AC table against the test names. **Not checked:** the 360 px screen and the timings (left to the test stage by instruction).
+Covered by `test_held_team_086.py` (31 tests: list, send, scope, filer guard, lock, HR and employee side, 088 notice) and the DOM test (20 checks). I did not re-walk all 67 ACs one by one in this step; the reviewer and test stage should trace the AC table against the test names. **Not checked:** the 360 px screen and the timings (left to the test stage by instruction).
 
 ## Gaps against the prototype
 None found by reading prototype-v2 against `hdlRow`/`hdlBar`/`hdlAsk`. Two approved words differ from v2 by decision: D-4 (reason box says it is printed on the monthly notice) and P-3/P-5/P-6. **Not checked in a browser.**
@@ -43,7 +43,7 @@ None found by reading prototype-v2 against `hdlRow`/`hdlBar`/`hdlAsk`. Two appro
 | Compliance / privacy | improves | rows carry five keys, no GPS, photo, login or email; error log holds counts and the manager id only; nothing typed is stored in the browser |
 
 ## Test results (alv086-bench, site test_site)
-test_held_team_086 30 OK; test_held_day_085 45 OK; test_punch_fix_087 132 OK; test_punch_fix_087_proof 11 OK; test_register_notice_088 79 OK; test_attendance_correction 148 OK (second batch 19 OK); test_security_alv411_412 9 OK; test_attendance_doors_085 16 OK; test_confirm_switch_alv430 13 OK. DOM runner: 29 run, 0 failed. Static checks (design system, trays, brand spelling, app integrity, scope traps): exit 0 each.
+test_held_team_086 31 OK (30 in the first batch run; 31 on the final re-run after the break tests, I did not find which test is the extra one); test_held_day_085 45 OK; test_punch_fix_087 132 OK; test_punch_fix_087_proof 11 OK; test_register_notice_088 79 OK; test_attendance_correction 148 OK (second batch 19 OK); test_security_alv411_412 9 OK; test_attendance_doors_085 16 OK; test_confirm_switch_alv430 13 OK. DOM runner: 29 run, 0 failed. Static checks (design system, trays, brand spelling, app integrity, scope traps): exit 0 each.
 
 **The 21 errors seen in the first 085 run were not 086 code.** All were Frappe's own "Throttled" (more than 60 new Users in an hour, `throttle_user_limit`) after the 086 module created many users. I set `throttle_user_limit` to 100000 in the throwaway site's config on this stack only, and 085 then passed (45 OK). Anyone running the whole list back to back will hit the same wall.
 

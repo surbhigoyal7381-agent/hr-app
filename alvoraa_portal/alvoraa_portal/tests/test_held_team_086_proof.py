@@ -75,6 +75,32 @@ class ProofCase(HeldTeamCase):
 				frappe.cache.delete_value(k)
 		self.assertIn("Too many", str(cm.exception))
 
+	# AC-32 / OPS-56, with the database's real behaviour: a deadlock rolls back the WHOLE transaction ---------
+	def test_a_deadlock_gets_a_sentence_and_the_answer_never_names_a_request_that_is_not_there(self):
+		"""P1 found at the test stage. In a real deadlock InnoDB rolls the whole transaction back and forgets the
+		savepoints, so `rollback to savepoint held_row` itself fails (1305) and the manager gets a 500. Three
+		sends at the same moment reproduced it over HTTP: two of three returned 500. The build's own AC-32
+		test raises the error but leaves the savepoint in place, so it never saw this. Here the deadlock is
+		acted out faithfully: a plain ROLLBACK first, then the error."""
+		for e in (self.a, self.b):
+			self.hold(e)
+		real, calls = held_team._file_one, []
+
+		def deadlock_on_second(row, n):
+			calls.append(row["employee"])
+			if len(calls) == 2:
+				frappe.db.sql("rollback")                # what InnoDB does to the victim: everything, savepoints too
+				raise frappe.QueryDeadlockError("Deadlock found when trying to get lock")
+			return real(row, n)
+		with patch.object(held_team, "_file_one", deadlock_on_second):
+			out = self.send([self.row(self.a), self.row(self.b)])      # must answer, not raise
+		for entry in out["results"]:
+			if entry["ok"]:
+				self.assertTrue(frappe.db.exists(REQUEST, entry["request"]),
+				                "the answer says %s was sent but no request exists" % entry["employee"])
+			else:
+				self.assertTrue(entry["sentence"])
+
 	# AC-2: a cancelled request frees the day -------------------------------------------------------
 	def test_a_cancelled_request_brings_the_day_back(self):
 		self.hold(self.a)

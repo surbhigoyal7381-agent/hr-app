@@ -986,6 +986,43 @@ class ReasonOnEveryRequest(PunchFixCase):
 		self.assertIn("He told me", frappe.db.get_value(REQUEST, out["name"], "explanation"))
 		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "alvoraa_needs_confirm"), 1)
 
+	def test_a_reason_that_would_empty_itself_is_refused_not_stored(self):
+		"""ALV-436. The fault: Frappe cleans every Small Text on save and removes anything
+		shaped like a tag, so `<machine down>` was stored as nothing at all - AFTER the "a
+		reason is needed" refusal above had already passed. A mandatory reason silently
+		emptying itself is the worst shape this bug could take, because the reason is the
+		evidence counsel cleared DTC and Grace on.
+
+		Asserted from both sides, the habit this file keeps: the brackets are refused AND an
+		ordinary reason is stored exactly as typed. A test that only proves the refusal
+		passes just as well on code that refuses everything."""
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: punch_fix.send(self.day, "12:00", None, "<machine down>"),
+			             "without < and >")
+			self.refused(lambda: punch_fix.send(self.day, "12:00", None, "Punch missed <not my fault>"),
+			             "without < and >")
+			out = punch_fix.send(self.day, "12:00", None, "machine 9 > 8 was down & I told HR")
+		finally:
+			frappe.set_user("Administrator")
+		# The control: what a person types is what payroll reads, character for character.
+		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "explanation"),
+		                 "machine 9 > 8 was down & I told HR")
+
+	def test_nothing_was_written_by_the_refused_attempt(self):
+		"""ALV-436, the half that matters to an auditor: a refusal must leave no row behind."""
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		before = frappe.db.count(REQUEST)
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: punch_fix.send(self.day, "12:00", None, "<machine down>"),
+			             "without < and >")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count(REQUEST), before,
+		                 "a request was stored for a reason that was refused")
+
 
 class Confirm(PunchFixCase):
 	"""ALV-419: a request somebody else filed for the employee waits for their Confirm."""

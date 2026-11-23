@@ -46,10 +46,15 @@ and implement the tighter one unless there is a stated reason not to.
 
 ## 2 · India — DPDP Act 2023 and DPDP Rules 2025
 
-*Verified 24 Aug 2026. Rules notified 14 November 2025; phased, with Data Fiduciary
-obligations becoming fully effective roughly 18 months from notification — **around May
-2027**. ⚠ Confirm exact phase dates and our Data Fiduciary vs Data Processor position
-with counsel.*
+*Verified 24 Aug 2026; phase dates re-checked 23 Nov 2026 (slice 090). Rules notified
+by gazette dated 13 November 2025 (PIB published 14 Nov); Rules 1, 2, 17-21 in force on
+publication; Rule 4 (Consent Managers) after one year; Rules 3, 5-16, 22, 23 and the
+Act's ss.3-17 (incl. s.7 legitimate uses) after 18 months — **13 May 2027** in most
+sources (one says 12 May). Sources: Mondaq/AZB Partners and SCC Online summaries, read
+23 Nov 2026. s.7(i) text ("for the purposes of employment or those related to
+safeguarding the employer from loss or liability…") read on dpdpa.com 23 Nov 2026.
+⚠ Confirm exact phase dates and our Data Fiduciary vs Data Processor position with
+counsel.*
 
 ### What it obliges the product to do
 

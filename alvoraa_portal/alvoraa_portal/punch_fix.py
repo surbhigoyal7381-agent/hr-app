@@ -373,6 +373,41 @@ def seen_token(doc):
 
 # ── raising (validate: Desk, REST, the portal) ───────────────────────────────
 
+def refuse_if_the_words_would_be_lost(text):
+	"""ALV-436. Refuse a reason that the database would quietly empty.
+
+	Frappe cleans every `Small Text` field on save (`base_document._sanitize_content`, through
+	`frappe.utils.html_utils.sanitize_html`) and removes anything shaped like a tag it does not
+	recognise. `<machine down>` is shaped like one, so it disappears - silently, and AFTER our
+	own "a reason is needed" refusal has already passed. `Punch missed <not my fault>` is stored
+	as `Punch missed `, and a reason typed entirely inside brackets is stored EMPTY. A reason
+	that empties itself is the one thing a reason must not do: it is the evidence counsel
+	cleared DTC and Grace on.
+
+	**It cleans the text itself rather than reading back what was stored.** Our `validate` hook
+	runs BEFORE Frappe cleans - `document.insert` calls `run_before_save_methods()` and only
+	then `_validate()` - so the hook sees the raw text. Calling the same function Frappe is
+	about to call is what makes this honest instead of a guess about hook ordering.
+
+	**An honest refusal, not a silent repair.** Surbhi chose this over keeping the raw text
+	(which would then have to be escaped on every screen that shows it) and over showing a
+	preview before sending (more honest still, and much more work), 23 Nov 2026.
+
+	Measured the same day against thirteen ordinary reasons - Hindi, an emoji, `&`, an
+	apostrophe, newlines, an email address, `9 > 8`, `a<b`, `Site A -> Site B`, `100%` and
+	`<35 degrees>` - and none of them is refused. Only `<word...>` beginning with a LETTER is
+	eaten, because only that parses as a tag, and that is exactly what this refuses.
+	"""
+	from frappe.utils.html_utils import sanitize_html
+
+	if not text or not isinstance(text, str):
+		return
+	if sanitize_html(text) != text:
+		frappe.throw(_("Please write the reason without < and > around a word. Anything "
+		               "between them is removed when it is saved, so what you wrote "
+		               "would be lost."))
+
+
 def validate(doc, method=None):
 	"""Attendance Request validate, first in the list. Runs on a draft only: at
 	submit Frappe validates again with docstatus 1, and the approval has its own checks.
@@ -380,6 +415,11 @@ def validate(doc, method=None):
 	It also owns `alvoraa_for_held_day`: set here on a new request from whether the
 	day is Held now, and put back to the stored value on an edit. A client value is
 	never read, so a time cannot be used to dodge the monthly limit."""
+	# ALV-436, before the column guard below: a reason that would empty itself is refused on
+	# every door into this DocType - the portal, the Desk, an import - and on a site whose
+	# migrate has not run yet. One rule in one place, rather than at each endpoint that
+	# accepts one; the next endpoint somebody adds is covered without being told.
+	refuse_if_the_words_would_be_lost(doc.get("explanation"))
 	if not frappe.db.has_column(REQUEST, "alvoraa_for_held_day"):
 		return
 	before = None if doc.is_new() else doc.get_doc_before_save()

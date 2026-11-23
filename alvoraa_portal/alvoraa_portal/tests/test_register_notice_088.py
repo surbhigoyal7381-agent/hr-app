@@ -973,6 +973,26 @@ class RecordingTheSignature(RegisterNoticeCase):
 		doc = frappe.get_doc(NOTICE, notice)
 		self.assertEqual(doc.outcome, "Not right")
 		self.assertEqual(doc.dispute_reason, "I was there till 7")
+
+	def test_a_disagreement_that_would_empty_itself_is_refused(self):
+		"""ALV-436 on the one surface where the employee gets to disagree.
+
+		`dispute_reason` is a Small Text like 087's `explanation`, so the same save would
+		have cleaned it away. This is the worse of the two places for it to happen: the
+		employee's own words, on the record of a page they refused to accept. Both sides
+		asserted, and the notice is checked to be untouched by the refusal."""
+		name = self.an_approved_hr_change()
+		notice = self.notice([name])
+		self.refused(lambda: self._record(notice, "Not right", reason="<I was there till 7>",
+		                                  user=self.h.hr2), "without < and >")
+		doc = frappe.get_doc(NOTICE, notice)
+		self.assertEqual(doc.outcome, "Printed", "a refused disagreement changed the notice")
+		self.assertFalse(doc.dispute_reason, "a refused disagreement was stored anyway")
+		# The control: ordinary words go through, character for character.
+		self._record(notice, "Not right", reason="I was there till 7 & told the guard",
+		             user=self.h.hr2)
+		self.assertEqual(frappe.db.get_value(NOTICE, notice, "dispute_reason"),
+		                 "I was there till 7 & told the guard")
 		self.assertEqual(doc.recorded_by, self.h.hr2)
 		self.assertEqual(len(doc.pages), 0, "a dispute stored a photo")
 		self.assertFalse(frappe.db.get_value(REQUEST, name, punch_fix.SIGNED_NOTICE))

@@ -782,6 +782,12 @@ def _write_the_answer(doc, outcome, photos=None, reason=None):
 		if marked:
 			punch_fix.record_register_signature(marked, doc.name)
 
+	# ALV-436. The employee's own words, on the one surface where they get to disagree -
+	# and `dispute_reason` is a Small Text, so Frappe would clean it on the save below.
+	# Checked here rather than in the notice's own validate, because this is the only
+	# door: the controller refuses every other write to the field.
+	punch_fix.refuse_if_the_words_would_be_lost(reason)
+
 	frappe.flags.in_register_notice = True
 	try:
 		doc.outcome = outcome

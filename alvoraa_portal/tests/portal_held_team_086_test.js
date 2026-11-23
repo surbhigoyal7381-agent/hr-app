@@ -128,7 +128,7 @@ const K1 = "HR-EMP-00011|2026-11-20";
   await window.hdlLoad();
   await settle(40);
   const barText = doc.getElementById("tr-bar").textContent;
-  check(!/\(2\)/.test(barText) && /All days in this period \(\d+ \w+ \d{4} to \d+ \w+ \d{4}\)/.test(barText),
+  check(!/\(2\)/.test(barText) && /All days in this period \([^)]+ to [^)]+\)/.test(barText),
         "the Show box is redrawn from the new answer, with the dates of the period");
   check(/Nothing is held on/.test(doc.body.textContent) && /When somebody forgets to punch, the day shows up here\./.test(doc.body.textContent),
         "the empty state says what it is, in prototype-v2's words");

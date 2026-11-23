@@ -17628,7 +17628,7 @@ function hdlRender() {
     return '<option value="' + gpEsc(x.date) + '"' + (d.day === x.date ? " selected" : "") + ">"
       + gpEsc(fmtDate(x.date)) + " (" + x.count + ")</option>";
   }).join("") + '<option value="all"' + (d.day === "all" ? " selected" : "") + ">"
-    + gpEsc(d.from ? drT("All days in this period ({0} to {1})", [fmtDate(d.from), fmtDate(d.to)]) : drT("All days in this period")) + "</option>";
+    + gpEsc(d.from ? drT("All days in this period ({0} to {1})", [drDay(d.from), drDay(d.to)]) : drT("All days in this period")) + "</option>";
   if (d.day && d.day !== "all" && !(d.days || []).some(function (x) { return x.date === d.day; })) {
     opts = '<option value="' + gpEsc(d.day) + '" selected>' + gpEsc(fmtDate(d.day)) + "</option>" + opts;   /* the day just emptied */
   }

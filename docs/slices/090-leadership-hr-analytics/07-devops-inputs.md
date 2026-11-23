@@ -189,3 +189,69 @@ Read: `deploy/nginx.conf` (lines 292-298 `/api/` rate limit, 344 page-route list
 
 ### Subtract pass
 Removed a MariaDB slow-log setting, an nginx limit zone for the new endpoint, and a monitoring alert rule. Each needs a server or shared-file change with no measured need. Left behind: nothing new; the two earlier read-only scripts remain in `alv358-bench`.
+
+## §4 Strategy — 2026-11-23
+
+Read: the engineer's `00-impact-analysis.md` (commit 2fa20cfe), `.github/workflows/ci.yml`, `deploy.yml` (lines 496-503, 696-770), `scripts/check_*.py`, `announcements.make_role`, `deploy/Dockerfile` (line 50), memory notes on stale assets. Queried `alv358-bench`, site `test_site`, read-only. Nothing run on dev or production.
+
+**Where I disagree with the engineer, first: (1) the new `people-trends.js` will fail CI's asset gate unless the deploy gate names it, and (2) R1's go or stop needs a number written down before step 0, and the fallback should be Employee-based populations, not a cache.** Everything else I agree with.
+
+### Install order (for the release, each step on the user's word)
+1. Merge to `dev` only after the gates below are green (check the last CI PASSED, not only finished).
+2. Deploy to dev with the normal pipeline. The image is the only thing that carries the code; `after_migrate` makes the role on every site. Read the role back on each site (OPS-31).
+3. 3G and DTC-size timing on a dev copy (OPS-23) and the property test result, then Surbhi's word for `main`. Night window IST only.
+4. Production: same image tag as dev, `run_migrations=true`, role read-back per site.
+
+### Image and Compose: no change (agree)
+No new app, no pin, no volume, no worker, no nginx edit. The page lives inside `/hrms-employee`, so `deploy/nginx.conf` is untouched (agree; this removes the shared-nginx risk). **Version pinning:** nothing new to pin. Frappe stays `v16.35.0` (`deploy/Dockerfile` line 50); `check_version_pins.py` holds Dockerfile, CI and build args together and needs no edit. [proven by reading]
+
+### Migration risk: the Leadership role
+- **Proven locally:** `test_site` on `alv358-bench` already has Role `Leadership` with `desk_access = 1` and 0 holders in `Has Role`. It comes from the 012 tests. I did not read dev or production. [production not checked]
+- **Agree** with the engineer: the hook must set `desk_access` to 0 on an existing role, as `make_role` does for the announcement role.
+- **Risk:** `after_migrate` runs on every site at every migrate. On a site where someone really holds a `Leadership` role with desk access, the hook silently removes their Desk. Probability low (no DocPerm rows, so the role gives nothing), but it is a write on a live tenant. **Recommend: before the production release, the user approves a read-only count of holders per site.** For the user to approve, not run by me: `bench --site <site> mariadb -e "select parent from \`tabHas Role\` where role='Leadership'"` on dev first. [command quoted, not run on dev or production]
+- **Order trap (read in `make_role`'s docstring):** Frappe makes a role with desk access on when it first meets it in a permission. On a new tenant `after_install` must run after anything that mentions `Leadership`. Put the new hook last in both lists.
+- **Scope words:** "every site has desk_access 0" is a claim. After the migrate, count the sites and read the value on each one. The migrate-stops-halfway trap (memory, 5 Nov) means a later site can be left behind; check the queue is clear first.
+- **Rollback:** the role is harmless left in place with no permissions. Rollback is to redeploy the previous tag with migrations off. I have not checked that the previous tag exists in `alvoraa-app`; the user checks before the release. [not checked]
+
+### CI gates the new files fall into (read from `ci.yml`)
+| Gate | What a new file does to it | Action |
+|---|---|---|
+| `check_portal_assets_gate.py` | The page will load a new `<script>`. This gate fails if `deploy.yml`'s "Portal assets must be served" step (lines 756-765) does not name every asset the page loads | **Add `/assets/alvoraa_portal/js/ess/people-trends.js` to that step.** That edits `deploy.yml`, a shared file. The automatic Deploy runs `main`'s copy (lesson 14), so the new line only gates production after the release; harmless, but say so in the report. [P2] |
+| Stale assets (memory 23 Sep) | A new static file is not in the sites volume unless the deploy copies it; `refresh_bench_files.sh` does so on dev since 24 Sep, **production only after a release carrying it** | Prove the file lands: compare the volume's `assets.json` with the image's and fetch the new JS URL after deploy (OPS-32) |
+| `check_api_paths.py --max 0` | The panel's data call path must resolve to a whitelisted function | Run locally; the page uses `gpFetch`, so confirm the script sees it |
+| `check_scope_traps.py` | Reads Python by `ast`: bans `dict(permitted_employee_filters(user), name=...)` | The new `leader_scope()` must not use that shape; run it |
+| `check_undefined_js`, `check_portal_handlers`, `check_tag_balance`, `check_design_system` | Read the portal files. The design check **counts colours**; the new CSS and inline SVG add to the count | Run all four locally before the commit |
+| `check_brand_spelling.py` | On-screen name is "Alvora" | Run it |
+| `check_app_integrity.py` | Rejects `from package import submodule`, redefined core doctypes | Run it before the commit (lesson 7) |
+| gitleaks and `check_no_demo_passwords.py` | A literal test password trips the scan (slice 089). The 012 fixtures already hold test users | Fixtures take passwords from a generated value, never a literal |
+| Python tests, 4 parallel parts | New test files land in a part by the runner's split | Two 012 tests insert Role `Leadership` with desk access on; the new hook sets it to 0. **Test order must not matter** (ALV-360 lesson). Run the new files alone and after the 012 files |
+
+Not found: an `ignore_permissions` counter script among `scripts/check_*`. The engineer's baseline of 632 against 01c's 392 is two different greps, so I agree with recording one command and its number. [not checked whether CI holds a counter elsewhere]
+
+### R1: 730 days of Attendance per call vs the 3 s budget
+- **Agree** with step 0 first, before anything else is built, and with "do not add a cache quietly".
+- **Disagree on how loose it is.** "Come back as a decision" with no number lets a miss be argued after the work is done. **Recommend the threshold now:** the whole attendance part, cold, on a DTC-size copy, must finish inside **1.5 s** of the 3 s page budget (the rest of the call, the network and the render need the other half). Go if under; stop and decide if over. [P2]
+- **Estimate (not measured):** two years at DTC is about 440,000 rows (twice 220,000 from §1). `(company, attendance_date)` finds the range, but "distinct people per stretch" needs the `employee` value for every row, so the database reads each row, not just the index. A warm run may be fast; a cold run after a restart may not.
+- **Fallback order I recommend:** (1) read populations from Employee dates (joining and relieving) instead of Attendance, which is fewer rows and already indexed; (2) only then a time-only cache keyed per OPS-15. Reason: the cache adds a stale-number and a scope-leak surface; fewer rows adds neither. The engineer lists both; I only change the order.
+- **Concurrency not covered:** the 120 per minute limit is per address, not per database. Several leaders opening the page together make several heavy reads at once. I did not check the gunicorn worker count. Recommend the step 0 test also runs five calls at once. [not checked: worker count]
+- **Measure on the same MariaDB version as production** (the local one is 10.8.8; production's version not checked). A Mac Docker timing is a guide, not the budget proof. OPS-23 on dev stays the proof.
+
+### Where I agree with the engineer
+No cache, job, queue, schema, patch or nginx line; zero edits to `org_figures.py`, `access.py`, `hr_api.py`; HR off in v1 (BQ-2 option 1 is a Tier 1 change to 13 call sites); own local stack for testing (the shared bench mounts a stale checkout); hot-file edits last, one line each, rebase first; thin slice with a measured go or stop; the 1-line `hooks.py` pin test.
+
+### New requirements
+| ID | Requirement | Why | Cost of ignoring | Level | Decision |
+|---|---|---|---|---|---|
+| OPS-28 | R1 go or stop number: attendance part under 1.5 s cold at DTC size, plus five concurrent calls; fallback order Employee-based populations, then time-only cache | Gives step 0 a pass mark | A miss argued after the build | Recommend / P2 | Accepted — Surbhi, 23 Nov 2026 ("go with your recommendations") |
+| OPS-29 | Add `people-trends.js` to the "Portal assets must be served" step in `deploy.yml` | `check_portal_assets_gate` fails CI otherwise | Red CI, or an unchecked asset | Recommend / P2 | Accepted — Surbhi, 23 Nov 2026 ("go with your recommendations") |
+| OPS-30 | Read-only holder count of Role `Leadership` per dev and production site before release | The hook sets desk access 0 on an existing role | A real user loses Desk | Recommend / P2 | Accepted — Surbhi, 23 Nov 2026 ("go with your recommendations") |
+| OPS-31 | After each migrate, read `desk_access` of `Leadership` on every site and report the count of sites read | Scope words are claims | A site left behind | Recommend / P2 | Accepted — Surbhi, 23 Nov 2026 ("go with your recommendations") |
+| OPS-32 | After deploy, prove the JS landed: volume `assets.json` against the image, and fetch the new asset URL on each stack | Volume hides image assets | A blank panel on production | Recommend / P1 | Accepted — Surbhi, 23 Nov 2026 ("go with your recommendations") |
+| OPS-33 | Run the 9 local gates in the table before commit; fixtures use generated passwords; new test files pass alone and after the 012 files | Each has failed this repo before | Red CI or a gate that passes without testing | Recommend / P3 | Accepted — Surbhi, 23 Nov 2026 ("go with your recommendations") |
+
+### Subtract pass
+Removed from my draft: a separate migration patch, a feature flag for rollback (the role with no permissions is already inert), and a CI counter script for `ignore_permissions` (no measured need in this slice). Left behind: `/tmp/q090c.py` in `alv358-bench` (read-only; could not be removed, as before).
+
+### Leadership role on live sites (OPS-30), 23 Nov 2026
+
+Read-only, counts only. Production (run by Surbhi, step02): aahr, alvoraa.co, demo, dtc, grace, tft — role absent, 0 holders. Dev (read by Claude): amata.dev, dev, ppj.dev, test_site — role absent, 0 holders. Setting desk_access=0 on the new role takes Desk from no one.

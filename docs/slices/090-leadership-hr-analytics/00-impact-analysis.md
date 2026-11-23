@@ -204,3 +204,9 @@ Removed from my own first idea: a separate `people_trends_rules.py`; a `patches.
 ## 11 · Waiting for you
 
 Approve, adjust or redirect. Specifically: **(1)** go ahead on the file plan in section 7; **(2)** BQ-2: HR off in v1 (my default) or option 2; **(3)** may I build my own local stack; **(4)** read-only count of Leadership role holders on dev and production; **(5)** is anyone else in the four hot files. Deploy is a separate decision, later.
+
+---
+
+## Strategy decision
+
+**Approved — Surbhi, 23 Nov 2026 ("go with your recommendations"):** the file plan plus the deploy.yml "Portal assets must be served" edit (OPS-29); HR off in v1 (BQ-2); the engineer builds its own local stack; R1 pass mark = attendance part under 1.5 s cold at DTC size, with five concurrent calls (OPS-28); OPS-28 to OPS-33 accepted. This approves local implementation only — not commit to dev, push or deploy.

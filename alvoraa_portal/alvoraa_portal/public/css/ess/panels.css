@@ -2556,6 +2556,9 @@ body.panel-fullscreen{overflow:hidden}
   border-radius:var(--r-full);border:1px solid var(--border);
   background:var(--surface);color:var(--text2);cursor:pointer}
 .tr-chip b{font-weight:700}
+.tr-chip{display:inline-flex;align-items:center;gap:6px;min-height:24px}
+.tr-chip-ic{flex-shrink:0}
+@media(max-width:768px){.tr-chip{min-height:44px;padding:4px 16px}.hdl-banner .btn{min-height:44px}}
 .tr-chip.on{background:var(--primary);border-color:var(--primary);color:var(--surface)}
 .tr-chip.bad:not(.on){border-color:var(--red);color:var(--red)}
 .tr-chip.warn:not(.on){border-color:var(--amber);color:var(--amber)}

@@ -17376,7 +17376,7 @@ function trChips() {
   if (hd && hd.hold_on && !hd.nobody && hd.total) {
     html += '<span class="tr-chip warn' + (trState.only === "held" ? " on" : "")
       + '" role="button" tabindex="0" onclick="trSet(&quot;only&quot;,&quot;held&quot;)">'
-      + gpEsc(drT("Held")) + " <b>" + hd.total + "</b></span>";
+      + HDL_WARN + gpEsc(drT("Held")) + " <b>" + hd.total + "</b></span>";
   }
   TR_FLAGS.forEach(function (f) {
     var n = counts[f[0]] || 0;
@@ -17465,7 +17465,8 @@ function trDay(r, byPerson) {
     + '<button class="tr-open" onclick="acFromTeam(&quot;' + gpEsc(r.employee)
     + '&quot;,&quot;' + r.date + '&quot;)">' + gpEsc(who) + "</button>"
     + '<span class="tr-status">' + gpEsc(r.status || "") + "</span>"
-    + '<span class="tr-need ' + f[2] + '">' + gpEsc(f[1]) + "</span></div>"
+    + (r.flag === "no_clock_out" && hdl.data && hdl.data.hold_on ? ""
+      : '<span class="tr-need ' + f[2] + '">' + gpEsc(f[1]) + "</span>") + "</div>"
     + '<div class="tr-day-sub">' + gpEsc(times) + " · "
     + gpEsc(bits.join(" · ")) + "</div>"
     + (trState.open === key ? trAskForm(r) : "")
@@ -17576,6 +17577,9 @@ window.trPage = function (direction) {
    storage, no draft, so the next person on a shared phone sees nothing. */
 var hdl = {data: null, day: null, start: 0, vals: {}, said: {}, banner: null, sending: false, ask: false};
 
+/* The warning triangle prototype-v2 draws on the Held chip. */
+var HDL_WARN = '<svg class="tr-chip-ic" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l8 14H2L10 3zM10 8v4M10 14.5v.5"/></svg>';
+
 function hdlKey(r) { return r.employee + "|" + r.date; }
 function hdlVal(r) { var k = hdlKey(r); return hdl.vals[k] || (hdl.vals[k] = {time: "", reason: "", flip: false}); }
 function hdlFirst(r) { return String(r.employee_name || r.employee).split(" ")[0]; }
@@ -17626,10 +17630,14 @@ function hdlRender() {
   }).join("") + '<option value="all"' + (d.day === "all" ? " selected" : "") + ">"
     + gpEsc(drT("All days in this period")) + "</option>";
   if ((d.days || []).length) {
-    html += '<div class="hdl-top"><label class="tr-f"><span>' + gpEsc(drT("Show")) + '</span>'
-      + '<select class="form-control" onchange="hdlDay(this.value)">' + opts + "</select></label>"
-      + '<p class="hdl-line">' + gpEsc(d.total === 1 ? drT("1 held day needs a time from you.")
-          : drT("{0} held days need a time from you.", [d.total])) + "</p></div>";
+    /* Prototype-v2: Show, the chips and the list come straight away. The From, To, Person and Group by
+       filters give way to the one Show box while this view is open; trBar() brings them back. */
+    var bar = document.getElementById("tr-bar");
+    if (bar) bar.innerHTML = '<label class="tr-f"><span>' + gpEsc(drT("Show")) + '</span>'
+      + '<select class="form-control" onchange="hdlDay(this.value)">' + opts + "</select></label>";
+    html += '<div class="hdl-top"><p class="hdl-line">' + gpEsc(d.total === 1 ? drT("1 held day needs a time from you.")
+          : drT("{0} held days need a time from you.", [d.total])) + "</p>"
+      + '<p class="ac-help">' + gpEsc(drT("Held days have a punch missing, so pay for the day is on hold until HR fixes it. Give the missing time and a reason, and HR decides.")) + "</p></div>";
   }
   if (!rows.length) {
     var next = (d.days || [])[0];
@@ -17653,8 +17661,15 @@ function hdlRender() {
 
 function hdlBanner() {
   var b = hdl.banner;
-  return b ? '<div class="hdl-banner" role="status" aria-live="polite">' + gpEsc(b) + "</div>" : "";
+  return b ? '<div class="hdl-banner" role="status" aria-live="polite">' + gpEsc(b)
+    + (Object.keys(hdl.said).length ? ' <button type="button" class="btn btn-outline btn-sm" onclick="hdlFirstRefused()">'
+      + gpEsc(drT("Go to the first one")) + "</button>" : "") + "</div>" : "";
 }
+
+window.hdlFirstRefused = function () {
+  var e = document.querySelector(".hdl-refused");
+  if (e) { e.scrollIntoView({block: "center"}); var t = e.parentNode.querySelector("input,textarea"); if (t) t.focus(); }
+};
 
 window.hdlDay = function (day) { hdl.day = day; hdl.start = 0; hdl.banner = null; hdlLoad(); };
 window.hdlPage = function (dir) {
@@ -17689,7 +17704,7 @@ function hdlRow(r) {
     + '<p class="ac-help">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
     + '<textarea id="' + rid + '" rows="2" maxlength="500" required aria-required="true" placeholder="' + gpEsc(drT("e.g. Forgot to scan after lunch"))
     + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;reason&quot;,this.value)">' + gpEsc(v.reason) + "</textarea>"
-    + (said ? '<p class="hdl-refused" role="alert">' + gpEsc(said) + " " + gpEsc(drT("Change the time and send again.")) + "</p>" : "")
+    + (said ? '<p class="hdl-refused" role="alert">' + gpEsc(said) + " " + gpEsc(drT("Change what is needed and send again.")) + "</p>" : "")
     + "</div>";
 }
 
@@ -17826,7 +17841,7 @@ function hdlBar() {
   var ready = hdlReadyRows(), n = ready.length;
   if (!n) { hdlBarHost(""); return; }
   var go = Math.min(n, 50);
-  hdlBarHost('<div class="hdl-sum"><b>' + gpEsc(drT("{0} days ready", [n])) + "</b> "
+  hdlBarHost('<div class="hdl-sum"><b>' + gpEsc((n === 1 ? drT("1 day ready") : drT("{0} days ready", [n]))) + "</b> "
     + gpEsc(drT("Each person is told on their day sheet. HR decides.")) + "</div>"
     + (n > 50 ? '<p class="ac-help">' + gpEsc(drT("50 at most in one send. The first 50 go now; {0} stay here for the next send.", [n - 50])) + "</p>" : "")
     + '<button class="btn btn-primary" id="hdl-send" onclick="hdlAsk()">' + gpEsc(drT("Send {0} to HR", [go])) + "</button>");

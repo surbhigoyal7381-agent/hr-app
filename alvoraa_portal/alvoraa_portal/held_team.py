@@ -133,7 +133,7 @@ def _refusal_of(error):
 
 
 @frappe.whitelist(methods=["POST"])
-@_limited(SELF_KEY, "user", limit=30, window=3600)
+@_limited(SELF_KEY, "user", limit=30, window=3600, message=_("Too many sends. Please wait a while."))
 def send_held(rows=None):
 	"""File up to 50 held-day times for the caller's direct reports, one request per day.
 
@@ -179,19 +179,22 @@ def send_held(rows=None):
 		frappe.db.savepoint("held_row")
 		try:
 			answer["request"] = _file_one(row, len(clean))
+			# Filed for good before the next row: a later deadlock cannot take it back, so the answer
+			# may say "sent" (AC-32), and locks are held for one row only.
+			frappe.db.commit()
 			answer["ok"] = True
 		except (frappe.ValidationError, frappe.PermissionError) as e:
-			frappe.db.rollback(save_point="held_row")
+			_undo_row()
 			answer["sentence"] = _("Not sent.") + " " + _refusal_of(e)
 		except (frappe.QueryTimeoutError, frappe.QueryDeadlockError) as e:
 			# A lock wait: stop here, keep what already went, say so for the rest (OPS-56).
-			frappe.db.rollback(save_point="held_row")
+			_undo_row()
 			frappe.clear_messages()
 			answer["sentence"] = _("Not sent. The office was busy with something else. Reload the page, then send again.")
 			faults.append(type(e).__name__)
 			stopped = True
 		except Exception as e:
-			frappe.db.rollback(save_point="held_row")
+			_undo_row()
 			frappe.clear_messages()
 			answer["sentence"] = _("Could not send this one. Nothing was filed for it. Try again.")
 			faults.append(type(e).__name__)
@@ -206,6 +209,15 @@ def send_held(rows=None):
 			message="manager %s, %d rows, %d sent, %d not sent, first fault %s" % (
 				me.name, len(results), sent, len(results) - sent, faults[0]))
 	return {"results": results, "sent": sent, "not_sent": len(results) - sent}
+
+
+def _undo_row():
+	"""Undo this row. After a deadlock InnoDB has already rolled the whole transaction back and the savepoint is
+	gone (error 1305), so fall back to a plain rollback. Earlier rows were committed, so only this row is lost."""
+	try:
+		frappe.db.rollback(save_point="held_row")
+	except Exception:
+		frappe.db.rollback()
 
 
 def _file_one(row, n):

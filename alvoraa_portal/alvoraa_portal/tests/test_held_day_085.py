@@ -598,6 +598,11 @@ class HeldDayCase(FrappeTestCase):
 		self._held()
 		user = frappe.db.get_value("Employee", self.worker, "user_id")
 		self.assertIsNone(user)  # the worker has no login: raise through the manager path instead
+		# Slice 086 (ALV-425, D-1): `raise_for_report` is for the person's own manager, whatever roles they
+		# hold, so the HR person here is made the worker's manager first.
+		worker_doc = frappe.get_doc("Employee", self.worker)
+		worker_doc.reports_to = self.hr_emp
+		worker_doc.save(ignore_permissions=True)
 		frappe.set_user(self.hr)
 		try:
 			with patch.object(ac, "_subject", return_value=(
@@ -613,8 +618,8 @@ class HeldDayCase(FrappeTestCase):
 		# request are the filer's reason followed by the system's own stamp. The auto-picked reason
 		# value holds no text of anyone's.
 		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "explanation"),
-		                 "He forgot\n\nRaised by %s on behalf of the employee." % frappe.db.get_value(
-			                 "Employee", self.hr_emp, "employee_name"))
+		                 "He forgot\n\nRaised by %s (%s), their reporting manager, on behalf of the employee." % (
+			                 frappe.db.get_value("Employee", self.hr_emp, "employee_name"), self.hr_emp))
 		self.assertEqual(out["reason"], "Forgot to Punch Out")
 
 	# ── the vendored Monthly Attendance Sheet (D-3) ────────────────────

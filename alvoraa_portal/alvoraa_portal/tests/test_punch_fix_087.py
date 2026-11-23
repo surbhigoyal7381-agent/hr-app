@@ -974,8 +974,12 @@ class ReasonOnEveryRequest(PunchFixCase):
 
 	def test_somebody_filing_for_the_employee_needs_a_reason_on_a_held_day(self):
 		"""`raise_for_report` is the door for a manager and for HR; HR is used here because the
-		manager's insert right needs a User Permission this fixture does not make."""
+		manager's insert right needs a User Permission this fixture does not make. Slice 086 (ALV-425): HR
+		may file only for a direct report, so the HR person is made this employee's manager first."""
 		self.held_three()
+		boss = frappe.get_doc("Employee", self.emp)
+		boss.reports_to = self.h.hr_emp
+		boss.save(ignore_permissions=True)
 		frappe.set_user(self.hr)
 		try:
 			with patch.object(ac, "manager_on_behalf_on", return_value=True):

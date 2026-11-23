@@ -98,6 +98,9 @@ const INVENTORY = {
   // punch is tapped, into one host appended to <body> (acPfHost), so no panel
   // can be its frame. Escape or a tap outside closes it; leaving the page clears it.
   ".pfx-scrim":           { page: "portal", kind: "dialog", open: "script" },
+  // Slice 086: the Held view's send bar. Built by script into one host on <body> (hdlBarHost) when a
+  // row is ready, removed when the Held view or the page is left; above the bottom nav on a phone.
+  ".hdl-barfix":          { page: "portal", kind: "toast" },
   // Slice 078: the "what people can see about each other" picker. Built by
   // script when the button is pressed and appended to <body>, like 076's
   // sheets, so no panel can be its frame. Escape cancels and writes nothing.

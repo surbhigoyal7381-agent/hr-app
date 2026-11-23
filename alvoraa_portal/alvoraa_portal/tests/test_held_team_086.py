@@ -145,6 +145,7 @@ class TheList(HeldTeamCase):
 		few = count()
 		for i in range(6):
 			self.hold(self.report("M%d" % i))
+		count()                                 # saving employees clears caches; warm them again
 		self.assertEqual(count(), few)
 
 	def test_the_day_control_and_paging(self):
@@ -257,8 +258,10 @@ class TheSend(HeldTeamCase):
 		long = self.send([self.row(self.a, reason="x" * 501)])
 		self.assertIn("500 characters", long["results"][0]["sentence"])
 		script = "<img src=x onerror=alert(1)>"
-		self.assertEqual(self.send([self.row(self.a, reason=script)])["sent"], 1)
-		self.assertTrue(self.requests(self.a)[0].explanation.startswith(script))
+		filed = self.send([self.row(self.a, reason=script)])
+		self.assertEqual(filed["sent"], 1, filed)
+		# Frappe's own text sanitiser strips the handler on save; the screens escape what is left (gpEsc).
+		self.assertNotIn("onerror", self.requests(self.a)[0].explanation)
 
 	def test_a_partial_send_leaves_no_document_for_a_refused_row(self):
 		"""AC-28 and AC-30: row 2 blank reason, row 3 no longer held; rows 1 and 4 filed."""
@@ -281,8 +284,6 @@ class TheSend(HeldTeamCase):
 			out = self.send([self.row(self.a, time="18:30", day=today)])
 			self.assertIn("has not happened yet", out["results"][0]["sentence"])
 			self.assertEqual(self.send([self.row(self.a, time="09:30", log="OUT", day=today)])["sent"], 1)
-		self.assertIn("has not happened yet", self.send([self.row(self.b, day=add_days(today, 1))])["results"][0]["sentence"]
-		              if False else "has not happened yet")  # (the day itself is refused first, see next test)
 
 	def test_a_day_that_has_not_happened_and_a_missing_time_are_refused(self):
 		self.hold(self.a)
@@ -334,9 +335,6 @@ class TheSend(HeldTeamCase):
 		"""AC-33, AC-63."""
 		self.hold(self.a)
 		marker = "MARKER%s" % frappe.generate_hash(length=6)
-		with patch.object(punch_fix, "derive", side_effect=ValueError(marker)):
-			# derive errors are the "time not understood" sentence; use a fault deeper down instead
-			pass
 		with patch.object(ac, "raise_for_report", side_effect=RuntimeError("boom " + marker)):
 			out = self.send([self.row(self.a, reason=marker)])
 		self.assertEqual(out["results"][0]["sentence"], "Could not send this one. Nothing was filed for it. Try again.")
@@ -363,8 +361,7 @@ class TheSend(HeldTeamCase):
 	def test_post_only_and_the_limit_is_thirty_an_hour(self):
 		"""AC-18 (the method half) and AC-35 (the limit is pinned; the 31st call is the limiter's own test)."""
 		self.assertEqual(held_team.send_held.__alvoraa_limit__, (SELF_KEY, "user", 30, 3600))
-		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[held_team.send_held.__wrapped__],
-		                 ["POST"])
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[held_team.send_held], ["POST"])
 
 	def test_this_module_never_ignores_permissions(self):
 		"""AC-41: the same source check `ac` has, for the new file, and no flag set around `raise_for_report`."""
@@ -403,16 +400,17 @@ class TheEmployeeAndHR(HeldTeamCase):
 	def test_the_notice_for_the_register_carries_only_the_managers_words(self):
 		"""D-7 (ALV-426): a 086 request reaches 088's notice data, and what is printed as the reason
 		is the manager's words, not the stamp or the "One of n" line."""
-		self.hold(self.b)
-		self.send([self.row(self.a, reason="Seen leaving at 18:30"), self.row(self.b)])
-		for name in (self.requests(self.a)[0].name,):
-			frappe.set_user(self.hr)
-			try:
-				ac.decide(name, 1, None, punch_fix.seen_token(frappe.get_doc(REQUEST, name)))
-			finally:
-				frappe.set_user("Administrator")
+		c = self.report("C")
+		self.hold(c)
+		self.send([self.row(c, reason="Seen leaving at 18:30"), self.row(self.b)])
+		name = self.requests(c)[0].name
+		frappe.set_user(self.hr)
+		try:
+			ac.decide(name, 1, None, punch_fix.seen_token(frappe.get_doc(REQUEST, name)))
+		finally:
+			frappe.set_user("Administrator")
 		month = str(self.day)[:7] + "-01"
-		found = register_notice.qualifying_changes(month, employees=[self.a], with_content=True)
+		found = register_notice.qualifying_changes(month, employees=[c], with_content=True)
 		self.assertEqual(len(found), 1)
 		self.assertEqual(punch_fix._reason_of(found[0].get("explanation")), "Seen leaving at 18:30")
 
@@ -420,32 +418,28 @@ class TheEmployeeAndHR(HeldTeamCase):
 		"""AC-61: 087 built it; this pins that it still works for a 086 request."""
 		frappe.set_user(self.emp_user)
 		try:
-			punch_fix.confirm(self.req, 0, "I did not leave then")
+			punch_fix.confirm(self.req, 0, "I did not leave then", "18:45")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value(REQUEST, self.req, "alvoraa_review_status"), "Declined")
+		self.assertEqual(frappe.db.get_value(REQUEST, {"alvoraa_replaces": self.req}, "alvoraa_missing_time").seconds, 18 * 3600 + 45 * 60)
 
 	def test_case_a_holds_only_for_the_managers_plain_addition(self):
-		"""AC-55: five requests, five values. Switch on for the company so a Confirm is asked for."""
+		"""AC-55: with the company asking for a Confirm, the manager's plain addition needs none and HR's does."""
 		frappe.db.set_value("Company", self.h.company, punch_fix.CONFIRM_SWITCH, 1)
 		frappe.clear_cache()
-		emp_filed = None
-		# 1 the manager's added time: no confirm (the request in setUp)
 		self.assertEqual(frappe.db.get_value(REQUEST, self.req, "alvoraa_needs_confirm"), 0)
-		# 2 HR files a time for a held day: asks
 		c = self.report("C")
 		self.hold(c)
-		doc = frappe.get_doc({"doctype": REQUEST, "employee": c, "from_date": self.day, "to_date": self.day,
-		                      "reason": "Forgot to Punch Out", "alvoraa_missing_time": "18:30",
-		                      "alvoraa_missing_log": "OUT", "explanation": "hr", "alvoraa_review_status": "Waiting"})
 		frappe.set_user(self.hr)
 		try:
+			doc = frappe.get_doc({"doctype": REQUEST, "employee": c, "from_date": self.day, "to_date": self.day,
+			                      "reason": "Forgot to Punch Out", "alvoraa_missing_time": "18:30",
+			                      "alvoraa_missing_log": "OUT", "explanation": "hr", "alvoraa_review_status": "Waiting"})
 			doc.insert(ignore_permissions=True)
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(doc.alvoraa_needs_confirm, 1)
-		# 3 a request that sets a punch aside: asks (and a manager cannot make one at all, see 087)
-		self.assertIsNone(emp_filed)
 
 
 class TheFilerGuard(HeldTeamCase):
@@ -512,6 +506,76 @@ class TheFilerGuard(HeldTeamCase):
 		self.assertFalse(frappe.db.exists(REQUEST, own.name))
 
 
-class TheLock(FrappeTestCase):
-	"""AC-31, the two-connection half. Real committed rows, two real connections, cleaned up in the end."""
-	pass
+class TheLock(HeldTeamCase):
+	"""AC-31, the two-connection half, on two REAL database connections (not one function called twice).
+
+	Connection 1 files the day and is held before its commit, so it still owns the locks. Connection 2 has
+	already started its transaction (so under MariaDB's default REPEATABLE READ its snapshot is OLDER than
+	connection 1's insert), then asks for the same day and has to wait. When connection 1 commits, connection 2
+	must still SEE the request and refuse. The fixtures are committed so the second connection can see them,
+	and removed again at the end."""
+
+	def setUp(self):
+		super().setUp()
+		self.hold(self.a)
+		frappe.db.commit()
+		self.addCleanup(self.remove_what_was_committed)
+
+	def remove_what_was_committed(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+		people = [self.a, self.b, self.boss]
+		for dt in (REQUEST, CHECKIN, ATT):
+			frappe.db.delete(dt, {"employee": ("in", people)})
+		frappe.db.delete("User Permission", {"for_value": ("in", people)})
+		frappe.db.delete("Employee", {"name": ("in", people)})
+		frappe.db.commit()
+
+	def test_two_sends_at_the_same_moment_file_one_request(self):
+		site, path = frappe.local.site, frappe.local.sites_path
+		boss_email, a, row = self.boss_email, self.a, self.row(self.a)
+		filed, release, snapshot = threading.Event(), threading.Event(), threading.Event()
+		out, real = {}, ac.raise_for_report
+
+		def pausing(*args, **kwargs):
+			result = real(*args, **kwargs)
+			if threading.current_thread().name == "first":
+				filed.set()                         # filed, locks still held, not committed
+				release.wait(30)
+			return result
+
+		def connect():
+			frappe.init(site=site, sites_path=path)
+			frappe.connect()
+			frappe.set_user(boss_email)
+
+		def send(name):
+			try:
+				connect()
+				if name == "second":
+					frappe.db.sql("select count(*) from `tabAttendance Request`")   # starts this snapshot now
+					snapshot.set()
+				out[name] = held_team.send_held(rows=[row])
+				frappe.db.commit()
+			except Exception as e:      # a lock wait would show here, and the test would fail on `out`
+				out[name] = repr(e)
+				frappe.db.rollback()
+			finally:
+				frappe.destroy()
+
+		with patch.object(ac, "raise_for_report", pausing):
+			one = threading.Thread(target=send, args=("first",), name="first")
+			two = threading.Thread(target=send, args=("second",), name="second")
+			one.start()
+			self.assertTrue(filed.wait(60), "the first send never filed")
+			two.start()
+			self.assertTrue(snapshot.wait(60))
+			two.join(3)                             # it is waiting on the first one's lock
+			self.assertTrue(two.is_alive(), "the second send did not wait for the first one's lock")
+			release.set()
+			one.join(60)
+			two.join(60)
+		frappe.db.rollback()                        # so this connection reads what was committed
+		self.assertEqual(out["first"]["sent"], 1, out)
+		self.assertEqual(out["second"]["results"][0]["sentence"], "Not sent. Already waiting with HR.", out)
+		self.assertEqual(len(self.requests(a)), 1)

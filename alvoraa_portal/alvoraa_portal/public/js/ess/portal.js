@@ -17380,7 +17380,8 @@ function trChips() {
   }
   TR_FLAGS.forEach(function (f) {
     var n = counts[f[0]] || 0;
-    if (!n) return;
+    /* P-1 (Surbhi, 21 Nov): where the hold is on, a day with one punch is Held, not "No clock-out". */
+    if (!n || (f[0] === "no_clock_out" && hd && hd.hold_on)) return;
     html += '<span class="tr-chip ' + f[2] + (trState.only === f[0] ? " on" : "")
       + '" onclick="trSet(&quot;only&quot;,&quot;' + f[0] + '&quot;)">'
       + gpEsc(f[1]) + " <b>" + n + "</b></span>";
@@ -17603,6 +17604,7 @@ window.hdlLoad = async function () {
   hdl.day = hdl.data.day;
   trChips();
   if (trState.only === "held") { hdlRender(); return; }
+  hdlBarHost("");
   trRows();
   trPager();
 };
@@ -17611,6 +17613,7 @@ function hdlRender() {
   var body = document.getElementById("tr-body"), pager = document.getElementById("tr-pager");
   if (!body) return;
   if (pager) pager.innerHTML = "";
+  hdlBarHost("");
   var d = hdl.data || {}, rows = d.rows || [], html = "";
   if (d.nobody) {
     body.innerHTML = '<p class="ac-empty">' + gpEsc(drT("Nobody reports to you, so there is nothing to review here.")) + "</p>";
@@ -17643,7 +17646,7 @@ function hdlRender() {
       + ' onclick="hdlPage(-1)">' + gpEsc(drT("Previous")) + '</button><button class="btn btn-outline btn-sm" '
       + (d.total > rows.length + (d.start || 0) ? "" : "disabled") + ' onclick="hdlPage(1)">' + gpEsc(drT("Next")) + "</button></div>";
   }
-  html += '<div id="hdl-bar" class="hdl-bar"></div>';
+  html += '<div class="hdl-space" aria-hidden="true"></div>';
   body.innerHTML = html;
   hdlBar();
 }
@@ -17674,12 +17677,13 @@ function hdlRow(r) {
     + '<span class="hdl-state" id="hdl-st-' + kid + '">' + hdlStateText(r) + "</span></div>"
     + pfStrip(r.shift, pts, null)
     + '<p class="hdl-punches">' + gpEsc(drT("Punches on this day")) + ": " + (real || gpEsc(drT("none"))) + "</p>"
-    + '<label class="form-label" for="' + tid + '">' + ask + "</label>"
-    + '<p class="ac-help">' + gpEsc(drT("Type the time you know it was. Nothing is filled in for you.")) + "</p>"
-    + '<input type="time" class="form-control" id="' + tid + '" value="' + gpEsc(v.time) + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;time&quot;,this.value)"'
-    + ' onkeydown="if(event.key===&quot;Enter&quot;)event.preventDefault()">'
-    + (one ? ' <button type="button" class="pfx-lnk" onclick="hdlChange(&quot;' + kid + '&quot;)">'
-        + gpEsc(r.single_is_out !== v.flip ? drT("Change to leaving") : drT("Change to arrival")) + "</button>" : "")
+    + (one ? '<label class="form-label" for="' + tid + '">' + ask + "</label>"
+      + '<p class="ac-help">' + gpEsc(drT("Type the time you know it was. Nothing is filled in for you.")) + "</p>"
+      + '<input type="time" class="form-control" id="' + tid + '" value="' + gpEsc(v.time) + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;time&quot;,this.value)"'
+      + ' onkeydown="if(event.key===&quot;Enter&quot;)event.preventDefault()">'
+      + ' <button type="button" class="pfx-lnk" onclick="hdlChange(&quot;' + kid + '&quot;)">'
+      + gpEsc(r.single_is_out !== v.flip ? drT("Change to leaving") : drT("Change to arrival")) + "</button>"
+      : hdlGapBlock(r, v, kid, ask))
     + '<label class="form-label" for="' + rid + '">' + gpEsc(drT("Your reason")) + ' <span class="pfx-req">' + gpEsc(drT("Required")) + "</span></label>"
     + '<p class="ac-help">' + gpEsc(drT("HR and {0} can read this. No health or family details.", [hdlFirst(r)])) + "</p>"
     + '<p class="ac-help">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
@@ -17688,6 +17692,99 @@ function hdlRow(r) {
     + (said ? '<p class="hdl-refused" role="alert">' + gpEsc(said) + " " + gpEsc(drT("Change the time and send again.")) + "</p>" : "")
     + "</div>";
 }
+
+/* A row with three or more punches: the box is a button that opens 087's timeline. Tapping a gap opens the
+   add sheet with the kind worked out ("Back in after a break"); the row then shows "+14:40 . Back in after a break"
+   and a Change that opens the timeline again. One punch per row. */
+function hdlGapBlock(r, v, kid, ask) {
+  var h = '<p class="form-label">' + ask + "</p>";
+  if (v.time) {
+    h += '<p class="pfx-one"><b>+' + gpEsc(v.time) + " &middot; " + gpEsc(v.label || "") + "</b> "
+      + '<button type="button" class="pfx-lnk" onclick="hdlGaps(&quot;' + kid + '&quot;)">' + gpEsc(drT("Change")) + "</button></p>";
+  } else {
+    h += '<button type="button" class="btn btn-outline" onclick="hdlGaps(&quot;' + kid + '&quot;)">'
+      + gpEsc(drT("Choose where the missing punch goes")) + "</button>";
+  }
+  if (!v.open) return h;
+  var pts = r.punches.slice().sort(function (a, b) { return a.m - b.m; });
+  h += '<p class="pfx-hint">' + gpEsc(drT("Something missing? Tap a gap.")) + '</p><ul class="pfx-tl">';
+  function gap(i) {
+    return '<li><button type="button" class="pfx-b pfx-g" onclick="hdlGap(&quot;' + kid + '&quot;,' + i + ')"><span class="pfx-tm"></span>'
+      + '<span class="pfx-rail"><span class="pfx-gdot" aria-hidden="true">+</span></span>'
+      + '<span class="pfx-gl">' + gpEsc(drT("Add a missing punch here")) + "</span><span></span></button></li>";
+  }
+  h += gap(0);
+  pts.forEach(function (p, i) {
+    h += '<li><div class="pfx-s pfx-p"><span class="pfx-tm num">' + gpEsc(p.time) + '</span><span class="pfx-rail"><span class="pfx-dot io"></span></span>'
+      + '<span class="pfx-lb"><span class="pfx-lbt">' + gpEsc(i % 2 ? drT("Out") : drT("In")) + '</span><span class="pfx-sb">' + gpEsc(p.source) + "</span></span><span></span></div></li>" + gap(i + 1);
+  });
+  return h + "</ul>";
+}
+
+function hdlRowOf(k) { return (hdl.data.rows || []).filter(function (x) { return hdlKey(x) === k; })[0]; }
+function hdlRedraw(k, focusSel) {
+  var r = hdlRowOf(k), el = document.getElementById("hdl-row-" + k);
+  if (r && el) el.outerHTML = hdlRow(r);
+  var f = focusSel && document.querySelector('[data-k="' + k + '"] ' + focusSel);
+  if (f) f.focus();
+  hdlBar();
+}
+
+window.hdlGaps = function (k) {
+  var r = hdlRowOf(k); if (!r) return;
+  var v = hdlVal(r); v.open = !v.open;
+  hdlRedraw(k, ".pfx-g");
+};
+
+window.hdlGap = function (k, i) {
+  var r = hdlRowOf(k); if (!r) return;
+  var pts = r.punches.slice().sort(function (a, b) { return a.m - b.m; });
+  var prev = pts[i - 1], next = pts[i];
+  var ctx = prev && next ? "Between " + prev.time + " and " + next.time + "." : prev ? "After " + prev.time + "." : next ? "Before " + next.time + "." : "";
+  hdl.sheet = {k: k, prev: prev ? prev.m : null, next: next ? next.m : null, ctx: ctx, kind: null};
+  hdl.ask = true;
+  acPfHost('<div class="pfx-scrim" onclick="if(event.target===this)hdlGapClose()"><div id="pfx-sheet" class="pfx-sheet" role="dialog" aria-modal="true" aria-labelledby="hdl-gh" onkeydown="hdlKeys(event)">'
+    + '<h2 id="hdl-gh">' + gpEsc(drT("Add the missing punch")) + '</h2><p class="pfx-ctx">' + gpEsc(ctx) + "</p>"
+    + '<div class="pfx-field"><label class="pfx-fl" for="hdl-gt">' + gpEsc(drT("Time")) + "</label>"
+    + '<input type="time" id="hdl-gt" oninput="hdlGapTime(this.value)" aria-describedby="hdl-gi hdl-ge">'
+    + '<p class="pfx-infer" id="hdl-gi" aria-live="polite"></p><div class="pfx-err" id="hdl-ge" role="alert"></div></div>'
+    + '<div class="pfx-acts"><button type="button" class="btn" onclick="hdlGapClose()">' + gpEsc(drT("Cancel")) + "</button>"
+    + '<button type="button" class="btn btn-primary" onclick="hdlGapAdd()">' + gpEsc(drT("Add to request")) + "</button></div></div></div>");
+  var t = document.getElementById("hdl-gt"); if (t) t.focus();
+};
+
+window.hdlGapTime = function (t) {
+  var s = hdl.sheet, r = s && hdlRowOf(s.k); if (!r) return;
+  var m = pfMin(t), kd = isNaN(m) ? null : acKind(r.punches.map(function (p) { return p.m; }), m);
+  s.kind = kd;
+  var inf = document.getElementById("hdl-gi");
+  if (inf) inf.innerHTML = kd ? gpEsc(drT("It will be added as")) + ": <b>" + gpEsc(kd.label) + "</b>." : "";
+};
+
+window.hdlGapAdd = function () {
+  var s = hdl.sheet, r = s && hdlRowOf(s.k); if (!r) return;
+  var t = (document.getElementById("hdl-gt") || {}).value;
+  var err = pfFit(s, t);
+  if (!err && r.punches.some(function (p) { return p.time === t; })) err = "There is already a punch at " + t + ". Check the time.";
+  if (err) {
+    var box = document.getElementById("hdl-ge"), inp = document.getElementById("hdl-gt");
+    if (box) box.textContent = err;
+    if (inp) { inp.classList.add("bad"); inp.focus(); }
+    return;
+  }
+  var kd = acKind(r.punches.map(function (p) { return p.m; }), pfMin(t)), v = hdlVal(r);
+  v.time = t; v.label = kd.label; v.open = false;
+  delete hdl.said[s.k];
+  var k = s.k;
+  hdl.sheet = null; hdl.ask = false; acPfHost("");
+  hdlRedraw(k, ".pfx-lnk");
+};
+
+window.hdlGapClose = function () {
+  var k = hdl.sheet && hdl.sheet.k;
+  hdl.sheet = null; hdl.ask = false; acPfHost("");
+  var b = k && document.querySelector('[data-k="' + k + '"] .pfx-g'); if (b) b.focus();
+};
 
 function hdlStateText(r) {
   var v = hdlVal(r);
@@ -17726,16 +17823,25 @@ window.hdlChange = function (k) {
 function hdlReadyRows() { return (hdl.data.rows || []).filter(hdlReady); }
 
 function hdlBar() {
-  var bar = document.getElementById("hdl-bar");
-  if (!bar) return;
   var ready = hdlReadyRows(), n = ready.length;
-  if (!n) { bar.innerHTML = ""; return; }
+  if (!n) { hdlBarHost(""); return; }
   var go = Math.min(n, 50);
-  bar.innerHTML = '<div class="hdl-sum"><b>' + gpEsc(drT("{0} days ready", [n])) + "</b> "
+  hdlBarHost('<div class="hdl-sum"><b>' + gpEsc(drT("{0} days ready", [n])) + "</b> "
     + gpEsc(drT("Each person is told on their day sheet. HR decides.")) + "</div>"
     + (n > 50 ? '<p class="ac-help">' + gpEsc(drT("50 at most in one send. The first 50 go now; {0} stay here for the next send.", [n - 50])) + "</p>" : "")
-    + '<button class="btn btn-primary" id="hdl-send" onclick="hdlAsk()">' + gpEsc(drT("Send {0} to HR", [go])) + "</button>";
+    + '<button class="btn btn-primary" id="hdl-send" onclick="hdlAsk()">' + gpEsc(drT("Send {0} to HR", [go])) + "</button>");
 }
+
+/* The send bar is fixed above the portal's bottom bar (prototype-v2). Position:fixed lives in one host on
+   <body>, never in a panel, so no ancestor can be its frame (scripts/check_portal_trays.js). Leaving the
+   Held view or the page takes it away. */
+function hdlBarHost(html) {
+  var host = document.getElementById("hdl-bar-host");
+  if (!html) { if (host) host.remove(); return; }
+  if (!host) { host = document.createElement("div"); host.id = "hdl-bar-host"; host.className = "hdl-barfix"; document.body.appendChild(host); }
+  host.innerHTML = html;
+}
+window.addEventListener("hashchange", function () { hdlBarHost(""); });
 
 /* One confirm that says what is being said. It reuses 087's sheet classes, so no new overlay. */
 window.hdlAsk = function () {
@@ -17758,9 +17864,9 @@ window.hdlAsk = function () {
 
 /* A dialog: Escape closes it, Tab stays inside it. */
 window.hdlKeys = function (e) {
-  if (e.key === "Escape") { hdlClose(); return; }
+  if (e.key === "Escape") { hdl.sheet ? hdlGapClose() : hdlClose(); return; }
   if (e.key !== "Tab") return;
-  var f = document.getElementById("pfx-sheet").querySelectorAll("button");
+  var f = document.getElementById("pfx-sheet").querySelectorAll("button,input");
   if (!f.length) return;
   var first = f[0], last = f[f.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }

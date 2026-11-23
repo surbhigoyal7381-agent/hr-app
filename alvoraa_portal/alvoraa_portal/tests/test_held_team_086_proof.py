@@ -96,12 +96,25 @@ class ProofCase(HeldTeamCase):
 
 	# AC-10 ---------------------------------------------------------------------------------------
 	def test_the_list_writes_nothing_to_the_cache(self):
+		"""The first call may warm Frappe's own caches (meta, permissions). After that, a call that writes
+		anything to the cache is a held-list cache, which AC-10 forbids: spy on every write method."""
 		self.hold(self.a)
 		self.listed()
-		before = set(frappe.cache.get_keys("*"))
-		self.listed()
-		self.listed(day="all")
-		self.assertEqual(set(frappe.cache.get_keys("*")) - before, set())
+		wrote = []
+		spied = []
+		for name in ("set_value", "hset", "set", "setex", "hmset"):
+			real = getattr(frappe.cache, name, None)
+			if real is None:
+				continue
+			spied.append((name, real))
+			setattr(frappe.cache, name, lambda *a, _n=name, _r=real, **k: (wrote.append(_n), _r(*a, **k))[1])
+		try:
+			self.listed()
+			self.listed(day="all")
+		finally:
+			for name, real in spied:
+				setattr(frappe.cache, name, real)
+		self.assertEqual(wrote, [])
 
 	# AC-56: no login, or a disabled login, is filed like everyone else ----------------------------
 	def test_a_report_with_no_login_or_a_disabled_login_is_filed_like_everyone(self):

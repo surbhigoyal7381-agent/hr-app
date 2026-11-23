@@ -259,6 +259,8 @@ doc_events = {
         "before_insert": [
             "alvoraa_portal.leave_rules.prepare_half_day_correction",
         ],
+        # Slice 086 (SEC-7): nobody but HR deletes a request filed for somebody else.
+        "on_trash": "alvoraa_portal.punch_fix.refuse_delete_by_others",
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────

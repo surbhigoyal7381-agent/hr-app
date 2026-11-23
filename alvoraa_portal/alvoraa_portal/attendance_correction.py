@@ -2485,15 +2485,18 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 	# a confusing refusal, and only ever for skip-level reports, which is
 	# exactly the case nobody tries by hand. Now the refusal is here, in words
 	# that say what to do instead.
-	if not _may_review():
-		me_now = _employee_for(frappe.session.user)
-		direct = _reports_to(me_now.name, deep=False) if me_now else []
-		if subject.name not in direct:
-			frappe.throw(
-				_("{0} does not report directly to you, so this is their own "
-				  "manager's to raise. You can still open their attendance to "
-				  "see what happened.").format(subject.employee_name or subject.name),
-				frappe.PermissionError)
+	#
+	# ALV-425 (086, Surbhi 23 Nov 2026): this runs for EVERY caller. It used to be skipped for anyone who
+	# may submit a request (HR and the Shift Supervisor), so they could file for somebody who does not
+	# report to them. HR still decides requests elsewhere; this door is the manager's.
+	me_now = _employee_for(frappe.session.user)
+	direct = _reports_to(me_now.name, deep=False) if me_now else []
+	if subject.name not in direct:
+		frappe.throw(
+			_("{0} does not report directly to you, so this is their own "
+			  "manager's to raise. You can still open their attendance to "
+			  "see what happened.").format(subject.employee_name or subject.name),
+			frappe.PermissionError)
 
 	to_date = to_date or from_date
 	if getdate(to_date) < getdate(from_date):
@@ -2536,8 +2539,9 @@ def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
 	me = _employee_for(frappe.session.user)
 	note = (explanation or "").strip()
 	if me:
-		stamp = _("Raised by {0} on behalf of the employee.").format(
-			me.employee_name or me.name)
+		# SEC-8 (086): the manager's id too, and whose manager, so the record can be read a year later.
+		stamp = _("Raised by {0} ({1}), their reporting manager, on behalf of the employee.").format(
+			me.employee_name or me.name, me.name)
 		note = (note + "\n\n" + stamp).strip() if note else stamp
 
 	doc = frappe.get_doc({

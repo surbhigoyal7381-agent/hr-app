@@ -17259,7 +17259,7 @@ window.trLoad = async function () {
       from_date: trState.from,
       to_date: trState.to,
       employee: trState.employee || null,
-      only: trState.only || null,
+      only: (trState.only && trState.only !== "held") ? trState.only : null,
       depth: trState.depth,
       department: trState.department || null,
       branch: trState.branch || null,
@@ -17274,9 +17274,7 @@ window.trLoad = async function () {
     return;
   }
   trBar();
-  trChips();
-  trRows();
-  trPager();
+  hdlLoad();
 };
 
 /* ── the filters ──────────────────────────────────────────────────────── */
@@ -17355,6 +17353,7 @@ function trBar() {
 window.trSet = function (key, value) {
   trState[key] = value;
   trState.open = null;
+  if (key === "only" && value === "held") { hdlLoad(); return; }
   /* Grouping only rearranges what is already here, so it needs no round
      trip. Everything else changes what is being asked for and starts again
      at the first page - keeping the offset would land somebody on an empty
@@ -17372,6 +17371,13 @@ function trChips() {
   var counts = (trState.data || {}).counts || {};
   var html = '<span class="tr-chip' + (trState.only ? "" : " on")
     + '" onclick="trSet(&quot;only&quot;,&quot;&quot;)">Everything</span>';
+  /* Slice 086: only where the manager has held days to send, and the hold is on. */
+  var hd = hdl.data;
+  if (hd && hd.hold_on && !hd.nobody && hd.total) {
+    html += '<span class="tr-chip warn' + (trState.only === "held" ? " on" : "")
+      + '" role="button" tabindex="0" onclick="trSet(&quot;only&quot;,&quot;held&quot;)">'
+      + gpEsc(drT("Held")) + " <b>" + hd.total + "</b></span>";
+  }
   TR_FLAGS.forEach(function (f) {
     var n = counts[f[0]] || 0;
     if (!n) return;
@@ -17560,6 +17566,284 @@ window.trPage = function (direction) {
   trState.open = null;
   trLoad();
 };
+
+/* ── Slice 086: the Held view on the Whole team page ─────────────────────
+   A manager types the missing time and a reason for each held day of a direct
+   report and sends them to HR in one go. HR decides each. The server owns every
+   rule (`held_team.send_held`); this only draws the days and posts five keys per
+   row. Nothing typed is kept anywhere but in this page's memory (PRIV-4): no
+   storage, no draft, so the next person on a shared phone sees nothing. */
+var hdl = {data: null, day: null, start: 0, vals: {}, said: {}, banner: null, sending: false, ask: false};
+
+function hdlKey(r) { return r.employee + "|" + r.date; }
+function hdlVal(r) { var k = hdlKey(r); return hdl.vals[k] || (hdl.vals[k] = {time: "", reason: "", flip: false}); }
+function hdlFirst(r) { return String(r.employee_name || r.employee).split(" ")[0]; }
+
+/* In or Out for a typed time: one punch = the end the page guessed (or its opposite after Change);
+   otherwise the same rule as the server (`acKind`). The server checks it again and decides. */
+function hdlLog(r, v) {
+  if (r.punches.length === 1) {
+    var arrivalMissing = r.single_is_out !== v.flip;
+    return arrivalMissing ? "IN" : "OUT";
+  }
+  return acKind(r.punches.map(function (p) { return p.m; }), pfMin(v.time)).log;
+}
+
+function hdlReady(r) { var v = hdlVal(r); return !!(v.time && (v.reason || "").trim()); }
+
+window.hdlLoad = async function () {
+  var body = document.getElementById("tr-body");
+  try {
+    hdl.data = await gpFetch("alvoraa_portal.held_team.held_days", {day: hdl.day || null, start: hdl.start});
+  } catch (e) {
+    if (trState.only === "held" && body) body.innerHTML = '<p class="ac-empty">' + gpEsc(trErr(e)) + "</p>";
+    else { trChips(); trRows(); trPager(); }
+    return;
+  }
+  hdl.day = hdl.data.day;
+  trChips();
+  if (trState.only === "held") { hdlRender(); return; }
+  trRows();
+  trPager();
+};
+
+function hdlRender() {
+  var body = document.getElementById("tr-body"), pager = document.getElementById("tr-pager");
+  if (!body) return;
+  if (pager) pager.innerHTML = "";
+  var d = hdl.data || {}, rows = d.rows || [], html = "";
+  if (d.nobody) {
+    body.innerHTML = '<p class="ac-empty">' + gpEsc(drT("Nobody reports to you, so there is nothing to review here.")) + "</p>";
+    return;
+  }
+  html += hdlBanner();
+  var opts = (d.days || []).map(function (x) {
+    return '<option value="' + gpEsc(x.date) + '"' + (d.day === x.date ? " selected" : "") + ">"
+      + gpEsc(fmtDate(x.date)) + " (" + x.count + ")</option>";
+  }).join("") + '<option value="all"' + (d.day === "all" ? " selected" : "") + ">"
+    + gpEsc(drT("All days in this period")) + "</option>";
+  if ((d.days || []).length) {
+    html += '<div class="hdl-top"><label class="tr-f"><span>' + gpEsc(drT("Show")) + '</span>'
+      + '<select class="form-control" onchange="hdlDay(this.value)">' + opts + "</select></label>"
+      + '<p class="hdl-line">' + gpEsc(d.total === 1 ? drT("1 held day needs a time from you.")
+          : drT("{0} held days need a time from you.", [d.total])) + "</p></div>";
+  }
+  if (!rows.length) {
+    var next = (d.days || [])[0];
+    html += '<p class="ac-empty">' + gpEsc(drT("Nothing is held on {0}.", [d.day && d.day !== "all" ? fmtDate(d.day) : drT("this period")])) + "</p>"
+      + (next ? '<button class="btn btn-outline" onclick="hdlDay(&quot;' + gpEsc(next.date) + '&quot;)">'
+          + gpEsc(fmtDate(next.date)) + "</button>"
+        : '<button class="btn btn-outline" onclick="trSet(&quot;only&quot;,&quot;&quot;)">' + gpEsc(drT("See everything")) + "</button>");
+    body.innerHTML = html;
+    return;
+  }
+  html += rows.map(hdlRow).join("");
+  if (d.total > rows.length + (d.start || 0) || d.start) {
+    html += '<div class="tr-pager"><button class="btn btn-outline btn-sm" ' + (d.start ? "" : "disabled")
+      + ' onclick="hdlPage(-1)">' + gpEsc(drT("Previous")) + '</button><button class="btn btn-outline btn-sm" '
+      + (d.total > rows.length + (d.start || 0) ? "" : "disabled") + ' onclick="hdlPage(1)">' + gpEsc(drT("Next")) + "</button></div>";
+  }
+  html += '<div id="hdl-bar" class="hdl-bar"></div>';
+  body.innerHTML = html;
+  hdlBar();
+}
+
+function hdlBanner() {
+  var b = hdl.banner;
+  return b ? '<div class="hdl-banner" role="status" aria-live="polite">' + gpEsc(b) + "</div>" : "";
+}
+
+window.hdlDay = function (day) { hdl.day = day; hdl.start = 0; hdl.banner = null; hdlLoad(); };
+window.hdlPage = function (dir) {
+  hdl.start = Math.max(0, (hdl.data.start || 0) + dir * (hdl.data.page_length || 50));
+  hdlLoad();
+};
+
+function hdlRow(r) {
+  var k = hdlKey(r), v = hdlVal(r), one = r.punches.length === 1, first = gpEsc(hdlFirst(r));
+  var kid = gpEsc(k), said = hdl.said[k];
+  var ask = one ? (r.single_is_out !== v.flip ? drT("What time did {0} arrive?", [first]) : drT("What time did {0} leave?", [first]))
+    : drT("What time was the missing punch?");
+  var pts = r.punches.map(function (p) { return {m: p.m, k: ""}; });
+  var real = r.punches.map(function (p) { return gpEsc(p.time) + " (" + gpEsc(p.source) + ")"; }).join(" · ");
+  var tid = "hdl-t-" + kid, rid = "hdl-r-" + kid;
+  return '<div class="hdl-row" id="hdl-row-' + kid + '" data-k="' + kid + '">'
+    + '<div class="hdl-head"><button class="tr-open" onclick="acFromTeam(&quot;' + gpEsc(r.employee) + '&quot;,&quot;' + gpEsc(r.date) + '&quot;)">'
+    + gpEsc(r.employee_name || r.employee) + '</button><span class="hdl-day">' + gpEsc(fmtDate(r.date)) + "</span>"
+    + '<span class="tr-need warn">' + gpEsc(drT("Held")) + "</span>"
+    + '<span class="hdl-state" id="hdl-st-' + kid + '">' + hdlStateText(r) + "</span></div>"
+    + pfStrip(r.shift, pts, null)
+    + '<p class="hdl-punches">' + gpEsc(drT("Punches on this day")) + ": " + (real || gpEsc(drT("none"))) + "</p>"
+    + '<label class="form-label" for="' + tid + '">' + ask + "</label>"
+    + '<p class="ac-help">' + gpEsc(drT("Type the time you know it was. Nothing is filled in for you.")) + "</p>"
+    + '<input type="time" class="form-control" id="' + tid + '" value="' + gpEsc(v.time) + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;time&quot;,this.value)"'
+    + ' onkeydown="if(event.key===&quot;Enter&quot;)event.preventDefault()">'
+    + (one ? ' <button type="button" class="pfx-lnk" onclick="hdlChange(&quot;' + kid + '&quot;)">'
+        + gpEsc(r.single_is_out !== v.flip ? drT("Change to leaving") : drT("Change to arrival")) + "</button>" : "")
+    + '<label class="form-label" for="' + rid + '">' + gpEsc(drT("Your reason")) + ' <span class="pfx-req">' + gpEsc(drT("Required")) + "</span></label>"
+    + '<p class="ac-help">' + gpEsc(drT("HR and {0} can read this. No health or family details.", [hdlFirst(r)])) + "</p>"
+    + '<p class="ac-help">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
+    + '<textarea id="' + rid + '" rows="2" maxlength="500" required aria-required="true" placeholder="' + gpEsc(drT("e.g. Forgot to scan after lunch"))
+    + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;reason&quot;,this.value)">' + gpEsc(v.reason) + "</textarea>"
+    + (said ? '<p class="hdl-refused" role="alert">' + gpEsc(said) + " " + gpEsc(drT("Change the time and send again.")) + "</p>" : "")
+    + "</div>";
+}
+
+function hdlStateText(r) {
+  var v = hdlVal(r);
+  if (hdlReady(r)) return "&#10003; " + gpEsc(drT("Ready"));
+  return v.time ? gpEsc(drT("Add a reason to include this day")) : "";
+}
+
+/* Typing never redraws a row: only the one state word and the bar are touched, so the cursor stays. */
+window.hdlType = function (k, field, value) {
+  var r = (hdl.data.rows || []).filter(function (x) { return hdlKey(x) === k; })[0];
+  if (!r) return;
+  hdlVal(r)[field] = value;
+  if (field === "time") delete hdl.said[k];       /* the refusal goes when she edits the time */
+  var st = document.getElementById("hdl-st-" + k);
+  if (st) st.innerHTML = hdlStateText(r);
+  var box = document.querySelector('[data-k="' + k.replace(/"/g, "") + '"] .hdl-refused');
+  if (box && field === "time") box.remove();
+  hdlBar();
+};
+
+/* H-11: Change flips the end, empties the box and puts the cursor back in it. Nothing is stored. */
+window.hdlChange = function (k) {
+  var r = (hdl.data.rows || []).filter(function (x) { return hdlKey(x) === k; })[0];
+  if (!r) return;
+  var v = hdlVal(r);
+  v.flip = !v.flip;
+  v.time = "";
+  delete hdl.said[k];
+  var el = document.getElementById("hdl-row-" + k);
+  if (el) el.outerHTML = hdlRow(r);
+  var t = document.getElementById("hdl-t-" + k);
+  if (t) t.focus();
+  hdlBar();
+};
+
+function hdlReadyRows() { return (hdl.data.rows || []).filter(hdlReady); }
+
+function hdlBar() {
+  var bar = document.getElementById("hdl-bar");
+  if (!bar) return;
+  var ready = hdlReadyRows(), n = ready.length;
+  if (!n) { bar.innerHTML = ""; return; }
+  var go = Math.min(n, 50);
+  bar.innerHTML = '<div class="hdl-sum"><b>' + gpEsc(drT("{0} days ready", [n])) + "</b> "
+    + gpEsc(drT("Each person is told on their day sheet. HR decides.")) + "</div>"
+    + (n > 50 ? '<p class="ac-help">' + gpEsc(drT("50 at most in one send. The first 50 go now; {0} stay here for the next send.", [n - 50])) + "</p>" : "")
+    + '<button class="btn btn-primary" id="hdl-send" onclick="hdlAsk()">' + gpEsc(drT("Send {0} to HR", [go])) + "</button>";
+}
+
+/* One confirm that says what is being said. It reuses 087's sheet classes, so no new overlay. */
+window.hdlAsk = function () {
+  var ready = hdlReadyRows().slice(0, 50), n = ready.length;
+  if (!n) return;
+  hdl.ask = true;
+  var lines = ready.map(function (r) {
+    var v = hdlVal(r);
+    return "<li><b>" + gpEsc(r.employee_name || r.employee) + "</b>, " + gpEsc(fmtDate(r.date)) + ", " + gpEsc(v.time)
+      + '<br><span class="hdl-q">' + gpEsc(v.reason.trim()) + "</span></li>";
+  }).join("");
+  acPfHost('<div class="pfx-scrim" onclick="if(event.target===this)hdlClose()"><div id="pfx-sheet" class="pfx-sheet" role="dialog" aria-modal="true" aria-labelledby="hdl-h"'
+    + ' onkeydown="hdlKeys(event)"><h2 id="hdl-h">' + gpEsc(drT("Send {0} days to HR?", [n])) + "</h2>"
+    + '<p class="pfx-ctx">' + gpEsc(drT("Your name goes on each request. Each person is told on their day sheet and can say it is not right. HR decides each one. Until HR does, the day stays held.")) + "</p>"
+    + '<ul class="hdl-list">' + lines + "</ul>"
+    + '<div class="pfx-acts"><button type="button" class="btn" onclick="hdlClose()">' + gpEsc(drT("Go back")) + "</button>"
+    + '<button type="button" class="btn btn-primary" id="hdl-go" onclick="hdlSend()">' + gpEsc(drT("Send {0} to HR", [n])) + "</button></div></div></div>");
+  var go = document.getElementById("hdl-go"); if (go) go.focus();
+};
+
+/* A dialog: Escape closes it, Tab stays inside it. */
+window.hdlKeys = function (e) {
+  if (e.key === "Escape") { hdlClose(); return; }
+  if (e.key !== "Tab") return;
+  var f = document.getElementById("pfx-sheet").querySelectorAll("button");
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+};
+
+window.hdlClose = function () {
+  hdl.ask = false;
+  acPfHost("");
+  var b = document.getElementById("hdl-send"); if (b) b.focus();
+};
+
+/* ONE call, five keys per row, each row with its own reason (PRIV-1). The page never posts a row on its own. */
+window.hdlSend = async function () {
+  if (hdl.sending) return;
+  var sendRows = hdlReadyRows().slice(0, 50);
+  if (!sendRows.length) return;
+  hdl.sending = true;
+  var go = document.getElementById("hdl-go");
+  if (go) { go.disabled = true; go.textContent = drT("Sending {0}... please keep this page open", [sendRows.length]); }
+  var body = JSON.stringify(sendRows.map(function (r) {
+    var v = hdlVal(r);
+    return {employee: r.employee, date: r.date, time: v.time, in_or_out: hdlLog(r, v), reason: v.reason.trim()};
+  }));
+  try {
+    var out = await gpFetch("alvoraa_portal.held_team.send_held", {rows: body});
+    hdlClose();
+    hdlDone(sendRows, out);
+  } catch (e) {
+    hdlClose();
+    if (e && e.kind === "offline") {
+      hdl.banner = drT("Nothing was sent. You are offline. The times you typed are still here. Connect, then press Send again.");
+      hdlRender();
+    } else if (mayHaveGone(e)) {
+      await hdlLostAnswer(sendRows);
+    } else {
+      hdl.banner = (e && e.message ? e.message + " " : "") + drT("Nothing was sent. The times you typed are still here.");
+      hdlRender();
+    }
+  } finally {
+    hdl.sending = false;
+  }
+};
+
+function hdlDone(sendRows, out) {
+  var names = [], failed = 0;
+  (out.results || []).forEach(function (a) {
+    var k = a.employee + "|" + a.date;
+    if (a.ok) {
+      var row = sendRows.filter(function (r) { return hdlKey(r) === k; })[0];
+      if (row) names.push(hdlFirst(row));
+      delete hdl.vals[k]; delete hdl.said[k];
+    } else { hdl.said[k] = a.sentence; failed++; }
+  });
+  var total = (out.results || []).length;
+  if (!failed) {
+    hdl.banner = drT("{0} of {1} sent to HR. {2}: HR will decide each one. Each person has been told on their day sheet.", [out.sent, total, names.join(", ")]);
+  } else if (!out.sent) {
+    hdl.banner = drT("Nothing sent. {0} not sent. The reason is on each one below.", [failed]);
+  } else {
+    hdl.banner = drT("Sent {0} of {1} to HR. {2} not sent. The reason is on each one below. The {0} that went are waiting for HR.", [out.sent, total, failed]);
+  }
+  hdlLoad();
+}
+
+/* The answer was lost. Ask the server what is still listed; never send again on its own (D-5). */
+async function hdlLostAnswer(sendRows) {
+  hdl.banner = drT("We did not get an answer from the office. Some days may have gone through. Checking now, please do not send again.");
+  hdlRender();
+  try {
+    var again = await gpFetch("alvoraa_portal.held_team.held_days", {day: hdl.day || null, start: hdl.start});
+    var still = {};
+    (again.rows || []).forEach(function (r) { still[hdlKey(r)] = 1; });
+    var gone = sendRows.filter(function (r) { return !still[hdlKey(r)]; });
+    gone.forEach(function (r) { delete hdl.vals[hdlKey(r)]; });
+    hdl.banner = drT("{0} of {1} are no longer on this list: sent, or fixed in the meantime. {2} still ready.", [gone.length, sendRows.length, sendRows.length - gone.length]);
+    hdl.data = again; hdl.day = again.day;
+    trChips();
+  } catch (e2) {
+    hdl.banner = drT("We could not check. Reload the page to see which days are still listed before sending again.");
+  }
+  hdlRender();
+}
 
 function populateTeamNoteEmpFilter() {
   const sel = document.getElementById("tn-emp");

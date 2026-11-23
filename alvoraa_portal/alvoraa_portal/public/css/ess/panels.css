@@ -3554,3 +3554,22 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
 .lv-dl dd{margin:0;font-size:var(--fs-base);overflow-wrap:anywhere}
 .lv-personal{grid-column:1/-1}
 @media (max-width:600px){.lv-dl{grid-template-columns:1fr;gap:2px}.lv-dl dd{margin-bottom:8px}}
+
+/* Slice 086: the Held view on the Whole team page. Values reused from the .tr- and .pfx- rules above; no new size or radius. */
+.hdl-top{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-end;margin-bottom:12px}
+.hdl-line{font-size:var(--fs-md);font-weight:600;margin:0}
+.hdl-row{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);padding:14px;margin-top:10px}
+.hdl-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.hdl-day{font-size:var(--fs-xs);color:var(--text3)}
+.hdl-state{margin-left:auto;font-size:var(--fs-xs);font-weight:700;color:var(--green)}
+.hdl-punches{font-size:var(--fs-xs);color:var(--text2);margin:4px 0 8px}
+.hdl-row input[type=time]{max-width:200px;min-height:44px;font-size:16px}
+.hdl-row textarea{width:100%;min-height:48px;font-size:16px}
+.hdl-refused{border:1px solid var(--red);color:var(--red);font-weight:600;font-size:var(--fs-xs);border-radius:var(--r-sm);padding:8px 10px;margin:8px 0 0}
+.hdl-banner{border:1px solid var(--border2);background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;font-weight:600}
+.hdl-bar{position:sticky;bottom:0;z-index:5;background:var(--surface);border-top:1px solid var(--border);padding:12px 0;margin-top:12px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.hdl-bar .hdl-sum{flex:1;min-width:0;font-size:var(--fs-xs)}
+.hdl-bar .btn{min-height:48px}
+.hdl-list{list-style:none;margin:8px 0 16px;padding:0}
+.hdl-list li{padding:8px 0;border-top:1px solid var(--border)}
+.hdl-q{font-size:var(--fs-xs);color:var(--text2)}

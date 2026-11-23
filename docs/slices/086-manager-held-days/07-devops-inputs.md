@@ -170,10 +170,10 @@ Code-only, so rollback = **redeploy the previous tag with migrations off.** The 
 ### Open OPS decisions for Surbhi (Decision column blank)
 | ID | Recommendation | Level | Decision |
 |---|---|---|---|
-| OPS-63 | **Release 088 to main first (switch off), switch it on at DTC and Grace, read it back, then release 086 separately.** Or, if 086 goes first, keep the send bar unannounced until the 088 switch is on | P1 Recommend | |
-| OPS-64 | **Accept "the send runs on the existing hold switch, with no switch of its own"** [I did not read whether the list and the send can be separated from it], and use the release order in OPS-63 as the control instead of new code | P2 Consider | |
-| OPS-65 | **Accept D-5** (no recheck endpoint) knowing the banner can say "no longer listed", not "sent" | P3 Consider | |
-| OPS-66 | **Allow one build of the throwaway DTC-size stack** to time M-1 to M-7 before the usability test. If she says no, the 10 s and 500 ms passes stay unproved and I will not call the release ready on speed | P2 Recommend | |
+| OPS-63 | **Release 088 to main first (switch off), switch it on at DTC and Grace, read it back, then release 086 separately.** Or, if 086 goes first, keep the send bar unannounced until the 088 switch is on | P1 Recommend |  Yes (Surbhi, 23 Nov 2026): 088 first, switch on at DTC and Grace; 086 in a separate release. |
+| OPS-64 | **Accept "the send runs on the existing hold switch, with no switch of its own"** [I did not read whether the list and the send can be separated from it], and use the release order in OPS-63 as the control instead of new code | P2 Consider |  Yes (Surbhi, 23 Nov 2026): no own switch; the existing hold switch. |
+| OPS-65 | **Accept D-5** (no recheck endpoint) knowing the banner can say "no longer listed", not "sent" | P3 Consider |  Yes (Surbhi, 23 Nov 2026): no recheck endpoint; the list call is reused (D-5). |
+| OPS-66 | **Allow one build of the throwaway DTC-size stack** to time M-1 to M-7 before the usability test. If she says no, the 10 s and 500 ms passes stay unproved and I will not call the release ready on speed | P2 Recommend |  Yes (Surbhi, 23 Nov 2026): one DTC-size throwaway stack to time M-1 to M-7. For the test stage, not built yet. |
 | (engineer's) | D-1, D-2, D-3 (with the blank-line join), D-4, D-6, D-7 are hers; I have **no objection** to the engineer's recommendations on D-1, D-2, D-7, and ask that D-3 carry the join rule | | |
 
 **Not checked:** any server state; the tag list in `alvoraa-app`; whether the `short` worker is alive; `innodb_lock_wait_timeout`; which job writes Attendance for a held day; `patches/` for deletes of Attendance Request; how the Held view's CSS is counted by the design gate.

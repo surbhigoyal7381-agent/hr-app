@@ -435,6 +435,8 @@ def validate(doc, method=None):
 		if before.employee != doc.employee or any(
 				before.get(f) and doc.get(f) and before.get(f) != doc.get(f) for f in ("employee_name", "company")):
 			frappe.throw(_("A request cannot be moved to another employee. Withdraw it and send a new one for the right person."))
+	if before is not None:
+		_refuse_edit_by_others(doc, before)
 	_own_the_confirm_fields(doc, before)
 	if doc.docstatus or not is_punch_fix(doc):
 		return
@@ -462,6 +464,33 @@ def validate(doc, method=None):
 	elif len(counted(doc.employee, doc.from_date, ticked)) == 0:
 		frappe.throw(_("A day cannot be left with no punches. Add a punch too."))
 	# Nothing in a refusal names a person or quotes the note.
+
+
+def _filed_for_someone_else(owner, employee):
+	"""Was this request filed by somebody other than the employee? (SEC-7, slice 086.)"""
+	return owner != frappe.db.get_value("Employee", employee, "user_id")
+
+
+def _refuse_edit_by_others(doc, before):
+	"""SEC-7 (086, Surbhi 23 Nov 2026): once a request is filed for somebody, only HR may change what it
+	says. Not the manager who filed it and not the employee it is about. Under case A there is no Confirm
+	to clear, so this is the guard. It looks at the CONTENT, so HR's approval and the employee's Confirm
+	and Not right (which write with `db_set`) are not in its way."""
+	login = frappe.db.get_value("Employee", before.employee, "user_id")
+	if not _filed_for_someone_else(before.owner, before.employee) or held_day._filed_by_hr(frappe.session.user, login):
+		return
+	if any(doc.has_value_changed(f) for f in CONFIRMED_CONTENT):
+		access.refuse(_("This request was sent for somebody, so only HR can change it. Ask HR, or withdraw "
+		                "it and send a new one."), "SEC-7", "Attendance Request edit", REQUEST, doc.name)
+
+
+def refuse_delete_by_others(doc, method=None):
+	"""Attendance Request on_trash (SEC-7, 086): the same rule for a delete. Deleting would erase what was
+	said in somebody's name. The employee may still delete their own draft; HR and Administrator may delete."""
+	login = frappe.db.get_value("Employee", doc.employee, "user_id")
+	if _filed_for_someone_else(doc.owner, doc.employee) and not held_day._filed_by_hr(frappe.session.user, login):
+		access.refuse(_("This request was sent for somebody, so only HR can delete it. Withdraw it instead."),
+		              "SEC-7", "Attendance Request delete", REQUEST, doc.name)
 
 
 def _added_by(request):

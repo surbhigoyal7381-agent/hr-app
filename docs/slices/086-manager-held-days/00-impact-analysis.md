@@ -261,3 +261,21 @@ I removed nothing else. If the 20-row send measures well I would still keep the 
 ## 12 - What I did not check
 
 Not run: any test, bench, site or browser. Not read: `held_day.validate_missing_time` body (spec read it), `access.permitted_employee_filters`, the Employee `manager_scope` User Permission code (the comment in `raise_for_report` is my only source), Frappe's `db_query.py` beyond a grep for `for_update`, the old "Ask HR to fix" button on a Held day (F4, unchanged, not 086's), how `trRows` draws a row (the screen build reads it first), the DTC site's switch values, and counsel's own text. Written without using a bench.
+
+## 13 - Strategy gate, 23 Nov 2026
+
+Surbhi approved the strategy above with every recommendation ("approve, all recommendations"). Her answers, as given to the build:
+
+| # | Decision | Answer | What the build does |
+|---|---|---|---|
+| D-1 | Close F1 (HR acts only on direct reports) | **Yes** | The `if not _may_review():` guard in `raise_for_report` is removed, so the direct-report check always runs, and the new call checks each row too. The 087 and 085 tests that pinned the old behaviour are updated |
+| D-2 | Only HR may change or delete a request filed for someone else | **Yes** | Guard in `punch_fix.validate` (change to a confirmed-content field) and an `on_trash` hook on Attendance Request |
+| D-3 | "One of n" stamp line | Joined with a blank line (`"\n\n"`) so it never enters the reason that 088 prints | A test proves the printed reason is only the manager's words (DevOps P1) |
+| D-4 | Reason box says the reason is printed on the employee's monthly notice | **Yes** | `acHeldForm` wording reused |
+| D-5 / OPS-65 | No separate recheck endpoint | **Yes** | After a lost answer the page calls the list again; a row no longer listed is "sent or fixed meanwhile" |
+| D-6 | A day the employee declined comes back on the manager's list | **Yes** | "Open request" = `docstatus 0` and not Declined/Withdrawn |
+| D-7 | ALV-426 | Covered by 088 plus its switch on; no payslip line | One test pins a 086 request reaching 088's notice data |
+| D-8 | New words P-3, P-5, P-6 | **Yes**, as in the spec | |
+| OPS-63 | Release order | 088 first (switch on at DTC and Grace), 086 in a separate release | Release step, not code |
+| OPS-64 | Own switch | None; the existing hold switch | |
+| OPS-66 | DTC-size throwaway stack for timing | **Yes**, at the test stage | Not built in this step |

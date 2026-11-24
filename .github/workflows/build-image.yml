@@ -56,10 +56,26 @@ env:
   # server. The release main points at is added to this list automatically.
   CARRY_TAGS: prod-65878e8 prod-d99ba99
 
+# -- RUNNER: both jobs below are pinned to ubuntu-24.04, never ubuntu-latest --
+#
+# ALV-441. GitHub is moving the `ubuntu-latest` label to Ubuntu 26.04 in stages.
+# On 24 Nov 2026 a 26.04 runner broke ci.yml outright: its apt step could not
+# reach the Ubuntu archive, so every ordinary package read as "unable to locate".
+#
+# That exact fault CANNOT hit this workflow - it installs nothing from apt and
+# does all its work through the docker/* actions. The pin here is PRECAUTION, not
+# a fix for a known break: this is the only workflow that produces the image a
+# release runs from, so if a host change did break it, no release could be built
+# at all. Holding it on a known-good image until 26.04 has been faced
+# deliberately costs nothing and removes that chance.
+#
+# Unpin together with ci.yml, after a trial build on 26.04 - watch qemu, buildx
+# and the docker daemon version, which are the parts a host change would touch.
+
 jobs:
   build:
     name: Build and push
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # ALV-441 - pinned, see RUNNER above
     timeout-minutes: 90
     permissions:
       contents: read
@@ -270,7 +286,7 @@ jobs:
   scan:
     name: Vulnerability scan
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # ALV-441 - pinned, see RUNNER above
     timeout-minutes: 20
     permissions:
       contents: read

@@ -467,3 +467,73 @@ The engineer is right that misaligned bins give only a rough estimate of a hidde
 ## Subtract pass (round 3)
 
 I removed a check of unshared companies on the By company card (pooled hidden companies against the parent): that is part C of the people rule, already R15. I removed nothing else.
+
+# Final check round 4 (24 Nov 2026)
+
+**Read at:** worktree `.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics`, commit **a0ed7fb2**. I read the diff of b28a77b2 (`people_trends.py`, the property test), 03 §13 and the newest line in 02 ("attendance all five or none", Surbhi 24 Nov 2026). I read `Rule`, `_bins`, `_bin_lengths`, `_interval`, `_rows_of_counted_people` and `_build`. I worked out the bucket layout with a short script on my machine (pure date arithmetic, no bench). **Not done:** I ran no test and nothing in `alv090-*`. I changed no source. Conflict of interest, as before: I wrote 01c.
+
+## Verdict
+
+**No P0 and no P1. Two P2 items (H4, H5) to fix or accept in writing before main.** H2 and H3 are closed as reported, for the normal case. Leave figures are unchanged.
+
+## What round 4 did
+
+| Item | Result | Label |
+|---|---|---|
+| H2 (month 60-90 days back from three windows) | **Closed.** That month is a bucket of the 180-day view, and the one rule checks every bucket of all five periods and every "before" window. If it is thin, attendance is Not shared on all five periods, so none of the three windows is sent | proven in code (`_attendance_buckets`, `_build` line 860) |
+| H3 (company filter undoes the card) | **Closed when every company's records start on the same day.** The company view asks `att_rule.verdict(company, None, None, several)`, which is part C across companies, the same answer the card gets in `_by_company`. See H4 for the case where records start on different days | proven in code |
+| Branches, departments, types | Part C along each filter, from the same `Rule` the people figures use | proven in code |
+| Periods and chips | One bucket list for every period, so the verdict is the same on all five. The headline only uses `absent_pct` when the block is shared | proven in code |
+| Bit mask size | 37 buckets, 33 day pieces; the SQL mask `1 << (k - 1)` needs at most 33 bits, inside 64 | proven (counted by script) |
+| Caller left out; open doubtful days | Caller dropped in SQL (`a.employee != own_emp`). Both the rule and the figures skip open doubtful rows, so they count the same people | proven in code |
+| Leave | Only change: `series_ok` became `chart["shared"]`, which is the same value. Days, before, pending and types untouched | proven in code (diff) |
+| PRIV-13 | **Met for the rule.** The property test now runs the same `Rule` on attendance-shaped units (14 random buckets, minimums 3, 5, 10, 300 seeds) and its break test removes part C. It does not build the real bucket list or the SQL masks, and it does not vary records start, so it would not catch H4 or H5 | proven (test read); the test run is the engineer's, not mine |
+
+## New findings
+
+### H4 · Minor · P2 · A company view checks a different set of days from the All-companies view
+
+**Where.** `_build` line 769: `records_start = min(p.joined for p in counted)`, and `counted` is only the chosen company's people. That date goes into `_attendance_rule` (line 854), so each company view checks a different, shorter bucket list from the All-companies view. The people rule has no such dependence (fixed stretches).
+**Scenario.** A CXO leads companies A and B. A's records start 100 days ago, B's two years ago. B had 3 people at work 100 to 119 days ago and none since. All-companies view: B fails, so the card hides A and B, but All-companies passes (A adds its own people to that month) and shows its 180-day figures. Company A view: its rule only reads rows from 99 days back, so B has no unit, B is not checked, and A is shown on every period. All-companies minus A gives B's 3 people for that month and for the 180-day window. Same caveat as H2: it needs the expected days, which are not sent.
+**Labels.** Inferred from reading the code; not run. Needs a leader over two or more companies whose records start on different days within two years. Not checked: whether any live leader has that.
+**Smallest fix.** Pass the records start of the whole scope (`counted_all`) to `_attendance_rule`, one line. Add a test with two companies that start on different days.
+
+### H5 · Minor · P2 · Eight unchecked day pieces can be worked out from shown figures (this is R3, now judged)
+
+**Where.** `_attendance_buckets` checks the 37 buckets, not the day pieces between their edges. Eight pieces are not buckets: days back 21 (1 day), 22-27 (6), 28-29 (2), 30-34 (5), 56-59 (4), 60-62 (3), 334-359 (26), 360-364 (5). For each one, I checked it is an exact sum and difference of shown buckets (script, date arithmetic only).
+**Scenario.** A branch head's group passes every bucket, but only 2 people were expected at work 28-29 days ago. The 30-day window, the 30-day view's last bins and the 90-day weeks are all shown. Combined with the expected days, they give those 2 people's absent rate for those 2 days.
+**Labels.** Layout proven by script; that the rate can be rebuilt is inferred; it needs the expected days, which are not sent. A leader who knows the roster can get close.
+**R3, judged.** The engineer's line "only a rough estimate" is not right any more. Each bucket is now 5 or more, but these eight pieces are not checked, and they can be got nearly exactly. It is narrower than H2: no figure the rule hid comes back.
+**Smallest fix.** Check the day pieces instead of the buckets. A bucket is a set of whole pieces, so if every piece has 0 or 5+ people, every bucket does too. The SQL mask `m` is already the piece mask, so the code gets shorter (no `seg_masks`). Cost: a few more small groups show Not shared. Or accept it in writing.
+
+## Note for DevOps (not a security finding)
+
+Every call now reads two years of attendance. On the engineer's stack the 6-month view went from 4.1 s to 9.9 s and the 1-year view from 6.9 s to 12.3 s (03 §13, not measured by me). A slow page is not a leak, but if someone later adds a cache of the verdict, it holds a per-group pass/fail and needs the same invalidation as the figures.
+
+## SEC and PRIV, round 4
+
+**Counts:** SEC: 10 met, 0 partial, 0 not met. PRIV: 12 met, 1 partial (PRIV-7: H4, H5), 0 not met.
+
+## Final residual risks for Surbhi to accept or reject (none accepted yet)
+
+1. **R1.** A leader can narrow a figure to a range by combining filters. Owner: Surbhi.
+2. **R2.** A leader who visits every day can see each day's change. Owner: Surbhi.
+3. **R3 / H5, only if not fixed.** Eight small day pieces between buckets can be worked out nearly exactly for a group of fewer than 5. Owner: Surbhi (accept) or engineer (fix).
+4. **H4, only if not fixed.** For a leader over several companies whose records start on different days, one company's attendance can be worked out from All companies less another. Owner: Surbhi (accept) or engineer (fix).
+5. **R4.** A leader can combine the page with what they already know. Owner: Surbhi.
+6. **R5.** Two leaders who pool screens learn more than either one. Owner: Surbhi.
+7. **R6.** A store HR person with a narrowed Branch permission is treated as company-wide in HR Analytics (ALV-359). Dangerous debt, escalated. Owners: Surbhi (live check), engineer (fix).
+8. **R7.** We cannot detect a leader misusing figures inside their own scope. Owner: Surbhi.
+9. **R8.** The security log is about 2 MB and held in France. Owner: founder.
+10. **R10.** Early-leaver figures can show a lower limit for a small group. Owner: Surbhi.
+11. **R11.** Leave figures cover everyone on the roll, not only people at work. Owner: Surbhi.
+12. **R12.** A session with no saved CSRF token skips the CSRF check; low risk, the page only reads. Owner: engineer.
+13. **R13.** Removing only a branch head's Branch permission widens them to the whole company; the admin line warns. Owner: Surbhi.
+14. **R15.** A hidden branch or company can be roughly estimated from the parent less its siblings. Owner: Surbhi.
+15. **Temporary debt.** The property test checks the rule, not the real bucket list or the SQL masks. Owner: test engineer.
+
+H2 and H3 are off the list (closed). **Baseline:** the CERT-In entry is still stale (24 Aug); only R8 relies on it.
+
+## Subtract pass (round 4)
+
+I removed a worry about the 64-bit mask (counted: 33 bits) and a check of the headline (it already skips a figure that was not sent). I folded R3 into H5 instead of listing it twice.

@@ -112,8 +112,11 @@ class TestOverHttp(FrappeTestCase):
 		line = new[0]
 		self.assertEqual((line["outcome"], line["role"], line["period"], line["user"]), ("shown", "leadership", 30, self.user))
 		text = json.dumps(line)
-		for secret in (base.fx.KAVYA, base.FIX["cl"], "43"):
+		for secret in (base.fx.KAVYA, base.FIX["cl"]):
 			self.assertNotIn(secret, text)
+		# a headcount as a value (not as digits inside the time stamp or the millisecond count, which made this flaky)
+		self.assertNotIn(43, line.values())
+		self.assertNotIn("43", line.values())
 
 	def test_a_refusal_writes_exactly_one_line(self):  # AC-16, AC-65
 		self.login()

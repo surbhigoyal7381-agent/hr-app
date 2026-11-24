@@ -189,3 +189,56 @@ re-verify one by one.
 Removed from my draft: a finding on the generic `except Exception` branch (a lost database connection
 could still give a 500) - real but rare and not specific to this slice; and a finding on HR approvals
 waiting behind a send - covered by M-1's fix.
+
+---
+
+## Re-review after fix round 2 (24 Nov 2026)
+
+**Verdict: SHIP.** Every finding from the first review landed and matches prototype-v2. I found no new defect. SHIP means ready to present for push approval. It is not permission to push.
+
+**Where I looked.** Worktree `/Users/mac/hr-app/.claude/worktrees/086-manager-held-days`, branch `slice/086-manager-held-days`, HEAD `36d701b5`, base `origin/dev` `0a181d05`. I read `62bd524e` and `d7937ad8` in full, the "Fix round 2" section of 03, and the parts of `held_team.py` and `punch_fix.py` the fix depends on. Stack `alv086-bench`, site `test_site`. I proved it mounts this worktree with `docker inspect`.
+
+**Tests I ran myself:**
+| What | Result | Label |
+|---|---|---|
+| `test_held_team_086` | **33 OK** (427 s) | proven |
+| `test_held_team_086_proof` | **11 OK** | proven |
+| `portal_held_team_086_test.js` (DOM test) | **27 passed, 0 failed** | proven |
+| The other modules in 03's table, the 3 managers x 50 rows HTTP run, and the break tests | not re-run by me. The figures are the engineer's | not checked |
+
+**Warning about the test stack.** My first run of `test_held_team_086` gave **19 errors**. While it ran, another session (pid 52024, not mine) was running the same module on the same `test_site`. I stopped my copy and waited for theirs to finish. My solo re-run gave 33 OK. A third run (the proof module) started at the same time, so even that run was not fully alone. Inferred: the 19 errors came from the two runs clashing, not from the code. Whoever owns pid 52024 should not trust a red result from that window.
+
+**M-1 (P2), the deadlock: fixed. Proven by reading, and the test passes.**
+- The duplicate check is now a plain read (`held_team.py:262`). `frappe.db.commit()` runs before each row (`:193`). The day-row lock is still there (`:258`).
+- **Can two sends get past the check together? No.** I traced this in the code. Sender B blocks on the day-row lock until A commits. A holds that lock until the commit after `_file_one` (`:197`). Under MariaDB's default isolation (repeatable read), a transaction's snapshot is taken at its first plain read. A locking read does not take one. Between B's commit and the lock there is no database read, only `getdate` and `nowdate`. So B's duplicate read takes a fresh snapshot after A's commit and sees A's request. `TheLock` proves the hard case, where B starts its snapshot early on purpose. It passed in my run.
+- Inferred, very small: if Frappe had to load the Attendance doctype definition from the database just before the lock (a cold cache), that read would take the snapshot early. I did not prove this can happen. Not a finding.
+- Out of scope and not new: an employee filing their own 087 request at the same moment as the manager does not take the day-row lock. Round 1 did not stop that case either.
+
+**Other findings:**
+- **m-1 (empty Held view): fixed, matches v2 `listHtml`.** The Show box is redrawn from every answer. The empty block has v2's two sentences, a primary "Show {day}" button and "See everything". The DOM test covers it. Proven.
+- **m-2 (six wording differences): all six now match v2.** I checked them against v2's string table: "Change" with the full words as its `aria-label`, "Where is the missing punch?", "Show the punches and tap the gap", "Punches: {0} · Shift", a triangle on each row's label, a day heading in "All days" (the same `.dgrp` style), and the period dates. Proven by reading. Not checked by anyone: the day headings with more than one day, and the Hindi words. v2 has Hindi strings; the build relies on Frappe's `__`.
+- **m-3 (P4, deadlock test): fixed.** The test now also checks that the earlier row is still filed (`_proof.py:103-107`). Proven by reading.
+- **Subtract: done.** The "over 50 ready" line and `Math.min` are gone. AC-44 is moot.
+- **Security F1 and F2: fixed, pinned by two new tests** (they passed in my run of the 33). Known gap, as 03 says: nobody has broken the bad-`day` check to watch its test fail.
+
+**ALV-436 intent: kept. Proven by reading.**
+- `_refusal_of` now removes only real tags (`</?letter...>`), so the "< and >" in ALV-436's sentence survives. It still removes `<b>`.
+- `test_reason_rules` now expects `<img onerror>` and `<urgent>` to be refused, and `9 > 8` to be filed. That matches ALV-436's own list of reasons that must pass.
+- Nit (P4): the docstring at `test_held_team_086.py:271` still says "markup filed as text", and the variable `filed` holds a refusal. The words are wrong, the test is right.
+
+**Seven dimensions, now:**
+| Dimension | Verdict | Label |
+|---|---|---|
+| Performance | improves: no lock on the whole table | proven by reading. Timings are the engineer's |
+| Scalability | improves: one row locks one person-day | proven by reading |
+| Reliability | improves | concurrency figures not checked by me |
+| Security | neutral to round 1 | proven by reading |
+| Maintainability | neutral | proven by reading |
+| Data integrity | improves: F1 keeps the whole reason | proven by test |
+| Compliance / privacy | neutral: no new log content | proven by reading |
+
+**Still open (not blocking):**
+- The DOM runner failure in `portal_leave_063_test.js`. The engineer says it fails on `origin/dev` too. Not checked by me.
+- The P4 docstring nit above.
+
+**Subtract pass on this section:** I removed a note on the `_limited` change, which did not change this round.

@@ -1141,7 +1141,11 @@ class TestPrototypeV3Words(Case):
 		              " can still raise it with HR once this month."):                          # Z16
 			self.assertIn(words, table)
 		self.assertNotIn("raised it again on", js)
-		self.assertNotIn("Your reason", js)
+		# The grooming screen says "What was wrong", never "Your reason". Only the
+		# grooming code is checked: slice 086's held-days box is approved to say
+		# "Your reason", and it lives in the same file (24 Nov 2026).
+		grooming_js = js[js.index("function gmIsNet("):js.index("var TR_FLAGS = [")]
+		self.assertNotIn("Your reason", grooming_js)
 
 	def test_z5_an_other_mark_s_bell_points_to_the_day_and_never_carries_the_words(self):
 		name = _mark("Ravi", "Rahul", reason="Other", other="Shirt not tucked in")

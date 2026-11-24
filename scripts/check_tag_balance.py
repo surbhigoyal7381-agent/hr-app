@@ -109,6 +109,8 @@ PINNED_DEPTH = {
 	# the frame opened and leaves nothing for the frame to close, so 0 is the
 	# shape the file is rather than the number that made the check pass.
 	"notifications.html": 0,
+	# Slice 090. One panel and one style block, each opened and closed in this file.
+	"people-trends.html": 0,
 	# Slice 045's two skeletons, pinned when Wave 4 rebased onto this check.
 	# Each is ONE `<div class="nf-skeleton">` that opens and closes inside its
 	# own file, holding only decorative boxes that do the same. Neither closes

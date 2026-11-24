@@ -56,12 +56,14 @@ def _hash(token: str) -> str:
 	return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _limited(field, source, limit, window=WINDOW_SECONDS):
+def _limited(field, source, limit, window=WINDOW_SECONDS, message=None):
 	"""Rate limit an endpoint on one of its arguments, hashed.
 
 	`window` is in seconds. Every endpoint keeps the one-hour default except the
 	event form's save (slice 082, decided 13 Nov 2026): 300 a minute, so "wait 10
 	seconds" stays true for a full hall.
+
+	`message` replaces the default sentence for one endpoint (slice 086, AC-35); every other keeps the default.
 
 	`source` is the argument's name ("token", "code") or "user" for the signed-in
 	desk user. An empty or malformed argument is hashed as the empty string, so
@@ -84,7 +86,7 @@ def _limited(field, source, limit, window=WINDOW_SECONDS):
 				# the wait (section 7.1), which is what is left of the window.
 				frappe.clear_messages()
 				refuse("TOO_MANY_TRIES",
-				       _("Too many tries. Please wait a while and try again."),
+				       message or _("Too many tries. Please wait a while and try again."),
 				       retry_after_s=_seconds_left(hashed, window))
 			finally:
 				frappe.form_dict.pop(field, None)

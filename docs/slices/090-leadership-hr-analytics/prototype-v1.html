@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>People Trends Prototype</title>
+<style>
+:root{--bg:#F8F6F3;--surface:#fff;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--on-p:#fff;--green:#1B7F5A;--green-lt:#E8F4EF;--amber:#94600F;--amber-lt:#FBF1E0;--red:#B3261E;--sh1:0 1px 2px rgba(0,0,0,.05);--sh3:0 12px 32px rgba(0,0,0,.16);--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px}
+:root[data-theme=dark]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--on-p:#1A1815;--green:#5FC79B;--green-lt:#1D3A2C;--amber:#E2B25A;--amber-lt:#3C381D;--sh3:0 12px 32px rgba(0,0,0,.6)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 var(--font)}
+button,select{font:inherit;color:inherit}
+.rv{background:#2D2622;color:#fff;padding:8px 12px;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:13px}
+.rv label{display:flex;gap:6px;align-items:center}.rv select,.rv button{background:#fff;color:#2D2622;border:0;border-radius:6px;padding:6px 8px;min-height:32px;cursor:pointer}
+.rv button.on{background:#EDEAF4;outline:2px solid #A99AD4}.rv b{font-weight:600}
+.stage{padding:0}.stage.ph{padding:16px 0;background:#d8d3cb}
+.app{position:relative;background:var(--bg);min-height:calc(100vh - 56px);display:grid;grid-template-columns:220px 1fr}
+.ph .app{max-width:390px;margin:0 auto;display:block;border:1px solid var(--border2);border-radius:18px;overflow:hidden;min-height:760px}
+.side{background:var(--surface);border-right:1px solid var(--border);padding:14px 10px}
+.side .brand{font-weight:700;color:var(--primary);padding:6px 10px 14px;font-size:16px}
+.side h6{margin:12px 10px 4px;font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+.side a{display:block;padding:8px 10px;border-radius:var(--r-sm);color:var(--text2);text-decoration:none;min-height:34px}
+.side a.on{background:var(--primary-lt);color:var(--primary);font-weight:600}
+.main{min-width:0}
+.top{display:flex;align-items:center;gap:10px;padding:12px 24px;background:var(--surface);border-bottom:1px solid var(--border)}
+.top h1{font-size:18px;margin:0;flex:1}
+.who{font-size:13px;color:var(--text2)}
+.bar{display:none}
+.page{padding:18px 24px 40px;max-width:1100px}
+.sample{display:inline-block;font-size:12px;background:var(--amber-lt);color:var(--amber);border-radius:999px;padding:2px 10px;font-weight:600;margin-left:8px}
+.scope{margin:0 0 10px;color:var(--text2)}.scope b{color:var(--text)}
+.dataup{color:var(--text3);font-size:12px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;margin:8px 0 10px}
+.chip{border:1px solid var(--border2);background:var(--surface);border-radius:999px;padding:8px 16px;min-height:44px;white-space:nowrap;cursor:pointer;font-weight:500}
+.chip[aria-checked=true]{background:var(--primary);color:var(--on-p);border-color:var(--primary);font-weight:600}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+details.flt{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;margin-bottom:14px}
+details.flt summary{cursor:pointer;min-height:32px;display:flex;align-items:center;font-weight:600}
+.frow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:8px 0 4px}
+.frow label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text2);font-weight:600}
+.frow select{border:1px solid var(--border2);border-radius:var(--r-sm);padding:8px;background:var(--surface);min-height:40px;font-size:14px;font-weight:400}
+.fixed{padding:8px 10px;background:var(--surface2);border-radius:var(--r-sm);font-weight:400;color:var(--text)}
+.clear{background:none;border:0;color:var(--primary);text-decoration:underline;cursor:pointer;min-height:32px;padding:4px 0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh1);padding:16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 2px}.card .sub{color:var(--text2);margin:0 0 12px;font-size:13px}
+.head{border-left:4px solid var(--primary)}.head p{margin:0;font-size:16px;line-height:1.5}.head p+p{margin-top:6px}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.tile{background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px;min-width:0}
+.tile .l{font-size:12px;color:var(--text2);font-weight:600}.tile .v{font-size:24px;font-weight:700;line-height:1.2}.tile .c{font-size:12px;color:var(--text2)}
+.ns{display:inline-block;background:var(--surface);border:1px dashed var(--border2);border-radius:var(--r-sm);padding:2px 8px;font-size:13px;font-weight:600;color:var(--text2)}
+.tile .ns{font-size:14px}
+.link{background:none;border:0;color:var(--primary);text-decoration:underline;cursor:pointer;padding:4px 0;min-height:32px;font-size:13px}
+.early{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.early .tile .v{font-size:18px}
+.note{font-size:12px;color:var(--text2);margin:8px 0 0}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--text2);margin:6px 0}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.chart{width:100%}.chart svg{display:block}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.bars .row{display:grid;grid-template-columns:110px 1fr 70px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+.bars .trk{background:var(--surface2);border-radius:4px;height:14px}.bars .fill{background:var(--primary);height:14px;border-radius:4px}
+.bars .n{text-align:right;font-weight:600}
+details.how{margin:6px 0 20px;color:var(--text2)}details.how summary{cursor:pointer;min-height:32px;font-weight:600}
+.cos{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.co{background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px}.co b{display:block;margin-bottom:4px}
+.co span{display:inline-block;margin-right:14px;font-size:13px}
+.banner{border:1px solid var(--border2);background:var(--surface);border-radius:var(--r);padding:20px;margin-bottom:14px}
+.banner h2{margin:0 0 6px;font-size:16px}.banner p{margin:0 0 8px;color:var(--text2)}
+.btn{background:var(--primary);color:var(--on-p);border:0;border-radius:var(--r-sm);padding:10px 18px;min-height:44px;cursor:pointer;font-weight:600}
+.sk{background:linear-gradient(90deg,var(--surface2),var(--border),var(--surface2));background-size:200% 100%;animation:sh 1.2s infinite;border-radius:8px;height:88px;margin-bottom:14px}@keyframes sh{to{background-position:-200% 0}}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50}
+.sheet{position:fixed;bottom:0;background:var(--surface);border-radius:16px 16px 0 0;box-shadow:var(--sh3);padding:18px;z-index:51;max-height:80vh;overflow:auto}
+.sheet h2{margin:0 0 8px;font-size:17px}.sheet p{margin:0 0 10px}
+table.t{border-collapse:collapse;width:100%;font-size:12px}table.t th,table.t td{border-bottom:1px solid var(--border);padding:4px 6px;text-align:right}table.t th:first-child,table.t td:first-child{text-align:left}
+.table-wrap{overflow-x:auto}
+.dq{background:var(--amber-lt);color:var(--text);border-radius:var(--r-sm);padding:8px 12px;margin-top:10px;font-size:13px}
+</style></head><body>
+<div class="rv" id="rv">
+<b>Review controls</b>
+<label>Person <select id="rv-p"><option value="cxo">Leader (CXO), two companies</option><option value="hr">HR Manager, Kavya Retail only</option></select></label>
+<span><button id="rv-d" class="on" data-d="desk">Desktop</button> <button data-d="ph">Phone 360</button></span>
+<label>State <select id="rv-s"><option value="ok">Normal</option><option value="load">Loading</option><option value="empty">No people records yet</option><option value="err">Error</option><option value="noscope">Leader with no company linked</option></select></label>
+<button id="rv-t">Dark theme</button><span>All names and numbers are invented (Sample).</span></div>
+<div class="stage" id="stage"><div class="app" id="app"></div></div>
+<div id="live" aria-live="polite" style="position:absolute;left:-9999px"></div>
+<script>
+const MIN=5, MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const END=new Date(2026,10,22);
+const addD=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+const f1=d=>d.getDate()+' '+MON[d.getMonth()], f2=d=>f1(d)+' '+d.getFullYear();
+const hs=s=>{let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return((h>>>0)%10000)/10000};
+const ORG={'Kavya Retail':{share:[.72,.28],rec:9999,br:{'Station Road':{Sales:58,Stores:24,Admin:6},'Civil Lines':{Sales:41,Stores:18},'Hilltop Kiosk':{Sales:4},'Market Yard':{Sales:33,Admin:5}}},
+'Kavya Foods':{share:[.55,.45],rec:313,br:{'Plant North':{Production:96,Stores:22},'Plant South':{Production:71,Admin:8},'Head Office':{Admin:15,Sales:19}}}};
+const TY=['Permanent','Contract'];
+const UNITS=[];for(const co in ORG)for(const br in ORG[co].br)for(const dp in ORG[co].br[br])TY.forEach((ty,i)=>{const h=Math.round(ORG[co].br[br][dp]*ORG[co].share[i]);if(h)UNITS.push({id:co+br+dp+ty,co,br,dp,ty,h})});
+const PER=[{d:7,n:'1 week',long:'the last 7 days',prev:'the 7 days before'},{d:30,n:'1 month',long:'the last 30 days',prev:'the 30 days before'},{d:90,n:'3 months',long:'the last 3 months',prev:'the 3 months before'},{d:180,n:'6 months',long:'the last 6 months',prev:'the 6 months before'},{d:365,n:'1 year',long:'the last year',prev:'the year before'}];
+const LT={Casual:.34,Sick:.26,Earned:.2,'Comp off':.08,Maternity:.05,Unpaid:.07};
+const S={p:'cxo',dev:'desk',theme:'light',st:'ok',per:90,co:'All',br:'All',dp:'All',ty:'All'};
+const nz=(u,k)=>.7+.6*hs(u.id+k);
+const NS='<span class="ns">Not shared</span>';
+function win(U,d,k){let H=0,J=0,L=0,E={7:0,30:0,90:0},C={7:0,30:0,90:0},O={7:0,30:0,90:0},A=0,V=0,T={};
+ for(const u of U){const m=u.ty=='Contract'?1.8:1,pm=u.dp=='Production'?1.25:1;H+=u.h;
+  const j=u.h*.2*m*d/365*nz(u,'j'+d+k),l=u.h*.22*m*pm*d/365*nz(u,'l'+d+k);J+=j;L+=l;
+  for(const X of [7,30,90]){const cl=Math.max(0,(d-X)/d)*j;C[X]+=cl;E[X]+=cl*({7:.03,30:.09,90:.16}[X])*m*nz(u,'e'+X+d);O[X]+=j*Math.min(1,X/d)}
+  A+=u.h*.04*(u.ty=='Contract'?1.3:1)*nz(u,'a'+d+k);
+  for(const t in LT){const v=u.h*6.5/365*d*LT[t]*nz(u,'t'+t+d+k);T[t]=(T[t]||0)+v;V+=v}}
+ return{H,J:Math.round(J),L:Math.round(L),E,C,O,abs:H?A/H*100:0,V:Math.round(V),T}}
+function sel(over){const o=Object.assign({},S,over||{});return UNITS.filter(u=>(o.co=='All'||u.co==o.co)&&(o.br=='All'||u.br==o.br)&&(o.dp=='All'||u.dp==o.dp)&&(o.ty=='All'||u.ty==o.ty))}
+function brHead(co,br){return UNITS.filter(u=>u.co==co&&u.br==br).reduce((a,u)=>a+u.h,0)}
+function brHidden(br){const co=UNITS.find(u=>u.br==br).co;const hs_=Object.keys(ORG[co].br).map(b=>({b,h:brHead(co,b)}));const small=hs_.filter(x=>x.h<MIN);if(!small.length)return null;
+ if(small.some(x=>x.b==br))return'small';const rest=hs_.filter(x=>x.h>=MIN).sort((a,b)=>a.h-b.h)[0];return rest&&rest.b==br?'sub':null}
+function lr(total,w){const s=w.reduce((a,b)=>a+b,0),raw=w.map(x=>total*x/s),fl=raw.map(Math.floor);let r=total-fl.reduce((a,b)=>a+b,0);raw.map((x,i)=>[x-fl[i],i]).sort((a,b)=>b[0]-a[0]).forEach(([_,i])=>{if(r>0){fl[i]++;r--}});return fl}
+function buckets(d){if(d==7)return{n:7,lab:i=>f1(addD(END,i-6)).split(' ')[0]+' '+MON[addD(END,i-6).getMonth()]};
+ if(d==30)return{n:4,lab:i=>'w/c '+f1(addD(END,-29+Math.round(i*7.5)))};if(d==90)return{n:13,lab:i=>'w/c '+f1(addD(END,-89+i*7))};
+ const n=d==180?6:12,sp=d/n;return{n,lab:i=>MON[addD(END,-d+1+Math.round(i*sp)).getMonth()]}}
+const R=(n,sg)=>(sg&&n>0?'+':'')+n;
+function chg(c,p,unit,pt){const x=Math.round((c-p)*10)/10;if(x==0)return'Same as before';return(x>0?'Up ':'Down ')+Math.abs(x)+(unit||'')}
+function leaveTypes(T,V){let a=Object.keys(T).map(k=>({k,d:Math.round(T[k]),p:T[k]/2.4})).sort((x,y)=>y.d-x.d),vis=[],oth={d:0,p:0};
+ for(const t of a){if(t.p>=MIN)vis.push(t);else{oth.d+=t.d;oth.p+=t.p}}
+ while(oth.p>0&&oth.p<MIN&&vis.length){const t=vis.pop();oth.d+=t.d;oth.p+=t.p}
+ if(oth.p>=MIN)vis.push({k:'Other types',d:oth.d,p:oth.p});return vis}
+function jobs_(){return window.__jobs=window.__jobs||[]}
+function draw(){const J=window.__jobs||[];J.forEach(f=>f())}
+function axis(lo,hi){const span=hi-lo||1,raw=span/4,mag=Math.pow(10,Math.floor(Math.log10(raw))),st=[1,2,5,10].map(x=>x*mag).find(x=>x>=raw);const t=[];for(let v=Math.floor(lo/st)*st;v<=hi+1e-9;v+=st)t.push(Math.round(v*100)/100);return t}
+function svgChart(id,lab,series,opt){const el=document.getElementById(id);if(!el)return;const w=Math.max(240,el.clientWidth),h=opt.h||210,ml=38,mr=8,mt=10,mb=26,pw=w-ml-mr,ph=h-mt-mb,n=lab.length;
+ let vals=[];series.forEach(s=>vals=vals.concat(s.v));let lo=Math.min(0,...vals),hi=Math.max(0,...vals);if(opt.pad){lo=Math.min(lo,opt.lo??lo);hi=Math.max(hi,opt.hi??hi)}const tk=axis(lo,hi);lo=Math.min(lo,tk[0]);hi=Math.max(hi,tk[tk.length-1]);
+ const y=v=>mt+ph-(v-lo)/(hi-lo||1)*ph,x=i=>ml+pw*(i+.5)/n,bw=Math.min(28,pw/n*.6);let o=`<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
+ tk.forEach(t=>o+=`<line x1="${ml}" x2="${w-mr}" y1="${y(t)}" y2="${y(t)}" style="stroke:var(--border)"/><text x="${ml-6}" y="${y(t)+4}" text-anchor="end" font-size="12" style="fill:var(--text2)">${t}${opt.u||''}</text>`);
+ o+=`<line x1="${ml}" x2="${w-mr}" y1="${y(0)}" y2="${y(0)}" style="stroke:var(--border2)"/>`;
+ series.forEach(s=>{if(s.t=='bar')s.v.forEach((v,i)=>{const a=y(v),b=y(0);o+=`<rect x="${x(i)-bw/2}" y="${Math.min(a,b)}" width="${bw}" height="${Math.max(1,Math.abs(a-b))}" rx="2" style="fill:${s.c}"/>`});
+  else{o+=`<polyline fill="none" stroke-width="2.5" points="${s.v.map((v,i)=>x(i)+','+y(v)).join(' ')}" style="stroke:${s.c}"/>`;s.v.forEach((v,i)=>o+=`<circle cx="${x(i)}" cy="${y(v)}" r="3.5" style="fill:var(--surface);stroke:${s.c};stroke-width:2"/>`)}});
+ const every=Math.ceil(n/Math.max(2,Math.floor(pw/64)));lab.forEach((l,i)=>{if(i%every==0||i==n-1&&every<2)o+=`<text x="${x(i)}" y="${h-8}" text-anchor="middle" font-size="12" style="fill:var(--text2)">${l}</text>`});
+ el.innerHTML=o+'</svg>'}
+function tbl(lab,cols){return`<div class="table-wrap"><table class="t"><tr><th>Period</th>${cols.map(c=>'<th>'+c[0]+'</th>').join('')}</tr>${lab.map((l,i)=>'<tr><td>'+l+'</td>'+cols.map(c=>'<td>'+c[1][i]+'</td>').join('')+'</tr>').join('')}</table></div>`}
+function render(){
+ const app=document.getElementById('app');document.getElementById('stage').className='stage'+(S.dev=='ph'?' ph':'');app.className='app'+(S.dev=='ph'?' ph':'');
+ document.documentElement.dataset.theme=S.theme;window.__jobs=[];
+ const hr=S.p=='hr';if(hr)S.co='Kavya Retail';
+ const nav=`<aside class="side"><div class="brand">Alvora</div><h6>Me</h6><a href="#">Home</a><a href="#">Inbox</a><h6>Company</h6><a class="on" aria-current="page" href="#">People trends</a>${hr?'<a href="#">HR Analytics</a><a href="#">Data to review</a>':''}</aside>`;
+ const bot=`<nav class="bar" aria-label="Main"><a href="#">Home</a><a href="#">Inbox</a><a href="#" class="on">Trends</a><a href="#">Menu</a></nav>`;
+ let body='';const P=PER.find(p=>p.d==S.per);
+ if(S.st=='load')body='<div class="sk"></div><div class="sk"></div><div class="sk" style="height:200px"></div><p class="note">Loading People trends. The period bar stays usable; figures fill in as they arrive.</p>';
+ else if(S.st=='err')body=`<div class="banner" role="alert"><h2>We could not load People trends</h2><p>Your data is safe. The page did not get an answer from the server in time.</p><p>Try again. If it keeps happening, tell HR and quote <b>Code PT-LOAD</b>.</p><button class="btn" onclick="S.st='ok';sync();render()">Try again</button></div>`;
+ else if(S.st=='noscope')body=`<div class="banner"><h2>People trends is not set up for you yet</h2><p>You have the Leadership role, but no company or branch is linked to your account. We show nothing rather than guess.</p><p>Copy this message to your HR or system administrator:</p><p><b>"Please link my user to a Company so I can open People trends."</b></p><button class="btn" onclick="navigator.clipboard&&navigator.clipboard.writeText('Please link my user to a Company so I can open People trends.');this.textContent='Copied'">Copy message</button></div>`;
+ else if(S.st=='empty')body=`<div class="banner"><h2>No people records in this view yet</h2><p>People trends counts joiners and leavers from Employee records, then adds attendance and leave. This company has no Employee records yet, so there is nothing to count.</p><p>${hr?'Add employees in HR, or import them. This page fills in by itself.':'Ask your HR team to add the employee records.'}</p>${hr?'<button class="btn">Go to Employees</button>':''}</div>`;
+ else body=main(P,hr);
+ app.innerHTML=nav+`<div class="main"><header class="top"><h1>People trends<span class="sample">Sample</span></h1><span class="who">${hr?'HR Manager, Kavya Retail':'Leader, all companies'}</span></header><div class="page">${body}</div>${bot}</div>`;
+ wire();draw()}
+function main(P,hr){
+ const U=sel(),H=U.reduce((a,u)=>a+u.h,0);const narrowed=S.br!='All'||S.dp!='All'||S.ty!='All';
+ const co1=S.co!='All'?ORG[S.co]:null;const rec=co1?co1.rec:9999;const effd=Math.min(P.d,rec);const canCmp=P.d*2<=rec;
+ const start=addD(END,-effd+1),ps=addD(start,-P.d),pe=addD(start,-1);
+ let o=`<p class="scope"><b>Showing:</b> ${scopeText()}, ${P.n}<br><span class="dataup">${f2(start)} to ${f2(END)} · Data up to ${f2(END)}</span></p>`;
+ o+=`<div class="chips" role="radiogroup" aria-label="Period">${PER.map(p=>`<button class="chip" role="radio" aria-checked="${p.d==S.per}" data-per="${p.d}">${p.n}</button>`).join('')}</div>`;
+ o+=filters(hr);
+ const hid=S.br!='All'?brHidden(S.br):null;
+ if(!H)return o+`<div class="banner"><h2>No one matches these filters</h2><p>This company has no people with that mix of branch, department and employment type.</p><button class="btn" data-clear>Clear filters</button></div>`;
+ if(H<MIN||hid)return o+`<div class="banner"><h2>${NS}</h2><p><b>${hid=='sub'?'Not shared: it would let someone work out a smaller group’s figures':'Not shared: too few people in this group for a fair picture'}</b></p><p>${hid=='sub'?'Another branch of this company is too small to share, and showing this one would reveal it by subtraction.':'With a small group, a total can point at one person.'} Try a wider group, such as the whole company.</p><button class="link" data-why>Why is this not shared?</button> <button class="btn" data-clear>Clear filters</button></div>`;
+ const c=win(U,effd,0),p=win(U,effd,1);const cmp=canCmp;
+ const hide=n=>narrowed&&n<MIN;const J=c.J,L=c.L,hJ=hide(J),hL=hide(L);const net=J-L,pnet=p.J-p.L;const startH=H-net;
+ // headline
+ const e30M=Math.round(c.C[30]),e30=Math.min(Math.round(c.E[30]),e30M);
+ let hl=`<p><b>Headcount ${H}${hJ||hL?'':', '+(net<0?'down ':net>0?'up ':'no change')+(net?Math.abs(net):'')+' in '+P.n}.</b>`;
+ hl+=(hJ||hL)?' Joiners and leavers are not shared for this group in this period.':` ${J} joined, ${L} left.`;
+ if(!hL&&e30M>=MIN&&!(narrowed&&e30<MIN))hl+=` Of those who joined and have passed their first month, ${e30} of ${e30M} left within it.`;hl+='</p>';
+ const ab=c.abs,pab=p.abs;hl+=`<p>Absent on ${ab.toFixed(1)}% of expected days${cmp?', '+(Math.abs(ab-pab)<.05?'the same as':(ab>pab?'up ':'down ')+Math.abs(ab-pab).toFixed(1)+' points on')+' '+P.prev:''}.`;
+ const lt=leaveTypes(c.T,c.V);hl+=` ${c.V} leave days taken${lt.length&&lt[0].k!='Other types'?', '+lt[0].k+' the most':''}.</p>`;
+ o+=`<section class="card head" aria-label="Summary">${hl}</section>`;
+ // people
+ const T=(l,v,cc)=>`<div class="tile"><div class="l">${l}</div><div class="v">${v}</div><div class="c">${cc||''}</div></div>`;
+ o+=`<section class="card"><h2>People</h2><p class="sub">${cmp?'Changes compare with '+P.prev+' ('+f2(ps)+' to '+f2(pe)+').':(canCmp?'':'No earlier window to compare with: your records start on '+f2(addD(END,-rec+1))+'.')}${effd<P.d?' This window shows '+effd+' days, from the start of your records.':''}</p><div class="tiles">`
+ +T('Headcount',H,hJ||hL?'':(net==0?'Same since '+f1(start):(net>0?'Up ':'Down ')+Math.abs(net)+' since '+f1(start)))
+ +T('Joined',hJ?NS:J,hJ||!cmp?'':chg(J,p.J))+T('Left',hL?NS:L,hL||!cmp?'':chg(L,p.L))
+ +T('Net change',hJ||hL?NS:R(net,1),hJ||hL||!cmp?'':chg(net,pnet))
+ +T('Attrition',hL?NS:(L/(H-net/2)*100).toFixed(1)+'%',hL||!cmp?'':chg(L/(H-net/2)*100,p.L/((H-net)-pnet/2)*100,' points'))
+ +`</div><p class="note">Left means status Left and a relieving date on or before ${f1(END)}. Someone serving notice is not counted yet. Attrition is people who left divided by average headcount in this window, not a yearly rate.${(hHide()?'':'')}</p>`;
+ const dq=Math.round(H*.0185);if(dq>=1){o+=hr?`<div class="dq">${dq} leaver${dq>1?'s have':' has'} no relieving date, so they cannot be placed in a window. <button class="link" data-dq>Open the list in Employees</button></div>`:(dq>=MIN?`<div class="dq">${dq} leavers have no relieving date. HR is asked to fix this.</div>`:'')}
+ o+='</section>';
+ // early leavers
+ o+=`<section class="card"><h2>Early leavers</h2><p class="sub">Of people who joined in this period, how many left soon after joining. Only people whose first stretch is over are counted.</p><div class="early">`;
+ [[7,'1 week'],[30,'1 month'],[90,'3 months']].forEach(([X,n])=>{const M=Math.round(c.C[X]),E=Math.min(Math.round(c.E[X]),M),op=Math.round(c.O[X]);let v,s;
+  if(M==0){v='Too early to tell';s=`Everyone who joined in this period is still inside their first ${n}.`}
+  else if(M<MIN||(narrowed&&E<MIN)){v=NS;s='Joiner group too small to share'.replace('Joiner group too small to share','')}
+  else{v=`${E} of ${M}`;s=`joiners left within ${n} (${(E/M*100).toFixed(0)}%)`+(op>0?`. Too early to tell for ${op} more who joined in the last ${n}.`:'')}
+  o+=`<div class="tile"><div class="l">Within ${n}</div><div class="v">${v}</div><div class="c">${s}</div></div>`});
+ o+=`</div><p class="note">The cohort is everyone who joined in the period. ${narrowed?'':''}<button class="link" data-why>Why do some figures say Not shared?</button></p></section>`;
+ // chart
+ const B=buckets(effd),w1=[...Array(B.n)].map((_,i)=>.6+.8*hs('J'+effd+i)),w2=[...Array(B.n)].map((_,i)=>.6+.8*hs('L'+effd+i));
+ o+=`<section class="card"><h2>Joined, left and running net change</h2><p class="sub">${B.n==7?'Each day':(effd<=90?'Each week':'Each month')} in ${P.long}. The line adds up joined minus left from the start of the period.</p>`;
+ if(hJ||hL)o+=`<p>${NS} Too few people joined or left in this group to chart without pointing at someone. Try a longer period or a wider group.</p>`;
+ else{const jv=lr(J,w1),lv=lr(L,w2);let cum=0;const rn=jv.map((v,i)=>cum+=v-lv[i]);const lab=[...Array(B.n)].map((_,i)=>B.lab(i));
+  o+=`<div class="legend"><span><i class="sw" style="background:var(--primary)"></i>Joined (bars up)</span><span><i class="sw" style="background:var(--text3)"></i>Left (bars down)</span><span><i class="sw" style="background:var(--text);height:3px;vertical-align:3px"></i>Running net change (line)</span></div><div class="chart" id="ch1" role="img" aria-label="Chart of joined, left and running net change. Total joined ${J}, left ${L}, net ${R(net,1)}. A table follows."></div><details class="how"><summary>Show as a table</summary>${tbl(lab,[['Joined',jv],['Left',lv],['Net so far',rn.map(v=>R(v,1))]])}</details>`;
+  window.__jobs.push(()=>svgChart('ch1',lab,[{t:'bar',v:jv,c:'var(--primary)'},{t:'bar',v:lv.map(x=>-x),c:'var(--text3)'},{t:'line',v:rn,c:'var(--text)'}],{}))}
+ o+='</section>';
+ // attendance
+ const ar=[...Array(B.n)].map((_,i)=>Math.round(ab*(.85+.3*hs('A'+effd+i))*10)/10);const lab=[...Array(B.n)].map((_,i)=>B.lab(i));
+ o+=`<section class="card"><h2>Attendance</h2><p class="sub">Absent days as a share of days people were expected to work. Weekly offs and holidays are not counted as expected.</p><div class="tiles" style="grid-template-columns:repeat(2,1fr)">${T('Absent',ab.toFixed(1)+'%',cmp?(Math.abs(ab-pab)<.05?'Same as before':(ab>pab?'Up ':'Down ')+Math.abs(ab-pab).toFixed(1)+' points'):'')}${T('Data up to',f1(END),'3 days left out; HR is checking')}</div><div class="chart" id="ch2" role="img" aria-label="Absent share of expected days by period, from ${Math.min(...ar)}% to ${Math.max(...ar)}%"></div><details class="how"><summary>Show as a table</summary>${tbl(lab,[['Absent %',ar]])}</details><p class="note">Days that look wrong (for example, everyone absent on one day) are left out of this rate until HR has checked them. ${hr?'<button class="link" data-dq>Open Data to review</button>':''}</p></section>`;
+ window.__jobs.push(()=>svgChart('ch2',lab,[{t:'line',v:ar,c:'var(--primary)'}],{u:'%',lo:0}));
+ // leave
+ const lw=[...Array(B.n)].map((_,i)=>.6+.8*hs('V'+effd+i)),lv2=lr(c.V,lw),mx=Math.max(1,...lt.map(t=>t.d)),pend=Math.round(H*.03);
+ o+=`<section class="card"><h2>Leave</h2><p class="sub">Approved leave days that fall inside the period. A leave that starts before the period counts only its days inside it.</p><div class="two"><div><div class="tile"><div class="l">Leave days taken</div><div class="v">${c.V}</div><div class="c">${cmp?chg(c.V,p.V):''}</div></div><div class="bars" style="margin-top:10px"><h3 style="font-size:13px;margin:0">By leave type</h3>${lt.map(t=>`<div class="row"><span>${t.k}</span><div class="trk"><div class="fill" style="width:${t.d/mx*100}%"></div></div><span class="n">${t.d} days</span></div>`).join('')}<p class="note">Small leave types are grouped under Other so no one can be picked out.</p></div><p class="note">Waiting for approval: ${hide(pend)?NS:'<b>'+pend+'</b> requests (count only)'}</p></div><div><div class="chart" id="ch3" role="img" aria-label="Leave days by period, total ${c.V}"></div><details class="how"><summary>Show as a table</summary>${tbl(lab,[['Leave days',lv2]])}</details></div></div></section>`;
+ window.__jobs.push(()=>svgChart('ch3',lab,[{t:'bar',v:lv2,c:'var(--primary)'}],{}));
+ // companies
+ if(S.p=='cxo'&&S.co=='All'&&!narrowed)o+=`<section class="card"><h2>By company</h2><p class="sub">In alphabetical order. This is not a ranking.</p><div class="cos">${Object.keys(ORG).sort().map(k=>{const u=sel({co:k}),cw=win(u,P.d,0),n=cw.J-cw.L;return`<div class="co"><b>${k}</b><span>Headcount ${cw.H}</span><span>Net ${R(n,1)}</span><span>Left ${cw.L}</span><span>Absent ${cw.abs.toFixed(1)}%</span></div>`}).join('')}</div></section>`;
+ o+=`<details class="how"><summary>How these figures are counted</summary><p>Headcount is people employed on the last day. Joined and Left are inside the period. Net change is joined minus left. Absent is absent days divided by days people were expected, with weekly offs and holidays taken out. Leave days are approved leave days inside the period. Leaders see totals only: no names and no reasons for leave. The smallest group we show is ${MIN} people.</p></details>`;
+ return o}
+function hHide(){return''}
+function scopeText(){const a=[];a.push(S.co=='All'?'All companies':S.co);if(S.br!='All')a.push(S.br);if(S.dp!='All')a.push(S.dp);if(S.ty!='All')a.push(S.ty);return a.join(', ')}
+function filters(hr){const cos=Object.keys(ORG),brs=[...new Set(UNITS.filter(u=>S.co=='All'||u.co==S.co).map(u=>u.br))],dps=[...new Set(UNITS.filter(u=>S.co=='All'||u.co==S.co).map(u=>u.dp))];
+ const n=(S.co!='All'&&!hr?1:0)+(S.br!='All')+(S.dp!='All')+(S.ty!='All');const op=(v,cur,l)=>`<option value="${v}" ${v==cur?'selected':''}>${l||v}</option>`;
+ const open=S.dev!='ph'&&window.innerWidth>768;
+ return`<details class="flt" ${open?'open':''}><summary>Filters${n?' · '+n+' applied':''}</summary><div class="frow">
+ <label>Company ${hr?'<span class="fixed">Kavya Retail</span>':`<select data-f="co">${op('All',S.co,'All companies')}${cos.map(c=>op(c,S.co)).join('')}</select>`}</label>
+ <label>Branch <select data-f="br">${op('All',S.br,'All branches')}${brs.map(b=>op(b,S.br,b+(brHidden(b)?' (Not shared)':''))).join('')}</select></label>
+ <label>Department <select data-f="dp">${op('All',S.dp,'All departments')}${dps.map(b=>op(b,S.dp)).join('')}</select></label>
+ <label>Employment type <select data-f="ty">${op('All',S.ty,'All types')}${TY.map(b=>op(b,S.ty)).join('')}</select></label></div>${n?'<button class="clear" data-clear>Clear filters</button>':''}</details>`}
+function sheet(title,html){const sc=document.createElement('div');sc.className='scrim';const sh=document.createElement('div');sh.className='sheet';sh.setAttribute('role','dialog');sh.setAttribute('aria-modal','true');sh.setAttribute('aria-label',title);
+ sh.innerHTML=`<h2>${title}</h2>${html}<button class="btn" id="sx">Close</button>`;const r=document.getElementById('app').getBoundingClientRect();sh.style.left=r.left+'px';sh.style.width=r.width+'px';
+ const last=document.activeElement,cl=()=>{sc.remove();sh.remove();last&&last.focus();document.removeEventListener('keydown',k)},k=e=>{if(e.key=='Escape')cl()};document.addEventListener('keydown',k);sc.onclick=cl;document.body.append(sc,sh);const b=sh.querySelector('#sx');b.onclick=cl;b.focus()}
+function sync(){document.getElementById('rv-s').value=S.st}
+function wire(){document.querySelectorAll('[data-per]').forEach(b=>b.onclick=()=>{S.per=+b.dataset.per;render();document.getElementById('live').textContent='Showing '+PER.find(p=>p.d==S.per).n+'. All figures updated.';document.querySelector('[data-per="'+S.per+'"]').focus()});
+ document.querySelectorAll('[data-f]').forEach(s=>s.onchange=()=>{S[s.dataset.f]=s.value;if(s.dataset.f=='co'){S.br='All';S.dp='All'}render()});
+ document.querySelectorAll('[data-clear]').forEach(b=>b.onclick=()=>{S.br=S.dp=S.ty='All';if(S.p=='cxo')S.co='All';render()});
+ document.querySelectorAll('[data-why]').forEach(b=>b.onclick=()=>sheet('Why is this not shared?',`<p><b>Not shared: too few people in this group for a fair picture.</b></p><p>With a small group, a total can point at one person, and that person is a colleague. So we only show figures for ${MIN} or more people.</p><p>Sometimes a larger group is not shared either. That is when showing it would let someone work out a smaller group by subtraction.</p><p>Try a longer period, or fewer filters. The whole-company totals are always shown.</p><p>Leaders see totals only. Names and reasons for leave are never shown here.</p>`));
+ document.querySelectorAll('[data-dq]').forEach(b=>b.onclick=()=>sheet('Prototype: this link goes to the Employee list in Desk',`<p>In the product this opens the Employee list, filtered to people with status Left and no relieving date. It is HR only.</p>`))}
+document.getElementById('rv-p').onchange=e=>{S.p=e.target.value;S.co='All';S.br=S.dp=S.ty='All';render()};
+document.getElementById('rv-s').onchange=e=>{S.st=e.target.value;render()};
+document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{S.dev=b.dataset.d;document.querySelectorAll('[data-d]').forEach(x=>x.classList.toggle('on',x==b));render()});
+document.getElementById('rv-t').onclick=e=>{S.theme=S.theme=='light'?'dark':'light';e.target.textContent=S.theme=='light'?'Dark theme':'Light theme';render()};
+window.addEventListener('resize',()=>draw());
+// phone rules: same block under the .ph wrapper and under a real media query
+const PH=`& .side{display:none}& .top{padding:12px 16px}& .top .who{display:none}& .page{padding:14px 14px 84px}& .tiles{grid-template-columns:1fr 1fr}& .tile .v{font-size:22px}& .early{grid-template-columns:1fr}& .two{grid-template-columns:1fr}& .cos{grid-template-columns:1fr}& .frow{grid-template-columns:1fr}& .frow select{font-size:16px;min-height:44px}& .bars .row{grid-template-columns:90px 1fr 64px}& .bar{display:flex;position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border)}& .bar a{flex:1;text-align:center;padding:14px 4px;min-height:48px;color:var(--text2);text-decoration:none;font-size:13px}& .bar a.on{color:var(--primary);font-weight:700}& .link,& .clear{min-height:44px}& details.flt summary{min-height:44px}`;
+const st=document.createElement('style');st.textContent=`.app.ph{${PH}}@media(max-width:768px){.app{${PH}}}`;document.head.append(st);
+render();
+</script></body></html>

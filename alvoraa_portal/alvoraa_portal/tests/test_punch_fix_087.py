@@ -974,8 +974,12 @@ class ReasonOnEveryRequest(PunchFixCase):
 
 	def test_somebody_filing_for_the_employee_needs_a_reason_on_a_held_day(self):
 		"""`raise_for_report` is the door for a manager and for HR; HR is used here because the
-		manager's insert right needs a User Permission this fixture does not make."""
+		manager's insert right needs a User Permission this fixture does not make. Slice 086 (ALV-425): HR
+		may file only for a direct report, so the HR person is made this employee's manager first."""
 		self.held_three()
+		boss = frappe.get_doc("Employee", self.emp)
+		boss.reports_to = self.h.hr_emp
+		boss.save(ignore_permissions=True)
 		frappe.set_user(self.hr)
 		try:
 			with patch.object(ac, "manager_on_behalf_on", return_value=True):
@@ -985,6 +989,43 @@ class ReasonOnEveryRequest(PunchFixCase):
 			frappe.set_user("Administrator")
 		self.assertIn("He told me", frappe.db.get_value(REQUEST, out["name"], "explanation"))
 		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "alvoraa_needs_confirm"), 1)
+
+	def test_a_reason_that_would_empty_itself_is_refused_not_stored(self):
+		"""ALV-436. The fault: Frappe cleans every Small Text on save and removes anything
+		shaped like a tag, so `<machine down>` was stored as nothing at all - AFTER the "a
+		reason is needed" refusal above had already passed. A mandatory reason silently
+		emptying itself is the worst shape this bug could take, because the reason is the
+		evidence counsel cleared DTC and Grace on.
+
+		Asserted from both sides, the habit this file keeps: the brackets are refused AND an
+		ordinary reason is stored exactly as typed. A test that only proves the refusal
+		passes just as well on code that refuses everything."""
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: punch_fix.send(self.day, "12:00", None, "<machine down>"),
+			             "without < and >")
+			self.refused(lambda: punch_fix.send(self.day, "12:00", None, "Punch missed <not my fault>"),
+			             "without < and >")
+			out = punch_fix.send(self.day, "12:00", None, "machine 9 > 8 was down & I told HR")
+		finally:
+			frappe.set_user("Administrator")
+		# The control: what a person types is what payroll reads, character for character.
+		self.assertEqual(frappe.db.get_value(REQUEST, out["name"], "explanation"),
+		                 "machine 9 > 8 was down & I told HR")
+
+	def test_nothing_was_written_by_the_refused_attempt(self):
+		"""ALV-436, the half that matters to an auditor: a refusal must leave no row behind."""
+		self.day_of([("09:00", "IN"), ("18:00", "OUT")])
+		before = frappe.db.count(REQUEST)
+		frappe.set_user(self.emp_user)
+		try:
+			self.refused(lambda: punch_fix.send(self.day, "12:00", None, "<machine down>"),
+			             "without < and >")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count(REQUEST), before,
+		                 "a request was stored for a reason that was refused")
 
 
 class Confirm(PunchFixCase):
@@ -1427,8 +1468,15 @@ class V5(PunchFixCase):
 		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import salary_components_and_workings as rpt
 		self.assertIn("unconfirmed", [c["fieldname"] for c in rpt._columns()])
 
-	def test_the_register_seam_is_declared_and_not_available_yet(self):
-		self.refused(lambda: punch_fix.record_register_signature(["HR-ARQ-X"], "NOTICE-X"), "not available yet")
+	def test_the_register_seam_refuses_a_notice_that_does_not_exist(self):
+		"""Slice 088 part 1 implemented this seam, so it no longer says "not available yet".
+
+		What 087 needs to keep proving is that the seam is WIRED and is not a no-op: handed a
+		notice that does not exist it refuses, rather than quietly marking the days as signed
+		for a page nobody ever printed. The marking itself is proved in
+		`test_register_notice_088`, which owns the notice record."""
+		self.refused(lambda: punch_fix.record_register_signature(["HR-ARQ-X"], "NOTICE-X"),
+		             "does not exist")
 
 	def test_the_printed_reason_hint_is_on_every_reason_box_and_has_a_hindi_line(self):
 		js = open(os.path.join(PKG, "public/js/ess/portal.js")).read()

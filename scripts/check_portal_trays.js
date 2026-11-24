@@ -98,6 +98,9 @@ const INVENTORY = {
   // punch is tapped, into one host appended to <body> (acPfHost), so no panel
   // can be its frame. Escape or a tap outside closes it; leaving the page clears it.
   ".pfx-scrim":           { page: "portal", kind: "dialog", open: "script" },
+  // Slice 086: the Held view's send bar. Built by script into one host on <body> (hdlBarHost) when a
+  // row is ready, removed when the Held view or the page is left; above the bottom nav on a phone.
+  ".hdl-barfix":          { page: "portal", kind: "toast" },
   // Slice 078: the "what people can see about each other" picker. Built by
   // script when the button is pressed and appended to <body>, like 076's
   // sheets, so no panel can be its frame. Escape cancels and writes nothing.
@@ -108,6 +111,21 @@ const INVENTORY = {
   // page does not fit a 480 px drawer.
   ".mpf-dv":              { page: "portal", kind: "dialog", open: "script" },
   "#cal-signoff-modal":   { page: "portal", kind: "dialog", open: "style" },
+  // Slice 088: the change-notice print preview, and the backdrop of the sheet
+  // that records a signature. Both are built by script when a button is pressed
+  // and appended to <body>, like 076's sheets and 087's punch-fix scrim, so no
+  // panel can be their frame. `.rn-pv` covers the window because it is what the
+  // printer sees: the @media print block in panels.css hides every other child
+  // of <body> and makes `.rn-pv` static, so the A4 sheets print on their own.
+  // A tap outside `.rn-scrim`, or Escape, closes it and writes nothing.
+  ".rn-pv":               { page: "portal", kind: "dialog", open: "script" },
+  ".rn-scrim":            { page: "portal", kind: "dialog", open: "script" },
+  // Slice 090: People trends' "Why is this not shared?" sheet. Built by script when the button is
+  // pressed and appended to <body>, so no panel can be its frame. The scrim covers the window; the
+  // sheet is a bottom sheet (left and right at 0, bottom at 0, 640 px wide at most) placed by
+  // script above it. Escape, the Close button or a tap on the scrim closes it and writes nothing.
+  "#pt-sheet-scrim":      { page: "portal", kind: "dialog", open: "script" },
+  "#pt-sheet":            { page: "portal", kind: "popover", open: "script" },
   // The -next page (a separate document; left rail and bottom sheet only)
   ".nf-rail":             { page: "next", kind: "shell" },
   ".nf-scrim":            { page: "next", kind: "scrim" },

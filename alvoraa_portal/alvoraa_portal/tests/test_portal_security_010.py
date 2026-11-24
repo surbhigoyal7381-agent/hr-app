@@ -750,6 +750,12 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "leave_rules.py"): 0,
 		# Slice 085: one deliberate bypass, the slip re-save after a release (F6).
 		("alvoraa_portal", "held_day.py"): 1,
+		# Slice 089 (new file, OPS-24). ONE: the "Alert" bell line written FOR
+		# another person (the reporter), whom the confirmer's save acts on
+		# behalf of. A user cannot create a Notification Log for somebody else.
+		# The ToDos themselves are plain inserts, and the auto-close is one
+		# `frappe.db.set_value` (listed in 03-implementation-notes).
+		("alvoraa_portal", "leaver_report.py"): 1,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
 		# is proven for them too, not only for files already listed.
 		("alvoraa_portal", "org_figures.py"): 0,

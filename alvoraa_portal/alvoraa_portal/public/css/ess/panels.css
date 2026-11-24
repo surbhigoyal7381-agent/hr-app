@@ -1779,6 +1779,7 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .sc-emp-name{font-size:var(--fs-lg);font-weight:700;color:var(--text);line-height:1.2}
 .sc-emp-role{font-size:var(--fs-base);color:var(--text3);margin-top:2px}
 .sc-join-badge{font-size:var(--fs-xs);color:var(--text3);background:var(--surface2);padding:4px 10px;border-radius:var(--r-full);white-space:nowrap;flex-shrink:0}
+@media (max-width:480px){.sc-topbar{gap:10px;padding:12px 16px}.sc-identity{flex:1 1 150px;gap:10px}}
 .sc-body{flex:1;overflow-y:auto;padding:20px 24px}
 .sc-stat-row{display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:16px}
 .sc-stat{flex:1;text-align:center;padding:14px 8px}
@@ -2555,6 +2556,9 @@ body.panel-fullscreen{overflow:hidden}
   border-radius:var(--r-full);border:1px solid var(--border);
   background:var(--surface);color:var(--text2);cursor:pointer}
 .tr-chip b{font-weight:700}
+.tr-chip{display:inline-flex;align-items:center;gap:6px;min-height:24px}
+.tr-chip-ic{flex-shrink:0}
+@media(max-width:768px){.tr-chip{min-height:44px;padding:4px 16px}.hdl-banner .btn{min-height:44px}}
 .tr-chip.on{background:var(--primary);border-color:var(--primary);color:var(--surface)}
 .tr-chip.bad:not(.on){border-color:var(--red);color:var(--red)}
 .tr-chip.warn:not(.on){border-color:var(--amber);color:var(--amber)}
@@ -3440,3 +3444,141 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
 .pfx-pre{list-style:none;margin:8px 0 0;padding:0}
 .pfx-pre li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--border);font-size:14px;line-height:20px}
 .pfx-pre .btn{min-height:44px;flex:none}
+
+/* ── Slice 088: the monthly change notice ──────────────────────────────────
+   Three surfaces: HR's month card, the A4 print preview, and the record dialog.
+
+   **The sheet has its own small palette, and that is deliberate.** This portal has
+   a dark theme. Every other panel uses `--surface` and `--text`, which is right for
+   a screen and wrong for paper: in dark mode they would print pale ink on a dark
+   background, or white on white. A printed page is black ink on white paper whatever
+   the person's screen is set to, so the sheet names its own ink and paper here, in
+   `:root`, where the design system keeps a palette - not scattered through the rules
+   as hand-painted values. The screen parts use the shared tokens like everything
+   else. The CI design check is what made me write this down; the reason it matters
+   is the dark-mode print, which the check cannot see. */
+:root{
+  --rn-paper:#ffffff;      /* the page */
+  --rn-ink:#111111;        /* body text */
+  --rn-ink2:#444444;       /* the footer and the box labels */
+  --rn-rule:#333333;       /* table and box borders, dark enough to photocopy */
+  --rn-rule-soft:#cccccc;  /* the hairline above the footer */
+  --rn-head:#f3f3f3;       /* the table's heading row */
+  --rn-edge:#dddddd;       /* the preview's own border, screen only */
+}
+.rn-card h3{margin:0 0 4px;font-size:var(--fs-md)}
+.rn-sub{font-size:var(--fs-sm);color:var(--text3);margin:0 0 8px}
+.rn-mbar{display:flex;align-items:center;gap:12px;margin:10px 0}
+.rn-mbar b{font-size:var(--fs-base);min-width:150px;text-align:center}
+.rn-mbar button{min-width:44px;min-height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--r-sm);font-size:var(--fs-md);cursor:pointer}
+.rn-mbar button[disabled]{opacity:.4;cursor:default}
+.rn-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0}
+.rn-tools label{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);min-height:44px;cursor:pointer}
+.rn-tools input[type=checkbox]{width:20px;height:20px}
+.rn-list{list-style:none;margin:8px 0 0;padding:0}
+.rn-list li{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--border);font-size:var(--fs-sm);line-height:20px}
+.rn-list .rn-nm{font-weight:600}
+.rn-list .rn-meta{font-size:var(--fs-sm);color:var(--text3)}
+.rn-note{grid-column:1 / -1;font-size:var(--fs-sm);line-height:19px}
+.rn-note small{display:block;color:var(--text3)}
+.rn-acts{display:flex;gap:8px;flex-wrap:wrap}
+.rn-acts .btn{min-height:44px}
+.rn-filer{font-size:var(--fs-sm);color:var(--text3);max-width:320px}
+.rn-ok{color:var(--green)}
+.rn-warn{color:var(--amber)}
+.rn-logline{font-size:var(--fs-xs);color:var(--text3);margin:10px 0 0}
+.rn-empty{padding:18px 0;font-size:var(--fs-sm)}
+.rn-empty b{display:block;font-size:var(--fs-base);margin-bottom:4px}
+.rn-err{color:var(--red);font-size:var(--fs-sm);margin:0 0 10px}
+.rn-sk{height:44px;border-radius:var(--r-sm);background:var(--surface2);margin:8px 0;animation:rn-pulse 1.4s ease-in-out infinite}
+@keyframes rn-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* the preview */
+.rn-pv{position:fixed;inset:0;z-index:70;background:var(--bg);overflow:auto}
+.rn-pvbar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+.rn-pvbar .rn-pvnote{font-size:var(--fs-xs);color:var(--text3);flex:1 1 240px}
+.rn-pvwrap{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px}
+/* 210x297 mm at 96 dpi is 794x1123 px. The only place in this product drawn to a
+   paper size, which is why these two numbers are literal. */
+.rn-a4{width:794px;min-height:1123px;box-sizing:border-box;padding:48px 56px;
+       background:var(--rn-paper);color:var(--rn-ink);border:1px solid var(--rn-edge);
+       box-shadow:var(--sh1);font-size:var(--fs-base);line-height:22px}
+.rn-a4 .rn-top{display:flex;justify-content:space-between;font-size:var(--fs-sm);color:var(--rn-ink2);border-bottom:1px solid var(--rn-rule);padding-bottom:6px}
+.rn-a4 h2{font-size:var(--fs-lg);margin:18px 0 10px}
+.rn-a4 .rn-who{margin:0 0 12px}
+.rn-a4 .rn-who .rn-nm{font-size:var(--fs-md);font-weight:700}
+.rn-a4 .rn-intro{margin:0 0 14px}
+.rn-a4 table{width:100%;border-collapse:collapse;font-size:var(--fs-base)}
+.rn-a4 th,.rn-a4 td{border:1px solid var(--rn-rule);padding:8px 10px;text-align:left;vertical-align:top}
+.rn-a4 th{background:var(--rn-head);font-size:var(--fs-sm)}
+.rn-a4 .rn-cnt{font-weight:700;margin-top:4px}
+.rn-a4 .rn-rule{border:1px solid var(--rn-rule);padding:10px;margin:16px 0 0;font-weight:600}
+.rn-a4 .rn-hold{border-top:none;font-weight:400}
+.rn-a4 .rn-read{margin:16px 0 8px}
+.rn-a4 .rn-boxes{display:flex;gap:16px}
+.rn-a4 .rn-box{border:1px solid var(--rn-rule);flex:1;height:26mm;padding:6px 8px;font-size:var(--fs-sm);color:var(--rn-ink2)}
+.rn-a4 .rn-box.rn-dt{flex:0 0 46mm}
+.rn-a4 .rn-foot{margin-top:18px;font-size:var(--fs-xs);color:var(--rn-ink2);border-top:1px solid var(--rn-rule-soft);padding-top:6px}
+
+/* Printing. Only the sheets go on the paper: the bar, the portal frame and every
+   other panel are left off, so a stray header cannot push a sign box onto page two. */
+@media print{
+  body>*{display:none !important}
+  body>.rn-pv{display:block !important;position:static;overflow:visible;background:var(--rn-paper)}
+  .rn-noprint{display:none !important}
+  .rn-pvwrap{padding:0;gap:0}
+  .rn-a4{width:auto;min-height:auto;border:none;box-shadow:none;padding:12mm 14mm;
+         page-break-after:always;break-after:page}
+  .rn-a4:last-child{page-break-after:auto;break-after:auto}
+  @page{size:A4;margin:0}
+}
+
+/* the dialog */
+.rn-scrim{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center}
+.rn-sheet{background:var(--surface);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:var(--r) var(--r) 0 0;padding:18px 18px 24px}
+@media (min-width:720px){.rn-scrim{align-items:center}.rn-sheet{border-radius:var(--r)}}
+.rn-sheet h3{margin:0 0 6px;font-size:var(--fs-md)}
+.rn-sheet .rn-cov{margin:10px 0;padding-left:20px;font-size:var(--fs-sm)}
+.rn-sheet label{display:block;font-size:var(--fs-sm);font-weight:600;margin:14px 0 6px}
+.rn-sheet .rn-hint{font-size:var(--fs-sm);color:var(--text3);font-weight:400;margin:2px 0 6px}
+.rn-sheet textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--border);border-radius:var(--r-sm)}
+.rn-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.rn-thumbs img{width:88px;height:88px;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--border)}
+.rn-sheet .rn-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.rn-sheet .rn-foot .btn{min-height:48px;flex:1 1 auto}
+
+/* Slice 089: leaver report, quiet on purpose (design v2: not loud). */
+.lv-icon{flex-shrink:0;background:none;border:0;color:var(--text3);min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border-radius:var(--r-sm)}
+.lv-icon:hover,.lv-icon:focus-visible{color:var(--text);background:var(--surface2)}
+.lv-note,.lv-emp-note{margin:0 0 12px;padding:2px 0 2px 12px;border-left:3px solid var(--border2);color:var(--text2);font-size:var(--fs-base)}
+.lv-state{margin-top:8px;font-size:var(--fs-xs);color:var(--text3)}
+.lv-dl{margin:0;display:grid;grid-template-columns:minmax(0,40%) minmax(0,60%);gap:8px 14px;align-items:start}
+.lv-dl dt{margin:0;font-size:var(--fs-xs);color:var(--text3)}
+.lv-dl dd{margin:0;font-size:var(--fs-base);overflow-wrap:anywhere}
+.lv-personal{grid-column:1/-1}
+@media (max-width:600px){.lv-dl{grid-template-columns:1fr;gap:2px}.lv-dl dd{margin-bottom:8px}}
+
+/* Slice 086: the Held view on the Whole team page. Values reused from the .tr- and .pfx- rules above; no new size or radius. */
+.hdl-top{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-end;margin-bottom:12px}
+.hdl-line{font-size:var(--fs-md);font-weight:600;margin:0}
+.hdl-row{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);padding:14px;margin-top:10px}
+.hdl-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.hdl-day{font-size:var(--fs-xs);color:var(--text3)}
+.hdl-state{margin-left:auto;font-size:var(--fs-xs);font-weight:700;color:var(--green)}
+.hdl-punches{font-size:var(--fs-xs);color:var(--text2);margin:4px 0 8px}
+.hdl-dgrp{font-size:var(--fs-xs);font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:20px 0 0}
+.hdl-empty{padding:24px 0;color:var(--text2)}
+.hdl-empty b{display:block;font-size:var(--fs-md);color:var(--text);margin-bottom:4px}
+.hdl-empty-go{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.hdl-row input[type=time]{max-width:200px;min-height:44px;font-size:16px}
+.hdl-row textarea{width:100%;min-height:48px;font-size:16px}
+.hdl-refused{border:1px solid var(--red);color:var(--red);font-weight:600;font-size:var(--fs-xs);border-radius:var(--r-sm);padding:8px 10px;margin:8px 0 0}
+.hdl-banner{border:1px solid var(--border2);background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;font-weight:600}
+.hdl-barfix{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -4px 16px rgba(0,0,0,.08);padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.hdl-barfix .hdl-sum{flex:1;min-width:0;font-size:var(--fs-xs)}
+.hdl-barfix .btn{min-height:48px}
+.hdl-space{height:140px}
+@media(max-width:768px){.hdl-barfix{bottom:var(--bottom-h)}}
+.hdl-list{list-style:none;margin:8px 0 16px;padding:0}
+.hdl-list li{padding:8px 0;border-top:1px solid var(--border)}
+.hdl-q{font-size:var(--fs-xs);color:var(--text2)}

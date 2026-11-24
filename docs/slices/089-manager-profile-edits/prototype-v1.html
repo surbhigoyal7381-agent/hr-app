@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leaver Report Prototype</title>
+<style>
+/* Tokens copied from templates/includes/design_system.html (light and dark). */
+:root{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#94600F;--amber-lt:#FBF1E0;--hero-bg:#3D3461;--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--r-full:999px}
+[data-theme=dark]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;--hero-bg:#2A2438;--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 var(--font)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.vbar{position:sticky;top:0;z-index:50;background:var(--hero-bg);color:#fff;padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;font-size:13px}
+.vbar b{font-weight:600}.vbar .grp{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.vbar button,.vbar select{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;min-height:32px}
+.vbar select option{color:#000}
+.vbar button[aria-pressed=true]{background:#fff;color:#3D3461;font-weight:600}
+.vnote{font-size:12px;opacity:.85}
+.wrap{display:flex;gap:24px;padding:18px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+.stagecol{flex:0 1 auto;max-width:100%}
+.side{flex:1 1 300px;max-width:440px;font-size:13px;color:var(--text2)}
+.side h3{margin:0 0 6px;font-size:15px;color:var(--text)}
+.side ul{padding-left:18px;margin:0 0 12px}.side li{margin-bottom:5px}
+.device{position:relative;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh2)}
+.device.phone{width:360px;height:700px}
+.device.desktop{width:min(1040px,calc(100vw - 40px));min-height:660px}
+.device .scroll{height:100%;overflow:auto}
+.device.desktop .scroll{height:auto;min-height:660px}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;position:sticky;top:0;z-index:5}
+.title{font-size:18px;font-weight:700}.sub{font-size:13px;color:var(--text3)}
+.pad{padding:14px 16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.name{font-size:16px;font-weight:600;overflow-wrap:anywhere}.job{font-size:14px;color:var(--text2)}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:var(--r-full);padding:3px 10px;font-size:13px;font-weight:600;border:1px solid transparent}
+.chip.green{background:var(--green-lt);color:var(--green);border-color:var(--green)}
+.chip.amber{background:var(--amber-lt);color:var(--amber);border-color:var(--amber)}
+.chip.grey{background:var(--surface2);color:var(--text2);border-color:var(--border2)}
+.chip.red{background:var(--red-lt);color:var(--red);border-color:var(--red)}
+.sample{font-size:12px;font-weight:600;background:var(--surface2);color:var(--text2);border:1px dashed var(--border2);border-radius:4px;padding:1px 6px;margin-left:6px;white-space:nowrap}
+.btn{min-height:44px;min-width:44px;padding:8px 14px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);cursor:pointer;font-size:15px;font-weight:600;color:var(--text)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+[data-theme=dark] .btn.primary{color:#1A1815}
+.btn.text{border-color:transparent;background:transparent;color:var(--primary)}
+.btn.sm{min-height:44px;font-size:14px}
+.btn.block{width:100%}
+.row2{display:flex;gap:8px;margin-top:10px}.row2 .btn{flex:1}
+label{display:block;font-weight:600;margin:12px 0 4px;font-size:14px}
+.in{width:100%;min-height:44px;font-size:16px;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface)}
+.hint{font-size:13px;color:var(--text3);margin-top:4px}
+.err{background:var(--red-lt);color:var(--red);border:1px solid var(--red);border-radius:var(--r-sm);padding:10px;margin:10px 0;font-size:14px}
+.info{background:var(--primary-lt);border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px;margin:10px 0;font-size:14px}
+.warn{background:var(--amber-lt);color:var(--text);border:1px solid var(--amber);border-radius:var(--r-sm);padding:10px;margin:10px 0;font-size:14px}
+.ok{background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r-sm);padding:10px;margin:10px 0;font-size:14px}
+.ov{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.device.desktop .ov{align-items:center}
+.dlg{background:var(--surface);width:100%;max-height:92%;overflow:auto;border-radius:16px 16px 0 0;padding:16px;box-shadow:var(--sh3)}
+.device.desktop .dlg{width:520px;border-radius:var(--r)}
+.dlg h2{margin:0 0 6px;font-size:18px}
+.dl{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px}
+.dl span:first-child{color:var(--text3);flex:0 0 40%}.dl span:last-child{text-align:right;overflow-wrap:anywhere}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tag{background:var(--primary-lt);border:1px solid var(--border2);border-radius:var(--r-full);padding:4px 12px;font-size:14px}
+.chk{display:flex;gap:10px;align-items:flex-start;padding:10px 4px;min-height:44px;border-bottom:1px solid var(--border);font-weight:400;margin:0;cursor:pointer}
+.chk input{width:22px;height:22px;margin-top:1px;accent-color:var(--primary);flex:none}
+.desk{font-family:system-ui,sans-serif;background:#f4f5f6;color:#1f272e;min-height:660px}
+.desk .nav{background:#fff;border-bottom:1px solid #d1d8dd;padding:10px 18px;font-weight:600;display:flex;gap:16px;align-items:center}
+.desk .pg{padding:18px;max-width:900px}
+.desk table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #d1d8dd;border-radius:8px}
+.desk th,.desk td{text-align:left;padding:10px 12px;border-bottom:1px solid #ebeef0;font-size:14px}
+.desk th{color:#6c7680;font-weight:500;font-size:13px}
+.desk .b{background:#fff;border:1px solid #d1d8dd;border-radius:8px;padding:16px;margin-bottom:14px}
+.desk .in{border-radius:6px}.desk .lbl{font-size:12px;color:#6c7680;margin:10px 0 3px;font-weight:400}
+.desk .dbtn{background:#2490ef;color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;min-height:36px}
+.desk .dbtn.g{background:#ebeef0;color:#1f272e}
+.desk .ind{display:inline-block;background:#fff0f0;color:#e24c4c;border-radius:12px;padding:2px 10px;font-size:12px}
+.desk .ind.gr{background:#e4f5e9;color:#30a66d}
+.desk .timeline{border-left:2px solid #d1d8dd;padding-left:12px;margin-top:12px;font-size:13px;color:#4c5a67}
+.deskwarn{font-size:12px;color:#6c7680;margin-bottom:10px}
+.toast{position:absolute;left:12px;right:12px;bottom:12px;background:var(--text);color:var(--bg);padding:12px;border-radius:var(--r-sm);z-index:30;font-size:14px}
+.set-row{padding:14px 0;border-top:1px solid var(--border)}
+.set-row:first-of-type{border-top:0}
+.sel{min-height:44px;font-size:16px;padding:6px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);min-width:240px}
+.top-banner{background:var(--amber-lt);border-bottom:1px solid var(--amber);padding:12px 16px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="vbar" id="vbar" role="region" aria-label="Prototype controls. Not part of the product.">
+  <b>Prototype v1 · slice 089</b><span class="vnote">Controls here are for you. They are not part of the product. All names and numbers are Sample.</span>
+  <div class="grp" role="group" aria-label="Who you are">View as:
+    <button data-v="manager">Store manager</button><button data-v="employee">Employee reported</button><button data-v="payroll">Confirmer (Desk)</button><button data-v="admin">Administrator</button></div>
+  <div class="grp" role="group" aria-label="Device">Device:
+    <button data-d="phone">Phone 360 px</button><button data-d="desktop">Desktop</button></div>
+  <div class="grp" role="group" aria-label="Theme and language"><button data-th="1" id="thBtn">Dark</button>
+    <button data-l="en">English</button><button data-l="hi">हिन्दी (machine draft)</button></div>
+  <div class="grp">When sending:
+    <select id="sim" aria-label="What happens when the manager sends"><option value="ok">It works</option><option value="offline">No connection</option><option value="refused">Server refuses: not your report</option><option value="dup">Server refuses: already reported</option></select></div>
+  <div class="grp"><button data-p="empty">Settings: default (both lists empty)</button><button data-p="example">Settings: example</button><button data-reset="1">Start again</button></div>
+</div>
+<div class="wrap"><div class="stagecol" id="stage"></div><div class="side" id="side"></div></div>
+<script>
+"use strict";
+var TODAY_ISO="2026-11-22", JOIN_ISO="2024-03-03";
+var MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmt(iso){var p=iso.split("-");return (+p[2])+" "+MONTHS[+p[1]-1]+" "+p[0];}
+function addDays(iso,n){var d=new Date(iso+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
+var PEOPLE=[
+ {n:"Ravi Kumar",first:"Ravi",job:"Sales Associate",here:true},
+ {n:"Anita Devi",first:"Anita",job:"Cashier",here:true},
+ {n:"Sunil Yadav",first:"Sunil",job:"Stock Associate",here:false},
+ {n:"Pooja Singh",first:"Pooja",job:"Sales Associate",here:true}];
+var MGR="Meena Sharma";
+var PERSONAL=[
+ {k:"phone",label:"Personal phone",val:"98765 43210",hint:"Staff can already correct this on My profile."},
+ {k:"email",label:"Personal email",val:"ravi.k@example.test",hint:"Staff can already correct this on My profile."},
+ {k:"addr",label:"Home address",val:"14 Gali No. 3, Karol Bagh, Delhi",hint:"Staff can already correct this on My profile."},
+ {k:"emg",label:"Emergency contact",val:"Kamla Devi, Mother, 98100 12345",hint:"Name, relation and phone. Staff can already correct these."}];
+var ROLES={"HR Manager":2,"HR User":2,"Accounts team":0};
+var DEF={view:"manager",device:"phone",theme:"light",lang:"en",see:[],change:[],role:"HR Manager",notice:null,emg:{name:"Kamla Devi",rel:"Mother",ph:"98100 12345",by:null,on:null},sheet:null,dlg:null,toast:"",sim:"ok",adminLine:"",roleErr:""};
+var S=JSON.parse(JSON.stringify(DEF));
+
+var T={en:{
+ left:"Report that {n} left",details:"Details",sheetTitle:"{n} left?",lwd:"Last working day",lwdHint:"The last day {n} worked, or will work.",
+ preview:"You are reporting: {n} · last working day {d}.",
+ notice:"This is sent for confirmation. Until it is confirmed, nothing changes for {n}: {n} stays on your team and is shown as working.",
+ send:"Report that {n} left",notnow:"Not now",sending:"Sending…",
+ chip:"Reported, not yet confirmed",chipLine:"Last working day {d}. You reported it on {r}.",
+ sentTitle:"Sent for confirmation",sentBody:"You reported this on {r}. {n} shows as working until it is confirmed. Wrong person or date? Ask HR.",done:"Done",
+ offline:"Not sent. We kept your date. Try again when you have signal.",retry:"Try again",
+ refused:"{n} does not report to you, so you cannot report this. Ask HR.",
+ dup:"You already reported {n} on {r}. It has not been confirmed yet.",
+ tooold:"The last working day cannot be more than 31 days ago. Check the date.",
+ toofar:"The last working day cannot be more than 60 days ahead. Check the date.",
+ empBanner:"{m} reported that your last working day is {d}. It has not been confirmed yet. Nothing about your pay or sign-in has changed. Not right? Speak to HR."},
+hi:{left:"{n} ने छोड़ा, यह बताएं",details:"विवरण",sheetTitle:"क्या {n} ने नौकरी छोड़ दी?",lwd:"आख़िरी कार्य दिवस",lwdHint:"{n} का आख़िरी कार्य दिवस।",
+ preview:"आप बता रहे हैं: {n} · आख़िरी कार्य दिवस {d}।",
+ notice:"यह पुष्टि के लिए भेजा जाता है। पुष्टि तक {n} के लिए कुछ नहीं बदलता: {n} आपकी टीम में काम करते हुए दिखेंगे।",
+ send:"बताएं कि {n} ने नौकरी छोड़ दी",notnow:"अभी नहीं",sending:"भेज रहे हैं…",
+ chip:"बताया गया, अभी पुष्टि नहीं",chipLine:"आख़िरी कार्य दिवस {d}। आपने इसे {r} को बताया।",
+ sentTitle:"पुष्टि के लिए भेज दिया",sentBody:"आपने इसे {r} को बताया। पुष्टि तक {n} काम करते हुए दिखेंगे। गलत व्यक्ति या तारीख? एचआर से पूछें।",done:"ठीक है",
+ offline:"भेजा नहीं गया। आपकी तारीख़ सुरक्षित है। नेटवर्क आने पर फिर कोशिश करें।",retry:"फिर कोशिश करें",
+ empBanner:"{m} ने बताया कि आपका आख़िरी कार्य दिवस {d} है। अभी इसकी पुष्टि नहीं हुई है। आपके वेतन या साइन-इन में कुछ नहीं बदला है। सही नहीं है? एचआर से बात करें।"}};
+function t(k,v){var s=(T[S.lang]&&T[S.lang][k])||T.en[k]||k;if(v)for(var a in v)s=s.split("{"+a+"}").join(v[a]);return s;}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+var SMP='<span class="sample">Sample</span>';
+
+/* ---------- Manager ---------- */
+function mgrTeam(){
+ var h='<div class="topbar"><div class="title">Team View</div><div class="sub">Your direct reports '+SMP+'</div></div><div class="pad">';
+ PEOPLE.forEach(function(p,i){
+  var rep=S.notice&&S.notice.i===i&&S.notice.status==="open";
+  h+='<div class="card"><div class="name">'+esc(p.n)+'</div><div class="job">'+esc(p.job)+'</div>'+
+   '<div style="margin-top:6px"><span class="chip '+(p.here?'green':'grey')+'">'+(p.here?'Present today':'Not in yet today')+'</span></div>';
+  if(rep){
+   h+='<div style="margin-top:8px"><span class="chip amber">⏳ '+t("chip")+'</span></div><div class="hint" style="font-size:14px">'+t("chipLine",{d:fmt(S.notice.date),r:fmt(S.notice.on)})+'</div>'+
+      '<div class="row2"><button class="btn" data-a="profile" data-i="'+i+'">'+t("details")+'</button></div>';
+  }else{
+   h+='<div class="row2"><button class="btn" data-a="profile" data-i="'+i+'">'+t("details")+'</button><button class="btn" data-a="report" data-i="'+i+'" id="left'+i+'">'+t("left",{n:p.first})+'</button></div>';
+  }
+  h+='</div>';
+ });
+ if(S.notice&&S.notice.status==="closed")h+='<div class="info">The report about '+esc(PEOPLE[S.notice.i].first)+' was closed without being confirmed, on 24 Nov 2026. '+esc(PEOPLE[S.notice.i].first)+' stays on your team. Ask HR why. '+SMP+'</div>';
+ if(S.notice&&S.notice.status==="confirmed")h+='<div class="ok">Confirmed: '+esc(PEOPLE[S.notice.i].n)+' left on '+fmt(S.notice.finalDate)+'. '+esc(PEOPLE[S.notice.i].first)+' is no longer on your list. '+SMP+'</div>';
+ return h+'</div>';
+}
+function peopleVisible(){return PEOPLE.map(function(p,i){return i;}).filter(function(i){return !(S.notice&&S.notice.status==="confirmed"&&S.notice.i===i);});}
+function sheetReport(){
+ var sh=S.sheet,p=PEOPLE[sh.i],n=p.first,h='<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dt"><h2 id="dt">'+t("sheetTitle",{n:p.n})+'</h2>';
+ if(sh.done){
+  h+='<div class="ok"><b>'+t("sentTitle")+'</b><br>'+t("sentBody",{n:n,r:fmt(TODAY_ISO)})+'</div><button class="btn primary block" data-a="close" id="firstf">'+t("done")+'</button></div>';return h;}
+ h+='<label for="lwd">'+t("lwd")+'</label><input class="in" type="date" id="lwd" data-f="lwd" value="'+sh.date+'" min="'+addDays(TODAY_ISO,-31)+'" max="'+addDays(TODAY_ISO,60)+'" aria-describedby="lwdh"><div class="hint" id="lwdh">'+t("lwdHint",{n:n})+'</div>';
+ if(sh.err)h+='<div class="err" role="alert">'+sh.err+'</div>';
+ h+='<div class="info" id="prev">'+t("preview",{n:esc(p.n),d:fmt(sh.date)})+'</div><p style="margin:8px 0">'+t("notice",{n:n})+'</p>'+
+  '<button class="btn primary block" data-a="send" id="sendb">'+(sh.offline?t("retry"):(sh.sending?t("sending"):t("send",{n:n})))+'</button>'+
+  '<button class="btn text block" data-a="close" style="margin-top:6px">'+t("notnow")+'</button></div>';
+ return h;
+}
+function sheetProfile(){
+ var p=PEOPLE[S.sheet.i],h='<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dt"><h2 id="dt">'+esc(p.n)+'</h2><div class="job">'+esc(p.job)+' '+SMP+'</div>'+
+  '<div style="margin-top:10px;font-weight:600">Work details</div><div class="hint">Already built in slice 078. Not changed here.</div>'+
+  '<div class="dl"><span>Branch</span><span>Karol Bagh</span></div><div class="dl"><span>Reports to</span><span>'+MGR+'</span></div><div class="dl"><span>Joined</span><span>'+fmt(JOIN_ISO)+'</span></div>';
+ if(S.see.length){
+  h+='<div style="margin-top:14px;font-weight:600">Personal details</div><div class="hint">Your organisation lets managers see these. Only you and HR can see them. Staff can see that you can.</div>';
+  PERSONAL.forEach(function(f){
+   if(S.see.indexOf(f.k)<0)return;
+   var v=f.val;if(f.k==="emg")v=S.emg.name+", "+S.emg.rel+", "+S.emg.ph;
+   h+='<div class="dl"><span>'+f.label+'</span><span>'+esc(v)+'</span></div>';
+   if(f.k==="emg"&&S.change.indexOf("emg")>=0)h+='<div style="text-align:right"><button class="btn" data-a="edit" data-i="'+S.sheet.i+'">Change emergency contact</button></div>';
+  });
+ }
+ return h+'<button class="btn block" data-a="close" id="firstf" style="margin-top:14px">Close</button></div>';
+}
+function sheetEdit(){
+ var p=PEOPLE[S.sheet.i],e=S.emg;
+ return '<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dt"><h2 id="dt">Emergency contact for '+esc(p.first)+'</h2>'+
+ '<div class="hint">Ask '+esc(p.first)+' first if you can. '+esc(p.first)+' will see on My profile that you changed it.</div>'+
+ '<label for="en">Name</label><input class="in" id="en" value="'+esc(e.name)+'">'+
+ '<label for="er">Relation</label><input class="in" id="er" value="'+esc(e.rel)+'">'+
+ '<label for="ep">Phone</label><input class="in" id="ep" inputmode="tel" value="'+esc(e.ph)+'">'+
+ '<button class="btn primary block" data-a="saveEmg" style="margin-top:14px">Save emergency contact for '+esc(p.first)+'</button>'+
+ '<button class="btn text block" data-a="close" style="margin-top:6px">Cancel</button></div>';
+}
+function manager(){
+ var h=mgrTeam();
+ if(S.notice&&S.notice.status==="confirmed"){ /* confirmed person leaves the list */
+  var keep=peopleVisible();var tmp=mgrTeam();h=tmp; }
+ return '<div class="scroll">'+h+'</div>'+overlay();
+}
+function overlay(){
+ var s=S.sheet,h="";
+ if(s){h='<div class="ov" data-a="ovclick">'+(s.type==="report"?sheetReport():s.type==="profile"?sheetProfile():sheetEdit())+'</div>';}
+ if(S.dlg)h+=dlgAdmin();
+ if(S.toast)h+='<div class="toast" role="status">'+esc(S.toast)+'</div>';
+ return h;
+}
+
+/* ---------- Employee ---------- */
+function employee(){
+ var i=S.notice?S.notice.i:0,p=PEOPLE[i],h='<div class="scroll"><div class="topbar"><div class="title">My profile</div><div class="sub">'+esc(p.n)+' '+SMP+'</div></div>';
+ if(S.notice&&S.notice.status==="open")h+='<div class="top-banner" role="status">'+t("empBanner",{m:"Your manager "+MGR,d:fmt(S.notice.date)})+'</div>';
+ h+='<div class="pad"><div class="card"><div style="font-weight:600;margin-bottom:6px">My details</div><div class="dl"><span>Personal phone</span><span>98765 43210</span></div><div class="dl"><span>Emergency contact</span><span>'+esc(S.emg.name+", "+S.emg.rel+", "+S.emg.ph)+'</span></div>';
+ if(S.emg.by)h+='<div class="warn" style="font-size:14px">Changed by your manager '+esc(S.emg.by)+' on '+fmt(S.emg.on)+'. Not right? You can correct it here, or speak to HR.</div>';
+ h+='</div>';
+ if(!S.notice)h+='<div class="hint">Nothing here yet about your last working day. If your manager reports one, you will see it at the top of this page.</div>';
+ if(S.notice&&S.notice.status==="confirmed")h+='<div class="info">Your last working day is confirmed: '+fmt(S.notice.finalDate)+'. What you can still open after that follows the existing rules for people who have left. Not drawn here.</div>';
+ return h+'</div></div>'+overlay();
+}
+
+/* ---------- Confirmer (Desk) ---------- */
+function payroll(){
+ var n=S.notice,h='<div class="desk"><div class="nav"><span>Desk</span><span style="font-weight:400">ToDo</span><span style="font-weight:400">Employee</span><span style="margin-left:auto;font-weight:400">Asha Verma (HR Manager) '+SMP+'</span></div><div class="pg">'+
+ '<div class="deskwarn">Drawn to look like Frappe Desk. Desk is the framework\'s own screen. We do not change it, except that one new ToDo is written and closes itself.</div>';
+ if(S.sheet&&S.sheet.type==="emp"){
+  var p=PEOPLE[n.i];
+  h+='<div class="title" style="margin-bottom:10px">'+esc(p.n)+' <span class="ind '+(S.sheet.status==="Left"?"gr":"")+'">'+(S.sheet.status==="Left"?"Left":"Active")+'</span></div><div class="b">'+
+  '<div class="lbl">Status</div><select class="in" id="dst" style="max-width:260px"><option'+(S.sheet.status==="Active"?" selected":"")+'>Active</option><option'+(S.sheet.status==="Left"?" selected":"")+'>Left</option></select>'+
+  '<div class="lbl">Relieving Date (the manager said '+fmt(n.date)+')</div><input class="in" type="date" id="drd" style="max-width:260px" value="'+(S.sheet.rd||"")+'">'+
+  (S.sheet.err?'<div class="err">'+S.sheet.err+'</div>':'')+
+  '<div style="margin-top:14px"><button class="dbtn" data-a="deskSave">Save</button> <button class="dbtn g" data-a="deskBack">Back to ToDo</button></div>'+
+  '<div class="timeline"><div>'+MGR+' reported that '+esc(p.first)+' left, last working day '+fmt(n.date)+' · '+fmt(n.on)+'</div></div></div>'+
+  '<div class="deskwarn">Saving here is the normal Employee save. All the existing leaver steps (field phone, manager scope, caches) run as they do today.</div>';
+ }else{
+  h+='<div class="title" style="margin-bottom:10px">ToDo</div><table><tr><th>Description</th><th>Assigned to</th><th>Status</th><th></th></tr>';
+  if(n&&n.status==="open"){var q=PEOPLE[n.i];
+   h+='<tr><td>Confirm that <b>'+esc(q.n)+'</b> left. Last working day '+fmt(n.date)+'. Reported by '+MGR+' on '+fmt(n.on)+'.</td><td>Everyone with the role '+esc(S.role)+'</td><td><span class="ind">Open</span></td><td><button class="dbtn" data-a="deskOpen">Open Employee</button> <button class="dbtn g" data-a="deskClose">Close without confirming</button></td></tr>';
+  }else h+='<tr><td colspan="4" style="color:#6c7680">'+(n&&n.status==="confirmed"?"Confirmed. The ToDo closed by itself when you saved.":n&&n.status==="closed"?"Closed without confirming. The manager can see that.":"No leaver notices are waiting. Ask a manager to report one first.")+'</td></tr>';
+  h+='</table>';
+ }
+ return h+'</div></div>'+(S.toast?'<div class="toast" role="status">'+esc(S.toast)+'</div>':'');
+}
+
+/* ---------- Administrator ---------- */
+function tags(list,empty){return list.length?'<div class="tags">'+list.map(function(k){return '<span class="tag">'+PERSONAL.filter(function(f){return f.k===k;})[0].label+'</span>';}).join("")+'</div>':'<div class="hint" style="font-size:14px">'+empty+'</div>';}
+function admin(){
+ var h='<div class="scroll"><div class="topbar"><div class="title">Organisation settings</div><div class="sub">Only a System Manager sees this card. '+SMP+'</div></div><div class="pad"><div class="card">'+
+ '<div style="font-weight:600;font-size:16px;margin-bottom:4px">What managers can see and change about their team</div><div class="hint" style="margin-bottom:8px">Only a System Manager can change these. Every change is recorded with who made it and when.</div>'+
+ '<div class="set-row"><div style="font-weight:600">Managers can see</div>'+tags(S.see,"None. Managers see no personal details of their team.")+'<button class="btn" data-a="dlgsee" id="bsee">Change what managers see</button></div>'+
+ '<div class="set-row"><div style="font-weight:600">Managers can change</div>'+tags(S.change,"None. Managers change nothing.")+'<button class="btn" data-a="dlgchange" id="bchg">Change what managers change</button></div>'+
+ '<div class="set-row"><label for="role" style="margin-top:0">Leaver notices are confirmed by</label><select class="sel" id="role" data-f="role">'+Object.keys(ROLES).map(function(r){return '<option'+(r===S.role?' selected':'')+'>'+r+'</option>';}).join("")+'</select>'+
+ '<div class="hint">When a manager reports that someone left, everyone with this role gets a to-do in Desk and confirms it there. Only they set a person to Left. '+ROLES[S.role]+' enabled people hold <b>'+esc(S.role)+'</b> '+SMP+'</div>'+
+ (S.roleErr?'<div class="err" role="alert">'+S.roleErr+'</div>':'')+'</div>'+
+ (S.adminLine?'<div class="hint" style="margin-top:8px">'+esc(S.adminLine)+'</div>':'')+'</div></div></div>'+overlay();
+ return h;
+}
+function dlgAdmin(){
+ var d=S.dlg,see=d.kind==="see",h='<div class="ov"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dt"><h2 id="dt">'+(see?"Managers can see":"Managers can change")+'</h2>';
+ h+=see?'<div class="hint">Tick the personal details a manager may see about the people who report to them. Pay, bank, ID numbers and date of birth are never offered.</div>'
+       :'<div class="hint">A manager can change only what they can also see. Personal phone and home address can never be changed by a manager.</div>';
+ PERSONAL.forEach(function(f){
+  if(!see&&f.k!=="emg")return;
+  h+='<label class="chk"><input type="checkbox" data-f="tick" value="'+f.k+'"'+(d.tmp.indexOf(f.k)>=0?' checked':'')+'><span><b>'+f.label+'</b><br><span class="hint">'+f.hint+'</span></span></label>';
+ });
+ var extra="";
+ if(!see&&d.tmp.indexOf("emg")>=0&&S.see.indexOf("emg")<0)extra=" Managers will also be able to see it.";
+ if(see&&d.tmp.indexOf("emg")<0&&S.change.indexOf("emg")>=0)extra=" Managers will no longer change the emergency contact either.";
+ var c=d.tmp.length;
+ h+='<div class="info" role="status">'+(c?'Managers will '+(see?'see ':'change ')+c+(c===1?' detail':' details')+' about 45 people who have a manager. '+SMP:'Managers will '+(see?'see none of these.':'change none of these.'))+extra+'</div>'+
+ '<button class="btn primary block" data-a="dlgsave" id="firstf">Save — managers '+(see?'see ':'change ')+c+(c===1?' detail':' details')+' about 45 people</button><button class="btn text block" data-a="dlgcancel" style="margin-top:6px">Cancel</button></div></div>';
+ return h;
+}
+
+/* ---------- Notes per view ---------- */
+var NOTES={
+manager:['<b>What to click:</b> "Report that Ravi left" on Ravi. Change the date. Send. Then switch to <i>Confirmer (Desk)</i> and confirm, then back here.','Try the <i>When sending</i> list at the top for the failures.','<b>Drawn from code, not a running page.</b> Team View, the row cards and "Details" are drawn from <code>team.html</code> and <code>ACTION_MATRIX</code>. I did not open the running portal.','Rows reached through HR cover (not the person\'s own manager) get no "Report" button. Not drawn: same as today\'s matrix.','To see Details with personal rows, press <i>Settings: example</i> first.'],
+employee:['The employee never sees a status change. They see one line at the top, with the manager\'s name, and "Speak to HR" in words. No button, because HR has no screen to open for this today.','"Changed by your manager" shows only if you press <i>Settings: example</i>, open Details as the manager and change the emergency contact.'],
+payroll:['Desk is Frappe\'s own screen. Nothing is customised except one ToDo, its text, and the ToDo closing by itself when Employee is saved as Left.','Try Save with Status left on Active: nothing closes. Try "Close without confirming": the manager sees it.'],
+admin:['Same card and dialog pattern as slice 078: tags on the page, a button, a dialog, Save names the effect.','The change list offers one item only. Phone and home address are not offered at all.','Pick "Accounts team" in the role list: nobody holds it, so the save is refused.']};
+
+/* ---------- Render and events ---------- */
+function render(){
+ var focusId=document.activeElement&&document.activeElement.id;
+ document.documentElement.setAttribute("data-theme",S.theme);
+ var body={manager:manager,employee:employee,payroll:payroll,admin:admin}[S.view]();
+ var dev=S.view==="payroll"||S.view==="admin"&&S.device==="desktop"?S.device:S.device;
+ document.getElementById("stage").innerHTML='<div class="device '+dev+'" id="device">'+body+'</div>';
+ document.getElementById("side").innerHTML='<h3>What you are looking at</h3><ul>'+NOTES[S.view].map(function(x){return '<li>'+x+'</li>';}).join("")+'</ul>';
+ document.querySelectorAll("#vbar [data-v]").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.v===S.view);});
+ document.querySelectorAll("#vbar [data-d]").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.d===S.device);});
+ document.querySelectorAll("#vbar [data-l]").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.l===S.lang);});
+ document.getElementById("thBtn").textContent=S.theme==="light"?"Dark":"Light";
+ var f=document.getElementById("firstf")||(focusId&&document.getElementById(focusId));
+ if(S.sheet||S.dlg){var dlg=document.querySelector(".dlg");var first=document.getElementById("lwd")||document.getElementById("firstf")||(dlg&&dlg.querySelector("input,button"));if(first&&!(focusId&&document.getElementById(focusId)&&dlg&&dlg.contains(document.getElementById(focusId))))first.focus();else if(focusId&&document.getElementById(focusId))document.getElementById(focusId).focus();}
+ else if(focusId&&document.getElementById(focusId))document.getElementById(focusId).focus();
+}
+function closeAll(){var i=S.sheet&&S.sheet.i;S.sheet=null;S.dlg=null;S.toast="";render();var b=document.getElementById("left"+i);if(b)b.focus();}
+function doSend(){
+ var sh=S.sheet,p=PEOPLE[sh.i],sim=document.getElementById("sim").value;sh.err="";sh.offline=false;
+ if(sh.date<addDays(TODAY_ISO,-31)||sh.date<JOIN_ISO){sh.err=t("tooold");return render();}
+ if(sh.date>addDays(TODAY_ISO,60)){sh.err=t("toofar");return render();}
+ if(sim==="offline"){sh.offline=true;sh.err=t("offline");return render();}
+ if(sim==="refused"){sh.err=t("refused",{n:p.n});return render();}
+ if(sim==="dup"){sh.err=t("dup",{n:p.n,r:"20 Nov 2026"});return render();}
+ S.notice={i:sh.i,date:sh.date,on:TODAY_ISO,status:"open"};sh.done=true;render();
+}
+document.addEventListener("click",function(e){
+ var v=e.target.closest("[data-v]");if(v&&v.closest("#vbar")){S.view=v.dataset.v;S.sheet=null;S.dlg=null;S.toast="";if(S.view==="payroll"||S.view==="admin")S.device="desktop";if(S.view==="manager"||S.view==="employee")S.device="phone";return render();}
+ var d=e.target.closest("[data-d]");if(d&&d.closest("#vbar")){S.device=d.dataset.d;return render();}
+ var l=e.target.closest("[data-l]");if(l&&l.closest("#vbar")){S.lang=l.dataset.l;return render();}
+ if(e.target.closest("[data-th]")){S.theme=S.theme==="light"?"dark":"light";return render();}
+ var pr=e.target.closest("[data-p]");if(pr){S.see=pr.dataset.p==="example"?["phone","addr","emg"]:[];S.change=pr.dataset.p==="example"?["emg"]:[];S.adminLine="Changed by Surbhi Goyal on 22 Nov 2026 (Sample).";return render();}
+ if(e.target.closest("[data-reset]")){var keep={view:S.view,device:S.device,theme:S.theme,lang:S.lang};S=JSON.parse(JSON.stringify(DEF));Object.assign(S,keep);return render();}
+ var a=e.target.closest("[data-a]");if(!a)return;var act=a.dataset.a,i=+a.dataset.i;
+ if(act==="ovclick"){if(e.target===a)closeAll();return;}
+ if(act==="report"){S.sheet={type:"report",i:i,date:TODAY_ISO,err:"",offline:false};return render();}
+ if(act==="profile"){S.sheet={type:"profile",i:i};return render();}
+ if(act==="edit"){S.sheet={type:"edit",i:i};return render();}
+ if(act==="close")return closeAll();
+ if(act==="send")return doSend();
+ if(act==="saveEmg"){S.emg={name:document.getElementById("en").value,rel:document.getElementById("er").value,ph:document.getElementById("ep").value,by:MGR,on:TODAY_ISO};S.sheet=null;S.toast="Saved. "+PEOPLE[i].first+" will see that you changed it.";render();return;}
+ if(act==="deskOpen"){S.sheet={type:"emp",status:"Active",rd:"",err:""};return render();}
+ if(act==="deskBack"){S.sheet=null;return render();}
+ if(act==="deskClose"){S.notice.status="closed";S.toast="ToDo closed. The manager now sees that it was not confirmed.";return render();}
+ if(act==="deskSave"){var st=document.getElementById("dst").value,rd=document.getElementById("drd").value;S.sheet.status=st;S.sheet.rd=rd;
+   if(st==="Left"&&!rd){S.sheet.err="Set the Relieving Date. (Desk\'s own words will be used.)";return render();}
+   if(st==="Left"){S.notice.status="confirmed";S.notice.finalDate=rd;S.sheet=null;S.toast="Saved. Status is Left. The ToDo closed by itself.";return render();}
+   S.toast="Saved. Nothing changed. The ToDo is still open.";return render();}
+ if(act==="dlgsee"){S.dlg={kind:"see",tmp:S.see.slice()};return render();}
+ if(act==="dlgchange"){S.dlg={kind:"change",tmp:S.change.slice()};return render();}
+ if(act==="dlgcancel"){var b=S.dlg.kind==="see"?"bsee":"bchg";S.dlg=null;render();document.getElementById(b).focus();return;}
+ if(act==="dlgsave"){var k=S.dlg.kind,tmp=S.dlg.tmp.slice();
+   if(k==="see"){S.see=tmp;if(tmp.indexOf("emg")<0)S.change=[];}
+   else{S.change=tmp;if(tmp.indexOf("emg")>=0&&S.see.indexOf("emg")<0)S.see.push("emg");}
+   S.adminLine="Changed by Surbhi Goyal on 22 Nov 2026 (Sample).";S.dlg=null;render();document.getElementById(k==="see"?"bsee":"bchg").focus();return;}
+});
+document.addEventListener("change",function(e){
+ var f=e.target.dataset&&e.target.dataset.f;if(!f)return;
+ if(f==="lwd"&&S.sheet){S.sheet.date=e.target.value||TODAY_ISO;S.sheet.err="";var p=document.getElementById("prev");if(p)p.textContent=t("preview",{n:PEOPLE[S.sheet.i].n,d:fmt(S.sheet.date)});}
+ if(f==="tick"){var tmp=S.dlg.tmp,v=e.target.value,ix=tmp.indexOf(v);if(e.target.checked&&ix<0)tmp.push(v);if(!e.target.checked&&ix>=0)tmp.splice(ix,1);render();}
+ if(f==="role"){var r=e.target.value;if(ROLES[r]===0){S.roleErr="Nobody holds "+r+", so nobody would be told. Pick a role that someone holds. Nothing was saved.";}else{S.role=r;S.roleErr="";S.adminLine="Changed by Surbhi Goyal on 22 Nov 2026 (Sample).";}render();}
+});
+document.addEventListener("keydown",function(e){
+ if(e.key==="Escape"&&(S.sheet&&S.sheet.type!=="emp"||S.dlg)){closeAll();return;}
+ if(e.key==="Tab"){var dlg=document.querySelector(".dlg");if(!dlg)return;var els=dlg.querySelectorAll("button,input,select");if(!els.length)return;var first=els[0],last=els[els.length-1];
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+});
+render();
+</script>
+</body>
+</html>

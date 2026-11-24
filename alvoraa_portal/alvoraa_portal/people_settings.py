@@ -61,6 +61,10 @@ NOTICE_KEY = "alvoraa_joiner_notice_text"
 # decision about who sees whom.
 HR_PHONE_KEY = "alvoraa_hr_contact_phone"
 HR_EMAIL_KEY = "alvoraa_hr_contact_email"
+# Slice 089. What a direct manager sees of a team member, and who confirms a
+# leaver a manager reports.
+SEES_KEY = "alvoraa_manager_sees_team_details"
+CONFIRM_KEY = "alvoraa_leaver_confirm_role"
 
 # A document of one of these categories is an identity, statutory or
 # background-check paper. Ticking one puts the FILE itself one click from a
@@ -155,6 +159,19 @@ def get_people_settings():
 		# contradicting the gate on the same screen. Key names only: no value,
 		# and nothing about anybody.
 		"joiner_not_ready_keys": [m["key"] for m in not_ready],
+		# ── slice 089 ──────────────────────────────────────────────────────
+		"manager_sees_fields": list(people_fields.allowed(
+			SEES_KEY, frappe.db.get_default(SEES_KEY))),
+		"manager_sees_choices": list(people_fields.MANAGER_SEES_FIELDS),
+		# The real count the Save button names: active people who have a manager.
+		"manager_sees_people": frappe.db.count(
+			"Employee", {"status": "Active", "reports_to": ("is", "set")}),
+		"leaver_confirm_role": org_settings.confirm_role(),
+		"leaver_confirm_roles": frappe.get_all(
+			"Role", filters={"disabled": 0, "name": ("not in", org_settings.BROAD_ROLES)},
+			pluck="name", order_by="name asc", limit_page_length=0),
+		"leaver_confirm_holders": len(org_settings.eligible_confirmers(
+			org_settings.confirm_role())),
 		"last_changed": _last_changed(),
 	}
 
@@ -300,7 +317,7 @@ def set_people_setting(key=None, value=None):
 	               NOT_HIRED_KEY, BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY,
 	               JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY, MY_REQUIRED_KEY,
 	               JOINER_DOCS_KEY, JOINER_TICKED_DOCS_KEY, DOCUMENT_DAYS_KEY,
-	               NOTICE_KEY, HR_PHONE_KEY, HR_EMAIL_KEY):
+	               NOTICE_KEY, HR_PHONE_KEY, HR_EMAIL_KEY, SEES_KEY, CONFIRM_KEY):
 		from hrms.alvoraa_hr_core.access import refuse
 
 		refuse(_("That setting cannot be changed here."), "078-SEC-5",
@@ -321,7 +338,8 @@ def _last_changed():
 		                            BACKSTOP_KEY, WARN_KEY, FORM_ON_KEY,
 		                            JOINER_FIELDS_KEY, JOINER_REQUIRED_KEY,
 		                            MY_REQUIRED_KEY, JOINER_DOCS_KEY,
-		                            JOINER_TICKED_DOCS_KEY, DOCUMENT_DAYS_KEY, NOTICE_KEY])},
+		                            JOINER_TICKED_DOCS_KEY, DOCUMENT_DAYS_KEY, NOTICE_KEY,
+		                            SEES_KEY, CONFIRM_KEY])},
 		fields=["owner", "creation"], order_by="creation desc", limit=1)
 	if not rows:
 		return {"by": "", "on": ""}

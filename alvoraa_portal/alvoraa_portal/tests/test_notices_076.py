@@ -277,7 +277,7 @@ class TestTheTrueUnreadCount(Case):
 		self.assertEqual(set(notices.NOTICE_DOCTYPES) & inbox_doctypes, set())
 		self.assertEqual(
 			set(notices.NOTICE_DOCTYPES),
-			{"Grooming Mark", "Grooming Review", "Announcement"},
+			{"Grooming Mark", "Grooming Review", "Announcement", "ToDo"},
 			"the notice kinds changed - check the badge is not double counting")
 		self.assertEqual(len(inbox_api.ROW_KEYS), 7,
 		                 "a new inbox part - check it against NOTICE_DOCTYPES by hand")
@@ -331,13 +331,14 @@ class TestMarkAllSeen(Case):
 			                 "a colleague's notice was cleared")
 
 	def test_it_is_one_statement_for_a_long_backlog(self):
-		"""AC-33. One set-based UPDATE for 86 unread rows, not 86."""
+		"""AC-33. One set-based UPDATE for 86 unread rows, not 86. Since r3-1 the
+		leaver-line lookup adds one SELECT, so the bound is 3: fixed, not per row."""
 		name = _mark("Ravi", "Rahul")
 		_more_notices("Rahul", name, 85)
 		with as_user("Rahul"):
 			with _Spy() as spy:
 				notices.mark_all_seen()
-		self.assertLessEqual(spy.n, 2, "86 unread notices cost one UPDATE, not 86")
+		self.assertLessEqual(spy.n, 3, "86 unread notices cost one UPDATE, not 86")
 
 	def test_it_is_safe_to_run_twice(self):
 		"""E-14. Two handsets, or a retry. The second call matches nothing."""

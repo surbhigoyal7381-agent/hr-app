@@ -39,7 +39,13 @@ from alvoraa_portal.field_app_limits import SELF_KEY, _limited
 
 # The kinds of document a notice may be about.
 ANNOUNCEMENT = "Announcement"
-NOTICE_DOCTYPES = (grooming.MARK, grooming.REVIEW, ANNOUNCEMENT)
+# Slice 089: the outcome line a manager gets about a leaver report. It is the
+# person's own copy, like an announcement, so it needs no gate. It is written
+# with document_type "ToDo" (see leaver_report._tell) because "Employee" is what
+# Desk's own notices use (DTC has 902 unread) and must stay out of this feed.
+LEAVER = "ToDo"
+OWN_COPY = (ANNOUNCEMENT, LEAVER)
+NOTICE_DOCTYPES = (grooming.MARK, grooming.REVIEW, ANNOUNCEMENT, LEAVER)
 
 CARD_ROWS = 5        # what the Home card shows (design 4.2)
 READ_CAP = 100       # the most rows one call reads
@@ -100,14 +106,20 @@ def notices_feed(see_all=0):
 		         "document_type": ["in", [grooming.MARK, grooming.REVIEW]]},
 		fields=["name", "document_type", "document_name"], limit_page_length=0)
 
+	# A ToDo-typed row is listed only when it is a leaver outcome line (r2-3):
+	# Frappe writes ToDo rows of its own (mentions, shares, rules) and those
+	# are not this page's to show.
+	capped = len(rows) >= READ_CAP
+	leaver = _leaver_lines(user)
+	rows = [r for r in rows if r.document_type != LEAVER or r.name in leaver]
 	# An announcement row is the person's own copy: nothing more to gate.
-	alerts = [r for r in rows if r.document_type != ANNOUNCEMENT]
+	alerts = [r for r in rows if r.document_type not in OWN_COPY]
 	# ONE gate call for both sets. `_readable` asks a fixed number of queries
 	# whatever the row count - longer IN lists, not more queries - and it keys
 	# on (doctype, name), so the overlap between the two sets costs nothing.
 	gate = alerts + open_alerts
 	allowed = grooming._readable(user, gate) if gate else set()
-	shown = [r for r in rows if r.document_type == ANNOUNCEMENT
+	shown = [r for r in rows if r.document_type in OWN_COPY
 	         or (r.document_type, r.document_name) in allowed]
 	# Pinned first, then newest first (the sort keeps creation order inside each).
 	shown.sort(key=lambda r: r.document_type != ANNOUNCEMENT)
@@ -116,12 +128,13 @@ def notices_feed(see_all=0):
 	unread_total = (
 		frappe.db.count("Notification Log",
 		                {"for_user": user, "document_type": ANNOUNCEMENT, "read": 0})
+		+ sum(1 for read in leaver.values() if not read)
 		+ sum(1 for r in open_alerts
 		      if (r.document_type, r.document_name) in allowed))
 
 	chosen = (sorted(shown, key=lambda r: bool(r.read)) if see_all else unread[:CARD_ROWS])
 	# Grooming links open the day only while grooming is on (as the old bell did).
-	on = grooming.is_on() if any(r.document_type != ANNOUNCEMENT for r in chosen) else False
+	on = grooming.is_on() if any(r.document_type not in OWN_COPY for r in chosen) else False
 	sent = [r.document_name for r in chosen if r.document_type == ANNOUNCEMENT]
 	senders = dict(frappe.get_all(ANNOUNCEMENT, filters={"name": ["in", sent]},
 	                              fields=["name", "sender_label"], as_list=True)) if sent else {}
@@ -130,19 +143,34 @@ def notices_feed(see_all=0):
 		# The LIST was cut, not the count. `get_inbox` already returns `cap`,
 		# `shown` and `capped` per part for exactly this reason, so this is the
 		# same honesty on the sibling endpoint, not a new idea.
-		"capped": len(rows) >= READ_CAP,
+		"capped": capped,
 		"any": bool(shown),
 		"can_send": 1 if "Notice Sender" in frappe.get_roles(user) else 0,
 		"items": [{
 			"name": r.name,
 			"kind": "announcement" if r.document_type == ANNOUNCEMENT else "alert",
 			"from": senders.get(r.document_name) if r.document_type == ANNOUNCEMENT else None,
-			"text": html.unescape(r.subject or "") if r.document_type == ANNOUNCEMENT else r.subject,
+			"text": html.unescape(r.subject or "") if r.document_type in OWN_COPY else r.subject,
 			"link": r.link if on and str(r.link or "").startswith("/hrms-employee?grooming=") else None,
 			"when": str(r.creation),
 			"read": 1 if r.read else 0,
 		} for r in chosen],
 	}
+
+
+def _leaver_lines(user):
+	"""{Notification Log name: read} for the caller's own leaver outcome lines:
+	type "Alert" and pointing at a ToDo that carries the leaver marker."""
+	from alvoraa_portal.leaver_report import FIELD
+
+	mine = frappe.get_list("Notification Log",
+	                      filters={"for_user": user, "document_type": LEAVER, "type": "Alert"},
+	                      fields=["name", "document_name", "read"], limit_page_length=0)
+	if not mine:
+		return {}
+	real = set(frappe.get_all("ToDo", filters={"name": ["in", [r.document_name for r in mine]],
+	                                           FIELD: ["is", "set"]}, pluck="name"))
+	return {r.name: r.read for r in mine if r.document_name in real}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -185,6 +213,12 @@ def mark_all_seen():
 	frappe.db.set_value(
 		"Notification Log",
 		{"for_user": user, "read": 0,
-		 "document_type": ["in", list(NOTICE_DOCTYPES)]},
+		 "document_type": ["in", [d for d in NOTICE_DOCTYPES if d != LEAVER]]},
 		"read", 1, update_modified=False)
+	# ToDo rows are not all this page's: only the leaver outcome lines are shown
+	# (r2-3), so only those are cleared, by name. A Desk Mention stays unread (r3-1).
+	unread = [n for n, read in _leaver_lines(user).items() if not read]
+	if unread:
+		frappe.db.set_value("Notification Log", {"name": ["in", unread], "for_user": user},
+		                    "read", 1, update_modified=False)
 	return {"ok": 1}

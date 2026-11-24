@@ -15,7 +15,7 @@ being written down.
 """
 
 import frappe
-from frappe.utils import cint, flt
+from frappe.utils import cint, cstr, flt
 
 from hrms.alvoraa_org_structure import people_fields
 
@@ -105,6 +105,12 @@ DEFAULTS = {
 	# themselves. The photograph is NOT in this list: it is always on, and the
 	# employee is told who sees it before they add it.
 	"alvoraa_my_profile_fields": "",
+
+	# Slice 089. Nothing is visible to a manager until a System Manager ticks it,
+	# and a manager's leaver report goes to HR Manager unless somebody says
+	# otherwise.
+	"alvoraa_manager_sees_team_details": "",
+	"alvoraa_leaver_confirm_role": "HR Manager",
 
 	# ── How long a joiner's submission is kept (counsel, 29 Oct 2026) ───────
 	#
@@ -288,6 +294,13 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_joiner_required_documents",
 	"alvoraa_joiner_document_days",
 	"alvoraa_joiner_notice_text",
+	# Slice 089. What a direct manager may see of a team member's personal
+	# details, and who confirms a leaver a manager reports. The first decides
+	# who sees whom; the second decides who is told about a person's last day.
+	# Same treatment as the lists above: System Manager only, a refusal is
+	# logged, and a change writes a Version row. Both default to nothing / HR.
+	"alvoraa_manager_sees_team_details",
+	"alvoraa_leaver_confirm_role",
 })
 
 # Which rule id a refusal and a change are logged under. Slice 012's four keys
@@ -311,6 +324,8 @@ RULE_FOR_KEY = {
 	"alvoraa_joiner_required_documents": "079-SEC-1",
 	"alvoraa_joiner_document_days": "079-PRIV-1",
 	"alvoraa_joiner_notice_text": "079-PRIV-3",
+	"alvoraa_manager_sees_team_details": "089-SEC-3",
+	"alvoraa_leaver_confirm_role": "089-SEC-8",
 }
 DEFAULT_RULE = "SEC-18"
 
@@ -351,6 +366,10 @@ LABELS = {
 		"Whoever can open the Positions page can open the file itself, for everyone in their own companies and branches."),
 	"alvoraa_my_profile_fields": ("Details an employee may correct about themselves",
 		"A photo is always on. These are the other details they may change."),
+	"alvoraa_manager_sees_team_details": ("Personal details a manager may see about their team",
+		"Phone, home address and emergency contact, only for people who report directly to them."),
+	"alvoraa_leaver_confirm_role": ("Leaver notices are confirmed by",
+		"Everyone with this role is told when a manager reports that someone left."),
 	# PLAIN WORDS, not "retention" and "expiry". The two are easy to read as
 	# the same thing - and were read that way once already - so each label says
 	# what it actually decides.
@@ -509,6 +528,24 @@ def _set_access_setting(key, value):
 				key,
 			)
 
+	# Slice 089 (SEC-8, OPS-11). The role that is told when a manager reports a
+	# leaver has to be one somebody holds, and few enough people hold it that
+	# one tap writes a handful of rows. REFUSED with the reason, never saved.
+	if key == "alvoraa_leaver_confirm_role":
+		role = cstr(value).strip()
+		holders = eligible_confirmers(role)
+		if not holders:
+			refuse(
+				_("Nobody holds {0}, so nobody would be told. Pick a role that "
+				  "someone holds. Nothing was saved.").format(role),
+				rule, endpoint, "DefaultValue", key)
+		if len(holders) > CONFIRMER_CAP:
+			refuse(
+				_("{0} is held by {1} people, and a leaver notice goes to each "
+				  "of them. Pick a role held by {2} people or fewer. Nothing "
+				  "was saved.").format(role, len(holders), CONFIRMER_CAP),
+				rule, endpoint, "DefaultValue", key)
+
 	_DAYS = {
 		# counsel's own range
 		"alvoraa_joiner_not_hired_days": (180, 365),
@@ -601,6 +638,47 @@ def _set_access_setting(key, value):
 		_log_access_change(endpoint, key, rule)
 	frappe.db.commit()
 	return {"ok": True, "key": key, "value": get(key)}
+
+
+# ── slice 089: who confirms a leaver a manager reports ───────────────────────
+
+# The roles that can actually save an Employee as Left. A copy of
+# `alvoraa_portal.employee_field_rights.LEVEL_2_WRITERS` on purpose: this app
+# must not import the portal for a rule (a guarded import that fails open is
+# not a control). A test pins the two together.
+LEAVER_WRITERS = ("HR User", "HR Manager", "System Manager")
+# Roles every login holds or that mean nobody in particular.
+BROAD_ROLES = ("Guest", "All", "Administrator", "Desk User", "Employee",
+               "Employee Self Service")
+# One report writes one ToDo per confirmer, inside the one request (OPS-11).
+CONFIRMER_CAP = 10
+CONFIRM_ROLE_KEY = "alvoraa_leaver_confirm_role"
+
+
+def confirm_role():
+	return cstr(get(CONFIRM_ROLE_KEY)).strip() or "HR Manager"
+
+
+def eligible_confirmers(role):
+	"""Enabled users who hold `role` AND a role that can save Left. Three
+	reads, whatever the headcount; a broad or unknown role gives nobody.
+	Company scope is applied by the caller, per person reported."""
+	if not role or role in BROAD_ROLES or not frappe.db.exists("Role", role):
+		return []
+	holders = frappe.get_all("Has Role", filters={"role": role, "parenttype": "User"},
+	                         pluck="parent", limit_page_length=0)
+	holders = [u for u in set(holders) if u not in ("Administrator", "Guest")]
+	if not holders:
+		return []
+	enabled = frappe.get_all("User", filters={"name": ("in", holders), "enabled": 1},
+	                         pluck="name", limit_page_length=0)
+	if not enabled:
+		return []
+	writers = frappe.get_all("Has Role", filters={"role": ("in", LEAVER_WRITERS),
+	                                              "parenttype": "User",
+	                                              "parent": ("in", enabled)},
+	                         pluck="parent", limit_page_length=0)
+	return sorted(set(writers))
 
 
 def _log_access_change(endpoint, key, rule=DEFAULT_RULE):

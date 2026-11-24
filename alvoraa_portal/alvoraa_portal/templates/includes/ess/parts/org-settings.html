@@ -46,6 +46,15 @@
           <div class="gp-hint" id="ocs-changed" style="margin-top:12px"></div>
         </div>
 
+        <!-- Slice 089: what a manager sees of their team, and who confirms a leaver.
+             System Manager only; drawn by lvAdminPaint(), hidden when the server refuses. -->
+        <div class="pf-card ocs-card" style="margin-bottom:24px;display:none" id="org-managers-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">What managers can see about their team</div>
+          <div class="gp-hint" style="margin-bottom:12px">Only a System Manager can change these, and every change is recorded with who made it and when.</div>
+          <div id="lv-admin-body"></div>
+          <div class="gp-hint" id="lv-admin-changed" style="margin-top:12px"></div>
+        </div>
+
         <!-- Document Compliance (build B4) -->
         <div class="pf-card" style="margin-bottom:24px;display:none" id="org-docs-card">
           <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">

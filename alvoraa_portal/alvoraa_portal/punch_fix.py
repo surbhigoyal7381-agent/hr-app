@@ -43,9 +43,19 @@ ASIDE_ON = "alvoraa_fix_aside_on"
 MARKS = (ADDED, ASIDE, ASIDE_BY, ASIDE_ON)
 HR_ROLES = {"HR User", "HR Manager", "System Manager"}
 
+# Slice 088. The notice whose printed page this change was signed on. A SECOND way out of
+# the confirm, for the people who have no app at all: the employee signs the paper and HR
+# records it. Deliberately not `alvoraa_confirmed_*`, because the employee's own screen has
+# to say a different sentence - "You signed for it on the register", not "You confirmed it
+# in the app" - and because the two have different evidence behind them. The field is
+# created by `register_notice.after_migrate`, which owns slice 088's schema; the name lives
+# here because this is the module that reads it.
+SIGNED_NOTICE = "alvoraa_signed_notice"
+
 SERVER_OWNED = ("alvoraa_needs_confirm", "alvoraa_confirmed_by", "alvoraa_confirmed_on", "alvoraa_replaces",
                 "alvoraa_disputed_by", "alvoraa_disputed_on", "alvoraa_dispute_reason",
-                "alvoraa_undone_by", "alvoraa_undone_on", "alvoraa_undone_reason")
+                "alvoraa_undone_by", "alvoraa_undone_on", "alvoraa_undone_reason",
+                SIGNED_NOTICE)
 
 
 # What a Confirm vouches for: the day, the time and kind, the punches to set aside, the words.
@@ -177,6 +187,16 @@ def columns_ready():
 		return bool(frappe.db.has_column(CHECKIN, ASIDE) and frappe.db.has_column(REQUEST, "alvoraa_set_aside")
 		            and frappe.db.has_column(REQUEST, "alvoraa_needs_confirm")
 		            and frappe.db.has_column(REQUEST, "alvoraa_undone_on"))
+	except Exception:
+		return False
+
+
+def signed_column_ready():
+	"""False until slice 088's migrate has run on this site. Kept apart from `columns_ready()`
+	on purpose: that one is 087's gate, and folding this column into it would switch 087's own
+	features off on a site that has 087 but not yet 088."""
+	try:
+		return bool(frappe.db.has_column(REQUEST, SIGNED_NOTICE))
 	except Exception:
 		return False
 
@@ -353,6 +373,41 @@ def seen_token(doc):
 
 # ── raising (validate: Desk, REST, the portal) ───────────────────────────────
 
+def refuse_if_the_words_would_be_lost(text):
+	"""ALV-436. Refuse a reason that the database would quietly empty.
+
+	Frappe cleans every `Small Text` field on save (`base_document._sanitize_content`, through
+	`frappe.utils.html_utils.sanitize_html`) and removes anything shaped like a tag it does not
+	recognise. `<machine down>` is shaped like one, so it disappears - silently, and AFTER our
+	own "a reason is needed" refusal has already passed. `Punch missed <not my fault>` is stored
+	as `Punch missed `, and a reason typed entirely inside brackets is stored EMPTY. A reason
+	that empties itself is the one thing a reason must not do: it is the evidence counsel
+	cleared DTC and Grace on.
+
+	**It cleans the text itself rather than reading back what was stored.** Our `validate` hook
+	runs BEFORE Frappe cleans - `document.insert` calls `run_before_save_methods()` and only
+	then `_validate()` - so the hook sees the raw text. Calling the same function Frappe is
+	about to call is what makes this honest instead of a guess about hook ordering.
+
+	**An honest refusal, not a silent repair.** Surbhi chose this over keeping the raw text
+	(which would then have to be escaped on every screen that shows it) and over showing a
+	preview before sending (more honest still, and much more work), 23 Nov 2026.
+
+	Measured the same day against thirteen ordinary reasons - Hindi, an emoji, `&`, an
+	apostrophe, newlines, an email address, `9 > 8`, `a<b`, `Site A -> Site B`, `100%` and
+	`<35 degrees>` - and none of them is refused. Only `<word...>` beginning with a LETTER is
+	eaten, because only that parses as a tag, and that is exactly what this refuses.
+	"""
+	from frappe.utils.html_utils import sanitize_html
+
+	if not text or not isinstance(text, str):
+		return
+	if sanitize_html(text) != text:
+		frappe.throw(_("Please write the reason without < and > around a word. Anything "
+		               "between them is removed when it is saved, so what you wrote "
+		               "would be lost."))
+
+
 def validate(doc, method=None):
 	"""Attendance Request validate, first in the list. Runs on a draft only: at
 	submit Frappe validates again with docstatus 1, and the approval has its own checks.
@@ -360,6 +415,11 @@ def validate(doc, method=None):
 	It also owns `alvoraa_for_held_day`: set here on a new request from whether the
 	day is Held now, and put back to the stored value on an edit. A client value is
 	never read, so a time cannot be used to dodge the monthly limit."""
+	# ALV-436, before the column guard below: a reason that would empty itself is refused on
+	# every door into this DocType - the portal, the Desk, an import - and on a site whose
+	# migrate has not run yet. One rule in one place, rather than at each endpoint that
+	# accepts one; the next endpoint somebody adds is covered without being told.
+	refuse_if_the_words_would_be_lost(doc.get("explanation"))
 	if not frappe.db.has_column(REQUEST, "alvoraa_for_held_day"):
 		return
 	before = None if doc.is_new() else doc.get_doc_before_save()
@@ -375,6 +435,8 @@ def validate(doc, method=None):
 		if before.employee != doc.employee or any(
 				before.get(f) and doc.get(f) and before.get(f) != doc.get(f) for f in ("employee_name", "company")):
 			frappe.throw(_("A request cannot be moved to another employee. Withdraw it and send a new one for the right person."))
+	if before is not None:
+		_refuse_edit_by_others(doc, before)
 	_own_the_confirm_fields(doc, before)
 	if doc.docstatus or not is_punch_fix(doc):
 		return
@@ -402,6 +464,33 @@ def validate(doc, method=None):
 	elif len(counted(doc.employee, doc.from_date, ticked)) == 0:
 		frappe.throw(_("A day cannot be left with no punches. Add a punch too."))
 	# Nothing in a refusal names a person or quotes the note.
+
+
+def _filed_for_someone_else(owner, employee):
+	"""Was this request filed by somebody other than the employee? (SEC-7, slice 086.)"""
+	return owner != frappe.db.get_value("Employee", employee, "user_id")
+
+
+def _refuse_edit_by_others(doc, before):
+	"""SEC-7 (086, Surbhi 23 Nov 2026): once a request is filed for somebody, only HR may change what it
+	says. Not the manager who filed it and not the employee it is about. Under case A there is no Confirm
+	to clear, so this is the guard. It looks at the CONTENT, so HR's approval and the employee's Confirm
+	and Not right (which write with `db_set`) are not in its way."""
+	login = frappe.db.get_value("Employee", before.employee, "user_id")
+	if not _filed_for_someone_else(before.owner, before.employee) or held_day._filed_by_hr(frappe.session.user, login):
+		return
+	if any(doc.has_value_changed(f) for f in CONFIRMED_CONTENT):
+		access.refuse(_("This request was sent for somebody, so only HR can change it. Ask HR, or withdraw "
+		                "it and send a new one."), "SEC-7", "Attendance Request edit", REQUEST, doc.name)
+
+
+def refuse_delete_by_others(doc, method=None):
+	"""Attendance Request on_trash (SEC-7, 086): the same rule for a delete. Deleting would erase what was
+	said in somebody's name. The employee may still delete their own draft; HR and Administrator may delete."""
+	login = frappe.db.get_value("Employee", doc.employee, "user_id")
+	if _filed_for_someone_else(doc.owner, doc.employee) and not held_day._filed_by_hr(frappe.session.user, login):
+		access.refuse(_("This request was sent for somebody, so only HR can delete it. Withdraw it instead."),
+		              "SEC-7", "Attendance Request delete", REQUEST, doc.name)
 
 
 def _added_by(request):
@@ -441,6 +530,9 @@ def _own_the_confirm_fields(doc, before):
 		doc.alvoraa_needs_confirm = 0 if (not asks or filer in ("Administrator", login)
 		                                  or manager_adds) else 1
 		doc.alvoraa_confirmed_by = doc.alvoraa_confirmed_on = None
+		# Slice 088: a brand new request has never been on a printed page. Cleared here as well
+		# as owned above, so a client that sends the field on create cannot pre-sign its own change.
+		doc.set(SIGNED_NOTICE, None)
 		doc.alvoraa_disputed_by = doc.alvoraa_disputed_on = doc.alvoraa_dispute_reason = None
 		doc.alvoraa_undone_by = doc.alvoraa_undone_on = doc.alvoraa_undone_reason = None
 		# Only `confirm` sets the link (a process flag a client cannot send), so it cannot be used to
@@ -801,6 +893,15 @@ def _unconfirmed_filters():
 	f = {"alvoraa_needs_confirm": 1, "alvoraa_confirmed_on": ("is", "not set"), "docstatus": ("<", 2),
 	     "alvoraa_undone_on": ("is", "not set"),
 	     "alvoraa_review_status": ("not in", ["Declined", "Withdrawn"])}
+	# Slice 088. Signing the printed register is the other way out, and the only one the staff
+	# this matters to actually have: no app, no screen, a thumb print on paper. Added HERE rather
+	# than at each reader for the reason `confirms_are_on` gives - the slip gate, the
+	# before-payroll list, the Workings column, the day sheet and Home all read this one
+	# function, so they all learn it at once and none of them can learn it differently.
+	# Guarded on the column: between a deploy and its migrate the field does not exist, and a
+	# filter naming a missing column would take the salary slip down rather than let it through.
+	if signed_column_ready():
+		f[SIGNED_NOTICE] = ("is", "not set")
 	return f
 
 
@@ -1024,11 +1125,42 @@ def undo_change(name, reason):
 
 
 def record_register_signature(requests, notice):
-	"""The seam with slice 088 (088's 02-functional-spec section 8.5). 088 implements it: it sets
-	`alvoraa_signed_notice = notice` on each request in the list under a process flag, with no commit,
-	called only from its own transaction. Declared here so 087 and 088 agree the name and the shape.
-	Until 088 lands it refuses in plain words."""
-	frappe.throw(_("Recording a signed register is not available yet."))
+	"""The seam with slice 088 (088 spec section 8.5): these changed days were on a page the
+	employee signed, so the confirm they were waiting for has happened on paper.
+
+	**It writes and it does not decide.** Who may record, whether the page is the latest one,
+	whether the recorder is the filer, whether the content still matches what was printed -
+	every one of those is `register_notice.record`'s to answer, and it answers them before it
+	calls this. The reason for the split is the one the slice exists for: the decision needs
+	the notice, the photo and HR's scope, none of which belong in this module.
+
+	No commit. The caller owns the transaction, so a photo that fails to save takes the
+	signature with it rather than leaving a change marked signed with no evidence behind it.
+
+	It is deliberately quiet about a request it cannot mark: a request that has since been
+	confirmed in the app, withdrawn or undone is simply left alone. The page the employee
+	signed was true when it was printed; a change that has moved on since is `register_notice`'s
+	"changed after printing" state, not an error to throw in HR's face mid-save."""
+	if not signed_column_ready():
+		frappe.throw(_("This site has not been updated for the signed register yet."))
+	if not notice or not frappe.db.exists("Alvoraa Register Notice", notice):
+		frappe.throw(_("That notice does not exist."))
+	marked = []
+	for name in (requests or []):
+		row = frappe.db.get_value(REQUEST, name,
+		                          ["name", "docstatus", "alvoraa_confirmed_on", "alvoraa_undone_on",
+		                           "alvoraa_review_status", SIGNED_NOTICE], as_dict=True)
+		if not row or row.docstatus == 2 or row.get(SIGNED_NOTICE) \
+				or row.alvoraa_confirmed_on or row.alvoraa_undone_on \
+				or row.alvoraa_review_status in ("Declined", "Withdrawn"):
+			continue
+		frappe.db.set_value(REQUEST, name, SIGNED_NOTICE, notice, update_modified=False)
+		marked.append(name)
+	if marked:
+		access.security_logger().info(
+			"punch_fix register signature notice=%s requests=%s user=%s",
+			notice, ",".join(marked), frappe.session.user)
+	return marked
 
 
 @frappe.whitelist(methods=["POST"])

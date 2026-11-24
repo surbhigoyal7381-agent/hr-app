@@ -45,6 +45,7 @@ let ATT_WINDOW = null;        // what get_requests_history says about the employ
 let LOSE_RAISE = false;       // the answer to raise_correction never arrives (slice 085, AC-30)
 let REFUSE_RAISE = null;      // a sentence the server refuses raise_correction with
 let REFUSE_REQUEST = null;    // a sentence the server refuses submit_attendance_request with
+let REFUSE_DECIDE = null;     // ALV-434: {status, message} the server refuses decide with (message "" = none)
 function reply(url, body) {
   const m = /attendance_correction\.(\w+)|hr_api\.(\w+)/.exec(url) || [];
   const fn = m[1] || m[2] || "";
@@ -94,6 +95,13 @@ const dom = new JSDOM(html, {
   beforeParse(w) {
     w.fetch = (url, opts) => LOSE_RAISE && /raise_correction/.test(String(url))
       ? Promise.reject(new Error("net"))
+      : REFUSE_DECIDE && /attendance_correction\.decide/.test(String(url))
+      ? (calls.push({ fn: "decide", body: opts && opts.body }), Promise.resolve({ ok: false, status: REFUSE_DECIDE.status,
+          json: () => Promise.resolve(REFUSE_DECIDE.message
+            ? { exc_type: "ValidationError",
+                _server_messages: JSON.stringify([JSON.stringify({ message: REFUSE_DECIDE.message })]) }
+            : { exc_type: "PermissionError" }),
+          text: () => Promise.resolve("") }))
       : REFUSE_RAISE && /raise_correction/.test(String(url))
       ? Promise.resolve({ ok: false, status: 417,
           json: () => Promise.resolve({ exc_type: "ValidationError",
@@ -612,6 +620,40 @@ function putForm(reason) {
   (cards[1] && /See their month/.test(cards[1].textContent))
     ? ok("the waiting row can still open the month")
     : bad("the waiting row lost 'See their month'");
+
+  // ── ALV-434: a refused approval is said on the card, and stays ─────
+  // Grace, 22 Nov 2026: HR pressed Approve and "nothing happened" - the only
+  // sign was a 3-second toast. The refusal now sits on the card as plain text.
+  window.prompt = () => "";
+  const approveOn = (card) => [...card.querySelectorAll("button")]
+    .filter(b => /acDecide\(.*?,1[,)]/.test(b.getAttribute("onclick") || ""))[0];
+  REFUSE_DECIDE = { status: 417, message:
+    "Workflow State transition not allowed from <strong>Draft</strong> to <strong>Approved</strong>" };
+  let card0 = doc.querySelectorAll("#ac-review .ac-req")[0];
+  let btn = card0 && approveOn(card0);
+  if (!btn) { bad("ALV-434: no Approve button to press"); }
+  else {
+    btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await settle(300);
+    const box = card0.querySelector(".ac-refused");
+    (box && box.getAttribute("role") === "alert" && /transition not allowed from Draft to Approved/.test(box.textContent))
+      ? ok("ALV-434: the server's refusal is written on the card")
+      : bad("ALV-434: no refusal on the card: " + (box ? box.textContent : "none"));
+    (box && !/<strong>/.test(box.textContent))
+      ? ok("ALV-434: the refusal is plain text, not tags")
+      : bad("ALV-434: the refusal shows raw tags");
+  }
+  REFUSE_DECIDE = { status: 403, message: "" };
+  btn && btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await settle(300);
+  const box2 = card0 && card0.querySelector(".ac-refused");
+  (box2 && /no reason came back\. Nothing was changed/.test(box2.textContent))
+    ? ok("ALV-434: a refusal with no sentence still says what to do")
+    : bad("ALV-434: a wordless refusal said: " + (box2 ? box2.textContent : "nothing"));
+  (card0 && card0.querySelectorAll(".ac-refused").length === 1)
+    ? ok("ALV-434: a second refusal replaces the first, not a pile")
+    : bad("ALV-434: refusals pile up on the card");
+  REFUSE_DECIDE = null;
 
   // ── The month reads newest first, and stops at today ───────────────
   //

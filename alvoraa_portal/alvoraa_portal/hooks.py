@@ -259,6 +259,8 @@ doc_events = {
         "before_insert": [
             "alvoraa_portal.leave_rules.prepare_half_day_correction",
         ],
+        # Slice 086 (SEC-7): nobody but HR deletes a request filed for somebody else.
+        "on_trash": "alvoraa_portal.punch_fix.refuse_delete_by_others",
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────
@@ -319,6 +321,11 @@ doc_events = {
             "alvoraa_portal.manager_scope.on_employee_update",
             # ALV-249: a staff login sees its own record and nobody else's.
             "alvoraa_portal.own_record_permission.on_employee_update",
+            # Slice 089: a person saved as Left closes the open leaver reports
+            # and tells each reporter. Returns at once unless the status just
+            # became Left, and cannot fail the save. Before the photo handler,
+            # which must stay last.
+            "alvoraa_portal.leaver_report.on_employee_update",
             # Slice 078 (OPS-12, OPS-13): derive the 48 px copy of a changed
             # photograph. LAST in the chain and guarded on
             # has_value_changed("image"), so the four handlers above are
@@ -327,7 +334,9 @@ doc_events = {
             # employee, payroll work included.
             "alvoraa_portal.employee_photo.on_employee_update",
         ],
-        "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+        "on_trash":  ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
+                      # Slice 089: no orphan leaver ToDo naming a deleted person.
+                      "alvoraa_portal.leaver_report.on_employee_trash"],
         # ALV-215 (063 SEC-17, R4): nobody changes a locked job, pay or bank
         # field on their own record, HR included. See employee_field_rights.py.
         "validate": ["alvoraa_portal.employee_field_rights.refuse_own_locked_change",
@@ -576,11 +585,19 @@ doc_events = {
     "Comment": {
         "validate": "alvoraa_portal.grooming.refuse_side_record",
     },
+    # Slice 089 (SEC-9): a leaver report is a ToDo carrying one marker field.
+    # The guard refuses the reporter's edit or delete and a hand-made marked
+    # ToDo; the update handler tells the reporter when a confirmer declines.
+    # Every other ToDo passes through each of them on one attribute read.
     "ToDo": {
-        "validate": "alvoraa_portal.grooming.refuse_side_record",
+        "validate": ["alvoraa_portal.grooming.refuse_side_record",
+                     "alvoraa_portal.leaver_report.guard_todo"],
+        "on_trash": "alvoraa_portal.leaver_report.guard_todo",
+        "on_update": "alvoraa_portal.leaver_report.on_todo_update",
     },
     "DocShare": {
-        "validate": "alvoraa_portal.grooming.refuse_side_record",
+        "validate": ["alvoraa_portal.grooming.refuse_side_record",
+                     "alvoraa_portal.leaver_report.guard_share"],
     },
     # Slice 066, 25 Oct (security verification B2): no file, no tag on a mark.
     "File": {
@@ -633,6 +650,20 @@ permission_query_conditions = {
     # Permissions - those cannot say "today", and leave a new doctype open.
     "Grooming Mark": "alvoraa_portal.grooming.mark_query_conditions",
     "Grooming Review": "alvoraa_portal.grooming.review_query_conditions",
+    # Slice 088: a signed register page is the most personal thing this product
+    # stores about a shop worker, so the notice is scoped by company AND branch -
+    # not by the company-only helper above, which would let one store's HR person
+    # list every store's signatures.
+    "Alvoraa Register Notice": "alvoraa_portal.register_notice.notice_query_conditions",
+    # 088 SEC-10: this log had NO entry here, so an HR Manager of one company could
+    # list every company's rows in it. Found by the slice's privacy review, and it is
+    # a gap that predates 088.
+    "Alvoraa Photo Access Log": "alvoraa_portal.register_notice.photo_log_query_conditions",
+    # ALV-440: this doctype had NO entry here either, so an HR Manager of one
+    # company could list every company's findings. Nothing leaked because every
+    # caller in data_review.py passes item_filters by hand - one forgotten
+    # argument from a leak, and ALV-440 adds a desk-bell link to these records.
+    "Alvoraa Data Review Item": "alvoraa_portal.data_review.item_query_conditions",
 }
 
 has_permission = {
@@ -647,6 +678,12 @@ has_permission = {
     "Grooming Review": "alvoraa_portal.grooming.review_has_permission",
     # ALV-266: only HR changes someone else's Employee record. See employee_field_rights.py.
     "Employee": "alvoraa_portal.employee_field_rights.employee_has_permission",
+    # Slice 088: the same company-and-branch rule for one notice opened by name or
+    # through the API, so a row filter on the list is not the only thing in the way.
+    "Alvoraa Register Notice": "alvoraa_portal.register_notice.notice_has_permission",
+    # ALV-440: the same company-and-branch rule for one finding opened by name,
+    # so the row filter above is not the only thing in the way.
+    "Alvoraa Data Review Item": "alvoraa_portal.data_review.item_has_permission",
 }
 
 scheduler_events = {
@@ -789,6 +826,11 @@ after_migrate = [
     # because a site built with `bench install-app` never runs a migrate.
     "alvoraa_portal.held_day.after_migrate",
     "alvoraa_portal.punch_fix.after_migrate",
+    # Slice 088: the link from a changed day to the printed page the employee signed,
+    # for the staff who have no app. AFTER punch_fix, because it is inserted after that
+    # module's `alvoraa_replaces` field, and a Custom Field with an `insert_after` naming
+    # a field that does not exist yet lands at the bottom of the form instead.
+    "alvoraa_portal.register_notice.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
@@ -798,6 +840,8 @@ after_migrate = [
     # Slice 080: the "Alternative number" field. Before the line below, so the
     # field exists by the time field rights are applied. See alternative_number.py.
     "alvoraa_portal.alternative_number.after_migrate",
+    # Slice 089: the one Custom Field on ToDo (writes only what is missing).
+    "alvoraa_portal.leaver_report.after_migrate",
     # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
     # and ID fields HR Manager only (level 1). Re-applied every migrate, so a
     # reset in Role Permission Manager is put right. See employee_field_rights.py.
@@ -813,6 +857,9 @@ after_migrate = [
     "alvoraa_portal.joiner_invite.make_role",
     # Slice 082: the five event-form fields on CRM Lead. A no-op without CRM.
     "alvoraa_portal.event_form.ensure_fields",
+    # Slice 090: the Leadership role, with no Desk access. Last in the list, so
+    # nothing that names the role runs after it and puts Desk access back.
+    "alvoraa_portal.people_trends.make_role",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
@@ -882,6 +929,11 @@ after_install = [
     # because a site built with `bench install-app` never runs a migrate.
     "alvoraa_portal.held_day.after_migrate",
     "alvoraa_portal.punch_fix.after_migrate",
+    # Slice 088: the link from a changed day to the printed page the employee signed,
+    # for the staff who have no app. AFTER punch_fix, because it is inserted after that
+    # module's `alvoraa_replaces` field, and a Custom Field with an `insert_after` naming
+    # a field that does not exist yet lands at the bottom of the form instead.
+    "alvoraa_portal.register_notice.after_migrate",
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
@@ -890,6 +942,8 @@ after_install = [
     # Slice 080: same as after_migrate, and this is the half that matters - a
     # patch would never run here, so a new tenant would not have the field.
     "alvoraa_portal.alternative_number.after_migrate",
+    # Slice 089: the one Custom Field on ToDo (writes only what is missing).
+    "alvoraa_portal.leaver_report.after_migrate",
     # ALV-215: same as after_migrate - a new tenant must not start open.
     "alvoraa_portal.employee_field_rights.apply",
     # Slice 076: the Notice Sender role without desk access. Frappe makes it
@@ -901,6 +955,9 @@ after_install = [
     # Slice 082: the event-form fields, for a site that had CRM before this app.
     # A no-op without CRM; after_app_install covers CRM arriving later.
     "alvoraa_portal.event_form.ensure_fields",
+    # Slice 090: the Leadership role, with no Desk access. Last in the list, so
+    # nothing that names the role runs after it and puts Desk access back.
+    "alvoraa_portal.people_trends.make_role",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

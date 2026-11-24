@@ -4857,6 +4857,7 @@ function switchPanel(name, triggerEl) {
     if (name === "adv-req")     loadAdvReqPanel();
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
+    if (name === "people-trends") ptLoad();   /* slice 090, people-trends.js */
     if (name === "goals")       loadGoalsPanel();
     if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); bsLoad(); ocsLoad(); }
     if (name === "policies")    polLoad();
@@ -5617,7 +5618,8 @@ async function acLoad() {
     acBar();
     acPaint();
     acMine();
-    if (d.can_review) { acReviewQueue(); acPrepay(); }
+    if (d.can_review) { acReviewQueue(); acPrepay(); rnLoad(); }
+    rnMine();
   }
   try {
     await show(await acApi("month", {year: acState.year, month: acState.month,
@@ -6826,6 +6828,498 @@ window.acPrepayWithdraw = async function (name) {
   catch (e) { hideLoad(); toast(e.message || "Could not withdraw that.", "err"); }
 };
 
+/* ── Slice 088: the monthly change notice ─────────────────────────────────────
+   Three surfaces: HR's month card, the A4 print preview, and the record dialog.
+
+   **Every word is the approved prototype's own string** (prototype-v1.html, English
+   column). The parity rule binds: changing a word needs Surbhi's yes, not a
+   developer's judgement. Two departures, both agreed and both in the spec:
+
+     * no Hindi. The prototype draws a Hindi line under every English one; she decided
+       on 21 Nov 2026 that Hindi is not built, so the paper is English only.
+     * the sheet names a MANAGER and prints only "HR" for an HR filing (her OQ-1
+       decision, matching 087 decision 7). The server sends it that way; this code is
+       never given the HR person's name, so it could not print one.
+
+   **The server owns every rule.** Which days a notice covers, who may record it,
+   whether a page is the latest, whether a photo is reused - none of that is decided
+   here. A button this file hides is never the reason an action is refused; the
+   endpoint refuses it too, and the 088 tests prove that separately. */
+
+/* Translation when Frappe's `__` is on the page, plain English otherwise, with the
+   placeholders filled in ONE place so no sentence is built from pieces. The same shape
+   as `drT` in the data-review panel, written out rather than shared: these two panels
+   do not otherwise know about each other. */
+function rnT(text, args) {
+  var out = (typeof window.__ === "function") ? window.__(text) : text;
+  (args || []).forEach(function (a, i) { out = out.split("{" + i + "}").join(String(a)); });
+  return out;
+}
+
+function rnApi(fn, args) { return window.gpFetch("alvoraa_portal.register_notice." + fn, args || {}); }
+
+var rnState = {month: null, rows: [], total: 0, done: 0, waiting: 0, sel: {}, phase: "load"};
+
+function rnThisMonth() {
+  var d = new Date();
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-01";
+}
+
+function rnMonthWords(iso) {
+  var p = String(iso || "").split("-");
+  if (p.length < 2) return "";
+  var names = ["January", "February", "March", "April", "May", "June", "July",
+               "August", "September", "October", "November", "December"];
+  return (names[(+p[1]) - 1] || "") + " " + p[0];
+}
+
+function rnShiftMonth(iso, by) {
+  var p = String(iso).split("-"), d = new Date(+p[0], (+p[1]) - 1 + by, 1);
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-01";
+}
+
+function rnNice(iso) { return iso ? acNice(String(iso).slice(0, 10)) : ""; }
+
+function rnPicked() {
+  return Object.keys(rnState.sel).filter(function (k) { return rnState.sel[k]; });
+}
+
+/* ── HR's month card ──────────────────────────────────────────────────────── */
+
+async function rnLoad(month) {
+  var host = document.getElementById("rn-card");
+  if (!host) {
+    var w = document.getElementById("ac-review-wrap");
+    if (!w || !w.parentNode) return;
+    host = document.createElement("section");
+    host.id = "rn-card";
+    /* Straight after 087's "before payroll" card, which is about the same people:
+       that one says whose pay is held, this one says whose paper is outstanding. */
+    var pre = document.getElementById("ac-prepay");
+    w.parentNode.insertBefore(host, pre ? pre.nextSibling : w);
+  }
+  rnState.month = month || rnState.month || rnThisMonth();
+  rnState.sel = {};
+  rnState.phase = "load";
+  rnDraw();
+  try {
+    var res = await rnApi("list_people", {month: rnState.month, start: 0});
+    rnState.rows = (res && res.rows) || [];
+    rnState.total = (res && res.total) || 0;
+    rnState.done = (res && res.done) || 0;
+    rnState.waiting = (res && res.waiting) || 0;
+    rnState.phase = "ok";
+  } catch (e) {
+    /* A refusal hides the card rather than showing an error: a user with no HR role
+       is not having a problem, they simply have no business here (AC-9). Anything
+       else is an error, and the words are ours - a server refusal can name a rule
+       id, which the person reading this cannot act on (AC-6).
+
+       `isDenied` is ALV-350's own helper and the only honest test: it reads Frappe's
+       `exc_type` and treats a bare 403 as the same answer. My first version invented
+       `e.kind === "permission"`, which `gpErr` never produces - every refusal comes
+       back as kind "refused" - so the card stayed on screen for a user with no HR
+       role. The browser test caught it. */
+    rnState.phase = isDenied(e) ? "hide" : "err";
+  }
+  rnDraw();
+}
+
+async function rnMore() {
+  try {
+    var res = await rnApi("list_people", {month: rnState.month, start: rnState.rows.length});
+    rnState.rows = rnState.rows.concat((res && res.rows) || []);
+    rnState.total = (res && res.total) || rnState.total;
+    rnDraw();
+  } catch (e) { toast(rnT("Could not load the list. Nothing was changed."), "err"); }
+}
+
+function rnOpened(r) {
+  return rnT("Print opened on {0} by {1}. Waiting for the signature.",
+             [rnNice(r.printed_at), r.printed_by || ""]);
+}
+
+function rnRowNote(r) {
+  if (r.state === "done") {
+    return '<span class="rn-note rn-ok">' + gpEsc(r.recorded_on
+      ? rnT("Signed on the register on {0}. Recorded by {1}.", [rnNice(r.recorded_on), r.recorded_by || ""])
+      : rnT("Confirmed in the app.")) + "</span>";
+  }
+  if (r.state === "not_printed") {
+    return '<span class="rn-note">' + gpEsc(rnT("Not printed yet")) + "</span>";
+  }
+  if (r.state === "changed_after_print") {
+    return '<span class="rn-note rn-warn">' + gpEsc(rnOpened(r)) + "<small>"
+      + gpEsc(rnT("{0} change added after the page was printed. It is not on that page. Print again.",
+                  [r.uncovered])) + "</small></span>";
+  }
+  if (r.state === "not_right") {
+    return '<span class="rn-note rn-warn">' + gpEsc(
+        rnT("{0} says it is not right (told HR on {1}, recorded by {2}).",
+            [(r.employee_name || "").split(" ")[0], rnNice(r.recorded_on), r.recorded_by || ""]))
+      + "<small>" + gpEsc(r.said || "") + "</small></span>";
+  }
+  if (r.state === "filer") {
+    return '<span class="rn-note">' + gpEsc(rnOpened(r)) + '<small class="rn-filer">'
+      + gpEsc(rnT("You filed a change on this page, so another HR person records the signature."))
+      + "</small></span>";
+  }
+  return '<span class="rn-note">' + gpEsc(rnOpened(r)) + "</span>";
+}
+
+function rnRow(r) {
+  var acts = [];
+  if (r.state === "not_printed") {
+    acts.push('<button type="button" class="btn btn-primary" onclick="rnPreview([&quot;'
+      + gpEsc(r.employee) + '&quot;])">' + gpEsc(rnT("Print notice")) + "</button>");
+  } else if (r.state !== "done") {
+    if (r.can_record) {
+      acts.push('<button type="button" class="btn '
+        + (r.state === "printed" ? "btn-primary" : "btn-outline")
+        + '" onclick="rnOpenRecord(&quot;' + gpEsc(r.notice) + '&quot;)">'
+        + gpEsc(rnT("Signed on the register")) + "</button>");
+    }
+    acts.push('<button type="button" class="btn btn-outline" onclick="rnPreview([&quot;'
+      + gpEsc(r.employee) + '&quot;])">' + gpEsc(rnT("Print again")) + "</button>");
+  }
+  var days = r.changed_days === 1 ? rnT("1 changed day")
+                                  : rnT("{0} changed days", [r.changed_days]);
+  var box = r.can_tick
+    ? '<label><input type="checkbox" aria-label="'
+      + gpEsc(rnT("Select {0}", [r.employee_name || ""])) + '" '
+      + (rnState.sel[r.employee] ? "checked" : "")
+      + ' onchange="rnTick(&quot;' + gpEsc(r.employee) + '&quot;,this.checked)"></label>'
+    : "<span></span>";
+  return "<li>" + box
+    + '<div><div class="rn-nm">' + gpEsc(r.employee_name || "") + '</div><div class="rn-meta">'
+    + gpEsc([r.employee_number, r.branch, days].filter(Boolean).join(" · ")) + "</div></div>"
+    + '<div class="rn-acts">' + acts.join("") + "</div>"
+    + rnRowNote(r) + "</li>";
+}
+
+function rnDraw() {
+  var host = document.getElementById("rn-card");
+  if (!host) return;
+  if (rnState.phase === "hide") { host.innerHTML = ""; return; }
+
+  var body;
+  if (rnState.phase === "load") {
+    body = '<div aria-busy="true" aria-label="' + gpEsc(rnT("Loading the list"))
+      + '"><div class="rn-sk"></div><div class="rn-sk"></div><div class="rn-sk"></div></div>';
+  } else if (rnState.phase === "err") {
+    body = '<div class="rn-empty"><p class="rn-err" role="alert">'
+      + gpEsc(rnT("Could not load the list. Nothing was changed.")) + "</p>"
+      + '<button type="button" class="btn btn-outline" onclick="rnLoad()">'
+      + gpEsc(rnT("Try again")) + "</button></div>";
+  } else if (!rnState.rows.length) {
+    body = '<div class="rn-empty"><b>'
+      + gpEsc(rnT("No changed days in {0}", [rnMonthWords(rnState.month)])) + "</b><span>"
+      + gpEsc(rnT("A notice is only for a person whose day someone else changed and that still "
+                  + "needs to be confirmed. Nobody needs one this month.")) + "</span></div>";
+  } else {
+    var tickable = rnState.rows.filter(function (r) { return r.can_tick; }).length;
+    var picked = rnPicked().length;
+    body = '<p class="rn-sub">' + gpEsc(rnT(
+        "{0} people have changed days in {1}. {2} are done. {3} still need a signature or a confirmation.",
+        [rnState.total, rnMonthWords(rnState.month), rnState.done, rnState.waiting])) + "</p>"
+      + '<div class="rn-tools"><label><input type="checkbox" '
+      + (picked && picked === tickable ? "checked" : "")
+      + ' onchange="rnTickAll(this.checked)">' + gpEsc(rnT("Select all {0}", [tickable]))
+      + "</label>"
+      + (picked ? '<button type="button" class="btn btn-primary" onclick="rnPreview(null)">'
+          + gpEsc(rnT("Print selected ({0})", [picked])) + "</button>" : "")
+      + "</div>"
+      + '<ul class="rn-list">' + rnState.rows.map(rnRow).join("") + "</ul>"
+      + (rnState.rows.length < rnState.total
+          ? '<button type="button" class="btn btn-outline" onclick="rnMore()">'
+            + gpEsc(rnT("Showing {0} of {1}", [rnState.rows.length, rnState.total]))
+            + "</button>" : "")
+      + '<p class="rn-logline">' + gpEsc(rnT(
+          "Every time a notice is opened for print, we keep your name, the date and the person."))
+      + "</p>";
+  }
+
+  host.innerHTML = '<div class="pfx-card rn-card"><h3>' + gpEsc(rnT("Change notices")) + "</h3>"
+    + '<p class="rn-sub">' + gpEsc(rnT("For people who do not use the app. Print the page, read it "
+        + "out if you need to, and record the signature.")) + "</p>"
+    + '<div class="rn-mbar"><button type="button" aria-label="' + gpEsc(rnT("Earlier month"))
+    + '" onclick="rnLoad(rnShiftMonth(rnState.month,-1))">‹</button><b>'
+    + gpEsc(rnMonthWords(rnState.month)) + '</b><button type="button" aria-label="'
+    + gpEsc(rnT("Later month")) + '"'
+    + (rnState.month === rnThisMonth() ? " disabled" : "")
+    + ' onclick="rnLoad(rnShiftMonth(rnState.month,1))">›</button></div>'
+    + body + "</div>";
+}
+
+/* Reachable from outside for two reasons, in this order: the month view calls
+   `rnLoad` and `rnMine` when it finishes drawing, and the browser test drives these
+   screens the way a person does - press the button, then assert what went to the
+   server. A screen that can only be tested by reading its HTML is a screen whose
+   payload nobody has ever checked. */
+window.rnLoad = rnLoad;
+window.rnMine = rnMine;
+window.rnShiftMonth = rnShiftMonth;
+window.rnState = rnState;
+
+window.rnTick = function (employee, on) { rnState.sel[employee] = !!on; rnDraw(); };
+window.rnTickAll = function (on) {
+  rnState.sel = {};
+  if (on) rnState.rows.forEach(function (r) { if (r.can_tick) rnState.sel[r.employee] = true; });
+  rnDraw();
+};
+
+/* ── the print preview ────────────────────────────────────────────────────────
+   One A4 sheet per person per page, drawn from what the server returned. The
+   server decided which change is on which page and already wrote the record, so
+   by the time anything appears here the print is logged whether or not paper
+   comes out. `window.print()` is the browser's own dialog; nothing waits on it. */
+
+function rnSheetHtml(s) {
+  var rows = (s.changes || []).map(function (c) {
+    return "<tr><td>" + gpEsc(c.day) + "</td><td>"
+      + (c.what || []).map(gpEsc).join("<br>")
+      + (c.counts ? '<div class="rn-cnt">' + gpEsc(rnT("This day now counts {0}.", [c.counts])) + "</div>" : "")
+      + "</td><td>" + gpEsc(c.filed_by ? c.filed_by + " · " + rnT("Manager") : rnT("HR"))
+      + "<br>" + gpEsc(rnNice(c.filed_on)) + "</td><td>" + gpEsc(c.why || "") + "</td></tr>";
+  }).join("");
+  return '<section class="rn-a4" aria-label="' + gpEsc(s.employee_name || "") + '">'
+    + '<div class="rn-top"><span><b>' + gpEsc(s.company || "") + "</b></span><span>"
+    + gpEsc(rnT("Ref {0}", [s.ref]) + " · " + rnT("No. {0}", [s.print_no])) + "</span></div>"
+    + "<h2>" + gpEsc(rnT("Changes to your attendance") + " · " + rnMonthWords(s.month)) + "</h2>"
+    + '<div class="rn-who"><div class="rn-nm">' + gpEsc(s.employee_name || "") + "</div><div>"
+    + gpEsc(rnT("Employee no. {0} · {1}", [s.employee_number || s.employee, s.branch || ""]))
+    + "</div></div>"
+    + '<p class="rn-intro">' + gpEsc(rnT(
+        "Someone else changed these days in your attendance. Please read each one.")) + "</p>"
+    + "<table><thead><tr><th>" + gpEsc(rnT("Day")) + "</th><th>" + gpEsc(rnT("What changed"))
+    + "</th><th>" + gpEsc(rnT("Who filed it")) + "</th><th>" + gpEsc(rnT("Why"))
+    + "</th></tr></thead><tbody>" + rows + "</tbody></table>"
+    + '<div class="rn-rule">' + gpEsc(rnT(
+        "If something here is not right, tell HR before you sign.")) + "</div>"
+    /* D-7: only where THIS page holds a change that actually holds pay. A page of
+       manager additions would be telling the worker something untrue. The server
+       decides it per sheet and sends `pay_line`. */
+    + (s.pay_line ? '<div class="rn-rule rn-hold">' + gpEsc(rnT(
+        "Your salary slip for this month waits until each change is confirmed.")) + "</div>" : "")
+    + '<p class="rn-read">' + gpEsc(rnT("I have read the changes on this page.")) + "</p>"
+    + '<div class="rn-boxes"><div class="rn-box">' + gpEsc(rnT("Signature or thumb print"))
+    + '</div><div class="rn-box rn-dt">' + gpEsc(rnT("Date")) + "</div></div>"
+    + '<div class="rn-foot">' + gpEsc(rnT("Printed by {0} on {1}. Page {2} of {3}.",
+        [rnWho(), rnNice(rnToday()), s.page_no, s.pages]))
+    + " " + gpEsc(rnT("This page is only about you. Keep it private.")) + "</div></section>";
+}
+
+function rnToday() {
+  var d = new Date();
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+}
+
+function rnWho() {
+  return (window.frappe && frappe.boot && frappe.boot.user && frappe.boot.user.full_name)
+    || (window.frappe && frappe.session && frappe.session.user) || "";
+}
+
+window.rnPreview = async function (employees) {
+  var who = employees || rnPicked();
+  if (!who.length) return;
+  showLoad();
+  var res;
+  try {
+    res = await rnApi("open_notices", {employees: who, month: rnState.month});
+  } catch (e) {
+    hideLoad();
+    /* AC-12: the server writes the record before it returns anything, so a failure
+       here means nothing was printed - and that is what the message says. */
+    toast(e && e.message ? e.message : rnT("Could not open the notices. Nothing was printed."), "err");
+    return;
+  }
+  hideLoad();
+  var sheets = (res && res.sheets) || [];
+  if (!sheets.length) { toast(rnT("Could not open the notices. Nothing was printed."), "err"); return; }
+
+  var pv = document.createElement("div");
+  pv.className = "rn-pv";
+  pv.id = "rn-pv";
+  pv.innerHTML = '<div class="rn-pvbar rn-noprint">'
+    + '<button type="button" class="btn btn-outline" onclick="rnClosePreview()">‹ '
+    + gpEsc(rnT("Back to the list")) + "</button>"
+    + '<button type="button" class="btn btn-primary" onclick="window.print()">'
+    + gpEsc(sheets.length === 1 ? rnT("Print 1 sheet") : rnT("Print {0} sheets", [sheets.length]))
+    + "</button>"
+    + '<span class="rn-pvnote">' + gpEsc(rnT(
+        "Preview at A4. One person on each page. Only hours that were counted are shown. "
+        + "Printing is logged: {0}, {1}.", [rnWho(), rnNice(rnToday())])) + "</span></div>"
+    + '<div class="rn-pvwrap">' + sheets.map(rnSheetHtml).join("") + "</div>";
+  document.body.appendChild(pv);
+  rnFit();
+  window.addEventListener("resize", rnFit);
+  /* The notice has been opened, so every row's state has changed. */
+  rnLoad(rnState.month);
+};
+
+window.rnClosePreview = function () {
+  var pv = document.getElementById("rn-pv");
+  if (pv && pv.parentNode) pv.parentNode.removeChild(pv);
+  window.removeEventListener("resize", rnFit);
+};
+
+/* An A4 page is 794 px wide at 96 dpi, which is wider than a phone. Zoomed to fit so
+   HR can read it on the screen; printing ignores the zoom because the print rules set
+   the width back to the paper's. */
+function rnFit() {
+  var wrap = document.querySelector("#rn-pv .rn-pvwrap");
+  if (!wrap) return;
+  var z = Math.min(1, (wrap.clientWidth - 24) / 794);
+  Array.prototype.forEach.call(wrap.querySelectorAll(".rn-a4"), function (a) {
+    a.style.transform = z < 1 ? "scale(" + z + ")" : "";
+    a.style.transformOrigin = "top left";
+    a.style.marginBottom = z < 1 ? (-1123 * (1 - z) + 16) + "px" : "";
+  });
+}
+
+/* ── the record dialog ────────────────────────────────────────────────────────
+   Two actions on one sheet, as the prototype draws it: "Record signature" with one
+   photo per printed page, and "Says it is not right" with the worker's words.
+
+   The photos never touch `localStorage`, IndexedDB or a cache (PRIV-1): they live in
+   this object until the call succeeds, and if it fails they stay here so HR can press
+   the button again without photographing the page a second time. */
+
+var rnReg = null;
+
+window.rnOpenRecord = function (notice) {
+  var row = rnState.rows.filter(function (r) { return r.notice === notice; })[0];
+  if (!row) return;
+  rnReg = {notice: notice, row: row, photos: [], thumbs: [], err: "", sending: false};
+  rnDrawRecord();
+};
+
+window.rnCloseRecord = function () {
+  if (rnReg) rnReg.thumbs.forEach(function (u) { URL.revokeObjectURL(u); });
+  rnReg = null;
+  var s = document.getElementById("rn-scrim");
+  if (s && s.parentNode) s.parentNode.removeChild(s);
+};
+
+function rnDrawRecord() {
+  var s = document.getElementById("rn-scrim");
+  if (!rnReg) { if (s && s.parentNode) s.parentNode.removeChild(s); return; }
+  if (!s) {
+    s = document.createElement("div");
+    s.id = "rn-scrim";
+    s.className = "rn-scrim";
+    s.addEventListener("click", function (ev) { if (ev.target === s) window.rnCloseRecord(); });
+    s.addEventListener("keydown", function (ev) { if (ev.key === "Escape") window.rnCloseRecord(); });
+    document.body.appendChild(s);
+  }
+  var r = rnReg.row;
+  var first = (r.employee_name || "").split(" ")[0];
+  var pages = r.pages || 1;
+  s.innerHTML = '<div class="rn-sheet" role="dialog" aria-modal="true" aria-labelledby="rn-rgt">'
+    + '<h3 id="rn-rgt">' + gpEsc(rnT("Signed on the register")) + "</h3>"
+    + "<p>" + gpEsc(pages > 1
+        ? rnT("Record this only if {0} signed or gave a thumb print on every page of this notice ({1} pages).", [first, pages])
+        : rnT("Record this only if {0} signed or gave a thumb print on this notice.", [first])) + "</p>"
+    + (r.uncovered ? "<p>" + gpEsc(rnT(
+        "{0} change added after printing is not covered. It stays open.", [r.uncovered])) + "</p>" : "")
+    + '<label for="rn-ph">' + gpEsc(rnT("One photo of each signed page ({0} pages)", [pages]))
+    + '<span class="rn-hint">' + gpEsc(rnT(
+        "Take the whole page, with the signature box. The page has only {0}'s own details, "
+        + "nobody else's.", [first])) + "</span></label>"
+    + '<input id="rn-ph" type="file" accept="image/*" capture="environment" multiple '
+    + 'onchange="rnPickPhotos(this)">'
+    + '<div class="rn-thumbs">' + rnReg.thumbs.map(function (u) {
+        return '<img src="' + u + '" alt="">'; }).join("") + "</div>"
+    + (rnReg.thumbs.length ? '<p class="rn-hint">' + gpEsc(rnT(
+        "Look at the photo. Can you read the signature or thumb print? If not, take it again."))
+        + "</p>" : "")
+    + '<p class="rn-hint">' + gpEsc(rnT("Your name, today's date and the photo are kept with these "
+        + "changes. Only HR can open the photo.")) + "</p>"
+    + '<label for="rn-nr">' + gpEsc(rnT("What did {0} say is not right?", [first]))
+    + '<span class="rn-hint">' + gpEsc(rnT(
+        "These changes stay open. HR decides what to do next.")) + "</span></label>"
+    + '<textarea id="rn-nr" rows="2"></textarea>'
+    + '<div class="rn-err" role="alert">' + gpEsc(rnReg.err || "") + "</div>"
+    + '<div class="rn-foot">'
+    + '<button type="button" class="btn btn-primary"' + (rnReg.sending ? " disabled" : "")
+    + ' onclick="rnSend(&quot;Signed&quot;)">' + gpEsc(rnT("Record signature")) + "</button>"
+    + '<button type="button" class="btn btn-outline"' + (rnReg.sending ? " disabled" : "")
+    + ' onclick="rnSend(&quot;Not right&quot;)">' + gpEsc(rnT("Says it is not right")) + "</button>"
+    + '<button type="button" class="btn btn-outline" onclick="rnCloseRecord()">'
+    + gpEsc(rnT("Cancel")) + "</button></div></div>";
+}
+
+window.rnPickPhotos = function (input) {
+  /* The dialog may already be gone: a file input can fire its change event after
+     a successful save has closed it, and reading `rnReg.thumbs` then threw. Found
+     while breaking the photo-count guard on purpose - the guard's absence let the
+     save succeed, the dialog closed, and the next pick crashed. A stray event is
+     not an error worth a stack trace. */
+  if (!rnReg) return;
+  var files = Array.prototype.slice.call((input && input.files) || []);
+  rnReg.thumbs.forEach(function (u) { URL.revokeObjectURL(u); });
+  rnReg.photos = [];
+  rnReg.thumbs = files.map(function (f) { return URL.createObjectURL(f); });
+  rnReg.err = "";
+  var left = files.length;
+  if (!left) { rnDrawRecord(); return; }
+  files.forEach(function (f, i) {
+    var fr = new FileReader();
+    fr.onload = function () {
+      rnReg.photos[i] = String(fr.result);
+      if (--left === 0) rnDrawRecord();
+    };
+    fr.onerror = function () {
+      rnReg.err = rnT("Could not read that photo. Try again.");
+      if (--left === 0) rnDrawRecord();
+    };
+    fr.readAsDataURL(f);
+  });
+};
+
+window.rnSend = async function (outcome) {
+  if (!rnReg || rnReg.sending) return;
+  var why = ((document.getElementById("rn-nr") || {}).value || "").trim();
+  var pages = rnReg.row.pages || 1;
+  if (outcome === "Not right" && !why) {
+    rnReg.err = rnT("Write what they said is not right.");
+    rnDrawRecord(); return;
+  }
+  if (outcome === "Signed") {
+    if (!rnReg.photos.length) {
+      rnReg.err = rnT("Add the photo of the signed notice first.");
+      rnDrawRecord(); return;
+    }
+    if (rnReg.photos.length !== pages) {
+      rnReg.err = rnT("Add {0} photos, one for each page. You added {1}.",
+                      [pages, rnReg.photos.length]);
+      rnDrawRecord(); return;
+    }
+  }
+  rnReg.sending = true; rnReg.err = ""; rnDrawRecord();
+  showLoad();
+  try {
+    await rnApi("record", {notice: rnReg.notice, outcome: outcome,
+                           photos: outcome === "Signed" ? rnReg.photos : null,
+                           reason: outcome === "Not right" ? why : null});
+    hideLoad();
+    toast(outcome === "Signed"
+      ? rnT("Recorded. The salary slip no longer waits for these changes.")
+      : rnT("Recorded. The changes stay open."), "ok");
+    window.rnCloseRecord();
+    await rnLoad(rnState.month);
+    /* 087's own card counts the same changes, so it has to be redrawn too. */
+    if (typeof acPrepay === "function") acPrepay();
+  } catch (e) {
+    hideLoad();
+    rnReg.sending = false;
+    /* The photos are still in `rnReg`, so "Try again" means pressing the button -
+       not photographing the page a second time (AC-38). */
+    rnReg.err = (e && e.message) ? e.message : rnT("Not saved yet. Try again.");
+    rnDrawRecord();
+  }
+};
+
 window.acPfWithdraw = async function (name) {
   showLoad();
   try { await acApi("withdraw", {name: name}); hideLoad(); toast("Withdrawn.", "ok"); await acPfLoad(acPf.date); }
@@ -6862,6 +7356,8 @@ window.acPfNote = function (name) {
 };
 
 window.acPfDecide = async function (name, approve, seen, first) {
+  var btn = window.event && window.event.target && window.event.target.closest
+    ? window.event.target.closest("button") : null;
   var ta = document.getElementById("pfx-note-text-" + name), note = ta ? ta.value.trim() : "";
   if (!approve && !note) {
     var err = document.getElementById("pfx-note-err-" + name);
@@ -6889,7 +7385,7 @@ window.acPfDecide = async function (name, approve, seen, first) {
     }
     toast(said, "ok");
     await acLoad();
-  } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
+  } catch (e) { hideLoad(); acSayRefused(btn, e); }
 };
 var acPfCards = {};
 
@@ -7236,6 +7732,68 @@ async function acMine() {
   }
 }
 
+
+/* ── the employee's own small view (US-7) ─────────────────────────────────────
+   One line on their month, and the days behind it. It opens 087's day sheet, which
+   already carries Confirm and "Not right" - this slice adds no second way to answer,
+   because the employee who HAS the app already had one. The whole point of 088 is the
+   person who does not. */
+
+/* "See the day" goes to 087's own day sheet, which already carries Confirm and
+   "Not right". `acPfLoad` is NOT a standalone opener - it fills an element the month
+   view has already drawn (`pfx-<date>`), so calling it for a day that is not on
+   screen does nothing at all. My first version did exactly that: a button that
+   looked like it worked and silently did not. If the day is not drawn, this says so
+   instead of pretending. */
+window.rnSeeDay = function (date) {
+  var el = document.getElementById("pfx-" + date);
+  if (!el) {
+    toast(rnT("Open that day from your month list to answer it."), "info");
+    return;
+  }
+  el.scrollIntoView({behavior: "smooth", block: "center"});
+  if (typeof acPfLoad === "function") acPfLoad(date);
+};
+
+async function rnMine() {
+  var host = document.getElementById("rn-mine");
+  if (!host) {
+    var wrap = document.getElementById("ac-mine-wrap");
+    if (!wrap || !wrap.parentNode) return;
+    host = document.createElement("section");
+    host.id = "rn-mine";
+    wrap.parentNode.insertBefore(host, wrap);
+  }
+  var res;
+  try {
+    res = await rnApi("my_changes", {month: rnState.month || rnThisMonth()});
+  } catch (e) { host.innerHTML = ""; return; }
+  var days = (res && res.days) || [];
+  if (!days.length) { host.innerHTML = ""; return; }
+  var said = {
+    waiting: rnT("Not confirmed by you yet."),
+    confirmed: rnT("You confirmed it."),
+    signed: rnT("You signed for it on the register."),
+    shown: rnT("Shown to you. Say if it is not right.")
+  };
+  host.innerHTML = '<div class="pfx-card rn-card"><h3>' + gpEsc(
+      res.changed === 1 ? rnT("1 day this month was changed by someone else.")
+                        : rnT("{0} days this month were changed by someone else.", [res.changed]))
+    + "</h3><ul class=\"rn-list\">" + days.map(function (d) {
+      return "<li><span></span><div><div class=\"rn-nm\">" + gpEsc(d.day) + "</div>"
+        + "<div class=\"rn-meta\">" + (d.what || []).map(gpEsc).join(", ")
+        + (d.counts ? " \u00b7 " + gpEsc(rnT("This day now counts {0}.", [d.counts])) : "")
+        + "</div>"
+        + (d.why ? "<div class=\"rn-meta\">" + gpEsc(d.why) + "</div>" : "")
+        + "</div>"
+        + '<div class="rn-acts"><button type="button" class="btn btn-outline" onclick="rnSeeDay(&quot;'
+        + gpEsc(d.date) + '&quot;)">' + gpEsc(rnT("See the day")) + "</button></div>"
+        + '<span class="rn-note">' + gpEsc(said[d.state] || "")
+        + (d.filed_by ? " " + gpEsc(rnT("Changed by {0}.", [d.filed_by]))
+                      : " " + gpEsc(rnT("Changed by HR."))) + "</span></li>";
+    }).join("") + "</ul></div>";
+}
+
 /* HR's side. Approving submits the request, and it is that submit which
    makes Frappe HR write the corrected attendance - nothing here writes
    an attendance row itself. */
@@ -7303,7 +7861,39 @@ function acHeldHrLines(r) {
         + "To pay this day, add an Additional Salary for it.</div>" : "");
 }
 
+/* ALV-434: a refused approval is said on the card and stays there.
+   A 3-second toast after a pop-up was all an approver got, and at Grace on
+   22 Nov 2026 "nothing happened" was what HR saw. The server's sentence is
+   shown as plain text (Frappe's own messages carry <strong> tags), and a
+   refusal that came back with no sentence still says what to do. */
+function acPlainWords(msg) {
+  if (!msg) return "";
+  try { return (new DOMParser().parseFromString(String(msg), "text/html").body.textContent || "").trim(); }
+  catch (x) { return String(msg); }
+}
+function acSayRefused(btn, e) {
+  var words = acPlainWords(e && e.message);
+  if (!words || (e && e.kind === "refused" && !e.server)) {
+    words = "This was not saved, and no reason came back. Nothing was changed. "
+      + "Try once more; if it fails again, tell your system administrator which request it was.";
+  }
+  toast(words, "err");
+  var acts = btn && btn.closest ? btn.closest(".ac-acts, .pfx-foot") : null;
+  if (!acts || !acts.parentNode) return;
+  var box = acts.parentNode.querySelector(".ac-refused");
+  if (!box) {
+    box = document.createElement("p");
+    box.className = "ac-refused";
+    box.setAttribute("role", "alert");
+    box.style.cssText = "margin:8px 0;font-size:var(--fs-sm);color:var(--danger,var(--red))";
+    acts.parentNode.insertBefore(box, acts);
+  }
+  box.textContent = words;
+}
+
 window.acDecide = async function (name, approve, seen) {
+  var btn = window.event && window.event.target && window.event.target.closest
+    ? window.event.target.closest("button") : null;
   var note = "";
   if (!approve) {
     /* A bare refusal tells the employee nothing about what to do next, so
@@ -7322,7 +7912,7 @@ window.acDecide = async function (name, approve, seen) {
     if (approve && res && res.slip_final) said += " The day is in a slip that is already final, so the slip was not changed. Add an Additional Salary to pay it.";
     toast(said, "ok");
     await acLoad();
-  } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
+  } catch (e) { hideLoad(); acSayRefused(btn, e); }
 };
 
 /* ── Blocks that earn their place ──────────────────────────────────
@@ -8498,7 +9088,7 @@ function mypPaintPicture() {
     : '<button type="button" class="btn btn-primary myp-b" data-myp="camera">' + esc(drT("Take a photo")) + '</button>'
       + '<button type="button" class="btn btn-outline myp-b" data-myp="pick">' + esc(drT("Choose a file")) + '</button>';
 
-  hmEl("myp-pic").innerHTML = '<div class="nc-box myp-card">'
+  hmEl("myp-pic").innerHTML = lvEmployeeLine(d) + '<div class="nc-box myp-card">'
     + '<h3 class="nc-h3" style="margin-top:0">' + esc(drT(has ? "Your picture" : "Add your picture")) + '</h3>'
     + '<div class="myp-pic-row">' + circle
     + '<p class="myp-said">' + esc(has
@@ -8893,6 +9483,8 @@ function ocsLoad() {
     OCS.data = d;
     ocsPaint();
     card.style.display = "";
+    var lvc = hmEl("org-managers-card");
+    if (lvc) { lvc.style.display = ""; lvAdminPaint(d); }
   }, function () {
     /* Not a System Manager: not theirs to see, so the card is not there. */
     card.style.display = "none";
@@ -12854,13 +13446,14 @@ function loadPortalContext() {
     // kept for the leave modal "apply on behalf of" default
     window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
+    window._roles.leadership = (ctx.roles || []).indexOf("Leadership") !== -1;   /* slice 090 */
     window._roles.is_system_manager = !!ctx.is_system_manager;   /* slice 076: Pending shows a CXO counts */
     if (HM.pend) hmPaintPending();
     window._roles.positions  = !!ctx.positions;
 
     /* Attendance Insights counts towards the Management heading too, so the
        item can never end up under a heading that is hidden. */
-    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights || ctx.positions;
+    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights || ctx.positions || window._roles.leadership;
 
     // Sidebar management section
     const mgmtHdr = document.getElementById("mgmt-section-hdr");
@@ -12940,6 +13533,11 @@ function applyPlanNav() {
   // Absent means "not answered yet", which must not read as "not bought".
   if (navAna) navAna.style.display =
     (roles.is_hr && f.plan_analytics !== false) ? "flex" : "none";
+  /* Slice 090: People trends is for the Leadership role. The endpoint is the gate. */
+  var navPt = document.getElementById("nav-people-trends"), bnavPt = document.getElementById("bnav-people-trends");
+  var ptShow = (roles.leadership && !roles.is_hr && f.plan_analytics !== false) ? "flex" : "none";   /* HR roles are refused (PT-HR-OFF) */
+  if (navPt) navPt.style.display = ptShow;
+  if (bnavPt) bnavPt.style.display = ptShow === "flex" ? "" : "none";
   var navDr = document.getElementById("nav-data-review");   // slice 012: same rule as Analytics
   if (navDr) navDr.style.display = navAna ? navAna.style.display : "none";
 
@@ -14087,6 +14685,333 @@ document.addEventListener("click", function (e) {
   if (who) mpfOpen(who, t);
 });
 
+/* ── Slice 089: a manager reports that a direct report left ─────────────────
+   Everything here DRAWS what the server decided. The icon appears only when
+   `can_report` is true, the personal card holds only the keys the server sent,
+   and every refusal sentence is the server's own. Nothing from the server
+   reaches innerHTML unescaped. "Change" (emergency contact) is not built. */
+var LV = {api: "alvoraa_portal.leaver_report.", emp: null, sheet: null, opener: null, dlg: null};
+var LV_SEES_KEY = "alvoraa_manager_sees_team_details";
+var LV_ROLE_KEY = "alvoraa_leaver_confirm_role";
+var LV_GROUPS = [
+  {k: "phone", fields: ["cell_number"], label: "Personal phone",
+   hint: "Staff can already correct this on My profile."},
+  {k: "addr", fields: ["current_address"], label: "Home address",
+   hint: "Staff can already correct this on My profile."},
+  {k: "emg", fields: ["person_to_be_contacted", "relation", "emergency_phone_number"],
+   label: "Emergency contact", hint: "Name, relation and phone. Staff can already correct these."}
+];
+
+function lvIso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+function lvAdd(iso, n) { var d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return lvIso(d); }
+function lvFirst(n) { return String(n || "").split(" ")[0]; }
+
+function lvHost(html) {
+  var host = document.getElementById("lv-host");
+  if (!html) { if (host) host.remove(); return; }
+  if (!host) { host = document.createElement("div"); host.id = "lv-host"; host.className = "pfx"; document.body.appendChild(host); }
+  host.innerHTML = html;
+}
+
+/* Tab stays inside the open sheet or dialog; Escape closes it. */
+function lvKeys(e, close) {
+  if (e.key === "Escape") { close(); return; }
+  if (e.key !== "Tab") return;
+  var box = e.currentTarget;
+  var f = box.querySelectorAll("button:not([disabled]), input:not([disabled]), select, a[href]");
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+
+/* the Scorecard header, note and card ------------------------------------- */
+
+function lvHeader(d) {
+  var emp = d.employee || {};
+  LV.emp = {id: emp.name, name: emp.employee_name || ""};
+  var old = document.getElementById("sc-left-btn");
+  if (old) old.remove();
+  if (!d.can_report) return;
+  var first = lvFirst(emp.employee_name);
+  var label = drT("Report that {0} left", [first]);
+  var b = document.createElement("button");
+  b.type = "button"; b.id = "sc-left-btn"; b.className = "lv-icon";
+  b.setAttribute("aria-label", label); b.title = label;
+  b.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'
+    + '<path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
+  b.onclick = lvOpen;
+  /* A sibling of the name block, before the badge (prototype-v4). Inside the
+     name block it was squeezed under the "Joined" badge at 360 px (D-1). */
+  var bar = document.querySelector("#panel-scorecard .sc-topbar");
+  if (bar) bar.insertBefore(b, document.getElementById("sc-join-badge"));
+}
+
+function lvNote(d) {
+  var r = d.open_report;
+  if (!r) return "";
+  var first = lvFirst((d.employee || {}).employee_name);
+  return '<p class="lv-note" role="note"><b>' + esc(drT("Reported, not yet confirmed.")) + "</b> "
+    + esc(drT("You reported on {0} that {1}'s last working day is {2}. {1} stays on your team until it is confirmed.",
+              [fmtDate(r.reported_on), first, fmtDate(r.last_day)])) + "</p>";
+}
+
+function lvPersonal(d) {
+  var p = d.personal || {}, emp = d.employee || {};
+  if (emp.status !== "Active") return "";
+  var rows = LV_GROUPS.filter(function (g) {
+    return g.fields.some(function (f) { return f in p; });
+  }).map(function (g) {
+    var v = g.fields.map(function (f) { return p[f]; }).filter(Boolean).join(", ");
+    return "<dt>" + esc(drT(g.label)) + "</dt><dd>" + esc(v || drT("Not set")) + "</dd>";
+  });
+  if (!rows.length) return "";
+  return '<div class="sc-card lv-personal"><div class="sc-card-hdr">' + esc(drT("Personal details")) + "</div>"
+    + '<div class="sc-card-body"><p class="gp-hint" style="margin:0 0 8px">'
+    + esc(drT("Your organisation lets managers see these. Only you and HR can see them. Staff can see that you can."))
+    + '</p><dl class="lv-dl">' + rows.join("") + "</dl></div></div>";
+}
+
+/* the Team card ------------------------------------------------------------ */
+
+function lvTeamLine(reported, id) {
+  return (reported && reported[id])
+    ? '<div class="lv-state">&#9203; ' + esc(drT("Reported, not yet confirmed")) + "</div>" : "";
+}
+
+/* My profile: what the person is told ------------------------------------- */
+
+function lvEmployeeLine(d) {
+  var r = d && d.leaver_report;
+  if (!r) return "";
+  return '<p class="lv-emp-note" role="note">' + esc(drT(
+    "Your manager {0} reported that your last working day is {1}. It has not been confirmed yet. "
+    + "Nothing about your pay or sign-in has changed. Not right? Speak to HR.",
+    [r.by, fmtDate(r.last_day)])) + "</p>";
+}
+
+/* the report sheet ---------------------------------------------------------- */
+
+function lvOpen() {
+  if (!LV.emp) return;
+  LV.opener = document.getElementById("sc-left-btn");
+  LV.sheet = {date: lvIso(new Date()), err: "", sending: false, offline: false, done: null};
+  lvPaint();
+}
+
+function lvClose() {
+  LV.sheet = null; lvHost("");
+  var o = document.getElementById("sc-left-btn") || LV.opener;
+  if (o && o.focus) o.focus();
+}
+
+function lvPaint() {
+  var s = LV.sheet;
+  if (!s) { lvHost(""); return; }
+  var first = lvFirst(LV.emp.name), today = lvIso(new Date());
+  var h = '<div class="pfx-scrim" onclick="if(event.target===this)lvClose()"><div id="lv-sheet" class="pfx-sheet"'
+    + ' role="dialog" aria-modal="true" aria-labelledby="lv-t" onkeydown="lvKeys(event,lvClose)">';
+  if (s.done) {
+    h += '<h2 id="lv-t">' + esc(drT("{0} left?", [LV.emp.name])) + "</h2>"
+      + '<p class="pfx-ctx"><b>&#10003; ' + esc(drT("Sent for confirmation")) + "</b><br>"
+      + esc(drT("You reported this on {0}. {1} shows as working until it is confirmed. Wrong person or date? Ask HR.",
+                [fmtDate(s.done.reported_on), first])) + "</p>"
+      + '<div class="pfx-acts"><button type="button" class="btn btn-primary" id="lv-first" onclick="lvDone()">'
+      + esc(drT("Done")) + "</button></div>";
+  } else {
+    h += '<h2 id="lv-t">' + esc(drT("{0} left?", [LV.emp.name])) + "</h2>"
+      + '<div class="pfx-field"><label class="pfx-fl" for="lv-date">' + esc(drT("Last working day")) + "</label>"
+      + '<input type="date" id="lv-date" value="' + esc(s.date) + '" min="' + lvAdd(today, -31) + '" max="'
+      + lvAdd(today, 60) + '" oninput="lvDate(this.value)" aria-describedby="lv-hint lv-prev">'
+      + '<p class="pfx-ctx" id="lv-hint">' + esc(drT("The last day {0} worked, or will work.", [first])) + "</p></div>"
+      + '<p class="pfx-ctx" id="lv-prev" role="status">'
+      + esc(drT("You are reporting: {0} · last working day {1}.", [LV.emp.name, fmtDate(s.date)])) + "</p>"
+      + '<p class="pfx-ctx">' + esc(drT(
+          "This is sent for confirmation. Until it is confirmed, nothing changes for {0}: {0} stays on your team and is shown as working.",
+          [first])) + "</p>"
+      + '<div class="pfx-err" id="lv-err" role="alert">'
+      + esc(s.offline ? drT("It may not have been sent. We kept your date. Check your team list before you try again.") : (s.err || "")) + "</div>"
+      + '<div class="pfx-acts"><button type="button" class="btn" onclick="lvClose()">' + esc(drT("Not now")) + "</button>"
+      + '<button type="button" class="btn btn-primary" id="lv-send" onclick="lvSend()"'
+      + (s.sending ? " disabled" : "") + ">"
+      + esc(s.sending ? drT("Sending…") : s.offline ? drT("Try again") : drT("Report that {0} left", [first]))
+      + "</button></div>";
+  }
+  lvHost(h + "</div></div>");
+  var f = document.getElementById(s.done ? "lv-first" : (s.err || s.offline ? "lv-send" : "lv-date"));
+  if (f) f.focus();
+}
+
+function lvDate(v) {
+  if (!LV.sheet) return;
+  LV.sheet.date = v;
+  var p = document.getElementById("lv-prev");
+  if (p) p.textContent = drT("You are reporting: {0} · last working day {1}.", [LV.emp.name, fmtDate(v)]);
+}
+
+function lvSend() {
+  var s = LV.sheet;
+  if (!s || s.sending) return;
+  s.sending = true; s.err = ""; s.offline = false; lvPaint();
+  gpFetch(LV.api + "send_leaver_report", {employee: LV.emp.id, last_working_day: s.date},
+          {lostAnswerHandled: true}).then(function (r) {
+    s.sending = false;
+    s.done = {reported_on: (r && r.reported_on) || lvIso(new Date()), last_day: (r && r.last_working_day) || s.date};
+    lvPaint();
+  }, function (e) {
+    s.sending = false;
+    /* No answer may mean the report landed, so the words say "may not have been
+       sent" and ask for a look first. A second send is still safe: the server
+       refuses it with "You already reported this person on ...". */
+    if (e && e.server) s.err = e.message;
+    else s.offline = true;
+    lvPaint();
+  });
+}
+
+/* Done: the icon goes and the note appears, from what the server just said. */
+function lvDone() {
+  var s = LV.sheet, r = s && s.done;
+  LV.sheet = null; lvHost("");
+  var b = document.getElementById("sc-left-btn");
+  if (b) b.remove();
+  var body = document.getElementById("sc-body");
+  if (r && body) {
+    var tmp = document.createElement("div");
+    tmp.innerHTML = lvNote({employee: {employee_name: LV.emp.name},
+                            open_report: {reported_on: r.reported_on, last_day: r.last_day}});
+    if (tmp.firstChild) body.insertBefore(tmp.firstChild, body.firstChild);
+  }
+  var back = document.querySelector("#panel-scorecard .sc-back-btn");
+  if (back) back.focus();
+}
+
+/* the Administrator card ----------------------------------------------------- */
+
+function lvTicked(d) {
+  var have = d.manager_sees_fields || [];
+  return LV_GROUPS.filter(function (g) { return g.fields.every(function (f) { return have.indexOf(f) >= 0; }); })
+    .map(function (g) { return g.k; });
+}
+
+function lvAdminPaint(d) {
+  var box = hmEl("lv-admin-body");
+  if (!box) return;
+  var ticked = lvTicked(d);
+  var chips = ticked.length
+    ? '<div class="ocs-chips">' + LV_GROUPS.filter(function (g) { return ticked.indexOf(g.k) >= 0; }).map(function (g) {
+        return '<span class="ocs-chip">' + esc(drT(g.label)) + "</span>"; }).join("") + "</div>"
+    : '<p class="gp-hint">' + esc(drT("None. Managers see no personal details of their team.")) + "</p>";
+  var role = d.leaver_confirm_role || "HR Manager";
+  var roles = (d.leaver_confirm_roles || []).slice();
+  if (roles.indexOf(role) < 0) roles.unshift(role);
+  box.innerHTML = '<div class="ocs-sec"><h4 class="ocs-h">' + esc(drT("Managers can see")) + "</h4>" + chips
+    + '<div class="ocs-acts"><button type="button" class="btn btn-outline ocs-b" id="lv-see-btn" data-lv="see">'
+    + esc(drT("Change what managers see")) + "</button></div></div>"
+    + '<div class="ocs-sec"><h4 class="ocs-h"><label for="lv-role">' + esc(drT("Leaver notices are confirmed by")) + "</label></h4>"
+    + '<select class="gp-input" id="lv-role" data-lv="role" aria-describedby="lv-role-hint lv-role-err">'
+    + roles.map(function (r) {
+        return "<option" + (r === role ? " selected" : "") + ">" + esc(r) + "</option>"; }).join("") + "</select>"
+    + '<p class="gp-hint" id="lv-role-hint">' + esc(drT(
+        "When a manager reports that someone left, everyone with this role gets a to-do in Desk and confirms it there. "
+        + "Only they set a person to Left. {0} enabled people hold {1}.", [d.leaver_confirm_holders || 0, role])) + "</p>"
+    + '<div class="pfx-err" id="lv-role-err" role="alert"></div></div>';
+  hmEl("lv-admin-changed").textContent = d.last_changed && d.last_changed.by
+    ? drT("Changed by {0} on {1}", [d.last_changed.by, fmtDate(d.last_changed.on)]) : "";
+}
+
+function lvSeeDialog() {
+  var d = OCS.data || {};
+  LV.dlg = {tick: lvTicked(d), people: d.manager_sees_people || 0};
+  var box = document.createElement("div");
+  box.className = "ocs-back"; box.id = "lv-dlg";
+  box.innerHTML = '<div class="ocs-dlg" role="dialog" aria-modal="true" aria-labelledby="lv-dlg-h" tabindex="-1">'
+    + '<div class="ocs-dlg-hd"><h3 id="lv-dlg-h">' + esc(drT("Managers can see")) + "</h3>"
+    + '<button type="button" class="ocs-x" data-lv="cancel" aria-label="' + esc(drT("Cancel")) + '">&times;</button></div>'
+    + '<div class="ocs-dlg-bd"><p class="oc2-lead">' + esc(drT(
+        "Tick the personal details a manager may see about the people who report to them. "
+        + "Personal email, pay, bank, ID numbers and date of birth are never offered.")) + "</p>"
+    + LV_GROUPS.map(function (g) {
+        return '<label class="ocs-opt"><input type="checkbox" data-lv="tick" value="' + g.k + '"'
+          + (LV.dlg.tick.indexOf(g.k) >= 0 ? " checked" : "") + '><span><b>' + esc(drT(g.label)) + "</b>"
+          + '<span class="gp-hint" style="display:block">' + esc(drT(g.hint)) + "</span></span></label>";
+      }).join("")
+    + '<p class="lv-err pfx-err" id="lv-dlg-err" role="alert"></p></div>'
+    + '<div class="ocs-dlg-ft"><p class="ocs-sum" id="lv-sum" role="status"></p><div class="ocs-ft-b oc2-ft-b">'
+    + '<button type="button" class="btn btn-outline ocs-b" data-lv="cancel">' + esc(drT("Cancel")) + "</button>"
+    + '<button type="button" class="btn btn-primary ocs-b oc2-ok" data-lv="save" id="lv-save"></button></div></div></div>';
+  box.addEventListener("keydown", function (e) { lvKeys(e, lvDlgClose); });
+  document.body.appendChild(box);
+  lvDlgSum();
+  box.querySelector("input").focus();
+}
+
+function lvDlgSum() {
+  var n = LV.dlg.tick.length, p = LV.dlg.people;
+  hmEl("lv-sum").textContent = n
+    ? drT("Managers will see {0} of these about {1} people who have a manager.", [n, p])
+    : drT("Managers will see none of these.");
+  hmEl("lv-save").textContent = n
+    ? drT("Save — managers see {0} details about {1} people", [n, p])
+    : drT("Save — managers see none of these");
+}
+
+function lvDlgClose() {
+  var b = document.getElementById("lv-dlg");
+  if (b) b.remove();
+  LV.dlg = null;
+  var o = document.getElementById("lv-see-btn");
+  if (o) o.focus();
+}
+
+function lvSave(key, value, done, fail) {
+  gpFetch(OCS_API + "set_people_setting", {key: key, value: value}, {lostAnswerHandled: true}).then(done, fail);
+}
+
+document.addEventListener("click", function (e) {
+  var t = e.target.closest && e.target.closest("[data-lv]");
+  if (!t) return;
+  var what = t.getAttribute("data-lv");
+  if (what === "see") lvSeeDialog();
+  else if (what === "cancel") lvDlgClose();
+  else if (what === "save" && LV.dlg) {
+    var fields = [];
+    LV_GROUPS.forEach(function (g) { if (LV.dlg.tick.indexOf(g.k) >= 0) fields = fields.concat(g.fields); });
+    var btn = t; btn.disabled = true;
+    lvSave(LV_SEES_KEY, fields.join(","), function () {
+      lvDlgClose(); ocsLoad(); toast(drT("Saved."), "ok");
+    }, function (err) {
+      btn.disabled = false;
+      var m = hmEl("lv-dlg-err");
+      if (m) m.textContent = mayHaveGone(err)
+        ? drT("No answer from the office. It may have gone through. Close this and look before you save it again.")
+        : (err && err.message) || drT("Could not save that. Try again.");
+    });
+  }
+});
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!t || !t.getAttribute) return;
+  var what = t.getAttribute("data-lv");
+  if (what === "tick" && LV.dlg) {
+    var i = LV.dlg.tick.indexOf(t.value);
+    if (t.checked && i < 0) LV.dlg.tick.push(t.value);
+    if (!t.checked && i >= 0) LV.dlg.tick.splice(i, 1);
+    lvDlgSum();
+  } else if (what === "role") {
+    var err = hmEl("lv-role-err");
+    if (err) err.textContent = "";
+    lvSave(LV_ROLE_KEY, t.value, function () { ocsLoad(); toast(drT("Saved."), "ok"); }, function (x) {
+      if (err) err.textContent = mayHaveGone(x)
+        ? drT("No answer from the office. It may have gone through. Look before you save it again.")
+        : (x && x.message) || drT("Could not save that. Try again.");
+      var cur = (OCS.data || {}).leaver_confirm_role;
+      if (cur) t.value = cur;
+    });
+  }
+});
+
 /* ── Employee Scorecard ──────────────────────────── */
 var _scBackPanel = "team";
 var _scBackNavEl = null;
@@ -14095,6 +15020,8 @@ function openEmpScorecard(empId, color) {
   _scBackPanel = document.querySelector(".panel.active") ? (document.querySelector(".panel.active").id || "team").replace("panel-", "") : "team";
   _scBackNavEl = document.querySelector(".nav-item.active");
   switchPanel("scorecard");
+  var _lvOld = document.getElementById("sc-left-btn");
+  if (_lvOld) _lvOld.remove();
   var av = document.getElementById("sc-avatar");
   av.style.background = color || "var(--primary)";
   av.textContent = "…";
@@ -14123,6 +15050,7 @@ function renderScorecard(d, color) {
   document.getElementById("sc-emp-name").textContent = emp.employee_name || "";
   document.getElementById("sc-emp-role").textContent = [emp.designation, emp.department].filter(Boolean).join(" • ");
   document.getElementById("sc-join-badge").textContent = emp.date_of_joining ? "Joined " + fmtDate(emp.date_of_joining) : "";
+  lvHeader(d);
 
   var att     = d.month_att_summary || {};
   var present = (att["Present"] || 0) + Math.round((att["Half Day"] || 0) * 0.5);
@@ -14257,6 +15185,7 @@ function renderScorecard(d, color) {
 
   // Assemble body
   document.getElementById("sc-body").innerHTML =
+    lvNote(d) +
     statsHtml +
     pendHtml +
     '<div class="sc-grid">' +
@@ -14276,6 +15205,7 @@ function renderScorecard(d, color) {
         '<div class="sc-card-hdr">Appraisal History</div>' +
         '<div class="sc-card-body">' + apprHtml + '</div>' +
       '</div>' +
+      lvPersonal(d) +
     '</div>';
 }
 
@@ -14529,7 +15459,7 @@ function renderTeamData(d) {
         const status = todayAtt[m.name] || "—";
         const cls    = statusCss[status] || "badge-gray";
         const color  = TEAM_COLORS[i % TEAM_COLORS.length];
-        return '<div class="team-card" onclick="openEmpScorecard(\'' + m.name + '\',\'' + color + '\')"><div class="team-avatar" style="background:' + color + '">' + initials(m.employee_name) + '</div><div class="team-card-name" title="' + esc(m.employee_name) + '">' + esc(m.employee_name) + '</div><div class="team-card-role" title="' + esc(m.designation||"") + '">' + esc(m.designation||"—") + '</div><div class="team-card-status"><span class="badge ' + cls + '">' + status + '</span></div></div>';
+        return '<div class="team-card" onclick="openEmpScorecard(\'' + m.name + '\',\'' + color + '\')"><div class="team-avatar" style="background:' + color + '">' + initials(m.employee_name) + '</div><div class="team-card-name" title="' + esc(m.employee_name) + '">' + esc(m.employee_name) + '</div><div class="team-card-role" title="' + esc(m.designation||"") + '">' + esc(m.designation||"—") + '</div><div class="team-card-status"><span class="badge ' + cls + '">' + status + '</span></div>' + lvTeamLine(d.reported, m.name) + '</div>';
       }).join("");
 
   // On leave today
@@ -14860,6 +15790,28 @@ function drCard(c, i, manyCompanies) {
       attendance_date: ["between", [c.dates[0], c.dates[n - 1]]] })) + '">' + esc(drT("Open attendance for these days")) + '</a>');
     if (c.can_confirm) acts.push('<button type="button" class="btn btn-outline" onclick="drAsk(' + i + ', this)">' + esc(drT("The absence was real")) + '</button>');
     meta = drT("Found {0} · Checked again every morning", [drWhen(c.found_on)]);
+  } else if (c.kind === "feed") {
+    /* ALV-440: the branch is judged against its OWN normal for that weekday, so
+       the card says what normal is. Never a confirm button - there is nothing
+       here HR could declare correct, and it clears itself once punches arrive. */
+    var fn = c.dates.length;
+    title = drT("{0} may have stopped sending punches", [c.branch]);
+    chip = '<span class="dr-chip warn">' + esc(drT("Punch feed")) + '</span>';
+    lines.push(fn === 1
+      ? drT("On {0}, {1} people punched at {2}. It normally has about {3} on that day of the week.",
+            [drDates(c.dates), c.punched, c.branch, c.normal])
+      : drT("On {0}, no more than {1} people punched at {2}. It normally has about {3} on those days of the week.",
+            [drDates(c.dates), c.punched, c.branch, c.normal]));
+    lines.push(drT("This is almost always a check-in device that has stopped sending, not people staying away. Check the device at this branch."));
+    lines.push(drT("Until it is fixed, these days stay marked absent and will reach pay."));
+    leaders = drT("nothing yet - these days still count as absent in every figure until the data is fixed.");
+    acts.push('<a class="btn btn-primary" target="_blank" rel="noopener" href="' + esc(drDeskUrl("employee-checkin", {
+      alvoraa_branch: c.branch,
+      time: ["between", [c.dates[0], c.dates[fn - 1]]] })) + '">' + esc(drT("Open check-ins for this branch")) + '</a>');
+    acts.push('<a class="btn btn-outline" target="_blank" rel="noopener" href="' + esc(drDeskUrl("attendance", {
+      company: c.company, alvoraa_branch: c.branch,
+      attendance_date: ["between", [c.dates[0], c.dates[fn - 1]]] })) + '">' + esc(drT("Open attendance for these days")) + '</a>');
+    meta = drT("Found {0} · Clears by itself once the branch is punching normally again", [drWhen(c.found_on)]);
   } else if (c.kind === "leave") {
     title = drT("Leave used");
     chip = '<span class="dr-chip review">' + esc(drT("Needs review")) + '</span>';
@@ -16336,7 +17288,7 @@ window.trLoad = async function () {
       from_date: trState.from,
       to_date: trState.to,
       employee: trState.employee || null,
-      only: trState.only || null,
+      only: (trState.only && trState.only !== "held") ? trState.only : null,
       depth: trState.depth,
       department: trState.department || null,
       branch: trState.branch || null,
@@ -16351,9 +17303,7 @@ window.trLoad = async function () {
     return;
   }
   trBar();
-  trChips();
-  trRows();
-  trPager();
+  hdlLoad();
 };
 
 /* ── the filters ──────────────────────────────────────────────────────── */
@@ -16432,6 +17382,7 @@ function trBar() {
 window.trSet = function (key, value) {
   trState[key] = value;
   trState.open = null;
+  if (key === "only" && value === "held") { hdlLoad(); return; }
   /* Grouping only rearranges what is already here, so it needs no round
      trip. Everything else changes what is being asked for and starts again
      at the first page - keeping the offset would land somebody on an empty
@@ -16449,9 +17400,17 @@ function trChips() {
   var counts = (trState.data || {}).counts || {};
   var html = '<span class="tr-chip' + (trState.only ? "" : " on")
     + '" onclick="trSet(&quot;only&quot;,&quot;&quot;)">Everything</span>';
+  /* Slice 086: only where the manager has held days to send, and the hold is on. */
+  var hd = hdl.data;
+  if (hd && hd.hold_on && !hd.nobody && (hd.total || trState.only === "held")) {
+    html += '<span class="tr-chip warn' + (trState.only === "held" ? " on" : "")
+      + '" role="button" tabindex="0" onclick="trSet(&quot;only&quot;,&quot;held&quot;)">'
+      + HDL_WARN + gpEsc(drT("Held")) + " <b>" + (hd.total || 0) + "</b></span>";
+  }
   TR_FLAGS.forEach(function (f) {
     var n = counts[f[0]] || 0;
-    if (!n) return;
+    /* P-1 (Surbhi, 21 Nov): where the hold is on, a day with one punch is Held, not "No clock-out". */
+    if (!n || (f[0] === "no_clock_out" && hd && hd.hold_on)) return;
     html += '<span class="tr-chip ' + f[2] + (trState.only === f[0] ? " on" : "")
       + '" onclick="trSet(&quot;only&quot;,&quot;' + f[0] + '&quot;)">'
       + gpEsc(f[1]) + " <b>" + n + "</b></span>";
@@ -16535,7 +17494,8 @@ function trDay(r, byPerson) {
     + '<button class="tr-open" onclick="acFromTeam(&quot;' + gpEsc(r.employee)
     + '&quot;,&quot;' + r.date + '&quot;)">' + gpEsc(who) + "</button>"
     + '<span class="tr-status">' + gpEsc(r.status || "") + "</span>"
-    + '<span class="tr-need ' + f[2] + '">' + gpEsc(f[1]) + "</span></div>"
+    + (r.flag === "no_clock_out" && hdl.data && hdl.data.hold_on ? ""
+      : '<span class="tr-need ' + f[2] + '">' + gpEsc(f[1]) + "</span>") + "</div>"
     + '<div class="tr-day-sub">' + gpEsc(times) + " · "
     + gpEsc(bits.join(" · ")) + "</div>"
     + (trState.open === key ? trAskForm(r) : "")
@@ -16637,6 +17597,411 @@ window.trPage = function (direction) {
   trState.open = null;
   trLoad();
 };
+
+/* ── Slice 086: the Held view on the Whole team page ─────────────────────
+   A manager types the missing time and a reason for each held day of a direct
+   report and sends them to HR in one go. HR decides each. The server owns every
+   rule (`held_team.send_held`); this only draws the days and posts five keys per
+   row. Nothing typed is kept anywhere but in this page's memory (PRIV-4): no
+   storage, no draft, so the next person on a shared phone sees nothing. */
+var hdl = {data: null, day: null, start: 0, vals: {}, said: {}, banner: null, sending: false, ask: false};
+
+/* The warning triangle prototype-v2 draws on the Held chip. */
+var HDL_WARN = '<svg class="tr-chip-ic" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3l8 14H2L10 3zM10 8v4M10 14.5v.5"/></svg>';
+
+function hdlKey(r) { return r.employee + "|" + r.date; }
+function hdlVal(r) { var k = hdlKey(r); return hdl.vals[k] || (hdl.vals[k] = {time: "", reason: "", flip: false}); }
+function hdlFirst(r) { return String(r.employee_name || r.employee).split(" ")[0]; }
+
+/* In or Out for a typed time: one punch = the end the page guessed (or its opposite after Change);
+   otherwise the same rule as the server (`acKind`). The server checks it again and decides. */
+function hdlLog(r, v) {
+  if (r.punches.length === 1) {
+    var arrivalMissing = r.single_is_out !== v.flip;
+    return arrivalMissing ? "IN" : "OUT";
+  }
+  return acKind(r.punches.map(function (p) { return p.m; }), pfMin(v.time)).log;
+}
+
+function hdlReady(r) { var v = hdlVal(r); return !!(v.time && (v.reason || "").trim()); }
+
+window.hdlLoad = async function () {
+  var body = document.getElementById("tr-body");
+  try {
+    hdl.data = await gpFetch("alvoraa_portal.held_team.held_days", {day: hdl.day || null, start: hdl.start});
+  } catch (e) {
+    if (trState.only === "held" && body) body.innerHTML = '<p class="ac-empty">' + gpEsc(trErr(e)) + "</p>";
+    else { trChips(); trRows(); trPager(); }
+    return;
+  }
+  hdl.day = hdl.data.day;
+  trChips();
+  if (trState.only === "held") { hdlRender(); return; }
+  hdlBarHost("");
+  trRows();
+  trPager();
+};
+
+function hdlRender() {
+  var body = document.getElementById("tr-body"), pager = document.getElementById("tr-pager");
+  if (!body) return;
+  if (pager) pager.innerHTML = "";
+  hdlBarHost("");
+  var d = hdl.data || {}, rows = d.rows || [], html = "";
+  if (d.nobody) {
+    body.innerHTML = '<p class="ac-empty">' + gpEsc(drT("Nobody reports to you, so there is nothing to review here.")) + "</p>";
+    return;
+  }
+  html += hdlBanner();
+  var opts = (d.days || []).map(function (x) {
+    return '<option value="' + gpEsc(x.date) + '"' + (d.day === x.date ? " selected" : "") + ">"
+      + gpEsc(fmtDate(x.date)) + " (" + x.count + ")</option>";
+  }).join("") + '<option value="all"' + (d.day === "all" ? " selected" : "") + ">"
+    + gpEsc(d.from ? drT("All days in this period ({0} to {1})", [drDay(d.from), drDay(d.to)]) : drT("All days in this period")) + "</option>";
+  if (d.day && d.day !== "all" && !(d.days || []).some(function (x) { return x.date === d.day; })) {
+    opts = '<option value="' + gpEsc(d.day) + '" selected>' + gpEsc(fmtDate(d.day)) + "</option>" + opts;   /* the day just emptied */
+  }
+  /* Prototype-v2: Show, the chips and the list come straight away, also when nothing is left. The From, To,
+     Person and Group by filters give way to the one Show box while this view is open; trBar() brings them back. */
+  var bar = document.getElementById("tr-bar");
+  if (bar) bar.innerHTML = '<label class="tr-f"><span>' + gpEsc(drT("Show")) + '</span>'
+    + '<select class="form-control" onchange="hdlDay(this.value)">' + opts + "</select></label>";
+  if (d.total) {
+    html += '<div class="hdl-top"><p class="hdl-line">' + gpEsc(d.total === 1 ? drT("1 held day needs a time from you.")
+          : drT("{0} held days need a time from you.", [d.total])) + "</p>"
+      + '<p class="ac-help">' + gpEsc(drT("Held days have a punch missing, so pay for the day is on hold until HR fixes it. Give the missing time and a reason, and HR decides.")) + "</p></div>";
+  }
+  if (!rows.length) {
+    var next = (d.days || []).filter(function (x) { return x.date !== d.day; })[0];
+    html += '<div class="hdl-empty"><b>' + gpEsc(drT("Nothing is held on {0}.", [d.day && d.day !== "all" ? fmtDate(d.day) : drT("this period")])) + "</b>"
+      + gpEsc(drT("No held day without a request is waiting for you. When somebody forgets to punch, the day shows up here.")) + '<div class="hdl-empty-go">'
+      + (next ? '<button class="btn btn-primary" onclick="hdlDay(&quot;' + gpEsc(next.date) + '&quot;)">'
+          + gpEsc(drT("Show {0}", [fmtDate(next.date)])) + "</button>" : "")
+      + '<button class="btn btn-outline" onclick="trSet(&quot;only&quot;,&quot;&quot;)">' + gpEsc(drT("See everything")) + "</button></div></div>";
+    body.innerHTML = html;
+    return;
+  }
+  var lastDay = "";
+  html += rows.map(function (r) {
+    var head = (d.day === "all" && r.date !== lastDay) ? '<div class="hdl-dgrp">' + gpEsc(fmtDate(r.date)) + "</div>" : "";
+    lastDay = r.date;
+    return head + hdlRow(r);
+  }).join("");
+  if (d.total > rows.length + (d.start || 0) || d.start) {
+    html += '<div class="tr-pager"><button class="btn btn-outline btn-sm" ' + (d.start ? "" : "disabled")
+      + ' onclick="hdlPage(-1)">' + gpEsc(drT("Previous")) + '</button><button class="btn btn-outline btn-sm" '
+      + (d.total > rows.length + (d.start || 0) ? "" : "disabled") + ' onclick="hdlPage(1)">' + gpEsc(drT("Next")) + "</button></div>";
+  }
+  html += '<div class="hdl-space" aria-hidden="true"></div>';
+  body.innerHTML = html;
+  hdlBar();
+}
+
+function hdlBanner() {
+  var b = hdl.banner;
+  return b ? '<div class="hdl-banner" role="status" aria-live="polite">' + gpEsc(b)
+    + (Object.keys(hdl.said).length ? ' <button type="button" class="btn btn-outline btn-sm" onclick="hdlFirstRefused()">'
+      + gpEsc(drT("Go to the first one")) + "</button>" : "") + "</div>" : "";
+}
+
+window.hdlFirstRefused = function () {
+  var e = document.querySelector(".hdl-refused");
+  if (e) { e.scrollIntoView({block: "center"}); var t = e.parentNode.querySelector("input,textarea"); if (t) t.focus(); }
+};
+
+window.hdlDay = function (day) { hdl.day = day; hdl.start = 0; hdl.banner = null; hdlLoad(); };
+window.hdlPage = function (dir) {
+  hdl.start = Math.max(0, (hdl.data.start || 0) + dir * (hdl.data.page_length || 50));
+  hdlLoad();
+};
+
+function hdlRow(r) {
+  var k = hdlKey(r), v = hdlVal(r), one = r.punches.length === 1, first = gpEsc(hdlFirst(r));
+  var kid = gpEsc(k), said = hdl.said[k];
+  var ask = one ? (r.single_is_out !== v.flip ? drT("What time did {0} arrive?", [first]) : drT("What time did {0} leave?", [first]))
+    : drT("Where is the missing punch?");
+  var pts = r.punches.map(function (p) { return {m: p.m, k: ""}; });
+  var real = r.punches.map(function (p) { return gpEsc(p.time) + " (" + gpEsc(p.source) + ")"; }).join(" · ");
+  var tid = "hdl-t-" + kid, rid = "hdl-r-" + kid;
+  return '<div class="hdl-row" id="hdl-row-' + kid + '" data-k="' + kid + '">'
+    + '<div class="hdl-head"><button class="tr-open" onclick="acFromTeam(&quot;' + gpEsc(r.employee) + '&quot;,&quot;' + gpEsc(r.date) + '&quot;)">'
+    + gpEsc(r.employee_name || r.employee) + '</button><span class="hdl-day">' + gpEsc(fmtDate(r.date)) + "</span>"
+    + '<span class="tr-need warn">' + HDL_WARN + gpEsc(drT("Held")) + "</span>"
+    + '<span class="hdl-state" id="hdl-st-' + kid + '">' + hdlStateText(r) + "</span></div>"
+    + pfStrip(r.shift, pts, null)
+    + '<p class="hdl-punches">' + drT("Punches: {0}", [real || gpEsc(drT("none"))])
+    + (r.shift ? " &middot; " + gpEsc(drT("Shift {0}", [r.shift.start + "\u2013" + r.shift.end])) : "") + "</p>"
+    + (one ? '<label class="form-label" for="' + tid + '">' + ask + "</label>"
+      + '<p class="ac-help">' + gpEsc(drT("Type the time you know it was. Nothing is filled in for you.")) + "</p>"
+      + '<input type="time" class="form-control" id="' + tid + '" value="' + gpEsc(v.time) + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;time&quot;,this.value)"'
+      + ' onkeydown="if(event.key===&quot;Enter&quot;)event.preventDefault()">'
+      + ' <button type="button" class="pfx-lnk" aria-label="' + gpEsc(r.single_is_out !== v.flip ? drT("Change to leaving") : drT("Change to arrival"))
+      + '" onclick="hdlChange(&quot;' + kid + '&quot;)">' + gpEsc(drT("Change")) + "</button>"
+      : hdlGapBlock(r, v, kid, ask))
+    + '<label class="form-label" for="' + rid + '">' + gpEsc(drT("Your reason")) + ' <span class="pfx-req">' + gpEsc(drT("Required")) + "</span></label>"
+    + '<p class="ac-help">' + gpEsc(drT("HR and {0} can read this. No health or family details.", [hdlFirst(r)])) + "</p>"
+    + '<p class="ac-help">' + gpEsc(drT("This reason is printed on the employee's monthly notice.")) + "</p>"
+    + '<textarea id="' + rid + '" rows="2" maxlength="500" required aria-required="true" placeholder="' + gpEsc(drT("e.g. Forgot to scan after lunch"))
+    + '" oninput="hdlType(&quot;' + kid + '&quot;,&quot;reason&quot;,this.value)">' + gpEsc(v.reason) + "</textarea>"
+    + (said ? '<p class="hdl-refused" role="alert">' + gpEsc(said) + " " + gpEsc(drT("Change what is needed and send again.")) + "</p>" : "")
+    + "</div>";
+}
+
+/* A row with three or more punches: the box is a button that opens 087's timeline. Tapping a gap opens the
+   add sheet with the kind worked out ("Back in after a break"); the row then shows "+14:40 . Back in after a break"
+   and a Change that opens the timeline again. One punch per row. */
+function hdlGapBlock(r, v, kid, ask) {
+  var h = '<p class="form-label">' + ask + "</p>";
+  if (v.time) {
+    h += '<p class="pfx-one"><b>+' + gpEsc(v.time) + " &middot; " + gpEsc(v.label || "") + "</b> "
+      + '<button type="button" class="pfx-lnk" onclick="hdlGaps(&quot;' + kid + '&quot;)">' + gpEsc(drT("Change")) + "</button></p>";
+  } else {
+    h += '<button type="button" class="btn btn-outline" onclick="hdlGaps(&quot;' + kid + '&quot;)">'
+      + gpEsc(drT("Show the punches and tap the gap")) + "</button>";
+  }
+  if (!v.open) return h;
+  var pts = r.punches.slice().sort(function (a, b) { return a.m - b.m; });
+  h += '<p class="pfx-hint">' + gpEsc(drT("Something missing? Tap a gap.")) + '</p><ul class="pfx-tl">';
+  function gap(i) {
+    return '<li><button type="button" class="pfx-b pfx-g" onclick="hdlGap(&quot;' + kid + '&quot;,' + i + ')"><span class="pfx-tm"></span>'
+      + '<span class="pfx-rail"><span class="pfx-gdot" aria-hidden="true">+</span></span>'
+      + '<span class="pfx-gl">' + gpEsc(drT("Add a missing punch here")) + "</span><span></span></button></li>";
+  }
+  h += gap(0);
+  pts.forEach(function (p, i) {
+    h += '<li><div class="pfx-s pfx-p"><span class="pfx-tm num">' + gpEsc(p.time) + '</span><span class="pfx-rail"><span class="pfx-dot io"></span></span>'
+      + '<span class="pfx-lb"><span class="pfx-lbt">' + gpEsc(i % 2 ? drT("Out") : drT("In")) + '</span><span class="pfx-sb">' + gpEsc(p.source) + "</span></span><span></span></div></li>" + gap(i + 1);
+  });
+  return h + "</ul>";
+}
+
+function hdlRowOf(k) { return (hdl.data.rows || []).filter(function (x) { return hdlKey(x) === k; })[0]; }
+function hdlRedraw(k, focusSel) {
+  var r = hdlRowOf(k), el = document.getElementById("hdl-row-" + k);
+  if (r && el) el.outerHTML = hdlRow(r);
+  var f = focusSel && document.querySelector('[data-k="' + k + '"] ' + focusSel);
+  if (f) f.focus();
+  hdlBar();
+}
+
+window.hdlGaps = function (k) {
+  var r = hdlRowOf(k); if (!r) return;
+  var v = hdlVal(r); v.open = !v.open;
+  hdlRedraw(k, ".pfx-g");
+};
+
+window.hdlGap = function (k, i) {
+  var r = hdlRowOf(k); if (!r) return;
+  var pts = r.punches.slice().sort(function (a, b) { return a.m - b.m; });
+  var prev = pts[i - 1], next = pts[i];
+  var ctx = prev && next ? "Between " + prev.time + " and " + next.time + "." : prev ? "After " + prev.time + "." : next ? "Before " + next.time + "." : "";
+  hdl.sheet = {k: k, prev: prev ? prev.m : null, next: next ? next.m : null, ctx: ctx, kind: null};
+  hdl.ask = true;
+  acPfHost('<div class="pfx-scrim" onclick="if(event.target===this)hdlGapClose()"><div id="pfx-sheet" class="pfx-sheet" role="dialog" aria-modal="true" aria-labelledby="hdl-gh" onkeydown="hdlKeys(event)">'
+    + '<h2 id="hdl-gh">' + gpEsc(drT("Add the missing punch")) + '</h2><p class="pfx-ctx">' + gpEsc(ctx) + "</p>"
+    + '<div class="pfx-field"><label class="pfx-fl" for="hdl-gt">' + gpEsc(drT("Time")) + "</label>"
+    + '<input type="time" id="hdl-gt" oninput="hdlGapTime(this.value)" aria-describedby="hdl-gi hdl-ge">'
+    + '<p class="pfx-infer" id="hdl-gi" aria-live="polite"></p><div class="pfx-err" id="hdl-ge" role="alert"></div></div>'
+    + '<div class="pfx-acts"><button type="button" class="btn" onclick="hdlGapClose()">' + gpEsc(drT("Cancel")) + "</button>"
+    + '<button type="button" class="btn btn-primary" onclick="hdlGapAdd()">' + gpEsc(drT("Add to request")) + "</button></div></div></div>");
+  var t = document.getElementById("hdl-gt"); if (t) t.focus();
+};
+
+window.hdlGapTime = function (t) {
+  var s = hdl.sheet, r = s && hdlRowOf(s.k); if (!r) return;
+  var m = pfMin(t), kd = isNaN(m) ? null : acKind(r.punches.map(function (p) { return p.m; }), m);
+  s.kind = kd;
+  var inf = document.getElementById("hdl-gi");
+  if (inf) inf.innerHTML = kd ? gpEsc(drT("It will be added as")) + ": <b>" + gpEsc(kd.label) + "</b>." : "";
+};
+
+window.hdlGapAdd = function () {
+  var s = hdl.sheet, r = s && hdlRowOf(s.k); if (!r) return;
+  var t = (document.getElementById("hdl-gt") || {}).value;
+  var err = pfFit(s, t);
+  if (!err && r.punches.some(function (p) { return p.time === t; })) err = "There is already a punch at " + t + ". Check the time.";
+  if (err) {
+    var box = document.getElementById("hdl-ge"), inp = document.getElementById("hdl-gt");
+    if (box) box.textContent = err;
+    if (inp) { inp.classList.add("bad"); inp.focus(); }
+    return;
+  }
+  var kd = acKind(r.punches.map(function (p) { return p.m; }), pfMin(t)), v = hdlVal(r);
+  v.time = t; v.label = kd.label; v.open = false;
+  delete hdl.said[s.k];
+  var k = s.k;
+  hdl.sheet = null; hdl.ask = false; acPfHost("");
+  hdlRedraw(k, ".pfx-lnk");
+};
+
+window.hdlGapClose = function () {
+  var k = hdl.sheet && hdl.sheet.k;
+  hdl.sheet = null; hdl.ask = false; acPfHost("");
+  var b = k && document.querySelector('[data-k="' + k + '"] .pfx-g'); if (b) b.focus();
+};
+
+function hdlStateText(r) {
+  var v = hdlVal(r);
+  if (hdlReady(r)) return "&#10003; " + gpEsc(drT("Ready"));
+  return v.time ? gpEsc(drT("Add a reason to include this day")) : "";
+}
+
+/* Typing never redraws a row: only the one state word and the bar are touched, so the cursor stays. */
+window.hdlType = function (k, field, value) {
+  var r = (hdl.data.rows || []).filter(function (x) { return hdlKey(x) === k; })[0];
+  if (!r) return;
+  hdlVal(r)[field] = value;
+  if (field === "time") delete hdl.said[k];       /* the refusal goes when she edits the time */
+  var st = document.getElementById("hdl-st-" + k);
+  if (st) st.innerHTML = hdlStateText(r);
+  var box = document.querySelector('[data-k="' + k.replace(/"/g, "") + '"] .hdl-refused');
+  if (box && field === "time") box.remove();
+  hdlBar();
+};
+
+/* H-11: Change flips the end, empties the box and puts the cursor back in it. Nothing is stored. */
+window.hdlChange = function (k) {
+  var r = (hdl.data.rows || []).filter(function (x) { return hdlKey(x) === k; })[0];
+  if (!r) return;
+  var v = hdlVal(r);
+  v.flip = !v.flip;
+  v.time = "";
+  delete hdl.said[k];
+  var el = document.getElementById("hdl-row-" + k);
+  if (el) el.outerHTML = hdlRow(r);
+  var t = document.getElementById("hdl-t-" + k);
+  if (t) t.focus();
+  hdlBar();
+};
+
+function hdlReadyRows() { return (hdl.data.rows || []).filter(hdlReady); }
+
+function hdlBar() {
+  var ready = hdlReadyRows(), n = ready.length;
+  if (!n) { hdlBarHost(""); return; }
+  hdlBarHost('<div class="hdl-sum"><b>' + gpEsc((n === 1 ? drT("1 day ready") : drT("{0} days ready", [n]))) + "</b> "
+    + gpEsc(drT("Each person is told on their day sheet. HR decides.")) + "</div>"
+    + '<button class="btn btn-primary" id="hdl-send" onclick="hdlAsk()">' + gpEsc(drT("Send {0} to HR", [n])) + "</button>");
+}
+
+/* The send bar is fixed above the portal's bottom bar (prototype-v2). Position:fixed lives in one host on
+   <body>, never in a panel, so no ancestor can be its frame (scripts/check_portal_trays.js). Leaving the
+   Held view or the page takes it away. */
+function hdlBarHost(html) {
+  var host = document.getElementById("hdl-bar-host");
+  if (!html) { if (host) host.remove(); return; }
+  if (!host) { host = document.createElement("div"); host.id = "hdl-bar-host"; host.className = "hdl-barfix"; document.body.appendChild(host); }
+  host.innerHTML = html;
+}
+window.addEventListener("hashchange", function () { hdlBarHost(""); });
+
+/* One confirm that says what is being said. It reuses 087's sheet classes, so no new overlay. */
+window.hdlAsk = function () {
+  var ready = hdlReadyRows().slice(0, 50), n = ready.length;
+  if (!n) return;
+  hdl.ask = true;
+  var lines = ready.map(function (r) {
+    var v = hdlVal(r);
+    return "<li><b>" + gpEsc(r.employee_name || r.employee) + "</b>, " + gpEsc(fmtDate(r.date)) + ", " + gpEsc(v.time)
+      + '<br><span class="hdl-q">' + gpEsc(v.reason.trim()) + "</span></li>";
+  }).join("");
+  acPfHost('<div class="pfx-scrim" onclick="if(event.target===this)hdlClose()"><div id="pfx-sheet" class="pfx-sheet" role="dialog" aria-modal="true" aria-labelledby="hdl-h"'
+    + ' onkeydown="hdlKeys(event)"><h2 id="hdl-h">' + gpEsc(drT("Send {0} days to HR?", [n])) + "</h2>"
+    + '<p class="pfx-ctx">' + gpEsc(drT("Your name goes on each request. Each person is told on their day sheet and can say it is not right. HR decides each one. Until HR does, the day stays held.")) + "</p>"
+    + '<ul class="hdl-list">' + lines + "</ul>"
+    + '<div class="pfx-acts"><button type="button" class="btn" onclick="hdlClose()">' + gpEsc(drT("Go back")) + "</button>"
+    + '<button type="button" class="btn btn-primary" id="hdl-go" onclick="hdlSend()">' + gpEsc(drT("Send {0} to HR", [n])) + "</button></div></div></div>");
+  var go = document.getElementById("hdl-go"); if (go) go.focus();
+};
+
+/* A dialog: Escape closes it, Tab stays inside it. */
+window.hdlKeys = function (e) {
+  if (e.key === "Escape") { hdl.sheet ? hdlGapClose() : hdlClose(); return; }
+  if (e.key !== "Tab") return;
+  var f = document.getElementById("pfx-sheet").querySelectorAll("button,input");
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+};
+
+window.hdlClose = function () {
+  hdl.ask = false;
+  acPfHost("");
+  var b = document.getElementById("hdl-send"); if (b) b.focus();
+};
+
+/* ONE call, five keys per row, each row with its own reason (PRIV-1). The page never posts a row on its own. */
+window.hdlSend = async function () {
+  if (hdl.sending) return;
+  var sendRows = hdlReadyRows().slice(0, 50);
+  if (!sendRows.length) return;
+  hdl.sending = true;
+  var go = document.getElementById("hdl-go");
+  if (go) { go.disabled = true; go.textContent = drT("Sending {0}... please keep this page open", [sendRows.length]); }
+  var body = JSON.stringify(sendRows.map(function (r) {
+    var v = hdlVal(r);
+    return {employee: r.employee, date: r.date, time: v.time, in_or_out: hdlLog(r, v), reason: v.reason.trim()};
+  }));
+  try {
+    var out = await gpFetch("alvoraa_portal.held_team.send_held", {rows: body});
+    hdlClose();
+    hdlDone(sendRows, out);
+  } catch (e) {
+    hdlClose();
+    if (e && e.kind === "offline") {
+      hdl.banner = drT("Nothing was sent. You are offline. The times you typed are still here. Connect, then press Send again.");
+      hdlRender();
+    } else if (mayHaveGone(e)) {
+      await hdlLostAnswer(sendRows);
+    } else {
+      hdl.banner = (e && e.message ? e.message + " " : "") + drT("Nothing was sent. The times you typed are still here.");
+      hdlRender();
+    }
+  } finally {
+    hdl.sending = false;
+  }
+};
+
+function hdlDone(sendRows, out) {
+  var names = [], failed = 0;
+  (out.results || []).forEach(function (a) {
+    var k = a.employee + "|" + a.date;
+    if (a.ok) {
+      var row = sendRows.filter(function (r) { return hdlKey(r) === k; })[0];
+      if (row) names.push(hdlFirst(row));
+      delete hdl.vals[k]; delete hdl.said[k];
+    } else { hdl.said[k] = a.sentence; failed++; }
+  });
+  var total = (out.results || []).length;
+  if (!failed) {
+    hdl.banner = drT("{0} of {1} sent to HR. {2}: HR will decide each one. Each person has been told on their day sheet.", [out.sent, total, names.join(", ")]);
+  } else if (!out.sent) {
+    hdl.banner = drT("Nothing sent. {0} not sent. The reason is on each one below.", [failed]);
+  } else {
+    hdl.banner = drT("Sent {0} of {1} to HR. {2} not sent. The reason is on each one below. The {0} that went are waiting for HR.", [out.sent, total, failed]);
+  }
+  hdlLoad();
+}
+
+/* The answer was lost. Ask the server what is still listed; never send again on its own (D-5). */
+async function hdlLostAnswer(sendRows) {
+  hdl.banner = drT("We did not get an answer from the office. Some days may have gone through. Checking now, please do not send again.");
+  hdlRender();
+  try {
+    var again = await gpFetch("alvoraa_portal.held_team.held_days", {day: hdl.day || null, start: hdl.start});
+    var still = {};
+    (again.rows || []).forEach(function (r) { still[hdlKey(r)] = 1; });
+    var gone = sendRows.filter(function (r) { return !still[hdlKey(r)]; });
+    gone.forEach(function (r) { delete hdl.vals[hdlKey(r)]; });
+    hdl.banner = drT("{0} of {1} are no longer on this list: sent, or fixed in the meantime. {2} still ready.", [gone.length, sendRows.length, sendRows.length - gone.length]);
+    hdl.data = again; hdl.day = again.day;
+    trChips();
+  } catch (e2) {
+    hdl.banner = drT("We could not check. Reload the page to see which days are still listed before sending again.");
+  }
+  hdlRender();
+}
 
 function populateTeamNoteEmpFilter() {
   const sel = document.getElementById("tn-emp");

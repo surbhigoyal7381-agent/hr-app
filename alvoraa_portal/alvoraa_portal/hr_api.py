@@ -533,6 +533,11 @@ def _own_upcoming_holidays(employee, date_):
     return holidays, None
 
 
+def _reported_by_me(team):
+    from alvoraa_portal import leaver_report
+    return leaver_report.open_reports_by([t.name for t in team])
+
+
 @frappe.whitelist()
 def get_manager_dashboard():
     user = frappe.session.user
@@ -775,6 +780,9 @@ def get_manager_dashboard():
         # whole record look like a reasonable thing to put there.
         "me":              me_block(emp),
         "team":            team,
+        # Slice 089: the people this caller has reported and not yet had
+        # confirmed. One query for the whole list, whatever its length.
+        "reported":        _reported_by_me(team),
         "today_att":       today_att,
         "on_leave_today":  on_leave_today,
         "pending_approvals": pending,
@@ -1160,17 +1168,23 @@ def get_employee_scorecard(employee_id):
     effective_mgr = get_effective_manager(employee_id)
     if effective_mgr != mgr_emp.name:
         if not is_hr:
-            frappe.throw("Access denied", frappe.PermissionError)
+            # Slice 089 (SEC-5): this refusal used to leave no trace.
+            from hrms.alvoraa_hr_core.access import refuse
+            refuse(_("You cannot open this scorecard. Ask HR."), "089-SEC-5",
+                   "hr_api.get_employee_scorecard", "Employee", employee_id)
         # HR opens only employees of the companies they look after (slice 010
         # group D, decision 28). It used to open any company's employee: contact
         # details, attendance, leave and appraisal history.
         _hr_target_employee(employee_id, "hr_api.get_employee_scorecard")
 
+    # Slice 089 (ALV-433, SEC-1): personal email, company email and gender no
+    # longer leave the server - the page never drew them. Phone, address and
+    # emergency contact come back only in `personal`, only for a direct
+    # manager, only when the organisation ticked them.
     emp = frappe.db.get_value(
         "Employee", employee_id,
         ["name", "employee_name", "designation", "department", "branch",
-         "date_of_joining", "cell_number", "personal_email", "company_email",
-         "status", "gender", "image"],
+         "date_of_joining", "status", "image"],
         as_dict=True,
     )
     if not emp:
@@ -1320,8 +1334,16 @@ def get_employee_scorecard(employee_id):
         as_dict=True,
     )
 
+    from alvoraa_portal import leaver_report
+    open_report = leaver_report.open_reports_by([employee_id]).get(employee_id)
     return {
         "employee": emp,
+        "personal": leaver_report.personal_details(employee_id, mgr_emp.name),
+        # The exit icon is drawn only when this is true (AC-1): an Active direct
+        # report of the caller, not the caller, with no open report of theirs.
+        "can_report": bool(not open_report
+                           and leaver_report.is_direct_active_report(employee_id, mgr_emp.name)),
+        "open_report": open_report,
         "checked_in": checked_in,
         "today_attendance": today_att,
         "month_att_summary": att_summary,
@@ -1500,15 +1522,18 @@ def get_employee_detail_for_manager(employee_id):
     emp_reports_to = frappe.db.get_value("Employee", employee_id, "reports_to")
     if emp_reports_to != mgr_emp.name:
         if not is_hr:
-            frappe.throw("Access denied", frappe.PermissionError)
+            from hrms.alvoraa_hr_core.access import refuse
+            refuse(_("You cannot open this person's details. Ask HR."), "089-SEC-5",
+                   "hr_api.get_employee_detail_for_manager", "Employee", employee_id)
         # The same hole as get_employee_scorecard, closed the same way (decision 28).
         _hr_target_employee(employee_id, "hr_api.get_employee_detail_for_manager")
 
+    # Slice 089 (ALV-433, SEC-1): the same cut as the scorecard.
+    from alvoraa_portal import leaver_report
     emp = frappe.db.get_value(
         "Employee", employee_id,
         ["name", "employee_name", "designation", "department", "branch",
-         "date_of_joining", "cell_number", "personal_email", "company_email",
-         "status", "gender", "image"],
+         "date_of_joining", "status", "image"],
         as_dict=True,
     )
     if not emp:
@@ -1585,6 +1610,7 @@ def get_employee_detail_for_manager(employee_id):
 
     return {
         "employee":        emp,
+        "personal":        leaver_report.personal_details(employee_id, mgr_emp.name),
         "checked_in":      checked_in,
         "last_checkin":    last_checkin,
         "today_checkins":  checkins,

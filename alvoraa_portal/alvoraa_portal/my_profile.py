@@ -34,7 +34,7 @@ import hrms.alvoraa_org_structure.people_fields as people_fields
 from frappe import _
 from frappe.utils import cstr
 
-from alvoraa_portal import people_settings
+from alvoraa_portal import leaver_report, people_settings
 from alvoraa_portal.employee_photo import IMAGE_FIELD, _my_employee
 from alvoraa_portal.field_app_limits import SELF_KEY, _limited
 
@@ -125,6 +125,9 @@ def get_my_profile():
 		# default. A notice that overstates the audience is the one failure a
 		# notice cannot have.
 		"photo_in_emails": people_settings.photo_in_emails(),
+		# Slice 089 (PRIV-2): while a manager's leaver report is open, the person
+		# is told, in plain words. Their own record only; never the confirmers.
+		"leaver_report": leaver_report.open_report_about(me.name),
 	}
 
 

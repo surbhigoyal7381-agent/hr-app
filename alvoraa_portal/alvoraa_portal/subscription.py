@@ -615,6 +615,14 @@ TENANT_DOCTYPES = [
     # the tenant by its HR - not our billing or provisioning plumbing. So it is
     # tenant-side, and stays inside the tenant access derivation.
     "Alvoraa Joiner Submission",
+    # Slice 088: the record of a printed change notice, and its two child tables.
+    # The tenant's own record about its own employee - who was shown which changed
+    # days, and whether they signed - read and written inside the tenant by its HR.
+    # It holds a photograph of that employee's signature, which is about as far
+    # from our billing plumbing as this product gets. So: tenant-side.
+    "Alvoraa Register Notice",
+    "Alvoraa Register Notice Change",
+    "Alvoraa Register Notice Page",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

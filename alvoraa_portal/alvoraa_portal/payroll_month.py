@@ -64,6 +64,10 @@ class MonthSummary:
 	# it again.
 	late_window_quarters: int = 0
 	late_window_deduction: float = 0.0
+	# Slice 091: quarters EARNED by staying late, and their money. Separate from
+	# total_quarters (lost), and added to Gross once, as its own line.
+	overtime_quarters: int = 0
+	overtime_earning: float = 0.0
 
 	# leave
 	leave_credits_earned: float = 0.0
@@ -150,6 +154,7 @@ def summarise_month(
 			# A held day is neither paid nor deducted, so it charges nothing.
 			m.late_window_quarters += v.extra_quarters
 		m.day_credits += v.day_credit
+		m.overtime_quarters += v.overtime_quarters
 		if v.half_leave:
 			m.days_on_leave += 0.5
 			if v.held:
@@ -244,6 +249,8 @@ def summarise_month(
 	# Same conversion as DayVerdict.day_credit: a quarter is 1/4 of a day.
 	m.late_window_deduction = m.late_window_quarters / QUARTERS_PER_DAY * m.daily_rate
 
+	m.overtime_earning = m.overtime_quarters / QUARTERS_PER_DAY * m.daily_rate
+
 	m.free_reds = int(free_reds or 0)
 	m.mark_rate = float(mark_rate or 0)
 	if not earns_marks:
@@ -271,6 +278,6 @@ def summarise_month(
 
 	m.incentive = float(incentive or 0)
 	m.other_deductions = float(other_deductions or 0)
-	m.gross = m.earning_basic + m.green_earning + m.incentive
+	m.gross = m.earning_basic + m.green_earning + m.overtime_earning + m.incentive
 	m.net = m.gross - m.red_deduction - m.grooming_deduction - m.other_deductions
 	return m

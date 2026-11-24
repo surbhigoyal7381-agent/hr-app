@@ -450,45 +450,51 @@ COUNTED_SQL = """e.date_of_joining is not null and (e.status = 'Active' or
 	(e.status = 'Left' and e.relieving_date is not null and e.relieving_date >= e.date_of_joining))"""
 
 
-def _rows_of_counted_people(scope, company, dim, value, alias, key):
-	"""(join, where, params) so a figure from `alias` rows (Attendance a, Leave Application l)
-	covers exactly the people the hiding rule checks, cut by their Employee record.
+def _rows_of_counted_people(scope, company, dim, value, alias):
+	"""(where on the rows, where on the Employee `e`, params) so a figure from `alias` rows
+	(Attendance a, Leave Application l) covers exactly the people the hiding rule checks, cut
+	by their Employee record.
 
 	Rows tagged with a blank or an old branch, and rows of people the rule does not
 	count, are left out of the total as well as the cuts, so company minus every
-	shown branch can never leave an unchecked group behind (F1). `alias.company` stays
-	in the condition for the (company, date) index."""
+	shown branch can never leave an unchecked group behind (F1). The row condition keeps
+	only the company, for the (company, date) index. Callers add up the rows per person
+	first and join the Employee after, so the join runs once per person, not once per row."""
 	cut_scope = of.Scope((company,), scope.branches) if company else scope
-	where, params = of.condition(of.Scope(cut_scope.companies, None), alias, "alvoraa_branch")
+	row_where, params = of.condition(of.Scope(cut_scope.companies, None), alias, "alvoraa_branch")
 	e_where, e_params = of.employee_condition(cut_scope)
 	params.update({k: v for k, v in e_params.items() if k not in params})
-	extra = f" and {e_where} and {COUNTED_SQL}"
+	e_where += f" and {COUNTED_SQL}"
 	if dim:
-		extra += f" and e.{dim} = %(cut_value)s"
+		e_where += f" and e.{dim} = %(cut_value)s"
 		params["cut_value"] = value
-	return f"join `tabEmployee` e on e.name = {alias}.{key}", where + extra, params
+	return row_where, e_where, params
 
 
 def _attendance_bins(call, scope, company, dim, value, first, last, edges):
 	"""Attendance counts per bin, and how many different people they come from. One query.
 	Bin 0 is before the first edge."""
-	join, where, params = _rows_of_counted_people(scope, company, dim, value, "a", "employee")
+	row_where, e_where, params = _rows_of_counted_people(scope, company, dim, value, "a")
 	k_sql, k_params = _interval("pb", [_to_days(d) for d in edges])
 	params.update(k_params)
 	params.update({"first": first, "last": last})
 	rows = call.sql(f"""
-		select {k_sql} as k,
-		       coalesce(sum(a.status = 'Present'), 0) as present,
-		       coalesce(sum(a.status = 'Work From Home'), 0) as wfh,
-		       coalesce(sum(a.status = 'Half Day'), 0) as half,
-		       coalesce(sum(a.status = 'Absent'), 0) as absent,
-		       coalesce(sum(a.status = 'On Leave'), 0) as on_leave,
-		       count(distinct a.employee) as people
-		from `tabAttendance` a {join}
-		where a.docstatus = 1 and a.attendance_date between %(first)s and %(last)s
-		  and {where}
-		  and not exists ({of._OPEN_DOUBTFUL})
-		group by k
+		select x.k, count(*) as people, sum(x.present) as present, sum(x.wfh) as wfh, sum(x.half) as half,
+		       sum(x.absent) as absent, sum(x.on_leave) as on_leave
+		from (
+			select a.employee, {k_sql} as k,
+			       sum(a.status = 'Present') as present, sum(a.status = 'Work From Home') as wfh,
+			       sum(a.status = 'Half Day') as half, sum(a.status = 'Absent') as absent,
+			       sum(a.status = 'On Leave') as on_leave
+			from `tabAttendance` a
+			where a.docstatus = 1 and a.attendance_date between %(first)s and %(last)s
+			  and {row_where}
+			  and not exists ({of._OPEN_DOUBTFUL})
+			group by a.employee, k
+		) x
+		join `tabEmployee` e on e.name = x.employee
+		where {e_where}
+		group by x.k
 	""", params)
 	return [{"k": cint(r.k), "people": cint(r.people), **{f: cint(r[f]) for f in ("present", "wfh", "half", "absent", "on_leave")}}
 	        for r in rows]
@@ -511,18 +517,23 @@ def _absent_pct(counts):
 
 def _leave_units(call, scope, end):
 	"""On Leave rows per person, leave type and stretch (five stretches). One query."""
-	join, where, params = _rows_of_counted_people(scope, None, None, None, "a", "employee")
+	row_where, e_where, params = _rows_of_counted_people(scope, None, None, None, "a")
 	edges = [_to_days(_stretch_dates(end, a, b)[0]) for a, b in reversed(LEAVE_STRETCHES)]
 	k_sql, k_params = _interval("pl", edges)
 	params.update(k_params)
 	params.update({"first": _stretch_dates(end, 0, 365)[0], "last": end})
 	rows = call.sql(f"""
-		select a.employee, coalesce(a.leave_type, '') as leave_type, {k_sql} as k, count(*) as days
-		from `tabAttendance` a {join}
-		where a.docstatus = 1 and a.status = 'On Leave'
-		  and a.attendance_date between %(first)s and %(last)s and {where}
-		  and not exists ({of._OPEN_DOUBTFUL})
-		group by a.employee, a.leave_type, k
+		select x.employee, x.leave_type, x.k, x.days
+		from (
+			select a.employee, coalesce(a.leave_type, '') as leave_type, {k_sql} as k, count(*) as days
+			from `tabAttendance` a
+			where a.docstatus = 1 and a.status = 'On Leave'
+			  and a.attendance_date between %(first)s and %(last)s and {row_where}
+			  and not exists ({of._OPEN_DOUBTFUL})
+			group by a.employee, a.leave_type, k
+		) x
+		join `tabEmployee` e on e.name = x.employee
+		where {e_where}
 	""", params)
 	return [(r.employee, r.leave_type, len(LEAVE_STRETCHES) - cint(r.k), cint(r.days)) for r in rows]
 
@@ -567,10 +578,11 @@ def _leave_types(rows, days, minimum, own_key):
 
 
 def _pending(call, scope, company, dim, value):
-	join, where, params = _rows_of_counted_people(scope, company, dim, value, "l", "employee")
+	row_where, e_where, params = _rows_of_counted_people(scope, company, dim, value, "l")
 	return cint(call.sql(f"""
-		select count(*) as n from `tabLeave Application` l {join}
-		where l.status = 'Open' and l.docstatus = 0 and {where}
+		select count(*) as n from `tabLeave Application` l
+		join `tabEmployee` e on e.name = l.employee
+		where l.status = 'Open' and l.docstatus = 0 and {row_where} and {e_where}
 	""", params)[0].n)
 
 

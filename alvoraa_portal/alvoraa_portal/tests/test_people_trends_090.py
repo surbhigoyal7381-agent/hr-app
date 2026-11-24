@@ -590,10 +590,10 @@ class TestReviewFixes(TrendsBase):
 		self.assertEqual(self._the_rows_of(e), 0)
 
 	def _the_rows_of(self, emp):
-		c, end = pt.Call(), pt._end()
-		join, where, params = pt._rows_of_counted_people(of.Scope((fx.KAVYA,), None), fx.KAVYA, None, None, "a", "employee")
-		return len(c.sql(f"select a.name from `tabAttendance` a {join} where {where} and a.employee = %(emp)s",
-		                 {**params, "emp": emp}))
+		"""How many of this person's attendance rows the figures would count."""
+		_row_where, e_where, params = pt._rows_of_counted_people(of.Scope((fx.KAVYA,), None), fx.KAVYA, None, None, "a")
+		return len(pt.Call().sql(f"select a.name from `tabAttendance` a join `tabEmployee` e on e.name = a.employee "
+		                         f"where a.employee = %(emp)s and {e_where}", {**params, "emp": emp}))
 
 	def test_attendance_is_shown_only_when_five_people_have_rows(self):  # M2 guard (Surbhi, 24 Nov 2026)
 		K = fx.KAVYA

@@ -3519,8 +3519,14 @@ tr.oc2-off .oc2-cell.oc2-n{visibility:hidden}
 /* Printing. Only the sheets go on the paper: the bar, the portal frame and every
    other panel are left off, so a stray header cannot push a sign box onto page two. */
 @media print{
-  body>*{display:none !important}
-  body>.rn-pv{display:block !important;position:static;overflow:visible;background:var(--rn-paper)}
+  /* Scoped to a body that actually holds the notice preview. Unscoped, this hid
+     every direct child of <body> on EVERY printable screen in the portal, because
+     panels.css loads on all of them and the 088 switch does not gate CSS: the wall
+     chart appends its print root straight to <body> (portal.js, getWallPrintHost)
+     and would have printed blank. Same `body:has(...)` guard the Positions A4
+     print above already uses. */
+  body:has(.rn-pv)>*{display:none !important}
+  body:has(.rn-pv)>.rn-pv{display:block !important;position:static;overflow:visible;background:var(--rn-paper)}
   .rn-noprint{display:none !important}
   .rn-pvwrap{padding:0;gap:0}
   .rn-a4{width:auto;min-height:auto;border:none;box-shadow:none;padding:12mm 14mm;

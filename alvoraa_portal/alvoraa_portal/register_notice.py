@@ -363,6 +363,14 @@ def list_people(month=None, start=0):
 			"recorded_on": str(notice.get("recorded_on") or "") or None,
 			"said": notice.get("dispute_reason") if notice.get("outcome") == "Not right" else None,
 			"notice": notice.get("name"),
+			# How many A4 pages were printed, so the record dialog asks for one photo of
+			# each. Without it the dialog assumed 1 and a notice of two or more pages
+			# could not be recorded at all: two photos were refused by the browser, one
+			# by `record` below, and the person's pay stayed held with no way out.
+			# `_latest_notices` already selects `page_count`; it was simply never put on
+			# the row. None before a notice is printed, which is every state where
+			# recording is not offered.
+			"pages": notice.get("page_count"),
 			# Print again is always offered; recording is not offered to the filer.
 			"can_tick": state["code"] != "done",
 			"can_record": state["code"] in ("printed", "not_right"),

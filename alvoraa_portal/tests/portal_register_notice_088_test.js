@@ -36,12 +36,16 @@ function listRows() {
       branch: "DTC Delhi", changed_days: 1, open_days: 1, state: "not_printed",
       uncovered: 1, i_filed: false, printed_at: null, printed_by: null,
       recorded_by: null, recorded_on: null, said: null, notice: null,
-      can_tick: true, can_record: false },
+      pages: null, can_tick: true, can_record: false },
+    /* `pages` is what list_people sends for a printed notice. Ramesh has two sheets.
+       It used to be patched on by hand further down, which meant the guard was being
+       tested against a key the real server never sent - the server always assumed 1
+       and a two-page notice could not be recorded at all. */
     { employee: OTHER, employee_name: "Ramesh Kumar", employee_number: "1080",
       branch: "DTC Delhi", changed_days: 2, open_days: 2, state: "printed",
       uncovered: 0, i_filed: false, printed_at: "2026-11-20 10:00:00",
       printed_by: "hr@example.com", recorded_by: null, recorded_on: null,
-      said: null, notice: NOTICE, can_tick: true, can_record: true },
+      said: null, notice: NOTICE, pages: 2, can_tick: true, can_record: true },
     { employee: "HR-EMP-00013", employee_name: "Anil Filer", employee_number: "1081",
       branch: "DTC Delhi", changed_days: 1, open_days: 1, state: "filer",
       uncovered: 0, i_filed: true, printed_at: "2026-11-20 10:00:00",
@@ -320,7 +324,6 @@ function buttonSaying(words, root) {
      The photos go in through the dialog's OWN picker, as real File objects, so this
      exercises the FileReader path that actually runs in a shop. Reaching into the
      dialog's private state would have tested the guard and skipped the reading. */
-  window.rnState.rows.filter(r => r.notice === NOTICE)[0].pages = 2;
   window.rnOpenRecord(NOTICE);
   await settle(10);
   const dlg2 = doc.getElementById("rn-scrim");

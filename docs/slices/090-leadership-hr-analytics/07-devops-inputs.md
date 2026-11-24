@@ -502,3 +502,5 @@ Timed on ppj.dev, all companies, as Administrator, session READ ONLY, MariaDB 10
 Five 1-year calls at once: 2.79 to 3.13 s each. Every call returned state ok, and the 1-year view shared attendance (absent 9.0%).
 
 **Against the budget:** all five are under the 3 s page budget. OPS-40's bar (median under 1.5 s for 6 months and 1 year) is **missed** by about 0.2 to 0.3 s. Five at once reach the 3 s line. Side effect: one security-log line per call on ppj.dev, user Administrator.
+
+**Decision, Surbhi, 24 Nov 2026 ("Go ahead" on the recommendation):** accept the small OPS-40 miss. No once-a-day stored check now. Watch DTC response times in the first week after the main release; build the stored check only if they miss 3 s.

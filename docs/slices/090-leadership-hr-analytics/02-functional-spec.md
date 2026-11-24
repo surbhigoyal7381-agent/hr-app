@@ -833,3 +833,10 @@ Amendment pass (23 Nov): removed the day-split code for leave and the sibling ru
 - **Early leavers: whole company only**, with the 4-stretch check (7-30, 30-90, 90-180, 180-365 days back; see 01c "SQ-1 after the production measure"). With any filter on, the row reads "shown for the whole company only". The 1-week chip says "Too early to tell".
 - **Leave trends read Attendance "On Leave" rows**, not Leave Application (DTC and Grace run payroll from Attendance; DTC has 3 Leave Applications in a year). Leave type split shown only where the rows carry a leave type (not checked for DTC).
 - Residual risk R10 (lower-limit guesses for groups of 5 or more): owner Surbhi, proposed, not formally accepted.
+
+## Decisions after review (24 Nov 2026)
+
+- **M2 guard — Surbhi, 24 Nov 2026: add a guard.** A bucket's attendance figures are shown only when at least 5 people in the group actually have attendance rows in that bucket (day, week or month). Otherwise the Attendance card says "Not shared" and no number is sent. (Built: attendance is withheld whole for the window when any bucket, or the comparison window, has 1 to 4 people with rows, so the window figure minus the shown buckets cannot give a small bucket away.)
+- **Hidden means not sent (reviews B1 and F2).** When a bucket fails the group rule, the attendance and leave day-by-day series are not sent either. The cards say "Not shared". Window totals stay.
+- **Same rows in the total and in the hiding rule (review F1).** Attendance, leave days and pending requests count only the people the group rule counts, cut by their Employee record (not the row's own branch tag).
+- **Open, not decided here:** F4 (the date "your records start on" is the first joining date; it also equals the window start when the window is clipped, as AC-27 draws). It needs a yes from Surbhi to change the drawn sentence. Left as built.

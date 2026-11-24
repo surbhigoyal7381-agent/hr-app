@@ -756,8 +756,10 @@ class ThePrintCall(RegisterNoticeCase):
 		out = self._print([self.emp])
 		self.assertEqual(len(out["sheets"]), 2, "the fixture did not make two pages")
 
+		# `.get`, not `[...]`: a missing key is exactly the fault this guards, and a bare
+		# KeyError would hide the sentence explaining what it costs.
 		row = self._rows_for_me()[0]
-		self.assertEqual(row["pages"], 2,
+		self.assertEqual(row.get("pages"), 2,
 		                 "the list did not tell the browser the notice has two pages, so "
 		                 "the record dialog would ask for one photo and refuse the second")
 

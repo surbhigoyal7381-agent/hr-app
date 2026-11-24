@@ -17,12 +17,34 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# ── RUNNER: every job below is pinned to ubuntu-24.04, never ubuntu-latest ──
+#
+# ALV-441. GitHub moved the `ubuntu-latest` label to Ubuntu 26.04 in stages, and
+# on a 26.04 runner the "System dependencies" step fetches only Microsoft's apt
+# repository - the Ubuntu archive is absent, so libcups2-dev, redis-tools,
+# mariadb-client and libmariadb-dev all read as "unable to locate" and the job
+# dies with exit 100 before a single test runs.
+#
+# On 24 Nov 2026 this hit one of four test shards in the same run while the other
+# three passed: a staged rollout, so it looks intermittent and is not. Left alone
+# it ends with no CI run on any branch able to go green, which also removes the
+# gate a release to main depends on.
+#
+# **This is a hold, not a cure.** GitHub retires old images, so 26.04 has to be
+# faced deliberately. Before unpinning, read /etc/apt/sources.list.d/ on a 26.04
+# runner to find where the Ubuntu archive went, check the renamed -dev packages,
+# and note that the wkhtmltopdf .deb in that step is Jammy amd64 only. ALV-441
+# carries the detail.
+#
+# The self-hosted runners in worker-health.yml and deploy.yml are unaffected.
+# mobile.yml and build-image.yml still say ubuntu-latest and carry the same risk.
+
 jobs:
 
   # ── Lint ──────────────────────────────────────────────────────────────────
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # ALV-441 - pinned, see RUNNER above
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -290,7 +312,7 @@ jobs:
   # it must run on app-only pushes too, which are the ones that could carry a key.
   key-guard:
     name: Key guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # ALV-441 - pinned, see RUNNER above
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -356,7 +378,7 @@ jobs:
   # requires; it passes only when every part passed.
   test-python:
     name: Python tests (${{ matrix.part }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # ALV-441 - pinned, see RUNNER above
     strategy:
       fail-fast: false
       matrix:
@@ -623,7 +645,7 @@ jobs:
     name: Python tests
     needs: test-python
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # ALV-441 - pinned, see RUNNER above
     timeout-minutes: 5
     steps:
       - name: Every part passed
@@ -634,7 +656,7 @@ jobs:
   # ── Frontend build ────────────────────────────────────────────────────────
   test-frontend:
     name: Frontend build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # ALV-441 - pinned, see RUNNER above
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

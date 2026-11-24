@@ -537,3 +537,16 @@ H2 and H3 are off the list (closed). **Baseline:** the CERT-In entry is still st
 ## Subtract pass (round 4)
 
 I removed a worry about the 64-bit mask (counted: 33 bits) and a check of the headline (it already skips a figure that was not sent). I folded R3 into H5 instead of listing it twice.
+
+## Risk decisions — Surbhi, 24 Nov 2026
+
+Given as "Go with your recommendations" after each risk was explained in plain words with an example.
+
+| Risk | Decision |
+|---|---|
+| R1, R2, R4, R5, R10, R11, R12, R13 | Accepted for release |
+| R3 | Closed by fix round 5 (H5); nothing to accept |
+| R7 (no alarm on misuse inside scope) | Accepted for now; every call is logged; add an alert later if misuse is seen |
+| R8 (log held in France) | Accepted for now as temporary debt; plan a log store in India |
+| R6 (ALV-359, older HR Analytics page ignores narrowed Branch rows) | Accepted for slice 090, which does not reach it; **ALV-359 is the next fix**, starting with a read of whether any live user is affected (production reads are Surbhi's to run) |
+| R13 condition | The admin guide must say: never remove only a branch head's Branch permission |

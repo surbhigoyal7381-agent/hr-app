@@ -326,3 +326,78 @@ None is accepted yet. Each is one sentence Surbhi can accept or reject. Proposed
 ## Subtract pass (round 1)
 
 Removed from my draft: a finding that the JS sends no token when `frappe.csrf_token` is "None" (the server then refuses, or R12 applies, so the page fails safe); a note on the `scope_company` key that both helpers write (same value, proven); a worry about "days left out" (one company-level figure, the same on every view, so there is nothing to subtract).
+
+# Final check round 2 (24 Nov 2026)
+
+**Read at:** worktree `.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics`, commit **5eeef770** (on `origin/dev` a269ce00). I read the diff e0fe98ad..5eeef770 of `people_trends.py` and `people-trends.js`, the six new tests, 03 §11, and 02 "Decisions after review" and §13. **Not done:** I ran no test and nothing in `alv090-*`. I changed no source and committed nothing. Same conflict of interest as before: I wrote 01c.
+
+## Verdict
+
+**Not ready for dev: one new P1 (H1), caused by the softer guard. No P0.** Everything asked for in round 1 is fixed.
+
+## What round 2 fixed (all proven in code; tests read, not run by me)
+
+| Item | Result |
+|---|---|
+| G1 | **Fixed.** A row counts only when its company is the person's Employee company (`_rows_of_counted_people`, `{row_company} = e.company`). Attendance and leave queries group by `a.company`; Pending uses `l.company`. Test: `test_all_companies_is_the_sum_of_the_companies_for_a_person_who_moved` |
+| G2 | **Fixed.** The caller is taken out of the per-bucket count (`own_emp` in `_attendance_bins`), also on By company. Test: `test_the_guard_leaves_the_caller_out` |
+| Expected people | **Built as decided.** Only people with a Present, WFH, Half Day or Absent row count (`expected > 0`). Test: `test_absence_counts_only_people_expected_at_work` |
+| Softer guard | **Built as decided**, with the one-hidden carve-out (`window_hidden`). The headline skips a hidden figure (`_headline` checks `absent_pct is not None`). `change()` shows nothing when the figure is hidden |
+| Records start | **Fixed.** `get_first_day` for `records_start` and a clipped start. Test plus a DOM check |
+| F5 | **Written** in 02 §13. AC-10 now matches the code |
+
+## New finding
+
+### H1 · Major · P1 · Another period button gives back the point the softer guard hid
+
+**Where.** `_bin_lengths` (line 176): the 30-day view's last bucket is the last 7 days. The 7-day view's buckets are those same 7 days, one by one. The 90-day view's window is exactly the 180-day view's last three buckets. Its comparison window is exactly the first three.
+**Scenario.** A branch head opens the 7-day view of their store. Sunday had 3 people at work, so Sunday is hidden and so is the window figure. The other six days show. They press 30 days. Its last point is the absent % for the same 7 days, and it is shown, because 7 days pooled has more than 5 people. Sunday = (that point × all expected days − the six daily points × their days) ÷ Sunday's days. A branch head knows the roster, so they know the days. Rounding to one decimal gives an error of about ±4 points. Each of 3 people is worth about 33 points, so the result says exactly how many of the 3 were absent. **Labels:** the bucket layout is proven in code. That the 30-day point is shown is inferred. The arithmetic was not run.
+**The same thing in a bigger form:** in the 180-day view one hidden month among the first three comes back from the 90-day view's "before" figure, less the two months shown.
+**Round 1 did not have this.** It held back the whole card on a thin chip, so no fine points sat next to a coarse one.
+**Neither option in 03 §11 closes it.** Hiding the window figure does not help, because the 30-day point carries that figure anyway.
+
+**Recommendation for Surbhi (one choice):** if any bucket on a view is thin, send **no chart points** on that view. **Keep** the window figure and the "before" figure (each covers 5 or more people). The 7-day Sunday case then has nothing to subtract from. The `window_hidden` carve-out is no longer needed, and R17 below goes away. The change is small: drop the series when `thin` is not empty, then add one test that the 7-day and 30-day views together give no hidden point. This goes against her words "a thin bucket hides only its own point". So it is her decision, not mine.
+
+## Trying to break it (round 2)
+
+| Attack | Result |
+|---|---|
+| All companies minus each company, with a person who moved | **Holds** (G1) |
+| Window minus shown buckets, exactly one hidden | **Holds inside one view.** **Breaks across views: H1** |
+| Two or more hidden buckets, inside one view | **Not rough when the hidden buckets are one quiet stretch.** The same 1-4 people sit behind each one, so the pooled figure is about them. It is as exact as the one-bucket case (R17) |
+| Two or more hidden, across views | **Breaks**: H1 brings one back, and then the window figure gives the rest |
+| Branch hidden, company point minus the sibling branches' points | **Rough**, because you need every sibling's daily expected days. Same as W4 (R15) |
+| All companies minus companies, one company's By-company % hidden | **Rough**, same kind as R15 |
+| Comparison window thin | **Holds**: `before` is dropped (`cmp_state`) |
+
+## SEC and PRIV, final
+
+SEC-6 is now **met** (F5 line, AC-10). PRIV-1 is **met** (F4). PRIV-2 is **met** (G2). PRIV-6 is **met** (G1). PRIV-7 ("shown figures must not rebuild a hidden one") is now **partial** (H1). PRIV-13 is still **partial**: the property test covers only the people figures. That is why H1 got through.
+
+**Counts:** SEC: 10 met, 0 partial, 0 not met. PRIV: 11 met, 2 partial (PRIV-7, PRIV-13), 0 not met.
+
+## Final residual risks (none accepted yet; each needs a name and a date)
+
+Owner is Surbhi unless stated.
+
+1. **R1.** A leader can narrow a figure down to a range by combining filters.
+2. **R2.** A leader who visits every day can see how each day changed.
+3. **R3.** Week and month buckets in different views overlap without lining up, and the slivers between them are not checked.
+4. **R4.** A leader can combine the page with what they already know, and no counting rule can stop that.
+5. **R5.** Two leaders who pool their screens can learn more than either one sees.
+6. **R6.** HR Analytics still treats a store HR person with a narrowed Branch permission as company-wide (ALV-359). This page cannot be reached that way. **Dangerous debt, escalated.** Owners: Surbhi (live check), engineer (fix).
+7. **R7.** We cannot detect a leader misusing figures inside their own scope.
+8. **R8.** The security log is about 2 MB and held in France. Owner: founder.
+9. **R10.** Early-leaver figures can show a lower limit for a small group, as designed.
+10. **R11.** Leave figures cover everyone on the roll, not only people expected at work (your decision, 24 Nov).
+11. **R12.** A session with no saved CSRF token skips Frappe's CSRF check. Low risk, because the page only reads.
+12. **R13.** Removing only a branch head's Branch permission widens them to the whole company. The admin line now warns about this.
+13. **R15.** A branch's hidden point can be roughly estimated from the company point less its sibling branches.
+14. **R17 (only if you keep the build as it is).** With two or more hidden buckets in one quiet stretch, the window figure gives those few people's absent % about as exactly as one hidden bucket would.
+15. **Temporary debt.** The property test covers only the people figures, and the By-company guard has no test of its own. Owner: test engineer.
+
+R14 (F4) and R16 (G3) are closed by your 24 Nov decisions. **Baseline:** the CERT-In entry is still stale (24 Aug). Only R8 relies on it.
+
+## Subtract pass (round 2)
+
+I removed a note on the `change()` text when the window is hidden (it returns nothing, proven) and a worry about `records_start` (the people figures are unchanged, per the engineer and my reading of `_build`). I also dropped the sibling case under the softer guard as a new finding, because it is R15 again.

@@ -385,3 +385,47 @@ Labels: **proven** (I read it or ran it), **inferred**, **not checked**, `[ASSUM
 3. F4 `records_start`: still open, as the engineer marked it.
 4. m4: prototype parity.
 5. Write R11 and the M2 guard as risk acceptances, with an owner.
+
+---
+
+# Final check round 2 (24 Nov 2026)
+
+**Verdict, for dev: SHIP WITH FIXES.** The round-2 fixes are right and every cheap gate is green. One new P2 gap: the By company card can give away one thin company's absent %. Fix it before main, or Surbhi accepts it in writing.
+
+**Where I looked:** worktree `.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics` at `5eeef770`, merge-base with `origin/dev` = `a269ce00`. I read the round-2 diff `e0fe98ad..5eeef770` in full, plus 03 §11 and 02 "Decisions after review". I did not run the Python suite, as the brief said.
+
+## What I checked
+
+| Item | Result | Label |
+|---|---|---|
+| N1: leader left out | `_attendance_bins` takes away the caller's own row from `people` (`people_trends.py:493`). By company passes `own_name` too (`:914`) | proven (read) |
+| Softer guard | `_bucket_state` gives empty / thin / ok. A thin bucket's point is `None` and is listed in `hidden` (`:835-836`). The window stays when one bucket is ok (`:825`). With exactly one thin bucket the window figure is `None` plus `window_hidden` (`:831-833`). A thin comparison window drops only `before` (`:837`). This matches the decision in 02 | proven (read) |
+| Absence % counts only people expected at work | `expected` = Present, WFH, Half Day or Absent rows. Only `expected > 0` counts (`:493-496`) | proven (read) |
+| Records start: month and year | `get_first_day` on `records_start` and on a clipped start (`:742-745`). The page says "Records start in {Mon YYYY}." The DOM test checks there is no "start on" | proven (read; DOM test run) |
+| 045 scanner `post(CONST,{...})` | **A real fix, not a weakening.** It adds call sites that get checked. A first argument it cannot resolve is skipped, never passed (`test_browser_call_args_045.py:297-299`). Only `public/js/ess` is scanned, so the `post()` in `joining.html` is never read. The other way out would have been adding the two endpoints to `NO_ARG_CALL`, which would have been the weakening. Raising the floor from 201 to 203 is correct. I did not count the 235 sites myself | proven (read); count not checked |
+| `test_portal_split_034`, tray INVENTORY | One file added to the expected set. Two `position:fixed` entries, each with a reason. `check_portal_trays.js --static`: 35 of 35, 0 problems | proven (run) |
+| Rebase with ALV-440 | The 090 hunks are all there: two `make_role` lines in `hooks.py`, three hunks in `portal.js`. All 30 lines that ALV-440 added to those two files are still in HEAD (checked line by line) | proven |
+| Gates | `run_dom_tests.js`: 31 run, 0 failed. Integrity: 1038 checks OK. Tag balance, api_paths, brand spelling, design system, no demo passwords, assets gate, portal handlers, undefined JS: all OK | proven (run) |
+| Prototype parity P3/P18/P24/P27/P28 | Unchanged by round 2. The parity table at 02 §18 says yes, 23 Nov | proven (read) |
+
+## New finding
+
+**N5 · By company: one thin company's absent % can be worked out by subtraction. P2. Same family as R15.**
+- *State:* a CXO looks at "All companies" with no filter. Company B passes the people rule (5 or more on the roll), but only 1 to 4 of its people were expected at work in the window, for example because most were on leave.
+- *What happens:* B's `absent_pct` on the card is `None` (`:915`). But A's absent %, the window absent % for all companies, and each company's headcount are all sent.
+- *Why it is wrong:* the window figure minus A, weighted roughly by headcount, gives B's figure for 1 to 4 people. The engineer closed exactly this case for time buckets (`window_hidden`) but not for companies. Round 2 made it reachable: before, a thin company blanked only its own cell, and that left the same gap, so the gap is not new, but nothing has closed it.
+- *Smallest fix:* when exactly one company on By company is thin, hide the window's absent % too, the same rule as buckets. Or Surbhi accepts it inside R15. Inferred from reading the code; I have not reproduced it. There is still no test for the By company guard (03 §11, temporary debt).
+
+**Minor (P3):** the parity table still says "As drawn" for P12 and P19. But the records-start line and the new "Not shared" point, tile and sentence differ from the prototype. Surbhi decided these on 24 Nov (02 Decisions), so this is only a missing row in the table.
+
+## Before main
+
+1. N5: fix it, or Surbhi accepts it in writing.
+2. Surbhi's written acceptance of the R-numbers: R11, R15 and the guard.
+3. OPS-23 / AC-115: timing on the DTC-size dev copy, with five calls at once and a two-company login (not re-measured).
+4. A real browser and a real 360 px screen (jsdom only so far).
+5. The nginx `/api/` zone needs its own approval (07).
+6. Still open, all P3: N2, N3, N4, m2, m4, and `@requires_feature` on `save_people_trends_period`.
+7. The full Python suite, green, on this SHA (not run by me).
+
+**Subtract pass:** I removed two candidates. The `change(null, before)` path returns "" and prints no number. The second was a person counted twice per bucket, which cannot happen because the `row_company = e.company` filter leaves one row per person per bucket.

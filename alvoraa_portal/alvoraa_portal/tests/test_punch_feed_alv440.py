@@ -28,7 +28,11 @@ from frappe.utils import add_days, getdate, today
 
 from alvoraa_portal import data_review as dr
 from alvoraa_portal.tests import leader_fixtures_012 as fx
-from alvoraa_portal.tests.test_data_review_012 import SETTINGS_MODULE, environment
+from alvoraa_portal.tests.test_data_review_012 import (
+	SETTINGS_MODULE,
+	_clear_limit,
+	environment,
+)
 from alvoraa_portal.tests.test_morning_checks_012 import AS_OF, no_commits
 
 def _a_midweek_day():
@@ -581,6 +585,219 @@ class TestItActuallyEmails(FeedCase):
 			dr._queue("someone@example.com", "subject", "<p>body</p>", "DRI-x")
 		self.assertFalse(mail.called)
 		self.assertTrue(bell.called, "the desk bell still goes")
+
+
+class TestAChronicOutage(FeedCase):
+	"""A feed that stays half-dead must not teach the rule that half-dead is normal,
+	and must never end up marked Cleared while it is still broken.
+
+	The second half is the sharper fault. A day that stops producing a finding is
+	not merely forgotten: `apply_findings` marks its record **Cleared**. So a
+	branch limping along fed its own bad days into its baseline, the median sank
+	below the group-size floor, every day stopped being judged - and every
+	finding was then marked Cleared, telling HR the feed was fixed.
+	"""
+
+	BACK6 = [getdate(add_days(DAY, -7 * w)) for w in range(1, 7)]
+
+	def test_a_flagged_day_is_not_used_as_normal(self):
+		"""Weeks 1-3 limping at 2 and already flagged; weeks 4-6 healthy at 10.
+
+		Normal must be 10, not the median of all six. At 3 punchers today that is
+		30% of 10 and a finding; it would be 50% of the six-week median of 6, and
+		nothing at all.
+		"""
+		b = fx.branch("ChronicBase")
+		crew = self.people(b, 10)
+		for day in self.BACK6[:3]:
+			self.punched_on(crew, b, [day], how_many=2)
+			fx.review_item(fx.KAVYA, b, rule="D20", item_type="Punch feed",
+			               check_date=day, checked_in_count=2, people_count=10)
+		self.punched_on(crew, b, self.BACK6[3:])
+		self.marked_on(crew, b, DAY, absent=7)
+		self.punched_on(crew, b, [DAY], how_many=3)
+
+		found = self.feed_for(b)
+		self.assertEqual(len(found), 1, "the healthy weeks are the normal, not the limping ones")
+		self.assertEqual(found[0]["people_count"], 10)
+
+	def test_a_still_dead_day_is_never_cleared(self):
+		"""No baseline left at all, and the day still has no punches.
+
+		The finding must survive on the normal it was raised against. If it does
+		not, apply_findings marks it Cleared and HR is told a dead feed is fixed.
+		"""
+		b = fx.branch("ChronicStuck")
+		crew = self.people(b, 10)
+		self.marked_on(crew, b, DAY, absent=10)       # no punches, ever, anywhere
+		fx.review_item(fx.KAVYA, b, rule="D20", item_type="Punch feed",
+		               check_date=DAY, checked_in_count=0, people_count=12)
+		found = self.feed_for(b)
+		self.assertEqual(len(found), 1, "a dead feed must not clear itself")
+		self.assertEqual(found[0]["people_count"], 12, "it keeps the normal it was raised against")
+
+	def test_it_still_clears_when_the_punches_come_back(self):
+		"""The other half: the stored normal must not make a finding permanent."""
+		b = fx.branch("ChronicBack")
+		crew = self.people(b, 10)
+		self.marked_on(crew, b, DAY, absent=0)
+		self.punched_on(crew, b, [DAY])               # everybody punched after all
+		fx.review_item(fx.KAVYA, b, rule="D20", item_type="Punch feed",
+		               check_date=DAY, checked_in_count=0, people_count=10)
+		self.assertEqual(self.feed_for(b), [],
+		                 "10 of a normal 10 is not a dead feed - this must clear")
+
+
+class TestOldDaysStopBeingRejudged(FeedCase):
+	"""Item 2: the re-judging window has to be bounded.
+
+	`read_from` is 42 days before the OLDEST day being re-judged, and a branch
+	whose reader stayed dead kept a record Open for ever - so each 06:30 run read
+	one more day of that company's punches than the run before. Six months in it
+	was reading six months of check-ins.
+	"""
+
+	# Fixed dates, NOT dates derived from OLD_DAY_LIMIT_DAYS. A first version of
+	# these tests computed "ancient" as `limit + 20` days ago, so raising the
+	# limit moved the test with it and the assertion could never fail. The guard
+	# below states the premise these numbers rest on.
+	ANCIENT_DAYS = 400
+	RECENT_DAYS = 100
+
+	def test_the_limit_sits_between_these_test_dates(self):
+		self.assertLess(dr.OLD_DAY_LIMIT_DAYS, self.ANCIENT_DAYS)
+		self.assertGreater(dr.OLD_DAY_LIMIT_DAYS, self.RECENT_DAYS)
+
+	def test_a_record_past_the_limit_is_not_rejudged(self):
+		b = fx.branch("OldLimit")
+		recent = getdate(add_days(AS_OF, -self.RECENT_DAYS))
+		ancient = getdate(add_days(AS_OF, -self.ANCIENT_DAYS))
+		fx.review_item(fx.KAVYA, b, rule="D20", item_type="Punch feed", check_date=recent)
+		fx.review_item(fx.KAVYA, b, rule="D20", item_type="Punch feed", check_date=ancient)
+
+		days = dr._open_day_rule_days_before(
+			fx.KAVYA, add_days(AS_OF, -dr.WINDOW_DAYS), as_of=AS_OF)
+		mine = sorted(getdate(d) for br, d in days if br == b)
+		self.assertIn(recent, mine, "a day inside the limit is still re-judged, so it can clear")
+		self.assertNotIn(ancient, mine, "a day past the limit is not re-judged, which bounds the read")
+
+	def test_the_in_memory_helper_uses_the_same_limit(self):
+		"""Both helpers feed `also_days`, so both have to be bounded or the job
+		re-opens the window the other one closed."""
+		b = fx.branch("OldLimitMem")
+		ancient = getdate(add_days(AS_OF, -self.ANCIENT_DAYS))
+		existing = {"X": {"rule": "D20", "status": "Open", "alvoraa_branch": b,
+		                  "check_date": ancient}}
+		self.assertEqual(dr._open_day_rule_days(existing, AS_OF), [])
+		existing["X"]["check_date"] = getdate(add_days(AS_OF, -self.RECENT_DAYS))
+		self.assertEqual(len(dr._open_day_rule_days(existing, AS_OF)), 1)
+
+
+class TestTheNewestDaysSurvive(FeedCase):
+	"""Item 3: two day rules now share MAX_ITEMS, so truncation is reachable in a
+	wide outage - and it used to drop TODAY's days, because the read ordered by
+	check_date ascending."""
+
+	def test_truncation_keeps_the_newest_days(self):
+		"""Through the real endpoint, with the cap squeezed to 2.
+
+		Asserting against a query this test writes itself would only prove that
+		MariaDB can sort. The fix is the endpoint own order_by, so the endpoint
+		is what has to be called.
+		"""
+		b = fx.branch("CapOrder")
+		crew = self.people(b, 6)
+		days = [getdate(add_days(DAY, -n)) for n in (0, 1, 2, 3)]
+		for day in days:
+			self.marked_on(crew, b, day, absent=6)
+			# Seeded by hand: the endpoint re-checks and clears, but only the
+			# morning job creates (decision D-5), so there would be nothing to read.
+			fx.review_item(fx.KAVYA, b, rule="D5", item_type="Doubtful day",
+			               check_date=day, expected_count=6, absent_count=6)
+		boss = fx.user("Cap440", ["HR Manager"])
+		fx.employee("Cap440", fx.KAVYA, None, user_id=boss)
+		_clear_limit(boss)
+		frappe.set_user(boss)
+		try:
+			with environment(), patch.object(dr, "MAX_ITEMS", 2):
+				out = dr.data_review_items()
+		finally:
+			frappe.set_user("Administrator")
+
+		shown = sorted({getdate(d) for c in out["cards"] for d in c.get("dates", [])})
+		self.assertEqual(len(shown), 2, "the cap was squeezed to two")
+		self.assertEqual(shown, sorted(days)[-2:],
+		                 "the two kept must be the newest two, not the oldest")
+		for card in out["cards"]:
+			got = [getdate(d) for d in card.get("dates", [])]
+			self.assertEqual(got, sorted(got), "a card days must read in order")
+
+
+class TestWhoMayReadAFindingAtAll(FeedCase):
+	"""Item 4: the Desk gap. This doctype had no permission_query_conditions and
+	no has_permission hook, so a plain `frappe.get_list` returned every company's
+	findings and /app/<doctype>/<name> was open to anyone who guessed a name.
+	Nothing leaked only because every caller passed `item_filters` by hand."""
+
+	def two_branches(self, nth):
+		"""Two branches with a finding each, plus one company-wide finding.
+
+		`nth` dates the company-wide record. A record's NAME is a hash of its
+		rule, company, branch and day, so two tests asking for the same
+		company-wide D18-2 would collide - and records in this module do not roll
+		back between tests.
+		"""
+		mine, theirs = fx.branch("GateMine"), fx.branch("GateTheirs")
+		a = fx.review_item(fx.KAVYA, mine, rule="D20", item_type="Punch feed", check_date=DAY)
+		b = fx.review_item(fx.KAVYA, theirs, rule="D20", item_type="Punch feed", check_date=DAY)
+		wide = fx.review_item(fx.KAVYA, None, rule="D18-2", item_type="Leavers",
+		                      check_date=add_days(DAY, -nth))
+		return mine, theirs, a, b, wide
+
+	def store_hr(self, local, branch, company=fx.KAVYA):
+		email = fx.user(local, ["HR Manager"])
+		fx.employee(local, company, branch, user_id=email)
+		fx.permission(email, "Company", company, applicable_for="Employee")
+		fx.permission(email, "Branch", branch, applicable_for="Employee")
+		return email
+
+	def test_a_plain_get_list_is_scoped(self):
+		"""No item_filters anywhere - the hook has to do it."""
+		mine, theirs, a, b, wide = self.two_branches(1)
+		boss = self.store_hr("Gate440", mine)
+		try:
+			frappe.set_user(boss)
+			names = frappe.get_list(fx.DRI, pluck="name", limit_page_length=0)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertIn(a, names)
+		self.assertNotIn(b, names, "another branch's finding must not be listable")
+		self.assertNotIn(wide, names, "a company-wide finding is not location HR's")
+
+	def test_one_record_cannot_be_opened_by_name(self):
+		"""A row filter alone leaves /app/<doctype>/<name> open to a guess."""
+		mine, theirs, a, b, wide = self.two_branches(2)
+		boss = self.store_hr("GateOne440", mine)
+		self.assertTrue(frappe.has_permission(fx.DRI, "read", doc=a, user=boss))
+		self.assertFalse(frappe.has_permission(fx.DRI, "read", doc=b, user=boss),
+		                 "another branch's finding must not be readable by name")
+		self.assertFalse(frappe.has_permission(fx.DRI, "read", doc=wide, user=boss),
+		                 "nor a company-wide one")
+
+	def test_company_wide_hr_still_reads_everything(self):
+		"""The gate must not lock out the people it is for."""
+		mine, theirs, a, b, wide = self.two_branches(3)
+		boss = fx.user("GateWide440", ["HR Manager"])
+		fx.employee("GateWide440", fx.KAVYA, None, user_id=boss)
+		for name in (a, b, wide):
+			self.assertTrue(frappe.has_permission(fx.DRI, "read", doc=name, user=boss), name)
+
+	def test_somebody_with_no_scope_reads_nothing(self):
+		"""Fails closed, like hr_scope itself."""
+		mine, theirs, a, b, wide = self.two_branches(4)
+		nobody = fx.user("GateNone440", ["HR User"])
+		self.assertEqual(dr.item_query_conditions(nobody), "1=0")
+		self.assertFalse(frappe.has_permission(fx.DRI, "read", doc=a, user=nobody))
 
 
 class TestTheRecordsStayPrivate(FeedCase):

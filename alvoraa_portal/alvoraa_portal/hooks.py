@@ -659,6 +659,11 @@ permission_query_conditions = {
     # list every company's rows in it. Found by the slice's privacy review, and it is
     # a gap that predates 088.
     "Alvoraa Photo Access Log": "alvoraa_portal.register_notice.photo_log_query_conditions",
+    # ALV-440: this doctype had NO entry here either, so an HR Manager of one
+    # company could list every company's findings. Nothing leaked because every
+    # caller in data_review.py passes item_filters by hand - one forgotten
+    # argument from a leak, and ALV-440 adds a desk-bell link to these records.
+    "Alvoraa Data Review Item": "alvoraa_portal.data_review.item_query_conditions",
 }
 
 has_permission = {
@@ -676,6 +681,9 @@ has_permission = {
     # Slice 088: the same company-and-branch rule for one notice opened by name or
     # through the API, so a row filter on the list is not the only thing in the way.
     "Alvoraa Register Notice": "alvoraa_portal.register_notice.notice_has_permission",
+    # ALV-440: the same company-and-branch rule for one finding opened by name,
+    # so the row filter above is not the only thing in the way.
+    "Alvoraa Data Review Item": "alvoraa_portal.data_review.item_has_permission",
 }
 
 scheduler_events = {

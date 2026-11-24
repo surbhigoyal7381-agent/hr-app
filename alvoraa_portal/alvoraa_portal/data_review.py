@@ -53,8 +53,19 @@ DAILY_RULES = ("D6", "D18-1", "D18-2")
 # theirs still Open from before the window is looked at again so it can clear.
 DAY_RULES = ("D5", "D20")
 
-# More Open items than one scope can have: 25 branches x 35 days, plus a few per company.
-MAX_ITEMS = 1000
+# How far back a day-rule record still Open is looked at again. Beyond this it
+# is Cleared and left alone, which bounds three things that were all unbounded:
+# how many Open records one dead branch can pile up, how far back the morning job
+# reads punches (read_from counts 42 days further still), and how long the page
+# carries a day nobody is going to fix. 180 days is well past any month anybody
+# is still correcting payroll for, and far short of growing without limit.
+OLD_DAY_LIMIT_DAYS = 180
+
+# More Open items than one scope can have. Two day rules now share this cap:
+# 25 branches x 35 days x 2 rules, plus a few per company. Reached only during a
+# wide outage - and `data_review_items` reads NEWEST first so that if it ever is
+# reached, the days dropped are the old ones, not today's.
+MAX_ITEMS = 2000
 
 
 def item_filters(scope, **extra):
@@ -242,7 +253,7 @@ def run_morning_checks(companies=None):
 		try:
 			existing = existing_items(company, as_of)
 			findings = company_findings(company, minimum, as_of, stage=stage,
-			                            also_days=_open_day_rule_days(existing))
+			                            also_days=_open_day_rule_days(existing, as_of))
 			stage["now"] = "save"
 			apply_findings(existing, findings, allow_create=True, created=created)
 			frappe.db.commit()
@@ -303,7 +314,8 @@ def company_findings(company, minimum, as_of, rules=DAY_RULES + DAILY_RULES, bra
 	if any(r in rules for r in DAY_RULES):
 		stage["now"] = "holidays"
 		if also_days is None:
-			also_days = _open_day_rule_days_before(company, add_days(as_of, -WINDOW_DAYS), branches)
+			also_days = _open_day_rule_days_before(company, add_days(as_of, -WINDOW_DAYS),
+			                                       branches, as_of)
 		# Far enough back to cover the punch rule's baseline weeks as well, so a
 		# festival is not counted as one of a branch's normal same-weekdays.
 		holidays = _holiday_branch_days(
@@ -543,10 +555,18 @@ def _punch_feed(company, minimum, as_of, holidays=frozenset(), also_days=()):
 
 	"Normal" is the median of the branch's own punchers on up to
 	FEED_BASELINE_WEEKS earlier SAME weekdays, counting only the same-weekdays it
-	actually punched on. So a shop closed every Monday has no Monday samples and
-	is never judged on a Monday, with no holiday list involved - and a branch
-	that closes for good stops being judged once its last samples age out, rather
-	than nagging for ever.
+	actually punched on, and **never a day already flagged as broken**. That last
+	clause matters more than it looks: without it a branch limping along on two
+	punches a day fed those two-punch days back into its own baseline, so after
+	about five weeks the median was 2, the group-size floor applied, and the
+	branch quietly stopped being judged at all. The alarm went off not because
+	anything was fixed but because the rule had learned the fault. Earlier
+	findings stayed Open, so HR kept one stale card and never heard another word.
+
+	A shop closed every Monday still has no Monday samples - no holiday list
+	involved - so it is never judged on a Monday. And a branch that stays dead
+	keeps being flagged until somebody fixes it or the day falls past
+	OLD_DAY_LIMIT_DAYS, which is what an alarm should do.
 
 	Two grouped queries for the company. Counts and dates only, never a name.
 	"""
@@ -556,6 +576,25 @@ def _punch_feed(company, minimum, as_of, holidays=frozenset(), also_days=()):
 	older = {(b, getdate(d)) for b, d in also_days if b and getdate(d) < getdate(start)}
 	first = min([getdate(start)] + [d for _b, d in older])
 	read_from = add_days(first, -7 * FEED_BASELINE_WEEKS)
+
+	# Days this rule has already called broken, with the normal each was judged
+	# against. Two jobs, and the second is the one that matters:
+	#
+	#   * such a day must not become the normal it is compared against, or a
+	#     branch limping on two punches a day teaches the rule that two is fine;
+	#   * and when the baseline cannot be computed any more, the normal the
+	#     finding was RAISED against is used instead. Without that, a day that
+	#     stops being judged produces no finding, and `apply_findings` marks its
+	#     record **Cleared** - so a feed that is still dead ends up telling HR it
+	#     was fixed. Going quiet would be bad; cancelling the alarm is worse.
+	flagged = {}
+	for r in frappe.get_all(
+		DOCTYPE, filters={"company": company, "rule": "D20",
+		                  "status": ["in", ["Open", "Confirmed"]]},
+		fields=["alvoraa_branch", "check_date", "people_count"],
+		limit_page_length=MAX_ITEMS):
+		if r.alvoraa_branch and r.check_date:
+			flagged[(r.alvoraa_branch, getdate(r.check_date))] = cint(r.people_count)
 
 	punched = {}
 	for r in frappe.db.sql("""
@@ -602,13 +641,14 @@ def _punch_feed(company, minimum, as_of, holidays=frozenset(), also_days=()):
 		samples = []
 		for w in range(1, FEED_BASELINE_WEEKS + 1):
 			back = getdate(add_days(day, -7 * w))
-			if (branch, back) in holidays:
+			if (branch, back) in holidays or (branch, back) in flagged:
 				continue
 			if (branch, back) in punched:
 				samples.append(punched[(branch, back)])
-		if len(samples) < FEED_MIN_SAMPLES:
-			continue
-		normal = int(median(samples))
+		normal = int(median(samples)) if len(samples) >= FEED_MIN_SAMPLES else 0
+		# A day already flagged keeps at least the normal it was judged against,
+		# so it clears when punches come back and not when the baseline runs out.
+		normal = max(normal, flagged.get((branch, day), 0))
 		if normal < max(cint(minimum), FEED_MIN_NORMAL):
 			continue
 		n = punched.get((branch, day), 0)
@@ -649,21 +689,36 @@ def existing_items(company, as_of, rules=DAY_RULES + DAILY_RULES, branches=None)
 	return out
 
 
-def _open_day_rule_days_before(company, start, branches=None):
-	"""(branch, day) of day-rule records still Open from before the window."""
+def _open_day_rule_days_before(company, start, branches=None, as_of=None):
+	"""(branch, day) of day-rule records still Open from before the window.
+
+	Bounded by OLD_DAY_LIMIT_DAYS. Without that bound a branch whose reader stays
+	dead keeps a record Open for ever, and because `read_from` is 42 days before
+	the OLDEST day being re-judged, every 06:30 run read one more day of that
+	company's punches than the run before it. Six months in, the job was reading
+	six months of check-ins. A record past the bound is still returned by
+	`existing_items`, so `apply_findings` Clears it rather than leaving it stuck
+	Open - it simply stops being re-judged.
+	"""
+	floor = add_days(getdate(as_of or today()), -OLD_DAY_LIMIT_DAYS)
 	filters = {"company": company, "rule": ["in", list(DAY_RULES)], "status": "Open",
-	           "check_date": ["<", start]}
+	           "check_date": ["between", [floor, add_days(getdate(start), -1)]]}
 	if branches is not None:
 		filters["alvoraa_branch"] = ["in", list(branches) or [""]]
 	return [(r.alvoraa_branch, r.check_date) for r in frappe.get_all(
 		DOCTYPE, filters=filters, fields=["alvoraa_branch", "check_date"], limit_page_length=0)]
 
 
-def _open_day_rule_days(existing):
+def _open_day_rule_days(existing, as_of=None):
 	"""(branch, day) of every day-rule record still Open, so a day outside the
-	window is looked at again and can clear."""
+	window is looked at again and can clear.
+
+	Bounded by OLD_DAY_LIMIT_DAYS, for the reason in `_open_day_rule_days_before`.
+	"""
+	floor = add_days(getdate(as_of or today()), -OLD_DAY_LIMIT_DAYS)
 	return [(r.get("alvoraa_branch"), r.get("check_date")) for r in existing.values()
-	        if r.get("rule") in DAY_RULES and r.get("status") == "Open" and r.get("check_date")]
+	        if r.get("rule") in DAY_RULES and r.get("status") == "Open" and r.get("check_date")
+	        and getdate(r.get("check_date")) >= floor]
 
 
 def apply_findings(existing, findings, allow_create, created=None):
@@ -716,6 +771,72 @@ def apply_findings(existing, findings, allow_create, created=None):
 			doc.save(ignore_version=False)
 			changed += 1
 	return changed
+
+
+# ── Who may read a finding at all (ALV-440) ───────────────────────────
+#
+# Both halves, because the house rule in hooks.py says so: "a list filter alone
+# leaves /app/<doctype>/<name> open to anyone who guesses a name."
+#
+# This doctype had neither, and nothing leaked only because every caller in this
+# module passes `item_filters` by hand. That is one forgotten argument away from
+# a leak, and this slice adds a desk-bell link straight to these records' Desk
+# form - so the safe thing becomes the default here instead.
+#
+# One rule, in one place: `org_figures.hr_scope`, the same one the page, the
+# confirm endpoint and the morning alert all use. Administrator and System
+# Manager get every company from `permitted_companies`, so they need no special
+# case. Anyone with neither HR role nor a company gets nothing.
+
+
+def _scope_sql(user=None):
+	"""The scope as a SQL condition on this doctype. Returns "" for everybody.
+
+	Values are escaped rather than bound: `permission_query_conditions` must
+	hand back a finished string, so there is nowhere to put parameters.
+	Company AND branch, matched together - one Branch record can serve two
+	companies, and a company-wide finding (branch empty) is never location HR's.
+	"""
+	from alvoraa_portal import org_figures as of
+
+	scope = of.hr_scope(user)
+	if scope.not_linked or not scope.companies:
+		return "1=0"
+	table = "`tab%s`" % DOCTYPE
+	companies = ", ".join(frappe.db.escape(c) for c in scope.companies)
+	where = "%s.company in (%s)" % (table, companies)
+	if scope.branches is not None:
+		if not scope.branches:
+			return "1=0"
+		branches = ", ".join(frappe.db.escape(b) for b in scope.branches)
+		# An IN list never matches an empty or NULL branch, which is exactly
+		# what is wanted: a company-wide finding has no branch, and it is not
+		# location HR's to read. That is the line `item_filters` draws too, and
+		# it is the half Frappe's own User Permissions do NOT draw - they let a
+		# record with an empty link field through.
+		where += " and %s.alvoraa_branch in (%s)" % (table, branches)
+	return where
+
+
+def item_query_conditions(user=None):
+	"""Row filter for Data to review records, in Desk, the API and reports."""
+	sql = _scope_sql(user)
+	return "" if not sql else sql
+
+
+def item_has_permission(doc, user=None, permission_type=None):
+	"""The same rule for one record opened by name or through the API."""
+	from alvoraa_portal import org_figures as of
+
+	user = user or frappe.session.user
+	scope = of.hr_scope(user)
+	if scope.not_linked or not scope.companies:
+		return False
+	if doc.get("company") not in scope.companies:
+		return False
+	if scope.branches is not None and doc.get("alvoraa_branch") not in scope.branches:
+		return False
+	return True
 
 
 # ── Telling HR a finding is new (ALV-440) ────────────────────────────────────
@@ -1001,7 +1122,7 @@ def recheck(scope, as_of=None):
 	for company in scope.companies:
 		existing = existing_items(company, as_of, rules=rules, branches=scope.branches)
 		findings = company_findings(company, 0, as_of, rules=rules, branches=scope.branches,
-		                            also_days=_open_day_rule_days(existing))
+		                            also_days=_open_day_rule_days(existing, as_of))
 		apply_findings(existing, findings, allow_create=False)
 
 
@@ -1050,7 +1171,13 @@ def data_review_items():
 		DOCTYPE, filters=item_filters(scope, status="Open"),
 		fields=["name", "item_type", "rule", "company", "alvoraa_branch", "check_date", "first_found_on",
 		        *COUNT_FIELDS],
-		order_by="check_date asc", limit_page_length=MAX_ITEMS)
+		# NEWEST first, so that if MAX_ITEMS is ever reached in a wide outage the
+		# days left out are the oldest, not the ones HR most needs to see. The
+		# cards below sort their own days back into order, so nothing on screen
+		# reads backwards.
+		order_by="check_date desc", limit_page_length=MAX_ITEMS)
+	rows.sort(key=lambda r: (str(r.get("check_date") or ""), r.rule,
+	                         str(r.get("alvoraa_branch") or "")))
 
 	period, base, left_out = _figures_for_confirming(scope)
 	leave = of.leave_figures(scope) if any(r.rule == "D6" for r in rows) else {"by_company": {}}

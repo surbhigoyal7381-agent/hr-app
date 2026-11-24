@@ -28,6 +28,7 @@ SETTINGS = "Alvoraa Leader View Settings"
 JOB_METHOD = "alvoraa_portal.data_review.run_morning_checks"
 JOB_ID = "leader-data-checks"
 FAILED_TITLE = "Leader data checks failed"
+FAILED_ALERT_TITLE = "Data to review alert failed"
 
 WINDOW_DAYS = 35           # how far back doubtful days are looked for
 ABSENT_PCT = 95            # a day is doubtful at 95% or more marked absent...
@@ -202,6 +203,8 @@ def _ensure_settings():
 #          expected are marked absent and fewer than CHECKED_IN_PCT checked in -
 #          or, for a company with no check-ins at all, the absent test alone.
 #          Only for groups of at least the minimum group size (PRIV-10).
+#   D20    a branch sending far fewer punches than it normally does on this
+#          weekday - the rule that sees a dead feed D5's 95% bar misses (ALV-440)
 #   D6     leave used under 1%, three months or more into the leave year
 #   D18-1  people marked Left with no leaving date, per branch
 #   D18-2  nobody in the company has a leaving date in the last 12 months
@@ -431,47 +434,90 @@ def _doubtful_days(company, minimum, as_of, also_days=(), holidays=frozenset()):
 def _holiday_branch_days(company, start, end):
 	"""(branch, day) that is a holiday for MOST of that branch's active people.
 
-	Most, not any, and the difference is load-bearing. At DTC the holiday list
-	"Ambala Monday off" is on 1 employee of 63, so a rule that skipped a day
-	because *some* list held it would let one mis-assigned record silence a whole
-	branch's alarm for ever. Above half, and only the festivals everybody shares
-	are skipped; Ambala's Mondays are made quiet by the weekday baseline in
-	_punch_feed instead, which needs no list to be right.
+	**The source has to be Holiday List Assignment, not `Employee.holiday_list`.**
+	That column is the pre-v16 one the hrms migration patch read *from*; nothing
+	maintains it now, and `hrms.utils.holiday_list.get_holiday_list_for_employee`
+	- registered as the `employee_holiday_list` override - does not look at it.
+	The real answer is the latest submitted Holiday List Assignment for the
+	employee with `from_date` on or before the day, and failing that the one for
+	their company.
 
-	Two grouped queries for the company. Holiday rows carry no employee.
+	An earlier version of this read the legacy column, and DTC shows exactly how
+	badly that fails: on 23 Nov 2026 the column said 62 of Ambala's 63 people
+	were on the ordinary calendar and 1 on "Ambala Monday off", while the
+	assignments said all 62 were on the Monday-off list from 9 Nov - which is
+	what the product's own resolver returns for them. Read the column and the
+	rule is blind at the one branch it was written for; read the assignments and
+	Ambala's Mondays are correctly quiet.
+
+	**Most, not any.** One mis-assigned record must not be able to silence a
+	whole branch's alarm for ever. Employees with no list at all stay in the
+	denominator.
+
+	**Shift Type.holiday_list is deliberately NOT consulted**, although
+	`shift_type.get_holiday_list` puts it first. A shift's own list overriding
+	the employee's dated assignment is the bug in ALV-354 - it is why Ambala
+	still has Absent rows on its Mondays. This function answers "does the
+	business say this branch is shut?", and the assignment is that answer. Taking
+	the shift's view here would make the alarm agree with the bug.
+
+	Three grouped queries for the company. No employee is named in a finding.
 	"""
-	heads = {}
-	for r in frappe.db.sql("""
-		select e.branch as branch, e.holiday_list as list, count(*) as n
-		from `tabEmployee` e
+	people = frappe.db.sql("""
+		select e.name as emp, e.branch as branch from `tabEmployee` e
 		where e.company = %s and e.status = 'Active'
-		  and e.branch is not null and e.branch != ''
-		group by e.branch, e.holiday_list""", company, as_dict=True):
-		heads.setdefault(r.branch, {})[r.list] = cint(r.n)
-
-	lists = sorted({lst for per in heads.values() for lst in per if lst})
-	if not lists:
+		  and e.branch is not null and e.branch != ''""", company, as_dict=True)
+	if not people:
 		return frozenset()
 
+	# One row per employee in practice, plus the company's own fallback.
+	assigned = {}
+	for r in frappe.db.sql("""
+		select a.assigned_to as who, a.holiday_list as lst, a.from_date as since
+		from `tabHoliday List Assignment` a
+		where a.docstatus = 1 and a.from_date <= %(end)s
+		  and (a.assigned_to in %(people)s or a.assigned_to = %(company)s)
+		order by a.from_date asc""",
+		{"end": getdate(end), "company": company,
+		 "people": [p.emp for p in people]}, as_dict=True):
+		assigned.setdefault(r.who, []).append((getdate(r.since), r.lst))
+
+	lists = sorted({lst for rows in assigned.values() for _since, lst in rows})
+	if not lists:
+		return frozenset()
 	held = {}
 	for r in frappe.db.sql("""
-		select h.parent as list, h.holiday_date as day from `tabHoliday` h
+		select h.parent as lst, h.holiday_date as day from `tabHoliday` h
 		where h.parent in %(lists)s and h.holiday_date between %(start)s and %(end)s""",
 		{"lists": lists, "start": getdate(start), "end": getdate(end)}, as_dict=True):
-		held.setdefault(r.list, set()).add(getdate(r.day))
+		held.setdefault(r.lst, set()).add(getdate(r.day))
 
-	out = set()
-	for branch, per in heads.items():
-		total = sum(per.values())
-		if not total:
-			continue
-		covered = {}
-		for lst, n in per.items():
-			for day in held.get(lst, ()):
-				covered[day] = covered.get(day, 0) + n
-		out.update((branch, day) for day, n in covered.items()
-		           if n * 100 > total * HOLIDAY_MAJORITY_PCT)
-	return frozenset(out)
+	days = sorted({d for dates in held.values() for d in dates})
+	if not days:
+		return frozenset()
+
+	def list_on(emp, day):
+		"""The latest assignment on or before `day` - the employee's, else their
+		company's. Mirrors get_assigned_holiday_list's ordering."""
+		for rows in (assigned.get(emp, ()), assigned.get(company, ())):
+			chosen = None
+			for since, lst in rows:            # ascending, so the last wins
+				if since <= day:
+					chosen = lst
+			if chosen:
+				return chosen
+		return None
+
+	heads, off = {}, {}
+	for p in people:
+		heads[p.branch] = heads.get(p.branch, 0) + 1
+		for day in days:
+			lst = list_on(p.emp, day)
+			if lst and day in held.get(lst, ()):
+				off[(p.branch, day)] = off.get((p.branch, day), 0) + 1
+
+	return frozenset(key for key, n in off.items()
+	                 if n * 100 > heads.get(key[0], 0) * HOLIDAY_MAJORITY_PCT)
 
 
 def _punch_feed(company, minimum, as_of, holidays=frozenset(), also_days=()):
@@ -528,7 +574,7 @@ def _punch_feed(company, minimum, as_of, holidays=frozenset(), also_days=()):
 		return {}
 
 	# A branch-day is judged only while the branch is in use, which its own
-	# attendance says. Days before the window are judged only when a record of
+	# attendance says. Only the keys of this are used, never the counts. Days before the window are judged only when a record of
 	# theirs is still Open, so it can clear.
 	clauses = ["a.attendance_date between %(start)s and %(end)s"]
 	params = {"company": company, "start": getdate(start), "end": getdate(end)}
@@ -548,7 +594,7 @@ def _punch_feed(company, minimum, as_of, holidays=frozenset(), also_days=()):
 		expected[(r.branch, getdate(r.day))] = cint(r.expected)
 
 	out = {}
-	for (branch, day), exp in sorted(expected.items()):
+	for (branch, day), _exp in sorted(expected.items()):
 		if day < getdate(start) and (branch, day) not in older:
 			continue
 		if (branch, day) in holidays:
@@ -568,8 +614,10 @@ def _punch_feed(company, minimum, as_of, holidays=frozenset(), also_days=()):
 		n = punched.get((branch, day), 0)
 		if n * 100 >= normal * FEED_DROP_PCT:
 			continue
+		# No expected_count on purpose: the PRIV-10 floor is on `normal`, so a
+		# day's own expected figure could be a count of one identifiable person.
 		f = _finding("D20", "Punch feed", company, branch, day,
-		             expected_count=exp, checked_in_count=n, people_count=normal)
+		             checked_in_count=n, people_count=normal)
 		out[f["name"]] = f
 	return out
 
@@ -729,77 +777,151 @@ def _hr_managers():
 	return sorted(set(out))
 
 
-def tell_hr_about(names):
-	"""Mail every HR Manager the findings that are NEW this morning (ALV-440).
+def _readable_by(rows, user):
+	"""The findings this HR user may read, by the SAME rule as their own page.
 
-	Three rules, each with a test:
+	It must be the same rule, and `has_permission` is not it. A tenant's Branch
+	User Permission rows carry `applicable_for = "Employee"` - that is what
+	`org_figures.hr_scope` looks for - and Frappe's
+	`permissions.filter_allowed_docs_for_doctype` keeps a row only when
+	`applicable_for` is empty or equals the doctype being tested. So asking
+	`has_permission` about a finding record filters every one of those rows out,
+	leaves the allowed list empty, and skips the check altogether: it answers
+	True for every branch and every company. An earlier version of this function
+	did exactly that, and a store HR Manager would have been mailed another
+	branch's and another company's counts every morning (ALV-440 review).
+
+	Company and branch are matched TOGETHER, as Scope's own docstring requires:
+	one Branch record can serve two companies. A finding with no branch is
+	company-wide, and location HR never sees one - the same line
+	`item_filters` draws, and for the same reason.
+	"""
+	from alvoraa_portal import org_figures as of
+
+	scope = of.hr_scope(user)
+	if scope.not_linked or not scope.companies:
+		return []
+	return [r for r in rows
+	        if r.company in scope.companies
+	        and (scope.branches is None or r.get("alvoraa_branch") in scope.branches)]
+
+
+def tell_hr_about(names):
+	"""Tell every HR Manager about the findings that are NEW this morning (ALV-440).
+
+	Four rules, each with a test:
 
 	  * **Only what is new.** A mail that arrives every morning whether or not
 	    anything happened is filtered within a week, and then the one that
 	    mattered is filtered too. A finding whose counts merely changed is not
 	    re-sent, and there is no daily "all clear".
-	  * **Only what that person may read.** Each HR Manager gets the findings
-	    Frappe's own permission check lets them read, so a branch HR person is
-	    never told another branch's counts (SEC-7). Somebody with nothing
-	    readable is not mailed at all.
+	  * **Only what that person may read**, by the same rule as their own page -
+	    `_readable_by`, which explains why `has_permission` is not that rule.
+	    Somebody with nothing readable is not written to at all.
 	  * **Nothing about a person.** Counts, dates, company and branch names.
 	    Never an employee, a name or a device (SEC-13, AC-36) - the same rule the
 	    findings themselves follow.
+	  * **One bad recipient never silences the rest.** The guard is INSIDE the
+	    loop. It was outside once, which meant a single failure skipped every
+	    later HR Manager and returned as though it had worked - the same silence
+	    this whole ticket exists to end.
 
-	Never raises. It runs after the findings are committed, and a mail that
-	cannot be queued must not undo them.
+	Never raises. It runs after the findings are committed, and a message that
+	cannot be sent must not undo them. When there was something to say and
+	nothing went out, that is logged: a silent nought is the failure mode that
+	let ALV-439 run for a week.
 	"""
-	from frappe import _
-	from frappe.permissions import has_permission
-
 	try:
 		rows = frappe.get_all(DOCTYPE, filters={"name": ["in", list(names)]},
 		                      fields=["name", *NOTIFY_FIELDS], limit_page_length=0)
-		if not rows:
-			return
-		for user, email in _hr_managers():
-			mine = [r for r in rows
-			        if has_permission(DOCTYPE, "read", doc=r.name, user=user, print_logs=False)]
+	except Exception as exc:
+		_log_alert_failure(exc, len(list(names)))
+		return
+	if not rows:
+		return
+
+	sent = 0
+	for user, email in _hr_managers():
+		try:
+			mine = _readable_by(rows, user)
 			if not mine:
 				continue
-			mine.sort(key=lambda r: (r.rule, str(r.get("alvoraa_branch") or ""),
-			                         str(r.get("check_date") or "")))
-			feed_here = [r for r in mine if r.rule == "D20"]
-			if feed_here:
-				# The punch feed leads the subject wherever it appears: of
-				# everything here it is the one that is still going wrong now.
-				places = sorted({r.get("alvoraa_branch") or r.company for r in feed_here})
-				subject = _("{0} may have stopped sending punches").format(", ".join(places[:3]))
-			elif len(mine) == 1:
-				subject = _("1 new thing to check in Data to review")
-			else:
-				subject = _("{0} new things to check in Data to review").format(len(mine))
-			shown, extra = mine[:MAX_IN_MAIL], max(0, len(mine) - MAX_IN_MAIL)
-			body = "<p>" + _("Alvora's morning check found this. Open <b>Data to review</b> "
-			                 "in the portal to see it in full.") + "</p><ul>" + "".join(
-				"<li>" + frappe.utils.escape_html(_line(r)) + "</li>" for r in shown) + "</ul>"
-			if extra:
-				body += "<p>" + _("And {0} more in Data to review.").format(extra) + "</p>"
-			if feed_here:
-				body += "<p>" + _("A branch that sends far fewer punches than usual is "
-				                  "normally a device that has stopped, not people staying "
-				                  "away. Until it is fixed, those days are marked absent "
-				                  "and will reach pay.") + "</p>"
+			subject, body = _words_for(mine)
 			_queue(email, subject, body, mine[0].name)
-	except Exception as exc:
-		# Type only. A traceback's local values hold counts, and could hold a
-		# branch name for a scope this log is read outside (OPS-50, OPS-57).
-		try:
-			frappe.log_error(title="Data to review alert failed",
-			                 message=json.dumps({"error": type(exc).__name__,
-			                                     "findings": len(list(names))}))
-		except Exception:
-			pass
+			sent += 1
+		except Exception as exc:
+			_log_alert_failure(exc, len(rows))
+	if not sent:
+		# Not an error - a tenant may simply have no HR Manager with a login -
+		# but somebody has to be able to find out why nothing arrived.
+		_log_alert_failure(None, len(rows), note="nobody to tell")
+
+
+def _words_for(mine):
+	"""The subject and body for one recipient's own findings. No person in either."""
+	from frappe import _
+
+	mine.sort(key=lambda r: (r.rule, str(r.get("alvoraa_branch") or ""),
+	                         str(r.get("check_date") or "")))
+	feed_here = [r for r in mine if r.rule == "D20"]
+	if feed_here:
+		# The punch feed leads the subject wherever it appears: of everything
+		# here it is the one that is still going wrong now. Escaped, because the
+		# desk draws a notification's subject as HTML and a Branch name is
+		# whatever somebody typed (the body below is escaped for the same reason).
+		places = sorted({r.get("alvoraa_branch") or r.company for r in feed_here})
+		named = ", ".join(frappe.utils.escape_html(p) for p in places[:3])
+		if len(places) > 3:
+			named = _("{0} and {1} more").format(named, len(places) - 3)
+		subject = _("{0} may have stopped sending punches").format(named)
+	elif len(mine) == 1:
+		subject = _("1 new thing to check in Data to review")
+	else:
+		subject = _("{0} new things to check in Data to review").format(len(mine))
+
+	shown, extra = mine[:MAX_IN_MAIL], max(0, len(mine) - MAX_IN_MAIL)
+	body = "<p>" + _("Alvora's morning check found this. Open <b>Data to review</b> "
+	                 "in the portal to see it in full.") + "</p><ul>" + "".join(
+		"<li>" + frappe.utils.escape_html(_line(r)) + "</li>" for r in shown) + "</ul>"
+	if extra:
+		body += "<p>" + _("And {0} more in Data to review.").format(extra) + "</p>"
+	if feed_here:
+		body += "<p>" + _("A branch that sends far fewer punches than usual is normally a "
+		                  "device that has stopped, not people staying away. Until it is "
+		                  "fixed, those days are marked absent and will reach pay.") + "</p>"
+	return subject, body
+
+
+def _log_alert_failure(exc, findings, note=None):
+	"""Error type and counts only. A traceback's local values hold counts, and a
+	branch name for a scope this log may be read outside (OPS-50, OPS-57)."""
+	try:
+		frappe.log_error(title=FAILED_ALERT_TITLE, message=json.dumps({
+			"error": type(exc).__name__ if exc is not None else None,
+			"findings": cint(findings), "note": note}))
+	except Exception:
+		pass
 
 
 def _queue(email, subject, body, name):
-	"""One Notification Log row - the desk bell, and an email where that person
-	has email on in their own notification settings."""
+	"""The desk bell, and a real email.
+
+	Both, because neither is enough on its own. A Notification Log of type
+	"Alert" NEVER emails anybody: "Alert" is in Frappe's
+	`notification_skip_email_types`, so `is_email_notifications_enabled_for_type`
+	returns False before it reads the person's own settings. This module believed
+	otherwise for one commit, which would have shipped an alarm that reached only
+	HR Managers who happen to open Desk - and "Alvoraa Data Review Item" is not
+	in `notices.NOTICE_DOCTYPES`, so the portal bell does not carry it either.
+	`announcements.py` had already learned this and sends its own copy; so does
+	this.
+
+	The email goes only when email is switched on for the tenant. On every
+	production site today it is muted, so the bell is all there is until it is
+	unmuted - which is worth knowing rather than discovering.
+	"""
+	from alvoraa_portal.announcements import email_is_active
+
 	frappe.enqueue(
 		"frappe.desk.doctype.notification_log.notification_log.make_notification_logs",
 		queue="short",
@@ -810,6 +932,11 @@ def _queue(email, subject, body, name):
 		now=frappe.in_test,
 		enqueue_after_commit=not frappe.in_test,
 	)
+	if email_is_active():
+		frappe.sendmail(recipients=[email], subject=subject, message=body,
+		                reference_doctype=DOCTYPE, reference_name=name,
+		                add_unsubscribe_link=0,
+		                now=frappe.in_test, queue_separately=False)
 
 
 # ── Data to review: HR's page (US-4, US-6, SEC-7, SEC-13) ────────────────────
@@ -965,7 +1092,6 @@ def data_review_items():
 			"dates": [str(i.check_date) for i in items], "items": [i.name for i in items],
 			"punched": max(cint(i.checked_in_count) for i in items),
 			"normal": max(cint(i.people_count) for i in items),
-			"expected": max(cint(i.expected_count) for i in items),
 			"found_on": str(min(i.first_found_on for i in items)),
 			"can_confirm": False,
 		})

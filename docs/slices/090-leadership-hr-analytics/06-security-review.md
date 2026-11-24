@@ -401,3 +401,69 @@ R14 (F4) and R16 (G3) are closed by your 24 Nov decisions. **Baseline:** the CER
 ## Subtract pass (round 2)
 
 I removed a note on the `change()` text when the window is hidden (it returns nothing, proven) and a worry about `records_start` (the people figures are unchanged, per the engineer and my reading of `_build`). I also dropped the sibling case under the softer guard as a new finding, because it is R15 again.
+
+# Final check round 3 (24 Nov 2026)
+
+**Read at:** worktree `.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics`, commit **d41c1bed**. I read the diff of 703fee29 (`people_trends.py`, `people-trends.js`, the two new tests), 03 §12 and the new line in 02 "Decisions after review". **Not done:** I ran no test and nothing in `alv090-*`. I changed no source. Same conflict of interest as before: I wrote 01c.
+
+## Verdict
+
+**Not ready for dev: one P1 (H2) and one P2 (H3). No P0.** Decision 1 is built as written. H1's own case (7 days against 30 days) is closed. But the decision does not close every cross-view route, and the By company fix has a one-click way round.
+
+## What round 3 did
+
+| Item | Result | Label |
+|---|---|---|
+| H1, 7d vs 30d | **Closed.** A view with any thin bin sends no `series` (`_build`, `if series_ok and not thin`). The 7-day window is the 30-day view's last bin, and the 7-day "before" is its third bin, so the 30-day points add nothing. A thin 30-day bin makes every day inside it non-ok, so the 7-day view is not shared | proven in code; test read, not run |
+| R17 | **Gone.** No points on a thin view, so nothing to subtract inside one view | proven in code |
+| `window_hidden` / `hidden` removed | **No new fault.** No reference left in the page or the app (grep). `absent_pct` is now `None` only when there are no counts, so "No attendance recorded" is right. The headline still skips a `None` | proven in code |
+| N5, the card | **Built.** One thin company blanks every shared company's absent % on the card | proven in code; test read, not run |
+| Leave series | **Cannot do the same exactly.** The leave series is hidden only by the people rule, and the people rule already checks 60-90, 30-60 and 0-30 days back as stretches. So months 4 to 6 of the 180-day view always pass when the view is shown. Months 1 to 3 and the 30-day bins 1 and 2 meet other views only through misaligned weeks: rough (R3) | proven (layout and stretches read); the conclusion is inferred |
+
+## New findings
+
+### H2 · Major · P1 · A month hidden on 180 days comes back from the 90-day and 30-day windows
+
+**Where.** `_bin_lengths` and the window code in `_build`. The 180-day view's months are end-179..end-150, ..., end-89..end-60, end-59..end-30, end-29..end. The 90-day window is end-89..end. The 30-day window is end-29..end (month 6). The 30-day "before" is end-59..end-30 (month 5).
+**Scenario.** A branch head's store had 1 to 4 people at work 60 to 90 days ago, and 5 or more since. The 180-day (and 365-day) view shows no points: correct. But the 90-day window, the 30-day window and the 30-day "before" are all shown, because each covers 5 or more. 90-day window less month 6 less month 5, weighted by expected days, is the absent % of month 4: the hidden 1 to 4 people. The rounding error is under half a point; one absent day of about 80 is worth about 1.3 points.
+**Labels.** Layout proven in code. That all three figures are shown is inferred from `attending_ok` and `cmp_state`. The arithmetic was not run. Like H1, it needs the expected days, which are not sent; a branch head who knows the roster can get close. Round 2 had this too: I missed it then.
+**Smallest fix (her choice).** On the 30-day view, also drop "before" when the month 60 to 90 days back is thin (one more edge in the same query). Or accept it in writing. Either way, extend the property test (PRIV-13) to attendance across all five views together. That is the test that would have caught H1 and H2.
+
+### H3 · Minor · P2 · N5's fix is one click away from undone
+
+**Where.** `_by_company` hides the card. But each company's own view (`company=` filter) still sends its window absent %.
+**Scenario.** A CXO with two companies, B thin. The card shows no absent %. They pick company A: A's figure is shown. The all-companies figure less A, weighted by headcount, gives B roughly. In the new N5 test's own data, the KAVYA view would show its absent %.
+**Labels.** Inferred from reading `_build`; not run. Rough, same family as R15.
+**Smallest fix (her choice).** Hide the all-companies absent % when any company is thin (the architect's first N5 option, against "the all-companies figure stays"). Or accept it inside R15.
+
+## R3, judged
+
+The engineer is right that misaligned bins give only a rough estimate of a hidden bin. Two corrections. First, H2 is not misaligned: it is exact, and it is not part of R3. Second, the slivers themselves can be got exactly, even though no rule checks them: for example 365-day window less 180-day window less 180-day "before" gives end-364..end-360 (5 days), and the 30-day window less the 90-day view's last four weeks gives end-29..end-28 (2 days). Inferred from layout, not run. R3 stays open with that wording.
+
+## SEC and PRIV, round 3
+
+**Counts:** SEC: 10 met, 0 partial, 0 not met. PRIV: 11 met, 2 partial (PRIV-7: H2, H3; PRIV-13: the property test still covers only the people figures), 0 not met.
+
+## Residual risks for Surbhi to accept or reject (none accepted yet)
+
+1. **R1.** A leader can narrow a figure to a range by combining filters. Owner: Surbhi.
+2. **R2.** A leader who visits every day can see each day's change. Owner: Surbhi.
+3. **R3.** Slivers of 2 to 5 days between views can be worked out exactly, and a hidden bin roughly, and no rule checks the slivers. Owner: Surbhi.
+4. **R4.** A leader can combine the page with what they already know. Owner: Surbhi.
+5. **R5.** Two leaders who pool screens learn more than either one. Owner: Surbhi.
+6. **R6.** A store HR person with a narrowed Branch permission is treated as company-wide in HR Analytics (ALV-359). Dangerous debt, escalated. Owners: Surbhi (live check), engineer (fix).
+7. **R7.** We cannot detect a leader misusing figures inside their own scope. Owner: Surbhi.
+8. **R8.** The security log is about 2 MB and held in France. Owner: founder.
+9. **R10.** Early-leaver figures can show a lower limit for a small group. Owner: Surbhi.
+10. **R11.** Leave figures cover everyone on the roll, not only people at work. Owner: Surbhi.
+11. **R12.** A session with no saved CSRF token skips the CSRF check; low risk, the page only reads. Owner: engineer.
+12. **R13.** Removing only a branch head's Branch permission widens them to the whole company; the admin line warns. Owner: Surbhi.
+13. **R15.** A hidden branch or company can be roughly estimated from the parent less its siblings (now including H3, if not fixed). Owner: Surbhi.
+14. **H2, only if not fixed.** A thin month 60 to 90 days back can be worked out from three shown window figures. Owner: Surbhi (accept) or engineer (fix).
+15. **Temporary debt.** The property test covers only the people figures. Owner: test engineer.
+
+**Baseline:** the CERT-In entry is still stale (24 Aug); only R8 relies on it.
+
+## Subtract pass (round 3)
+
+I removed a check of unshared companies on the By company card (pooled hidden companies against the parent): that is part C of the people rule, already R15. I removed nothing else.

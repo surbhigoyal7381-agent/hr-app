@@ -55,3 +55,55 @@ DPDP baseline entries were last verified 24 Aug 2026, now stale (more than 90 da
 | R4 | `security.log` keeps about 2 MB; probes are visible only for a short time | acceptable simplification (01c SEC-8) |
 
 Subtract pass: I removed a planned section restating the threat model (it is in 01c) and a table of every test name (04 has it).
+
+## Re-check after fix round 2 (24 Nov 2026)
+
+Read: worktree `.claude/worktrees/086-manager-held-days`, branch `slice/086-manager-held-days`, HEAD `36d701b5`, `git diff 0a181d05..HEAD` and the "Fix round 2" notes in 03. The bench `alv086-bench` runs this worktree's code (md5 of `held_team.py`, `punch_fix.py`, `attendance_correction.py` match, proven). Site `test_site`.
+
+**Verdict: SHIP.** F1 and F2 are fixed. Nothing new found. One honest gap: my own test run was not clean (see "Tests" below), so the green results are the engineer's, not mine.
+
+### Findings
+
+| # | Status | Evidence | Label |
+|---|---|---|---|
+| F1 blank lines cut the 088 notice | **fixed** | `_file_one` collapses every run of blank lines to one line break before filing (`held_team.py`, the `re.sub(r"\s*\n\s*", "\n", ...)` line). The "One of n" line is still added after a blank line, so it stays out of what 088 prints. A manager can still type a line that reads like "Raised by ...", but it can no longer be a paragraph of its own: 088 prints it as part of the manager's reason, and `owner` and the real stamp stay true | proven in code; pin `test_a_blank_line_in_the_reason_does_not_cut_what_088_prints` read; the engineer's break test (03) not repeated by me |
+| F2 bad payload or day gives a traceback | **fixed** | `send_held` wraps `parse_json`; `held_days` wraps `getdate`. Both say a plain sentence with no personal data. The engineer had no break test for the bad `day` line. I ran the unguarded call instead: `getdate("not-a-day")` throws "<strong>not-a-day</strong> is not a valid date string", which does not contain "was not understood". So the pin would fail without the guard | proven by running (the getdate call); pin `test_a_broken_payload_or_day_gets_a_sentence_not_a_traceback` read |
+
+### The `_refusal_of` change (keeps "< and >")
+
+- **It cannot put markup on the screen.** The manager's page never shows a sentence as HTML. Each row's refusal is drawn with `gpEsc(said)` (`portal.js` `hdlRow`, the `hdl-refused` line). A whole-call refusal is drawn with `gpEsc(trErr(e))`. `esc` turns `& < > "` into entities (`portal.js:265-270`). So the screen escapes, whatever the server sends. Proven in code.
+- The server-side regex is not a sanitiser, and it does not need to be one. I ran it on test strings: `<<b>script>` comes out as `<script>`, and an unclosed `<img ... onerror=...` passes through. The old `strip_html_tags` was not a sanitiser either. Proven by running. This is safe only because the screen escapes. **P4 note:** the docstring should say so, so nobody later draws this sentence with `innerHTML` unescaped.
+- **What can reach a sentence:** our own fixed words; `raise_for_report`'s sentence with the employee's name, which is reached only after the row passed the direct-report check (so only the manager's own report's name); and Frappe's sentences. A row for somebody outside the team gets the fixed `NOT_YOURS` sentence. Proven in code.
+- **ALV-436 still works.** `punch_fix.validate` still calls `refuse_if_the_words_would_be_lost` first. `test_reason_rules` sends `<img src=x onerror=alert(1)>` and `<urgent>`. It expects both refused, no request filed, and the full sentence "without < and > around a word". Only the display of the sentence changed. Proven in code; test read.
+
+### M-1 (commit before the day-row lock, duplicate check now a plain read)
+
+- **The scope check cannot be skipped.** In `send_held` the order for each row is: the duplicate-pair check, then `row["employee"] not in team` with `continue`, then `commit`, then `_file_one`. The commit comes after the check, and `_file_one` → `raise_for_report` checks direct report again for every caller (ALV-425). So there are two checks. Proven in code.
+- **It cannot file twice.** `_file_one` locks the day row (`for_update`) before the plain duplicate read. Nothing reads the database between the commit and that lock. `nowdate` uses System Settings held in `frappe.local` (`system_settings.py:261-271`, read in the bench). So the duplicate read takes its snapshot after the lock and sees a request another send committed. A day that is not Held, or has no row, is refused, so filing never happens without the lock. Proven in code, with one inference: the "no read before the lock" point rests on the cache being warm. `TheLock` guards it: the engineer's break test shows it fails without the commit.
+- Side effect: each row is committed on its own. That was already true after fix round 1 (AC-32). Nothing new.
+
+### Personal data and passwords
+
+- The two new sentences and the new `from`/`to` dates hold no personal data. The Error Log message is unchanged (counts, the manager's id and the fault type). Proven in code.
+- No literal password in `test_held_team_086*.py` or `portal_held_team_086_test.js` (grep: the only hits are `seen_token` and `csrf_token: "x"`, a stub). Proven.
+
+### Tests (not clean on my side)
+
+- My run of `test_held_team_086`: 33 ran, 0 assertion failures, **7 errors**. All 7 were MariaDB deadlocks inside the cleanup `_wipe` (`DELETE FROM tabEmployee`, test file line 63), in `TheEmployeeAndHR` and `TheFilerGuard`.
+- Another session was running the same module on `test_site` at the same time. I saw its process (`run-tests --app alvoraa_portal --module ...test_held_team_086`) before and after my run.
+- So I infer the errors come from two runs clashing on one site, not from the product code. I have not proven that.
+- I stopped my two `_proof` runs partway, to stop disturbing the other session. **They may have left test fixtures on `test_site`.**
+- I rely on the engineer's results in 03: 33 OK and 11 OK. **Not checked by me.**
+- Removes it: one clean run of both modules while no other session uses `test_site`.
+
+### SEC/PRIV status changes since round 1
+
+| Item | Was | Now |
+|---|---|---|
+| SEC-3 | partial (F2; browser escape on HR's card and the day sheet not tested) | partial. F2 is closed. The browser check on 087's screens is still not run (R3) |
+| SEC-5 | met, day-row lock untested | met. `TheDayLock` now exists (I did not run it cleanly). R2 is closed if that test passes |
+| SEC-8 | met, see F1 | met. F1 is closed |
+
+Every other SEC and PRIV item is unchanged.
+
+Subtract pass: I removed a planned table of every changed line (the diff has it) and a repeat of the round-1 threat model.

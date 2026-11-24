@@ -263,10 +263,10 @@
   },
   {
    "default": "0",
-   "description": "Tick to let every employee earn the night green (out one hour after their own shift end), while the morning green stays as the field above nominates it. The dated green grants keep counting for the morning green.",
+   "description": "Tick to let every employee who earns marks earn the night green (out one hour after their own shift end), while the morning green stays as the field above nominates it and the dated green grants keep counting. Staff in a category that earns no marks, such as Contract, earn no greens of any kind, ticked or not.",
    "fieldname": "night_green_for_everyone",
    "fieldtype": "Check",
-   "label": "Night Green For Everyone"
+   "label": "Night Green For All Staff Who Earn Marks"
   },
   {
    "fieldname": "overtime_section",
@@ -283,7 +283,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-24 12:00:00.000000",
+ "modified": "2026-11-24 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Payroll Rule Set",

@@ -102,6 +102,27 @@ class NightGreenForEveryone(FrappeTestCase):
 		                 "a blank value earns a morning green and not a night one, as before")
 
 
+class TheTickKeepsItsPromise(FrappeTestCase):
+	"""The label says "who earn marks", so staff who do not (Contract) earn no
+	green of any kind with the tick on, on the engine and on the card."""
+
+	def test_the_label_and_description_say_who_is_left_out(self):
+		field = frappe.get_meta("Alvoraa Payroll Rule Set").get_field("night_green_for_everyone")
+		self.assertIn("Earn Marks", field.label)
+		self.assertIn("Contract", field.description)
+
+	def test_with_the_tick_on_a_contract_person_earns_no_green_at_all(self):
+		rs = _rule_set(night_green_for_everyone=1, categories=[CONTRACT],
+		               overtime_bands=BANDS)
+		day = getdate(nowdate())
+		flags = _employee_flags(_employee("Contract"), day, prepare(rs, day, day))
+		self.assertFalse(flags["earns_marks"])
+		from alvoraa_portal.payroll_rules import evaluate_day
+		v = evaluate_day(shift_start=630, shift_end=1230, first_in=500, last_out=1510,
+		                 punch_count=2, slabs=prepare(rs, day, day)["slabs"], **flags)
+		self.assertEqual((v.greens, v.overtime_quarters), (0, 0))
+
+
 class TheCardDoesNotOfferWhatCannotBeEarned(FrappeTestCase):
 	def _green(self, employment_type):
 		day = getdate(nowdate())

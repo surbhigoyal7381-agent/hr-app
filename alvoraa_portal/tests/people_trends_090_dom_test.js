@@ -85,13 +85,13 @@ const status = code => () => Promise.resolve(R(code, {}));
   p = page(reply(few)); p.w.ptLoad(); await tick();
   ok(/attendance records in this group/.test(cardOf("Attendance").textContent) && !/4\.6%/.test(p.d.body.textContent), "attendance not shared: no number on the page");
 
-  // Softer guard: one hidden bar says so and shows no number for it; one hidden bar also hides the window figure
-  const thin = JSON.parse(JSON.stringify(OK)); thin.attendance = { shared: true, absent_pct: null, window_hidden: true, series: [4.1, null], hidden: [1], left_out_days: 0 };
+  // Thin guard: a view with a thin bar sends no points; the window figure stays and the card says why
+  const thin = JSON.parse(JSON.stringify(OK)); thin.attendance = { shared: true, absent_pct: 4.1, left_out_days: 0 };
   p = page(reply(thin)); p.w.ptLoad(); await tick();
   const att = cardOf("Attendance");
-  ok(/Not shared/.test(att.querySelector(".pt-v").textContent) && !/No attendance recorded/.test(att.textContent) && !!att.querySelector("svg") &&
-     /left out of this chart/.test(att.textContent) && /Not shared/.test(att.querySelector("table").textContent),
-     "a hidden bar: the window tile says Not shared, the chart stays, the table names the hidden period, and the card says why");
+  ok(/4\.1%/.test(att.querySelector(".pt-v").textContent) && !att.querySelector("svg") && !att.querySelector("table") &&
+     /chart by period is not shared/.test(att.textContent),
+     "a thin bar: the window tile keeps its number, there is no chart or table, and the card says the chart is not shared");
   // Records start: month and year only
   const early = JSON.parse(JSON.stringify(OK)); early.window = { start: "2026-03-01", end: "2026-11-22", days: 267, clipped: true, records_start: "2026-03-01", compare: null };
   p = page(reply(early)); p.w.ptLoad(); await tick();

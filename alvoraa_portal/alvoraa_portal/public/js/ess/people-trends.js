@@ -157,15 +157,14 @@
   function attendanceCard(d) {
     var a = d.attendance, o = '<section class="pt-card"><h2>' + h(T("Attendance")) + '</h2><p class="pt-sub">' + h(T("Absent days as a share of days people were expected to work. Weekly offs and holidays are not counted as expected.")) + "</p>";
     if (!a.shared) return o + "<p>" + NS + " " + h(T("Too few people have attendance records in this group for a fair picture. Try a longer period or a wider group.")) + "</p></section>";
-    if (a.absent_pct === null && !a.window_hidden) return o + "<p>" + h(T("No attendance recorded for this period")) + "</p></section>";
+    if (a.absent_pct === null) return o + "<p>" + h(T("No attendance recorded for this period")) + "</p></section>";
     var before = a.before ? a.before.absent_pct : null;
-    o += '<div class="pt-tiles">' + tile(T("Absent"), a.window_hidden ? NS : a.absent_pct + "%", before === null ? "" : h(change(a.absent_pct, before, " " + T("points")))) +
+    o += '<div class="pt-tiles">' + tile(T("Absent"), a.absent_pct + "%", before === null ? "" : h(change(a.absent_pct, before, " " + T("points")))) +
       tile(T("Data up to"), d.data_up_to ? h(day(d.data_up_to)) : "–", a.left_out_days ? h(T("{0} days left out; HR is checking", [a.left_out_days])) : "") + "</div>";
     if (a.series) {
       var labels = binLabels(d.period, d.chart.points);
       o += '<div role="img" aria-label="' + h(T("Absent share of expected days by period")) + '">' + chart(labels, [{t: "line", v: a.series, c: "var(--primary)"}], "%") + "</div>" +
-        "<details><summary>" + h(T("Show as a table")) + "</summary>" + tableOf(labels.map(function (x, i) { return [x, (a.hidden || []).indexOf(i) >= 0 ? T("Not shared") : a.series[i] === null ? "–" : a.series[i]]; }), [T("Absent %")]) + "</details>";
-      if ((a.hidden || []).length) o += "<p>" + NS + " " + h(T("Some periods are left out of this chart: too few people were expected at work in them.")) + "</p>";
+        "<details><summary>" + h(T("Show as a table")) + "</summary>" + tableOf(labels.map(function (x, i) { return [x, a.series[i] === null ? "–" : a.series[i]]; }), [T("Absent %")]) + "</details>";
     } else {
       o += "<p>" + NS + " " + h(T("The chart by period is not shared: too few people in this group in some periods.")) + "</p>";
     }

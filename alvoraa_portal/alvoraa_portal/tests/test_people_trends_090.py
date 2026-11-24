@@ -604,7 +604,7 @@ class TestReviewFixes(TrendsBase):
 			for d in days:
 				fx.attendance(e, fx.KAVYA, self.lastb, ago(d), status(e, d))
 
-	def test_a_thin_bucket_loses_only_its_own_point(self):  # M2 guard, softer (Surbhi, 24 Nov 2026)
+	def test_a_thin_bucket_sends_no_points_for_the_whole_view(self):  # M2 guard (Surbhi, 24 Nov 2026, decision 1)
 		b, emps = self._few()
 		self.lastb = b
 		self._rows(emps[:4], range(0, 30))                           # four people on every day
@@ -613,21 +613,36 @@ class TestReviewFixes(TrendsBase):
 		self._rows(emps[4:5], range(14, 30))                         # a fifth person, in the two oldest buckets only
 		out = call(self.lead_retail, period=30, branch=b)["attendance"]
 		self.assertTrue(out["shared"])                               # two buckets have five
-		self.assertEqual(out["hidden"], [2, 3])                      # the two newest have four
-		self.assertEqual([v is None for v in out["series"]], [False, False, True, True])   # no number for them
+		self.assertNotIn("series", out)                              # two have four: no day-by-day points at all
+		self.assertNotIn("hidden", out)
 		self.assertIsNotNone(out["absent_pct"])                      # the window figure stays
 
-	def test_one_hidden_bucket_also_hides_the_window_figure(self):  # M2 guard: window less the others must not give it away
-		b, emps = self._few("One")
+	def test_no_hidden_day_can_be_got_back_from_two_views_together(self):  # H1 (Surbhi, 24 Nov 2026, decision 1)
+		b, emps = self._few("Cross")
 		self.lastb = b
-		self._rows(emps[:4], range(0, 30), lambda e, d: "Absent" if d % 3 == 0 else "Present")
-		self._rows(emps[4:5], range(0, 22))                          # a fifth person, in every bucket but the oldest
-		out = call(self.lead_retail, period=30, branch=b)["attendance"]
-		self.assertEqual(out["hidden"], [0])
-		self.assertIsNone(out["absent_pct"])
-		self.assertTrue(out["window_hidden"])
-		self.assertIsNone(out["series"][0])
-		self.assertTrue(all(v is not None for v in out["series"][1:]))
+		self._rows(emps[:5], range(7, 30))                           # five people in every older day
+		self._rows(emps[:4], range(0, 7), lambda e, d: "Absent" if d == 0 else "Present")   # the last day has four
+		self._rows(emps[4:5], range(1, 7))                           # the fifth is missing on the last day only
+		week = call(self.lead_retail, period=7, branch=b)["attendance"]
+		month = call(self.lead_retail, period=30, branch=b)["attendance"]
+		self.assertNotIn("series", week)                             # the 7-day view shows no day at all
+		self.assertTrue(all(v is not None for v in month["series"]))  # every 30-day point covers five or more
+		self.assertEqual(month["series"][-1], week["absent_pct"])    # its last point is the 7-day window: nothing new
+		self.assertEqual(len(month["series"]), 4)                    # and no 30-day point is a single day
+
+	def test_by_company_sends_no_absent_percent_when_one_company_is_thin(self):  # N5 (Surbhi, 24 Nov 2026, decision 1)
+		def staff(company, n):
+			return frappe.get_all("Employee", filters={"company": company, "last_name": TAG, "status": "Active"}, pluck="name", limit=n)
+		for e in staff(fx.OTHER, 3):                                 # three of Other Co's twelve were at work
+			fx.attendance(e, fx.OTHER, self.cl, ago(2), "Absent")
+		for e in staff(fx.KAVYA, 6):
+			fx.attendance(e, fx.KAVYA, self.cl, ago(2), "Present")
+		out = call(self.lead_both, period=30)
+		blocks = {c["company"]: c for c in out["by_company"]}
+		self.assertTrue(blocks[fx.OTHER]["shared"] and blocks[fx.KAVYA]["shared"])
+		self.assertIsNone(blocks[fx.OTHER]["absent_pct"])            # the thin one
+		self.assertIsNone(blocks[fx.KAVYA]["absent_pct"])            # and so the other one, or the all-companies figure gives it back
+		self.assertIsNotNone(out["attendance"]["absent_pct"])        # the all-companies figure stays
 
 	def test_the_guard_leaves_the_caller_out(self):  # AC-45, PRIV-2 (N1, G2)
 		b = fx.branch("OwnAtt")

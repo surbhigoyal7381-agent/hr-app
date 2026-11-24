@@ -813,10 +813,10 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 	counts = _sum_counts(cur_rows)
 	by_bin = [[r for r in rows if r["k"] == offset + 1 + i] for i in range(len(bins))]
 	# Hidden means not sent. A bin the rule failed has no series for any of the three figures.
-	# For attendance, a bin with 1 to (minimum - 1) people expected at work loses only its own
-	# point (no number sent). The window figure stays if at least one bin has enough people,
-	# which proves the window has enough, but not when exactly one bin is hidden: the window
-	# figure less the shown bins would then give that bin away (Surbhi, 24 Nov 2026).
+	# For attendance, if any bin has 1 to (minimum - 1) people expected at work, the view sends no
+	# day-by-day points at all, but keeps its window and "before" figures (each covers enough
+	# people). One view's points can then never be set against another view's to give a hidden
+	# bin away (Surbhi, 24 Nov 2026, replacing the softer per-bin guard).
 	series_ok = chart["shared"]
 	states = [_bucket_state(b, minimum) for b in by_bin]
 	cmp_state = _bucket_state(cmp_rows, minimum)
@@ -828,12 +828,9 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 	up_to = of.data_up_to(of.Scope((company,), scope.branches) if company else scope)
 	call.statements += 1 if company else len(scope.companies)
 	if attending_ok:
-		attendance = {"shared": True, "absent_pct": None if len(thin) == 1 else _absent_pct(counts), "left_out_days": left_out}
-		if len(thin) == 1:
-			attendance["window_hidden"] = True
-		if series_ok:
-			attendance["series"] = [None if i in thin else _absent_pct(_sum_counts(b)) for i, b in enumerate(by_bin)]
-			attendance["hidden"] = thin
+		attendance = {"shared": True, "absent_pct": _absent_pct(counts), "left_out_days": left_out}
+		if series_ok and not thin:
+			attendance["series"] = [_absent_pct(_sum_counts(b)) for b in by_bin]
 		if compare and cmp_state != "thin":
 			attendance["before"] = {"absent_pct": _absent_pct(_sum_counts(cmp_rows))}
 	else:
@@ -899,7 +896,10 @@ def _filter_lists(counted, rule, company, dim, here, scope):
 
 
 def _by_company(call, scope, rule, counted_all, start, end, several, minimum, own_name):
-	"""One block per company, alphabetical, no ranking."""
+	"""One block per company, alphabetical, no ranking.
+
+	If any shown company has 1 to (minimum - 1) people expected at work, no company on the card
+	gets an absent % (the all-companies figure is elsewhere and would give the thin one away)."""
 	out = []
 	for c in sorted(scope.companies):
 		mine = [p for p in counted_all if p.company == c]
@@ -912,8 +912,13 @@ def _by_company(call, scope, rule, counted_all, start, end, several, minimum, ow
 		w = _people_block(mine, start, end, None)
 		block = {"company": c, "shared": True, "headcount": w["headcount"], "net": w["net"], "left": w["left"]}
 		rows = _attendance_bins(call, scope, c, None, None, start, end, [start, add_days(end, 1)], own_name)
-		block["absent_pct"] = None if _bucket_state([r for r in rows if r["k"] == 1], minimum) == "thin" else _absent_pct(_sum_counts(rows))
+		block["absent_pct"] = _absent_pct(_sum_counts(rows))
+		block["_thin"] = _bucket_state([r for r in rows if r["k"] == 1], minimum) == "thin"
 		out.append(block)
+	if any([b.pop("_thin", False) for b in out]):
+		for b in out:
+			if b["shared"]:
+				b["absent_pct"] = None
 	return out
 
 

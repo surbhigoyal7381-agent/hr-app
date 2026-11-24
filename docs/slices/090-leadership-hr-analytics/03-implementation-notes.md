@@ -272,3 +272,35 @@ Reworded: `test_a_failing_bucket_sends_no_series_at_all` (attendance no longer f
 **Timing, once, 600 staff and 438,000 attendance rows, warm, this stack:** 1 week 9.2 s, 1 month 8.0 s, 3 months 8.5 s, **6 months 9.9 s (was 4.1)**, **1 year 12.3 s (was 6.9)**. 7 statements each. **This is a real cost of "all five or none":** every call now reads two years of attendance, so the short views slow down most. It misses the 3 s budget here, and it also did before for 6 months and 1 year. No cache added. A cache of the pass test per company and day would fix it; it needs your word.
 
 **Inferred, not proven:** a person has no attendance rows before their joining date, so a view clipped to the records start has the same people as the global bucket. **Known gap (R3, unchanged):** buckets of different periods that do not line up exactly (for example 30-day and 90-day bins) can still give a rough estimate of a day, but every bucket and every window is now 5 or more people, so no exact small group can be rebuilt.
+
+## 14 · Fix round 5 (24 Nov 2026): one start date for the whole scope, and every day piece checked (H4, H5)
+
+Built on a0ed7fb2 (base `origin/dev` a269ce00, nothing came in, no rebase). Security notes committed first as 7cbafb27; tests as their own commit (red), then the fix. Surbhi approved both fixes.
+
+**What changed (`people_trends.py`, 9 lines added, 8 removed, most of them the docstring)**
+- **H4.** `_build` now passes the records start of the whole scope (`min` of `joined` over `counted_all`) to `_attendance_rule`, not the chosen company's own start. Every company view and the All-companies view therefore check the same day pieces and share one verdict.
+- **H5.** `_attendance_rule` now checks the elementary day pieces (the pieces cut by every bucket edge of all five periods) instead of the buckets. The SQL mask was already the piece mask, so `seg_masks` and the per-bucket re-mapping are deleted, and `Rule` gets `len(edges) - 1` bits. A bucket is a set of whole pieces, so if every piece has 0 or 5+ people, every bucket does too. Parts A to D, "all five periods or none" and the leave figures are unchanged.
+- **Subtract pass:** removed `seg_masks` and the unit-mask loop. Nothing else removable.
+
+**Tests (both new, in `test_people_trends_090.py`, committed red first)**
+| Test | Before the fix | After |
+|---|---|---|
+| `test_companies_with_different_start_dates_still_share_one_check` (H4: Kavya starts 89 days ago, Other Co long before, three Other Co people at work 100-119 days ago; All, Kavya and Other Co must all be Not shared) | **fails**: Kavya's company view was shown | passes |
+| `test_a_day_piece_between_buckets_is_checked_on_its_own` (H5: five people on every bucket, four on days 28 and 29 back; all five periods Not shared, then shown when a fifth joins those days) | **fails**: all five periods were shown | passes |
+Break-test: I put the previous `people_trends.py` back from git (source only, tests kept): exactly these two tests failed (67 run, 2 failures), nothing else. I restored the file (git status clean). While writing H4 my first version (Kavya from 100 days ago) did not fail, because buckets of the 90-119 piece mixed both companies; I moved the start to 89 so the thin piece belongs to Other Co alone.
+
+**Run (alv090-bench, test_site):** `test_people_trends_090` 67 OK (+ 2 other classes, 2 OK), `_property_090` 4 OK, `_final_090` 3 OK, `_http_090` 1 + 5 OK. `run_dom_tests.js`: 31 run, 0 failed. Gates: `check_app_integrity.py` OK (1038 checks), `check_design_system.py` OK, `check_portal_trays.js` static part 35 of 35, 0 problems. **Not run:** the browser part of `check_portal_trays.js` (the `playwright` module is not installed here), the full suite, a real browser.
+
+**Timing** (same script as round 4, `/tmp/full090.py seq` in the bench, 600 staff, 438,000 rows, warm, one run each; 7 statements each):
+| Period | Round 4 | Round 5 |
+|---|---|---|
+| 1 week | 9.2 s | 9.4 s |
+| 1 month | 8.0 s | 8.1 s |
+| 3 months | 8.5 s | 8.9 s |
+| 6 months | 9.9 s | 10.0 s |
+| 1 year | 12.3 s | 12.5 s |
+Within run-to-run noise (one run each). Still over the 3 s budget on this stack, as noted in §13; no cache added.
+
+**Effect on figures:** a few more small groups show Not shared (any group with a day piece of 1 to 4 people). **Inferred, not checked:** I did not count how many groups in the DTC copy change.
+
+**Known gap:** a piece that falls in no bucket of any period (a gap between the "before" windows) is also checked, which is slightly stricter than needed. **Acceptable simplification.**

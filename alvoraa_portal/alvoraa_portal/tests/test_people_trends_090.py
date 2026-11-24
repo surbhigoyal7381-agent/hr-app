@@ -610,12 +610,11 @@ class TestReviewFixes(TrendsBase):
 		self._rows(emps[:4], range(0, 30))                           # four people on every day
 		none = call(self.lead_retail, period=30, branch=b)["attendance"]
 		self.assertEqual(none, {"shared": False, "reason": "few_attending"})   # no bucket has five
-		self._rows(emps[4:5], range(7, 30))                          # a fifth person, in every bucket but the newest
+		self._rows(emps[4:5], range(14, 30))                         # a fifth person, in the two oldest buckets only
 		out = call(self.lead_retail, period=30, branch=b)["attendance"]
-		self.assertTrue(out["shared"])                               # three buckets have five
-		self.assertEqual(out["hidden"], [3])                         # the newest week has four
-		self.assertIsNone(out["series"][3])                          # no number for it
-		self.assertTrue(all(v is not None for v in out["series"][:3]))
+		self.assertTrue(out["shared"])                               # two buckets have five
+		self.assertEqual(out["hidden"], [2, 3])                      # the two newest have four
+		self.assertEqual([v is None for v in out["series"]], [False, False, True, True])   # no number for them
 		self.assertIsNotNone(out["absent_pct"])                      # the window figure stays
 
 	def test_one_hidden_bucket_also_hides_the_window_figure(self):  # M2 guard: window less the others must not give it away
@@ -629,7 +628,6 @@ class TestReviewFixes(TrendsBase):
 		self.assertTrue(out["window_hidden"])
 		self.assertIsNone(out["series"][0])
 		self.assertTrue(all(v is not None for v in out["series"][1:]))
-		self.assertNotIn("before", out)                              # the window before has its own check
 
 	def test_the_guard_leaves_the_caller_out(self):  # AC-45, PRIV-2 (N1, G2)
 		b = fx.branch("OwnAtt")

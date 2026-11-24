@@ -4857,6 +4857,7 @@ function switchPanel(name, triggerEl) {
     if (name === "adv-req")     loadAdvReqPanel();
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
+    if (name === "people-trends") ptLoad();   /* slice 090, people-trends.js */
     if (name === "goals")       loadGoalsPanel();
     if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); ncHolders(); bsLoad(); ocsLoad(); }
     if (name === "policies")    polLoad();
@@ -13445,13 +13446,14 @@ function loadPortalContext() {
     // kept for the leave modal "apply on behalf of" default
     window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
+    window._roles.leadership = (ctx.roles || []).indexOf("Leadership") !== -1;   /* slice 090 */
     window._roles.is_system_manager = !!ctx.is_system_manager;   /* slice 076: Pending shows a CXO counts */
     if (HM.pend) hmPaintPending();
     window._roles.positions  = !!ctx.positions;
 
     /* Attendance Insights counts towards the Management heading too, so the
        item can never end up under a heading that is hidden. */
-    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights || ctx.positions;
+    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights || ctx.positions || window._roles.leadership;
 
     // Sidebar management section
     const mgmtHdr = document.getElementById("mgmt-section-hdr");
@@ -13531,6 +13533,11 @@ function applyPlanNav() {
   // Absent means "not answered yet", which must not read as "not bought".
   if (navAna) navAna.style.display =
     (roles.is_hr && f.plan_analytics !== false) ? "flex" : "none";
+  /* Slice 090: People trends is for the Leadership role. The endpoint is the gate. */
+  var navPt = document.getElementById("nav-people-trends"), bnavPt = document.getElementById("bnav-people-trends");
+  var ptShow = (roles.leadership && f.plan_analytics !== false) ? "flex" : "none";
+  if (navPt) navPt.style.display = ptShow;
+  if (bnavPt) bnavPt.style.display = ptShow === "flex" ? "" : "none";
   var navDr = document.getElementById("nav-data-review");   // slice 012: same rule as Analytics
   if (navDr) navDr.style.display = navAna ? navAna.style.display : "none";
 

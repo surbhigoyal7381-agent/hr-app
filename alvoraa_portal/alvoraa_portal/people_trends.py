@@ -35,6 +35,9 @@ from alvoraa_portal.subscription import requires_feature
 
 ENDPOINT = "people_trends"
 ROLE = "Leadership"
+# The two HR roles, as `hrms.alvoraa_hr_core.access.HR_ROLES` (the integrity check reads only
+# functions and classes from that module, so the constant is not imported).
+HR_ROLES = frozenset({"HR Manager", "HR User"})
 PERIODS = (7, 30, 90, 180, 365)
 DEFAULT_PERIOD = 90
 PERIOD_KEY = "alvoraa_people_trends_period"
@@ -137,8 +140,6 @@ def _caller(call):
 	Worked out on every call and never cached (SEC-6). HR roles are off in the
 	first release (BQ-2), including a person who holds an HR role and Leadership.
 	"""
-	from hrms.alvoraa_hr_core.access import HR_ROLES
-
 	user = frappe.session.user
 	if user == "Guest":
 		call.refuse(_("Sign in to see People trends."), "PT-GUEST")
@@ -443,7 +444,7 @@ def _interval(prefix, edges):
 
 
 def _to_days(d):
-	return d.toordinal() + 366
+	return d.toordinal() + 365
 
 
 def _attendance_bins(call, scope, company, dim, value, first, last, edges):

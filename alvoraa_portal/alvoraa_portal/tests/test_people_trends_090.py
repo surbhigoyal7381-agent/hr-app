@@ -451,3 +451,79 @@ class TestSavedPeriod(TrendsBase):
 		frappe.set_user(self.plain)
 		with self.assertRaises(frappe.PermissionError):
 			pt.save_people_trends_period(period=30)
+
+
+class TestAttendanceAndLeave(TrendsBase):
+	def make_branch(self):
+		b = fx.branch("Att")
+		emps = person(fx.KAVYA, b, "S090 Att", None, n=6)
+		return b, emps
+
+	def test_absent_percent_and_leave_days_match_the_shared_figures(self):  # AC-76, AC-77, AC-83
+		b, emps = self.make_branch()
+		K = fx.KAVYA
+		for i, e in enumerate(emps):
+			for d in range(1, 8):
+				status = "Absent" if (i + d) % 4 == 0 else "On Leave" if (i + d) % 7 == 0 else "Present"
+				fx.attendance(e, K, b, ago(d), status)
+		fx.attendance(emps[0], K, b, ago(9), "Absent", docstatus=0)      # a draft counts nowhere
+		fx.review_item(K, b, check_date=ago(3))                          # an Open doubtful day is left out
+		out = call(self.lead_retail, period=30, branch=b)
+		scope = of.Scope((K,), (b,))
+		figs = of.attendance_figures(scope, ago(29), ago(0), detail=False)
+		self.assertEqual(out["attendance"]["absent_pct"], round(100 - figs["rate"], 1))
+		self.assertEqual(out["leave"]["days"], figs["on_leave"])
+		self.assertGreater(figs["on_leave"], 0)
+		self.assertGreater(out["attendance"]["left_out_days"], 0)
+		self.assertEqual(sum(out["leave"]["series"]), out["leave"]["days"])  # the bins add up
+
+	def test_leave_across_the_window_edge_counts_only_days_inside(self):  # AC-82
+		b, emps = self.make_branch()
+		for d in (31, 30, 29, 28):  # a 30-day window starts 29 days back
+			fx.attendance(emps[0], fx.KAVYA, b, ago(d), "On Leave")
+		out = call(self.lead_retail, period=30, branch=b)
+		self.assertEqual(out["leave"]["days"], 2)
+
+	def test_no_attendance_says_so(self):  # AC-79
+		b, _emps = self.make_branch()
+		out = call(self.lead_retail, period=30, branch=b)
+		self.assertIsNone(out["attendance"]["absent_pct"])
+
+	def test_pending_requests_are_a_count_only(self):  # AC-88
+		b, emps = self.make_branch()
+		fx.application(emps[0], fx.KAVYA, b, ago(2), 1, status="Open", docstatus=0)
+		fx.application(emps[1], fx.KAVYA, b, ago(2), 1, status="Approved", docstatus=1)
+		out = call(self.lead_retail, period=30, branch=b)
+		self.assertEqual(out["leave"]["pending"], 1)
+
+	def test_leave_types_fold_small_ones_into_other(self):  # AC-86, AC-122
+		rows = [(f"c{i}", "Casual", 0, 2) for i in range(6)] + [(f"e{i}", "Earned", 0, 1) for i in range(5)] + [("s0", "Sick", 0, 4), ("n0", "", 0, 1)]
+		types = pt._leave_types(rows, 365, 5, own_key=None)
+		named = {t["type"] for t in types}
+		self.assertNotIn("Sick", named)                                  # one person: never named
+		self.assertIn("Casual", named)
+		self.assertEqual(sum(t["days"] for t in types), 12 + 5 + 4 + 1)  # the total is exact
+		other = next(t for t in types if t["type"] is None)
+		self.assertGreaterEqual(other["days"], 5)
+		# nobody taking a type is ever alone in Other: if Other cannot pass, the total only
+		self.assertIsNone(pt._leave_types([("a", "X", 0, 1)], 365, 5, own_key=None))
+
+	def test_types_are_named_only_at_the_top(self):  # AC-85
+		b, emps = self.make_branch()
+		for e in emps:
+			fx.attendance(e, fx.KAVYA, b, ago(2), "On Leave")
+		frappe.db.sql("update tabAttendance set leave_type = 'Casual Leave' where employee in %s", (emps,))
+		top = call(self.lead_retail, period=30)["leave"]
+		cut = call(self.lead_retail, period=30, branch=b)["leave"]
+		self.assertIsNone(cut["types"])
+		self.assertEqual([t["type"] for t in top["types"]], ["Casual Leave"])
+
+
+class TestThePagePins(FrappeTestCase):
+	def test_the_page_carries_the_panel_the_nav_and_the_script(self):  # pin: a bad merge cannot drop them
+		from alvoraa_portal.tests import portal_source as PS
+		page = PS.read_page()
+		for needle in ('id="panel-people-trends"', 'id="nav-people-trends"', 'id="bnav-people-trends"',
+		               "window.ptLoad"):  # the shared expander pastes the script in, so its code is what shows
+			self.assertIn(needle, page, needle)
+		self.assertIn('ptLoad()', open(frappe.get_app_path("alvoraa_portal", "public", "js", "ess", "portal.js")).read())

@@ -762,6 +762,7 @@ jobs:
             /assets/alvoraa_portal/css/ess/frame.css \
             /assets/alvoraa_portal/css/ess/panels.css \
             /assets/alvoraa_portal/js/ess/portal.js \
+            /assets/alvoraa_portal/js/ess/people-trends.js \
             /assets/frappe/node_modules/ace-builds/src-min-noconflict/ace.js
           do
             # `|| echo "000 0"` is not swallowing anything: a curl that cannot

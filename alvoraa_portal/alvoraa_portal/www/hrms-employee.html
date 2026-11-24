@@ -66,6 +66,7 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
 {{ ess_part("pay") }}
 {{ ess_part("team") }}
 {{ ess_part("data-review") }}
+{{ ess_part("people-trends") }}
 {{ ess_part("requests") }}
 {{ ess_part("growth") }}
 {{ ess_part("positions") }}
@@ -78,6 +79,8 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
    markup exists. The only readyState test in it has an else branch, and the markup
    carries no inline script tag, so nothing depended on running mid-parse. #}
 <script src="/assets/alvoraa_portal/js/ess/portal.js?v={{ asset_version | e }}" defer></script>
+{# Slice 090: People trends. Loaded after portal.js, which it calls into (switchPanel). #}
+<script src="/assets/alvoraa_portal/js/ess/people-trends.js?v={{ asset_version | e }}" defer></script>
 {# Slice 062. Registering the worker is what turns "a page with a manifest" into
    "a page Chrome offers to install". It lives here rather than in portal.js on
    purpose: that file is the busiest in the repo and this needs nothing from it.

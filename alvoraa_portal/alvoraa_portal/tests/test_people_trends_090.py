@@ -534,8 +534,8 @@ class TestReviewFixes(TrendsBase):
 		out = call(self.lead_retail, period=7, branch=b)
 		self.assertEqual(out["state"], "ok")
 		self.assertFalse(out["chart"]["shared"])                     # only 4 on the roll on one day
-		self.assertNotIn("series", out["attendance"])
-		self.assertNotIn("series", out["leave"])
+		self.assertNotIn("series", out["leave"])                     # leave is unchanged: it follows the people chart
+		self.assertTrue(out["attendance"]["shared"])                 # attendance has its own pass test: six were expected every day
 		self.assertIsNotNone(out["leave"]["days"])                   # the window totals stay
 		self.assertNotIn("total", out["chart"])
 		# a chip where every bucket passes still sends them
@@ -604,20 +604,30 @@ class TestReviewFixes(TrendsBase):
 			for d in days:
 				fx.attendance(e, fx.KAVYA, self.lastb, ago(d), status(e, d))
 
-	def test_a_thin_bucket_sends_no_points_for_the_whole_view(self):  # M2 guard (Surbhi, 24 Nov 2026, decision 1)
-		b, emps = self._few()
-		self.lastb = b
-		self._rows(emps[:4], range(0, 30))                           # four people on every day
-		none = call(self.lead_retail, period=30, branch=b)["attendance"]
-		self.assertEqual(none, {"shared": False, "reason": "few_attending"})   # no bucket has five
-		self._rows(emps[4:5], range(14, 30))                         # a fifth person, in the two oldest buckets only
-		out = call(self.lead_retail, period=30, branch=b)["attendance"]
-		self.assertTrue(out["shared"])                               # two buckets have five
-		self.assertNotIn("series", out)                              # two have four: no day-by-day points at all
-		self.assertNotIn("hidden", out)
-		self.assertIsNotNone(out["absent_pct"])                      # the window figure stays
+	def _attendance_on_every_period(self, user, **kw):
+		return {p: call(user, period=p, **kw)["attendance"] for p in pt.PERIODS}
 
-	def test_no_hidden_day_can_be_got_back_from_two_views_together(self):  # H1 (Surbhi, 24 Nov 2026, decision 1)
+	def test_one_thin_day_hides_attendance_on_all_five_periods(self):  # Surbhi, 24 Nov 2026: all five or none
+		b, emps = self._few("Thin")
+		self.lastb = b
+		self._rows(emps[:5], range(1, 365))                          # five people on every day but the last
+		self._rows(emps[:4], [0])                                    # the last day has four
+		out = self._attendance_on_every_period(self.lead_retail, branch=b)
+		self.assertEqual(out, {p: {"shared": False, "reason": "few_attending"} for p in pt.PERIODS})   # even the year, whose buckets are big
+		self._rows(emps[4:5], [0])                                   # the fifth person comes in on the last day
+		out = self._attendance_on_every_period(self.lead_retail, branch=b)
+		self.assertTrue(all(a["shared"] and a["absent_pct"] is not None and len(a["series"]) > 0 for a in out.values()), out)   # a passing group shows all five
+
+	def test_a_bucket_of_another_period_hides_the_short_views_too(self):  # H2: 90 days - 30 days - the 30 before = the 60-90 month
+		b, emps = self._few("H2")
+		self.lastb = b
+		self._rows(emps[:5], range(0, 60))                           # five people in the last two months
+		self._rows(emps[:3], range(60, 90))                          # three in the month before: thin
+		self._rows(emps[:5], range(90, 180))
+		out = self._attendance_on_every_period(self.lead_retail, branch=b)
+		self.assertEqual(out, {p: {"shared": False, "reason": "few_attending"} for p in pt.PERIODS})   # the 30 and 90 day views are hidden as well
+
+	def test_no_hidden_day_can_be_got_back_from_two_views_together(self):  # H1
 		b, emps = self._few("Cross")
 		self.lastb = b
 		self._rows(emps[:5], range(7, 30))                           # five people in every older day
@@ -625,24 +635,33 @@ class TestReviewFixes(TrendsBase):
 		self._rows(emps[4:5], range(1, 7))                           # the fifth is missing on the last day only
 		week = call(self.lead_retail, period=7, branch=b)["attendance"]
 		month = call(self.lead_retail, period=30, branch=b)["attendance"]
-		self.assertNotIn("series", week)                             # the 7-day view shows no day at all
-		self.assertTrue(all(v is not None for v in month["series"]))  # every 30-day point covers five or more
-		self.assertEqual(month["series"][-1], week["absent_pct"])    # its last point is the 7-day window: nothing new
-		self.assertEqual(len(month["series"]), 4)                    # and no 30-day point is a single day
+		self.assertEqual((week, month), ({"shared": False, "reason": "few_attending"},) * 2)
 
-	def test_by_company_sends_no_absent_percent_when_one_company_is_thin(self):  # N5 (Surbhi, 24 Nov 2026, decision 1)
+	def _thin_company_day(self):
 		def staff(company, n):
 			return frappe.get_all("Employee", filters={"company": company, "last_name": TAG, "status": "Active"}, pluck="name", limit=n)
 		for e in staff(fx.OTHER, 3):                                 # three of Other Co's twelve were at work
 			fx.attendance(e, fx.OTHER, self.cl, ago(2), "Absent")
 		for e in staff(fx.KAVYA, 6):
 			fx.attendance(e, fx.KAVYA, self.cl, ago(2), "Present")
+
+	def test_by_company_sends_no_absent_percent_when_one_company_is_thin(self):  # N5
+		self._thin_company_day()
 		out = call(self.lead_both, period=30)
 		blocks = {c["company"]: c for c in out["by_company"]}
 		self.assertTrue(blocks[fx.OTHER]["shared"] and blocks[fx.KAVYA]["shared"])
 		self.assertIsNone(blocks[fx.OTHER]["absent_pct"])            # the thin one
 		self.assertIsNone(blocks[fx.KAVYA]["absent_pct"])            # and so the other one, or the all-companies figure gives it back
 		self.assertIsNotNone(out["attendance"]["absent_pct"])        # the all-companies figure stays
+
+	def test_all_companies_minus_one_company_cannot_rebuild_a_thin_one(self):  # H3
+		self._thin_company_day()
+		other = call(self.lead_both, period=30, company=fx.OTHER)["attendance"]
+		kavya = call(self.lead_both, period=30, company=fx.KAVYA)["attendance"]
+		everyone = call(self.lead_both, period=30)["attendance"]
+		self.assertEqual(other, {"shared": False, "reason": "few_attending"})
+		self.assertEqual(kavya, {"shared": False, "reason": "few_attending"})   # next-smallest rule: both of the pair are hidden
+		self.assertTrue(everyone["shared"])
 
 	def test_the_guard_leaves_the_caller_out(self):  # AC-45, PRIV-2 (N1, G2)
 		b = fx.branch("OwnAtt")

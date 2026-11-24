@@ -53,14 +53,23 @@ class Mutant(pt.Rule):
 			pt.Rule.passes = saved
 
 
-def violations(rule_cls, seeds, minimum):
+ATTENDANCE_BUCKETS = 14
+
+
+def attendance_units(people, rng):
+	"""The shape `_attendance_rule` builds: one unit per person, a bit for each bucket they were expected in."""
+	return [pt.Unit(("a", i), 1, p.company, p.branch, p.department, p.employment_type, rng.getrandbits(ATTENDANCE_BUCKETS))
+	        for i, p in enumerate(people)]
+
+
+def violations(rule_cls, seeds, minimum, attendance=False):
 	bad = []
 	for seed in seeds:
 		rng = random.Random(seed)
 		people = pt._counted_list(tenant(rng)) if hasattr(pt, "_counted_list") else [p for p in tenant(rng) if pt._counted(p)]
-		units = pt._people_units(people, END)
+		units = attendance_units(people, rng) if attendance else pt._people_units(people, END)
 		sizes = pt._sizes(people, END, ())
-		rule = rule_cls(units, len(pt.STRETCHES), minimum, sizes)
+		rule = rule_cls(units, ATTENDANCE_BUCKETS if attendance else len(pt.STRETCHES), minimum, sizes)
 		companies = sorted({p.company for p in people})
 		scopes = [("company", None)] + [(d, c) for c in companies for d in DIMS]
 		for dim, company in scopes:
@@ -93,3 +102,10 @@ class TestTheRuleOverGeneratedTenants(FrappeTestCase):
 
 	def test_the_property_catches_part_c_removed(self):  # the break test
 		self.assertTrue(violations(Mutant, self.SEEDS, 5), "the property did not notice part C was gone")
+
+	def test_the_same_rule_holds_for_attendance_units(self):  # PRIV-13: attendance reuses the people rule
+		for minimum in (3, 5, 10):
+			self.assertEqual(violations(pt.Rule, self.SEEDS, minimum, attendance=True)[:3], [], f"minimum {minimum}")
+
+	def test_the_property_catches_part_c_removed_from_attendance(self):  # the break test, for attendance
+		self.assertTrue(violations(Mutant, self.SEEDS, 5, attendance=True))

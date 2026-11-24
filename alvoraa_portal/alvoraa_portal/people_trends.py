@@ -475,25 +475,17 @@ def _rows_of_counted_people(scope, company, dim, value, alias, row_company):
 	return row_where, e_where, params
 
 
-def _attendance_bins(call, scope, company, dim, value, first, last, edges, own=None):
-	"""Attendance counts per bin, and how many different people they come from. One query.
-	Bin 0 is before the first edge.
-
-	`people` is the people who were expected at work in the bin (at least one Present, Work From
-	Home, Half Day or Absent row; On Leave alone does not count), with the caller `own` left out
-	like every other check (AC-45, PRIV-2)."""
+def _attendance_bins(call, scope, company, dim, value, first, last, edges):
+	"""Attendance counts per bin. One query. Bin 0 is before the first edge."""
 	row_where, e_where, params = _rows_of_counted_people(scope, company, dim, value, "a", "x.company")
-	params["own_emp"] = own or ""
 	k_sql, k_params = _interval("pb", [_to_days(d) for d in edges])
 	params.update(k_params)
 	params.update({"first": first, "last": last})
 	rows = call.sql(f"""
-		select x.k, coalesce(sum(x.expected > 0), 0) - coalesce(sum(x.expected > 0 and x.employee = %(own_emp)s), 0) as people,
-		       sum(x.present) as present, sum(x.wfh) as wfh, sum(x.half) as half,
+		select x.k, sum(x.present) as present, sum(x.wfh) as wfh, sum(x.half) as half,
 		       sum(x.absent) as absent, sum(x.on_leave) as on_leave
 		from (
 			select a.employee, a.company, {k_sql} as k,
-			       sum(a.status in ('Present', 'Work From Home', 'Half Day', 'Absent')) as expected,
 			       sum(a.status = 'Present') as present, sum(a.status = 'Work From Home') as wfh,
 			       sum(a.status = 'Half Day') as half, sum(a.status = 'Absent') as absent,
 			       sum(a.status = 'On Leave') as on_leave
@@ -507,14 +499,59 @@ def _attendance_bins(call, scope, company, dim, value, first, last, edges, own=N
 		where {e_where}
 		group by x.k
 	""", params)
-	return [{"k": cint(r.k), "people": cint(r.people), **{f: cint(r[f]) for f in ("present", "wfh", "half", "absent", "on_leave")}}
+	return [{"k": cint(r.k), **{f: cint(r[f]) for f in ("present", "wfh", "half", "absent", "on_leave")}}
 	        for r in rows]
 
 
-def _bucket_state(rows, minimum):
-	"""'empty' (nobody expected), 'thin' (1 to minimum - 1 people, caller left out) or 'ok'."""
-	people = sum(r["people"] for r in rows)
-	return "empty" if people <= 0 else "thin" if people < minimum else "ok"
+def _attendance_buckets(end, records_start):
+	"""Every bucket attendance is ever shown in, over all five periods: each period's day, week
+	or month buckets, and its "before" window when it has one. The same list for every view and
+	every period, so one pass test covers them all (Surbhi, 24 Nov 2026: all five or none)."""
+	out = {}
+	for period in PERIODS:
+		start = max(add_days(end, -period + 1), records_start)
+		for b in _bins(end, period, start):
+			out[b] = None
+		if add_days(end, -period + 1) >= records_start and add_days(start, -period) >= records_start:
+			out[(add_days(start, -period), add_days(start, -1))] = None
+	return list(out)
+
+
+def _attendance_rule(call, scope, own, end, records_start, minimum, sizes):
+	"""The people rule (parts A to D), run on attendance. One query.
+
+	A unit is a group of people with the same company, branch, department, type and the same
+	pattern of buckets in which they were expected at work (at least one Present, Work From Home,
+	Half Day or Absent row; On Leave alone does not count). The caller is left out of the unit
+	rows, like every other check (AC-45, PRIV-2). A group passes only if every bucket has 0 or at
+	least `minimum` such people, so one rule decides every period."""
+	buckets = _attendance_buckets(end, records_start)
+	edges = sorted({b[0] for b in buckets} | {add_days(b[1], 1) for b in buckets})
+	seg_masks = [sum(1 << k for k in range(len(edges) - 1) if b[0] <= edges[k] and add_days(edges[k + 1], -1) <= b[1])
+	             for b in buckets]
+	row_where, e_where, params = _rows_of_counted_people(scope, None, None, None, "a", "x.company")
+	k_sql, k_params = _interval("pa", [_to_days(d) for d in edges])
+	params.update(k_params)
+	params.update({"first": edges[0], "last": end, "own_emp": own or ""})
+	rows = call.sql(f"""
+		select e.company, e.branch, e.department, e.employment_type, x.m, count(*) as n
+		from (
+			select a.employee, a.company, bit_or(1 << ({k_sql} - 1)) as m
+			from `tabAttendance` a
+			where a.docstatus = 1 and a.status in ('Present', 'Work From Home', 'Half Day', 'Absent')
+			  and a.attendance_date between %(first)s and %(last)s and a.employee != %(own_emp)s
+			  and {row_where}
+			  and not exists ({of._OPEN_DOUBTFUL})
+			group by a.employee, a.company
+		) x
+		join `tabEmployee` e on e.name = x.employee
+		where {e_where}
+		group by e.company, e.branch, e.department, e.employment_type, x.m
+	""", params)
+	units = [Unit(("a", i), cint(r.n), r.company, _norm(r.branch), _norm(r.department), _norm(r.employment_type),
+	              sum(1 << b for b, sm in enumerate(seg_masks) if cint(r.m) & sm))
+	         for i, r in enumerate(rows)]
+	return Rule(units, len(buckets), minimum, sizes)
 
 
 def _sum_counts(rows):
@@ -805,39 +842,31 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 	edges = [start] + [b[0] for b in bins[1:]]
 	edges = ([compare[0]] if compare else []) + edges
 	first = compare[0] if compare else start
-	own_name = own.name if own else None
-	rows = _attendance_bins(call, scope, company, dim, value, first, end, edges + [add_days(end, 1)], own_name)
+	rows = _attendance_bins(call, scope, company, dim, value, first, end, edges + [add_days(end, 1)])
 	offset = 1 if compare else 0
 	cur_rows = [r for r in rows if r["k"] >= offset + 1]
 	cmp_rows = [r for r in rows if compare and r["k"] == 1]
 	counts = _sum_counts(cur_rows)
 	by_bin = [[r for r in rows if r["k"] == offset + 1 + i] for i in range(len(bins))]
-	# Hidden means not sent. A bin the rule failed has no series for any of the three figures.
-	# For attendance, if any bin has 1 to (minimum - 1) people expected at work, the view sends no
-	# day-by-day points at all, but keeps its window and "before" figures (each covers enough
-	# people). One view's points can then never be set against another view's to give a hidden
-	# bin away (Surbhi, 24 Nov 2026, replacing the softer per-bin guard).
-	series_ok = chart["shared"]
-	states = [_bucket_state(b, minimum) for b in by_bin]
-	cmp_state = _bucket_state(cmp_rows, minimum)
-	thin = [i for i, st in enumerate(states) if st == "thin"]
-	attending_ok = not thin or "ok" in states
+	# Attendance follows the people rule: a group's attendance shows on all five periods or on none.
+	# The group passes only if every bucket in every period has 0 or at least `minimum` people
+	# expected at work. Hidden means no number is sent (Surbhi, 24 Nov 2026, all five or none).
+	att_rule = _attendance_rule(call, scope, own.name if own else None, end, records_start, minimum, sizes)
 	left_out = sum(sum(v.values()) for v in of.open_doubtful_counts(
 		of.Scope((company,), scope.branches) if company else scope, start, end).values())
 	call.statements += 1
 	up_to = of.data_up_to(of.Scope((company,), scope.branches) if company else scope)
 	call.statements += 1 if company else len(scope.companies)
-	if attending_ok:
-		attendance = {"shared": True, "absent_pct": _absent_pct(counts), "left_out_days": left_out}
-		if series_ok and not thin:
-			attendance["series"] = [_absent_pct(_sum_counts(b)) for b in by_bin]
-		if compare and cmp_state != "thin":
+	if att_rule.verdict(company, dim, value, several) is None:
+		attendance = {"shared": True, "absent_pct": _absent_pct(counts), "left_out_days": left_out,
+		              "series": [_absent_pct(_sum_counts(b)) for b in by_bin]}
+		if compare:
 			attendance["before"] = {"absent_pct": _absent_pct(_sum_counts(cmp_rows))}
 	else:
 		attendance = {"shared": False, "reason": "few_attending"}
 
 	leave = {"shared": True, "days": counts["on_leave"], "pending": _pending(call, scope, company, dim, value)}
-	if series_ok:
+	if chart["shared"]:
 		leave["series"] = [sum(r["on_leave"] for r in b) for b in by_bin]
 	if compare:
 		leave["before"] = {"days": _sum_counts(cmp_rows)["on_leave"]}
@@ -848,7 +877,7 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 
 	by_company = None
 	if several and company is None and dim is None:
-		by_company = _by_company(call, scope, rule, counted_all, start, end, several, minimum, own_name)
+		by_company = _by_company(call, scope, rule, att_rule, counted_all, start, end, several, minimum)
 
 	note = _data_quality(here, dim, scope, company, minimum)
 	out = {"state": "ok", **base, "data_up_to": str(up_to) if up_to else None, "people": people_block,
@@ -895,11 +924,11 @@ def _filter_lists(counted, rule, company, dim, here, scope):
 	        "employment_types": listing("employment_type")}
 
 
-def _by_company(call, scope, rule, counted_all, start, end, several, minimum, own_name):
+def _by_company(call, scope, rule, att_rule, counted_all, start, end, several, minimum):
 	"""One block per company, alphabetical, no ranking.
 
-	If any shown company has 1 to (minimum - 1) people expected at work, no company on the card
-	gets an absent % (the all-companies figure is elsewhere and would give the thin one away)."""
+	A company's absent % shows only if its attendance passes the same rule as everywhere else
+	(all five periods, next-smallest subtraction across companies)."""
 	out = []
 	for c in sorted(scope.companies):
 		mine = [p for p in counted_all if p.company == c]
@@ -911,14 +940,12 @@ def _by_company(call, scope, rule, counted_all, start, end, several, minimum, ow
 			continue
 		w = _people_block(mine, start, end, None)
 		block = {"company": c, "shared": True, "headcount": w["headcount"], "net": w["net"], "left": w["left"]}
-		rows = _attendance_bins(call, scope, c, None, None, start, end, [start, add_days(end, 1)], own_name)
-		block["absent_pct"] = _absent_pct(_sum_counts(rows))
-		block["_thin"] = _bucket_state([r for r in rows if r["k"] == 1], minimum) == "thin"
+		if att_rule.verdict(c, several_companies=several) is None:
+			rows = _attendance_bins(call, scope, c, None, None, start, end, [start, add_days(end, 1)])
+			block["absent_pct"] = _absent_pct(_sum_counts(rows))
+		else:
+			block["absent_pct"] = None
 		out.append(block)
-	if any([b.pop("_thin", False) for b in out]):
-		for b in out:
-			if b["shared"]:
-				b["absent_pct"] = None
 	return out
 
 

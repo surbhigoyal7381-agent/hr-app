@@ -317,7 +317,15 @@ const txt = id => (doc.getElementById(id) || {}).textContent || "";
   has(hk, "Your leave is recorded for DTC's attendance. Your agency pays you, so this page shows no payout. Nothing carries over to next month.", "R-85");
   has(hk, "How Housekeeping earns Paid Leaves - class A", "R-86");
   has(hk, "In a 30- or 31-day month like October: 6 to 12 days attended earns 1, 13 to 18 days attended earns 2, 19 to 25 days attended earns 3, 26 or more days attended earns 4, never more than 4. In a 28- or 29-day month the rows start one day earlier (5, 12, 18, 25). Approved Paid Leaves days count as days attended. A half day counts as half, and the total is rounded down to whole days. Nothing carries over.", "R-86");
-  for (const never of ["15", "salary", "red", "green", "₹", "Class A · 4 days of Paid Leaves"]) hasNot(hk, never, "R-88");
+  /* R-88: the agency card must not carry the payout gate the salaried card
+     shows ("once you reach 15 days", from `gate: 15` in the default fixture).
+     This used to check the bare string "15", which also matched any date that
+     landed on the 15th. PAST2 is shift(-9), so on 24 Nov 2026 it became 15 Nov,
+     the card printed "Used · 15 Nov", and the suite went red on the date rather
+     than on a defect - one day a month, every month, on dev and on main alike.
+     Guard the gate's own wording instead, which is what R-88 ever meant. */
+  for (const never of ["once you reach 15 days", "attended 15 days", "salary", "red", "green", "₹",
+                       "Class A · 4 days of Paid Leaves"]) hasNot(hk, never, "R-88");
   window.lpRenderCard(PRIYA_CARD);
   hasNot(doc.getElementById("lv-bal-card").textContent, "So far", "R-77: the chip is for the agency card only");
   window.lpRenderCard(Object.assign({}, GEETA, {earned: 0, attended_so_far: 0, attended_up_to: null, next_at: 6, days_to_next: 6, used: 0, used_dates: []}));

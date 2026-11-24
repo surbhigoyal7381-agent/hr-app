@@ -13535,7 +13535,7 @@ function applyPlanNav() {
     (roles.is_hr && f.plan_analytics !== false) ? "flex" : "none";
   /* Slice 090: People trends is for the Leadership role. The endpoint is the gate. */
   var navPt = document.getElementById("nav-people-trends"), bnavPt = document.getElementById("bnav-people-trends");
-  var ptShow = (roles.leadership && f.plan_analytics !== false) ? "flex" : "none";
+  var ptShow = (roles.leadership && !roles.is_hr && f.plan_analytics !== false) ? "flex" : "none";   /* HR roles are refused (PT-HR-OFF) */
   if (navPt) navPt.style.display = ptShow;
   if (bnavPt) bnavPt.style.display = ptShow === "flex" ? "" : "none";
   var navDr = document.getElementById("nav-data-review");   // slice 012: same rule as Analytics

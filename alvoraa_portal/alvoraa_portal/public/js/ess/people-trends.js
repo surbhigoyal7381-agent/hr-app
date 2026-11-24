@@ -155,15 +155,17 @@
   }
   function attendanceCard(d) {
     var a = d.attendance, o = '<section class="pt-card"><h2>' + h(T("Attendance")) + '</h2><p class="pt-sub">' + h(T("Absent days as a share of days people were expected to work. Weekly offs and holidays are not counted as expected.")) + "</p>";
+    if (!a.shared) return o + "<p>" + NS + " " + h(T("Too few people have attendance records in this group for a fair picture. Try a longer period or a wider group.")) + "</p></section>";
     if (a.absent_pct === null) return o + "<p>" + h(T("No attendance recorded for this period")) + "</p></section>";
     var before = a.before ? a.before.absent_pct : null;
-    var labels = binLabels(d.period, d.chart.shared ? d.chart.points : d.leave.series.map(function (_v, i) { return {start: d.window.start}; }));
     o += '<div class="pt-tiles">' + tile(T("Absent"), a.absent_pct + "%", before === null ? "" : h(change(a.absent_pct, before, " " + T("points")))) +
       tile(T("Data up to"), d.data_up_to ? h(day(d.data_up_to)) : "–", a.left_out_days ? h(T("{0} days left out; HR is checking", [a.left_out_days])) : "") + "</div>";
-    if (d.chart.shared) {
-      var series = a.series;
-      o += '<div role="img" aria-label="' + h(T("Absent share of expected days by period")) + '">' + chart(labels, [{t: "line", v: series, c: "var(--primary)"}], "%") + "</div>" +
-        "<details><summary>" + h(T("Show as a table")) + "</summary>" + tableOf(labels.map(function (x, i) { return [x, series[i] === null ? "–" : series[i]]; }), [T("Absent %")]) + "</details>";
+    if (a.series) {
+      var labels = binLabels(d.period, d.chart.points);
+      o += '<div role="img" aria-label="' + h(T("Absent share of expected days by period")) + '">' + chart(labels, [{t: "line", v: a.series, c: "var(--primary)"}], "%") + "</div>" +
+        "<details><summary>" + h(T("Show as a table")) + "</summary>" + tableOf(labels.map(function (x, i) { return [x, a.series[i] === null ? "–" : a.series[i]]; }), [T("Absent %")]) + "</details>";
+    } else {
+      o += "<p>" + NS + " " + h(T("The chart by period is not shared: too few people in this group in some periods.")) + "</p>";
     }
     return o + '<p class="pt-note">' + h(T("Days that look wrong (for example, everyone absent on one day) are left out of this rate until HR has checked them.")) + "</p></section>";
   }
@@ -173,14 +175,16 @@
     if (l.types && l.types.length) {
       var mx = Math.max.apply(null, l.types.map(function (t) { return t.days; })) || 1;
       o += "<h3 style=\"font-size:var(--fs-base);margin:12px 0 4px\">" + h(T("By leave type")) + "</h3>" + l.types.map(function (t) {
-        return '<div style="display:grid;grid-template-columns:110px 1fr 70px;gap:8px;align-items:center"><span>' + h(t.type || T("Other")) + '</span><div style="background:var(--surface2);border-radius:4px;height:10px"><div style="background:var(--primary);height:10px;border-radius:4px;width:' + (t.days / mx * 100) + '%"></div></div><span style="text-align:right">' + h(T("{0} days", [t.days])) + "</span></div>";
+        return '<div style="display:grid;grid-template-columns:110px 1fr 70px;gap:8px;align-items:center"><span>' + h(t.type || T("Other")) + '</span><div style="background:var(--surface2);border-radius:var(--r-sm);height:10px"><div style="background:var(--primary);height:10px;border-radius:var(--r-sm);width:' + (t.days / mx * 100) + '%"></div></div><span style="text-align:right">' + h(T("{0} days", [t.days])) + "</span></div>";
       }).join("") + '<p class="pt-note">' + h(T("Small leave types are grouped under Other so no one can be picked out.")) + "</p>";
     }
     o += '<p class="pt-note">' + h(T("Waiting for approval: {0} requests (count only)", [l.pending])) + "</p>";
-    if (d.chart.shared) {
+    if (l.series) {
       var labels = binLabels(d.period, d.chart.points);
       o += '<div role="img" aria-label="' + h(T("Leave days by period, total {0}", [l.days])) + '">' + chart(labels, [{t: "bar", v: l.series, c: "var(--primary)"}]) + "</div>" +
         "<details><summary>" + h(T("Show as a table")) + "</summary>" + tableOf(labels.map(function (x, i) { return [x, l.series[i]]; }), [T("Leave days")]) + "</details>";
+    } else {
+      o += "<p>" + NS + " " + h(T("The chart by period is not shared: too few people in this group in some periods.")) + "</p>";
     }
     return o + "</section>";
   }
@@ -220,7 +224,19 @@
     el.innerHTML = head + '<section class="pt-card" aria-label="' + h(T("Summary")) + '"><p>' + h(d.headline) + "</p></section>" + peopleCard(d) + earlyCard(d) + chartCard(d) + attendanceCard(d) + leaveCard(d) + companiesCard(d) + howCard(d);
   }
 
-  /* ── talking to the server ── */
+  /* ── talking to the server ──
+     A plain fetch to /api/method/ (OPS-18): the website frappe.call posts to "/" with a
+     `cmd`, which skips the path gates, and never reports a refusal. Real HTTP status codes
+     tell a refusal (403, PT-SCOPE) from a failure (anything else, PT-LOAD). */
+  function post(method, args) {
+    var headers = {"Content-Type": "application/json"};
+    var tok = (window.frappe && frappe.csrf_token) || "";
+    if (tok && tok !== "None") headers["X-Frappe-CSRF-Token"] = tok;
+    return fetch("/api/method/" + method, {method: "POST", credentials: "same-origin", headers: headers, body: JSON.stringify(args)})
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) { return {status: res.status, ok: res.ok, data: data}; });
+      });
+  }
   function params() {
     var a = {};
     if (S.period) a.period = S.period;
@@ -245,26 +261,22 @@
     }
     if (navigator.onLine === false) { setTimeout(function () { fail(false); }, 0); return; }
     timer = setTimeout(function () { fail(false); }, 15000);
-    frappe.call({
-      method: METHOD, type: "POST", args: params(), freeze: false,
-      error_msg: document.createElement("template"),
-      callback: function (r) {
-        if (mine !== S.req) return;                 /* the answer to the last tap wins */
-        clearTimeout(timer);
-        if (!r || !r.message) { fail(false); return; }
-        S.data = r.message; S.period = S.data.period;
-        render();
-        live(T("Showing {0}. All figures updated.", [T(NAMES[S.period] || "")]));
-        var chip = body().querySelector('[data-pt-per="' + S.period + '"]');
-        if (previous && chip) chip.focus();
-      },
-      error: function (xhr) { fail(xhr && xhr.status === 403); }
-    });
+    post(METHOD, params()).then(function (r) {
+      if (mine !== S.req) return;                 /* the answer to the last tap wins */
+      clearTimeout(timer);
+      if (r.status === 403) { fail(true); return; }
+      if (!r.ok || !r.data || !r.data.message) { fail(false); return; }
+      S.data = r.data.message; S.period = S.data.period;
+      render();
+      live(T("Showing {0}. All figures updated.", [T(NAMES[S.period] || "")]));
+      var chip = body().querySelector('[data-pt-per="' + S.period + '"]');
+      if (previous && chip) chip.focus();
+    }, function () { fail(false); });
   }
   function savePeriod() {
     clearTimeout(S.save);
     S.save = setTimeout(function () {
-      frappe.call({method: SAVE, type: "POST", args: {period: S.period}, freeze: false, error_msg: document.createElement("template")});
+      post(SAVE, {period: S.period}).then(null, function () {});
     }, 2000);
   }
   function sheet() {

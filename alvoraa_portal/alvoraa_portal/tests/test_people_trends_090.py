@@ -626,6 +626,15 @@ class TestReviewFixes(TrendsBase):
 		self.assertEqual([t["type"] for t in week if t["type"]], ["Casual"])
 		self.assertEqual([t["type"] for t in year if t["type"]], ["Casual"])
 
+	def test_the_nav_item_is_hidden_from_a_login_the_page_refuses(self):  # m1: HR roles plus Leadership
+		src = frappe.read_file(frappe.get_app_path("alvoraa_portal", "public", "js", "ess", "portal.js"))
+		self.assertRegex(src, r"ptShow = \(roles\.leadership && !roles\.is_hr && f\.plan_analytics")
+
+	def test_the_page_never_uses_the_website_call(self):  # OPS-18, B2
+		src = frappe.read_file(frappe.get_app_path("alvoraa_portal", "public", "js", "ess", "people-trends.js"))
+		self.assertNotRegex(src, r"frappe\.call\(")
+		self.assertIn('"/api/method/" + method', src)
+
 	def test_the_headline_names_a_leave_type_only_if_it_beats_other(self):  # AC-87 (M3)
 		def line(types):
 			return pt._headline(30, {"headcount": 9}, None, {}, {"shared": True, "days": 1105, "types": types}, 5)

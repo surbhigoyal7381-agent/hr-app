@@ -29,20 +29,27 @@ const OK = {
   by_company: null, data_quality: null,
 };
 
+/* A response as the browser's fetch gives it: a real status code and a json() that may fail. */
+const R = (status, body) => ({ status, ok: status >= 200 && status < 300, json: () => body === undefined ? Promise.reject(new Error("not json")) : Promise.resolve(body) });
 function page(answer) {
   const dom = new JSDOM("<!doctype html><body>" + part + "</body>", { runScripts: "outside-only", url: "http://localhost/hrms-employee" });
-  const w = dom.window, sent = [];
-  w.frappe = { call: opts => { sent.push(opts.args); answer(sent.length, opts); return {}; } };
+  const w = dom.window, sent = [], calls = [];
+  // The website's frappe.call posts to "/" with a cmd and never reports a refusal (OPS-18): the panel must not use it.
+  w.frappe = { csrf_token: "tok-090", call: () => { throw new Error("frappe.call used"); } };
+  w.fetch = (url, opts) => { sent.push(JSON.parse(opts.body)); calls.push({ url, opts }); return answer(sent.length, url, opts); };
   w.eval(script);
-  return { w, d: w.document, sent };
+  return { w, d: w.document, sent, calls };
 }
-const reply = body => (_n, opts) => setTimeout(() => opts.callback({ message: body }), 0);
+const reply = body => () => Promise.resolve(R(200, { message: body }));
+const status = code => () => Promise.resolve(R(code, {}));
 
 (async () => {
   let p = page(reply(OK));
   p.w.ptLoad(); await tick();
   const d = p.d;
   ok(p.sent.length === 1 && p.sent[0].period === undefined, "first load sends no period (the server uses the saved one)");
+  ok(p.calls[0].url === "/api/method/alvoraa_portal.people_trends.get_people_trends" && p.calls[0].opts.method === "POST" &&
+     p.calls[0].opts.headers["X-Frappe-CSRF-Token"] === "tok-090", "OPS-18: a POST to /api/method/ with the CSRF header, never a cmd on /");
   ok(d.querySelectorAll('[role="radio"]').length === 5 && d.querySelector('[role="radiogroup"]'), "five chips in a radiogroup");
   ok(d.querySelector('[role="radio"][aria-checked="true"]').textContent === "3 months", "the answer's period is the selected chip");
   ok(/Headcount 43/.test(d.body.textContent) && /Net change/.test(d.body.textContent), "tiles drawn");
@@ -66,6 +73,18 @@ const reply = body => (_n, opts) => setTimeout(() => opts.callback({ message: bo
   ok(tileOf("Left") === "Not shared" && tileOf("Net change") === "Not shared" && tileOf("Attrition") === "Not shared" && tileOf("Headcount") === "43",
      "a withheld Left leaves Not shared in Left, Net change and Attrition, and Headcount stays");
 
+  // B1: a chart the server withheld leaves a "Not shared" line in the attendance and leave cards, and no chart
+  const held = JSON.parse(JSON.stringify(OK)); held.chart = { shared: false, reason: "few" }; delete held.attendance.series; delete held.leave.series;
+  p = page(reply(held)); p.w.ptLoad(); await tick();
+  const cardOf = title => [...p.d.querySelectorAll(".pt-card")].find(c => c.querySelector("h2") && c.querySelector("h2").textContent === title);
+  ok(!cardOf("Attendance").querySelector("svg") && !cardOf("Leave").querySelector("svg") &&
+     /not shared/i.test(cardOf("Attendance").textContent) && /not shared/i.test(cardOf("Leave").textContent),
+     "a withheld series: no chart, and both cards say Not shared");
+  // M2 guard: attendance withheld because too few people have rows
+  const few = JSON.parse(JSON.stringify(OK)); few.attendance = { shared: false, reason: "few_attending" };
+  p = page(reply(few)); p.w.ptLoad(); await tick();
+  ok(/attendance records in this group/.test(cardOf("Attendance").textContent) && !/4\.6%/.test(p.d.body.textContent), "attendance not shared: no number on the page");
+
   p = page(reply({ state: "not_set_up" })); p.w.ptLoad(); await tick();
   ok(/not set up for you yet/.test(p.d.body.textContent) && !p.d.querySelector('[role="radio"]'), "not set up page shows nothing else");
 
@@ -77,10 +96,16 @@ const reply = body => (_n, opts) => setTimeout(() => opts.callback({ message: bo
   p.d.dispatchEvent(new p.w.KeyboardEvent("keydown", { key: "Escape" }));
   ok(!p.d.querySelector("#pt-sheet"), "Escape closes the sheet");
 
-  p = page((_n, opts) => setTimeout(() => opts.error({ status: 500 }), 0)); p.w.ptLoad(); await tick();
+  p = page(status(500)); p.w.ptLoad(); await tick();
   ok(/We could not load People trends/.test(p.d.body.textContent) && /PT-LOAD/.test(p.d.body.textContent), "error shows Code PT-LOAD and no raw message");
-  p = page((_n, opts) => setTimeout(() => opts.error({ status: 403 }), 0)); p.w.ptLoad(); await tick();
-  ok(/That view is not available to you/.test(p.d.body.textContent) && /PT-SCOPE/.test(p.d.body.textContent), "a refused filter says so without saying whether it exists");
+  p = page(status(403)); p.w.ptLoad(); await tick();
+  ok(/That view is not available to you/.test(p.d.body.textContent) && /PT-SCOPE/.test(p.d.body.textContent), "a refused filter (HTTP 403) says so without saying whether it exists");
+  p = page(() => Promise.reject(new Error("offline"))); p.w.ptLoad(); await tick();
+  ok(/PT-LOAD/.test(p.d.body.textContent) && !/PT-SCOPE/.test(p.d.body.textContent), "a dropped connection is a failure (PT-LOAD), not a refusal");
+  // a refused filter after figures are on screen replaces them: the old figures do not stay under a refused value
+  let n = 0; p = page(() => (++n === 1 ? Promise.resolve(R(200, { message: OK })) : Promise.resolve(R(403, {})))); p.w.ptLoad(); await tick();
+  const sel2 = p.d.querySelector('[data-pt-f="branch"]'); sel2.value = "Civil Lines"; sel2.dispatchEvent(new p.w.Event("change", { bubbles: true })); await tick();
+  ok(/PT-SCOPE/.test(p.d.body.textContent) && !/Headcount 43/.test(p.d.body.textContent), "a refusal after figures replaces them with the PT-SCOPE page");
 
   console.log(fails ? "FAILED " + fails : "all ok");
   process.exit(fails ? 1 : 0);

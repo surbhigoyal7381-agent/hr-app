@@ -210,3 +210,7 @@ Approve, adjust or redirect. Specifically: **(1)** go ahead on the file plan in 
 ## Strategy decision
 
 **Approved — Surbhi, 23 Nov 2026 ("go with your recommendations"):** the file plan plus the deploy.yml "Portal assets must be served" edit (OPS-29); HR off in v1 (BQ-2); the engineer builds its own local stack; R1 pass mark = attendance part under 1.5 s cold at DTC size, with five concurrent calls (OPS-28); OPS-28 to OPS-33 accepted. This approves local implementation only — not commit to dev, push or deploy.
+
+### R1 decision after step 0 — Surbhi, 24 Nov 2026 ("go with your recommendations")
+
+Option 1: group populations come from Employee (date_of_joining, relieving_date, status), not from a 2-year Attendance scan (measured 0.011 s vs 6.4-10.1 s on the 8x-slow local stack). The per-period Attendance query stays, capped at the window plus its comparison window. The 6-month and 1-year timing is confirmed on the DTC-size dev copy (OPS-23) before release. No cache; a cache comes back to Surbhi only if that test still misses.

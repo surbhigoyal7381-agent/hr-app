@@ -857,6 +857,9 @@ after_migrate = [
     "alvoraa_portal.joiner_invite.make_role",
     # Slice 082: the five event-form fields on CRM Lead. A no-op without CRM.
     "alvoraa_portal.event_form.ensure_fields",
+    # Slice 090: the Leadership role, with no Desk access. Last in the list, so
+    # nothing that names the role runs after it and puts Desk access back.
+    "alvoraa_portal.people_trends.make_role",
 ]
 
 # Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
@@ -952,6 +955,9 @@ after_install = [
     # Slice 082: the event-form fields, for a site that had CRM before this app.
     # A no-op without CRM; after_app_install covers CRM arriving later.
     "alvoraa_portal.event_form.ensure_fields",
+    # Slice 090: the Leadership role, with no Desk access. Last in the list, so
+    # nothing that names the role runs after it and puts Desk access back.
+    "alvoraa_portal.people_trends.make_role",
 ]
 
 # ALV-215 step B: the Promotion / Transfer field picker returned any Employee

@@ -771,6 +771,35 @@ class ThePrintCall(RegisterNoticeCase):
 		self.assertEqual(sorted(r.page_no for r in notice.changes), [1, 1, 1, 1, 1, 2],
 		                 "the stored record disagrees with the pages that were printed")
 
+	def test_the_list_tells_the_browser_how_many_pages_were_printed(self):
+		"""The record dialog asks for one photo of each printed page, and it can only
+		know how many to ask for if the list says so.
+
+		Without this the dialog assumed one page, so a two-page notice could not be
+		recorded by any route: two photos were refused by the browser and one by
+		`record`, and the person's pay stayed held. The browser test could not catch
+		it because it patched the page count onto the row by hand - a key the server
+		never sent - so this assertion belongs on the server side, where the contract
+		actually lives.
+		"""
+		for n in range(6):
+			self.an_approved_hr_change("1%d:30" % (n + 2))
+		out = self._print([self.emp])
+		self.assertEqual(len(out["sheets"]), 2, "the fixture did not make two pages")
+
+		row = self._rows_for_me()[0]
+		self.assertEqual(row["pages"], 2,
+		                 "the list did not tell the browser the notice has two pages, so "
+		                 "the record dialog would ask for one photo and refuse the second")
+
+	def test_a_notice_not_yet_printed_has_no_page_count(self):
+		"""Nothing has been printed, so there is nothing to photograph. The row says so
+		rather than claiming one page."""
+		self.an_approved_hr_change()
+		row = self._rows_for_me()[0]
+		self.assertEqual(row["state"], "not_printed")
+		self.assertIsNone(row["pages"])
+
 	def test_the_reference_carries_the_month_the_page_and_the_print_number(self):
 		"""Parity P-9, which Surbhi approved: a reprint must be tellable from the page
 		before it."""

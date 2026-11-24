@@ -663,6 +663,32 @@ class TestReviewFixes(TrendsBase):
 		self.assertEqual(kavya, {"shared": False, "reason": "few_attending"})   # next-smallest rule: both of the pair are hidden
 		self.assertTrue(everyone["shared"])
 
+	def test_companies_with_different_start_dates_still_share_one_check(self):  # H4
+		frappe.db.sql("update tabEmployee set date_of_joining = %s where company = %s and date_of_joining < %s",
+		              (ago(89), fx.KAVYA, ago(89)))                 # Kavya's records start 89 days ago, Other Co's long before
+		b = fx.branch("H4")
+		self.lastb = b
+		mine = person(fx.KAVYA, b, "S090 H4", None, joined=ago(89), n=6)
+		self._rows(mine, range(0, 89))                               # Kavya: six people at work every day since
+		other = frappe.get_all("Employee", filters={"company": fx.OTHER, "last_name": TAG, "status": "Active", "date_of_joining": ["<", ago(1000)]}, pluck="name", limit=3)
+		for e in other:                                              # Other Co: three people at work 100 to 119 days ago (a day piece of their own), nobody since
+			for d in range(100, 120):
+				fx.attendance(e, fx.OTHER, self.cl, ago(d), "Present")
+		gone = {"shared": False, "reason": "few_attending"}
+		for kw in ({}, {"company": fx.KAVYA}, {"company": fx.OTHER}):
+			self.assertEqual(call(self.lead_both, period=365, **kw)["attendance"], gone, kw)   # All companies less one company would give the other back
+
+	def test_a_day_piece_between_buckets_is_checked_on_its_own(self):  # H5 (was R3): days 28 and 29 back are no bucket
+		b, emps = self._few("H5")
+		self.lastb = b
+		self._rows(emps[:5], [d for d in range(0, 365) if d not in (28, 29)])
+		self._rows(emps[:4], [28, 29])                               # five people were at work on every bucket, four on those two days
+		out = self._attendance_on_every_period(self.lead_retail, branch=b)
+		self.assertEqual(out, {p: {"shared": False, "reason": "few_attending"} for p in pt.PERIODS})
+		self._rows(emps[4:5], [28, 29])                              # the fifth comes in on those two days: the group passes
+		out = self._attendance_on_every_period(self.lead_retail, branch=b)
+		self.assertTrue(all(a["shared"] for a in out.values()), out)
+
 	def test_the_guard_leaves_the_caller_out(self):  # AC-45, PRIV-2 (N1, G2)
 		b = fx.branch("OwnAtt")
 		user = fx.user("p090ownatt", [pt.ROLE])

@@ -769,6 +769,13 @@ class TestThePagePins(FrappeTestCase):
 			self.assertIn(needle, page, needle)
 		self.assertIn('ptLoad()', open(frappe.get_app_path("alvoraa_portal", "public", "js", "ess", "portal.js")).read())
 
+	def test_period_buttons_wrap_instead_of_being_squeezed(self):  # ALV-443: words were cut off at 360 px
+		import re
+		from alvoraa_portal.tests import portal_source as PS
+		rule = re.search(r"#panel-people-trends \.pt-chips\{([^}]*)\}", PS.read_page())
+		self.assertTrue(rule, "the .pt-chips rule is missing")
+		self.assertIn("flex-wrap:wrap", rule.group(1))
+
 
 class TestMore(TrendsBase):
 	def test_response_size_follows_branches_not_people(self):  # AC-114

@@ -5,7 +5,7 @@ the window before. AC-60 the same request gives the same answer, whatever came b
 """
 
 from alvoraa_portal.tests import leader_fixtures_012 as fx
-from alvoraa_portal.tests.test_people_trends_090 import TrendsBase, ago, call, person
+from alvoraa_portal.tests.test_people_trends_090 import TrendsBase, ago, call, person, setUpModule, tearDownModule  # noqa: F401  (the module builds the tenant)
 
 
 class TestFinalRunGaps(TrendsBase):

@@ -245,3 +245,30 @@ Built on 5eeef770, commit 703fee29 (code and tests). `origin/dev` is at a269ce00
 **Tests (new, all break-tested):** `test_a_thin_bucket_sends_no_points_for_the_whole_view` (replaces the softer-guard test), `test_no_hidden_day_can_be_got_back_from_two_views_together` (7d and 30d together), `test_by_company_sends_no_absent_percent_when_one_company_is_thin`. I replaced `test_one_hidden_bucket_also_hides_the_window_figure` (the rule it pinned is gone) and changed the DOM check for a thin bar. Break-test: I put back the per-bin points and the per-company hiding; `test_people_trends_090` showed 3 failures (I did not read their names; inferred these three), then I restored the file (git status clean).
 
 **Run:** `test_people_trends_090` 63 OK (+2), `_http_090` 1+5 OK, `_final_090` 3 OK, `_property_090` 2 OK, `test_portal_split_034` 12 OK, `test_browser_call_args_045` 6 OK (all in `alv090-bench`, `test_site`). `run_dom_tests.js`: 31 run, 0 failed. Gates OK: integrity, design system, api_paths, brand spelling, no demo passwords, assets gate, portal handlers, trays static (35 of 35), tag balance, undefined JS. **Not run:** full suite, `check_scope_traps.py`, a real browser. The property test still covers only people figures (temporary debt).
+
+## 13 · Fix round 4 (24 Nov 2026): attendance follows the people rule, all five or none
+
+Built on f1d863e9 (security notes committed first as 457e4902); code and tests in b28a77b2. `origin/dev` is at a269ce00, which is my merge base: **nothing came in, no rebase.**
+
+**What changed (`people_trends.py`)**
+- New `_attendance_rule`: one query gives, per person, the set of buckets they were expected at work in (a bit mask built with `bit_or`), grouped by company, branch, department and type. It feeds the same `Rule` class the people figures use, so parts A to D (next-smallest subtraction, company and dimension siblings) apply with no new code. The leader is left out in the SQL.
+- New `_attendance_buckets`: every bucket of all five periods plus each period's "before" window. Same list for every view, so the verdict is the same on every period.
+- `_build`: attendance is shown only if `att_rule.verdict(company, dim, value, several)` is None, then it sends window, series and before. `_by_company`: a company's absent % shows only if its verdict is None.
+- **Removed (subtract pass):** `_bucket_state`, the `people` column and `own` argument of `_attendance_bins`, the thin-bucket and "exactly one hidden" code in `_build`, the `_thin` flag in `_by_company`, `series_ok`/`attending_ok` for attendance. Leave still uses `chart["shared"]` for its series (unchanged).
+
+**Tests (all break-tested: undo, named test fails, restore)**
+| Test | Break made | Result |
+|---|---|---|
+| `test_one_thin_day_hides_attendance_on_all_five_periods` (thin day: Not shared on 7, 30, 90, 180, 365; fifth person added: all five shown) | attendance always shown | fails by name |
+| `test_a_bucket_of_another_period_hides_the_short_views_too` (H2) | buckets of the 7-day period only | fails by name |
+| `test_all_companies_minus_one_company_cannot_rebuild_a_thin_one` (H3) | company verdict ignores "several companies" | fails by name |
+| `test_by_company_sends_no_absent_percent_when_one_company_is_thin` | by-company check removed | fails by name |
+| `test_no_hidden_day_can_be_got_back_from_two_views_together` (H1), caller-left-out and expected-at-work tests | attendance always shown | fail by name |
+| Property test on attendance units (PRIV-13), 300 seeds, minimum 3, 5, 10 | part C removed (`Mutant`) | the property catches it |
+Reworded: `test_a_failing_bucket_sends_no_series_at_all` (attendance no longer follows the people chart; leave still does).
+
+**Run (alv090-bench, test_site):** `test_people_trends_090` 65 + 2 OK, `_property_090` 4 OK, `_final_090` 3, `_http_090` 1 + 5, `test_portal_split_034` 12, `test_browser_call_args_045` 6, all OK. `run_dom_tests.js` 31 run, 0 failed; both 090 DOM tests ok. Gates OK: api_paths, integrity, design system, portal handlers, trays static, undefined JS, no demo passwords, tag balance, brand spelling, assets gate, `check_scope_traps.py` (on the bench Python). **Not run:** the full suite, ruff (not installed here), a real browser.
+
+**Timing, once, 600 staff and 438,000 attendance rows, warm, this stack:** 1 week 9.2 s, 1 month 8.0 s, 3 months 8.5 s, **6 months 9.9 s (was 4.1)**, **1 year 12.3 s (was 6.9)**. 7 statements each. **This is a real cost of "all five or none":** every call now reads two years of attendance, so the short views slow down most. It misses the 3 s budget here, and it also did before for 6 months and 1 year. No cache added. A cache of the pass test per company and day would fix it; it needs your word.
+
+**Inferred, not proven:** a person has no attendance rows before their joining date, so a view clipped to the records start has the same people as the global bucket. **Known gap (R3, unchanged):** buckets of different periods that do not line up exactly (for example 30-day and 90-day bins) can still give a rough estimate of a day, but every bucket and every window is now 5 or more people, so no exact small group can be rebuilt.

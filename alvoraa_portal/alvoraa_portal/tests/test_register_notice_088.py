@@ -525,11 +525,15 @@ class TheHRList(RegisterNoticeCase):
 		for forbidden in ("explanation", "reason", "alvoraa_missing_time", "alvoraa_set_aside",
 		                  "from_date", "content_hash", "secret words about this person"):
 			self.assertNotIn(forbidden, blob, forbidden + " left the server in the list payload")
+		# `pages` is how many A4 sheets were printed, so the record dialog knows how many
+		# photos to ask for. It is a count of paper, not content: it says nothing about
+		# what any day was changed to, and `changed_days` above already tells HR the
+		# scale. Added deliberately, which is what this list is here to force.
 		self.assertEqual(sorted(out["rows"][0].keys()),
 		                 sorted(["employee", "employee_name", "employee_number", "branch",
 		                         "changed_days", "open_days", "state", "uncovered", "i_filed",
 		                         "printed_at", "printed_by", "recorded_by", "recorded_on",
-		                         "said", "notice", "can_tick", "can_record"]))
+		                         "said", "notice", "pages", "can_tick", "can_record"]))
 
 	def test_an_employee_and_a_line_manager_are_refused(self):
 		"""AC-9 and US-8. The control is every other test here, which calls it as HR."""

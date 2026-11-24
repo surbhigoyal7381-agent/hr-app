@@ -519,6 +519,120 @@ class TestAttendanceAndLeave(TrendsBase):
 		self.assertEqual([t["type"] for t in top["types"]], ["Casual Leave"])
 
 
+class TestReviewFixes(TrendsBase):
+	"""Round 1 after the architect and security reviews (24 Nov 2026)."""
+
+	def test_a_failing_bucket_sends_no_series_at_all(self):  # AC-50, AC-81, AC-90 (B1, F2)
+		K = fx.KAVYA
+		b = fx.branch("Bkt")
+		steady = person(K, b, "S090 Bkt", None, n=4)
+		leaver = person(K, b, "S090 Bkt", None, status="Left", relieved=ago(4))
+		joiner = person(K, b, "S090 Bkt", None, joined=ago(3))
+		for e in steady + leaver + joiner:
+			for d in range(0, 7):
+				fx.attendance(e, K, b, ago(d), "On Leave" if d == 2 else "Present")
+		out = call(self.lead_retail, period=7, branch=b)
+		self.assertEqual(out["state"], "ok")
+		self.assertFalse(out["chart"]["shared"])                     # only 4 on the roll on one day
+		self.assertNotIn("series", out["attendance"])
+		self.assertNotIn("series", out["leave"])
+		self.assertIsNotNone(out["leave"]["days"])                   # the window totals stay
+		self.assertNotIn("total", out["chart"])
+		# a chip where every bucket passes still sends them
+		whole = call(self.lead_retail, period=30, branch=self.my)
+		self.assertTrue(whole["chart"]["shared"])
+		self.assertIn("series", whole["leave"])
+
+	def _company_minus_branches(self):
+		"""Company attendance and pending, and the same added up over the branches the rule checks."""
+		K, end = fx.KAVYA, pt._end()
+		first, scope, c = ago(29), of.Scope((fx.KAVYA,), None), pt.Call()
+		edges = [first, add_days(end, 1)]
+
+		def figures(dim, value):
+			rows = [r for r in pt._attendance_bins(c, scope, K, dim, value, first, end, edges) if r["k"] == 1]
+			return {**pt._sum_counts(rows), "pending": pt._pending(c, scope, K, dim, value)}
+		people = [p for p in pt._people(c, scope) if pt._counted(p)]
+		self.assertTrue(all(p.branch for p in people))              # no "none set" cut can be asked for
+		total = figures(None, None)
+		parts = [figures("branch", b) for b in sorted({p.branch for p in people})]
+		return total, {k: sum(p[k] for p in parts) for k in total}
+
+	def _a_counted_person_with(self, tag):
+		K = fx.KAVYA
+		b = fx.branch("Sub")
+		e = person(K, b, "S090 Sub", None, n=1)[0]
+		fx.attendance(e, K, tag(b), ago(2), "On Leave")
+		fx.attendance(e, K, tag(b), ago(3), "Absent")
+		fx.application(e, K, tag(b), ago(2), 1, status="Open", docstatus=0)
+
+	def test_company_minus_branches_leaves_nothing_a_row_with_no_branch_tag(self):  # F1, row kind 1
+		self._a_counted_person_with(lambda b: "")
+		total, parts = self._company_minus_branches()
+		self.assertEqual(total, parts)
+		self.assertGreater(total["on_leave"], 0)
+
+	def test_company_minus_branches_leaves_nothing_a_row_with_a_branch_nobody_holds(self):  # F1, row kind 2
+		gone = fx.branch("Gone")                                      # no employee holds it
+		self._a_counted_person_with(lambda b: gone)
+		total, parts = self._company_minus_branches()
+		self.assertEqual(total, parts)
+		self.assertGreater(total["on_leave"], 0)
+
+	def test_company_minus_branches_leaves_nothing_inactive_staff(self):  # F1, row kind 3
+		K = fx.KAVYA
+		b = fx.branch("Idle")
+		e = person(K, b, "S090 Idle", None, status="Inactive", n=1)[0]
+		fx.attendance(e, K, b, ago(2), "On Leave")
+		fx.application(e, K, b, ago(2), 1, status="Open", docstatus=0)
+		total, parts = self._company_minus_branches()
+		self.assertEqual(total, parts)
+		self.assertEqual(self._the_rows_of(e), 0)
+
+	def _the_rows_of(self, emp):
+		c, end = pt.Call(), pt._end()
+		join, where, params = pt._rows_of_counted_people(of.Scope((fx.KAVYA,), None), fx.KAVYA, None, None, "a", "employee")
+		return len(c.sql(f"select a.name from `tabAttendance` a {join} where {where} and a.employee = %(emp)s",
+		                 {**params, "emp": emp}))
+
+	def test_attendance_is_shown_only_when_five_people_have_rows(self):  # M2 guard (Surbhi, 24 Nov 2026)
+		K = fx.KAVYA
+		b = fx.branch("Few")
+		emps = person(K, b, "S090 Few", None, n=6)                   # six on the roll
+		for e in emps[:4]:                                           # four of them have rows
+			for d in range(0, 30):
+				fx.attendance(e, K, b, ago(d), "Absent" if d % 5 == 0 else "Present")
+		few = call(self.lead_retail, period=30, branch=b)
+		self.assertEqual(few["attendance"], {"shared": False, "reason": "few_attending"})   # no number, no series
+		fx.attendance(emps[4], K, b, ago(1), "Present")              # a fifth person, but only in one week
+		still = call(self.lead_retail, period=30, branch=b)
+		self.assertFalse(still["attendance"]["shared"])              # that week has 5, the others 4
+		for d in range(0, 30):
+			if d != 1:
+				fx.attendance(emps[4], K, b, ago(d), "Present")
+		five = call(self.lead_retail, period=30, branch=b)["attendance"]
+		self.assertTrue(five["shared"])
+		self.assertIsNotNone(five["absent_pct"])
+
+	def test_named_leave_types_are_the_same_on_every_chip(self):  # AC-86 (M3, F3)
+		def rows(per_stretch):
+			out = []
+			for kind, (a, b) in per_stretch.items():
+				out += [(f"{kind}{i}", kind, 0, a) for i in range(5)] + [(f"{kind}{i}", kind, 4, b) for i in range(5)]
+			return out
+		data = rows({"Casual": (1, 10), "Sick": (3, 1)}) + [("m0", "Maternity", 0, 4), ("m0", "Maternity", 4, 4)]
+		week = pt._leave_types(data, 7, 5, own_key=None)
+		year = pt._leave_types(data, 365, 5, own_key=None)
+		self.assertEqual([t["type"] for t in week if t["type"]], ["Casual"])
+		self.assertEqual([t["type"] for t in year if t["type"]], ["Casual"])
+
+	def test_the_headline_names_a_leave_type_only_if_it_beats_other(self):  # AC-87 (M3)
+		def line(types):
+			return pt._headline(30, {"headcount": 9}, None, {}, {"shared": True, "days": 1105, "types": types}, 5)
+		self.assertNotIn("the most", line([{"type": "Sick", "days": 105}, {"type": None, "days": 1000}]))
+		self.assertIn("Sick the most", line([{"type": "Sick", "days": 105}, {"type": None, "days": 4}]))
+
+
 class TestThePagePins(FrappeTestCase):
 	def test_the_page_carries_the_panel_the_nav_and_the_script(self):  # pin: a bad merge cannot drop them
 		from alvoraa_portal.tests import portal_source as PS

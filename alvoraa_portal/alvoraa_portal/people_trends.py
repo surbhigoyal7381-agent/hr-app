@@ -523,12 +523,13 @@ def _attendance_rule(call, scope, own, end, records_start, minimum, sizes):
 	A unit is a group of people with the same company, branch, department, type and the same
 	pattern of buckets in which they were expected at work (at least one Present, Work From Home,
 	Half Day or Absent row; On Leave alone does not count). The caller is left out of the unit
-	rows, like every other check (AC-45, PRIV-2). A group passes only if every bucket has 0 or at
-	least `minimum` such people, so one rule decides every period."""
+	rows, like every other check (AC-45, PRIV-2). A group passes only if every elementary day piece (the
+	pieces cut by every bucket edge of all five periods) has 0 or at least `minimum` such people.
+	Every bucket is a set of whole pieces, so every bucket passes too, and no figure can be
+	rebuilt from the differences between buckets. `records_start` is the start of the whole scope,
+	so every company view and the All-companies view share one set of pieces."""
 	buckets = _attendance_buckets(end, records_start)
 	edges = sorted({b[0] for b in buckets} | {add_days(b[1], 1) for b in buckets})
-	seg_masks = [sum(1 << k for k in range(len(edges) - 1) if b[0] <= edges[k] and add_days(edges[k + 1], -1) <= b[1])
-	             for b in buckets]
 	row_where, e_where, params = _rows_of_counted_people(scope, None, None, None, "a", "x.company")
 	k_sql, k_params = _interval("pa", [_to_days(d) for d in edges])
 	params.update(k_params)
@@ -548,10 +549,9 @@ def _attendance_rule(call, scope, own, end, records_start, minimum, sizes):
 		where {e_where}
 		group by e.company, e.branch, e.department, e.employment_type, x.m
 	""", params)
-	units = [Unit(("a", i), cint(r.n), r.company, _norm(r.branch), _norm(r.department), _norm(r.employment_type),
-	              sum(1 << b for b, sm in enumerate(seg_masks) if cint(r.m) & sm))
+	units = [Unit(("a", i), cint(r.n), r.company, _norm(r.branch), _norm(r.department), _norm(r.employment_type), cint(r.m))
 	         for i, r in enumerate(rows)]
-	return Rule(units, len(buckets), minimum, sizes)
+	return Rule(units, len(edges) - 1, minimum, sizes)
 
 
 def _sum_counts(rows):
@@ -851,7 +851,8 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 	# Attendance follows the people rule: a group's attendance shows on all five periods or on none.
 	# The group passes only if every bucket in every period has 0 or at least `minimum` people
 	# expected at work. Hidden means no number is sent (Surbhi, 24 Nov 2026, all five or none).
-	att_rule = _attendance_rule(call, scope, own.name if own else None, end, records_start, minimum, sizes)
+	att_rule = _attendance_rule(call, scope, own.name if own else None, end,
+	                           min((p.joined for p in counted_all), default=end), minimum, sizes)
 	left_out = sum(sum(v.values()) for v in of.open_doubtful_counts(
 		of.Scope((company,), scope.branches) if company else scope, start, end).values())
 	call.statements += 1

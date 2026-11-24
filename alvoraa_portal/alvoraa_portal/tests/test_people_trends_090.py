@@ -527,3 +527,60 @@ class TestThePagePins(FrappeTestCase):
 		               "window.ptLoad"):  # the shared expander pastes the script in, so its code is what shows
 			self.assertIn(needle, page, needle)
 		self.assertIn('ptLoad()', open(frappe.get_app_path("alvoraa_portal", "public", "js", "ess", "portal.js")).read())
+
+
+class TestMore(TrendsBase):
+	def test_response_size_follows_branches_not_people(self):  # AC-114
+		before = len(json.dumps(call(self.lead_retail, period=365)))
+		person(fx.KAVYA, self.my, "S090 Sales", None, n=400)
+		after = len(json.dumps(call(self.lead_retail, period=365)))
+		self.assertLess(abs(after - before), before * 0.1)
+
+	def test_the_role_adds_no_rows_anywhere(self):  # AC-8
+		def counts(user):
+			frappe.set_user(user)
+			out = {}
+			for dt in ("Employee", "Attendance", "Leave Application", "Salary Slip", "Employee Checkin"):
+				try:
+					out[dt] = len(frappe.get_list(dt, limit_page_length=0))
+				except frappe.PermissionError:
+					out[dt] = 0
+			frappe.set_user("Administrator")
+			return out
+
+		user = fx.user("p090rowcount", ["Employee"])
+		before = counts(user)
+		doc = frappe.get_doc("User", user)
+		doc.append("roles", {"role": pt.ROLE})
+		doc.save(ignore_permissions=True)
+		fx.permission(user, "Company", fx.KAVYA)
+		after = counts(user)
+		for dt in before:
+			self.assertLessEqual(after[dt], before[dt], dt)
+
+	def test_leadership_is_still_refused_the_organisation_attendance_view(self):  # AC-9
+		from alvoraa_portal import attendance_analytics as aa
+		frappe.set_user(self.lead_retail)
+		with self.assertRaises(frappe.PermissionError):
+			aa.summary(view="organisation")
+
+	def test_data_quality_line_only_at_the_top_and_only_five_or_more(self):  # AC-102, AC-103
+		b = fx.branch("NoDate")
+		person(fx.KAVYA, b, "S090 NoDate", None, status="Left", relieved=None, n=4)
+		self.assertIsNone(call(self.lead_retail, period=30)["data_quality"])
+		person(fx.KAVYA, b, "S090 NoDate", None, status="Left", relieved=None, n=1)
+		self.assertEqual(call(self.lead_retail, period=30)["data_quality"], {"no_relieving": 5})
+		self.assertIsNone(call(self.lead_retail, period=30, branch=self.my)["data_quality"])
+
+	def test_a_small_company_hides_the_next_smallest_too(self):  # AC-59, AC-93
+		frappe.db.sql("update tabEmployee set status = 'Inactive' where company = %s and last_name = %s and status = 'Active' "
+		              "and name not in (select n from (select name n from tabEmployee where company = %s and last_name = %s and status = 'Active' limit 3) x)",
+		              (fx.OTHER, TAG, fx.OTHER, TAG))
+		out = call(self.lead_both, period=30)
+		self.assertEqual(out["state"], "ok")  # the all-companies total is the parent
+		blocks = {b["company"]: b for b in out["by_company"]}
+		self.assertFalse(blocks[fx.OTHER]["shared"])
+		self.assertFalse(blocks[fx.KAVYA]["shared"])  # the next smallest goes with it
+		self.assertNotIn("headcount", blocks[fx.OTHER])
+		listed = {c["value"]: c["shared"] for c in out["filters"]["companies"]}
+		self.assertEqual(listed, {fx.KAVYA: False, fx.OTHER: False})

@@ -185,3 +185,43 @@ Also: the test engineer's gap DOM test is committed with this round. It found a 
 **Commands, after the rebase:** `test_people_trends_090` 57 + 2 (two batches) OK; `test_people_trends_http_090` 1 + 5 OK (6 repeat runs after the flake fix); `test_people_trends_property_090` 2 OK; `people_trends_090_dom_test.js` 22 checks ok; `people_trends_090_gaps_dom_test.js` 16 ok. Gates OK: integrity (1036 checks), design system, tag balance, assets gate (and self-test), brand spelling, api_paths, undefined_js, portal_handlers, no_demo_passwords. **Not run:** the full suite (told to wait), `check_scope_traps.py`, a browser at 360 px, 086's own tests against my branch, the 012-then-090 order.
 
 **Known gaps added:** the property test (`test_people_trends_property_090.py`) still covers only the people family; the three F1 cases are plain subtraction tests, not generated ones (**temporary debt**). The M2 guard counts people per bucket for one filter at a time; no test for the By company card's guard (**temporary debt**).
+
+## 11 · Fix round 2 (24 Nov 2026): the last round
+
+Built on worktree `.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics`, rebased onto `origin/dev` a269ce00. Labels: proven / inferred / not checked. Each fix has a test, and each was break-tested (the fix undone, the test watched failing, the fix put back after a commit).
+
+| # | Finding | What I did | Break test (proven) |
+|---|---|---|---|
+| 1 | G1 (security P1): "All companies" minus each company could leave a mover's rows unchecked | `_rows_of_counted_people` now also needs the row's company to be the person's Employee company (`x.company = e.company`; `l.company = e.company` for Pending). The attendance and leave queries group by the row's company too, so the match is per row company. Applies to attendance, leave days, leave types and pending | `test_all_companies_is_the_sum_of_the_companies_for_a_person_who_moved` failed with the line removed |
+| 2 | N1 / G2: the attendance check counted the leader | `_attendance_bins` takes the caller's Employee name and subtracts it from the count of people (also on the By company card) | `test_the_guard_leaves_the_caller_out` failed with the subtraction removed |
+| 3 | Softer guard (Surbhi, 24 Nov) | A bucket with 1 to 4 people loses only its own point (`series[i]` is `None`, `attendance.hidden` lists the index). The window figure stays when at least one bucket has 5 or more. The whole card is withheld only when no bucket has 5 (`few_attending`). A comparison with 1 to 4 people loses only its `before` figure. The page shows "Not shared" for the hidden point in the table and says why under the chart | `test_a_thin_bucket_loses_only_its_own_point` and (next row) |
+| 3b | Can the hidden bucket be got back as window minus shown buckets? | **Yes for exactly one hidden bucket** (the window percent, less the shown bucket percents, weighted by roughly known expected days, gives that bucket). So with exactly one hidden bucket the window figure is hidden too (`window_hidden`, the tile says "Not shared"; no number, no headline clause). **Leave days are not affected:** leave figures follow decision 1 (about everyone on the roll, R11), so the leave series is sent for every bucket the people rule passes. **Residual, not closed:** with two or more hidden buckets, the window figure less the shown buckets gives a rough pooled estimate of the hidden ones (needs expected days, which are not sent). This is R15; I judged it weaker than the single-bucket case and kept Surbhi's rule for it. Your call if you want it hidden whenever any bucket is hidden. | `test_one_hidden_bucket_also_hides_the_window_figure` failed with the carve-out removed |
+| 4 | Absence % counts people expected at work | The person count is people with at least one Present, Work From Home, Half Day or Absent row in the bucket. A person on leave all bucket does not count | `test_absence_counts_only_people_expected_at_work` failed with every row counted |
+| 5 | Records start: month and year only | The response sends the first of the month for `records_start`; a clipped window starts on the first of that month too, and `days` is counted from it. People figures are the same (nobody joined earlier in the scope). The page says "Records start in Mar 2026." AC-27 and its test changed | `test_records_start_is_a_month_never_a_day` failed with the day sent; the DOM check failed with the old sentence |
+| 6 | F5 admin line, AC-10 | Written in 02 section 13 (rollout, where the admin steps live; there is no separate admin guide in the repo, checked by grep of `docs/`). AC-10 now says removing only the Branch permission widens a branch head to the whole company | none (words) |
+| 7a | `check_portal_trays.js` inventory | Added `#pt-sheet-scrim` (dialog, opened by script) and `#pt-sheet` (a bottom sheet placed by script) | `--static` failed with both missing (before the edit: 2 problems), 0 now |
+| 7b | `test_portal_split_034` expected set | Added `js/ess/people-trends.js` | failed with the line removed |
+| 7c | `test_browser_call_args_045` | Taught the scanner a fourth call shape, `post(CONST, {...})`, so both People trends endpoints are read (and `period` is checked against `save_people_trends_period`). Nothing was weakened. Floor raised 201 to 203 (235 sites read now, counted in the container) | `test_no_endpoint_is_named_but_never_read` failed with the shape removed |
+| 8 | Decisions recorded | 02, "Decisions after review (24 Nov 2026)": softer guard, expected people, records start, G1. F4 is closed | none |
+
+Also: `test_people_trends_final_090.py` (the test engineer's file) failed when run alone (`no attribute lead_retail`: it did not import the module's tenant set-up). I added the two imports. It passes alone now.
+
+**Commands, after the rebase onto a269ce00 (all on my worktree in `alv090-bench`, run after the test engineer's run had ended):**
+
+| Command | Result |
+|---|---|
+| `test_people_trends_090` | 62 + 2 (two batches) OK |
+| `test_people_trends_http_090`, `test_people_trends_final_090`, `test_people_trends_property_090` | 5 OK, 3 OK, 2 OK |
+| `test_portal_split_034`, `test_browser_call_args_045` | 12 OK, 6 OK |
+| `people_trends_090_dom_test.js`, `people_trends_090_gaps_dom_test.js` | all ok (two new checks in the first) |
+| `node scripts/run_dom_tests.js` | 31 run, 0 not run, 0 failed (the R-88 date failure is gone with 80dc5cbf) |
+| Gates | integrity (1038 checks), design system, tag balance, assets gate, brand spelling, api_paths, undefined_js, portal_handlers, no_demo_passwords, `check_portal_trays.js --static` (35 of 35): all OK |
+| **Not run** | `check_scope_traps.py` (the host Python cannot parse one file, as in round 0), the full suite (the orchestrator's), a real 360 px screen, a real browser |
+
+**Rebase intake:** 7 commits came in, none in my files: ALV-440 (4 commits: `data_review.py` +674 lines, `hooks.py` +8, `portal.js` +22, the DocType JSON, `test_punch_feed_alv440.py`), `a269ce00` (a read-gate fix), 091's product brief (docs only), `14a9d115` (a grooming test), `80dc5cbf` (the leave card date fix). I read the diffs of the code files: no `eval`, `atob`, `Function(`, `base64`, `fromCharCode` or `\x` escapes. I did not review ALV-440's logic.
+
+**Timing, one call, my stack (600 staff, 438,000 Attendance rows, 8x slower than production class: calibration from section 3), `_build`, 6 statements:** 6 months 4.0 to 4.2 s (round 0: 4.1 s); 1 year 6.7 to 7.0 s (round 1: 6.3 to 7.2 s). So this round added nothing measurable. Dividing by 8 gives about 0.5 and 0.85 s (inferred). Five at once and the DTC-size dev copy: **not re-measured** (OPS-23 stays owed).
+
+**Seven dimensions, this round:** Performance neutral (measured). Security / privacy improves (G1 closed, the leader left out, the hidden bucket not recoverable for the single case). Reliability neutral. Scalability neutral. Maintainability neutral (one more argument on one helper, one more scanner shape). Data integrity improves (a row counts only for the person's own company). Compliance improves; R13 now has its admin line; R15 is the residual above.
+
+**Known gaps:** the property test still covers only the people family (temporary debt); the By company card's guard has no test of its own (temporary debt); N2 (an expired session shows "not available to you"), N3 (a thin company's absent % on By company shows nothing, not "Not shared"), N4 (a sentence in 02 that branch history moves with the person), m2, m4 and the missing `@requires_feature` on `save_people_trends_period` were not in this round and stay open. G3 is closed by Surbhi's expected-people decision. R-numbers still need Surbhi's written acceptance.

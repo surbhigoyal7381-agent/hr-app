@@ -67,11 +67,11 @@ REQUIRED_FILES = (
 	"next-time.js", "next-pay.js", "next-team.js", "next-growth.js",
 )
 
-# Pinned floor. 226 call sites are read today - one of them the raw `fetch` the
+# Pinned floor. 235 call sites are read today (two of them People trends' `post()`, slice 090) - one of them the raw `fetch` the
 # documents download uses, taught to the reader in slice 078. Raise it when call
 # sites are added; never lower it to make a refactor pass, because that is how a
 # check quietly stops checking.
-MIN_CALL_SITES = 201
+MIN_CALL_SITES = 203
 
 ENDPOINT_RE = re.compile(r"alvoraa_portal\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*")
 

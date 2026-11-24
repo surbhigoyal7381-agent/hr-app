@@ -91,6 +91,17 @@ class WhoNeverEarnsIt(unittest.TestCase):
 		self.assertEqual((one.overtime_quarters, three.overtime_quarters), (0, 0))
 		self.assertFalse(one.held or three.held)
 
+	def test_a_time_a_person_typed_pays_no_night_green_either(self):
+		"""Surbhi, 25 Nov 2026: neither the green nor overtime. A real punch at the
+		same time pays both, so the guard is the typed time and nothing else."""
+		one = day(None, first_in=SHIFT_START, punch_count=1, confirmed_out=hm(25, 30))
+		three = day(hm(24), punch_count=3, confirmed_out=hm(25, 30))
+		for v in (one, three):
+			self.assertEqual((v.greens, v.overtime_quarters), (0, 0))
+			self.assertIn("No night green", " ".join(v.reasons))
+		real = day(hm(25, 30))
+		self.assertEqual((real.greens, real.overtime_quarters), (1, 2))
+
 	def test_a_held_absent_or_leave_day_earns_none(self):
 		self.assertEqual(day(None, punch_count=1).overtime_quarters, 0)
 		self.assertEqual(day(None, first_in=None, punch_count=0,

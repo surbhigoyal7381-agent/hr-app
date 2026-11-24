@@ -458,15 +458,11 @@ def overtime_quarters_for(last_out, shift_end, bands) -> int:
 	01:00 the next morning is 1500, not 60 (`punch_minutes`, ALV-402). `bands` is
 	[(edge_minutes, total_quarters)], lowest edge first. A band counts once the
 	punch is AT OR AFTER its edge (Surbhi, 24 Nov 2026: a milestone passed), and
-	the latest one reached wins. Nothing counts before shift end + 60 minutes.
+	the largest one reached wins (the rule set refuses a table where later pays less). Nothing counts before shift end + 60 minutes.
 	"""
 	if last_out is None or last_out < shift_end + OVERTIME_AFTER_SHIFT_MINUTES:
 		return 0
-	earned = 0
-	for edge, quarters in bands:
-		if last_out >= edge:
-			earned = quarters
-	return earned
+	return max((quarters for edge, quarters in bands if last_out >= edge), default=0)
 
 
 def round_percent(percent) -> float:
@@ -882,9 +878,15 @@ def evaluate_day(
 		v.reasons.append(
 			"Morning green: in {0:.0f} minutes early.".format(shift_start - first_in))
 	if night_green_eligible and last_out >= shift_end + NIGHT_GREEN_LATE_MINUTES:
-		v.greens += 1
-		v.reasons.append(
-			"Night green: out {0:.0f} minutes late.".format(last_out - shift_end))
+		if typed_out:
+			# 091 (Surbhi, 25 Nov 2026): a time a person typed pays neither the night
+			# green nor overtime. Only a real punch supports a payment.
+			v.reasons.append(
+				"No night green: the leaving time was confirmed by a person, not punched.")
+		else:
+			v.greens += 1
+			v.reasons.append(
+				"Night green: out {0:.0f} minutes late.".format(last_out - shift_end))
 
 	# ── 091: overtime, from the last real punch ──────────────────────────────
 	# After the marks block on purpose: a category that earns no marks (Contract)

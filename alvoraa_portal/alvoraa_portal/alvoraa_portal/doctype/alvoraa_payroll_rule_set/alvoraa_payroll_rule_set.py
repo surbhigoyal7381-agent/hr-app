@@ -330,7 +330,7 @@ class AlvoraaPayrollRuleSet(Document):
 		"""
 		from alvoraa_portal.payroll_rules_apply import overtime_bands
 
-		for row in self.overtime_bands:
+		for row in self.get("overtime_bands") or []:
 			row.total_quarters = cint(row.total_quarters)
 			if not row.last_punch_at:
 				frappe.throw(_("Row {0} of the overtime bands has no time. Enter the clock "

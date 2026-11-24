@@ -173,6 +173,31 @@ class ANightJudgedFromRealPunches(FrappeTestCase):
 		v = self._night("Permanent", "{0} 01:10:00".format(self.d2))
 		self.assertFalse(v.held)
 		self.assertEqual((v.overtime_quarters, v.greens), (2, 1))
+		# The reason names the clock time the engine read: only true if the next-date
+		# punch reached it as minute 1510, not 70.
+		self.assertIn("last punch 01:10, 2 quarter(s)", " ".join(v.reasons))
+
+	def test_ten_past_three_pays_the_full_four(self):
+		v = self._night("Permanent", "{0} 03:10:00".format(self.d2))
+		self.assertEqual(v.overtime_quarters, 4)
+		self.assertIn("last punch 03:10, 4 quarter(s)", " ".join(v.reasons))
+
+	def test_the_daily_report_row_carries_the_day_s_overtime(self):
+		from alvoraa_portal.alvoraa_portal.report.daily_attendance_workings import (
+			daily_attendance_workings as daily)
+		rs = _rule_set(overtime_bands=BANDS, night_green_for_everyone=1)
+		emp = _employee("Permanent")
+		start = "{0} 10:30:00".format(self.d1)
+		self._punch(emp, start, start)
+		self._punch(emp, "{0} 01:10:00".format(self.d2), start)
+		ctx = prepare(rs, self.d1, self.d2)
+		att = frappe._dict(name="X", employee=emp, attendance_date=self.d1, status="Present",
+		                   shift=SHIFT, company=COMPANY)
+		att.get = lambda k, d=None: att[k] if k in att else d
+		who = frappe._dict(name=emp, employee_name="T", company=COMPANY, default_shift=SHIFT,
+		                   date_of_joining=None, relieving_date=None)
+		row = daily._day(str(self.d1), who, att, ctx, {}, {})
+		self.assertEqual(row["overtime"], 2)
 
 	def test_a_contract_person_who_stays_that_late_earns_nothing_extra(self):
 		v = self._night("Contract", "{0} 01:10:00".format(self.d2))
@@ -182,6 +207,29 @@ class ANightJudgedFromRealPunches(FrappeTestCase):
 	def test_leaving_at_ten_pm_earns_a_green_but_no_overtime(self):
 		v = self._night("Permanent", "{0} 22:00:00".format(self.d1))
 		self.assertEqual((v.overtime_quarters, v.greens), (0, 1))
+
+
+class TheReportsCarryTheFigures(FrappeTestCase):
+	"""A blank Overtime pay column beside a Gross that contains it is the worst way
+	this can fail, so the values are asserted, not only the column names."""
+
+	def test_the_salary_row_carries_both_overtime_figures(self):
+		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
+			salary_components_and_workings as salary)
+		from alvoraa_portal.payroll_month import MonthSummary
+		emp = frappe._dict(name="E", employee_name="T", branch="B", department="D",
+		                   employment_type="Permanent")
+		row = salary._row(emp, MonthSummary(overtime_quarters=6, daily_rate=1000.0,
+		                                    overtime_earning=1500.0))
+		self.assertEqual(row["overtime_quarters"], 6)
+		self.assertEqual(row["overtime_earning"], 1500.0)
+
+	def test_the_daily_month_row_carries_the_total(self):
+		from alvoraa_portal.alvoraa_portal.report.daily_attendance_workings import (
+			daily_attendance_workings as daily)
+		from alvoraa_portal.payroll_month import MonthSummary
+		total = daily._totals([], MonthSummary(overtime_quarters=6))
+		self.assertEqual(total["overtime"], 6)
 
 
 class TheReportsCarryTheColumns(FrappeTestCase):

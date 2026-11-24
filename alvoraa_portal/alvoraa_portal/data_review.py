@@ -824,9 +824,29 @@ def item_query_conditions(user=None):
 	return "" if not sql else sql
 
 
-def item_has_permission(doc, user=None, permission_type=None):
-	"""The same rule for one record opened by name or through the API."""
+def item_has_permission(doc, user=None, ptype=None):
+	"""The same rule for one record opened by name or through the API - READS only.
+
+	**The third parameter must be called `ptype`.** Frappe calls this with
+	`ptype=` and drops any keyword the function does not declare, so under any
+	other name it is silently always None and every operation looks like a read.
+	This function was first written with `permission_type`, which is exactly what
+	happened: the scope test then applied to writes as well, and it broke the
+	confirm path in `test_data_review_item_012` - an HR user with no company
+	scope could no longer save a record the controller was happy to let them
+	save. Red on dev CI, not caught locally because that module was not run.
+
+	Writes are deliberately NOT judged here. They already have a stronger gate
+	that this one cannot improve on: the controller refuses every save that does
+	not carry `via_rule_check` or `via_confirm`, flags no client can set, and
+	`data_review_confirm` checks the caller's scope itself before it saves. The
+	hole this hook exists to close is a READ - `/app/<doctype>/<name>` opened by
+	guessing a name.
+	"""
 	from alvoraa_portal import org_figures as of
+
+	if ptype not in (None, "read", "report", "select"):
+		return True                      # not ours to judge - see the docstring
 
 	user = user or frappe.session.user
 	scope = of.hr_scope(user)

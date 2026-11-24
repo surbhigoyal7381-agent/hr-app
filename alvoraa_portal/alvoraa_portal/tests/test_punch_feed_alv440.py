@@ -792,6 +792,32 @@ class TestWhoMayReadAFindingAtAll(FeedCase):
 		for name in (a, b, wide):
 			self.assertTrue(frappe.has_permission(fx.DRI, "read", doc=name, user=boss), name)
 
+	def test_the_gate_judges_reads_only(self):
+		"""The fault that reddened dev CI on 24 Nov 2026.
+
+		Frappe calls a has_permission hook with `ptype=` and DROPS any keyword the
+		function does not declare. The parameter was first named
+		`permission_type`, so it was silently always None and the scope test
+		applied to writes too - which blocked a confirm the controller allows, and
+		broke test_data_review_item_012. Writes belong to the controller's
+		via_rule_check / via_confirm flags and to data_review_confirm's own scope
+		check, not here.
+		"""
+		import inspect
+
+		self.assertIn("ptype", inspect.signature(dr.item_has_permission).parameters,
+		              "Frappe passes ptype= and drops any other name")
+
+		mine, theirs, a, b, wide = self.two_branches(5)
+		boss = self.store_hr("GatePtype440", mine)
+		other = frappe.get_doc(fx.DRI, b)
+		# Another branch's record: refused to read...
+		self.assertFalse(dr.item_has_permission(other, boss, ptype="read"))
+		# ...but writes are not this hook's business, for any of them.
+		for ptype in ("write", "create", "delete", "submit", "cancel"):
+			self.assertTrue(dr.item_has_permission(other, boss, ptype=ptype),
+			                "write gating belongs to the controller, not this hook: " + ptype)
+
 	def test_somebody_with_no_scope_reads_nothing(self):
 		"""Fails closed, like hr_scope itself."""
 		mine, theirs, a, b, wide = self.two_branches(4)

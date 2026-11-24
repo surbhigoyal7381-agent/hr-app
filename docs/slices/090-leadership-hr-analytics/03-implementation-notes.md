@@ -225,3 +225,23 @@ Also: `test_people_trends_final_090.py` (the test engineer's file) failed when r
 **Seven dimensions, this round:** Performance neutral (measured). Security / privacy improves (G1 closed, the leader left out, the hidden bucket not recoverable for the single case). Reliability neutral. Scalability neutral. Maintainability neutral (one more argument on one helper, one more scanner shape). Data integrity improves (a row counts only for the person's own company). Compliance improves; R13 now has its admin line; R15 is the residual above.
 
 **Known gaps:** the property test still covers only the people family (temporary debt); the By company card's guard has no test of its own (temporary debt); N2 (an expired session shows "not available to you"), N3 (a thin company's absent % on By company shows nothing, not "Not shared"), N4 (a sentence in 02 that branch history moves with the person), m2, m4 and the missing `@requires_feature` on `save_people_trends_period` were not in this round and stay open. G3 is closed by Surbhi's expected-people decision. R-numbers still need Surbhi's written acceptance.
+
+
+## 12 · Fix round 3 (24 Nov 2026): H1 and N5
+
+Built on 5eeef770, commit 703fee29 (code and tests). `origin/dev` is at a269ce00; I did not rebase.
+
+| Item | What I did | Files |
+|---|---|---|
+| H1 | If any bin has 1 to 4 people expected at work, the attendance block sends no `series`. It keeps `absent_pct` (window) and `before`. `window_hidden` and `hidden` are gone from the response and the page. The page already says "The chart by period is not shared" when there is no series | `people_trends.py`, `people-trends.js` |
+| N5 | On By company, if any shared company is thin, every shared company's `absent_pct` is `None`. The all-companies figure stays | `people_trends.py` (`_by_company`) |
+| Decision | Recorded in 02 "Decisions after review" as Surbhi, 24 Nov 2026 | `02-functional-spec.md` |
+
+**Can a hidden bucket still be got back across views?** I checked the bin layouts in `_bin_lengths` (read, proven).
+- **Exact overlaps:** the 7-day window is the 30-day view's last bin; the 90-day window is the 180-day view's last three bins, and its "before" is the first three; the 180-day view's six bins are the 365-day view's last six. With no points on a thin view, the other view gives only what the window figure already says. Proven for 7d/30d by the new test (the 30-day last point equals the 7-day window figure, and no 7-day point is sent). 90/180/365: proven by reading the layouts, not by a test.
+- **Not exact (still open, R3):** 30-day bins (8,8,7,7) and 90-day weeks (7s) do not line up (one-day sliver); 90-day weeks and 180-day months differ by three days; 365-day months (31 and 30) differ from 180-day months by a few days. A hidden bin could be estimated roughly, not exactly, from those. This is residual risk R3, unchanged. I did not close it.
+- R17 is gone: with no points on a thin view, there is nothing to subtract from the window figure inside one view.
+
+**Tests (new, all break-tested):** `test_a_thin_bucket_sends_no_points_for_the_whole_view` (replaces the softer-guard test), `test_no_hidden_day_can_be_got_back_from_two_views_together` (7d and 30d together), `test_by_company_sends_no_absent_percent_when_one_company_is_thin`. I replaced `test_one_hidden_bucket_also_hides_the_window_figure` (the rule it pinned is gone) and changed the DOM check for a thin bar. Break-test: I put back the per-bin points and the per-company hiding; `test_people_trends_090` showed 3 failures (I did not read their names; inferred these three), then I restored the file (git status clean).
+
+**Run:** `test_people_trends_090` 63 OK (+2), `_http_090` 1+5 OK, `_final_090` 3 OK, `_property_090` 2 OK, `test_portal_split_034` 12 OK, `test_browser_call_args_045` 6 OK (all in `alv090-bench`, `test_site`). `run_dom_tests.js`: 31 run, 0 failed. Gates OK: integrity, design system, api_paths, brand spelling, no demo passwords, assets gate, portal handlers, trays static (35 of 35), tag balance, undefined JS. **Not run:** full suite, `check_scope_traps.py`, a real browser. The property test still covers only people figures (temporary debt).

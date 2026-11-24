@@ -205,3 +205,124 @@ The plan refusal (`requires_feature`, before the body runs) and an empty tenant 
 ## Subtract pass
 
 Removed from my draft: a finding that `requires_feature` sits below the whitelist (it matches the three other analytics endpoints and runs before the body, so it is not a finding); a worry about the `few` and `subtraction` reasons revealing size (designed, UX-1b); a finding on `inside` counts for unfinished cohorts (it equals Joined, which may be shown). Kept: seven findings, three worries.
+
+---
+
+# Re-review round 1 (24 Nov 2026)
+
+**Read at:** worktree `.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics`, commit **cb3677e3**, rebased on `origin/dev` 640cd1f5. I read the fix diff 8c4763e0..cb3677e3 for `people_trends.py`, `people-trends.js`, the template and the new tests; 03 §10; 02 "Decisions after review". I did not re-read the whole slice (usage rule §5).
+**Not done:** I ran no test (the full suite is running in `alv090-bench`). The only commands in the container were read-only `sed`/`grep` of installed Frappe. I changed no source and committed nothing. Same conflict of interest as above: I wrote 01c.
+
+## Verdict
+
+**Not ready for dev yet: one new P1 (G1), small fix. No P0 (stop-the-line) finding.**
+F1 is fixed inside one company. F2 is fixed. B2 holds. But the F1 fix stops one level too low: **"All companies" minus each company can still leave a group the rule never checked** (G1). F5's admin line was not written.
+
+## What the fixes did
+
+| Item | Result | Evidence | Label |
+|---|---|---|---|
+| F1 | **Fixed inside a company.** Rows are now cut by the Employee's branch, department and type, only for counted people (`_rows_of_counted_people` 453-471, `COUNTED_SQL` 449, which matches `_counted` 221-227). The row tag only narrows to the company. Pending uses the same helper (580-585) | Read. Three tests (blank tag, tag nobody holds, Inactive staff) assert company = sum of branches | proven in code; tests not run by me |
+| F2 | **Fixed.** `series_ok = chart["shared"]` (802); `attendance.series` and `leave.series` are left out when it is false (811-812, 820-821). Window totals stay | `test_a_failing_bucket_sends_no_series_at_all` | proven in code; test not run by me |
+| F3 | **Fixed.** Named types sorted by the 365-day total, so the list is the same on every chip | `test_named_leave_types_are_the_same_on_every_chip` | proven in code |
+| F4 | **Not changed, by choice.** Needs Surbhi's yes, because the prototype draws the sentence (02, open) | — | proven (unchanged) |
+| F5 | **Not done.** No admin-guide line anywhere (`grep` of `docs/` and the app). AC-10 in 02 (line 330) still says "remove the Branch permission → not set up", which the code does not do | grep, read | proven |
+| B2 | **Holds.** `fetch("/api/method/…")`, POST, `X-Frappe-CSRF-Token` from `frappe.csrf_token` (JS 231-239). The host page asks for a token (`hrms_employee.py` 21). Frappe parses a JSON body (`frappe/app.py` 365, installed copy). 403 → PT-SCOPE; any other status, bad JSON or a dropped connection → PT-LOAD; the 15 s timer stays. Unknown args are still dropped by the server | Read; DOM tests use fakes with real status codes | proven in code. **Not checked:** a real browser; the HTTP test posts form data, not JSON |
+| M2 guard | **Built as decided.** `_attendance_bins` now counts people per bucket (482); attendance is withheld whole if any bucket, or the comparison window, has 1-4 people with rows (803); the By company card does the same per company (891) | `test_attendance_is_shown_only_when_five_people_have_rows` | proven in code. By company guard: no test (03 §10 says so) |
+| `ignore_permissions` | 362 at 640cd1f5 and 362 at cb3677e3 (app, outside tests); 0 in `people_trends.py` | `git grep` | proven |
+
+## New findings
+
+### G1 · Major · P1 · "All companies" minus each company leaves a group the rule never checked
+
+**Where.** `_rows_of_counted_people` 464-465. The row is matched on **its own** company (`a.company` / `l.company` in the scope), and the person on **their Employee** company. These are checked separately, never against each other.
+**Scenario.** A leader over Grace Drinks and Grace Sales. Three people moved from Sales to Drinks last month (Employee Transfer without a new Employee ID, so `Employee.company` changes and old rows keep "Grace Sales"). On "All companies" their old Sales leave rows count (row company in scope, Employee company in scope). On "Grace Drinks" they do not (row company is Sales). On "Grace Sales" they do not (Employee company is Drinks). **All-companies leave days minus Drinks minus Sales = those 3 people's leave days.** The same works for Pending, and roughly for absent %.
+**What must exist:** attendance or leave rows in the last 2 years whose company differs from the person's Employee company, and a leader with two or more companies. **Not checked** on any tenant.
+**Why P1:** it is the same leak as F1, one level up, and the fix is small.
+**Fix (engineer's choice):** also group the inner query by the row's company and add `x.company = e.company` (and `l.company = e.company` in `_pending`). Then a mover's old-company rows are left out everywhere. Add one test: All = sum of companies, with one moved person. The property test still covers only the people family (03 §10, temporary debt). That is why this got through.
+
+### G2 · Minor · P2 · The M2 guard counts the caller
+
+**Where.** `count(*) as people` (482) and `_attending_ok` (503-506) count every person with rows, the leader included. Every other check takes the caller out (PRIV-2, `minus`).
+**Scenario.** A branch head is on the roll of their own branch. A week has 5 people with rows: the head and 4 others. Attendance is shown. The head knows their own days, so the absent % is in effect about 4 people.
+**Fix:** leave the caller's employee out of the count (the own record is already known in `_build`). One line and one test.
+
+### G3 · Minor · P2 · On Leave rows count as "attending", but absent % ignores them
+
+**Where.** The guard counts anyone with a row (482). Absent % uses only Present, WFH, Half Day and Absent (`org_figures.rate` 129-134).
+**Scenario.** A day with 5 people with rows, 4 of them On Leave. The guard passes. The absent % for that day is about 1 person. The leave series on the same chart says 4 were on leave.
+**This matches Surbhi's words** ("at least 5 people have attendance rows"), so it is her call, not a defect. The cheaper, stricter version counts people with at least one non-leave row.
+
+## Trying to break the differencing again
+
+| Attack | Result |
+|---|---|
+| Company minus every shown branch, department or type (attendance, leave, pending) | **Holds** (F1 fix; three tests) |
+| Blank tag, orphan tag, Inactive staff | **Holds**: left out of total and cuts alike |
+| All companies minus each company | **Breaks for movers between companies: G1** |
+| Window total minus the shown buckets | **Holds**: series are sent only when every bucket passes (F2), and attendance is whole-or-nothing (M2) |
+| Chip minus chip (for example 30 days minus 7 days) | **Holds** as before. Every bucket of the longer chip has 5 or more people. A single day can only be got by visiting on two days in a row, which is R2 |
+| Company attendance minus the branches it shows, when one branch is hidden by M2 | **Only a rough estimate.** The M2 guard is not sibling-aware, but only percentages are sent. The days behind them are not. Worry W4 |
+| Caller's own days taken out of a 5-person bucket | **Breaks slightly: G2** |
+| Leave types across chips | **Holds** now (F3) |
+
+**W4 (worry, not a finding).** Company absent % minus the branches' absent % can give a rough figure for a branch that M2 hid. You would need the expected days, which are not sent. You could guess them from headcount × working days.
+
+## SEC and PRIV, re-marked
+
+| ID | Before | Now | Why |
+|---|---|---|---|
+| SEC-1 | Met | **Met** | Unchanged |
+| SEC-2 | Met | **Met** | Unchanged |
+| SEC-3 | Met | **Met** | Unchanged |
+| SEC-4 | Met | **Met** | B2 fixed: `/api/method`, POST, token header; status codes kept. R12 still applies |
+| SEC-5 | Met | **Met** | Only the `after_migrate` alias was removed; `make_role` still runs from hooks (03 §10 item 8; integrity check per engineer, not run by me) |
+| SEC-6 | Partial | **Partial** | F5 line not written; AC-10's text is still wrong |
+| SEC-7 | Met | **Met** | New SQL slots are constants (`COUNTED_SQL`, `e.{dim}` from a fixed tuple) or parameters. 362 → 362 |
+| SEC-8 | Met | **Met** | Unchanged |
+| SEC-9 | Met | **Met** | Flaky log test now checks values (engineer; not run by me) |
+| SEC-10 | Met | **Met** | Still no cache |
+| PRIV-1 | Partial | **Partial** | F4 open, waiting for Surbhi |
+| PRIV-2 | Met | **Partial** | G2: the new M2 count includes the caller |
+| PRIV-3 | Met | **Met** | Unchanged |
+| PRIV-4 | Partial | **Met** | F2 fixed and tested |
+| PRIV-5 | Met | **Met** | Unchanged |
+| PRIV-6 | Partial | **Partial** | F1 fixed inside a company; G1 across companies |
+| PRIV-7 | Met | **Met** | Unchanged |
+| PRIV-8 | Partial | **Met** | F3 fixed |
+| PRIV-9 to PRIV-12 | Met | **Met** | Unchanged |
+| PRIV-13 | Partial | **Partial** | Still the people family only; the F1 cases are hand-written tests, not generated ones |
+
+**Counts:** SEC 9 met, 1 partial, 0 not met. PRIV 9 met, 4 partial, 0 not met (before: 8 and 5).
+
+## Before dev
+
+1. Fix G1 with its test. Fix G2 (one line). Surbhi decides G3.
+2. Write the F5 line in the admin guide, and correct AC-10 in 02.
+3. One read-only count per tenant on a dev copy, with Surbhi's word: rows whose company differs from the person's Employee company (G1). Counts only, no names.
+
+## Residual risks needing a name and a date
+
+None is accepted yet. Each is one sentence Surbhi can accept or reject. Proposed owner: Surbhi, unless stated.
+
+1. **R1.** A leader can narrow a figure to a range, not an exact number, by combining different filters.
+2. **R2.** A leader who visits every day can see how each day changed.
+3. **R3.** Short stretches where week and month buckets overlap are not checked on their own.
+4. **R4.** A leader can combine the page with what they already know (who was missing from the floor), and no counting rule can stop that.
+5. **R5.** Two leaders who pool their screens, or one who looks before and after the minimum changes, can learn more than either view shows.
+6. **R6.** HR Analytics still treats a store HR person with a narrowed Branch permission as company-wide (ALV-359). People trends cannot be reached this way. **Dangerous debt, escalated**; owners: Surbhi (live check) and the engineer (fix).
+7. **R7.** We cannot detect a leader misusing figures inside their own scope.
+8. **R8.** The security log is about 2 MB and held in France, not India. Owner: founder.
+9. **R10.** Early-leaver figures can show a lower limit for a small group, as designed.
+10. **R11.** Leave figures are about everyone on the roll, not only people with attendance rows (Surbhi's decision 1, 24 Nov; not yet written as an acceptance).
+11. **R12.** A session with no saved CSRF token skips Frappe's CSRF check (`frappe/auth.py` 87). Low risk here, because the endpoint only reads.
+12. **R13.** Removing only a branch head's Branch permission widens them to the whole company, until the admin line (F5) tells admins not to do that.
+13. **R14 (new).** "Your records start on {date}" shows the company's earliest joining date (F4), as the prototype draws it.
+14. **R15 (new).** A branch hidden by the M2 guard can be roughly estimated from the company and sibling percentages (W4).
+15. **R16 (new, only if Surbhi keeps G3 as built).** Absent % can be about fewer than 5 people when most people with rows were on leave.
+
+**Baseline:** the CERT-In entry is still stale (last checked 24 Aug). This round relies on it only for R8.
+
+## Subtract pass (round 1)
+
+Removed from my draft: a finding that the JS sends no token when `frappe.csrf_token` is "None" (the server then refuses, or R12 applies, so the page fails safe); a note on the `scope_company` key that both helpers write (same value, proven); a worry about "days left out" (one company-level figure, the same on every view, so there is nothing to subtract).

@@ -245,3 +245,143 @@ Labels: **proven** (I read it or ran it), **inferred**, **not checked**, `[ASSUM
 - `records_start` being one person's joining date (the spec draws it, AC-27);
 - the "Management" heading instead of "Company" (parity P1 allows the portal's real nav);
 - the chips having no arrow-key movement (AC-107 asks only for a radiogroup).
+
+---
+
+# Re-review round 1 (24 Nov 2026)
+
+`read_at:` worktree `/Users/mac/hr-app/.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics`, HEAD `cb3677e3`, based on `origin/dev` `640cd1f5`. Fix diff read: `7b3164f1..cb3677e3` (commits 3a853154, 8d35ca2f, cea243d3, 3975d245, 65c2eab9, c56d642f, cb3677e3), plus 03 §10 and 02 "Decisions after review".
+
+**Verdict: SHIP WITH FIXES (to dev).** Both blockers are fixed, and so are M3 and m1. One new P2 is small: the new attendance guard counts the leader's own record, which the other guards leave out. `main` stays held by the same gates as before: speed on the DTC-size copy (M1), and the risk and counsel items (M4). **This is advice. You decide.**
+
+**What I ran and did not run.** I did not run `bench run-tests`, because the test engineer's full suite is running in `alv090-bench`. **So every Python test count in 03 §10 (57 + 2, 1 + 5, 2) is the engineer's figure, not checked by me.** What I ran myself:
+
+- both DOM tests with node: `people_trends_090_dom_test.js` all ok (22 checks), and `people_trends_090_gaps_dom_test.js` all ok;
+- the gates: `check_app_integrity.py` (1036 checks, OK), `check_tag_balance.py` OK, `check_portal_assets_gate.py` OK;
+- `check_scope_traps.py`: FAIL, 1 hit. The same FAIL shows on a clean `origin/dev` checkout, so it is **not this slice** (proven). My system Python 3.9 also cannot parse one hrms file, so treat this gate as not run properly;
+- the M3 leave-type case from round 0, re-run on the fixed module with stand-in `frappe` (result below);
+- read-only greps in `alv090-bench` of Frappe 16.33.1: `app.py` `make_form_dict` (it parses a JSON body), `base_template_page.py` (it sets `frappe.csrf_token` on website pages), and `is_whitelisted` (a Guest gets PermissionError, which is HTTP 403).
+
+## Earlier findings, one by one
+
+| Finding | Status | Proof |
+|---|---|---|
+| **B1** day-by-day series sent for a hidden bucket | **fixed** | Proven by reading: `_build` sets `series_ok = chart["shared"]` and adds `attendance.series` and `leave.series` only when it is true. `test_a_failing_bucket_sends_no_series_at_all` uses my round-0 fixture shape (4 steady, 1 leaver, 1 joiner) and asserts both keys are absent. Test read, not run by me. The engineer's break test is his claim |
+| **B2** website `frappe.call` to "/" (OPS-18, AC-71, 96, 97) | **fixed (not checked in a real browser)** | Proven by reading: `post()` calls `fetch("/api/method/" + method)` with POST, same-origin cookies and the `X-Frappe-CSRF-Token` header. 403 gives PT-SCOPE at once; any other status or a dropped connection gives PT-LOAD at once. Frappe parses the JSON body (`make_form_dict`) and sets the token on this kind of page (`add_csrf_token`), both proven. The endpoint raises PermissionError (403) for refusals and ValidationError (417) for PT-LOAD (`people_trends.py:666-673`). The DOM fake now uses real status codes and throws if `frappe.call` is used. I ran it: it asserts the URL, the method and the header |
+| **M1** speed not proven | **still open; a little slower** | See "Speed" below |
+| **M2** attendance about fewer people than the minimum | **fixed by a guard; one gap (N1)** | See "The M2 guard" below |
+| **M3** leave types change between chips, and the headline names the wrong "most" | **fixed** | Proven by my stand-in run: the same data gives `['Sick', Other]` on all five chips (round 0 gave Casual on 1 week and Sick on 1 year). The headline leaves out "the most" when Other has 1,000 days and Sick 105, and says "Sick the most" when Sick is larger |
+| **M4** release gates | **still open** | R1 to R10 are still not accepted, and CQ1 to CQ3 are still open. AC-106 and AC-107 are now partly covered in jsdom (the gaps test: focus, dialog, no text under 12 px), but not on a real 360 px screen or with a screen reader. The 012-then-090 order has not been run. The rebase is done, and the counter is 31. **`origin/dev` has moved one more commit** (`80dc5cbf`, the R-88 date fix, which touches only `portal_leave_063_test.js`). A conflict-free rebase is inferred, not checked |
+| **m1** nav for HR + Leadership | **fixed** | `portal.js:13538` reads `roles.leadership && !roles.is_hr`. Pinned by a source test (a pin, not a browser check) |
+| **m2** "days left out" ignores the filter | **not fixed** | `open_doubtful_counts` is still called with company and branch scope only. P3, tracked. It is not in 03 §10 |
+| **m3** charts vanish without a word | **fixed** | Both cards now say "Not shared" when they have no series, and Attendance says it when the whole card is withheld |
+| **m4** prototype parity (sub line, Leave layout) | **not addressed** | Still needs your yes or a change |
+| **m5** one query per company | **unchanged** | P3 |
+| Nits | partly | `save_people_trends_period` still has no `@requires_feature` (`:676`) |
+| Deletions | **mostly done** | `after_migrate`, `scope.branches_only`, `scope.several_companies`, `chart.total` and the dead `labels` line are gone. `_bin_minus` still rebuilds the caller's Person (`:848`) |
+
+## New findings from the fixes
+
+### N1 · The new attendance guard counts the leader's own record (PRIV-2, AC-45): P2
+
+- **Where:** `_attending_ok` (`people_trends.py`, after `_attendance_bins`) passes when `people >= minimum`. `people` is `count(*)` over the people with attendance rows, and that **includes the caller**. Every other pass test in this module leaves the caller out (`minus=own`, 02 line 309, AC-45).
+- **Scenario (inferred from reading; not run):**
+  - A department has 6 people on the roll, and the leader is one of them.
+  - The people rule passes, because 5 remain after the leader is left out.
+  - 5 of the 6 punch, the leader included.
+  - So the guard sees 5, which is at least 5, and sends the absent %.
+  - The leader knows their own days, so the figure is really about 4 other people. That is the case AC-45 exists to stop.
+- **Smallest fix:** add `sum(x.employee = %(own)s) as mine` to the outer select, and test `people - mine >= minimum`. That is one column and no new query. Add one test: AC-45's fixture with attendance rows.
+
+### N2 · An expired session shows "That view is not available to you": P3
+
+- A Guest calling the method gets a PermissionError, which is HTTP 403 (proven, `frappe/__init__.py` `is_whitelisted`). The page maps every 403 to the PT-SCOPE page, with "Clear filters".
+- So a leader who left the tab open overnight is told the view is not theirs, when they only need to sign in again.
+- **Fix:** check `frappe.session.user` / the `exc_type`, or send a 403 with no `_server_messages` to PT-LOAD. Or write it down as accepted friction.
+
+### N3 · The By company card hides a thin company's absent % without a word: P3
+
+- `_by_company` sets `absent_pct = None` when 1 to 4 people have rows. The page then prints nothing (`people-trends.js:196`), which looks the same as "no attendance".
+- That is the "empty must never look like configured to show nothing" lesson. **Fix:** say "Not shared". Company groups are rarely that small, so the cost is low.
+
+### N4 · Attendance now follows the person's current branch, not the branch where the day was worked: P3, needs a line in the spec
+
+- The F1 fix cuts attendance, leave and pending by the Employee record (`_rows_of_counted_people`). The row's own branch tag now matters only for the doubtful-day check.
+- So a person who moved from A to B last month brings a year of A's attendance into B's figures. A branch-scoped leader of B sees that history only as a total.
+- This matches the people figures, and 02 records the choice. **Inferred:** it is not a leak, because it is totals only and the people inside are the leader's own branch today. But neither 02 nor 01c says that branch history moves with the person. Add one sentence, so an HR Manager comparing with the Desk's branch attendance report is not surprised.
+
+**Incoming work (lesson 4).** 23 commits of slice 086 by the same account came in with the rebase: `held_team.py` (new), `attendance_correction.py`, `punch_fix.py`, `field_app_limits.py`, `hooks.py` (+2), `portal.js` (+425), `panels.css`, two scripts, tests and docs. I grepped the added lines for `eval(`, `atob(`, `Function(`, `base64`, `fromCharCode` and `\x..` escapes: no hits. The one code line over 400 characters is the `EXPECTED_BROWSER_TESTS` comment. I did not review 086's logic; that is 086's own review.
+
+## The M2 guard: right, or too strict?
+
+**It is safe, and it matches your words. It is stricter than safety needs.**
+
+- **What it does:** if any bucket (a day on 1 week, a week on 1 to 3 months, a month on 6 months and 1 year), or the comparison window, has 1 to 4 people with rows, the whole Attendance card for that chip says "Not shared".
+- **Where it will bite (inferred; not checked on DTC data):** small branches on the **1 week** chip. A weekly-off day or a festival day, when only 1 to 4 staff punch, hides the week's absent % too. Longer chips rarely have a thin bucket. Whole-company views are almost never affected. `_end()` is yesterday, so a half-marked today cannot trigger it.
+- **The engineer's reason does not hold for the window figure.** He said the window figure minus the shown buckets could give a thin bucket away. That is only true while the buckets are sent. If a thin bucket withholds the **series** (exactly as B1 does), there are no bucket figures left to subtract.
+- **The softer rule I would offer you:**
+  - a thin bucket withholds the series only;
+  - the window figure stays, if at least one bucket has 5 or more people with rows. That proves the window has at least 5 different people, and it needs no extra query;
+  - the comparison keeps its own check.
+- **My recommendation:** keep the strict rule for dev testing. Ask DTC's HR whether "Not shared" on small branches for 1 week bothers them, then decide. **Either way, fix N1 first.** It applies to both rules.
+
+## Speed (M1, after the F1 fix)
+
+- **The engineer's figures, not checked by me (I was told not to load `alv090-*`):** 1 year went from 5.0 s to 6.3-7.2 s on his 8x-slow stack.
+- **The round-0 figure for the same call was 6.9 s.** So the "before" of 5.0 s comes from a different run. This stack moves by about 20 percent between runs, and the real cost of the fix is somewhere between "a little" and +40 percent.
+- **Dividing by 8 gives about 0.8 to 0.9 s on one call (inferred).** That is inside 1.5 s.
+- Not re-measured after the last change:
+  - **five concurrent calls.** In round 0 they took about 12 s each, about 1.5 s after dividing by 8. Add 25 to 40 percent and they are **likely over the OPS-28 line of 1.5 s** (inferred);
+  - the 90-day chip;
+  - the multi-company path.
+- **Judgement:** the cost is worth paying. F1 closes a real subtraction leak, and safety of people's data ranks above the NFR (priority rungs 1 against 4). The per-person sum before the join was the right way to cut the cost. No cache.
+- **For main:** OPS-23 / AC-115 on the DTC-size dev copy, with five concurrent calls and a two-company login, stays the gate. It is now a little more likely to come back to you as a decision.
+
+## Tables, updated
+
+| AC | Round 0 | Now | Evidence |
+|---|---|---|---|
+| 50, 81, 90 | partial | **met** | B1 above (read, test read) |
+| 71, 96, 97 | not met in a real page | **met in jsdom; real browser not checked** | B2 above; DOM tests run by me |
+| 86, 87 | not met | **met** | stand-in run |
+| 45 (the guard's population) | met | **partial: the new attendance guard counts the caller** | N1 |
+| 62 | partial | partial | The property test still covers only the people family (03 §10, temporary debt) |
+| 106, 107 | not checked | partial (jsdom only) | gaps DOM test, run by me |
+| 115 | owed | owed | M1 |
+
+| Compliance row | Round 0 | Now |
+|---|---|---|
+| Hidden means not sent (PRIV-3, 4, OPS-11) | partial: B1 | **discharged for the series.** Attendance population: **partial (N1)** |
+| Leave types fixed (PRIV-8) | partial: M3 | **discharged** (one test each, read; stand-in run by me) |
+| Endpoint hygiene (SEC-4, OPS-18, 19) | partial: B2 | **discharged in code.** The nginx `/api/` zone still needs its own deploy approval (07) |
+| Counsel CQ1-3, R1-R10, R11, the M2 guard acceptance | not discharged | **not discharged.** 03 §10 says R11 and the guard are "not yet written as risk acceptances" |
+
+| Dimension | Round 0 finding | Now |
+|---|---|---|
+| Performance | degraded, unproven | **degraded a little more, still unproven at DTC size** |
+| Security | page broke OPS-18 | **improves** (`/api/method`, CSRF header) |
+| Reliability | refusals mishandled | **improves.** N2 is the one wrong message left |
+| Data integrity | neutral | **improves** (the total and the checked set are one set) |
+| Compliance / privacy | one leak, one widening | **improves.** N1 is a small gap in the new guard |
+| Maintainability | slightly worse | **neutral.** Dead keys are gone; `COUNTED_SQL` copies `_counted`, pinned only by the subtraction tests |
+
+## Subtract pass
+
+**On the fixes:**
+
+- nothing new was over-built: no cache, no flag, no new DocType;
+- `COUNTED_SQL` is a second copy of `_counted`. It earns its place, because the SQL must filter before the rows reach Python;
+- the source-pin tests for m1 and OPS-18 are cheap and stay.
+
+**On this section:** I removed two candidate findings that I could not turn into a failure scenario.
+
+- The fetch rejection path skips the `mine` check. It does not: `fail()` checks it.
+- The leave days total stays when attendance is withheld. It is not the hidden figure: the people rule decides it, and it cannot rebuild an absent %.
+
+**Open for you:**
+
+1. N1: fix it (recommended), or accept it.
+2. The M2 rule: strict (as built), or the softer option above.
+3. F4 `records_start`: still open, as the engineer marked it.
+4. m4: prototype parity.
+5. Write R11 and the M2 guard as risk acceptances, with an owner.

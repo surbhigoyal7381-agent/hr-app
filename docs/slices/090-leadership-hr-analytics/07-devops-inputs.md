@@ -457,3 +457,28 @@ This needs the new image on dev (step 2 of the rollout), because the module exis
 ### Subtract pass
 
 Removed from my draft: a cache proposal, a monitoring alert or dashboard, a second timing harness for the 3G test (a person with a browser does it), and a hand-written copy of every after-deploy command for production (the production list is the same five checks on `compose-*`, run by Surbhi). Added nothing that needs a new container, job or volume. Left behind: three unpacked trees and the script under the scratchpad folder; nothing in any repo or container.
+
+## Re-check after fix round 1 — 2026-11-24
+
+Read: worktree `.claude/worktrees/090-leadership-hr-analytics`, branch head **cb3677e3**, based on `640cd1f5`. Fetched `origin/dev` = **80dc5cbf**. Ran only `git fetch/log/diff/merge-tree`, `check_design_system.py` on the worktree, `gh run list`, `gh api` (refused). No server, bench or container touched. Nothing pushed or rebased.
+
+| Earlier blocker | Now | Evidence |
+|---|---|---|
+| P1-A design-system radii | **Cleared** | `check_design_system.py` on cb3677e3: "OK - the visual system holds" [proven, I ran it] |
+| P1-B rebase and `run_dom_tests.js` conflict | **Cleared for 640cd1f5; one more rebase needed** | Runner says `EXPECTED_BROWSER_TESTS = 31` and the comment lists the 090, 086 and 089 files [proven, read]. Working tree clean [proven]. |
+| P2-C DTC-size timing | **Still open, and slower** | Engineer: 1 year went 5.0 s to 6.3-7.2 s on the 8x-slow stack [engineer's figure, not re-measured by me]. Budget is 3 s. Main still waits for the timing on a DTC-sized dev site. |
+| OPS-42 rollback tag `prod-835b1b7` | **Not checked, still open** | `gh api` on package versions returned 403: the token has `gist, read:org, repo, workflow` and lacks `read:packages`. No such git tag exists (`git tag -l`). `build-image.yml` makes `prod-<sha>` on every main push, so it was probably pushed on 22 Nov [inferred]. Surbhi runs `gh auth refresh -s read:packages` or reads the package page herself. |
+
+**What one more rebase brings in [proven]:** `origin/dev` is one commit past the base: **80dc5cbf "The leave card test went red on a date, not on a defect"**, which changes only `alvoraa_portal/tests/portal_leave_063_test.js` (+9 -1). `git merge-tree` of the branch against it: **clean, no conflict**. The runner count stays 31 (no new test file).
+
+**CI on origin/dev is NOT idle and NOT green right now [proven, `gh run list`].** CI `45332031101` and Build Image `45332031275` for 80dc5cbf started 05:15 UTC and are in progress. The run before them, CI `45326494804` (slice 086, 04:27 UTC), **failed** after 43 min: jobs Lint and Python tests (two) failed. The last green CI on dev is `45134843809` (23 Nov, ALV-436). **Do not push on top of a running CI. Wait for 80dc5cbf to finish and read it.** I did not read why 086's run failed; 80dc5cbf looks like the fix for a date-bound test, but that is an inference.
+
+**Timing script [proven, read both]:** `/private/tmp/claude-501/-Users-mac-hr-app/67b461e9-84fe-425b-b761-79423d0b7215/scratchpad/time_people_trends_090.py` calls only `get_people_trends(period, company)`. That signature is unchanged in cb3677e3. The query change is inside the module (`_rows_of_counted_people` lost its `key` argument, and the Attendance queries now sum per person in a sub-select). The script calls none of those, so **no edit was needed**. It is read-only (session set READ ONLY) and I did not run it.
+
+**Row for the decision table (Decision left blank):**
+
+| ID | Recommendation | Why | Cost of ignoring | Level | Decision |
+|---|---|---|---|---|---|
+| OPS-43 | Wait for CI on 80dc5cbf to finish green, then rebase, then push to dev only on Surbhi's word. Read why `45326494804` failed first. | A push cancels the running CI; dev's last run was red | Unchecked commits, a cancelled gate | P2 / Recommend | |
+
+**Subtract pass:** removed nothing; this note only reports status.

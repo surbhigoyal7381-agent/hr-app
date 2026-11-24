@@ -120,6 +120,12 @@ const INVENTORY = {
   // A tap outside `.rn-scrim`, or Escape, closes it and writes nothing.
   ".rn-pv":               { page: "portal", kind: "dialog", open: "script" },
   ".rn-scrim":            { page: "portal", kind: "dialog", open: "script" },
+  // Slice 090: People trends' "Why is this not shared?" sheet. Built by script when the button is
+  // pressed and appended to <body>, so no panel can be its frame. The scrim covers the window; the
+  // sheet is a bottom sheet (left and right at 0, bottom at 0, 640 px wide at most) placed by
+  // script above it. Escape, the Close button or a tap on the scrim closes it and writes nothing.
+  "#pt-sheet-scrim":      { page: "portal", kind: "dialog", open: "script" },
+  "#pt-sheet":            { page: "portal", kind: "popover", open: "script" },
   // The -next page (a separate document; left rail and bottom sheet only)
   ".nf-rail":             { page: "next", kind: "shell" },
   ".nf-scrim":            { page: "next", kind: "scrim" },

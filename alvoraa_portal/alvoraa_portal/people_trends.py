@@ -28,7 +28,7 @@ from datetime import date
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, flt, getdate, today
+from frappe.utils import add_days, cint, flt, get_first_day, getdate, today
 
 from alvoraa_portal import org_figures as of
 from alvoraa_portal.subscription import requires_feature
@@ -450,7 +450,7 @@ COUNTED_SQL = """e.date_of_joining is not null and (e.status = 'Active' or
 	(e.status = 'Left' and e.relieving_date is not null and e.relieving_date >= e.date_of_joining))"""
 
 
-def _rows_of_counted_people(scope, company, dim, value, alias):
+def _rows_of_counted_people(scope, company, dim, value, alias, row_company):
 	"""(where on the rows, where on the Employee `e`, params) so a figure from `alias` rows
 	(Attendance a, Leave Application l) covers exactly the people the hiding rule checks, cut
 	by their Employee record.
@@ -459,30 +459,41 @@ def _rows_of_counted_people(scope, company, dim, value, alias):
 	count, are left out of the total as well as the cuts, so company minus every
 	shown branch can never leave an unchecked group behind (F1). The row condition keeps
 	only the company, for the (company, date) index. Callers add up the rows per person
-	first and join the Employee after, so the join runs once per person, not once per row."""
+	first and join the Employee after, so the join runs once per person, not once per row.
+
+	`row_company` is the row's company column as the Employee join sees it. A row counts only
+	if it is tagged with the person's own Employee company, so a person who moved company
+	takes no old-company rows into "All companies" that no single company would show (G1)."""
 	cut_scope = of.Scope((company,), scope.branches) if company else scope
 	row_where, params = of.condition(of.Scope(cut_scope.companies, None), alias, "alvoraa_branch")
 	e_where, e_params = of.employee_condition(cut_scope)
 	params.update({k: v for k, v in e_params.items() if k not in params})
-	e_where += f" and {COUNTED_SQL}"
+	e_where += f" and {COUNTED_SQL} and {row_company} = e.company"
 	if dim:
 		e_where += f" and e.{dim} = %(cut_value)s"
 		params["cut_value"] = value
 	return row_where, e_where, params
 
 
-def _attendance_bins(call, scope, company, dim, value, first, last, edges):
+def _attendance_bins(call, scope, company, dim, value, first, last, edges, own=None):
 	"""Attendance counts per bin, and how many different people they come from. One query.
-	Bin 0 is before the first edge."""
-	row_where, e_where, params = _rows_of_counted_people(scope, company, dim, value, "a")
+	Bin 0 is before the first edge.
+
+	`people` is the people who were expected at work in the bin (at least one Present, Work From
+	Home, Half Day or Absent row; On Leave alone does not count), with the caller `own` left out
+	like every other check (AC-45, PRIV-2)."""
+	row_where, e_where, params = _rows_of_counted_people(scope, company, dim, value, "a", "x.company")
+	params["own_emp"] = own or ""
 	k_sql, k_params = _interval("pb", [_to_days(d) for d in edges])
 	params.update(k_params)
 	params.update({"first": first, "last": last})
 	rows = call.sql(f"""
-		select x.k, count(*) as people, sum(x.present) as present, sum(x.wfh) as wfh, sum(x.half) as half,
+		select x.k, coalesce(sum(x.expected > 0), 0) - coalesce(sum(x.expected > 0 and x.employee = %(own_emp)s), 0) as people,
+		       sum(x.present) as present, sum(x.wfh) as wfh, sum(x.half) as half,
 		       sum(x.absent) as absent, sum(x.on_leave) as on_leave
 		from (
-			select a.employee, {k_sql} as k,
+			select a.employee, a.company, {k_sql} as k,
+			       sum(a.status in ('Present', 'Work From Home', 'Half Day', 'Absent')) as expected,
 			       sum(a.status = 'Present') as present, sum(a.status = 'Work From Home') as wfh,
 			       sum(a.status = 'Half Day') as half, sum(a.status = 'Absent') as absent,
 			       sum(a.status = 'On Leave') as on_leave
@@ -490,7 +501,7 @@ def _attendance_bins(call, scope, company, dim, value, first, last, edges):
 			where a.docstatus = 1 and a.attendance_date between %(first)s and %(last)s
 			  and {row_where}
 			  and not exists ({of._OPEN_DOUBTFUL})
-			group by a.employee, k
+			group by a.employee, a.company, k
 		) x
 		join `tabEmployee` e on e.name = x.employee
 		where {e_where}
@@ -500,10 +511,10 @@ def _attendance_bins(call, scope, company, dim, value, first, last, edges):
 	        for r in rows]
 
 
-def _attending_ok(rows, minimum):
-	"""False when 1 to (minimum - 1) different people stand behind these attendance rows."""
+def _bucket_state(rows, minimum):
+	"""'empty' (nobody expected), 'thin' (1 to minimum - 1 people, caller left out) or 'ok'."""
 	people = sum(r["people"] for r in rows)
-	return people == 0 or people >= minimum
+	return "empty" if people <= 0 else "thin" if people < minimum else "ok"
 
 
 def _sum_counts(rows):
@@ -517,7 +528,7 @@ def _absent_pct(counts):
 
 def _leave_units(call, scope, end):
 	"""On Leave rows per person, leave type and stretch (five stretches). One query."""
-	row_where, e_where, params = _rows_of_counted_people(scope, None, None, None, "a")
+	row_where, e_where, params = _rows_of_counted_people(scope, None, None, None, "a", "x.company")
 	edges = [_to_days(_stretch_dates(end, a, b)[0]) for a, b in reversed(LEAVE_STRETCHES)]
 	k_sql, k_params = _interval("pl", edges)
 	params.update(k_params)
@@ -525,12 +536,12 @@ def _leave_units(call, scope, end):
 	rows = call.sql(f"""
 		select x.employee, x.leave_type, x.k, x.days
 		from (
-			select a.employee, coalesce(a.leave_type, '') as leave_type, {k_sql} as k, count(*) as days
+			select a.employee, a.company, coalesce(a.leave_type, '') as leave_type, {k_sql} as k, count(*) as days
 			from `tabAttendance` a
 			where a.docstatus = 1 and a.status = 'On Leave'
 			  and a.attendance_date between %(first)s and %(last)s and {row_where}
 			  and not exists ({of._OPEN_DOUBTFUL})
-			group by a.employee, a.leave_type, k
+			group by a.employee, a.company, a.leave_type, k
 		) x
 		join `tabEmployee` e on e.name = x.employee
 		where {e_where}
@@ -578,7 +589,7 @@ def _leave_types(rows, days, minimum, own_key):
 
 
 def _pending(call, scope, company, dim, value):
-	row_where, e_where, params = _rows_of_counted_people(scope, company, dim, value, "l")
+	row_where, e_where, params = _rows_of_counted_people(scope, company, dim, value, "l", "l.company")
 	return cint(call.sql(f"""
 		select count(*) as n from `tabLeave Application` l
 		join `tabEmployee` e on e.name = l.employee
@@ -723,11 +734,15 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 	clipped = start < records_start
 	if clipped:
 		start = records_start
-	days = (end - start).days + 1
 	compare = None
 	if not clipped and add_days(start, -period) >= records_start:
 		compare = (add_days(start, -period), add_days(start, -1))
-	window = {"start": str(start), "end": str(end), "days": days, "clipped": clipped, "records_start": str(records_start),
+	# A leader sees the month records start, never the day: that day is one person's joining
+	# date. A clipped window is sent from the first of that month. Nobody joined earlier in this
+	# company scope, so the people figures are the same (Surbhi, 24 Nov 2026).
+	shown_start = get_first_day(start) if clipped else start
+	window = {"start": str(shown_start), "end": str(end), "days": (end - shown_start).days + 1, "clipped": clipped,
+	          "records_start": str(get_first_day(records_start)),
 	          "compare": {"start": str(compare[0]), "end": str(compare[1])} if compare else None}
 
 	# ── the rule, for people ──
@@ -790,27 +805,36 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 	edges = [start] + [b[0] for b in bins[1:]]
 	edges = ([compare[0]] if compare else []) + edges
 	first = compare[0] if compare else start
-	rows = _attendance_bins(call, scope, company, dim, value, first, end, edges + [add_days(end, 1)])
+	own_name = own.name if own else None
+	rows = _attendance_bins(call, scope, company, dim, value, first, end, edges + [add_days(end, 1)], own_name)
 	offset = 1 if compare else 0
 	cur_rows = [r for r in rows if r["k"] >= offset + 1]
 	cmp_rows = [r for r in rows if compare and r["k"] == 1]
 	counts = _sum_counts(cur_rows)
 	by_bin = [[r for r in rows if r["k"] == offset + 1 + i] for i in range(len(bins))]
-	# Hidden means not sent: a bin the rule failed has no series for any of the three
-	# figures, and attendance (a figure about how many people were there) is withheld
-	# whole when some bin has 1 to (minimum - 1) people with attendance rows (M2 guard).
+	# Hidden means not sent. A bin the rule failed has no series for any of the three figures.
+	# For attendance, a bin with 1 to (minimum - 1) people expected at work loses only its own
+	# point (no number sent). The window figure stays if at least one bin has enough people,
+	# which proves the window has enough, but not when exactly one bin is hidden: the window
+	# figure less the shown bins would then give that bin away (Surbhi, 24 Nov 2026).
 	series_ok = chart["shared"]
-	attending_ok = all(_attending_ok(b, minimum) for b in by_bin) and _attending_ok(cmp_rows, minimum)
+	states = [_bucket_state(b, minimum) for b in by_bin]
+	cmp_state = _bucket_state(cmp_rows, minimum)
+	thin = [i for i, st in enumerate(states) if st == "thin"]
+	attending_ok = not thin or "ok" in states
 	left_out = sum(sum(v.values()) for v in of.open_doubtful_counts(
 		of.Scope((company,), scope.branches) if company else scope, start, end).values())
 	call.statements += 1
 	up_to = of.data_up_to(of.Scope((company,), scope.branches) if company else scope)
 	call.statements += 1 if company else len(scope.companies)
 	if attending_ok:
-		attendance = {"shared": True, "absent_pct": _absent_pct(counts), "left_out_days": left_out}
+		attendance = {"shared": True, "absent_pct": None if len(thin) == 1 else _absent_pct(counts), "left_out_days": left_out}
+		if len(thin) == 1:
+			attendance["window_hidden"] = True
 		if series_ok:
-			attendance["series"] = [_absent_pct(_sum_counts(b)) for b in by_bin]
-		if compare:
+			attendance["series"] = [None if i in thin else _absent_pct(_sum_counts(b)) for i, b in enumerate(by_bin)]
+			attendance["hidden"] = thin
+		if compare and cmp_state != "thin":
 			attendance["before"] = {"absent_pct": _absent_pct(_sum_counts(cmp_rows))}
 	else:
 		attendance = {"shared": False, "reason": "few_attending"}
@@ -827,7 +851,7 @@ def _build(call, scope, own, period, company, branch, department, employment_typ
 
 	by_company = None
 	if several and company is None and dim is None:
-		by_company = _by_company(call, scope, rule, counted_all, start, end, several, minimum)
+		by_company = _by_company(call, scope, rule, counted_all, start, end, several, minimum, own_name)
 
 	note = _data_quality(here, dim, scope, company, minimum)
 	out = {"state": "ok", **base, "data_up_to": str(up_to) if up_to else None, "people": people_block,
@@ -874,7 +898,7 @@ def _filter_lists(counted, rule, company, dim, here, scope):
 	        "employment_types": listing("employment_type")}
 
 
-def _by_company(call, scope, rule, counted_all, start, end, several, minimum):
+def _by_company(call, scope, rule, counted_all, start, end, several, minimum, own_name):
 	"""One block per company, alphabetical, no ranking."""
 	out = []
 	for c in sorted(scope.companies):
@@ -887,8 +911,8 @@ def _by_company(call, scope, rule, counted_all, start, end, several, minimum):
 			continue
 		w = _people_block(mine, start, end, None)
 		block = {"company": c, "shared": True, "headcount": w["headcount"], "net": w["net"], "left": w["left"]}
-		rows = _attendance_bins(call, scope, c, None, None, start, end, [start, add_days(end, 1)])
-		block["absent_pct"] = _absent_pct(_sum_counts(rows)) if _attending_ok([r for r in rows if r["k"] == 1], minimum) else None
+		rows = _attendance_bins(call, scope, c, None, None, start, end, [start, add_days(end, 1)], own_name)
+		block["absent_pct"] = None if _bucket_state([r for r in rows if r["k"] == 1], minimum) == "thin" else _absent_pct(_sum_counts(rows))
 		out.append(block)
 	return out
 

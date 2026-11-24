@@ -210,6 +210,8 @@ _CALLS = (
 	(re.compile(r"\bgpFetch\s*\("), "resolve"),
 	# portal.js: pf("kra_api.get_my_kras", { ... }) -> PF + it
 	(re.compile(r"(?<![.\w$])pf\s*\("), "pf"),
+	# people-trends.js (slice 090): post(METHOD, { ... }) -> a plain fetch to /api/method/<METHOD>
+	(re.compile(r"(?<![.\w$])post\s*\("), "resolve"),
 )
 
 _CONST_RE = re.compile(

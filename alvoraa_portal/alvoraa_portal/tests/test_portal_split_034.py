@@ -182,7 +182,9 @@ class TestThePageIsStillSplit(FrappeTestCase):
 			 # beside it, which would have left the frame's copy dead and
 			 # `next_frame_test.js` asserting nothing.
 			 "css/ess/next-growth-team.css", "js/ess/next-team.js",
-			 "js/ess/next-growth.js"})
+			 "js/ess/next-growth.js",
+			 # Slice 090: the People trends page, one static script like the others.
+			 "js/ess/people-trends.js"})
 
 	def test_the_static_files_hold_no_jinja(self):
 		"""They are served raw by nginx. A Jinja tag in one would reach the

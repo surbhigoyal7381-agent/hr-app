@@ -327,7 +327,7 @@ Every AC has an oracle: a JSON key, a log line read from the log file, a screen 
 - **AC-7** Given a user with HR Manager and Leadership, then the scope equals `hr_scope()` and is never the union.
 - **AC-8** The Role "Leadership" has zero rows in DocPerm and Custom DocPerm. For `lead.retail`, `frappe.get_list` row counts on Employee, Attendance, Leave Application, Salary Slip and Employee Checkin are equal or lower after adding the role and permissions than before.
 - **AC-9** Given the stored org-roles setting lists Leadership, a Leadership-only user is still refused by `attendance_analytics.summary(view="organisation")` (`NEVER_ORG_ROLES`, line 81; `summary` at 385 `[UNVERIFIED: engineer confirms the call name]`).
-- **AC-10** (SEC-6) Given `lead.bh1` loads (200), when their Employee record is set to Left, the next call is refused; restored → 200; remove the Branch permission → "not set up"; remove the role → refused. Scope is never cached.
+- **AC-10** (SEC-6) Given `lead.bh1` loads (200), when their Employee record is set to Left, the next call is refused; restored → 200; remove only the Branch permission → the branch head becomes a company head on the next call (see the admin line in section 13); remove the Company permission → "not set up"; remove the role → refused. Scope is never cached.
 - **AC-121** Running the migrate hook twice leaves exactly one Role "Leadership" and no error.
 
 ### US-2 · The endpoint
@@ -351,7 +351,7 @@ Every AC has an oracle: a JSON key, a log line read from the log file, a screen 
 
 - **AC-25** Five chips labelled "1 week", "1 month", "3 months", "6 months", "1 year", in a radiogroup. One tap sends **one** request and changes every figure, chart and sentence. The chip keeps focus; the live region reads "Showing {chip}. All figures updated."
 - **AC-26** Given END = 22 Nov 2026 and chip "3 months", the window is 25 Aug to 22 Nov 2026 and the comparison text reads "the 3 months before, 27 May to 24 Aug 2026".
-- **AC-27** Given `lead.both` with Kavya Foods (records start 14 Jan 2026) and chip "1 year", the page says "No earlier window to compare with: your records start on 14 Jan 2026. This window shows 313 days, from the start of your records." and the window length in the response is 313.
+- **AC-27** Given `lead.both` with Kavya Foods (records start 14 Jan 2026) and chip "1 year", the page says "No earlier window to compare with. Records start in Jan 2026. This window shows 313 days, from the start of your records." (month and year only: Surbhi, 24 Nov 2026; the response sends the first of the month, so the window length is counted from 1 Jan 2026.)
 - **AC-28** Given Kavya Foods and chip "6 months" (2 × 180 > 313), comparisons are absent and the note says there is no earlier window.
 - **AC-29** The saved period: three taps within 1 s produce one save (saved after the chip is kept 2 s `[ASSUMPTION]`); reloading opens on the saved chip; a user with none opens on "3 months". The value is held on the server for that user.
 - **AC-30** User A's saved period does not change user B's. A save of any value outside the five is refused.
@@ -555,7 +555,7 @@ Mini fixture "M" (one cut, END 22 Nov, window 3 months): E1 Active, joined 1 Jan
 
 ## 13 · Migration and backfill
 
-**Nothing to backfill.** On each tenant: the migrate hook creates the Role "Leadership" if missing. A person (tenant admin) then gives named leaders the role and a Company (and Branch) User Permission that applies to Employee. Surbhi names the first leaders (brief Q7). No data is created, defaulted or recomputed. **Rollback:** revert the code; delete the Role (removes it from users). No schema change, so no migrate risk expected (OPS-27). Deploy needs no `nginx` edit (AC-104).
+**Nothing to backfill.** On each tenant: the migrate hook creates the Role "Leadership" if missing. A person (tenant admin) then gives named leaders the role and a Company (and Branch) User Permission that applies to Employee. **Admin line (F5, R13): to end a leader's access, remove the Leadership role or the Company permission, never only the Branch one. Removing only a branch head's Branch permission widens them to the whole company.** Surbhi names the first leaders (brief Q7). No data is created, defaulted or recomputed. **Rollback:** revert the code; delete the Role (removes it from users). No schema change, so no migrate risk expected (OPS-27). Deploy needs no `nginx` edit (AC-104).
 
 ## 14 · Notifications and messages
 
@@ -839,4 +839,7 @@ Amendment pass (23 Nov): removed the day-split code for leave and the sibling ru
 - **M2 guard — Surbhi, 24 Nov 2026: add a guard.** A bucket's attendance figures are shown only when at least 5 people in the group actually have attendance rows in that bucket (day, week or month). Otherwise the Attendance card says "Not shared" and no number is sent. (Built: attendance is withheld whole for the window when any bucket, or the comparison window, has 1 to 4 people with rows, so the window figure minus the shown buckets cannot give a small bucket away.)
 - **Hidden means not sent (reviews B1 and F2).** When a bucket fails the group rule, the attendance and leave day-by-day series are not sent either. The cards say "Not shared". Window totals stay.
 - **Same rows in the total and in the hiding rule (review F1).** Attendance, leave days and pending requests count only the people the group rule counts, cut by their Employee record (not the row's own branch tag).
-- **Open, not decided here:** F4 (the date "your records start on" is the first joining date; it also equals the window start when the window is clipped, as AC-27 draws). It needs a yes from Surbhi to change the drawn sentence. Left as built.
+- **Softer attendance guard — Surbhi, 24 Nov 2026.** A bucket with 1 to 4 people with attendance rows hides only that bucket's point (no number sent for it). The window figure still shows if at least one bucket has 5 or more. Built with one exception: when exactly one bucket is hidden the window figure is hidden too, because the window figure less the shown buckets would give that bucket away. With two or more hidden buckets only a pooled rough estimate is possible (risk R15). A comparison window with 1 to 4 people loses only its own "before" figure.
+- **Absence % counts people expected at work — Surbhi, 24 Nov 2026.** For the 5-people check a person counts only if they have at least one Present, Work From Home, Half Day or Absent row in the bucket. A person who was On Leave all bucket does not count. The leader's own record is left out, like every other check (AC-45).
+- **Records start shows month and year only — Surbhi, 24 Nov 2026.** "Records start in Mar 2025", never a day (the day is one person's joining date). F4 is closed. The response sends the first of that month; a clipped window starts on the first of that month too (no one joined earlier, so the figures are the same).
+- **Rows count only in the person's own company (security G1).** An attendance, leave or pending row counts only when its company is the company on the person's Employee record, so "All companies" equals the sum of the companies for a person who moved.

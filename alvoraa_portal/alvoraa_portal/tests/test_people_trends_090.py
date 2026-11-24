@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days
+from frappe.utils import add_days, get_first_day
 
 from alvoraa_portal import org_figures as of
 from alvoraa_portal import people_trends as pt
@@ -243,7 +243,7 @@ class TestPeopleFigures(TrendsBase):
 		              (ago(100), other, ago(100)))
 		out = call(self.lead_other, period=365)
 		self.assertTrue(out["window"]["clipped"])
-		self.assertEqual(out["window"]["days"], 101)
+		self.assertEqual(out["window"]["days"], (pt._end() - get_first_day(ago(100))).days + 1)
 		self.assertIsNone(out["window"]["compare"])
 		self.assertEqual(start, pt._end())
 
@@ -591,28 +591,88 @@ class TestReviewFixes(TrendsBase):
 
 	def _the_rows_of(self, emp):
 		"""How many of this person's attendance rows the figures would count."""
-		_row_where, e_where, params = pt._rows_of_counted_people(of.Scope((fx.KAVYA,), None), fx.KAVYA, None, None, "a")
+		_row_where, e_where, params = pt._rows_of_counted_people(of.Scope((fx.KAVYA,), None), fx.KAVYA, None, None, "a", "a.company")
 		return len(pt.Call().sql(f"select a.name from `tabAttendance` a join `tabEmployee` e on e.name = a.employee "
 		                         f"where a.employee = %(emp)s and {e_where}", {**params, "emp": emp}))
 
-	def test_attendance_is_shown_only_when_five_people_have_rows(self):  # M2 guard (Surbhi, 24 Nov 2026)
-		K = fx.KAVYA
-		b = fx.branch("Few")
-		emps = person(K, b, "S090 Few", None, n=6)                   # six on the roll
-		for e in emps[:4]:                                           # four of them have rows
-			for d in range(0, 30):
-				fx.attendance(e, K, b, ago(d), "Absent" if d % 5 == 0 else "Present")
-		few = call(self.lead_retail, period=30, branch=b)
-		self.assertEqual(few["attendance"], {"shared": False, "reason": "few_attending"})   # no number, no series
-		fx.attendance(emps[4], K, b, ago(1), "Present")              # a fifth person, but only in one week
-		still = call(self.lead_retail, period=30, branch=b)
-		self.assertFalse(still["attendance"]["shared"])              # that week has 5, the others 4
-		for d in range(0, 30):
-			if d != 1:
-				fx.attendance(emps[4], K, b, ago(d), "Present")
-		five = call(self.lead_retail, period=30, branch=b)["attendance"]
-		self.assertTrue(five["shared"])
-		self.assertIsNotNone(five["absent_pct"])
+	def _few(self, name="Few"):
+		b = fx.branch(name)
+		return b, person(fx.KAVYA, b, "S090 " + name, None, n=7)    # seven on the roll
+
+	def _rows(self, emps, days, status=lambda e, d: "Present"):
+		for e in emps:
+			for d in days:
+				fx.attendance(e, fx.KAVYA, self.lastb, ago(d), status(e, d))
+
+	def test_a_thin_bucket_loses_only_its_own_point(self):  # M2 guard, softer (Surbhi, 24 Nov 2026)
+		b, emps = self._few()
+		self.lastb = b
+		self._rows(emps[:4], range(0, 30))                           # four people on every day
+		none = call(self.lead_retail, period=30, branch=b)["attendance"]
+		self.assertEqual(none, {"shared": False, "reason": "few_attending"})   # no bucket has five
+		self._rows(emps[4:5], range(7, 30))                          # a fifth person, in every bucket but the newest
+		out = call(self.lead_retail, period=30, branch=b)["attendance"]
+		self.assertTrue(out["shared"])                               # three buckets have five
+		self.assertEqual(out["hidden"], [3])                         # the newest week has four
+		self.assertIsNone(out["series"][3])                          # no number for it
+		self.assertTrue(all(v is not None for v in out["series"][:3]))
+		self.assertIsNotNone(out["absent_pct"])                      # the window figure stays
+
+	def test_one_hidden_bucket_also_hides_the_window_figure(self):  # M2 guard: window less the others must not give it away
+		b, emps = self._few("One")
+		self.lastb = b
+		self._rows(emps[:4], range(0, 30), lambda e, d: "Absent" if d % 3 == 0 else "Present")
+		self._rows(emps[4:5], range(0, 22))                          # a fifth person, in every bucket but the oldest
+		out = call(self.lead_retail, period=30, branch=b)["attendance"]
+		self.assertEqual(out["hidden"], [0])
+		self.assertIsNone(out["absent_pct"])
+		self.assertTrue(out["window_hidden"])
+		self.assertIsNone(out["series"][0])
+		self.assertTrue(all(v is not None for v in out["series"][1:]))
+		self.assertNotIn("before", out)                              # the window before has its own check
+
+	def test_the_guard_leaves_the_caller_out(self):  # AC-45, PRIV-2 (N1, G2)
+		b = fx.branch("OwnAtt")
+		user = fx.user("p090ownatt", [pt.ROLE])
+		mine = fx.employee("P090OwnAtt", fx.KAVYA, b, user_id=user, joined=ago(2000))
+		fx.permission(user, "Company", fx.KAVYA)
+		others = person(fx.KAVYA, b, "S090 OwnAtt", None, n=5)       # six on the roll, five without the caller
+		self.lastb = b
+		self._rows([mine] + others[:4], range(0, 30))                # five with rows: the caller and four
+		self.assertEqual(call(user, period=30, branch=b)["attendance"], {"shared": False, "reason": "few_attending"})
+		self.assertTrue(call(self.lead_retail, period=30, branch=b)["attendance"]["shared"])   # no caller: five people
+
+	def test_absence_counts_only_people_expected_at_work(self):  # Surbhi, 24 Nov 2026
+		b, emps = self._few("Exp")
+		self.lastb = b
+		self._rows(emps[:4], range(0, 30))
+		self._rows(emps[4:7], range(0, 30), lambda e, d: "On Leave")  # three more, on leave every day
+		out = call(self.lead_retail, period=30, branch=b)["attendance"]
+		self.assertEqual(out, {"shared": False, "reason": "few_attending"})   # seven have rows, four were expected
+
+	def test_all_companies_is_the_sum_of_the_companies_for_a_person_who_moved(self):  # G1
+		K, O = fx.KAVYA, fx.OTHER
+		b = fx.branch("Mover")
+		movers = person(K, b, "S090 Mover", None, n=6)               # now in Kavya
+		old = fx.branch("MoverOld")
+		for e in movers:                                             # their old rows still say Other Co
+			fx.attendance(e, O, old, ago(2), "On Leave")
+			fx.application(e, O, old, ago(2), 1, status="Open", docstatus=0)
+		figures = {}
+		for key, kw in (("all", {}), ("K", {"company": K}), ("O", {"company": O})):
+			out = call(self.lead_both, period=30, **kw)
+			figures[key] = (out["leave"]["days"], out["leave"]["pending"])
+		self.assertEqual(figures["all"], tuple(x + y for x, y in zip(figures["K"], figures["O"])))
+
+	def test_records_start_is_a_month_never_a_day(self):  # Surbhi, 24 Nov 2026
+		frappe.db.sql("update tabEmployee set date_of_joining = %s where company = %s and date_of_joining < %s",
+		              (ago(100), fx.OTHER, ago(100)))
+		out = call(self.lead_other, period=365)
+		first = str(get_first_day(ago(100)))
+		self.assertEqual(out["window"]["records_start"], first)
+		self.assertEqual(out["window"]["start"], first)
+		if ago(100).day != 1:
+			self.assertNotIn(str(ago(100)), json.dumps(out["window"]))   # the day itself is not sent
 
 	def test_named_leave_types_are_the_same_on_every_chip(self):  # AC-86 (M3, F3)
 		def rows(per_stretch):

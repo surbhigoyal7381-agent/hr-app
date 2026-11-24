@@ -429,3 +429,111 @@ Labels: **proven** (I read it or ran it), **inferred**, **not checked**, `[ASSUM
 7. The full Python suite, green, on this SHA (not run by me).
 
 **Subtract pass:** I removed two candidates. The `change(null, before)` path returns "" and prints no number. The second was a person counted twice per bucket, which cannot happen because the `row_company = e.company` filter leaves one row per person per bucket.
+
+---
+
+# Re-review rounds 3-5 (24 Nov 2026)
+
+**Verdict, for dev: SHIP.** The attendance rule is now "all five periods or none", checked on every day piece, with one start date for the whole scope. I could not build a way round it beyond the risks already listed (R1 to R5, R15). Both new tests fail on the old code for the right reason: I broke the code in memory myself and watched each one fail. Nothing new blocks dev. `main` stays held by the same gates as before. **This is advice. You decide.**
+
+**Where I looked:** worktree `.claude/worktrees/090-leadership-hr-analytics`, branch `slice/090-leadership-hr-analytics`, HEAD `e493e99a`, merge base with `origin/dev` = `a269ce00`. Bench `alv090-bench` (it mounts this worktree), site `test_site`.
+
+**A correction to the brief.** `a269ce00` is the base of the whole slice, not the end of round 2. So `a269ce00..e493e99a` is all 30 commits. The rounds 3 to 5 diff is `7a841012..e493e99a` (9 files), and that is what I read. Proven (`git log`).
+
+## What I ran (proven, my own runs on this SHA)
+
+| Run | Result |
+|---|---|
+| `bench run-tests --module alvoraa_portal.tests.test_people_trends_090` | **67 OK, plus a second batch of 2 OK.** Matches 03 §14 |
+| `... test_people_trends_property_090` | 4 OK (100 s) |
+| `scripts/run_dom_tests.js` | 31 run, 0 failed |
+| `check_app_integrity.py` | 1038 checks, OK |
+| **Break test, H5:** the rule patched in memory to check buckets instead of day pieces (the round-4 code) | only `test_a_day_piece_between_buckets_is_checked_on_its_own` fails; the server sends attendance on all five periods |
+| **Break test, H4:** the rule patched in memory to use the chosen company's own start date (the round-4 code) | only `test_companies_with_different_start_dates_still_share_one_check` fails; the company view sends attendance |
+| Control (no patch) | all 3 tests pass |
+
+The break test was a script piped into the bench Python. No file in the worktree changed, and `git status` is clean. **Owned:** I first copied the script into the container's `/tmp` with `docker cp`, then deleted it and piped the script in instead. It was a local test container, not a deploy, but `docker cp` is on the CLAUDE.md approval list, so I am telling you.
+
+**Not run:** the `_http_090` and `_final_090` modules, the full suite, a real browser.
+
+## (1) The attendance rule — correct
+
+- **One rule, every view (proven, read).** `_attendance_rule` (`people_trends.py:520`) builds one unit per group of people (company, branch, department, type, and the set of day pieces they were at work in). It feeds the same `Rule` class the people figures use, so the next-smallest step (part C) works for companies and for each filter. `_build:866` and `_by_company:944` both ask it.
+- **Day pieces (H5, proven).** The edges are every bucket edge of all five periods plus each "before" window. Every bucket the page can show is made of whole pieces. So when each piece has 0 or 5+ people, every bucket and every window also has 0 or 5+.
+- **One start date (H4, proven).** `_build:854` passes the earliest joining date of everyone in the leader's scope (`counted_all`), so a company view and All companies check the same pieces.
+- **The bit mask fits (proven, my own script).** At most 33 pieces, for any start date up to 1,200 days back. The SQL `1 << (k - 1)` has 64 bits.
+- **Every shown window lies inside the checked range (proven, read).** A company's start date is never earlier than the scope's. A company's "before" window needs a stricter condition than the rule's, so every "before" that is shown is a checked bucket.
+- **Mixing the two rules does not open a gap (inferred, worked through).** A branch can be hidden by the people rule, by the attendance rule, or by both. Company total less the shown branches equals the attendance-hidden set, which passes together (part C), plus branches that each pass on their own. Adding groups that each have 0 or 5+ people in a piece always gives 0 or 5+. So the leftover always passes.
+- **The routes I tried and could not make work:**
+  - 7 days against 30 days;
+  - the 60-90 month built from three windows (H2);
+  - All companies less one company (H3);
+  - two companies with different start dates (H4);
+  - slivers between buckets (H5);
+  - the people and attendance rules mixed.
+
+  What is left is R1 (filters combined), R2 (day-to-day changes) and R15 (rough estimates). All of them are already on the list.
+
+## (2) Regressions — none found
+
+| Area | Result | Label |
+|---|---|---|
+| Leave figures | `leave.series` still depends on `chart["shared"]`. Days, before, pending and types are untouched | proven (diff) |
+| Scope: CXO / HR / leader | `_caller`, `leader_scope` and the filter refusals in `_build` did not change in rounds 3 to 5. The rule reads the same `scope` (with branches) as the figures | proven (diff) |
+| G1 company match | The new query goes through `_rows_of_counted_people(..., "x.company")`, so a row counts only in the person's own company | proven (read) |
+| Leader left out | `a.employee != %(own_emp)s` in the rule's SQL. The shown totals still include the leader, as before | proven (read) |
+| fetch and CSRF error paths | Not touched. The only JS change is in `attendanceCard` | proven (diff) |
+| Headline | It uses `absent_pct` only when the card is shared | proven (read) |
+
+## (3) The tests prove the decisions
+
+- **H4 and H5:** each fails on the old code, for its own reason, and only that test fails. That is my run (above), not the engineer's word.
+- **"All five or none":** `test_one_thin_day_hides_attendance_on_all_five_periods` checks all five periods both ways: hidden with four people, shown once the fifth arrives. So it would catch a rule that always hides, and a rule that always shows.
+- **Weak spot (temporary debt, already listed by security):** the property test uses 14 random buckets. It does not use the real pieces, and it does not vary the start date. The two integration tests above now cover what it misses.
+
+## New findings (none block dev)
+
+**F6 · P3 · The spec says "every bucket"; the code checks every day piece.** 02's last decision line (24 Nov) says a group passes if every *bucket* has 0 or 5+ people. Since 7285fb53, the code checks the smaller day pieces, which is stricter. 03 §14 says you approved this, but 02 does not record it, and I cannot confirm the approval myself. **Fix:** add one line to 02.
+
+**F7 · P3 · Nobody has counted how many groups go dark.** A single day in the last week with 1 to 4 people at work hides that group's attendance on all five periods. A small store with a skeleton crew on its weekly off would never show attendance. The engineer did not count this on the DTC copy (03 §14). I did not either. **Fix:** count it during the dev timing check, so that a page with "Not shared" everywhere does not surprise you after the release. This is about whether the page is useful, not about safety.
+
+**F8 · P3 · N3 now happens more often.** With the next-smallest step, a CXO over two companies, one of them thin, gets no absent % for **either** company on By company. The page prints nothing in that spot (`people-trends.js:197`), so it looks like "no data", not "Not shared". This is the round-1 N3 finding, and it now comes up more often.
+
+**F9 · P4 · Stale comment.** `people_trends.py:839-841` says attendance uses "not a two-year Attendance scan" and "is shown exactly when the people figures are". Both are now false, and the next engineer will believe it. Delete or rewrite those three lines.
+
+**F10 · P4 · An inferred edge case, rows dated before a joining date.** A company view that starts on its own start date can show part of a checked piece. That is safe only if nobody has attendance dated before their joining date. HRMS refuses such rows (`hrms/.../attendance.py:92`, proven). A joining date moved later by hand, or rows loaded by SQL, could break that. Inferred, not checked on any tenant. No fix needed now; write it down.
+
+## What to delete
+
+- The `else` branch of `attendanceCard`, which shows "The chart by period is not shared…" (`people-trends.js:169`). The server now always sends `series` when the card is shared, so this branch cannot run for attendance. (The leave card's copy at `:188` is still used.)
+- The DOM test's "Thin guard" case (`people_trends_090_dom_test.js:88-94`). It feeds a reply the server can no longer send (shared, with no series), so it tests only the dead branch. Delete both together. P4.
+- Round 4 already deleted the right things: `_bucket_state`, `window_hidden`, `hidden`, the `people`/`own` column of `_attendance_bins`, and `seg_masks`. Proven by the diff. Nothing over-built was added: no cache, no flag, no new DocType.
+
+## What was done well
+
+- Reusing the one `Rule` class for attendance, instead of writing a second guard. That is why part C covers companies and filters with no new code, and why H2 and H3 closed by construction.
+- Checking day pieces instead of buckets made the code **shorter** and the guarantee stronger.
+- Each test was committed red before its fix (963d78ba, then 7285fb53), so the claim that it failed is in the history.
+
+## Before dev
+
+1. Rebase onto `origin/dev`. Two ALV-441 CI commits came in, by the same account, touching only `.github/workflows/ci.yml` and `build-image.yml`. This slice changes `deploy.yml`, not those two. So the files do not overlap (proven by `git diff --stat`), and a clean rebase is inferred.
+2. Check that the last CI run on dev **passed**, not just finished.
+
+## Before main (unchanged, still open)
+
+These are the gates from the round-2 list, still open:
+
+- the R-numbers accepted in writing;
+- timing on the DTC-size dev copy (the known open item; F7 rides along with it);
+- a real browser on a 360 px screen;
+- the nginx `/api/` approval;
+- N2, N4, m2, m4 (P3);
+- the full suite, green.
+
+N5 is closed by H3 and H4.
+
+**Subtract pass on this section:**
+
+- I removed a candidate about attendance series being sent when the people chart is hidden. The attendance rule checks each day on its own terms, so that is safe, and AC-50 still holds under it.
+- I removed a candidate about the property test's 14 bits, because security already lists it.

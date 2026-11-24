@@ -482,3 +482,23 @@ Read: worktree `.claude/worktrees/090-leadership-hr-analytics`, branch head **cb
 | OPS-43 | Wait for CI on 80dc5cbf to finish green, then rebase, then push to dev only on Surbhi's word. Read why `45326494804` failed first. | A push cancels the running CI; dev's last run was red | Unchecked commits, a cancelled gate | P2 / Recommend | |
 
 **Subtract pass:** removed nothing; this note only reports status.
+
+### OPS-23 / OPS-40 result on dev (24 Nov 2026, after fix round 5)
+
+Dev runs image `dev-2d768a9` (proven: `docker inspect devstack-backend-1`). The migrate ran: the Leadership role exists on dev.alvoraa.co, ppj.dev and amata.dev, held by nobody (proven, read-only query).
+
+**No dev site is DTC-size** (proven, read-only count): ppj.dev 405 active staff and 49,360 attendance rows in the last year; dev.alvoraa.co 363 and 2,844; amata.dev 0. DTC has 495 active staff. So this is the closest copy, not a DTC-size proof (OPS-41 still open).
+
+Timed on ppj.dev, all companies, as Administrator, session READ ONLY, MariaDB 10.8.8 with a 128 MB buffer pool, server-side only (no 3G page test):
+
+| Period | First call | Median of 4 repeats |
+|---|---|---|
+| 1 week | 1.26 s | 0.95 s |
+| 1 month | 1.15 s | 1.16 s |
+| 3 months | 1.93 s | 1.78 s |
+| 6 months | 2.01 s | 1.76 s |
+| 1 year | 1.60 s | 1.71 s |
+
+Five 1-year calls at once: 2.79 to 3.13 s each. Every call returned state ok, and the 1-year view shared attendance (absent 9.0%).
+
+**Against the budget:** all five are under the 3 s page budget. OPS-40's bar (median under 1.5 s for 6 months and 1 year) is **missed** by about 0.2 to 0.3 s. Five at once reach the 3 s line. Side effect: one security-log line per call on ppj.dev, user Administrator.

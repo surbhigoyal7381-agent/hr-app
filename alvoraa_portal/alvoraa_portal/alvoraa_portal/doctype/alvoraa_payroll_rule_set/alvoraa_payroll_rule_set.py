@@ -50,6 +50,7 @@ class AlvoraaPayrollRuleSet(Document):
 		self._check_leave()
 		self._check_credit_rows()
 		self._check_categories()
+		self._check_overtime_bands()
 		self._check_special_day_list()
 
 	def on_update(self):
@@ -319,6 +320,34 @@ class AlvoraaPayrollRuleSet(Document):
 					_("Leave earned by days present ({0}): the last row ends at {1} days, not {2}. "
 					  "The most days in such a month would match no row.")
 					.format(where, rows[-1].days_to, last_day), title=_("Gap in the leave table"))
+
+	def _check_overtime_bands(self):
+		"""The overtime table is optional. An empty one means no overtime.
+
+		A row's time must come after the one above it and earn more, and none can
+		earn more than a day (four quarters): otherwise staying later could pay
+		less, or the order of the rows would decide the answer.
+		"""
+		from alvoraa_portal.payroll_rules_apply import overtime_bands
+
+		for row in self.overtime_bands:
+			row.total_quarters = cint(row.total_quarters)
+			if not row.last_punch_at:
+				frappe.throw(_("Row {0} of the overtime bands has no time. Enter the clock "
+				               "time the last punch must reach.").format(row.idx))
+			if not 1 <= row.total_quarters <= 4:
+				frappe.throw(_("Row {0}: {1} quarters. Overtime pays between 1 and 4 "
+				               "quarters (a full extra day is 4).")
+				             .format(row.idx, row.total_quarters))
+		bands = overtime_bands(self)
+		for (e1, q1), (e2, q2) in zip(bands, bands[1:]):
+			if e2 == e1:
+				frappe.throw(_("Two overtime rows have the same time. Remove one, or "
+				               "tick Next Day on the one after midnight."))
+			if q2 <= q1:
+				frappe.throw(_("A later overtime row must earn more quarters than the "
+				               "row before it ({0} is not more than {1}), or staying "
+				               "later would pay less.").format(q2, q1))
 
 	def _check_categories(self):
 		"""Per-category exceptions, and the field that selects them.

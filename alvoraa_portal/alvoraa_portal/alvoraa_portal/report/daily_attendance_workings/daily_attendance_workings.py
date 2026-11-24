@@ -160,6 +160,9 @@ def _day(d, emp, att, ctx, holidays, fines):
 		row["minutes"] = 0
 		row["difference"] = -int(round(expected))
 	row["quarters"] = v.total_quarters or None
+	# Slice 091: quarters EARNED by the last punch. Not inside "Quarters", which
+	# are quarters lost, so the two never net against each other here.
+	row["overtime"] = v.overtime_quarters or None
 	# The month never counts a red or green on an absent day (summarise_month),
 	# so the day does not show one either - or the column would not add up.
 	row["red"] = (v.reds or None) if not v.absent else None
@@ -185,6 +188,7 @@ def _totals(days, s):
 		"difference": sum(r.get("difference") or 0 for r in days),
 		"break_minutes": sum(r.get("break_minutes") or 0 for r in days),
 		"quarters": s.total_quarters,
+		"overtime": s.overtime_quarters or None,
 		"red": s.reds,
 		"green": s.greens,
 		"leave": flt(s.days_on_leave, 2),
@@ -285,6 +289,7 @@ def _columns():
 		c("break_minutes", "Break (min)", 90, "Int"),
 		c("status", "Status", 90),
 		c("quarters", "Quarters", 80, "Int"),
+		c("overtime", "Overtime (qtrs)", 100, "Int"),
 		c("red", "Red", 60, "Int"),
 		c("green", "Green", 65, "Int"),
 		c("leave", "Leave", 110),

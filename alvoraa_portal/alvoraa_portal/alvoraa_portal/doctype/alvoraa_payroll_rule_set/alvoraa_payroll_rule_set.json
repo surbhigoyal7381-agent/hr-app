@@ -12,6 +12,7 @@
   "grade_field",
   "double_deduction_field",
   "green_eligibility_field",
+  "night_green_for_everyone",
   "leave_class_field",
   "category_field",
   "basics_section",
@@ -40,7 +41,9 @@
   "leave_classes",
   "leave_credit_rows",
   "category_section",
-  "categories"
+  "categories",
+  "overtime_section",
+  "overtime_bands"
  ],
  "fields": [
   {
@@ -257,11 +260,30 @@
    "fieldname": "accrual_month_days",
    "fieldtype": "Int",
    "label": "Accrual Month Days"
+  },
+  {
+   "default": "0",
+   "description": "Tick to let every employee earn the night green (out one hour after their own shift end), while the morning green stays as the field above nominates it. The dated green grants keep counting for the morning green.",
+   "fieldname": "night_green_for_everyone",
+   "fieldtype": "Check",
+   "label": "Night Green For Everyone"
+  },
+  {
+   "fieldname": "overtime_section",
+   "fieldtype": "Section Break",
+   "label": "Overtime By Last Punch"
+  },
+  {
+   "description": "Staying late is paid by the last punch of the day, counted from one hour after the person's own shift end. Once the last punch is at or after a row's time, the day earns that row's quarters (the latest row reached). Leave empty for no overtime. Staff whose category earns no marks (Contract) earn none.",
+   "fieldname": "overtime_bands",
+   "fieldtype": "Table",
+   "label": "Overtime Bands",
+   "options": "Alvoraa Overtime Band"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-11 12:00:00.000000",
+ "modified": "2026-11-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Payroll Rule Set",

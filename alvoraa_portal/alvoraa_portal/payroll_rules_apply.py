@@ -92,6 +92,18 @@ def _minutes(value):
 	return int(parts[0]) * 60 + int(parts[1])
 
 
+def overtime_bands(rule_set):
+	"""The rule set's overtime table as [(edge_minutes, total_quarters)], earliest
+	first. An edge is minutes from the SHIFT DAY's midnight, so 01:00 the next
+	morning (Next Day ticked) is 1500 - the same clock `punch_minutes` puts the
+	last punch on (ALV-402). Empty when the table is empty: no overtime.
+	"""
+	return sorted(
+		((_minutes(r.last_punch_at) + (1440 if r.next_day else 0), int(r.total_quarters or 0))
+		 for r in (rule_set.get("overtime_bands") or [])),
+		key=lambda band: band[0])
+
+
 def _green_windows(from_date=None, to_date=None, employee=None):
 	"""Every dated green grant that could touch this period, by employee.
 
@@ -183,6 +195,8 @@ def prepare(rule_set, from_date=None, to_date=None, employee=None):
 		"shift_hours_only": bool(rule_set.get("count_shift_hours_only")),
 		"late_quarter_after": int(rule_set.get("late_quarter_after_minutes") or 0),
 		"break_allowance": int(rule_set.get("break_allowance_minutes") or 0),
+		"overtime_bands": overtime_bands(rule_set),
+		"night_for_all": bool(rule_set.get("night_green_for_everyone")),
 		"window_field": (rule_set.late_window_employee_field or "").strip(),
 		"double_field": (rule_set.double_deduction_field or "").strip(),
 		"green_field": (rule_set.green_eligibility_field or "").strip(),
@@ -301,8 +315,10 @@ def _employee_flags(employee, date, ctx, shift_grace=None):
 		"double_deduction_applies": doubles,
 		"morning_green_eligible": (green in GREEN_MORNING)
 		if ctx["green_field"] else True,
-		"night_green_eligible": (green in GREEN_NIGHT)
-		if ctx["green_field"] else True,
+		# 091 (D1, option C): a rule set may open the NIGHT green to everyone while
+		# the morning green stays nominated and the dated grants keep counting.
+		"night_green_eligible": True if ctx["night_for_all"]
+		else ((green in GREEN_NIGHT) if ctx["green_field"] else True),
 	}
 
 
@@ -534,6 +550,7 @@ def judge(attendance, ctx):
 		other_half_regularised=regularised,
 		shift_hours_only=ctx["shift_hours_only"],
 		break_gaps=gaps,
+		overtime_bands=ctx["overtime_bands"],
 		**flags)
 
 

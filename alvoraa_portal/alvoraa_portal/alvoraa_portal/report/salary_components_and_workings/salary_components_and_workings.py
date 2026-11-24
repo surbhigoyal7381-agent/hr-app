@@ -218,6 +218,9 @@ def _row(emp, s):
 		"daily_rate": flt(s.daily_rate, 2),
 		"basic": flt(s.earning_basic, 2),
 
+		"overtime_quarters": s.overtime_quarters,
+		"overtime_earning": flt(s.overtime_earning, 2),
+
 		"greens": s.greens,
 		"green_earning": flt(s.green_earning, 2),
 		"reds": s.reds,
@@ -265,6 +268,8 @@ def _message(rule_set, from_date, to_date, skipped, live=True):
 		  "part of Quarters off, so it is already inside Basic earned and is "
 		  "shown only to split it out. <b>Grooming red deduction</b> is taken "
 		  "off Net as a separate line, and is 0 while grooming is switched off."),
+		_("<b>Overtime pay</b> is quarters of a day earned by staying late, at the daily "
+		  "rate. It is separate from Quarters off, and Gross and Net include it once."),
 		_("Period: {0} to {1}. Rule set: {2}{3}.").format(
 			from_date, to_date, frappe.bold(rule_set.name),
 			"" if live else _(" (not live)")),
@@ -318,6 +323,11 @@ def _columns():
 		c("paid_days", "Paid days", 90),
 		c("daily_rate", "Daily rate", 100, "Currency"),
 		c("basic", "Basic earned", 110, "Currency"),
+
+		# Slice 091: quarters of a day earned by the last punch, and their money.
+		# Added to Gross once, on top of Basic earned; not part of Quarters off.
+		c("overtime_quarters", "Overtime quarters", 120, "Int"),
+		c("overtime_earning", "Overtime pay", 110, "Currency"),
 
 		c("greens", "Greens", 75, "Int"),
 		c("green_earning", "Green pay", 100, "Currency"),

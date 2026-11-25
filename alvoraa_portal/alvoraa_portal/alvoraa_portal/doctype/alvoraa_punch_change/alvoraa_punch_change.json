@@ -2,16 +2,14 @@
  "actions": [],
  "autoname": "PCH-.######",
  "creation": "2026-11-25 06:00:00.000000",
- "description": "One manual addition or edit of a punch, made by a person, with the reason code they gave. Append-only: it is the record behind the monthly change notice. Written only by alvoraa_portal.punch_change, and only while the organisation's notice switch is on.",
+ "description": "One manual addition or edit of a punch, made by a person, with the reason code they gave. Append-only: it is the record behind the monthly change notice. Written only by alvoraa_portal.punch_change, and only while the organisation's notice switch is on. Tamper-evident, not tamper-proof: server code, a migration patch or a database login can still change or remove a row without a trace in the app.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "punch",
   "employee",
-  "company",
   "day",
   "column_break_a",
-  "kind",
   "reason_code",
   "what",
   "changed_by",
@@ -34,15 +32,7 @@
    "read_only": 1,
    "options": "Employee",
    "reqd": 1,
-   "in_list_view": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "company",
-   "fieldtype": "Link",
-   "label": "Company",
-   "read_only": 1,
-   "options": "Company"
+   "in_list_view": 1
   },
   {
    "fieldname": "day",
@@ -55,15 +45,6 @@
   {
    "fieldname": "column_break_a",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "kind",
-   "fieldtype": "Select",
-   "label": "Kind",
-   "read_only": 1,
-   "options": "Added\nChanged",
-   "reqd": 1,
-   "in_list_view": 1
   },
   {
    "fieldname": "reason_code",

@@ -24,9 +24,22 @@ date column or a migration.
 
 The first thing the tests prove is that none of those is refused or logged.
 
-**What counts as a change.** `time`, `log_type`, `employee` and `skip_auto_attendance`: the
-four fields that decide what a punch means for the day. Shift, attendance link, photo and
-position are not changes to a punch.
+**What counts as a change.** `time`, `log_type`, `skip_auto_attendance`, and the shift tag
+(`shift`, `shift_start`): the fields that decide what a punch means for the day and WHICH
+day it counts on (ALV-402: the day is the date of `shift_start`). The attendance link, photo
+and position are not changes to a punch. **Moving a punch to another person is refused**
+(Surbhi, 25 Nov): HR adds the punch to the right person and sets the wrong one aside, which
+is notified on both sides.
+
+**Why the demand runs in `before_validate`, and what that costs.** `ignore_validate` skips
+`validate` and nothing else, and one repair script already sets it on a punch
+(`alv291_attendance_fix.retag`). `before_validate` runs even then (`document.py`
+`run_before_save_methods`), the same reason `field_app_access.guard_shift_type_change` uses
+it. The cost: on an INSERT the shift tag is not set yet at that point (Frappe HR's own
+`validate` sets it), so an insert is judged on being new, not on its shift; and the day printed
+on the notice is worked out later, in `write_log`, from the saved punch. An edit that only
+re-tags the shift (the repair script) IS caught, because it changes `shift`/`shift_start` on
+the document before it is saved.
 
 **Deleting** a punch by hand is refused while the switch is on (Surbhi, 25 Nov 2026): there is
 no place to ask for a reason on a delete, and a vanished punch would be the quietest change of all.
@@ -42,7 +55,7 @@ CHECKIN = "Employee Checkin"
 LOG = "Alvoraa Punch Change"
 #: The Select on the punch where a person gives the reason. Always blank once saved.
 FIELD = "alvoraa_change_reason"
-MATERIAL = ("time", "log_type", "employee", "skip_auto_attendance")
+MATERIAL = ("time", "log_type", "skip_auto_attendance", "shift", "shift_start")
 
 FLAG = "in_punch_change"
 _STASH = "punch_change_pending"
@@ -50,7 +63,7 @@ _STASH = "punch_change_pending"
 
 # ── is this a person's change, in an organisation that asked for notices? ────
 
-def _is_a_persons_change(doc):
+def _is_a_persons_change(employee):
 	"""Cheapest tests first: a punch from a machine or a phone must cost almost nothing."""
 	if frappe.flags.in_punch_fix_apply or frappe.flags.in_install or frappe.flags.in_migrate:
 		return False
@@ -59,10 +72,10 @@ def _is_a_persons_change(doc):
 		return False
 	from alvoraa_portal.register_notice import notices_are_on
 
-	company = frappe.get_cached_value("Employee", doc.employee, "company") if doc.employee else None
+	company = frappe.get_cached_value("Employee", employee, "company") if employee else None
 	if not company or not notices_are_on(company):
 		return False
-	if frappe.get_cached_value("Employee", doc.employee, "user_id") == user:
+	if frappe.get_cached_value("Employee", employee, "user_id") == user:
 		return False                                   # the employee's own act
 	from alvoraa_portal.field_app_access import files_as_machine
 
@@ -76,10 +89,24 @@ def _moved(doc, before):
 	return any(str(doc.get(f) or "") != str(before.get(f) or "") for f in MATERIAL)
 
 
+def _valid_reason(reason):
+	"""The reason has to be one of the log's own options. Frappe skips the Select check for the
+	whole of a Data Import (`flags.in_import`, `base_document.py`), so without this a spreadsheet
+	could write any sentence into the record, and the record can never be corrected."""
+	return reason in (frappe.get_meta(LOG).get_field("reason_code").options or "").split("\n")
+
+
+def _refuse(message, rule, doc):
+	"""A refusal this slice makes, written down like every other one (`log_refusal`) and then
+	raised as an ordinary validation message the person can act on."""
+	access.log_refusal(rule, "Employee Checkin " + rule, CHECKIN, doc.name)
+	frappe.throw(message)
+
+
 # ── the handlers ─────────────────────────────────────────────────────────────
 
 def require_reason(doc, method=None):
-	"""Employee Checkin validate. A person's change needs a reason; everything else passes.
+	"""Employee Checkin before_validate. A person's change needs a reason; everything else passes.
 
 	The field is blanked on every path so a reason never sits on the punch and never gets
 	reused by the next edit. The chosen reason is carried to `write_log` on the document's own
@@ -87,12 +114,24 @@ def require_reason(doc, method=None):
 	reason = doc.get(FIELD)
 	doc.set(FIELD, None)
 	before = None if doc.is_new() else doc.get_doc_before_save()
-	if not _moved(doc, before) or not _is_a_persons_change(doc):
+	if before and doc.employee != before.employee:
+		# Refused, not logged: only the gaining person would be told. Either side counts.
+		if _is_a_persons_change(before.employee) or _is_a_persons_change(doc.employee):
+			_refuse(_("A punch cannot be moved to another person while change notices are on. Add "
+			          "the punch to the right person, then open this one, tick 'Skip Auto "
+			          "Attendance' and pick a reason. Both people are told."),
+			        "088c-move", doc)
+		return
+	if not _moved(doc, before) or not _is_a_persons_change(doc.employee):
 		return
 	if not reason:
-		frappe.throw(_("Pick a reason for this change. It is printed on the employee's monthly "
-		               "notice. If you are importing punches or calling the API, fill in "
-		               "'Reason For This Change' ({0}) on every row.").format(FIELD))
+		_refuse(_("Pick a reason for this change. It is printed on the employee's monthly "
+		          "notice. If you are importing punches or calling the API, fill in "
+		          "'Reason For This Change' ({0}) on every row.").format(FIELD),
+		        "088c-reason", doc)
+	if not _valid_reason(reason):
+		_refuse(_("That is not one of the reasons on the list. Pick one from the list."),
+		        "088c-reason-list", doc)
 	doc.flags[_STASH] = {"reason": reason, "what": _sentence(doc, before)}
 
 
@@ -103,15 +142,23 @@ def write_log(doc, method=None):
 	pending = doc.flags.pop(_STASH, None)
 	if not pending:
 		return
+	if not _valid_reason(pending["reason"]):
+		# The last line of defence: the same check as above, because this is the row that
+		# is evidence for ever.
+		_refuse(_("That is not one of the reasons on the list. Pick one from the list."),
+		        "088c-reason-list", doc)
+	from alvoraa_portal.payroll_rules_apply import shift_day
+
 	frappe.flags[FLAG] = True
 	try:
 		frappe.get_doc({
 			"doctype": LOG,
 			"punch": doc.name,
 			"employee": doc.employee,
-			"company": frappe.get_cached_value("Employee", doc.employee, "company"),
-			"day": getdate(doc.time),
-			"kind": "Added" if doc.flags.in_insert else "Changed",
+			# The working day (ALV-402: the date the punch's SHIFT started), the one rule the
+			# engine, the reports and the screens use. NOT the calendar date: a 00:30 punch
+			# on a 20:30 shift belongs to the evening before.
+			"day": getdate(shift_day(doc)),
 			"reason_code": pending["reason"],
 			"what": pending["what"],
 			"changed_by": frappe.session.user,
@@ -124,10 +171,11 @@ def write_log(doc, method=None):
 
 def refuse_delete(doc, method=None):
 	"""Employee Checkin on_trash. A person may not delete a punch while notices are on."""
-	if not _is_a_persons_change(doc):
+	if not _is_a_persons_change(doc.employee):
 		return
-	frappe.throw(_("A punch cannot be deleted while change notices are on. To stop it counting, "
-	               "open it, tick 'Skip Auto Attendance' and pick a reason. The employee is told."))
+	_refuse(_("A punch cannot be deleted while change notices are on. To stop it counting, "
+	          "open it, tick 'Skip Auto Attendance' and pick a reason. The employee is told."),
+	        "088c-delete", doc)
 
 
 # ── the words the paper uses (plain English, never translated: see register_notice.WHAT) ──
@@ -157,8 +205,11 @@ def _sentence(doc, before):
 	if bool(doc.skip_auto_attendance) != bool(before.skip_auto_attendance):
 		bits.append("Punch at %s %s" % (_hm(doc.time), "not counted" if doc.skip_auto_attendance
 		                                else "counted again"))
-	if doc.employee != before.employee:
-		bits.append("Punch moved to another person")
+	if doc.shift_start and str(get_datetime(doc.shift_start)) != str(get_datetime(before.shift_start or doc.shift_start)):
+		d = get_datetime(doc.shift_start)
+		bits.append("Punch moved to the %d %s shift" % (d.day, d.strftime("%b")))
+	elif (doc.shift or "") != (before.shift or ""):
+		bits.append("Punch shift changed")
 	return "; ".join(bits)
 
 

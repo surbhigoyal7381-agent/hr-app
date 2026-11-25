@@ -53,13 +53,18 @@ class RegisterNoticeCase(PunchFixCase):
 		self.addCleanup(self._put_the_notice_switch_back, self.h.company)
 		self._set_notices(1)
 
-	def _machine_user(self):
-		"""The biometric sync login: the sync role plus HR User, and no Employee record."""
+	def _machine_user(self, with_hr_role=False):
+		"""A biometric sync login with no Employee record. **Only the sync role by default**:
+		the extra HR role is NOT needed to file a fixture punch (it is filed with
+		`ignore_permissions`), and a login that holds both is exactly the shape a person could
+		also use to type a punch, so only the guard-rail test that needs that shape asks for it."""
 		if not frappe.db.exists("Role", "Biometric Sync"):
 			frappe.get_doc({"doctype": "Role", "role_name": "Biometric Sync"}).insert(ignore_permissions=True)
-		if not getattr(self, "_machine_login", None):
-			self._machine_login = self.h._login("mach088", ("Biometric Sync", "HR User"))
-		return self._machine_login
+		attr, local, roles = (("_machine_hr_login", "mach088hr", ("Biometric Sync", "HR User")) if with_hr_role
+		                      else ("_machine_login", "mach088", ("Biometric Sync",)))
+		if not getattr(self, attr, None):
+			setattr(self, attr, self.h._login(local, roles))
+		return getattr(self, attr)
 
 	def _machine_punch(self, doc):
 		"""A punch the way a biometric machine files it. **Since 088c a person adding a punch

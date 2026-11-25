@@ -297,11 +297,13 @@ doc_events = {
             "alvoraa_portal.branch_geofence.check_phone_punch",
             # Slice 087: the four marks on a punch are written by an approval only.
             "alvoraa_portal.punch_fix.guard_marks",
-            # Slice 088c: a person's added or changed punch needs a reason code, while
-            # the organisation's notice switch is on. LAST, so it sees the punch as the
-            # handlers above left it. Machines, phones and the employee's own punch pass.
-            "alvoraa_portal.punch_change.require_reason",
         ],
+        # Slice 088c: a person's added or changed punch needs a reason code, while the
+        # organisation's notice switch is on. `before_validate`, not `validate`: it runs even
+        # when a script sets `ignore_validate` (alv291's retag does), the way
+        # `field_app_access.guard_shift_type_change` does for the same reason. Message order
+        # changes a little: "Pick a reason" now comes before the geofence message.
+        "before_validate": "alvoraa_portal.punch_change.require_reason",
         # Slice 088c: write the append-only record of that change, after the punch is saved.
         "on_update": "alvoraa_portal.punch_change.write_log",
         "on_trash": [

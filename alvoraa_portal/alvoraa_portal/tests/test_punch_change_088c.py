@@ -16,6 +16,7 @@ from frappe.utils import add_days, add_months, get_first_day
 
 from alvoraa_portal import punch_change, register_notice
 from alvoraa_portal.tests import test_punch_fix_087 as p87
+from alvoraa_portal.tests.test_punch_fix_087 import security_lines_from_a_fresh_process
 from alvoraa_portal.tests.test_register_notice_088 import RegisterNoticeCase, _a_jpeg
 
 CHECKIN = "Employee Checkin"
@@ -73,6 +74,13 @@ class TheGuardRail(PunchChangeCase):
 		self.assertTrue(frappe.db.exists(CHECKIN, doc.name))
 		self.assertEqual(self.log(), [])
 
+	def test_a_sync_login_that_also_holds_an_hr_role_is_still_a_machine(self):
+		"""The real accounts hold the sync role PLUS an HR role (ALV-302), so that is the shape
+		that must pass. It is also the shape a person could use: see 03c, "what a person can do"."""
+		doc = self.punch(user=self._machine_user(with_hr_role=True))
+		self.assertTrue(frappe.db.exists(CHECKIN, doc.name))
+		self.assertEqual(self.log(), [])
+
 	def test_a_phone_app_punch_with_no_human_session_is_filed_and_not_logged(self):
 		doc = self.punch(user="Guest", device_id="alvoraa-field-app")
 		self.assertTrue(frappe.db.exists(CHECKIN, doc.name))
@@ -97,17 +105,18 @@ class TheGuardRail(PunchChangeCase):
 		"""The whitelisted function the sync tools use, called as `user`."""
 		from hrms.hr.doctype.employee_checkin.employee_checkin import add_log_based_on_employee_field
 
-		frappe.db.set_value("Employee", self.emp, "attendance_device_id", "D088C", update_modified=False)
+		device = "D" + frappe.generate_hash(length=8)      # unique: another run may have committed one
+		frappe.db.set_value("Employee", self.emp, "attendance_device_id", device, update_modified=False)
 		frappe.set_user(user)
 		try:
-			return add_log_based_on_employee_field("D088C", "%s %s:00" % (self.day, at), "reception", "IN")
+			return add_log_based_on_employee_field(device, "%s %s:00" % (self.day, at), "reception", "IN")
 		finally:
 			frappe.set_user("Administrator")
 
 	def test_the_sync_api_is_open_to_a_machine_and_closed_to_a_person_with_no_reason(self):
 		"""A person can reach the same function a machine uses (P7). It has no reason argument,
 		so for a person it is refused; for the machine account it is the normal punch."""
-		doc = self._call_the_sync_api(self._machine_user())
+		doc = self._call_the_sync_api(self._machine_user(with_hr_role=True))
 		self.assertTrue(frappe.db.exists(CHECKIN, doc.name))
 		self.assertEqual(self.log(), [])
 		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
@@ -129,10 +138,9 @@ class TheReason(PunchChangeCase):
 		rows = self.log()
 		self.assertEqual(len(rows), 1)
 		r = rows[0]
-		self.assertEqual((r.kind, r.reason_code, r.changed_by, r.punch, str(r.day)),
-		                 ("Added", REASON, self.hr, doc.name, str(self.day)))
+		self.assertEqual((r.reason_code, r.changed_by, r.punch, str(r.day)),
+		                 (REASON, self.hr, doc.name, str(self.day)))
 		self.assertEqual(r.what, "Punch at 10:00 added")
-		self.assertEqual(r.company, self.h.company)
 
 	def test_a_refused_punch_leaves_no_punch_and_no_record(self):
 		before = frappe.db.count(CHECKIN, {"employee": self.emp})
@@ -145,7 +153,7 @@ class TheReason(PunchChangeCase):
 		doc = self.punch("10:00", user=self.hr, reason=REASON)
 		self.edit(doc.name, self.hr, reason="Duplicate or accidental scan", time="%s 10:40:00" % self.day)
 		rows = self.log()
-		self.assertEqual([r.kind for r in rows], ["Added", "Changed"])
+		self.assertEqual([r.what for r in rows][0], "Punch at 10:00 added")
 		self.assertEqual(rows[1].what, "Punch moved from 10:00 to 10:40")
 		self.assertEqual(rows[1].reason_code, "Duplicate or accidental scan")
 		# The last reason is not reusable: the next edit must give its own.
@@ -193,7 +201,7 @@ class TheReason(PunchChangeCase):
 			try:
 				with self.assertRaises(frappe.PermissionError):
 					frappe.get_doc({"doctype": LOG, "punch": "x", "employee": self.emp, "day": self.day,
-					                "kind": "Added", "reason_code": REASON, "what": "x",
+					                "reason_code": REASON, "what": "x",
 					                "changed_by": user, "changed_on": frappe.utils.now_datetime()}
 					               ).insert(ignore_permissions=True)
 				doc = frappe.get_doc(LOG, row)
@@ -279,8 +287,254 @@ class TheNotice(PunchChangeCase):
 		self.assertEqual(len(mine["days"]), 1)
 		self.assertEqual((mine["days"][0]["why"], mine["days"][0]["state"]), (REASON, "shown"))
 
-	def test_the_record_is_scoped_exactly_as_the_notice_is(self):
-		self.assertEqual(
-			register_notice.punch_change_query_conditions(self.hr),
-			register_notice.notice_query_conditions(self.hr).replace(
-				"`tabAlvoraa Register Notice`", "`tabAlvoraa Punch Change`"))
+
+class TheWorkingDay(PunchChangeCase):
+	"""P1-1 of the review: the log and the paper use the day the punch's SHIFT started (ALV-402),
+	not its calendar date. A daytime test could never have failed this."""
+
+	NIGHT = "ALV088 Night"
+
+	def night_employee(self):
+		if not frappe.db.exists("Shift Type", self.NIGHT):
+			frappe.get_doc({"doctype": "Shift Type", "name": self.NIGHT, "start_time": "20:30:00",
+			                "end_time": "05:00:00", "working_hours_threshold_for_absent": 4,
+			                "working_hours_threshold_for_half_day": 7,
+			                "begin_check_in_before_shift_start_time": 240,
+			                "allow_check_out_after_shift_end_time": 240,
+			                "enable_auto_attendance": 1}).insert(ignore_permissions=True)
+		was = frappe.db.get_value("Employee", self.emp, "default_shift")
+		frappe.db.set_value("Employee", self.emp, "default_shift", self.NIGHT, update_modified=False)
+		self.addCleanup(frappe.db.set_value, "Employee", self.emp, "default_shift", was, update_modified=False)
+		frappe.clear_document_cache("Employee", self.emp)
+
+	def test_a_00_30_punch_on_a_night_shift_is_logged_and_printed_on_the_evening_before(self):
+		self.night_employee()
+		evening = self.day                                 # the shift starts at 20:30 on this day
+		doc = self.punch("00:30", day=add_days(evening, 1), user=self.hr, reason=REASON)
+		self.assertEqual(str(frappe.db.get_value(CHECKIN, doc.name, "shift_start"))[:10], str(evening),
+		                 "fixture is wrong: the night shift was not matched, so this proves nothing")
+		row = self.log()[0]
+		self.assertEqual(str(row.day), str(evening), "the log dated the punch by its calendar day")
+		out = self._print([self.emp], month=evening)
+		self.assertEqual(out["sheets"][0]["changes"][0]["day"], register_notice._day_words(evening))
+
+	def test_the_last_night_of_a_month_is_on_that_months_notice_and_not_the_next(self):
+		self.night_employee()
+		last = frappe.utils.get_last_day(add_months(get_first_day(self.day), -1))
+		self.punch("00:30", day=add_days(last, 1), user=self.hr, reason=REASON)
+		self.assertEqual(len(self._rows_for_me(get_first_day(last))), 1, "missing from the month that was paid")
+		self.assertEqual(self._rows_for_me(get_first_day(self.day)), [], "listed on the month after")
+
+	def test_a_daytime_punch_keeps_its_own_day(self):
+		"""The control: nothing changes for a day shift."""
+		self.punch("10:00", user=self.hr, reason=REASON)
+		self.assertEqual(str(self.log()[0].day), str(self.day))
+
+
+class TheEscapes(PunchChangeCase):
+	"""Review P2-2, P2-3, P2-4 and security F3: the ways round the rule that were found."""
+
+	OTHER_SHIFT = "ALV088 Other Shift"
+
+	def test_a_script_that_skips_validation_still_needs_a_reason(self):
+		"""`doc.flags.ignore_validate = True` (alv291's retag does it) skips `validate` only."""
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		again = frappe.get_doc(CHECKIN, doc.name)
+		again.log_type = "OUT"
+		again.flags.ignore_validate = True
+		frappe.set_user(self.hr)
+		try:
+			with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
+				again.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(CHECKIN, doc.name, "log_type"), "IN")
+		# control: with a reason the same save works and is logged
+		again = frappe.get_doc(CHECKIN, doc.name)
+		again.log_type = "OUT"
+		again.flags.ignore_validate = True
+		again.set(punch_change.FIELD, REASON)
+		frappe.set_user(self.hr)
+		try:
+			again.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(self.log()[-1].what, "Punch type changed from In to Out")
+
+	def test_re_tagging_the_shift_is_a_change_that_needs_a_reason(self):
+		"""The shift tag decides which day a punch counts on, so it is watched."""
+		if not frappe.db.exists("Shift Type", self.OTHER_SHIFT):
+			frappe.get_doc({"doctype": "Shift Type", "name": self.OTHER_SHIFT, "start_time": "14:00:00",
+			                "end_time": "22:00:00", "enable_auto_attendance": 1}).insert(ignore_permissions=True)
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		before = len(self.log())
+		again = frappe.get_doc(CHECKIN, doc.name)
+		again.shift = self.OTHER_SHIFT
+		again.shift_start = "%s 14:00:00" % add_days(self.day, -1)
+		again.flags.ignore_validate = True            # as alv291's retag does
+		frappe.set_user(self.hr)
+		try:
+			with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
+				again.save(ignore_permissions=True)
+			again = frappe.get_doc(CHECKIN, doc.name)       # a failed save stamps `modified` in memory
+			again.shift = self.OTHER_SHIFT
+			again.shift_start = "%s 14:00:00" % add_days(self.day, -1)
+			again.flags.ignore_validate = True
+			again.set(punch_change.FIELD, REASON)
+			again.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(len(self.log()), before + 1)
+		d = frappe.utils.getdate(add_days(self.day, -1))
+		self.assertEqual(self.log()[-1].what, "Punch moved to the %d %s shift" % (d.day, d.strftime("%b")))
+
+	def test_a_punch_cannot_be_moved_to_another_person(self):
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		other = self.h._employee("Mover088")
+		frappe.set_user(self.hr)
+		try:
+			again = frappe.get_doc(CHECKIN, doc.name)
+			again.employee = other
+			again.set(punch_change.FIELD, REASON)
+			with self.assertRaisesRegex(frappe.ValidationError, "cannot be moved to another person"):
+				again.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(CHECKIN, doc.name, "employee"), self.emp)
+		self.assertEqual(frappe.get_all(LOG, filters={"employee": other}), [])
+		# control: with notices off the move is allowed, so the refusal is the rule's.
+		self._set_notices(0)
+		again = frappe.get_doc(CHECKIN, doc.name)
+		again.employee = other
+		again.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value(CHECKIN, doc.name, "employee"), other)
+
+	def test_an_import_cannot_write_free_text_into_the_reason(self):
+		"""Frappe skips the Select check for the whole of an import (`flags.in_import`)."""
+		# The control: the premise is real, a bad Select value is accepted under the flag.
+		frappe.flags.in_import = True
+		self.addCleanup(setattr, frappe.flags, "in_import", False)
+		accepted = self.punch("05:00", user=self._machine_user(), log_type="SIDEWAYS")
+		self.assertEqual(frappe.db.get_value(CHECKIN, accepted.name, "log_type"), "SIDEWAYS",
+		                 "fixture is wrong: Frappe did not skip the Select check, so this proves nothing")
+		before = frappe.db.count(CHECKIN, {"employee": self.emp})
+		with self.assertRaisesRegex(frappe.ValidationError, "not one of the reasons"):
+			self.punch("11:00", user=self.hr, reason="Told by the manager, do not pay him")
+		self.assertEqual(frappe.db.count(CHECKIN, {"employee": self.emp}), before)
+		self.assertEqual(self.log(), [])
+		# and a listed reason still goes through under the same flag
+		self.punch("12:00", user=self.hr, reason=REASON)
+		self.assertEqual(len(self.log()), 1)
+
+	def test_the_reason_is_checked_again_when_the_record_is_written(self):
+		"""The second line of defence, tested on its own by handing `write_log` a bad stash."""
+		doc = frappe.get_doc({"doctype": CHECKIN, "employee": self.emp, "log_type": "IN",
+		                      "time": "%s 13:00:00" % self.day})
+		doc.flags[punch_change._STASH] = {"reason": "free text", "what": "Punch at 13:00 added"}
+		frappe.set_user(self.hr)
+		try:
+			with self.assertRaisesRegex(frappe.ValidationError, "not one of the reasons"):
+				punch_change.write_log(doc)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(self.log(), [])
+
+
+class TheRefusalsAreWrittenDown(PunchChangeCase):
+	def _rules(self, fn):
+		import json
+		out = []
+		for line in security_lines_from_a_fresh_process(fn):
+			try:
+				out.append(json.loads(line).get("rule"))
+			except Exception:
+				pass
+		return out
+
+	def test_each_refusal_leaves_a_line_with_its_rule(self):
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+
+		def attempts():
+			frappe.set_user(self.hr)
+			try:
+				for fn in (lambda: self.punch(hhmm="11:00", user=self.hr),
+				           lambda: frappe.delete_doc(CHECKIN, doc.name, ignore_permissions=True),
+				           lambda: self.punch(hhmm="12:00", user=self.hr, reason="free text")):
+					try:
+						fn()
+					except frappe.ValidationError:
+						pass
+			finally:
+				frappe.set_user("Administrator")
+
+		rules = self._rules(attempts)
+		self.assertEqual(sorted(set(rules)), ["088c-delete", "088c-reason", "088c-reason-list"])
+
+	def test_a_refused_move_leaves_its_line_too(self):
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		other = self.h._employee("Mover088b")
+
+		def attempt():
+			again = frappe.get_doc(CHECKIN, doc.name)
+			again.employee = other
+			frappe.set_user(self.hr)
+			try:
+				again.save(ignore_permissions=True)
+			except frappe.ValidationError:
+				pass
+			finally:
+				frappe.set_user("Administrator")
+
+		self.assertEqual(self._rules(attempt), ["088c-move"])
+
+	def test_the_record_cannot_be_deleted_even_during_a_migration(self):
+		self.punch(user=self.hr, reason=REASON)
+		row = self.log()[0].name
+		frappe.flags.in_migrate = True
+		self.addCleanup(setattr, frappe.flags, "in_migrate", False)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc(LOG, row, ignore_permissions=True)
+		self.assertTrue(frappe.db.exists(LOG, row))
+
+
+class TheScopeReadAsEachPersona(PunchChangeCase):
+	"""P2-5. Read the way the app reads it: `get_list` as each login, and `has_permission`."""
+
+	def test_hr_in_scope_sees_the_row_hr_of_another_company_and_an_employee_do_not(self):
+		self.punch(user=self.hr, reason=REASON)
+		row = self.log()[0].name
+		outsider = self.h._login("hrfar088c", ("HR Manager",))       # no company permission at all
+		names = lambda u: [r.name for r in frappe.get_list(LOG, user=u, filters={"employee": self.emp},
+		                                                    fields=["name"])]
+		self.assertEqual(names(self.hr), [row], "HR who looks after this person cannot see the row")
+		self.assertEqual(names(outsider), [], "HR of another company can list the row")
+		self.assertTrue(frappe.has_permission(LOG, "read", doc=row, user=self.hr))
+		self.assertFalse(frappe.has_permission(LOG, "read", doc=row, user=outsider),
+		                 "HR of another company can open the row by name")
+		self.assertFalse(frappe.has_permission(LOG, "read", doc=row, user=self.emp_user),
+		                 "the employee can open the log row; they see their own through my_changes")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_list(LOG, user=self.emp_user, fields=["name"])
+
+
+class TwoPages(PunchChangeCase):
+	"""Review P2-6 / F1: at 5 rows a page, direct changes make two pages ordinary."""
+
+	def test_six_direct_changes_print_two_pages_and_can_be_signed_with_two_photos(self):
+		first = get_first_day(self.day)
+		for k in range(6):
+			self.punch("10:%02d" % k, day=add_days(first, k), user=self.hr, reason=REASON)
+		out = self._print([self.emp], month=first)
+		self.assertEqual(sorted(s["page_no"] for s in out["sheets"]), [1, 2])
+		self.assertEqual([len(s["changes"]) for s in sorted(out["sheets"], key=lambda s: s["page_no"])], [5, 1])
+		notice = out["sheets"][0]["notice"]
+		self.assertEqual(frappe.db.get_value("Alvoraa Register Notice", notice, "page_count"), 2)
+		frappe.set_user(self.h.hr2)
+		try:
+			with self.assertRaises(frappe.ValidationError):
+				register_notice.record(notice, "Signed", photos=[_a_jpeg()])
+			done = register_notice.record(notice, "Signed", photos=[_a_jpeg(), _a_jpeg(colour=(10, 200, 30))])
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual((done["outcome"], done["photos"]), ("Signed", 2))
+		self.assertEqual(self._rows_for_me(first)[0]["state"], "done")

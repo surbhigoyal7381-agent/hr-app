@@ -257,7 +257,7 @@ def _punch_changes(month, employees, with_content):
 		punch_change.LOG,
 		filters={"employee": ("in", list(employees)),
 		         "day": ("between", [str(month), str(get_last_day(month))])},
-		fields=["name", "employee", "day", "changed_by", "changed_on", "reason_code", "what", "kind"],
+		fields=["name", "employee", "day", "changed_by", "changed_on", "reason_code", "what"],
 		order_by="day asc, changed_on asc", ignore_permissions=True)
 	if not rows:
 		return []
@@ -275,7 +275,7 @@ def _punch_changes(month, employees, with_content):
 		row[SIGNED_NOTICE] = signed.get(r.name)
 		row["is_open"] = r.name not in signed
 		if with_content:
-			row.update(creation=r.changed_on, reason_code=r.reason_code, what=r.what, kind=r.kind)
+			row.update(creation=r.changed_on, reason_code=r.reason_code, what=r.what)
 		out.append(row)
 	return out
 

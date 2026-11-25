@@ -14,22 +14,18 @@ from frappe import _
 from frappe.model.document import Document
 
 import hrms.alvoraa_hr_core.access as access
-
-#: Set by `punch_change.write_log` around its own insert. A browser cannot send a flag.
-FLAG = "in_punch_change"
+from alvoraa_portal.punch_change import FLAG
 
 
 class AlvoraaPunchChange(Document):
 	def validate(self):
-		if frappe.flags.get(FLAG) or frappe.flags.in_install or frappe.flags.in_migrate:
+		if frappe.flags.get(FLAG):
 			return
 		access.refuse(_("A punch change record is written by the system when a punch is changed. "
 		                "It cannot be created or edited by hand."),
 		              "088c-SEC-1", "Alvoraa Punch Change validate", self.doctype, self.name)
 
 	def on_trash(self):
-		if frappe.flags.in_install or frappe.flags.in_migrate:
-			return
 		access.refuse(_("A punch change record is evidence of what the employee was told, so it "
 		                "cannot be deleted."),
 		              "088c-SEC-1", "Alvoraa Punch Change on_trash", self.doctype, self.name)

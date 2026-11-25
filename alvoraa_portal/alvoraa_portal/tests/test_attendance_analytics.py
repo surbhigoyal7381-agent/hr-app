@@ -25,7 +25,8 @@ def _company():
 	if not name:
 		ensure_warehouse_type()
 		name = frappe.get_doc({"doctype": "Company", "company_name": "AA Test Co",
-		                       "abbr": "AAT", "default_currency": "INR"}
+		                       "abbr": "AAT", "default_currency": "INR",
+		                       "country": "India"}
 		                      ).insert(ignore_permissions=True).name
 	return name
 

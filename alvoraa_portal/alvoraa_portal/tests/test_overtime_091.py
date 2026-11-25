@@ -53,6 +53,10 @@ class TheBandEdges(unittest.TestCase):
 		self.assertEqual(day(hm(25, 10)).overtime_quarters, 2)
 		self.assertEqual(overtime_quarters_for(hm(1, 10), SHIFT_END, BANDS), 0)
 
+	def test_the_order_of_the_rows_does_not_matter(self):
+		self.assertEqual(overtime_quarters_for(hm(26, 20), SHIFT_END, list(reversed(BANDS))), 2)
+		self.assertEqual(overtime_quarters_for(hm(28), SHIFT_END, [BANDS[2], BANDS[0], BANDS[1]]), 4)
+
 	def test_an_empty_table_means_no_overtime(self):
 		self.assertEqual(day(hm(26), overtime_bands=[]).overtime_quarters, 0)
 

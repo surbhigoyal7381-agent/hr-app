@@ -136,6 +136,7 @@ class TheCardDoesNotOfferWhatCannotBeEarned(FrappeTestCase):
 	def test_a_permanent_person_sees_the_night_green(self):
 		out = self._green("Permanent")
 		self.assertTrue(out["eligible"])
+		self.assertIsNotNone(out["night"], "a Permanent person is offered the night green")
 		self.assertEqual(out["night"]["after"], "21:30")
 
 

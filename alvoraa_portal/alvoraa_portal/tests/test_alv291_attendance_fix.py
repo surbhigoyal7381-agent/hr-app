@@ -25,6 +25,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_to_date, get_datetime, getdate, now_datetime, nowdate
 
 from alvoraa_portal import alv291_attendance_fix as fix
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 COMPANY = "ALV291 Test Co"
 TRAP_COMPANY = "ALV291 Trap Co"
@@ -41,6 +42,7 @@ STEPS = ("preview", "pause", "set_start", "cancel_wrong", "retag", "enable_and_m
 
 def _company(name, abbr):
 	if not frappe.db.exists("Company", name):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": name, "abbr": abbr,
 		                "default_currency": "INR", "country": "India"}).insert()
 

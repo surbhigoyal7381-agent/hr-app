@@ -24,6 +24,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, getdate, nowdate
 
 from alvoraa_portal.payroll_rules_apply import _employee_flags, prepare
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 COMPANY = "Flags Test Co"
 ABBR = "FLGT"
@@ -47,6 +48,7 @@ def _gender():
 
 def _ensure_company():
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY,
 		                "abbr": ABBR, "default_currency": "INR",
 		                "country": "India"}).insert(ignore_permissions=True)

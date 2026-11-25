@@ -14,7 +14,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import today
 
 from alvoraa_portal.day_marks import marks_today
-from alvoraa_portal.tests.utils import ensure_gender
+from alvoraa_portal.tests.utils import ensure_gender, ensure_warehouse_type
 
 COMPANY = "Day Marks Test Co"
 SHIFT = "DM 10:30-8:30"
@@ -23,6 +23,7 @@ DAY = "2026-10-20"
 
 def setUpModule():
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY,
 		                "abbr": "DMTC", "default_currency": "INR",
 		                "country": "India"}).insert(ignore_permissions=True)

@@ -37,7 +37,7 @@ from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal.tests.test_attendance_correction import (_company,
                                                              _holiday_list,
                                                              setUpModule)
-from alvoraa_portal.tests.utils import ensure_gender
+from alvoraa_portal.tests.utils import ensure_gender, ensure_warehouse_type
 
 REQUEST = "Attendance Request"
 
@@ -261,6 +261,7 @@ class DeclineScopeCase(FrappeTestCase):
 	def _other_company_employee(self, tag):
 		name = "ALV269 Other Co %d" % tag
 		if not frappe.db.exists("Company", name):
+			ensure_warehouse_type()
 			frappe.get_doc({"doctype": "Company", "company_name": name,
 			                "default_currency": "INR", "country": "India",
 			                "abbr": "A269X%d" % tag}).insert(ignore_permissions=True)

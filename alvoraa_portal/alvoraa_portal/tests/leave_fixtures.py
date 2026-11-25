@@ -13,6 +13,7 @@ from alvoraa_goals.tests.utils import ensure_company, ensure_employee
 
 import frappe
 from frappe.utils import add_days, today
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 # Fixed, verified dates. Tests assert exact day counts, so these must not drift.
 HOLIDAY = "2026-09-16"   # Wednesday
@@ -147,6 +148,7 @@ PLAIN_LEAVE_COMPANY = "Alvoraa Leave Test Co"
 
 def _plain_company():
 	if not frappe.db.exists("Company", PLAIN_LEAVE_COMPANY):
+		ensure_warehouse_type()
 		doc = frappe.get_doc({"doctype": "Company", "company_name": PLAIN_LEAVE_COMPANY,
 		                      "abbr": "ALTC", "default_currency": "INR", "country": "India"})
 		doc.flags.ignore_permissions = True

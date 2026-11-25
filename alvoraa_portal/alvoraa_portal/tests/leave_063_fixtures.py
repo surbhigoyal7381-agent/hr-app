@@ -18,7 +18,7 @@ import frappe
 from frappe.utils import add_days, get_first_day, get_last_day, getdate, nowdate
 
 from alvoraa_portal.tests.test_payroll_rules import DTC_SLABS
-from alvoraa_portal.tests.utils import ensure_fiscal_years
+from alvoraa_portal.tests.utils import ensure_fiscal_years, ensure_warehouse_type
 
 COMPANY = "L063 Rules Co"
 ABBR = "L063R"
@@ -55,6 +55,7 @@ def _holiday_list(name, holidays=()):
 
 def _company(name, abbr):
 	if not frappe.db.exists("Company", name):
+		ensure_warehouse_type()
 		_insert({"doctype": "Company", "company_name": name, "abbr": abbr,
 		         "default_currency": "INR", "country": "India"})
 	frappe.db.set_value("Company", name, "default_holiday_list", HOLIDAYS)

@@ -126,3 +126,18 @@ def ensure_gender():
 		return existing
 	return frappe.get_doc({"doctype": "Gender", "gender": "Other"}).insert(
 		ignore_permissions=True).name
+
+
+def ensure_warehouse_type():
+	"""Make the "Transit" Warehouse Type, if the site does not have it.
+
+	Inserting a Company runs ERPNext's `create_default_warehouses`, and its
+	"Goods In Transit" warehouse links to Warehouse Type "Transit". That record
+	arrives with the setup wizard, which a bare test site never ran, so the
+	Company insert dies with LinkValidationError. It used to pass in CI only
+	because an earlier module in the same batch had made it.
+	"""
+	if not frappe.db.exists("Warehouse Type", "Transit"):
+		frappe.get_doc({"doctype": "Warehouse Type", "name": "Transit"}).insert(
+			ignore_permissions=True)
+	return "Transit"

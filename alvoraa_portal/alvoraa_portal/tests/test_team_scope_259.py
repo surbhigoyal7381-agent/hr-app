@@ -26,7 +26,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import attendance_correction as ac
-from alvoraa_portal.tests.utils import ensure_gender
+from alvoraa_portal.tests.utils import ensure_gender, ensure_warehouse_type
 
 SHIFT = "ALV 259 Day"
 
@@ -35,6 +35,7 @@ def _company():
 	name = frappe.db.get_value("Company", {}, "name")
 	if name:
 		return name
+	ensure_warehouse_type()
 	return frappe.get_doc({"doctype": "Company", "company_name": "ALV 259 Co",
 	                       "default_currency": "INR",
 	                       "abbr": "A259"}).insert(ignore_permissions=True).name

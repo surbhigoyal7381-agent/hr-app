@@ -22,7 +22,7 @@ from frappe.utils import add_days, add_months, flt, get_first_day, get_last_day,
 
 from alvoraa_portal import pay_api, payroll_slip
 from alvoraa_portal.payroll_month import MonthSummary
-from alvoraa_portal.tests.utils import ensure_fiscal_years
+from alvoraa_portal.tests.utils import ensure_fiscal_years, ensure_warehouse_type
 
 from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
 	salary_components_and_workings as report,
@@ -98,6 +98,7 @@ def setUpModule():
 		_insert({"doctype": "Holiday List", "holiday_list_name": HOLIDAYS,
 		         "from_date": add_days(START, -400), "to_date": add_days(END, 400)})
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		_insert({"doctype": "Company", "company_name": COMPANY, "abbr": ABBR,
 		         "default_currency": "INR", "country": "India"})
 	frappe.db.set_value("Company", COMPANY, "default_holiday_list", HOLIDAYS)

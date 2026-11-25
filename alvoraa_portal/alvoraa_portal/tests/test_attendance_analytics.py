@@ -15,7 +15,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import attendance_analytics as aa
-from alvoraa_portal.tests.utils import ensure_gender
+from alvoraa_portal.tests.utils import ensure_gender, ensure_warehouse_type
 
 SHIFT = "AA Test Shift"          # 09:00-18:00, nine hours
 
@@ -23,6 +23,7 @@ SHIFT = "AA Test Shift"          # 09:00-18:00, nine hours
 def _company():
 	name = frappe.db.get_value("Company", {}, "name")
 	if not name:
+		ensure_warehouse_type()
 		name = frappe.get_doc({"doctype": "Company", "company_name": "AA Test Co",
 		                       "abbr": "AAT", "default_currency": "INR"}
 		                      ).insert(ignore_permissions=True).name

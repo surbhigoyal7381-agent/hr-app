@@ -607,6 +607,10 @@ TENANT_DOCTYPES = [
     # Slice 063: the tenant's own days-present table of leave earned, a child
     # table of its pay rule set. Tenant-side, like the rest of the rule set.
     "Alvoraa Leave Credit Row",
+    # Slice 091: the tenant's own overtime table (last punch -> quarters earned), a
+    # child table of its pay rule set. Tenant-side like every other child table of it:
+    # how that tenant pays its own staff, not our billing or provisioning plumbing.
+    "Alvoraa Overtime Band",
     # Slice 076: a notice the tenant's own HR or management sent to its own
     # staff. The tenant's record, read and written inside the tenant.
     "Announcement",

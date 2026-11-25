@@ -4,7 +4,7 @@ artifact: 00b-notice-scope-analysis (change-process steps 1 and 2 only; no code 
 author: hrms-fullstack-engineer
 date: 2026-11-25
 risk tier: 1 (personal data, evidence, a mandatory field on the punch feed)
-status: STRATEGY FOR APPROVAL. Nothing is built. Nothing is pushed.
+status: APPROVED by Surbhi, 25 Nov 2026 (Q1 punches only; Q4 option B; Q5 refuse human deletes; the rest as recommended). Built locally, see 03c-implementation-notes.md. Not pushed.
 read from: worktree /Users/mac/hr-app/.claude/worktrees/088-notice-scope, branch docs/088-notice-scope-analysis, built on origin/main 7ebc5898 (also read: release worktree release-088-alv436 at 59f95044)
 ---
 
@@ -120,6 +120,8 @@ I recommend B because counsel's test is evidence, and a row that nobody can edit
 **The log row holds:** the punch (a plain `Data` copy of its name, not a Link, so it survives a delete), the employee, the company, the day, the kind (Added or Changed), the before and after of the material fields as short text, the reason code, `changed_by`, `changed_on`. No free text. It is created under a module flag and refused for edit or delete otherwise, the same pattern as `alvoraa_register_notice.py` (proven by reading it). Index on `(employee, day)`.
 
 ### 3.3 Reason code, not free text
+
+> **DRAFT LIST. It needs sign-off (the employer and counsel) before the notice switch is ticked on any tenant.** It is not a code blocker. The list is the `reason_code` Select options in `alvoraa_punch_change.json`; changing it is one JSON edit.
 
 **A fixed list.** Counsel's word is "reason code". Free text was the thing ALV-436 had to defend against (markup, personal detail in a sentence one person writes about another), and it cannot be counted or checked. The list lives in the log DocType's Select options (one source). The Custom Field's options are filled from that same list at `after_migrate`, so the two cannot drift. A Property Setter or HR Settings page for the list is rejected: one tenant list, edited by nobody asking for it.
 

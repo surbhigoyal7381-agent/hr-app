@@ -55,6 +55,7 @@ from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal.tests.test_attendance_correction import _company, _holiday_list
+from alvoraa_portal.tests.utils import ensure_gender
 
 EARLY = "ALV346 Early"    # 06:00-10:00
 LATE = "ALV346 Late"      # 14:00-18:00 - no overlap with EARLY, on purpose
@@ -101,7 +102,7 @@ class NoShiftAssignmentAnywhere(FrappeTestCase):
 		return frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "default_shift": default_shift,
 			"holiday_list": self.holidays,
 		}).insert(ignore_permissions=True).name

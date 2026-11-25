@@ -13,6 +13,7 @@ from frappe.utils import add_days, add_months, getdate, nowdate
 
 from alvoraa_portal import attendance_analytics as aa
 from alvoraa_portal import branch_scope
+from alvoraa_portal.tests.utils import ensure_gender
 
 LAKESIDE = "S012 G3 Lakeside"
 STATION = "S012 G3 Station Road"
@@ -54,7 +55,7 @@ class G3Case(FrappeTestCase):
 		return frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "branch": branch, "user_id": user, "reports_to": reports_to,
 			"department": department,
 			# ERPNext would otherwise limit this login to its own Employee record,
@@ -107,7 +108,7 @@ class TestPersonIsScoped(G3Case):
 		elsewhere = frappe.get_doc({
 			"doctype": "Employee", "first_name": "OtherCoG3", "company": other,
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male", "status": "Active",
+			"gender": ensure_gender(), "status": "Active",
 		}).insert(ignore_permissions=True).name
 		frappe.set_user(central)
 		with self.assertRaises(frappe.PermissionError):

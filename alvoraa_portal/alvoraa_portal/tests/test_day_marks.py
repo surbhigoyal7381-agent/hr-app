@@ -14,6 +14,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import today
 
 from alvoraa_portal.day_marks import marks_today
+from alvoraa_portal.tests.utils import ensure_gender
 
 COMPANY = "Day Marks Test Co"
 SHIFT = "DM 10:30-8:30"
@@ -91,7 +92,7 @@ class MarksCase(FrappeTestCase):
 			"doctype": "Employee", "first_name": "DM%d" % MarksCase._n,
 			"company": COMPANY, "date_of_birth": "1990-01-01",
 			"date_of_joining": "2024-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "default_shift": SHIFT,
 		})
 		doc.flags.ignore_permissions = True

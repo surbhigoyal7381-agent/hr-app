@@ -14,6 +14,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal import performance_api as pa
+from alvoraa_portal.tests.utils import ensure_gender
 
 CYCLE = "AV Test Cycle"
 
@@ -57,7 +58,7 @@ class VisibilityCase(FrappeTestCase):
 		emp = frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "user_id": email, "reports_to": reports_to,
 		}).insert(ignore_permissions=True)
 		return emp.name, email

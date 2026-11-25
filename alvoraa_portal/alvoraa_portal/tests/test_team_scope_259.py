@@ -26,6 +26,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import attendance_correction as ac
+from alvoraa_portal.tests.utils import ensure_gender
 
 SHIFT = "ALV 259 Day"
 
@@ -114,7 +115,7 @@ class TeamScopeCase(FrappeTestCase):
 	def _employee(self, first, branch, user_id=None):
 		doc = {"doctype": "Employee", "first_name": first, "company": self.company,
 		       "date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-		       "gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+		       "gender": ensure_gender(),
 		       "status": "Active", "default_shift": SHIFT}
 		if branch:
 			doc["branch"] = branch

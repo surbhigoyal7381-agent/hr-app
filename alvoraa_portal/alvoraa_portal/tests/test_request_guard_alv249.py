@@ -15,6 +15,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal import request_guard
+from alvoraa_portal.tests.utils import ensure_gender
 
 HOOK = "alvoraa_portal.request_guard.drop_permission_skips"
 
@@ -49,7 +50,7 @@ class DoorsCase(FrappeTestCase):
 		u.add_roles("Employee")
 		e = frappe.get_doc({"doctype": "Employee", "first_name": label, "company": cls.company,
 		                    "date_of_birth": "1990-10-15", "date_of_joining": "2015-01-01",
-		                    "gender": frappe.db.get_value("Gender", {}, "name") or "Male", "status": "Active",
+		                    "gender": ensure_gender(), "status": "Active",
 		                    "user_id": email, "create_user_permission": 0, "cell_number": "9800000000"}
 		                   ).insert(ignore_permissions=True)
 		return e.name, email

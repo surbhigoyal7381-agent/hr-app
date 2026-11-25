@@ -14,6 +14,7 @@ from frappe.utils import add_days, now_datetime, nowdate
 
 from alvoraa_portal import attendance_analytics as aa
 from alvoraa_portal import branch_scope as bs
+from alvoraa_portal.tests.utils import ensure_gender
 
 STORE_A = "BS Test Store A"
 STORE_B = "BS Test Store B"
@@ -48,7 +49,7 @@ class BranchCase(FrappeTestCase):
 		return frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "branch": branch,
 		}).insert(ignore_permissions=True).name
 

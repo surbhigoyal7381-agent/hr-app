@@ -27,6 +27,7 @@ from frappe.utils import now
 
 from alvoraa_portal import field_checkin as fc
 from alvoraa_portal import subscription as sub
+from alvoraa_portal.tests.utils import ensure_gender
 
 PHOTO_MARKER = "ZQXPHOTO014MARKER"
 LAT_MARKER = "12.3456789"
@@ -92,7 +93,7 @@ class CheckinLogCase(FrappeTestCase):
 		return frappe.get_doc({
 			"doctype": "Employee", "first_name": NAME_MARKER, "company": _company(),
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "user_id": EMP_EMAIL,
 		}).insert(ignore_permissions=True).name
 

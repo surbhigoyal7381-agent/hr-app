@@ -16,6 +16,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal.tests.fixtures_043 import ensure_company
+from alvoraa_portal.tests.utils import ensure_gender
 
 HOME = "ALV349 Home Company"
 OTHER = "ALV349 Other Company"
@@ -72,7 +73,7 @@ class PickerScopeCase(FrappeTestCase):
 		doc = {"doctype": "Employee", "first_name": self.tag + first,
 		       "company": company, "date_of_birth": "1970-01-01",
 		       "date_of_joining": "2000-01-01", "status": "Active",
-		       "gender": frappe.db.get_value("Gender", {}, "name") or "Male"}
+		       "gender": ensure_gender()}
 		if branch:
 			doc["branch"] = branch
 		if user:

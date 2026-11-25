@@ -16,6 +16,7 @@ from frappe.utils import now_datetime, today
 from alvoraa_portal import hr_api
 from alvoraa_portal.home_api import _checkin_today
 from alvoraa_portal.payroll_rules import label_punches
+from alvoraa_portal.tests.utils import ensure_gender
 
 
 def is_checked_in(rows):
@@ -82,7 +83,7 @@ class TheScreens(FrappeTestCase):
 				"doctype": "Employee", "first_name": "MachineIn",
 				"company": frappe.db.get_value("Company", {}, "name"),
 				"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-				"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+				"gender": ensure_gender(),
 				"status": "Active", "user_id": self.email,
 			}).insert(ignore_permissions=True).name
 		frappe.db.delete("Employee Checkin", {"employee": self.emp, "time": (">=", today() + " 00:00:00")})

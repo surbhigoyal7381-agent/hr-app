@@ -111,3 +111,18 @@ def set_org_switch(key, value="1"):
 	before = frappe.db.get_default(key)
 	frappe.db.set_default(key, value)
 	return lambda: frappe.db.set_default(key, before or "")
+
+
+def ensure_gender():
+	"""Return a Gender, creating one only if the site has none.
+
+	Employee.gender is a required Link. A test site that skipped the setup
+	wizard has no Gender rows, so a hard-coded "Male" is not a record and the
+	insert dies with LinkValidationError. Same idea as `_gender()` in
+	test_payroll_flags.
+	"""
+	existing = frappe.db.get_value("Gender", {}, "name")
+	if existing:
+		return existing
+	return frappe.get_doc({"doctype": "Gender", "gender": "Other"}).insert(
+		ignore_permissions=True).name

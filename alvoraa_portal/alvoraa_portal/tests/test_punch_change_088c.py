@@ -534,7 +534,7 @@ class TwoPages(PunchChangeCase):
 		try:
 			with self.assertRaises(frappe.ValidationError):
 				register_notice.record(notice, "Signed", photos=[_a_jpeg()])
-			done = register_notice.record(notice, "Signed", photos=[_a_jpeg(), _a_jpeg(colour=(10, 200, 30))])
+			done = register_notice.record(notice, "Signed", photos=[_a_jpeg(), _a_jpeg()])
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual((done["outcome"], done["photos"]), ("Signed", 2))

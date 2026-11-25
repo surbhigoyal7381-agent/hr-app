@@ -106,7 +106,7 @@ The numbers match the coordinator's fix list.
 9. **Migrate exemption removed** from the log's `on_trash` (and from `validate`: nothing used either).
 10. **Deleted:** `company` (written, read by nothing), `kind` (I chose to drop it: `what` already says "added", and nothing read it), the duplicate `employee` index (the composite `(employee, day)` stays), the duplicated `FLAG` literal in the controller (it imports the module's).
 11. **Ceilings:** `punch_change.py` 1, `register_notice.py` 14 added to `test_portal_security_010`.
-12. **Pair run:** see the report.
+12. **Pair run, one process, 088 then 087** (a throwaway module with `load_tests`, deleted afterwards): `Ran 214 tests in 1459.673s` / `OK`. The Company switch read from the database afterwards: 0 on every company. Neighbours after the fixes: 086 33 OK, alv302 62 OK, machine_085 3 OK, dedupe 26 OK, 014 14 OK, 013 16 OK, security_010 45+5 OK, geofence 23 OK, doors 16 OK, order 10 OK, slip 1+7 OK, `test_held_day_085` 39 OK and the same 6 environmental failures (missing `scripts/alv392_held_backfill_grace.py` on the bench path), `test_punch_change_088c` 36 OK.
 13. **Wording:** "every path through Frappe's document layer except where a script skips it". The fixture login now holds only `Biometric Sync` by default; one guard-rail test keeps the realistic sync-plus-HR-role shape on purpose.
 14. **Tamper-evident, not tamper-proof:** written into the DocType description and `00b`.
 15. **Two unlogged repair paths** noted for the runbook in `00b`.

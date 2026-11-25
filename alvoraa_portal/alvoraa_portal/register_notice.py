@@ -41,6 +41,7 @@ from frappe.utils import cint, get_first_day, get_last_day, getdate, nowdate
 import hrms.alvoraa_hr_core.access as access
 from alvoraa_portal.field_app_limits import SELF_KEY, _limited
 import alvoraa_portal.punch_fix as punch_fix
+import alvoraa_portal.punch_change as punch_change
 from alvoraa_portal.punch_fix import SIGNED_NOTICE, signed_column_ready
 
 REQUEST = "Attendance Request"
@@ -79,7 +80,9 @@ FIELDS = {
 		 "description": "On: HR can print a monthly page for anyone whose attendance was "
 		                "changed for them, have them sign it, and photograph the signed "
 		                "page. For staff who have no app and cannot confirm on a screen. "
-		                "Off: nothing is listed and nothing can be printed."},
+		                "On also means: HR must give a reason, from a fixed list, for every "
+		                "punch they add or change for somebody else, and the notice lists it. "
+		                "Off: nothing is listed, nothing can be printed and no reason is asked for."},
 	],
 }
 
@@ -167,8 +170,9 @@ def qualifying_changes(month, employees=None, scope=None, with_content=False):
 	- Approved and submitted - "this day now counts X h" is only true after approval, and
 	  the figure behind that sentence is written at approval (D-6). A waiting change on a
 	  printed page would be a promise, not a record;
-	- filed by somebody else. `Administrator` is the break-glass account and is not a
-	  person filing for somebody (087 AC-104), so it does not count either;
+	- filed by somebody else. `Administrator` DOES count, since 088c (counsel's wording has no
+	  exception, Surbhi 25 Nov 2026). It still needs no Confirm and holds no pay (087 AC-104);
+	  the notice is information, not a gate;
 	- the day falls in the month;
 	- not undone, declined or withdrawn.
 
@@ -180,7 +184,12 @@ def qualifying_changes(month, employees=None, scope=None, with_content=False):
 	confirmed or signed still belongs in the list, shown as done (AC-4). `is_open` on each
 	row says which is which.
 
-	**It returns no reason, no time and no hours.** Only what the list and the state need.
+	**Since 088c it also returns the punches a person added or changed directly** (the
+	`Alvoraa Punch Change` log), as rows of the same shape with `punch_change` set. They hold
+	no pay and need no Confirm. Whatever was done before the organisation's switch went on is
+	not in that log, so it can never appear here.
+
+	**It returns no reason, no time and no hours** for the request rows. Only what the list and the state need.
 	The sheet reads the request itself, under its own permission check, when it is printed.
 	"""
 	# **The scope is resolved to people, not spread onto the request.** The first version
@@ -196,6 +205,13 @@ def qualifying_changes(month, employees=None, scope=None, with_content=False):
 	employees = [e for e in (employees or allowed) if e in allowed]
 	if not employees:
 		return []
+	out = _request_changes(month, employees, with_content) + _punch_changes(month, employees, with_content)
+	out.sort(key=lambda r: str(r.from_date))
+	return out
+
+
+def _request_changes(month, employees, with_content):
+	"""The punch fixes filed as Attendance Requests (087). Unchanged apart from Administrator."""
 	filters = {}
 	# `alvoraa_review_status`, not `status`: Attendance Request has no `status` column at
 	# all. The first version of this query used one, read from the spec's prose rather than
@@ -222,10 +238,45 @@ def qualifying_changes(month, employees=None, scope=None, with_content=False):
 	for r in rows:
 		if not (r.alvoraa_missing_time or (r.alvoraa_set_aside or "").strip()):
 			continue                                   # not a punch fix at all
-		if r.owner == "Administrator" or r.owner == logins.get(r.employee):
-			continue                                   # the employee's own, or break-glass
+		if r.owner == logins.get(r.employee):
+			continue                                   # the employee's own
 		r["is_open"] = not (r.alvoraa_confirmed_on or r.get(SIGNED_NOTICE))
 		out.append(r)
+	return out
+
+
+def _punch_changes(month, employees, with_content):
+	"""Punches a person added or changed directly, as rows shaped like the request rows.
+
+	`name` is the log row's name, `owner` is who changed it (so the filer rules work), and a
+	row is open until a notice that covers it has been answered Signed. Nothing is written
+	onto the punch: the answer lives on the notice that covered the row."""
+	if not frappe.db.exists("DocType", punch_change.LOG):
+		return []
+	rows = frappe.get_all(
+		punch_change.LOG,
+		filters={"employee": ("in", list(employees)),
+		         "day": ("between", [str(month), str(get_last_day(month))])},
+		fields=["name", "employee", "day", "changed_by", "changed_on", "reason_code", "what", "kind"],
+		order_by="day asc, changed_on asc", ignore_permissions=True)
+	if not rows:
+		return []
+	signed = {}
+	for c in frappe.get_all("Alvoraa Register Notice Change",
+	                        filters={"punch_change": ("in", [r.name for r in rows])},
+	                        fields=["parent", "punch_change"], ignore_permissions=True):
+		if frappe.db.get_value(NOTICE, c.parent, "outcome") == "Signed":
+			signed[c.punch_change] = c.parent
+	out = []
+	for r in rows:
+		row = frappe._dict(name=r.name, employee=r.employee, owner=r.changed_by,
+		                   modified=r.changed_on, from_date=r.day, punch_change=r.name,
+		                   alvoraa_needs_confirm=0, alvoraa_confirmed_on=None)
+		row[SIGNED_NOTICE] = signed.get(r.name)
+		row["is_open"] = r.name not in signed
+		if with_content:
+			row.update(creation=r.changed_on, reason_code=r.reason_code, what=r.what, kind=r.kind)
+		out.append(row)
 	return out
 
 
@@ -243,10 +294,10 @@ def _latest_notices(month, employees):
 	if latest:
 		covered = frappe.get_all("Alvoraa Register Notice Change",
 		                         filters={"parent": ("in", [r.name for r in latest.values()])},
-		                         fields=["parent", "request", "content_hash"],
+		                         fields=["parent", "request", "punch_change", "content_hash"],
 		                         ignore_permissions=True)
 		for r in latest.values():
-			r["covered"] = {c.request: c.content_hash for c in covered if c.parent == r.name}
+			r["covered"] = {(c.request or c.punch_change): c.content_hash for c in covered if c.parent == r.name}
 	return latest
 
 
@@ -479,7 +530,10 @@ def _content_hash(change):
 	the same thing. The hash holds no reason text; that is the point of hashing it."""
 	import hashlib
 
-	parts = [str(change.get(f) or "") for f in punch_fix.CONFIRMED_CONTENT]
+	if change.get("punch_change"):
+		parts = [str(change.get(f) or "") for f in ("name", "from_date", "reason_code", "what")]
+	else:
+		parts = [str(change.get(f) or "") for f in punch_fix.CONFIRMED_CONTENT]
 	return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -491,6 +545,16 @@ def sheet_rows(change, filer_login):
 	on 21 Nov so the paper matches what the app already shows the employee. The name is
 	still on the HR-only notice record, which is where counsel allowed it.
 	"""
+	if change.get("punch_change"):
+		# A punch a person added or changed directly: the sentence and the code were fixed
+		# when it was done and are read back, never worked out again. Shown as "HR", with no
+		# name, like every other HR change on the paper (OQ-1).
+		return {
+			"day": _day_words(change.from_date), "what": [change.get("what")], "counts": None,
+			"filed_role": "HR", "filed_by": None,
+			"filed_on": str(getdate(change.get("creation") or change.from_date)),
+			"why": change.get("reason_code"), "blocks_pay": False,
+		}
 	kind, who = punch_fix._filer(change.owner, filer_login)
 	what = [s for s in [_added_sentence(change)] if s] + _aside_sentences(change)
 	return {
@@ -613,7 +677,8 @@ def _write_the_notice(employee_row, month, pages):
 			"printed_at": frappe.utils.now_datetime(),
 			"page_count": len(pages),
 			"outcome": "Printed",
-			"changes": [{"request": c.name, "page_no": page_no, "content_hash": _content_hash(c)}
+			"changes": [{("punch_change" if c.get("punch_change") else "request"): c.name,
+			             "page_no": page_no, "content_hash": _content_hash(c)}
 			            for page_no, page in enumerate(pages, start=1) for c in page],
 		})
 		doc.insert(ignore_permissions=True)
@@ -744,8 +809,7 @@ def record(notice, outcome, photos=None, reason=None):
 		frappe.throw(_("A newer notice was printed. Use the newer one."))
 
 	covered = list(doc.changes or [])
-	mine = [c for c in covered
-	        if frappe.db.get_value(REQUEST, c.request, "owner") == frappe.session.user]
+	mine = [c for c in covered if _filed_by(c) == frappe.session.user]
 	if mine:
 		access.refuse(_("You filed a change on this page, so another HR person records "
 		                "the signature."),
@@ -768,6 +832,14 @@ def record(notice, outcome, photos=None, reason=None):
 	return _write_the_answer(doc, "Signed", photos=photos)
 
 
+def _filed_by(change_row):
+	"""Who made this change, from the database and never from the screen. A direct punch
+	change is read from its record, a request from the request."""
+	if change_row.get("punch_change"):
+		return frappe.db.get_value(punch_change.LOG, change_row.punch_change, "changed_by")
+	return frappe.db.get_value(REQUEST, change_row.request, "owner")
+
+
 def _write_the_answer(doc, outcome, photos=None, reason=None):
 	"""The one write. Photos first, then the marks, then the notice - so that a refused
 	photo stops the whole thing before any change is marked signed."""
@@ -778,6 +850,8 @@ def _write_the_answer(doc, outcome, photos=None, reason=None):
 	marked, stale = [], []
 	if outcome == "Signed":
 		for c in (doc.changes or []):
+			if c.get("punch_change"):
+				continue       # nothing to mark: the answer on this notice IS the signature
 			(marked if _still_the_same(c) else stale).append(c.request)
 		if marked:
 			punch_fix.record_register_signature(marked, doc.name)
@@ -876,6 +950,11 @@ def notice_has_permission(doc, user=None, permission_type=None):
 	if not doc.get("employee"):
 		return False
 	return bool(access.employee_in_scope(doc.employee, user))
+
+
+def punch_change_query_conditions(user=None):
+	"""088c: HR sees the punch-change records of the people they look after, and nobody else's."""
+	return _scope_sql(punch_change.LOG, user)
 
 
 def photo_log_query_conditions(user=None):

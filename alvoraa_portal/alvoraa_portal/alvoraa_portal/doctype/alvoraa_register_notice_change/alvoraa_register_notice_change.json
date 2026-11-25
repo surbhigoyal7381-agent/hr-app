@@ -8,21 +8,31 @@
  "engine": "InnoDB",
  "field_order": [
   "request",
+  "punch_change",
   "page_no",
   "content_hash"
  ],
  "fields": [
   {
    "columns": 4,
-   "description": "The Attendance Request this line was about.",
+   "description": "Set for a change made through an Attendance Request. Exactly one of this and Punch Change is set.",
    "fieldname": "request",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Request",
    "options": "Attendance Request",
    "read_only": 1,
-   "reqd": 1,
+   "reqd": 0,
    "search_index": 1
+  },
+  {
+   "fieldname": "punch_change",
+   "fieldtype": "Link",
+   "label": "Punch Change",
+   "options": "Alvoraa Punch Change",
+   "in_list_view": 1,
+   "read_only": 1,
+   "description": "Set for a punch a person added or changed directly (slice 088c)."
   },
   {
    "columns": 2,

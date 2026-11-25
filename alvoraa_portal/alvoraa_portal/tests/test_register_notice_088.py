@@ -53,6 +53,25 @@ class RegisterNoticeCase(PunchFixCase):
 		self.addCleanup(self._put_the_notice_switch_back, self.h.company)
 		self._set_notices(1)
 
+	def _machine_user(self):
+		"""The biometric sync login: the sync role plus HR User, and no Employee record."""
+		if not frappe.db.exists("Role", "Biometric Sync"):
+			frappe.get_doc({"doctype": "Role", "role_name": "Biometric Sync"}).insert(ignore_permissions=True)
+		if not getattr(self, "_machine_login", None):
+			self._machine_login = self.h._login("mach088", ("Biometric Sync", "HR User"))
+		return self._machine_login
+
+	def _machine_punch(self, doc):
+		"""A punch the way a biometric machine files it. **Since 088c a person adding a punch
+		needs a reason once the switch is on, so a fixture that stands for "the day already
+		had these punches" must file them as the machine account, not as Administrator** -
+		otherwise it is refused, or worse, logged as a manual change and listed."""
+		frappe.set_user(self._machine_user())
+		try:
+			return doc.insert(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+
 	def _set_notices(self, on, company=None):
 		frappe.db.set_value("Company", company or self.h.company,
 		                    register_notice.NOTICE_SWITCH, on, update_modified=False)
@@ -89,9 +108,8 @@ class RegisterNoticeCase(PunchFixCase):
 		from alvoraa_portal.tests import test_held_day_085 as hd
 
 		for t, kind in (("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")):
-			frappe.get_doc({"doctype": "Employee Checkin", "employee": self.emp,
-			                "log_type": kind, "time": "%s %s:00" % (day, t)}
-			               ).insert(ignore_permissions=True)
+			self._machine_punch(frappe.get_doc({"doctype": "Employee Checkin", "employee": self.emp,
+			                                    "log_type": kind, "time": "%s %s:00" % (day, t)}))
 		att = frappe.get_doc({"doctype": "Attendance", "employee": self.emp,
 		                      "company": self.h.company, "attendance_date": day,
 		                      "status": "Present", "shift": hd.SHIFT,
@@ -112,9 +130,8 @@ class RegisterNoticeCase(PunchFixCase):
 		from alvoraa_portal.tests import test_held_day_085 as hd
 
 		for t, kind in (("09:00", "IN"), ("12:00", "OUT"), ("18:00", "OUT")):
-			frappe.get_doc({"doctype": "Employee Checkin", "employee": employee,
-			                "log_type": kind, "time": "%s %s:00" % (day, t)}
-			               ).insert(ignore_permissions=True)
+			self._machine_punch(frappe.get_doc({"doctype": "Employee Checkin", "employee": employee,
+			                                    "log_type": kind, "time": "%s %s:00" % (day, t)}))
 		att = frappe.get_doc({"doctype": "Attendance", "employee": employee,
 		                      "company": self.h.company, "attendance_date": day,
 		                      "status": "Present", "shift": hd.SHIFT,
@@ -425,8 +442,11 @@ class TheHRList(RegisterNoticeCase):
 		self.assertEqual(out["done"] + out["waiting"], out["total"])
 		self.assertGreaterEqual(out["waiting"], 1)
 
-	def test_the_employees_own_change_and_a_break_glass_one_are_not_on_the_list(self):
-		"""AC-2, two of its cases. The control is in the test above: an HR-filed change IS listed."""
+	def test_the_employees_own_change_is_not_on_the_list_but_an_administrator_one_is(self):
+		"""AC-2, two of its cases. The control is in the test above: an HR-filed change IS listed.
+
+		Changed by 088c (counsel, 24 Nov; Surbhi, 25 Nov): the Administrator account is a
+		person making a change to somebody else's day, so it is listed. It still holds no pay."""
 		self.held_on(self.day)
 		own = self.fix(time="18:30", by=self.emp_user)
 		self.decide(own, 1, by=self.hr)
@@ -436,8 +456,9 @@ class TheHRList(RegisterNoticeCase):
 		self.held_on(day2)
 		admin = self.fix(time="18:30", by="Administrator", day=day2)
 		self.decide(admin, 1, by=self.hr)
-		self.assertEqual(self._rows_for_me(), [],
-		                 "a break-glass change was treated as somebody filing for the employee")
+		rows = self._rows_for_me()
+		self.assertEqual(len(rows), 1, "an Administrator-filed change was left off the notice")
+		self.assertEqual(rows[0]["changed_days"], 1)
 
 	def test_a_waiting_or_declined_change_is_not_on_the_list(self):
 		"""AC-2, its other cases: only an approved change can say what a day now counts."""

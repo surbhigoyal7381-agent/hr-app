@@ -297,8 +297,18 @@ doc_events = {
             "alvoraa_portal.branch_geofence.check_phone_punch",
             # Slice 087: the four marks on a punch are written by an approval only.
             "alvoraa_portal.punch_fix.guard_marks",
+            # Slice 088c: a person's added or changed punch needs a reason code, while
+            # the organisation's notice switch is on. LAST, so it sees the punch as the
+            # handlers above left it. Machines, phones and the employee's own punch pass.
+            "alvoraa_portal.punch_change.require_reason",
         ],
-        "on_trash": "alvoraa_portal.punch_fix.guard_marks",
+        # Slice 088c: write the append-only record of that change, after the punch is saved.
+        "on_update": "alvoraa_portal.punch_change.write_log",
+        "on_trash": [
+            "alvoraa_portal.punch_fix.guard_marks",
+            # Slice 088c: no hand-made delete while notices are on.
+            "alvoraa_portal.punch_change.refuse_delete",
+        ],
         # Slice 085: a late machine punch releases a Held day. Machine account
         # only; the slip refresh is queued after commit, with ids only.
         "after_insert": "alvoraa_portal.held_day.release_on_machine_punch",
@@ -655,6 +665,8 @@ permission_query_conditions = {
     # not by the company-only helper above, which would let one store's HR person
     # list every store's signatures.
     "Alvoraa Register Notice": "alvoraa_portal.register_notice.notice_query_conditions",
+    # Slice 088c: the punch-change record is scoped the same way as the notice.
+    "Alvoraa Punch Change": "alvoraa_portal.register_notice.punch_change_query_conditions",
     # 088 SEC-10: this log had NO entry here, so an HR Manager of one company could
     # list every company's rows in it. Found by the slice's privacy review, and it is
     # a gap that predates 088.
@@ -681,6 +693,7 @@ has_permission = {
     # Slice 088: the same company-and-branch rule for one notice opened by name or
     # through the API, so a row filter on the list is not the only thing in the way.
     "Alvoraa Register Notice": "alvoraa_portal.register_notice.notice_has_permission",
+    "Alvoraa Punch Change": "alvoraa_portal.register_notice.notice_has_permission",
     # ALV-440: the same company-and-branch rule for one finding opened by name,
     # so the row filter above is not the only thing in the way.
     "Alvoraa Data Review Item": "alvoraa_portal.data_review.item_has_permission",
@@ -831,6 +844,9 @@ after_migrate = [
     # module's `alvoraa_replaces` field, and a Custom Field with an `insert_after` naming
     # a field that does not exist yet lands at the bottom of the form instead.
     "alvoraa_portal.register_notice.after_migrate",
+    # Slice 088c: the reason Select on Employee Checkin. After register_notice so the
+    # DocType exists; a no-op until it does.
+    "alvoraa_portal.punch_change.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
@@ -934,6 +950,9 @@ after_install = [
     # module's `alvoraa_replaces` field, and a Custom Field with an `insert_after` naming
     # a field that does not exist yet lands at the bottom of the form instead.
     "alvoraa_portal.register_notice.after_migrate",
+    # Slice 088c: the reason Select on Employee Checkin. After register_notice so the
+    # DocType exists; a no-op until it does.
+    "alvoraa_portal.punch_change.after_migrate",
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.

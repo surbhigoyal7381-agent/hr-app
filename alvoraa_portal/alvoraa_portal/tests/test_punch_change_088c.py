@@ -63,7 +63,7 @@ class TheGuardRail(PunchChangeCase):
 
 	def test_switch_is_on_and_a_person_is_refused_without_a_reason(self):
 		"""The control for every test below: the rule is running."""
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
 			self.punch(user=self.hr)
 
 	def test_a_machine_punch_with_no_reason_is_filed_and_not_logged(self):
@@ -93,14 +93,14 @@ class TheGuardRail(PunchChangeCase):
 		self.assertEqual(len(added), 1, "fixture: the approval should have added a punch")
 		self.assertEqual(self.log(), [], "a fix is on the notice through its request; it must not appear twice")
 
-	def _call_the_sync_api(self, user):
+	def _call_the_sync_api(self, user, at="07:00"):
 		"""The whitelisted function the sync tools use, called as `user`."""
 		from hrms.hr.doctype.employee_checkin.employee_checkin import add_log_based_on_employee_field
 
 		frappe.db.set_value("Employee", self.emp, "attendance_device_id", "D088C", update_modified=False)
 		frappe.set_user(user)
 		try:
-			return add_log_based_on_employee_field("D088C", "%s 07:00:00" % self.day, "reception", "IN")
+			return add_log_based_on_employee_field("D088C", "%s %s:00" % (self.day, at), "reception", "IN")
 		finally:
 			frappe.set_user("Administrator")
 
@@ -110,8 +110,8 @@ class TheGuardRail(PunchChangeCase):
 		doc = self._call_the_sync_api(self._machine_user())
 		self.assertTrue(frappe.db.exists(CHECKIN, doc.name))
 		self.assertEqual(self.log(), [])
-		with self.assertRaises(frappe.ValidationError):
-			self._call_the_sync_api(self.hr)
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
+			self._call_the_sync_api(self.hr, at="08:00")
 
 	def test_switch_off_nothing_is_demanded_or_logged(self):
 		"""Decision 1: nothing starts before the switch."""
@@ -136,7 +136,7 @@ class TheReason(PunchChangeCase):
 
 	def test_a_refused_punch_leaves_no_punch_and_no_record(self):
 		before = frappe.db.count(CHECKIN, {"employee": self.emp})
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
 			self.punch(user=self.hr)
 		self.assertEqual(frappe.db.count(CHECKIN, {"employee": self.emp}), before)
 		self.assertEqual(self.log(), [])
@@ -149,7 +149,7 @@ class TheReason(PunchChangeCase):
 		self.assertEqual(rows[1].what, "Punch moved from 10:00 to 10:40")
 		self.assertEqual(rows[1].reason_code, "Duplicate or accidental scan")
 		# The last reason is not reusable: the next edit must give its own.
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
 			self.edit(doc.name, self.hr, time="%s 10:55:00" % self.day)
 		self.assertEqual(str(frappe.db.get_value(CHECKIN, doc.name, "time"))[11:16], "10:40")
 		self.assertEqual(len(self.log()), 2)
@@ -165,7 +165,7 @@ class TheReason(PunchChangeCase):
 		self.assertEqual(self.log()[-1].what, "Punch at 10:00 not counted")
 
 	def test_administrator_is_a_person_and_needs_a_reason(self):
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
 			self.punch(user="Administrator")
 		doc = self.punch(user="Administrator", reason=REASON)
 		self.assertEqual(self.log()[-1].changed_by, "Administrator")
@@ -175,7 +175,7 @@ class TheReason(PunchChangeCase):
 		doc = self.punch(user=self.hr, reason=REASON)
 		frappe.set_user(self.hr)
 		try:
-			with self.assertRaises(frappe.ValidationError):
+			with self.assertRaisesRegex(frappe.ValidationError, "cannot be deleted"):
 				frappe.delete_doc(CHECKIN, doc.name, ignore_permissions=True)
 		finally:
 			frappe.set_user("Administrator")

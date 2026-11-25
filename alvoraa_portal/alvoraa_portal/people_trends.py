@@ -135,8 +135,15 @@ def leader_scope(user):
 def _caller(call):
 	"""(scope, own employee record or None). Refuses anyone who may not open the page.
 
-	Worked out on every call and never cached (SEC-6). HR roles are off in the
-	first release (BQ-2), including a person who holds an HR role and Leadership.
+	Worked out on every call and never cached (SEC-6).
+
+	HR roles alone never open this page (BQ-2): `hr_scope()` ignores a Branch
+	permission narrowed to one record type (R6, ALV-359), so HR scope cannot be
+	trusted here yet. A person who ALSO holds Leadership - an owner or director
+	who is an HR Manager too - is let in, but is scoped exactly like any other
+	leader, by `leader_scope()`, which already treats a narrowed Branch
+	permission as "not set up". HR scope is never read, so R6 cannot reach them
+	(Surbhi, 25 Nov 2026: DTC's and Grace's owners hold HR roles).
 	"""
 	user = frappe.session.user
 	if user == "Guest":
@@ -147,9 +154,7 @@ def _caller(call):
 		return of.Scope(tuple(frappe.get_all("Company", pluck="name", order_by="name asc")), None), None
 	if ROLE not in roles:
 		call.refuse(_("You do not have access to People trends."), "PT-ROLE")
-	if roles & HR_ROLES:
-		call.refuse(_("People trends is not open to HR roles yet."), "PT-HR-OFF")
-	call.role_class = "leadership"
+	call.role_class = "leadership_hr" if roles & HR_ROLES else "leadership"
 
 	mine = frappe.get_all("Employee", filters={"user_id": user},
 	                      fields=["name", "status", "company", "branch", "department", "employment_type",

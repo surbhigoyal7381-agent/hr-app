@@ -25,7 +25,7 @@ date column or a migration.
 The first thing the tests prove is that none of those is refused or logged.
 
 **What counts as a change.** `time`, `log_type`, `skip_auto_attendance`, and the shift tag
-(`shift`, `shift_start`): the fields that decide what a punch means for the day and WHICH
+(`shift`, `shift_start`, `shift_end`: all three, because the engine reads all three, `held_day.py`): the fields that decide what a punch means for the day and WHICH
 day it counts on (ALV-402: the day is the date of `shift_start`). The attendance link, photo
 and position are not changes to a punch. **Moving a punch to another person is refused**
 (Surbhi, 25 Nov): HR adds the punch to the right person and sets the wrong one aside, which
@@ -47,7 +47,7 @@ no place to ask for a reason on a delete, and a vanished punch would be the quie
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, getdate, now_datetime
+from frappe.utils import cint, get_datetime, getdate, now_datetime
 
 import hrms.alvoraa_hr_core.access as access
 
@@ -55,7 +55,7 @@ CHECKIN = "Employee Checkin"
 LOG = "Alvoraa Punch Change"
 #: The Select on the punch where a person gives the reason. Always blank once saved.
 FIELD = "alvoraa_change_reason"
-MATERIAL = ("time", "log_type", "skip_auto_attendance", "shift", "shift_start")
+MATERIAL = ("time", "log_type", "skip_auto_attendance", "shift", "shift_start", "shift_end")
 
 FLAG = "in_punch_change"
 _STASH = "punch_change_pending"
@@ -86,7 +86,9 @@ def _moved(doc, before):
 	"""True when a material field differs from the saved copy. A new punch always counts."""
 	if not before:
 		return True
-	return any(str(doc.get(f) or "") != str(before.get(f) or "") for f in MATERIAL)
+	# Cast on both sides (`get_value`): a REST call or an import sends "0" and "2026-11-20 14:00",
+	# the database holds 0 and a datetime with seconds, and a raw comparison calls those a change.
+	return any((doc.get_value(f) or "") != (before.get_value(f) or "") for f in MATERIAL)
 
 
 def _valid_reason(reason):
@@ -125,14 +127,22 @@ def require_reason(doc, method=None):
 	if not _moved(doc, before) or not _is_a_persons_change(doc.employee):
 		return
 	if not reason:
+		if (frappe.form_dict.get("cmd") or "").endswith("bulk_fetch_shift"):
+			# The Desk list action. It re-tags every row it is given, so every row needs a reason,
+			# and the action has nowhere to ask for one.
+			_refuse(_("'Fetch Shift' is not available while change notices are on. It re-tags a "
+			          "punch's shift, which can move it to another day, and every such change "
+			          "needs a reason that is printed on the employee's notice. Open the punch, "
+			          "correct it and pick a reason."), "088c-reason", doc)
 		_refuse(_("Pick a reason for this change. It is printed on the employee's monthly "
-		          "notice. If you are importing punches or calling the API, fill in "
-		          "'Reason For This Change' ({0}) on every row.").format(FIELD),
+		          "notice. (If you are importing punches or calling the API, put the reason in "
+		          "the 'Reason For This Change' column, {0}, on every row.)").format(FIELD),
 		        "088c-reason", doc)
 	if not _valid_reason(reason):
 		_refuse(_("That is not one of the reasons on the list. Pick one from the list."),
 		        "088c-reason-list", doc)
-	doc.flags[_STASH] = {"reason": reason, "what": _sentence(doc, before)}
+	# An addition's sentence is written in `write_log`, once the working day is known.
+	doc.flags[_STASH] = {"reason": reason, "what": _sentence(doc, before) if before else None}
 
 
 def write_log(doc, method=None):
@@ -149,6 +159,8 @@ def write_log(doc, method=None):
 		        "088c-reason-list", doc)
 	from alvoraa_portal.payroll_rules_apply import shift_day
 
+	day = getdate(shift_day(doc))
+	what = pending["what"] or "Punch at %s added" % _when(doc.time, day)   # date shown when it is not the shift's day
 	frappe.flags[FLAG] = True
 	try:
 		frappe.get_doc({
@@ -158,9 +170,9 @@ def write_log(doc, method=None):
 			# The working day (ALV-402: the date the punch's SHIFT started), the one rule the
 			# engine, the reports and the screens use. NOT the calendar date: a 00:30 punch
 			# on a 20:30 shift belongs to the evening before.
-			"day": getdate(shift_day(doc)),
+			"day": day,
 			"reason_code": pending["reason"],
-			"what": pending["what"],
+			"what": what,
 			"changed_by": frappe.session.user,
 			"changed_on": now_datetime(),
 		}).insert(ignore_permissions=True)
@@ -202,15 +214,16 @@ def _sentence(doc, before):
 	if (doc.log_type or "") != (before.log_type or ""):
 		bits.append("Punch type changed from %s to %s" % (
 			label.get(before.log_type, "blank"), label.get(doc.log_type, "blank")))
-	if bool(doc.skip_auto_attendance) != bool(before.skip_auto_attendance):
-		bits.append("Punch at %s %s" % (_hm(doc.time), "not counted" if doc.skip_auto_attendance
+	if cint(doc.get_value("skip_auto_attendance")) != cint(before.get_value("skip_auto_attendance")):
+		bits.append("Punch at %s %s" % (_hm(doc.time), "not counted" if cint(doc.get_value("skip_auto_attendance"))
 		                                else "counted again"))
 	if doc.shift_start and str(get_datetime(doc.shift_start)) != str(get_datetime(before.shift_start or doc.shift_start)):
 		d = get_datetime(doc.shift_start)
 		bits.append("Punch moved to the %d %s shift" % (d.day, d.strftime("%b")))
-	elif (doc.shift or "") != (before.shift or ""):
+	elif (doc.shift or "") != (before.shift or "") or doc.get_value("shift_end") != before.get_value("shift_end"):
 		bits.append("Punch shift changed")
-	return "; ".join(bits)
+	# Never empty: the record requires a sentence, and an empty one would fail the punch save.
+	return "; ".join(bits) or "Punch changed"
 
 
 # ── install ──────────────────────────────────────────────────────────────────

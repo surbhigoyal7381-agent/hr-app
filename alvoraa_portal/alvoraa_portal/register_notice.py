@@ -82,7 +82,9 @@ FIELDS = {
 		                "page. For staff who have no app and cannot confirm on a screen. "
 		                "On also means: HR must give a reason, from a fixed list, for every "
 		                "punch they add or change for somebody else, and the notice lists it. "
-		                "Off: nothing is listed, nothing can be printed and no reason is asked for."},
+		                "Off: nothing is listed, nothing can be printed and no reason is asked for. "
+		                "Unticking it later does not remove changes already recorded, and those "
+		                "people are not shown them."},
 	],
 }
 

@@ -317,6 +317,9 @@ class TheWorkingDay(PunchChangeCase):
 		self.assertEqual(str(row.day), str(evening), "the log dated the punch by its calendar day")
 		out = self._print([self.emp], month=evening)
 		self.assertEqual(out["sheets"][0]["changes"][0]["day"], register_notice._day_words(evening))
+		# R-4: the clock alone invites the wrong reading under an evening heading.
+		self.assertEqual(row.what, "Punch at %d %s 00:30 added" % (
+			frappe.utils.getdate(add_days(evening, 1)).day, frappe.utils.getdate(add_days(evening, 1)).strftime("%b")))
 
 	def test_the_last_night_of_a_month_is_on_that_months_notice_and_not_the_next(self):
 		self.night_employee()
@@ -441,6 +444,75 @@ class TheEscapes(PunchChangeCase):
 		self.assertEqual(self.log(), [])
 
 
+class TheComparisonIsCast(PunchChangeCase):
+	"""R-1 and R-2 of round 2."""
+
+	def _edit_as_hr(self, name, reason=None, **changes):
+		doc = frappe.get_doc(CHECKIN, name)
+		for k, v in changes.items():
+			doc.set(k, v)
+		doc.flags.ignore_validate = True
+		if reason:
+			doc.set(punch_change.FIELD, reason)
+		frappe.set_user(self.hr)
+		try:
+			doc.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_changing_only_the_shift_end_needs_a_reason(self):
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		stored = frappe.db.get_value(CHECKIN, doc.name, "shift_end")
+		new_end = "%s 23:00:00" % self.day
+		self.assertNotEqual(str(stored), new_end, "fixture is wrong: nothing would change")
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
+			self._edit_as_hr(doc.name, shift_end=new_end)
+		self._edit_as_hr(doc.name, reason=REASON, shift_end=new_end)
+		self.assertEqual(self.log()[-1].what, "Punch shift changed")
+
+	def test_the_same_values_in_another_spelling_are_not_a_change(self):
+		"""What a REST call or an import sends: "0" for a Check, a datetime with no seconds."""
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		before = len(self.log())
+		stored = str(frappe.db.get_value(CHECKIN, doc.name, "shift_start") or "")
+		changes = {"skip_auto_attendance": "0"}
+		if stored:
+			changes["shift_start"] = stored[:16]               # no seconds
+		self._edit_as_hr(doc.name, reason=REASON, **changes)
+		self.assertEqual(len(self.log()), before, "a respelled value was logged as a change")
+		self.assertEqual(frappe.db.get_value(CHECKIN, doc.name, "skip_auto_attendance"), 0)
+
+	def test_a_string_one_still_prints_not_counted_and_a_string_zero_never_does(self):
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		self._edit_as_hr(doc.name, reason=REASON, skip_auto_attendance="1")
+		self.assertEqual(self.log()[-1].what, "Punch at 10:00 not counted")
+		self._edit_as_hr(doc.name, reason=REASON, skip_auto_attendance="0")
+		self.assertEqual(self.log()[-1].what, "Punch at 10:00 counted again")
+
+
+class TheFetchShiftButton(PunchChangeCase):
+	"""R-3: the Desk list action is refused in words that describe what the person did."""
+
+	def test_fetch_shift_is_refused_with_its_own_sentence(self):
+		from hrms.hr.doctype.employee_checkin.employee_checkin import bulk_fetch_shift
+
+		doc = self.punch("10:00", user=self.hr, reason=REASON)
+		frappe.db.set_value(CHECKIN, doc.name, "shift_start", "%s 03:00:00" % add_days(self.day, -3),
+		                    update_modified=False)           # so a re-tag really changes it
+		frappe.set_user(self.hr)                  # set_user resets the form: set the call AFTER it
+		frappe.form_dict["cmd"] = "hrms.hr.doctype.employee_checkin.employee_checkin.bulk_fetch_shift"
+		try:
+			with self.assertRaisesRegex(frappe.ValidationError, "'Fetch Shift' is not available") as ctx:
+				bulk_fetch_shift([doc.name])
+		finally:
+			frappe.set_user("Administrator")
+		self.assertNotIn("importing", str(ctx.exception), "told a Desk user about imports")
+		# control: the same refusal outside that action keeps the general sentence
+		frappe.form_dict.pop("cmd", None)
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
+			self.punch("11:00", user=self.hr)
+
+
 class TheRefusalsAreWrittenDown(PunchChangeCase):
 	def _rules(self, fn):
 		import json
@@ -501,7 +573,11 @@ class TheRefusalsAreWrittenDown(PunchChangeCase):
 class TheScopeReadAsEachPersona(PunchChangeCase):
 	"""P2-5. Read the way the app reads it: `get_list` as each login, and `has_permission`."""
 
-	def test_hr_in_scope_sees_the_row_hr_of_another_company_and_an_employee_do_not(self):
+	def test_hr_in_scope_sees_the_row_hr_with_no_entitlement_and_an_employee_do_not(self):
+		"""The outsider here has no Employee record and no Company permission, so the scope
+		resolves to nobody (`1=0`): this proves FAIL-CLOSED ("HR with no entitlement sees
+		nothing"), not literally "HR of company B". The company and branch cases of the shared
+		`_scope_sql` are covered by the 088 notice tests (AC-57 and the branch test)."""
 		self.punch(user=self.hr, reason=REASON)
 		row = self.log()[0].name
 		outsider = self.h._login("hrfar088c", ("HR Manager",))       # no company permission at all

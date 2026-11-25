@@ -93,6 +93,26 @@ class TheGuardRail(PunchChangeCase):
 		self.assertEqual(len(added), 1, "fixture: the approval should have added a punch")
 		self.assertEqual(self.log(), [], "a fix is on the notice through its request; it must not appear twice")
 
+	def _call_the_sync_api(self, user):
+		"""The whitelisted function the sync tools use, called as `user`."""
+		from hrms.hr.doctype.employee_checkin.employee_checkin import add_log_based_on_employee_field
+
+		frappe.db.set_value("Employee", self.emp, "attendance_device_id", "D088C", update_modified=False)
+		frappe.set_user(user)
+		try:
+			return add_log_based_on_employee_field("D088C", "%s 07:00:00" % self.day, "reception", "IN")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_the_sync_api_is_open_to_a_machine_and_closed_to_a_person_with_no_reason(self):
+		"""A person can reach the same function a machine uses (P7). It has no reason argument,
+		so for a person it is refused; for the machine account it is the normal punch."""
+		doc = self._call_the_sync_api(self._machine_user())
+		self.assertTrue(frappe.db.exists(CHECKIN, doc.name))
+		self.assertEqual(self.log(), [])
+		with self.assertRaises(frappe.ValidationError):
+			self._call_the_sync_api(self.hr)
+
 	def test_switch_off_nothing_is_demanded_or_logged(self):
 		"""Decision 1: nothing starts before the switch."""
 		self._set_notices(0)

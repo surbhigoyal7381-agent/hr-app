@@ -18,6 +18,7 @@ from frappe.utils import add_days, formatdate, getdate, nowdate
 
 from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal import hr_api
+from alvoraa_portal.tests.utils import ensure_gender
 
 KEY = ac.EMPLOYEE_FILING_WINDOW_KEY
 REQ = "Attendance Request"
@@ -60,7 +61,7 @@ class Independent084(FrappeTestCase):
 		e = frappe.get_doc({
 			"doctype": "Employee", "first_name": first + tag, "company": self.company,
 			"date_of_birth": "1970-01-01", "date_of_joining": joined,
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "user_id": email,
 		}).insert(ignore_permissions=True)
 		frappe.get_doc({

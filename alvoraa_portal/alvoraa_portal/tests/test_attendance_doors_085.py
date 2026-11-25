@@ -19,6 +19,7 @@ from alvoraa_portal import field_app_access as faa
 from alvoraa_portal.tests.test_attendance_correction import (_company,
                                                              _holiday_list,
                                                              setUpModule)
+from alvoraa_portal.tests.utils import ensure_gender
 
 REQUEST = "Attendance Request"
 
@@ -53,7 +54,7 @@ class SafetyDoors(FrappeTestCase):
 	def _employee(self, first, user=None):
 		doc = {"doctype": "Employee", "first_name": self.tag + first, "company": self.company,
 		       "date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-		       "gender": frappe.db.get_value("Gender", {}, "name") or "Male", "status": "Active"}
+		       "gender": ensure_gender(), "status": "Active"}
 		if user:
 			doc["user_id"] = user
 			doc["create_user_permission"] = 0

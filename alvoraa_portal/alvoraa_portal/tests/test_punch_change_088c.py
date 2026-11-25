@@ -430,6 +430,7 @@ class TheEscapes(PunchChangeCase):
 		"""The second line of defence, tested on its own by handing `write_log` a bad stash."""
 		doc = frappe.get_doc({"doctype": CHECKIN, "employee": self.emp, "log_type": "IN",
 		                      "time": "%s 13:00:00" % self.day})
+		doc.name = "EMP-CKIN-NOT-SAVED"      # the record needs a punch name; only the reason is under test
 		doc.flags[punch_change._STASH] = {"reason": "free text", "what": "Punch at 13:00 added"}
 		frappe.set_user(self.hr)
 		try:

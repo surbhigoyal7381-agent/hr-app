@@ -90,4 +90,26 @@ Also run: `scripts/check_app_integrity.py` (OK, 1048 checks) and `scripts/check_
 - **Intentional trade-off:** paths with no hook (P13 `alv291`, P14 raw SQL) leave no row. If `alv291` is ever run again after switch-on, its skip-flag changes will not be on a notice.
 - **Not tested:** Data Import (P6) and the REST insert; both use the same `validate` hook but I did not drive them. Query count not measured. A real two-person (HR then employee) print on paper not looked at.
 - **Temporary debt:** the N+1 above; no expiry job.
-- **Acceptable simplification:** an after-midnight punch is logged on its own calendar day, not its shift day; only matters on the last night of a month.
+- **Corrected 25 Nov (review 05c, P1-1).** This section used to say an after-midnight punch is logged on its calendar day and that this "only matters on the last night of a month". That was wrong: it was wrong on every night-shift punch, and put a month-end night on the next month's notice. The log now uses the working day, `payroll_rules_apply.shift_day` (the date `shift_start` fell on, ALV-402), the same rule the engine and reports use.
+
+
+## Review fixes (25 Nov, after reviews 05c and 06c)
+The numbers match the coordinator's fix list.
+
+1. **Working day.** `write_log` stores `getdate(shift_day(doc))`. Tests: a 00:30 punch on a 20:30 night shift prints on the evening before; the last night of a month is on that month's notice and not the next; a daytime punch is unchanged (control).
+2. **Move between people: refused** while the switch is on (either person's company). `employee` is no longer a "material" field; the move is its own refusal.
+3. **Paper volume:** recorded as Surbhi's decision in `00b` section 11. Nothing built.
+4. and 5. **`before_validate`, and the shift tag.** *The choice I made, so the two do not cancel out:* the demand moved from `validate` to `before_validate` (it runs even with `ignore_validate`, as `guard_shift_type_change` already does). `shift` and `shift_start` are material, **compared against the saved copy**, so an edit or a retag that changes them needs a reason. On an INSERT the shift tag is not set yet at `before_validate` (Frappe HR's own `validate` sets it), so an insert is judged on being new and its day is worked out later in `write_log` from the saved punch. Cost: "Pick a reason" now comes before the geofence message; and the Desk list action "Fetch Shift" (`bulk_fetch_shift`, it saves with `ignore_validate`) is refused for a person while the switch is on, because a re-tag needs a reason and that action has no way to ask for one. `get_doc_before_save()` still gives what is needed in `before_validate` (proven by the tests).
+6. **Import free text.** `_valid_reason` checks the reason against the log's own options in `require_reason` and again in `write_log`. Tested with `frappe.flags.in_import` set, after a control proving Frappe then accepts a bad Select value. **A real Data Import file was not driven.**
+7. **Scope tests** now read as each persona (see below) instead of comparing two SQL strings.
+8. **Refusals are written down:** `require_reason`, the move and delete refusals and the list check call `access.log_refusal` (rules `088c-reason`, `088c-reason-list`, `088c-move`, `088c-delete`) and then raise an ordinary validation message, so the person can act on it. Pinned by a test that reads the security log.
+9. **Migrate exemption removed** from the log's `on_trash` (and from `validate`: nothing used either).
+10. **Deleted:** `company` (written, read by nothing), `kind` (I chose to drop it: `what` already says "added", and nothing read it), the duplicate `employee` index (the composite `(employee, day)` stays), the duplicated `FLAG` literal in the controller (it imports the module's).
+11. **Ceilings:** `punch_change.py` 1, `register_notice.py` 14 added to `test_portal_security_010`.
+12. **Pair run:** see the report.
+13. **Wording:** "every path through Frappe's document layer except where a script skips it". The fixture login now holds only `Biometric Sync` by default; one guard-rail test keeps the realistic sync-plus-HR-role shape on purpose.
+14. **Tamper-evident, not tamper-proof:** written into the DocType description and `00b`.
+15. **Two unlogged repair paths** noted for the runbook in `00b`.
+16. **Two-page test** driven by six direct changes: prints two sheets, `page_count` 2, recording needs two photos. **Not fixed here:** the HR list row on this branch still carries no `pages` key (main's blocker, the 4 commits are Surbhi's push to authorise), so the screen still cannot ask for two photos; the server accepts them.
+
+Not done (not on the list): review P3-7 (`_moved` compares uncast strings, a REST or import edit could print a false sentence), P3-10 (log rows for a company that unticks the switch), P3-11.

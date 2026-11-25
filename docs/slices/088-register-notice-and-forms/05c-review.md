@@ -777,3 +777,283 @@ after the commit fix?**
 
 **`SHIP` was not available here, and it would not have been permission to deploy in any
 case. The decision to ship is Surbhi's, not mine.**
+
+---
+
+# 088c · senior architect review, round 2
+
+```
+reviewed: same worktree, branch docs/088-notice-scope-analysis, head 350a7a12 (was 3d4591d4)
+new commits: bccf8f77, 6ac59220, 350a7a12 — diff read in full (12 files, +1607/-75)
+base: still origin/main 7ebc5898, not rebased. origin/dev has moved to 2558540b; I did not
+      read it and I did not need to — the coordinator says it touches none of these files
+      (not checked by me)
+ran: py_compile on all 5 changed Python files — clean. JSON valid. Test-method counts
+     recounted. Frappe 16.33.x source re-read read-only out of the running alv436rel-bench
+     with grep/sed only. NO test suite, no bench, no site. See "what I could not run".
+```
+
+## Verdict: SHIP WITH FIXES
+
+Split in two, because the two halves have different answers:
+
+- **Clear to land on dev.** The blocker is properly fixed, and fixed in the one place that
+  writes the date rather than patched where the tests look. Nine of my eleven findings are
+  closed, several with better tests than I asked for.
+- **Not clear for any tenant to tick the switch.** That still waits on the 4 page-count
+  commits reaching main, which is Surbhi's call and not in this branch.
+
+Four one-line fixes are worth taking in one more pass (R-1 to R-4 below). None of them
+blocks the dev landing, because the switch is off everywhere.
+
+## P1-1 is closed, and closed correctly
+
+**Proven.** `punch_change.py:161` now writes `"day": getdate(shift_day(doc))`.
+
+I checked the three things that could have made this a patch rather than a fix:
+
+1. **Is `shift_day` resolvable there?** Yes. `write_log` is `on_update`, which runs after
+   the controller's `validate` → `fetch_shift()` (`hrms/…/employee_checkin.py:58`), so
+   `shift_start` is set in memory by then. `shift_day` falls back to `time` when it is not
+   (`payroll_rules_apply.py:373`), which is the documented ALV-402 behaviour, so a punch
+   with no shift is unchanged. The lazy import is safe: `payroll_rules_apply`'s only
+   top-level app import is `alvoraa_portal.payroll_rules`, so there is **no cycle** back
+   to `punch_change` or `register_notice`.
+2. **Every path that writes or reads that date, not only where the tests look.** One
+   writer (`write_log`). Three readers, all of the log's `day`: the month filter and
+   `from_date` in `_punch_changes` (`register_notice.py:258, :274`), the printed heading
+   `_day_words(change.from_date)` in `sheet_rows` (`:552`), and `my_changes`'s
+   `"date": str(c.from_date)`, which the screen hands to `rnSeeDay(d.date)`
+   (`portal.js:7789`). All three now agree with the engine. **It is also now consistent
+   with the request rows**, whose `from_date` is the Attendance Request's working day — so
+   the two halves of one notice are dated by the same rule. That was not true before.
+3. **Could the test have passed without the fix?** No, and the test says so itself. It
+   asserts the fixture first — *"fixture is wrong: the night shift was not matched, so this
+   proves nothing"* — then the log's day, then the printed heading. The declared breaks are
+   value-level (`'2026-11-21' != '2026-11-20'`, and `0 != 1 : missing from the month that
+   was paid`). This is the lesson-2 discipline applied properly: it checks that the data
+   could show the behaviour before asserting the behaviour.
+
+## Which of my original findings are closed
+
+| # | Finding | Now |
+|---|---|---|
+| P1-1 | wrong day on the paper for night shifts | **closed** — above |
+| P2-2 | shift re-tag not watched | **closed but one field short** — `shift` and `shift_start` are material; `shift_end` is not. See **R-1** |
+| P2-3 | `ignore_validate` switches the rule off | **closed** — `before_validate`, and a test drives `again.flags.ignore_validate = True` with a control proving the same save works with a reason |
+| P2-4 | the person who loses a punch is never told | **closed, by refusing the move** — and this is the better answer of the two I offered: a second log row would have told Ravi about a change on Priya's punch, which is a worse thing to put on paper |
+| P2-5 | the hollow scope test | **closed** — see below |
+| P2-6 | 088c makes two pages ordinary | **half closed, and precisely located.** The server half is now proven: six direct changes print two sheets, `page_count` 2, one photo refused, two accepted. The screen half is untouched — the HR list row still carries no `pages`, so the dialog still cannot ask for two photos. **This stays a release condition, not a code fix here** |
+| P3-7 | `_moved` compares uncast values | **open, and its surface grew.** See **R-2** |
+| P3-8 | the test-pollution fix and the unproven pair order | **closed** — see below |
+| P3-9 | the sync login a person can use | **closed as a disclosure.** The fixture now holds only `Biometric Sync` by default, and one guard-rail test keeps the realistic sync-plus-HR shape on purpose, with a docstring naming it as the shape a person could use. The wording is fixed to "every path through Frappe's document layer except where a script skips it". That is the smaller true sentence |
+| P3-10, P3-11 | orphan rows after the switch is unticked; no "nothing recorded before switch-on" line | **open, declared.** Ranked below |
+| P3-12 | no `01d`, `04`, `01c` or `07` for 088c | **partly closed** — a `06c` security review now exists and is a real one. `01d` is still only on `origin/dev`; there is still no independent test report |
+| P4 nits | `company`, `kind`, the duplicate index, the duplicated `FLAG` | **all four deleted.** Verified nothing read them: `grep` for `kind`/`company` across `register_notice.py`, `punch_change.py`, the DocType and the suite returns nothing, and `_punch_changes`'s field list no longer selects them |
+
+### P2-5, verified rather than taken
+
+The three persona tests genuinely exercise **both** hooks, and I can say which from the
+declared breaks: `['PCH-000055'] != []` can only come from the row filter at
+`hooks.py:669` being absent, and `True is not false` from `has_permission` at
+`hooks.py:696`. `frappe.get_list(..., user=…)` and `frappe.has_permission(..., doc=…,
+user=…)` are the two doors the app actually uses. That is the right shape.
+
+One precision point, **P4**: the outsider is `_login("hrfar088c", ("HR Manager",))` with no
+Employee record and no Company user permission. `permitted_companies` (`access.py:238-256`)
+returns the user-permission companies, else their own Employee's company, else nothing — so
+this login resolves to `NO_EMPLOYEES` and `_scope_sql` returns `1=0`. The test therefore
+proves **"an HR Manager with no entitlement sees nothing"** (fail-closed), not literally
+"HR of company B cannot see company A". The company and branch cases are covered for the
+shared `_scope_sql` by the 088 suite's own SEC-1 tests, so the coverage is adequate; only
+the comment oversells the persona.
+
+### P3-8, the pair run: the right evidence, and I can check its arithmetic
+
+`Ran 214 tests in 1459.673s` / `OK`. **214 is exactly 80 + 134**, the two suites' test-method
+counts, which I recounted myself from the source this session (`grep -c 'def test_'`: 80 in
+`test_register_notice_088`, 134 in `test_punch_fix_087`). So the figure is internally
+consistent with both suites having run in one process, which is the question I asked. The
+switch reading 0 on every company afterwards answers the other half.
+
+**On the throwaway `load_tests` module being deleted: that was the right call.** Keeping a
+test harness nobody asked for is exactly what `no-over-engineering.md` §2 forbids, and the
+fix it proved lives in the suite's own cleanup. The honest cost is that **CI does not pin
+the ordering**, so if someone later deletes the `frappe.db.commit()` from
+`_put_the_notice_switch_back`, nothing fails until a punch suite happens to run after the
+088 suite. The comment above that line already says why it is there, in plain words. I rank
+that residual **P4** and would not build a guard for it.
+
+## What the fixes newly broke, judged
+
+**Two production paths are newly refused, and I enumerated them rather than asserting it.**
+Every place in `alvoraa_portal`, `hrms` and `scripts` that saves an Employee Checkin
+*document* (grep for `.save()` within three lines of a checkin, plus every `fetch_shift`
+caller):
+
+| Path | Effect |
+|---|---|
+| `punch_fix.py:1080, :1084` (087 undo) and `:1298` (087 approval) | **unaffected** — both inside `in_punch_fix_apply` |
+| `alv291_attendance_fix.py:967-970` (retag) | **refused** as Administrator until a reason is given. This is the intended catch |
+| `hrms/…/employee_checkin.py:216-222` `bulk_fetch_shift`, called from the Desk list action (`employee_checkin_list.js:12`) | **refused** for a person while the switch is on. Note it sets `ignore_validate` itself at `:222` — Frappe HR's own bulk action relies on the flag, which is precisely why `before_validate` was the right move |
+| `employee_checkin.js:31-35` single-form "Fetch Shift" button | **works** — the button only fills the fields in memory; the person's own Save then asks for a reason, which they can give on the form |
+| Auto attendance and the scheduler | **unaffected, and this was the big risk.** A scheduled job runs as `Administrator`, which this rule treats as a person. But Frappe HR never saves a punch document: `skip_attendance_in_checkins` and `update_attendance_in_checkins` (`employee_checkin.py:485-500`) use query-builder `UPDATE`s, and `shift_type.py` writes with `frappe.db.set_value` (`:448`, `:483`). So auto attendance cannot be stopped by this rule. Proven by reading all three |
+| hrms' own test suites that call `fetch_shift` / `bulk_fetch_shift` | **unaffected while the switch is restored** — which is what P3-8's commit fix guarantees. The two facts are linked: if the switch ever leaks again, Frappe HR's own tests go red too, not just ours |
+
+**Is refusing `bulk_fetch_shift` acceptable?** In substance yes — a bulk re-tag of many
+people's punches with no reason is exactly what counsel's rule forbids, and nobody should be
+able to move fifty people's days silently. But **the message is wrong for that door**: a
+person who ticked thirty rows and pressed "Fetch Shift" is told *"If you are importing
+punches or calling the API, fill in 'Reason For This Change' on every row"*, which does not
+describe what they did and gives them nothing to do next. The bulk action has no way to ask
+for a reason, so it is a **dead button** while the switch is on, not a prompt. That needs one
+clause in the message and one line in the release note. **R-3.**
+
+**Three message-order changes, not one.** `03c` names only the geofence. `before_validate`
+now also runs before Frappe HR's `validate_active_employee` and `validate_duplicate_log`
+(`employee_checkin.py:55-56`), so a duplicate punch or a punch for an inactive employee,
+filed by a person with no reason, now says "Pick a reason" first. All three still refuse, so
+nothing is unsafe — but note it, because the engineer's own earlier weak test passed on the
+duplicate-timestamp error, and this reordering makes that class of confusion *less* likely,
+not more. **P4.**
+
+## The remaining items, answered one by one
+
+**Item 6 · the import free-text hole, and whether the flag test is enough.** **Adequate, and
+I verified why.** `base_document.py:1101-1103`: `_validate_selects` returns immediately when
+`frappe.flags.in_import` is set. Setting that flag in a test does not *approximate* an
+import for this check — it takes **the same branch**. And the test proves its own premise
+first, by showing Frappe accepts `log_type="SIDEWAYS"` under the flag ("fixture is wrong:
+Frappe did not skip the Select check, so this proves nothing"). Two checks now guard it, at
+entry and at write time, and the second is tested on its own by handing `write_log` a bad
+stash.
+
+What a real import run would add is **not** this hole: it would cover the row-number prefix
+in the message (`_("Row #{0}")`), whether the Custom Field is mappable from a spreadsheet
+column at all, and what the refusal looks like to the person uploading. Those are import
+mechanics and usability, and they are worth **one manual upload** before the switch is
+ticked — not another test. **P3, operational.**
+
+**Item 7 · the deletions and the migrate exemptions.** Nothing read `kind` or `company`
+(grep, clean). Removing the exemptions cannot wedge a migration today: no patch creates or
+deletes a log row (`patches.txt` is untouched), DocType sync does not instantiate documents,
+and an uninstall drops tables rather than deleting docs. `test_the_record_cannot_be_deleted_even_during_a_migration`
+pins the new behaviour. **The forward-looking cost is real and the security review names it
+as F5:** the expiry job counsel's 5-year maximum requires will have to delete rows the
+controller refuses to delete, so it will need either `frappe.db.delete` or the module's own
+flag — and whichever is chosen becomes the supported way to remove audit rows. That belongs
+in the dated retention ticket, in one sentence, so the next person does not invent an
+exemption flag casually. **P3, for the ticket, not for this release.**
+
+**Item 8 · refusal logging cannot swallow or replace the refusal. Proven.**
+`access.log_refusal` (`hrms/…/access.py:71-93`) wraps the whole write in `try/except: pass`,
+and `_refuse` (`punch_change.py:99-103`) calls it and *then* throws unconditionally. So a
+broken logger loses the line, never the refusal. And the test behind it is stronger than I
+expected: `security_lines_from_a_fresh_process` resets the "security" logger to Frappe's own
+default ERROR **before** running the attempt, so a path that never calls `security_logger()`
+produces nothing and the test fails. That is the ALV-391 trap closed properly — it proves
+the line is really written at a level that writes, not that a function was called.
+
+The exception classes are now split, deliberately and sensibly: punch-level refusals are
+`ValidationError` (an ordinary message a person can act on), and tampering with the record
+itself stays `PermissionError` via `access.refuse`.
+
+**Item 9 · the weaker break on `write_log`'s second line of defence.** The test now drives
+`write_log` directly with a bad stash and asserts `"not one of the reasons"` — that is
+`_valid_reason`'s own message from `punch_change.py:148`, raised before the log insert, so it
+is **this slice's refusal and not Frappe's**. Reading the code, `_valid_reason` runs before
+the `frappe.get_doc(...).insert()`, so the log's own Select check can no longer be what
+fires. The break the engineer reported ("Reason cannot be … It should be one of …") was from
+the *earlier* shape, where Frappe's Select check was the thing that fired. **Adequate as it
+now stands**, and the assertion is on the slice's message, which is the right thing to pin.
+
+**Item 10 · ranking the three unfixed findings now that the rest is closed.**
+
+- **P3-7 (uncast comparison) — now the most worth doing of the three, and its surface grew.**
+  `MATERIAL` went from four fields to five, and `shift_start` is a Datetime arriving from the
+  API or an import as a string. The two consequences I traced still hold: a `"0"` for
+  `skip_auto_attendance` prints *"Punch at 10:00 not counted"* when nothing changed, and a
+  cosmetically-different datetime makes `_sentence` return `""`, which fails the punch save
+  on the log's `reqd` `what` with a mandatory-field error. The fix is still one line —
+  `doc.get_value(f)` and `before.get_value(f)`, which cast per field type. **R-2.** Rank
+  **P3**, and do it now because it is cheaper than explaining a false sentence on a signed
+  page later.
+- **P3-10 (orphan rows after the switch is unticked) — leave, but write the sentence.** The
+  cheapest honest mitigation is one clause on the Company switch's description, which is
+  configuration, not code. **P3, tracked.**
+- **P3-11 (no "nothing recorded before switch-on" line) — leave, Surbhi's call.** It is the
+  PM's own option B from `01d` §2 and is display-only, not a backfill. The empty-list trap is
+  real but October's changes are not in any notice at all, so there is no screen today where
+  a reader could be misled into thinking a month had none. **P4 until a tenant asks.**
+
+## New findings this round — four one-liners (R-1 to R-4)
+
+**R-1 · P3 · `shift_end` is material and is not watched.** The security review's F2 names
+three fields — `shift`, `shift_start`, `shift_end`. Two were taken; the third was not, and
+`03c` items 4–5 do not say so. `shift_end` on a punch **is** read by the engine:
+`held_day.py:300` selects it, `:329-337` carries it per log, and it is handed to
+`shift.get_attendance(logs, absent, half)` at `:342`, which decides working hours and
+Present / Half Day / Absent. So an API or Data Import write that changes `shift_end` alone
+changes what a day counts, with no reason and no row. The escape is narrow — `fetch_shift`
+always sets all three together, so no UI or script path changes it on its own — which is why
+this is P3 and not P2. **Fix: add `"shift_end"` to `MATERIAL` (`punch_change.py:58`)**, and
+either extend the shift sentence or accept that it reuses "Punch shift changed".
+
+**R-2 · P3 · the uncast comparison (my P3-7), unchanged and one field wider.** Above.
+
+**R-3 · P3 · the refusal message does not fit the Desk bulk action.** Above. One clause,
+plus a line in the release note so HR is not surprised the first time they use "Fetch Shift".
+
+**R-4 · P3 · a night-shift *addition* prints an ambiguous line.** The day heading is now
+right, but `_sentence(doc, None)` returns `"Punch at %s added" % _hm(doc.time)`
+(`punch_change.py:197`) — the clock time with no date. So the paper reads
+*"20 November · Punch at 00:30 added"* for a punch made at 00:30 on the 21st. That is how
+the rest of the product presents a night shift, so it is consistent — but on a page somebody
+signs as evidence, the time alone invites the wrong reading. The file already has the helper
+for it: `_when(doc.time, <the day>)` prints the date when the two differ. One line.
+
+**One new thing I checked and dismissed:** an edit that moves a punch *across* a shift-day
+boundary (HR changes the time from 10:00 to 23:30) writes its log row against the **new**
+working day, so the old day's notice says nothing — the same shape as the person-move case.
+I am not raising it, for two reasons, both read in source: `hrms.validate_time_change`
+(`employee_checkin.py:78-85`) refuses a time edit on any punch with an attendance row, so no
+already-decided day can lose a figure this way; and the sentence itself carries the old time
+("Punch moved from 10:00 to 23:30"), so a reader of the new day's row can see where it came
+from. That is materially different from the person-move case, where the losing side saw
+nothing at all.
+
+## The shortest honest statement of what must be true before this lands
+
+**To land on dev:** nothing further. The blocker is fixed, nine findings are closed, and the
+switch is off on every company on all six production sites, so no tenant behaviour changes
+when this lands. I would take R-1 to R-4 in the same pass because together they are four
+lines and one sentence of release note, but they do not block the landing.
+
+**Before any tenant ticks `alvoraa_print_change_notices`**, all of these, and they are not
+mine to grant:
+
+1. The 4 page-count commits on `release/088-alv436` are on main. Until then a two-page
+   notice cannot be signed on the screen, and 088c makes two pages ordinary.
+2. The reason list is signed off by the employer and counsel. It is a draft.
+3. Surbhi accepts, in writing, the paper volume: HR's list goes from a handful of people to
+   most of the floor, monthly, and a direct change closes only when somebody collects a
+   signature.
+4. HR is told that "Fetch Shift" on the punch list stops working, and that the sync account's
+   password bypasses the reason rule (ALV-386 is the control, not the product).
+5. The retention ticket is raised, with F5's tension written into it: whatever enforces the
+   5-year maximum must get past an `on_trash` that refuses everybody.
+6. One real Data Import of a punch sheet with the reason column is driven by hand, once.
+
+## What I could not run, this round
+
+- **No test suite, no bench, no site.** Every pass/fail figure — the 214-test pair run, the
+  36 new tests, the sixteen declared breaks — is the engineer's and is **unverified by me**.
+  What I did verify myself: `py_compile` on all five changed Python files, the DocType JSON
+  parses, and the test-method counts (36 / 80 / 134 / 50), with 80 + 134 = 214 reconciling
+  the pair run exactly.
+- **I did not read `origin/dev` 2558540b.** That it does not touch these files is the
+  coordinator's statement, **not checked** by me. The branch is not rebased, so slice 091's
+  changes are not in anything I read.
+- The printed page on paper, a real Data Import, and the Desk forms: **not checked**, as
+  before.
+- The live switch values and the zero notice records: taken as given, **not checked**.

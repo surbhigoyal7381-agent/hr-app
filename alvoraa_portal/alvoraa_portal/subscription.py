@@ -627,6 +627,8 @@ TENANT_DOCTYPES = [
     "Alvoraa Register Notice",
     "Alvoraa Register Notice Change",
     "Alvoraa Register Notice Page",
+    # Slice 088c: who changed whose punch, and why. Same reasoning: tenant-side, HR-only.
+    "Alvoraa Punch Change",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

@@ -80,6 +80,11 @@ class RegisterNoticeCase(PunchFixCase):
 	def _put_the_notice_switch_back(self, company):
 		frappe.db.set_value("Company", company, register_notice.NOTICE_SWITCH,
 		                    self._notices_were, update_modified=False)
+		# **Committed, and that is not optional since 088c.** `log_view` commits mid-test, which
+		# makes the "on" permanent unless the "back" is permanent too. Before 088c a leaked
+		# "on" was harmless; now it makes every later suite that files a punch as a person
+		# refuse it, in the same CI run. Found when the 087 suite went red after this one.
+		frappe.db.commit()
 		frappe.clear_cache()
 
 	def notice(self, requests, pages=1, employee=None, month=None):

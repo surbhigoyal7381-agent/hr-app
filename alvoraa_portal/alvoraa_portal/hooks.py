@@ -1007,4 +1007,6 @@ override_doctype_class = {
     "CRM Invitation": "alvoraa_portal.overrides.crm_invitation.AlvoraCRMInvitation",
     # Slice 087: three stock blocks a punch fix cannot get past (see the file).
     "Attendance Request": "alvoraa_portal.overrides.attendance_request.AlvoraAttendanceRequest",
+    # ALV-475: HR's approved punch fix has no location to give (see the file).
+    "Employee Checkin": "alvoraa_portal.overrides.employee_checkin.AlvoraEmployeeCheckin",
 }

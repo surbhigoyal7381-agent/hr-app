@@ -606,6 +606,11 @@ class TwoPages(PunchChangeCase):
 		self.assertEqual([len(s["changes"]) for s in sorted(out["sheets"], key=lambda s: s["page_no"])], [5, 1])
 		notice = out["sheets"][0]["notice"]
 		self.assertEqual(frappe.db.get_value("Alvoraa Register Notice", notice, "page_count"), 2)
+		# The screen asks for one photo per page and learns the count only from this row.
+		# Without `pages` it asks for one, so a two-page notice could never be recorded.
+		self.assertEqual(self._rows_for_me(first)[0].get("pages"), 2,
+		                 "the HR list row does not carry the page count, so the record dialog "
+		                 "would ask for one photo and the notice could not be recorded")
 		frappe.set_user(self.h.hr2)
 		try:
 			with self.assertRaises(frappe.ValidationError):

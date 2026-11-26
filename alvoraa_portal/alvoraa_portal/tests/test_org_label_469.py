@@ -360,6 +360,8 @@ class FooterPatchAlv469(IntegrationTestCase):
 
 	def setUp(self):
 		self.saved = {f: frappe.db.get_single_value("System Settings", f, cache=False) for f in self.FIELDS}
+		if frappe.db.exists("Email Account", "Alv469 Mail"):
+			frappe.delete_doc("Email Account", "Alv469 Mail", force=True, ignore_permissions=True)
 		frappe.get_doc({"doctype": "Email Account", "email_account_name": "Alv469 Mail",
 		                "email_id": "alv469mail@example.com", "enable_incoming": 0,
 		                "enable_outgoing": 1, "awaiting_password": 1}).insert(ignore_permissions=True)

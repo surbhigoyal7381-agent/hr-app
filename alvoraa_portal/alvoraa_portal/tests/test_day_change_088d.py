@@ -566,6 +566,11 @@ class TheReason(DayCase):
 		(row,) = self.log(punch=doc.name)
 		self.assertEqual((row.reason_code, row.reason_text), ("Other", "reader cable cut"))
 
+	def test_the_paper_line_names_the_text_only_for_other(self):
+		self.assertEqual(punch_change.why_line("Other", "reader cable cut"), "Other: reader cable cut")
+		self.assertEqual(punch_change.why_line("Other", None), "Other")
+		self.assertEqual(punch_change.why_line(REASON, "stray"), REASON)
+
 	def test_the_log_refuses_a_hand_made_row_with_text(self):
 		with self.assertRaises(frappe.PermissionError):
 			frappe.get_doc({"doctype": LOG, "punch": "x", "employee": self.emp, "day": self.day,
@@ -604,6 +609,7 @@ class TheCost(DayCase):
 		"""Only our handlers, on a system write (no door), `rows` times."""
 		doc = frappe.get_doc(self.doc_dict(self.a_day()))
 		doc.docstatus = 1
+		doc.name = "D088-NOT-A-REAL-ROW"                      # so a stray write would still be counted
 		for _ in range(rows):
 			day_change.before_validate(doc)
 			day_change.on_submit(doc)

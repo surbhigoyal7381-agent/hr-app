@@ -16,6 +16,20 @@ What I read: the repo at `origin/dev` e82bb3f0 (this worktree) for `alvoraa_port
 
 ---
 
+## Decisions of 26 Nov 2026 (Surbhi), added after approval
+
+| Question | Her decision | Note |
+|---|---|---|
+| Q1 first-ever manual marks | **Listed.** She chose against my recommendation ("no"). | Her decision, not mine. What it costs in pages: **not measured**, because nobody knows how many days are marked by hand. Each marked day is one line and a page holds five (`PER_PAGE = 5`), so a tenant whose HR marks every day of every person by hand would print about 20 to 30 lines a month for each person, which is 4 to 6 pages each. A machine-fed tenant such as DTC pays little. **Second cost, found in the build:** the Employee Attendance Tool and the list button "Mark Attendance" have nowhere to ask for a reason, so while the switch is on they are refused (loudly, up front). For a tenant that marks attendance with those tools every day, this switch cannot be turned on until a way to give a reason is built. |
+| Q2 cancel | Two steps, as recommended | |
+| Q8 Employee Attendance Tool half-day tick | Refused, as recommended | Because first marks are now listed the whole tool is refused, which includes the tick. |
+| Q4 | Two lines, cause and consequence; no merge | |
+| Q3, Q5, Q6, Q7, Q9, Q10 | My recommendations stand | |
+
+Where the build found something that 00d got wrong, it is in `03d-implementation-notes.md`.
+
+---
+
 ## 0. Bad news first
 
 1. **The lead "automatic attendance never saves an Attendance document" is wrong for the part that matters.** Auto attendance creates its rows with `attendance.save()` then `attendance.submit()` (`hrms/hr/doctype/employee_checkin/employee_checkin.py:342-343`, proven) and `frappe.new_doc` + `insert()` + `submit()` for the "Absent" rows (`attendance.py:338-367`, called from `shift_type.py:314`). Only two helpers use query-builder UPDATEs, and those write **punch** rows, not Attendance (`employee_checkin.py:485-500`, proven). So a document save on Attendance is **not** a sign of a human. Every hook on Attendance fires for the software's own rows.

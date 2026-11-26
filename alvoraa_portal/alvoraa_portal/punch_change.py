@@ -126,6 +126,11 @@ def reason_problem(reason, text=None):
 	return None
 
 
+def why_line(reason, text=None):
+	"""The reason as the paper prints it: the code, and for "Other" the typed words."""
+	return "%s: %s" % (reason, text) if reason == OTHER and text else reason
+
+
 def add_row(employee, day, reason, text, what, punch=None, attendance=None):
 	"""The one writer of the append-only log, for a punch and for a day record alike."""
 	problem = reason_problem(reason, text)

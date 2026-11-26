@@ -1,0 +1,119 @@
+---
+slice: 088d (a person's change to a day record is on the change notice)
+author: hrms-fullstack-engineer
+date: 2026-11-26
+worktree: /Users/mac/hr-app/.claude/worktrees/088d-attendance-scope, branch docs/088d-attendance-scope
+built on: origin/dev 8a62945d (ALV-469 came in while I worked; see "What else moved")
+status: built and tested on my own stack (d088-*). NOT pushed. `register_notice.py` NOT edited.
+---
+
+# 088d implementation notes
+
+## Read this first (what changed my mind, and what needs Surbhi)
+1. **Her Q1 ("first-ever manual marks are listed") has a consequence 00d did not say.** The list button "Mark Attendance" and the Employee Attendance Tool have nowhere to ask for a reason, so while the switch is on they are **refused for every use**, not only for an edge case. A tenant that marks attendance with them daily cannot switch notices on until a reason can be given there. I built what she approved. Reversing it is small: stop listing a row that has no earlier row (remove the "marked" branch in `day_change._submit_sentence` and the demand for a first mark), and the two tools work again. **Her call.**
+2. **Security finding, proven over real HTTP (not a notice problem; it predates this slice):** an HR login with API access can change the engine's own pay fields on a *submitted* day record. `PUT /api/resource/Attendance/<name>` with `{"alvoraa_slab_quarters": 5, "alvoraa_reds": 9}` returned **200 and the values changed**, with the notice switch OFF and no reason. Those fields are `read_only` in the form but `allow_on_submit`, and Frappe does not enforce `read_only` on the server. With the switch ON the same call is refused without a reason, and with one it succeeds and is listed as "Day record changed" (generic, it does not say the engine's fields). Who can do it: HR User, HR Manager, System Manager (they hold write on Attendance). A Version row is written (`track_changes`), so it is not silent, but nothing says "an engine field". Not fixed here (out of scope); it needs its own decision: a `validate_update_after_submit`-style guard that refuses a person's write to the 11 engine fields.
+3. **00d said Data Import "skips Frappe's Select check". True at document level, but Data Import also checks a Select column against its options before it starts.** A bad reason code stopped the import at the template stage (status stays Pending, a warning names the invalid value). So F3 for the code is half closed by Frappe itself; our check is the backstop for rows that get past it, and the only check for the text rules (below).
+
+## What was built (rung per item)
+| File | What | Rung |
+|---|---|---|
+| `alvoraa_portal/day_change.py` (new, about 290 lines) | `at_a_door`, the Attendance handlers (`before_validate`, `on_submit`, `before_update_after_submit`, `on_update_after_submit`, `before_cancel`, `on_cancel`), the two tool wrappers, `after_migrate` | new code |
+| `punch_change.py` | `reason_problem` (code and text together; replaces `_valid_reason`), `add_row` (the one writer of the log), `why_line` (what the paper prints), `clean_text`, text support in `require_reason` and `write_log`, text Custom Field on the punch | existing |
+| `alvoraa_punch_change.json` | `attendance` and `reason_text` fields; `punch` no longer required; the last option is now "Other"; `modified` bumped so migrate syncs it | existing DocType (name kept) |
+| `hooks.py` | Attendance `doc_events` +6 entries; two `override_whitelisted_methods`; `day_change.after_migrate` in both lists | hot file; re-read after fetch, ALV-469 touched 4 lines elsewhere, no clash |
+| `tests/test_day_change_088d.py` (new) | 54 tests | |
+| Custom Fields (via `after_migrate`) | `alvoraa_change_reason` and `alvoraa_change_reason_text` on Attendance (`allow_on_submit`); `alvoraa_change_reason_text` on Employee Checkin | customisation |
+
+**Not changed:** `register_notice.py` (see the four lines below), anything in `hrms`/`erpnext`/`frappe`, any JS.
+
+## The four lines waiting for `register_notice.py` (apply after the page-count fix lands)
+All four are in `register_notice.py` on `origin/dev` 8a62945d; the line numbers will move.
+1. `_punch_changes`, the `fields=[...]` list (line 262): add `"reason_text"`.
+2. `_punch_changes`, `row.update(...)` (line 280): add `reason_text=r.reason_text`.
+3. `_content_hash`, the punch branch tuple (line 536): add `"reason_text"` after `"reason_code"`.
+4. `sheet_rows`, the punch branch (line 558): `"why": punch_change.why_line(change.get("reason_code"), change.get("reason_text"))` instead of `change.get("reason_code")`.
+Until then a day-change row prints, and "Other" prints as just "Other". Everything else already reads the log. `punch_change.why_line` exists and is the only thing the fourth line calls.
+
+## How the door test works (what I built, and what I proved of it)
+`at_a_door()` is true when the request or job was addressed to Attendance: the Desk `savedocs`, `cancel` and `discard`, `frappe.client.*`, the list bulk action (and its queued job), the Data Import (by its reference doctype, as a command or a queued job), the upload tool (command and job), and the REST path (`/api/resource/Attendance`, `/api/v2/document/Attendance`). It reads memory only, so a system write costs nothing.
+- **Proven over real HTTP** on my stack with a real API login: `frappe.client.submit` (refused without a reason, accepted with one), REST `PUT` on a submitted row (refused without, accepted with), `frappe.client.cancel` (refused with the two-step sentence), and a real queued Data Import (below). So the REST path door and the `cmd` doors work in a real request, not only in a test that sets `form_dict`.
+- **A test trap found on the way:** `frappe.set_user` wipes `frappe.form_dict`. My first run set the door and then the user, so no door was ever seen and every "refused" test failed while every system test passed for the wrong reason. Fixed (user first, then door). Worth knowing for anyone writing a door test.
+
+## The 31 paths (`TheSystemAndTheOtherRecordsPass`, `ThePathTableDoors`; run 54 of 54 OK)
+Each id appears in a test name; `test_every_path_has_a_test` fails if one is dropped. **How each was driven, honestly:**
+- **Driven as the real function with the switch ON, in a person's session with a door of another record, and shown not refused and not listed:** A01, A02, A03, A05, A06 (two tests), A07, A08, A09, A10 (one notice entry, no log row), A12, A13, A14 (with `confirmed=1`), A27, A28, A31.
+- **Driven as a person at a door, listed or refused as designed:** A16 (three tests), A17 (two), A18, A19 (two), A20, A21, A22, A23 (three), A24 (two).
+- **Door detection only (not the full operation):** A25 (upload: command and job recognised), A26 (Data Import: recognised by reference doctype). The full import was driven separately over HTTP (below).
+- **Hook-less writes, documented not guarded:** A04, A15, A29/A30 (a `set_value`, raw SQL and a `qb.update` leave no trace; the tests assert exactly that, so a future change is noticed).
+- **Not driven:** A11 (087 undo; needs a disputed request; the test only names the known gap).
+
+## What was done about the silent "marked successfully" (your point 3)
+**Chosen: refuse up front, loudly.** `mark_bulk_attendance` and `mark_employee_attendance` are wrapped (`override_whitelisted_methods`). While the switch is on, a person using either gets one clear message ("'Mark Attendance' is not available while change notices are on ... Open the Attendance form, pick a reason, save and submit.") **before** any row is touched. Proven: the wrapper refuses; with the wrapper's check removed (break B7) the test fails; and `test_A23b` drives the stock loop alone and shows it skips the row and raises nothing, which is exactly why the wrapper exists. With the switch off, both call the stock function unchanged (tests A23c and A24b). I did not touch the stock loop itself (upstream). The upload tool and Data Import report each failed row to the person (shown below), so they needed no wrapper.
+
+## The Data Import, run for real
+A real queued import of 5 rows through a worker, as an HR login with the System Manager and HR User roles (a plain HR Manager is refused creating a Data Import at all, and an HR Manager without HR User may not import Attendance):
+| Row | File said | Result in the Data Import log |
+|---|---|---|
+| 1 | valid reason | imported, submitted, logged "Day marked Present" |
+| 2 | no reason | refused: "Pick a reason for this change. It is printed on the employee's monthly notice. (If you are importing ... put it in the 'Reason For This Change' column ... on every row.)" |
+| 3 | reason that is not "Other", with text | refused: "This row has text in 'Reason Text' but the reason is not 'Other'. Clear the text, or set the reason to 'Other'." |
+| 4 | "Other" with text | imported, logged with the text |
+| 5 | "Other", no text | refused: "The reason is 'Other', so say what happened in 'Reason Text' (up to 100 characters)." |
+The log shows the **row number** beside each sentence (`row_indexes`), and the import ends "Partial Success". A first import with a reason code that is not on the list never started: Frappe's own pre-check kept it Pending with "The following values are invalid: ... Values must be one of ...". Not done: an import of **punches** with the same file shapes was driven only as a unit test (`test_F3...`, with `in_import` set, after a control proving Frappe then accepts a bad Select value); I did not run a real queued punch import.
+
+## Query counts (the two figures asked for)
+- **Our handlers on a system write (no door): 0 queries at 20 rows and 0 at 1,000.** Measured by calling all five handlers that many times on a document with a name (so a stray write would be counted). With the `on_cancel` guard removed (break B8) it reads 20 and 1,000.
+- **A whole `mark_attendance` insert (the auto path's own function): 21.00 queries a row at 20 rows and 21.00 at 100.** I did **not** run 1,000 whole inserts: at about 3 seconds each it is about 50 minutes a run. The per-row figure is flat from 20 to 100, and our part of it is the 0 above. **Not measured:** wall time with the handlers removed (A/B). **Not measured** against a real month-end.
+
+## Every break, and what the test said
+Done on committed code, restored after each (the file was copied back). "Wrong value" = an assertion on a value; "setup error" = a crash before the assertion.
+| Break | Test | What it said |
+|---|---|---|
+| B1 door always true | A02, A06, A08 | all three: `ValidationError: Pick a reason for this change...` raised **inside the leave approval, the request approval and the Shift Type click**. This is the failure the whole design exists to avoid, and the tests catch it. (Raised error, not a wrong value, but it is the real refusal.) |
+| B2 door always false | control, A16 | `AssertionError: ValidationError not raised`; `ValueError: not enough values to unpack (expected 1, got 0)` (no log row) |
+| B3 demand removed | control | `AssertionError: ValidationError not raised` |
+| B4 text with a non-"Other" code allowed | text test, F3 test | `AssertionError: ValidationError not raised` (both) |
+| B5 100-character cap removed | cap test | **Not the failure I wanted.** Frappe's own column limit then stopped it (`CharacterLengthExceededError`), so the test failed on a message mismatch, not "not raised". The cap is doubly guarded; the test proves the sentence, not that our cap is the only guard. |
+| B6 every save counted as a change | A17b | wrong value: a log row existed where none should |
+| B7 tool refusal removed | A23, A24 | `ValidationError not raised`; message mismatch (the per-row reason sentence instead of the tool sentence) |
+| B8 `on_cancel` always writes | cost test | wrong value: `(20, 1000) != (0, 0)` (after I made the fixture carry a name; the first version of that test **passed under the break** and could not fail, which is how I found it) |
+| B9 "was" forgotten | A19 | wrong value: `'Day marked Absent' != 'Day changed from Present to Absent'` |
+| B10 import skips our check | F3 | `AssertionError: ValidationError not raised` |
+
+## Suites run (own stack, `test_site`, one at a time, `throttle_user_limit` set to 1000 as an integer: a string value crashes every user creation)
+| Suite | Result |
+|---|---|
+| `test_day_change_088d` (new) | **54 of 54 OK** (final run, after the last edit) |
+| `test_invoicing` | OK (4) |
+| `test_attendance_doors_085` | 16 OK |
+| `test_punch_change_088c` | 40 OK |
+| `test_register_notice_088` | 80 OK |
+| `test_payroll_reprocess` | 12 OK |
+| `test_alv291_attendance_fix` | 5 OK |
+| `test_attendance_request_shift_346` | 5 OK |
+| `test_company_scope_085` | 20 OK |
+| `test_held_team_086` | 33 OK |
+| `test_held_day_085` | 39 OK, **6 fail** (same six as 03c: the backfill script path is not mounted; environmental) |
+| `test_leave_063_card_cancel` | 17 OK |
+| `test_punch_fix_087` | 134 OK |
+| `test_portal_security_010` | 45 + 5 + 20: **13 errors, all `No module named 'frappe.core.doctype.kpi'`**: the KPI doctype belongs to `alvoraa_goals`, which my site does not install. Environmental, shown for one test (`test_sec9_approve_kpi_update_refuses_own`); the other twelve are the same group by name (goals and evidence), **not opened one by one**. The ceiling rows for `punch_change.py` and `register_notice.py` are in the passing part. |
+
+Also: `scripts/check_app_integrity.py` OK (1071 checks); `scripts/check_brand_spelling.py` first FAILED (my refusal log text said "Alvoraa Punch Change", a name a person could read) and was fixed to "punch_change.add_row"; now OK.
+
+## NFRs, against the code
+- **Performance:** neutral. Zero queries on a system write; a person at a door pays one read for the earlier row.
+- **Security:** improves. Server-side; the code-and-text check also runs under import; refusals are written down (`088d-*` rules). One pre-existing hole found (finding 2 at the top).
+- **Reliability:** the risk is a wrong door answer. The path table pins every system path as not refused. A refusal inside a stock bulk loop is made loud by refusing up front.
+- **Scalability:** neutral.
+- **Maintainability:** one door constant. `punch_change.add_row` is now the single writer of the log.
+- **Data integrity:** the log row and the Attendance save are in one transaction. The reason is cleared after logging.
+- **Privacy:** free text is capped, one line, shown escaped (Frappe also strips event attributes from Data fields on save; observed with `<img src=x onerror=1>`). A hint on the field says no medical details or other people's names. Not in any log line.
+
+## What else moved while I worked
+`origin/dev` moved from e82bb3f0 to 8a62945d: six ALV-469 commits (another engineer: `org_label.py`, `email_brand.py`, `hooks.py` +4 lines, two patches, frame templates, tests). I read the file list; none touches Attendance or the punch log. I rebased my two commits on top without conflict. Nothing of theirs was changed.
+
+## Known gaps and shortcuts
+- **Dangerous debt (escalate):** the REST write to engine fields (top, finding 2).
+- **Temporary debt:** 1,000-row whole-insert figure not run; punch import not run for real; A11 not driven; A25 only door detection; the four `register_notice.py` lines wait on the page-count fix; no A/B wall time.
+- **Acceptable simplification:** the log keeps its name; `_changed` compares cast values per field type rather than a list of fields.
+- **Existing, not mine, seen on the way:** `punch_change._moved` compares `doc.get_value(...)` on `shift_start`/`shift_end`, and Frappe's `get_value` turns an empty Datetime into "now", so two empty values compare unequal. I hit it in my own comparison and avoided it there. Whether it makes a punch with no shift tag look "changed" in 088c was **not checked**.

@@ -33,6 +33,7 @@ from alvoraa_portal import subscription as sub
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device import (
 	alvoraa_field_device as device_rules,
 )
+from alvoraa_portal.tests.utils import ensure_gender
 
 EMP_EMAIL = "zqx.fieldapp013@example.com"
 NAME_MARKER = "Zqxthirteen"
@@ -109,7 +110,7 @@ class FieldAppCase(FrappeTestCase):
 		return frappe.get_doc({
 			"doctype": "Employee", "first_name": NAME_MARKER, "company": _company(),
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "user_id": EMP_EMAIL,
 		}).insert(ignore_permissions=True).name
 

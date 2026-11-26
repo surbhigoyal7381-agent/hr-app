@@ -25,6 +25,7 @@ import hrms.alvoraa_org_structure.settings as org_settings
 from alvoraa_portal import hr_api, leaver_report, my_profile
 from alvoraa_portal.tests.leave_fixtures import ensure_user
 from alvoraa_portal.tests.test_portal_security_010 import _employee, _user
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 FIELD = leaver_report.FIELD
 ROLE = "S089 Confirmer"
@@ -35,6 +36,7 @@ PERSONAL_KEYS = ("cell_number", "personal_email", "company_email", "gender", "cu
 
 def _company(name, abbr):
 	if not frappe.db.exists("Company", name):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": name, "abbr": abbr,
 		                "default_currency": "INR", "country": "India"}).insert()
 	return name

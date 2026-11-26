@@ -37,6 +37,7 @@ from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal.tests.test_attendance_correction import (_company,
                                                              _holiday_list,
                                                              setUpModule)
+from alvoraa_portal.tests.utils import ensure_gender, ensure_warehouse_type
 
 REQUEST = "Attendance Request"
 
@@ -89,7 +90,7 @@ class DeclineScopeCase(FrappeTestCase):
 		return frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active"}).insert(ignore_permissions=True).name
 
 	def _permit(self, user, allow, value, applicable_for=None):
@@ -241,7 +242,7 @@ class DeclineScopeCase(FrappeTestCase):
 			"doctype": "Employee", "first_name": "Dsco%d" % tag,
 			"company": self.company, "user_id": email,
 			"date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active"}).insert(ignore_permissions=True)
 		# **Frappe HR adds an Employee User Permission for a linked login**, and it
 		# applies to Attendance Request - so Frappe would fence this reviewer to
@@ -260,6 +261,7 @@ class DeclineScopeCase(FrappeTestCase):
 	def _other_company_employee(self, tag):
 		name = "ALV269 Other Co %d" % tag
 		if not frappe.db.exists("Company", name):
+			ensure_warehouse_type()
 			frappe.get_doc({"doctype": "Company", "company_name": name,
 			                "default_currency": "INR", "country": "India",
 			                "abbr": "A269X%d" % tag}).insert(ignore_permissions=True)
@@ -268,7 +270,7 @@ class DeclineScopeCase(FrappeTestCase):
 			"doctype": "Employee", "first_name": "Dsother%d" % tag,
 			"company": name, "date_of_birth": "1970-01-01",
 			"date_of_joining": "2000-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active"}).insert(ignore_permissions=True).name
 
 	def test_hr_cannot_decline_another_companys_employee(self):

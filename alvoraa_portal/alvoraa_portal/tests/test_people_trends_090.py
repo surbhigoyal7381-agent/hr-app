@@ -154,10 +154,23 @@ class TestScopeAndRefusals(TrendsBase):
 			out = call(self.lead_none)
 		self.assertEqual(out, {"state": "not_set_up"})
 
-	def test_who_is_refused(self):  # AC-16, AC-118, AC-7 (HR is off in v1)
-		for user in (self.sm_only, self.plain, self.hr, self.hr_lead, "Guest"):
+	def test_who_is_refused(self):  # AC-16, AC-118, AC-7 (an HR role alone is off in v1)
+		for user in (self.sm_only, self.plain, self.hr, "Guest"):
 			with self.assertRaises(frappe.PermissionError, msg=user):
 				call(user)
+
+	def test_an_hr_manager_who_is_also_a_leader_gets_the_leader_scope(self):  # 25 Nov 2026
+		"""Owners at DTC and Grace hold HR roles. With Leadership they open the page,
+		scoped by their Company permissions like any leader, never by hr_scope()."""
+		self.assertEqual(call(self.hr_lead)["state"], "ok")
+		self.assertEqual(self.scope(self.hr_lead), of.Scope((fx.KAVYA,), None))
+		with patch.object(of, "hr_scope", side_effect=AssertionError("HR scope was read")):
+			self.assertEqual(call(self.hr_lead)["state"], "ok")
+		narrowed = fx.user("p090hrnarrow", ["HR Manager", pt.ROLE])
+		fx.permission(narrowed, "Company", fx.KAVYA)
+		fx.permission(narrowed, "Branch", self.cl, "Attendance")
+		self.assertEqual(call(narrowed), {"state": "not_set_up"},
+		                 "a narrowed Branch permission still means not set up for an HR leader (R6)")
 
 	def test_role_has_no_permissions_and_hook_is_repeatable(self):  # AC-8, AC-121
 		pt.make_role()
@@ -744,9 +757,9 @@ class TestReviewFixes(TrendsBase):
 		self.assertEqual([t["type"] for t in week if t["type"]], ["Casual"])
 		self.assertEqual([t["type"] for t in year if t["type"]], ["Casual"])
 
-	def test_the_nav_item_is_hidden_from_a_login_the_page_refuses(self):  # m1: HR roles plus Leadership
+	def test_the_nav_item_follows_leadership_alone(self):  # m1, then 25 Nov: HR plus Leadership is let in
 		src = frappe.read_file(frappe.get_app_path("alvoraa_portal", "public", "js", "ess", "portal.js"))
-		self.assertRegex(src, r"ptShow = \(roles\.leadership && !roles\.is_hr && f\.plan_analytics")
+		self.assertRegex(src, r"ptShow = \(roles\.leadership && f\.plan_analytics")
 
 	def test_the_page_never_uses_the_website_call(self):  # OPS-18, B2
 		src = frappe.read_file(frappe.get_app_path("alvoraa_portal", "public", "js", "ess", "people-trends.js"))

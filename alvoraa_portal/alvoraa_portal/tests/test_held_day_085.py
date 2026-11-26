@@ -19,6 +19,7 @@ from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal import held_day
 from alvoraa_portal.tests.test_attendance_correction import (_holiday_list,
                                                              setUpModule as _ac_setup)
+from alvoraa_portal.tests.utils import ensure_gender
 
 REQUEST = "Attendance Request"
 SHIFT = "ALV085 Shift"
@@ -96,7 +97,7 @@ class HeldDayCase(FrappeTestCase):
 	def _employee(self, first, user=None, company=None):
 		doc = {"doctype": "Employee", "first_name": self.tag + first, "company": company or self.company,
 		       "date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-		       "gender": frappe.db.get_value("Gender", {}, "name") or "Male", "status": "Active",
+		       "gender": ensure_gender(), "status": "Active",
 		       "default_shift": SHIFT}
 		if user:
 			doc["user_id"] = user

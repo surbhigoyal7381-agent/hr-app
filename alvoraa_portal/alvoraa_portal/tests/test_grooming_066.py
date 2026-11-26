@@ -27,7 +27,7 @@ import alvoraa_portal.grooming as grooming
 import alvoraa_portal.notices as notices
 import alvoraa_portal.payroll_slip as payroll_slip
 import alvoraa_portal.attendance_correction as ac
-from alvoraa_portal.tests.utils import ensure_fiscal_years
+from alvoraa_portal.tests.utils import ensure_fiscal_years, ensure_warehouse_type
 
 COMPANY, OTHER, OFF, PLAIN = "G066 Co", "G066 Other Co", "G066 Off Co", "G066 Plain Co"
 HOLIDAYS = "G066 Holidays"
@@ -186,6 +186,7 @@ def setUpModule():
 	_component(BASIC, "G066B", "Earning", by_days=1)
 	for company, abbr in ((COMPANY, "G066C"), (OTHER, "G066T"), (OFF, "G066F"), (PLAIN, "G066P")):
 		if not frappe.db.exists("Company", company):
+			ensure_warehouse_type()
 			_insert({"doctype": "Company", "company_name": company, "abbr": abbr,
 			         "default_currency": "INR", "country": "India"})
 		frappe.db.set_value("Company", company, "default_holiday_list", HOLIDAYS)

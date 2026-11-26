@@ -20,7 +20,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, flt, getdate, nowdate
 
-from alvoraa_portal.tests.utils import ensure_fiscal_years
+from alvoraa_portal.tests.utils import ensure_fiscal_years, ensure_warehouse_type
 
 from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
 	salary_components_and_workings as report,
@@ -80,6 +80,7 @@ def setUpModule():
 	ensure_fiscal_years()
 
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY,
 		                "abbr": ABBR, "default_currency": "INR",
 		                "country": "India"}).insert(ignore_permissions=True)

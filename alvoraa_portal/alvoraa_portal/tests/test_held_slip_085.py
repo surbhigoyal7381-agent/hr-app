@@ -12,7 +12,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_months, get_first_day, get_last_day, getdate, nowdate
 
 from alvoraa_portal import held_day
-from alvoraa_portal.tests.utils import ensure_fiscal_years
+from alvoraa_portal.tests.utils import ensure_fiscal_years, ensure_gender, ensure_warehouse_type
 
 COMPANY = "ALV085 Slip Co"
 ABBR = "A85S"
@@ -43,6 +43,7 @@ def setUpModule():
 		_insert({"doctype": "Holiday List", "holiday_list_name": HOLIDAYS,
 		         "from_date": add_days(START, -400), "to_date": add_days(END, 400)})
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		_insert({"doctype": "Company", "company_name": COMPANY, "abbr": ABBR,
 		         "default_currency": "INR", "country": "India"})
 	frappe.db.set_value("Company", COMPANY, "default_holiday_list", HOLIDAYS)
@@ -75,7 +76,7 @@ class RealSlip(FrappeTestCase):
 	def _employee(self):
 		emp = _insert({"doctype": "Employee", "first_name": "Slipper%d" % RealSlip._slot,
 		               "last_name": "A085", "company": COMPANY, "status": "Active",
-		               "gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+		               "gender": ensure_gender(),
 		               "date_of_birth": "1990-01-01", "date_of_joining": add_days(START, -200),
 		               "default_shift": SHIFT, "holiday_list": HOLIDAYS,
 		               "create_user_permission": 0}).name
@@ -154,7 +155,7 @@ class ReleaseAndTheSlip(RealSlip):
 		u.add_roles("HR Manager")
 		_insert({"doctype": "Employee", "first_name": "HrSlip%d" % RealSlip._slot, "last_name": "A085",
 		         "company": COMPANY, "status": "Active", "user_id": email,
-		         "gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+		         "gender": ensure_gender(),
 		         "date_of_birth": "1990-01-01", "date_of_joining": add_days(START, -200),
 		         "create_user_permission": 0})
 		return email

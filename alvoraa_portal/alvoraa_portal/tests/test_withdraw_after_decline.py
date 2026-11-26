@@ -26,6 +26,7 @@ from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal.tests.test_attendance_correction import (_company,
                                                              _holiday_list,
                                                              setUpModule)
+from alvoraa_portal.tests.utils import ensure_gender
 
 REQUEST = "Attendance Request"
 
@@ -77,7 +78,7 @@ class WithdrawAfterDeclineCase(FrappeTestCase):
 	def _employee(self, first, user_id=None):
 		doc = {"doctype": "Employee", "first_name": first, "company": self.company,
 		       "date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-		       "gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+		       "gender": ensure_gender(),
 		       "status": "Active"}
 		if user_id:
 			doc["user_id"] = user_id

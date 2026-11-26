@@ -327,7 +327,12 @@ def _green(able, start, end, checkin_rows):
 	when a blank field earns a morning green. Deciding it twice means the
 	screen and the payslip can disagree, and the employee acts on the screen.
 	"""
-	morning_ok, night_ok = able["morning"], able["night"]
+	# A category that earns no marks (Contract) earns no green, whatever the gate
+	# says: the engine returns before the greens (payroll_rules.evaluate_day).
+	# Slice 091: a rule set that opens the night green to everyone would
+	# otherwise show Contract staff a green they can never earn.
+	morning_ok = able["morning"] and able["earns_marks"]
+	night_ok = able["night"] and able["earns_marks"]
 	if not morning_ok and not night_ok:
 		return {"eligible": False, "why": "Not set up for green marks."}
 

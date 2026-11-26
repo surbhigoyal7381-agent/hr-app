@@ -23,6 +23,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_months, getdate, now_datetime, nowdate
 
 import alvoraa_portal.grooming as grooming
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 COMPANY = "R066 Co"
 TODAY = getdate(nowdate())
@@ -59,6 +60,7 @@ MADE = []   # every mark and review a test wrote, erased or not
 
 def _company():
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY, "abbr": "R066C",
 		                "default_currency": "INR", "country": "India"}).insert(ignore_permissions=True)
 

@@ -26,6 +26,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import attendance_correction as ac
+from alvoraa_portal.tests.utils import ensure_gender, ensure_warehouse_type
 
 SHIFT = "ALV 259 Day"
 
@@ -34,8 +35,9 @@ def _company():
 	name = frappe.db.get_value("Company", {}, "name")
 	if name:
 		return name
+	ensure_warehouse_type()
 	return frappe.get_doc({"doctype": "Company", "company_name": "ALV 259 Co",
-	                       "default_currency": "INR",
+	                       "default_currency": "INR", "country": "India",
 	                       "abbr": "A259"}).insert(ignore_permissions=True).name
 
 
@@ -114,7 +116,7 @@ class TeamScopeCase(FrappeTestCase):
 	def _employee(self, first, branch, user_id=None):
 		doc = {"doctype": "Employee", "first_name": first, "company": self.company,
 		       "date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
-		       "gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+		       "gender": ensure_gender(),
 		       "status": "Active", "default_shift": SHIFT}
 		if branch:
 			doc["branch"] = branch

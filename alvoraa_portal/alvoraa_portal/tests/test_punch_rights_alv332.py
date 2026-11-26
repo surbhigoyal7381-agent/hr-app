@@ -19,6 +19,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal import field_app_access
 from alvoraa_portal.field_app_access import WHOLE_LINE_SETTING, whole_line_on
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 CHECKIN = "Employee Checkin"
 COMPANY = "ALV332 Punch Co"
@@ -33,6 +34,7 @@ def _gender():
 def setUpModule():
 	frappe.set_user("Administrator")
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY, "abbr": "A332",
 		                "default_currency": "INR", "country": "India"}).insert(ignore_permissions=True)
 	frappe.db.set_single_value("HR Settings", WHOLE_LINE_SETTING, 0)

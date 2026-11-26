@@ -33,7 +33,7 @@ from frappe.utils import add_days, add_to_date, now_datetime, getdate, nowdate
 
 from alvoraa_portal import announcements as ann
 from alvoraa_portal import notices
-from alvoraa_portal.tests.utils import ensure_fiscal_years
+from alvoraa_portal.tests.utils import ensure_fiscal_years, ensure_warehouse_type
 
 X, Y = "N076 Co X", "N076 Co Y"
 A, B = "N076 Branch A", "N076 Branch B"
@@ -104,6 +104,7 @@ def setUpModule():
 			_insert({"doctype": "Branch", "branch": b})
 	for company, abbr in ((X, "N76X"), (Y, "N76Y")):
 		if not frappe.db.exists("Company", company):
+			ensure_warehouse_type()
 			_insert({"doctype": "Company", "company_name": company, "abbr": abbr,
 			         "default_currency": "INR", "country": "India"})
 	if not frappe.db.exists("Designation", "Store HR N076"):

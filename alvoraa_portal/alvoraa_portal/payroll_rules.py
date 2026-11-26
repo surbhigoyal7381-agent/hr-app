@@ -110,6 +110,10 @@ HALF_DAY_QUARTERS = 2
 MORNING_GREEN_EARLY_MINUTES = 120
 NIGHT_GREEN_LATE_MINUTES = 60
 
+# Slice 091: overtime starts to count one hour after the person's own shift end,
+# the same gate as the night green. Kept as its own name because it is its own rule.
+OVERTIME_AFTER_SHIFT_MINUTES = 60
+
 # Punches closer together than this are the same event, not an in and an out.
 # Readers double-read: HR-EMP-00031 on 1 October 2026 has punches at 10:09:00
 # and 10:09:01. Read literally that is a one-second working day, 0% attendance
@@ -313,6 +317,10 @@ class DayVerdict:
 	# leave application behind it). Everything else on the verdict then
 	# describes the OTHER half only.
 	half_leave: bool = False
+	# Slice 091: quarters of a day EARNED by staying late. Deliberately not part of
+	# total_quarters (which is quarters LOST) and not read by day_credit, so no
+	# existing total moves. The month adds it as its own money line.
+	overtime_quarters: int = 0
 	reasons: list = field(default_factory=list)
 
 	@property
@@ -441,6 +449,20 @@ def leave_credits_for_month(days_present, period_days, credit_per_period,
 	earned = periods * float(credit_per_period)
 	cap = float(monthly_cap or 0)
 	return min(earned, cap) if cap > 0 else earned
+
+
+def overtime_quarters_for(last_out, shift_end, bands) -> int:
+	"""Quarters earned by the last punch of the day (slice 091).
+
+	`last_out` and each band edge are minutes from the SHIFT DAY's midnight, so
+	01:00 the next morning is 1500, not 60 (`punch_minutes`, ALV-402). `bands` is
+	[(edge_minutes, total_quarters)], lowest edge first. A band counts once the
+	punch is AT OR AFTER its edge (Surbhi, 24 Nov 2026: a milestone passed), and
+	the largest one reached wins (the rule set refuses a table where later pays less). Nothing counts before shift end + 60 minutes.
+	"""
+	if last_out is None or last_out < shift_end + OVERTIME_AFTER_SHIFT_MINUTES:
+		return 0
+	return max((quarters for edge, quarters in bands if last_out >= edge), default=0)
 
 
 def round_percent(percent) -> float:
@@ -594,6 +616,7 @@ def evaluate_day(
 	late_quarter_after_minutes=0,
 	break_allowance_minutes=0,
 	break_gaps=(),
+	overtime_bands=(),
 ) -> DayVerdict:
 	"""Judge one employee on one day.
 
@@ -608,6 +631,9 @@ def evaluate_day(
 	"""
 	v = DayVerdict()
 	slabs = slabs or []
+	# True when `last_out` was typed by a person, not punched. A typed time never
+	# pays overtime (091, Q7): HR typing a time must not move money.
+	typed_out = False
 
 	shift_minutes = shift_end - shift_start
 	if shift_minutes <= 0:
@@ -667,6 +693,7 @@ def evaluate_day(
 				"confirms the time.")
 			return v
 		last_out = confirmed_out
+		typed_out = True
 		punch_count = 2
 		v.reasons.append(
 			"Check-out missing and confirmed afterwards as {0:02d}:{1:02d}. "
@@ -690,6 +717,7 @@ def evaluate_day(
 				"until somebody confirms the time.".format(punch_count))
 			return v
 		last_out = confirmed_out
+		typed_out = True
 		v.reasons.append(
 			"A punch is missing; check-out confirmed afterwards as {0:02d}:{1:02d}. "
 			"The day is measured from the first punch to that time."
@@ -850,8 +878,24 @@ def evaluate_day(
 		v.reasons.append(
 			"Morning green: in {0:.0f} minutes early.".format(shift_start - first_in))
 	if night_green_eligible and last_out >= shift_end + NIGHT_GREEN_LATE_MINUTES:
-		v.greens += 1
-		v.reasons.append(
-			"Night green: out {0:.0f} minutes late.".format(last_out - shift_end))
+		if typed_out:
+			# 091 (Surbhi, 25 Nov 2026): a time a person typed pays neither the night
+			# green nor overtime. Only a real punch supports a payment.
+			v.reasons.append(
+				"No night green: the leaving time was confirmed by a person, not punched.")
+		else:
+			v.greens += 1
+			v.reasons.append(
+				"Night green: out {0:.0f} minutes late.".format(last_out - shift_end))
+
+	# ── 091: overtime, from the last real punch ──────────────────────────────
+	# After the marks block on purpose: a category that earns no marks (Contract)
+	# has already returned above, so it earns no overtime either.
+	if not typed_out:
+		v.overtime_quarters = overtime_quarters_for(last_out, shift_end, overtime_bands)
+		if v.overtime_quarters:
+			v.reasons.append(
+				"Overtime: last punch {0:02d}:{1:02d}, {2} quarter(s) of a day on top."
+				.format(int(last_out) // 60 % 24, int(last_out) % 60, v.overtime_quarters))
 
 	return v

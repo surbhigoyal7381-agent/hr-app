@@ -20,6 +20,7 @@ from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal.field_app_access import WHOLE_LINE_SETTING
 from alvoraa_portal.payroll_rules import minutes_on_break, punch_minutes
 from alvoraa_portal.payroll_rules_apply import breaks_by_day
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 COMPANY = "ALV328 Break Co"
 SHIFT = "ALV328 10-19"
@@ -58,6 +59,7 @@ def _gender():
 def setUpModule():
 	frappe.set_user("Administrator")
 	if not frappe.db.exists("Company", COMPANY):
+		ensure_warehouse_type()
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY, "abbr": "A328",
 		                "default_currency": "INR", "country": "India"}).insert(ignore_permissions=True)
 	if not frappe.db.exists("Shift Type", SHIFT):

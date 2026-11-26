@@ -30,6 +30,7 @@ from alvoraa_portal.tests.leave_fixtures import (
 	link_user_to_employee,
 )
 from alvoraa_portal.tests.test_goal_cycle_035 import GoalCycleCase
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 WORKER_USER = "match.worker035@example.com"
 BOSS_USER = "match.boss035@example.com"
@@ -49,6 +50,7 @@ def ensure_second_company(not_this_one):
 	if other:
 		return other
 	first = not_this_one
+	ensure_warehouse_type()
 	doc = frappe.get_doc({
 			"doctype": "Company", "company_name": SECOND_COMPANY,
 		"default_currency": frappe.db.get_value("Company", first, "default_currency"),

@@ -30,6 +30,7 @@ import alvoraa_portal.performance_api as pa
 from alvoraa_goals import review_items
 
 from alvoraa_portal.tests.test_review_outside_010d import _CycleScreens
+from alvoraa_portal.tests.utils import ensure_warehouse_type
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -109,6 +110,7 @@ class TestCycleKeepsItsPages(FrappeTestCase):
 		"""A cycle belongs to a company. A bare site has none."""
 		if frappe.db.exists("Company", {"name": ["is", "set"]}):
 			return
+		ensure_warehouse_type()
 		frappe.get_doc({
 			"doctype": "Company",
 			"company_name": "Slice 027 Test Co",

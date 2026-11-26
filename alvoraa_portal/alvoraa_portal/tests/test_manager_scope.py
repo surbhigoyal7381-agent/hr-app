@@ -12,6 +12,7 @@ from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import manager_scope as ms
 from alvoraa_portal import own_record_permission as orp
+from alvoraa_portal.tests.utils import ensure_gender, ensure_warehouse_type
 
 
 def _an_excluded_role():
@@ -35,6 +36,7 @@ def _company():
 	# time this module does, so the `or` branch was dead. It only fires on a site
 	# with no company at all - which is exactly the fresh-site run this fix was
 	# verified on. Same value as the other 24 fixture files.
+	ensure_warehouse_type()
 	return (frappe.db.get_value("Company", {}, "name")
 	        or frappe.get_doc({"doctype": "Company", "company_name": "MS Test Co",
 	                           "abbr": "MSTC", "default_currency": "INR",
@@ -65,7 +67,7 @@ class ScopeCase(FrappeTestCase):
 			"doctype": "Employee", "first_name": "Ms" + label + str(self.tag),
 			"company": self.company, "date_of_birth": "1990-01-01",
 			"date_of_joining": "2015-01-01",
-			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"gender": ensure_gender(),
 			"status": "Active", "user_id": email,
 		}).insert(ignore_permissions=True)
 		return e.name, email

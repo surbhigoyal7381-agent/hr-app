@@ -8,6 +8,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal import own_record_permission as orp
+from alvoraa_portal.tests.utils import ensure_gender
 
 FIELDS = ["name", "date_of_birth", "cell_number", "personal_email", "current_address"]
 REFS = ["Employee", "ToDo", "Leave Application", "Expense Claim", "Attendance"]
@@ -38,7 +39,7 @@ class OwnRecordCase(FrappeTestCase):
 			u.add_roles(*roles)
 		doc = {"doctype": "Employee", "first_name": "Orp" + label + str(self.tag), "company": self.company,
 		       "date_of_birth": "1990-10-15", "date_of_joining": "2015-01-01",
-		       "gender": frappe.db.get_value("Gender", {}, "name") or "Male", "status": "Active",
+		       "gender": ensure_gender(), "status": "Active",
 		       "user_id": email, "create_user_permission": 0, "reports_to": reports_to,
 		       "cell_number": "9800000000"}
 		doc.update(extra)

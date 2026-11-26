@@ -15,6 +15,7 @@ from alvoraa_portal import branch_geofence as bg
 from alvoraa_portal import field_checkin as fc
 from alvoraa_portal import hr_api
 from alvoraa_portal.field_app_settings import CHILD, F_DESIGNATIONS, SETTINGS
+from alvoraa_portal.tests.utils import ensure_gender
 
 SHIFT = "CI Test Shift"
 BRANCH = "ALV338 Test Branch"
@@ -94,7 +95,7 @@ class Case(FrappeTestCase):
 				"doctype": "Employee", "first_name": first,
 				"company": frappe.db.get_value("Company", {}, "name"),
 				"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
-				"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+				"gender": ensure_gender(),
 				"status": "Active", "user_id": email, "default_shift": SHIFT,
 			}).insert(ignore_permissions=True).name
 		frappe.db.set_value("Employee", emp, {"branch": BRANCH, "designation": designation})

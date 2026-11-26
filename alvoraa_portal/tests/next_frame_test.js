@@ -37,6 +37,9 @@ function fillTemplate(src) {
     .replace(/\{\{\s*tenant_name\s*\|\s*tojson\s*\}\}/g, '"Test Tenant"')
     .replace(/\{\{\s*tenant_name\[0\]\s*\|\s*upper\s*\}\}/g, "T")
     .replace(/\{\{\s*tenant_name\s*\}\}/g, "Test Tenant")
+    // ALV-469: the frame names the person's own organisation, escaped.
+    .replace(/\{\{\s*brand_label\[0\]\s*\|\s*upper\s*\|\s*e\s*\}\}/g, "T")
+    .replace(/\{\{\s*brand_label\s*\|\s*e\s*\}\}/g, "Test Tenant")
     .replace(/\{\{\s*asset_version\s*\|\s*e\s*\}\}/g, "1")
     .replace(/\{\{\s*brand_mark_url\s*\|\s*e\s*\}\}/g, "")
     .replace(/\{%\s*if brand_mark_url\s*%\}[\s\S]*?\{%\s*endif\s*%\}/g, "")

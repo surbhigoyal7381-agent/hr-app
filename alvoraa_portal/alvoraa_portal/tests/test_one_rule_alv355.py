@@ -57,8 +57,13 @@ class OneRule(PunchFixCase):
 		self.assertEqual(punch_fix.outcome(row)["count"], 0)
 
 	def test_alv474_the_card_opens_when_every_punch_is_set_aside(self):
+		"""An earlier approved fix set every punch aside, so the day has none left. Frappe's
+		get_attendance read logs[0] and raised IndexError; `card` swallows the exception, so HR
+		saw a card with no "what changes" half and no reason why (ALV-474). The request carries
+		no time, so nothing is added back and the after-state really has zero punches - with a
+		time the empty path is never reached and this test cannot fail."""
 		att, names = self.held_three()
-		req = self.fix("12:40")
+		req = self.fix(aside=[names[1]], note="wrong scan")  # filed while the day still had punches
 		for n in names:
 			frappe.db.set_value(CHECKIN, n, punch_fix.ASIDE, "X")
 		frappe.set_user(self.hr)
@@ -67,7 +72,8 @@ class OneRule(PunchFixCase):
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual([p["aside"] for p in card["now"]["punches"]], [True, True, True])
-		self.assertIn("after", card)
+		self.assertIn("after", card)  # ALV-474: the what-changes half was calculated, not swallowed
+		self.assertEqual((card["after"]["status"], card["after"]["hours"]), ("Absent", 0.0))
 
 	def test_hr_may_set_aside_a_real_flagged_punch_but_not_one_already_set_aside(self):
 		att, names = self.held_three()

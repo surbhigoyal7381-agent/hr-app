@@ -44,15 +44,16 @@ FIELDS = {
 		 "label": "Exempt From The Limit", "insert_after": LIMIT,
 		 "description": "Role or designation names, separated by commas."},
 	],
+	# Not allow_on_submit (ALV-477): only the engine writes these, with db.set_value. See payroll_fields.
 	ATTENDANCE: [
 		{"fieldname": "alvoraa_release_how", "fieldtype": "Select", "read_only": 1,
-		 "allow_on_submit": 1, "options": "\nHR decision\nMachine punch",
+		 "allow_on_submit": 0, "options": "\nHR decision\nMachine punch",
 		 "label": "Released By", "insert_after": "alvoraa_evaluated_on"},
 		{"fieldname": "alvoraa_release_by", "fieldtype": "Data", "read_only": 1,
-		 "allow_on_submit": 1, "label": "Released By (User Or Punch)",
+		 "allow_on_submit": 0, "label": "Released By (User Or Punch)",
 		 "insert_after": "alvoraa_release_how"},
 		{"fieldname": "alvoraa_release_on", "fieldtype": "Datetime", "read_only": 1,
-		 "allow_on_submit": 1, "label": "Released On", "insert_after": "alvoraa_release_by"},
+		 "allow_on_submit": 0, "label": "Released On", "insert_after": "alvoraa_release_by"},
 	],
 	REQUEST: [
 		{"fieldname": "alvoraa_missing_time", "fieldtype": "Time",

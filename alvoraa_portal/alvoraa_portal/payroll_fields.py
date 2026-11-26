@@ -17,11 +17,16 @@ day it judges. Keeping it on the Attendance row is what makes a reprocess safe
 to run twice: the second run overwrites the same eleven values instead of
 adding a second adjustment on top of the first.
 
-ALL BUT TWO ARE READ-ONLY, and all are `allow_on_submit`. Attendance is
-submitted before the engine ever sees it, so a field the engine could not write
-after submit would be useless. The two that a person may set are the held-day
-confirmation (ATT-06) - somebody has to stand behind the time an employee left
-when the machine has no record of it.
+ALL BUT TWO ARE READ-ONLY, AND ONLY THOSE TWO ARE `allow_on_submit` (ALV-477).
+The two that a person may set are the held-day confirmation (ATT-06) - somebody
+has to stand behind the time an employee left when the machine has no record of
+it. The rest are the engine's alone. `read_only` is not enforced by the server,
+but a change to a submitted row that is not `allow_on_submit` is refused by
+Frappe on every route (Desk, REST, `frappe.client`, import). The engine does not
+need the flag: it writes with `frappe.db.set_value`, which is not a document
+save. The flag is written as an explicit 0 rather than left out, because
+`create_custom_fields` merges what is given over what a site already has, so a
+missing key would leave an existing tenant on 1.
 """
 
 import frappe
@@ -40,7 +45,7 @@ VERDICT = [
 	# ── the held day, and the only two fields a person may set ───────────────
 	{"fieldname": "alvoraa_held", "fieldtype": "Check", "label": "Held",
 	 "insert_after": "alvoraa_rules_section", "read_only": 1,
-	 "allow_on_submit": 1, "in_list_view": 0,
+	 "allow_on_submit": 0, "in_list_view": 0,
 	 "description": "An odd number of punches: the employee checked in and "
 	                "never checked out. The day is neither paid nor penalised "
 	                "until somebody confirms when they left."},
@@ -65,16 +70,16 @@ VERDICT = [
 	# ── what the day came to ─────────────────────────────────────────────────
 	{"fieldname": "alvoraa_attendance_percent", "fieldtype": "Percent",
 	 "label": "Attendance", "insert_after": "alvoraa_confirmed_out_time",
-	 "read_only": 1, "allow_on_submit": 1,
+	 "read_only": 1, "allow_on_submit": 0,
 	 "description": "Minutes present as a share of the shift. The slab table "
 	                "turns this into quarters."},
 	{"fieldname": "alvoraa_slab_quarters", "fieldtype": "Int",
 	 "label": "Quarters Off (Slab)", "insert_after": "alvoraa_attendance_percent",
-	 "read_only": 1, "allow_on_submit": 1,
+	 "read_only": 1, "allow_on_submit": 0,
 	 "description": "From the slab table, for time missed."},
 	{"fieldname": "alvoraa_extra_quarters", "fieldtype": "Int",
 	 "label": "Quarters Off (Extra)", "insert_after": "alvoraa_slab_quarters",
-	 "read_only": 1, "allow_on_submit": 1,
+	 "read_only": 1, "allow_on_submit": 0,
 	 "description": "Added by a rule outside the slab table, such as arriving "
 	                "inside the late window."},
 
@@ -83,32 +88,32 @@ VERDICT = [
 
 	{"fieldname": "alvoraa_reds", "fieldtype": "Int", "label": "Red Marks",
 	 "insert_after": "alvoraa_rules_column", "read_only": 1,
-	 "allow_on_submit": 1,
+	 "allow_on_submit": 0,
 	 "description": "Counted for the month, where the first two are free."},
 	{"fieldname": "alvoraa_greens", "fieldtype": "Int", "label": "Green Marks",
-	 "insert_after": "alvoraa_reds", "read_only": 1, "allow_on_submit": 1,
+	 "insert_after": "alvoraa_reds", "read_only": 1, "allow_on_submit": 0,
 	 "description": "Only for employees eligible on this date."},
 	{"fieldname": "alvoraa_late_arrival", "fieldtype": "Check",
 	 "label": "Late Arrival", "insert_after": "alvoraa_greens",
-	 "read_only": 1, "allow_on_submit": 1},
+	 "read_only": 1, "allow_on_submit": 0},
 	{"fieldname": "alvoraa_early_departure", "fieldtype": "Check",
 	 "label": "Early Departure", "insert_after": "alvoraa_late_arrival",
-	 "read_only": 1, "allow_on_submit": 1},
+	 "read_only": 1, "allow_on_submit": 0},
 	{"fieldname": "alvoraa_special_day_doubled", "fieldtype": "Check",
 	 "label": "Special Day (Doubled)",
 	 "insert_after": "alvoraa_early_departure", "read_only": 1,
-	 "allow_on_submit": 1,
+	 "allow_on_submit": 0,
 	 "description": "A listed special day, so the day counts twice."},
 
 	# ── the audit trail, which is the point of showing any of this ───────────
 	{"fieldname": "alvoraa_rules_why", "fieldtype": "Small Text",
 	 "label": "Why", "insert_after": "alvoraa_special_day_doubled",
-	 "read_only": 1, "allow_on_submit": 1,
+	 "read_only": 1, "allow_on_submit": 0,
 	 "description": "In plain words, every rule that fired on this day. This "
 	                "is what an employee is shown when they ask."},
 	{"fieldname": "alvoraa_evaluated_on", "fieldtype": "Datetime",
 	 "label": "Judged On", "insert_after": "alvoraa_rules_why",
-	 "read_only": 1, "allow_on_submit": 1,
+	 "read_only": 1, "allow_on_submit": 0,
 	 "description": "Blank means the engine has not looked at this day yet."},
 ]
 

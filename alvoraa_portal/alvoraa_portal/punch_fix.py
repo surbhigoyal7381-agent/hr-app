@@ -24,7 +24,7 @@ from frappe.utils import add_days, cint, flt, get_datetime, get_first_day, get_l
 import alvoraa_portal.held_day as held_day
 import hrms.alvoraa_hr_core.access as access
 from alvoraa_portal.payroll_rules import DUPLICATE_PUNCH_MINUTES
-from alvoraa_portal.payroll_rules_apply import shift_day  # the one working-day rule (ALV-402)
+from alvoraa_portal.payroll_rules_apply import fold_repeat_scans, shift_day  # the one day rule (ALV-402, ALV-355)
 
 REQUEST = "Attendance Request"
 ATTENDANCE = "Attendance"
@@ -306,7 +306,7 @@ def day_punches(employee, date):
 	rows = frappe.get_all(
 		CHECKIN, filters={"employee": employee,
 		                  "time": ("between", [f"{date} 00:00:00", f"{add_days(date, 1)} 23:59:59"])},
-		fields=["name", "time", "log_type", "device_id", "skip_auto_attendance", "offshift", "shift_start",
+		fields=["name", "time", "log_type", "device_id", "shift_start",
 		        ADDED, ASIDE],
 		order_by="time asc")
 	return [r for r in rows if shift_day(r) == str(date)]
@@ -565,13 +565,15 @@ def _check_aside(doc):
 	"""Each punch to set aside must be this employee's, on this day, and still counting."""
 	names = aside_names(doc)
 	for name in names:
-		row = frappe.db.get_value(CHECKIN, name, ["employee", "time", "shift_start", "skip_auto_attendance", ASIDE],
+		row = frappe.db.get_value(CHECKIN, name, ["employee", "time", "shift_start", ASIDE],
 		                          as_dict=True)
 		if not row or row.employee != doc.employee or shift_day(row) != str(getdate(doc.from_date)):
 			access.log_refusal("SEC-4", "punch_fix.validate", REQUEST, doc.name)
 			frappe.throw(_("One of the punches you picked is not on this day. Open the day again and pick "
 			               "from the list."))
-		if row.skip_auto_attendance or row.get(ASIDE):
+		# ALV-355: only an already-set-aside punch is refused. `skip_auto_attendance` is not a reason:
+		# it also marks real punches, which count and which HR may need to set aside.
+		if row.get(ASIDE):
 			frappe.throw(_("One of the punches you picked does not count already, so there is nothing to "
 			               "set aside."))
 	return names
@@ -668,11 +670,14 @@ def day_sheet(date):
 		return out
 	out.update({"status": row.status, "hours": flt(row.working_hours, 2), "held": row.status == held_day.HELD,
 	            "shift": _shift_line(row.shift) if row.shift else None})
+	# ALV-355: a punch counts unless HR set it aside or it is a repeat scan the engine folds.
+	every = day_punches(me.name, date)
+	counting = {p.name for p in fold_repeat_scans([p for p in every if not p.get(ASIDE)], date)}
 	out["punches"] = [{"name": p.name, "time": _hhmm(p.time), "m": _mins(p.time, date), "log_type": p.log_type,
 	                   "source": _source(p),
 	                   "added": bool(p.get(ADDED)), "aside": bool(p.get(ASIDE)),
-	                   "counted": not (p.skip_auto_attendance or p.offshift or p.get(ASIDE))}
-	                  for p in day_punches(me.name, date)]
+	                   "counted": p.name in counting}
+	                  for p in every]
 	for r in frappe.get_all(
 			REQUEST, filters={"employee": me.name, "docstatus": ("<", 2), "from_date": getdate(date)},
 			fields=["name", "docstatus", "alvoraa_review_status", "creation", "alvoraa_missing_time",
@@ -770,7 +775,7 @@ def card_context(rows):
 	by_emp = {}
 	for p in frappe.get_all(
 			CHECKIN, filters={"employee": ("in", emps), "time": ("between", [f"{lo} 00:00:00", f"{add_days(hi, 1)} 23:59:59"])},
-			fields=["name", "employee", "time", "log_type", "device_id", "skip_auto_attendance", "offshift",
+			fields=["name", "employee", "time", "log_type", "device_id",
 			        "shift_start", "shift_end", ADDED, ASIDE], order_by="time asc", limit_page_length=0):
 		by_emp.setdefault(p.employee, []).append(p)
 	return {
@@ -836,7 +841,7 @@ def card(row, ctx=None):
 	out["now"] = {"status": day.status, "hours": flt(day.working_hours, 2),
 	              "shift": _shift_line(day.shift) if day.shift else None,
 	              "punches": [{"time": _hhmm(p.time), "m": _mins(p.time, date), "log_type": p.log_type,
-	                           "source": _source(p), "aside": bool(p.name in ticked or p.skip_auto_attendance or p.get(ASIDE)),
+	                           "source": _source(p), "aside": bool(p.name in ticked or p.get(ASIDE)),
 	                           "ticked": p.name in ticked, "name": p.name} for p in punches]}
 	# Q6: HR is told in words when the punch to set aside came from a machine.
 	out["sets_aside_machine"] = any(p["ticked"] and p["source"] == _("Machine") for p in out["now"]["punches"])
@@ -846,7 +851,8 @@ def card(row, ctx=None):
 	# A replacement of an approved change: approving it first puts that change back, so its added
 	# punch does not count in the preview (the same as `apply`).
 	gone = set(frappe.get_all(CHECKIN, filters={ADDED: req.alvoraa_replaces}, pluck="name")) if req.get("alvoraa_replaces") else set()
-	logs = [p for p in punches if not p.skip_auto_attendance and not p.offshift and p.name not in ticked and p.name not in gone]
+	# ALV-355: the same punches `_day_logs` returns - not set aside, not ticked, repeat scans folded.
+	logs = fold_repeat_scans([p for p in punches if not p.get(ASIDE) and p.name not in ticked and p.name not in gone], date)
 	add = None
 	if held_day._has_time(req):
 		log_type, label, when = derive(doc.employee, date, req.alvoraa_missing_time, ticked, day.shift, logs)

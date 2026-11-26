@@ -22,7 +22,7 @@ import alvoraa_portal.held_day as held_day
 import alvoraa_portal.punch_fix as punch_fix
 import hrms.alvoraa_hr_core.access as access
 from alvoraa_portal.field_app_limits import SELF_KEY, _limited
-from alvoraa_portal.payroll_rules_apply import shift_day  # the one working-day rule (ALV-402)
+from alvoraa_portal.payroll_rules_apply import aside_filter, fold_repeat_scans, shift_day  # the one day rule
 
 REQUEST = "Attendance Request"
 ATTENDANCE = "Attendance"
@@ -105,7 +105,7 @@ def _shaped(page):
 	punches = {}
 	for p in frappe.get_all(
 			CHECKIN,
-			filters={"employee": ("in", emps), "skip_auto_attendance": 0, "offshift": 0,
+			filters={"employee": ("in", emps), **aside_filter(),
 			         "time": ("between", [f"{dates[0]} 00:00:00", f"{add_days(dates[-1], 1)} 23:59:59"])},
 			fields=["employee", "time", "log_type", "device_id", "shift_start", punch_fix.ADDED],
 			order_by="time asc", limit_page_length=20000):
@@ -119,7 +119,7 @@ def _shaped(page):
 	out = []
 	for r in page:
 		day = str(r.attendance_date)
-		logs = punches.get((r.employee, day), [])
+		logs = fold_repeat_scans(punches.get((r.employee, day), []), day)  # ALV-355: as the engine counts
 		sh = shifts.get(r.shift)
 		out.append({
 			"employee": r.employee, "employee_name": r.employee_name, "date": day,

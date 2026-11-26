@@ -92,6 +92,18 @@ def _minutes(value):
 	return int(parts[0]) * 60 + int(parts[1])
 
 
+def overtime_next_band_percent(rule_set):
+	"""ALV-478: the rule set's "Pay The Next Overtime Band After (%)" as a whole number
+	1 to 100. Blank is 100 (paid at the band time only). Raises ValueError for anything
+	else, which the rule set's save turns into a plain-words refusal."""
+	text = str(rule_set.get("overtime_next_band_percent") or "").strip()
+	if not text:
+		return 100
+	if not text.isdigit() or not 1 <= int(text) <= 100:
+		raise ValueError(text)
+	return int(text)
+
+
 def overtime_bands(rule_set):
 	"""The rule set's overtime table as [(edge_minutes, total_quarters)], earliest
 	first. An edge is minutes from the SHIFT DAY's midnight, so 01:00 the next
@@ -196,6 +208,7 @@ def prepare(rule_set, from_date=None, to_date=None, employee=None):
 		"late_quarter_after": int(rule_set.get("late_quarter_after_minutes") or 0),
 		"break_allowance": int(rule_set.get("break_allowance_minutes") or 0),
 		"overtime_bands": overtime_bands(rule_set),
+		"overtime_next_percent": overtime_next_band_percent(rule_set),
 		"night_for_all": bool(rule_set.get("night_green_for_everyone")),
 		"window_field": (rule_set.late_window_employee_field or "").strip(),
 		"double_field": (rule_set.double_deduction_field or "").strip(),
@@ -551,6 +564,7 @@ def judge(attendance, ctx):
 		shift_hours_only=ctx["shift_hours_only"],
 		break_gaps=gaps,
 		overtime_bands=ctx["overtime_bands"],
+		overtime_next_band_percent=ctx["overtime_next_percent"],
 		**flags)
 
 

@@ -328,8 +328,13 @@ class AlvoraaPayrollRuleSet(Document):
 		earn more than a day (four quarters): otherwise staying later could pay
 		less, or the order of the rows would decide the answer.
 		"""
-		from alvoraa_portal.payroll_rules_apply import overtime_bands
+		from alvoraa_portal.payroll_rules_apply import overtime_bands, overtime_next_band_percent
 
+		try:
+			overtime_next_band_percent(self)
+		except ValueError:
+			frappe.throw(_("\"Pay The Next Overtime Band After (%)\" must be a whole number from 1 to 100, "
+			               "for example 75. Leave it blank to pay the next band only at its own time."))
 		for row in self.get("overtime_bands") or []:
 			row.total_quarters = cint(row.total_quarters)
 			if not row.last_punch_at:

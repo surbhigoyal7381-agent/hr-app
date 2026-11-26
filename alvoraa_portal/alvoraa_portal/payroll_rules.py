@@ -451,7 +451,7 @@ def leave_credits_for_month(days_present, period_days, credit_per_period,
 	return min(earned, cap) if cap > 0 else earned
 
 
-def overtime_quarters_for(last_out, shift_end, bands) -> int:
+def overtime_quarters_for(last_out, shift_end, bands, next_band_percent=100) -> int:
 	"""Quarters earned by the last punch of the day (slice 091).
 
 	`last_out` and each band edge are minutes from the SHIFT DAY's midnight, so
@@ -459,10 +459,27 @@ def overtime_quarters_for(last_out, shift_end, bands) -> int:
 	[(edge_minutes, total_quarters)], lowest edge first. A band counts once the
 	punch is AT OR AFTER its edge (Surbhi, 24 Nov 2026: a milestone passed), and
 	the largest one reached wins (the rule set refuses a table where later pays less). Nothing counts before shift end + 60 minutes.
+
+	`next_band_percent` (ALV-478, Surbhi, 26 Nov 2026; 100 or blank = off): once a band is
+	reached, a last punch that is at or past this percent of the way from that band's edge
+	to the NEXT band's edge is paid the next band. At or past, so 75% of 23:00 to 01:00
+	(120 minutes) is exactly 00:30 and 00:30 pays. Whole-number arithmetic, no rounding:
+	(last_out - edge) * 100 >= percent * window. Nothing before the first band, and the
+	last band is the cap.
 	"""
 	if last_out is None or last_out < shift_end + OVERTIME_AFTER_SHIFT_MINUTES:
 		return 0
-	return max((quarters for edge, quarters in bands if last_out >= edge), default=0)
+	ordered = sorted(bands)
+	reached = [i for i, (edge, _q) in enumerate(ordered) if last_out >= edge]
+	if not reached:
+		return 0
+	i = reached[-1]
+	percent = next_band_percent or 100
+	if percent < 100 and i + 1 < len(ordered):
+		edge, next_edge = ordered[i][0], ordered[i + 1][0]
+		if (last_out - edge) * 100 >= percent * (next_edge - edge):
+			return ordered[i + 1][1]
+	return max(quarters for edge, quarters in ordered if last_out >= edge)
 
 
 def round_percent(percent) -> float:
@@ -617,6 +634,7 @@ def evaluate_day(
 	break_allowance_minutes=0,
 	break_gaps=(),
 	overtime_bands=(),
+	overtime_next_band_percent=100,
 ) -> DayVerdict:
 	"""Judge one employee on one day.
 
@@ -892,7 +910,8 @@ def evaluate_day(
 	# After the marks block on purpose: a category that earns no marks (Contract)
 	# has already returned above, so it earns no overtime either.
 	if not typed_out:
-		v.overtime_quarters = overtime_quarters_for(last_out, shift_end, overtime_bands)
+		v.overtime_quarters = overtime_quarters_for(
+			last_out, shift_end, overtime_bands, overtime_next_band_percent)
 		if v.overtime_quarters:
 			v.reasons.append(
 				"Overtime: last punch {0:02d}:{1:02d}, {2} quarter(s) of a day on top."

@@ -115,6 +115,49 @@ class WhoNeverEarnsIt(unittest.TestCase):
 		self.assertEqual(day(hm(26), half_day_leave=True).overtime_quarters, 0)
 
 
+class TheNextBandPercent(unittest.TestCase):
+	"""ALV-478 (Surbhi, 26 Nov 2026): at 75%, a last punch 75% of the way from one band to the
+	next pays the next band. 23:00 to 01:00 is 120 minutes, so 00:30 exactly; 01:00 to 03:00, 02:30."""
+
+	def paid(self, h, m, percent):
+		return day(hm(h, m), overtime_next_band_percent=percent).overtime_quarters
+
+	def test_surbhis_ten_examples_at_75(self):
+		cases = [((22, 59), 0), ((23, 0), 1), ((23, 42), 1), ((24, 29), 1), ((24, 30), 2),
+		         ((24, 35), 2), ((25, 50), 2), ((26, 30), 4), ((26, 40), 4), ((27, 30), 4)]
+		for (h, m), quarters in cases:
+			self.assertEqual(self.paid(h, m, 75), quarters, "%02d:%02d" % (h % 24, m))
+
+	def test_blank_and_100_are_exactly_today(self):
+		for h, m in [(22, 59), (23, 0), (24, 30), (24, 59), (25, 0), (26, 30), (26, 59), (27, 0), (28, 0)]:
+			today = day(hm(h, m)).overtime_quarters
+			for percent in (100, None, 0):
+				self.assertEqual(self.paid(h, m, percent), today, "%02d:%02d %r" % (h % 24, m, percent))
+
+	def test_the_boundary_minute_is_in_and_the_minute_before_is_out(self):
+		self.assertEqual(self.paid(24, 29, 75), 1)
+		self.assertEqual(self.paid(24, 30, 75), 2)
+		self.assertEqual(overtime_quarters_for(hm(26, 30), SHIFT_END, BANDS, 75), 4)
+		self.assertEqual(overtime_quarters_for(hm(26, 29), SHIFT_END, BANDS, 75), 2)
+
+	def test_nothing_before_the_first_band_and_the_last_band_is_the_cap(self):
+		self.assertEqual(overtime_quarters_for(hm(22, 59), SHIFT_END, BANDS, 1), 0)
+		self.assertEqual(overtime_quarters_for(hm(23, 0), SHIFT_END, BANDS, 1), 1, "the edge itself is 0% of the way")
+		self.assertEqual(overtime_quarters_for(hm(23, 2), SHIFT_END, BANDS, 1), 2, "2 of 120 minutes is past 1%")
+		self.assertEqual(overtime_quarters_for(hm(29), SHIFT_END, BANDS, 1), 4)
+
+	def test_the_bands_may_come_in_any_order(self):
+		for bands in (list(reversed(BANDS)), [BANDS[2], BANDS[0], BANDS[1]]):
+			self.assertEqual(overtime_quarters_for(hm(24, 30), SHIFT_END, bands, 75), 2)
+			self.assertEqual(overtime_quarters_for(hm(26, 30), SHIFT_END, bands, 75), 4)
+
+	def test_the_shift_end_gate_still_holds(self):
+		self.assertEqual(overtime_quarters_for(SHIFT_END + 59, SHIFT_END, [(SHIFT_END + 60, 1), (SHIFT_END + 120, 2)], 50), 0)
+
+	def test_a_typed_time_still_pays_nothing(self):
+		self.assertEqual(day(hm(24), punch_count=3, confirmed_out=hm(24, 40), overtime_next_band_percent=75).overtime_quarters, 0)
+
+
 class OvertimeIsEarnedNotLost(unittest.TestCase):
 	def test_it_is_not_inside_the_quarters_lost_and_day_credit_ignores_it(self):
 		on_time = day(hm(20, 30))

@@ -43,7 +43,8 @@
   "category_section",
   "categories",
   "overtime_section",
-  "overtime_bands"
+  "overtime_bands",
+  "overtime_next_band_percent"
  ],
  "fields": [
   {
@@ -279,6 +280,12 @@
    "fieldtype": "Table",
    "label": "Overtime Bands",
    "options": "Alvoraa Overtime Band"
+  },
+  {
+   "description": "A whole number from 1 to 100. Once the last punch has reached a band, a person who has gone this far toward the next band (counted from this band's time to the next band's time) is paid the next band. Nothing is paid before the first band. Leave blank or 100 to pay the next band only at its own time.",
+   "fieldname": "overtime_next_band_percent",
+   "fieldtype": "Data",
+   "label": "Pay The Next Overtime Band After (%)"
   }
  ],
  "index_web_pages_for_search": 1,

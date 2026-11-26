@@ -2,15 +2,17 @@
  "actions": [],
  "autoname": "PCH-.######",
  "creation": "2026-11-25 06:00:00.000000",
- "description": "One manual addition or edit of a punch, made by a person, with the reason code they gave. Append-only: it is the record behind the monthly change notice. Written only by alvoraa_portal.punch_change, and only while the organisation's notice switch is on. Tamper-evident, not tamper-proof: server code, a migration patch or a database login can still change or remove a row without a trace in the app.",
+ "description": "One manual addition or edit of a punch, or of a day's attendance record (slice 088d; the name says Punch for history), made by a person, with the reason code they gave. Append-only: it is the record behind the monthly change notice. Written only by alvoraa_portal.punch_change, and only while the organisation's notice switch is on. Tamper-evident, not tamper-proof: server code, a migration patch or a database login can still change or remove a row without a trace in the app.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "punch",
+  "attendance",
   "employee",
   "day",
   "column_break_a",
   "reason_code",
+  "reason_text",
   "what",
   "changed_by",
   "changed_on"
@@ -21,9 +23,15 @@
    "fieldtype": "Data",
    "label": "Punch",
    "read_only": 1,
-   "reqd": 1,
    "in_list_view": 1,
-   "description": "The name of the Employee Checkin this is about. Kept as text and not as a link, so the row outlives the punch."
+   "description": "The name of the Employee Checkin this is about, or blank when the row is about a day record (then 'Attendance' is set). Kept as text and not as a link, so the row outlives the punch."
+  },
+  {
+   "fieldname": "attendance",
+   "fieldtype": "Data",
+   "label": "Day Record",
+   "read_only": 1,
+   "description": "The name of the Attendance this is about, when the row is about a day record. Text, not a link, so the row outlives the document."
   },
   {
    "fieldname": "employee",
@@ -51,10 +59,18 @@
    "fieldtype": "Select",
    "label": "Reason",
    "read_only": 1,
-   "options": "Employee forgot to punch\nPunch machine was down or offline\nWrong direction (in and out swapped)\nDuplicate or accidental scan\nEmployee not yet enrolled on the machine\nEmployee was on approved duty away from the machine\nOther (details are in the HR file)",
+   "options": "Employee forgot to punch\nPunch machine was down or offline\nWrong direction (in and out swapped)\nDuplicate or accidental scan\nEmployee not yet enrolled on the machine\nEmployee was on approved duty away from the machine\nOther",
    "reqd": 1,
    "in_list_view": 1,
    "description": "DRAFT LIST. Needs sign-off before the notice switch is ticked on any tenant (slice 088, 00b section 3.3)."
+  },
+  {
+   "fieldname": "reason_text",
+   "fieldtype": "Data",
+   "label": "Reason Text",
+   "length": 100,
+   "read_only": 1,
+   "description": "Only with the reason 'Other'. Up to 100 characters. Printed on the employee's notice."
   },
   {
    "fieldname": "what",
@@ -82,7 +98,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-25 06:00:00.000000",
+ "modified": "2026-11-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Punch Change",

@@ -178,7 +178,10 @@ doc_events = {
         ],
     },
     "Attendance": {
-        "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+        "on_submit": [
+            "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+            "alvoraa_portal.day_change.on_submit",
+        ],
         # Slice 085 (R5): approving is scoped to the HR login's companies, on every door.
         # An HR login does not submit a draft of its own day either, whoever made it (SEC-2).
         "before_submit": [
@@ -192,13 +195,21 @@ doc_events = {
             "alvoraa_portal.attendance_doors.refuse_own_attendance_new",
             "alvoraa_portal.held_day.hold_odd_punch_day",
         ],
+        # Slice 088d: a person's change to the day's record needs a reason, while the
+        # organisation's notice switch is on. Only for a person AT A DOOR (day_change.at_a_door):
+        # the software's own writes, and a leave or request approval, pass untouched.
+        "before_validate": "alvoraa_portal.day_change.before_validate",
+        "on_update_after_submit": "alvoraa_portal.day_change.on_update_after_submit",
+        "on_cancel": "alvoraa_portal.day_change.on_cancel",
         "before_update_after_submit": [
             "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
             "alvoraa_portal.attendance_doors.refuse_outside_company",
+            "alvoraa_portal.day_change.before_update_after_submit",
         ],
         "before_cancel": [
             "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
             "alvoraa_portal.attendance_doors.refuse_outside_company",
+            "alvoraa_portal.day_change.before_cancel",
         ],
         "on_trash": "alvoraa_portal.attendance_doors.refuse_own_attendance_change",
         # ALV-351: shows HR the held-day confirm fields on a missing-punch day.
@@ -849,6 +860,7 @@ after_migrate = [
     # Slice 088c: the reason Select on Employee Checkin. After register_notice so the
     # DocType exists; a no-op until it does.
     "alvoraa_portal.punch_change.after_migrate",
+    "alvoraa_portal.day_change.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
@@ -957,6 +969,7 @@ after_install = [
     # Slice 088c: the reason Select on Employee Checkin. After register_notice so the
     # DocType exists; a no-op until it does.
     "alvoraa_portal.punch_change.after_migrate",
+    "alvoraa_portal.day_change.after_migrate",
     # ALV-194: the link from a Job Opening back to the seat it is filling, so
     # the chart can say "this hole is being recruited for" rather than only
     # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
@@ -996,6 +1009,11 @@ override_whitelisted_methods = {
     # every staff account is a System User. The wrapper calls Frappe's function
     # unchanged and only swaps the path it returns. See auth.update_password.
     "frappe.core.doctype.user.user.update_password": "alvoraa_portal.auth.update_password",
+    # Slice 088d: the two stock tools that mark days with nowhere to ask a reason. Refused up
+    # front while notices are on, because the stock bulk loop swallows every error and then
+    # prints "Attendance marked successfully". Otherwise they call the stock function unchanged.
+    "hrms.hr.doctype.attendance.attendance.mark_bulk_attendance": "alvoraa_portal.day_change.mark_bulk_attendance",
+    "hrms.hr.doctype.employee_attendance_tool.employee_attendance_tool.mark_employee_attendance": "alvoraa_portal.day_change.mark_employee_attendance",
 }
 
 # ── Replace one upstream method wholesale, not monkeypatch it (ALV-174) ────

@@ -858,6 +858,8 @@ after_migrate = [
     # Slice 080: the "Alternative number" field. Before the line below, so the
     # field exists by the time field rights are applied. See alternative_number.py.
     "alvoraa_portal.alternative_number.after_migrate",
+    # ALV-469: the two org fields and the Gig Worker / Freelancer types. See org_label.py.
+    "alvoraa_portal.org_label.after_migrate",
     # Slice 089: the one Custom Field on ToDo (writes only what is missing).
     "alvoraa_portal.leaver_report.after_migrate",
     # ALV-215 (063 SEC-17): job, pay and approver fields HR-only (level 2), bank
@@ -963,6 +965,8 @@ after_install = [
     # Slice 080: same as after_migrate, and this is the half that matters - a
     # patch would never run here, so a new tenant would not have the field.
     "alvoraa_portal.alternative_number.after_migrate",
+    # ALV-469: the two org fields and the Gig Worker / Freelancer types. See org_label.py.
+    "alvoraa_portal.org_label.after_migrate",
     # Slice 089: the one Custom Field on ToDo (writes only what is missing).
     "alvoraa_portal.leaver_report.after_migrate",
     # ALV-215: same as after_migrate - a new tenant must not start open.

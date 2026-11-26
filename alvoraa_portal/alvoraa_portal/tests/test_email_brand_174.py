@@ -60,13 +60,22 @@ class TestEmailFooterAndLogo(FrappeTestCase):
 		                 [r.split(":")[0] for r in second["changed"]])
 
 	# ── our own footer text ─────────────────────────────────────────────────
-	def test_alv174_footer_gets_tenant_name_and_the_powered_by_line(self):
+	def test_alv174_footer_is_only_the_powered_by_line(self):
+		"""ALV-469: the tenant name came off the footer (it was wrong for people
+		of the group's other companies). Was test_alv174_footer_gets_tenant_name..."""
 		frappe.db.set_single_value("System Settings", "email_footer_address", "")
-		email_brand.apply()
+		old = frappe.conf.get("tenant_name")
+		frappe.conf.tenant_name = "Alv469 Site Name Ltd"
+		try:
+			email_brand.apply()
+		finally:
+			if old is None:
+				frappe.conf.pop("tenant_name", None)
+			else:
+				frappe.conf.tenant_name = old
 		footer = _single("System Settings", "email_footer_address")
-		lines = footer.splitlines()
-		self.assertEqual(lines[-1], "Powered by AllAboutHR")
-		self.assertGreaterEqual(len(lines), 2)
+		self.assertEqual(footer, "Powered by AllAboutHR")
+		self.assertNotIn("Alv469 Site Name Ltd", footer)
 
 	def test_alv174_a_footer_the_tenant_typed_survives(self):
 		frappe.db.set_single_value("System Settings", "email_footer_address",

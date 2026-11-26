@@ -1,3 +1,4 @@
+from alvoraa_portal.org_label import org_label
 from alvoraa_portal.tenant_context import get_branding
 
 import frappe
@@ -27,3 +28,6 @@ def get_context(context):
     # keep last release's code. It is one os.stat and it carries no personal data.
     context.asset_version = get_build_version()
     context.update(get_branding())
+    # ALV-469: the name at the top of the sidebar and phone bar. Not the page
+    # title, the PWA name or the sign-in page: those stay the site's tenant_name.
+    context.brand_label = org_label(frappe.session.user)

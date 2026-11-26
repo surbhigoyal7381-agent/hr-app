@@ -41,9 +41,9 @@ Applied per site - the control plane included, same as brand.py and
 brand_text.py - from `after_install` (new tenant) and a patch (existing one).
 Safe to run twice. Never fails an install or a migrate over a footer.
 
-Surbhi's decisions, 28 Sep 2026 (ALV-174): footer = the tenant's own name
-(from `tenant_context.get_branding()`, already how the portal names a tenant
-everywhere else) plus "Powered by AllAboutHR" on its own line; header logo =
+Surbhi's decisions, 28 Sep 2026 (ALV-174): footer = the tenant's own name plus
+"Powered by AllAboutHR" on its own line (the name was dropped on 26 Nov 2026,
+ALV-469: the footer is now only "Powered by AllAboutHR"); header logo =
 the full ALVORA lockup (`brand.LOGO`), not the small mark.
 
 WHAT THIS DOES NOT DO
@@ -60,14 +60,15 @@ Surbhi to apply by hand rather than written by this patch.
 
 import frappe
 
-from alvoraa_portal import brand, tenant_context
+from alvoraa_portal import brand
 
 FOOTER_LINE = "Powered by AllAboutHR"
 
 
 def _footer_text():
-	tenant_name = tenant_context.get_branding()["tenant_name"]
-	return f"{tenant_name}\n{FOOTER_LINE}"
+	# ALV-469: no tenant name. A footer is sent by one site to people of many
+	# companies, so naming the site's own company on it was wrong for most.
+	return FOOTER_LINE
 
 
 def _footer_is_ours(value):

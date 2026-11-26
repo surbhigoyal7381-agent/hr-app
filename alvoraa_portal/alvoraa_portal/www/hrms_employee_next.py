@@ -30,6 +30,7 @@ from frappe import _
 from frappe.sessions import get_csrf_token
 from frappe.utils import get_build_version
 
+from alvoraa_portal.org_label import org_label
 from alvoraa_portal.tenant_context import get_branding
 
 # Never cached, and never in the sitemap (OPS-12, AC-65). Frappe reads both off
@@ -83,3 +84,4 @@ def get_context(context):
     # os.stat, and it carries no personal data.
     context.asset_version = get_build_version()
     context.update(get_branding())
+    context.brand_label = org_label(frappe.session.user)

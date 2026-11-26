@@ -156,7 +156,8 @@ body.sb-collapsed .sidebar:hover .sidebar-section{
   object-fit:contain;background:var(--surface);
 }
 .sidebar-brand-text{flex:1;min-width:0}
-.sidebar-brand-name{font-size:var(--fs-md);font-weight:700;color:var(--text);letter-spacing:-.02em}
+.sidebar-brand-name{font-size:var(--fs-md);font-weight:700;color:var(--text);letter-spacing:-.02em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sidebar-brand-sub{font-size:var(--fs-xs);color:var(--text3);margin-top:2px;letter-spacing:.08em;text-transform:uppercase}
 
 .sidebar-section{

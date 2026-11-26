@@ -18,3 +18,5 @@ alvoraa_portal.patches.v1_0.notice_sender_role
 alvoraa_portal.patches.v1_0.expense_claim_approver_backfill
 alvoraa_portal.patches.v1_0.joiner_sign_in_replaces_the_link
 alvoraa_portal.patches.v1_0.punch_fix_marks_085_requests_as_held_day
+alvoraa_portal.patches.v1_0.alv469_org_fields_from_dtc
+alvoraa_portal.patches.v1_0.alv469_email_footer_no_tenant_name

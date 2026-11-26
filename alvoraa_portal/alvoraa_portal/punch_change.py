@@ -86,13 +86,32 @@ def _is_a_persons_change(employee):
 	return not files_as_machine(user)
 
 
+def same(df, a, b):
+	"""Whether two values of one field are the same thing, cast by field type. An empty value
+	equals an empty value. **Do not use `get_value` for this:** Frappe's `get_datetime(None)`
+	returns "now", so an empty Datetime compared with itself differs, and a punch with no shift
+	tag looked changed on every save (05d P2-2)."""
+	if a in (None, "") or b in (None, ""):
+		return a in (None, "") and b in (None, "")
+	if df.fieldtype in ("Datetime", "Date", "Time"):
+		from frappe.utils import get_time
+
+		cast = {"Datetime": get_datetime, "Date": getdate, "Time": get_time}[df.fieldtype]
+		return cast(a) == cast(b)
+	if df.fieldtype in ("Int", "Check"):
+		return cint(a) == cint(b)
+	if df.fieldtype in ("Float", "Currency", "Percent"):
+		return abs(frappe.utils.flt(a) - frappe.utils.flt(b)) < 0.0001
+	return str(a) == str(b)
+
+
 def _moved(doc, before):
-	"""True when a material field differs from the saved copy. A new punch always counts."""
+	"""True when a material field differs from the saved copy. A new punch always counts.
+	A REST call or an import sends "0" and "2026-11-20 14:00" where the database holds 0 and a
+	datetime with seconds, so the values are cast by type, and empty equals empty."""
 	if not before:
 		return True
-	# Cast on both sides (`get_value`): a REST call or an import sends "0" and "2026-11-20 14:00",
-	# the database holds 0 and a datetime with seconds, and a raw comparison calls those a change.
-	return any((doc.get_value(f) or "") != (before.get_value(f) or "") for f in MATERIAL)
+	return any(not same(doc.meta.get_field(f), doc.get(f), before.get(f)) for f in MATERIAL)
 
 
 def clean_text(text):
@@ -248,13 +267,14 @@ def _sentence(doc, before):
 	if (doc.log_type or "") != (before.log_type or ""):
 		bits.append("Punch type changed from %s to %s" % (
 			label.get(before.log_type, "blank"), label.get(doc.log_type, "blank")))
-	if cint(doc.get_value("skip_auto_attendance")) != cint(before.get_value("skip_auto_attendance")):
-		bits.append("Punch at %s %s" % (_hm(doc.time), "not counted" if cint(doc.get_value("skip_auto_attendance"))
+	if cint(doc.skip_auto_attendance) != cint(before.skip_auto_attendance):
+		bits.append("Punch at %s %s" % (_hm(doc.time), "not counted" if cint(doc.skip_auto_attendance)
 		                                else "counted again"))
 	if doc.shift_start and str(get_datetime(doc.shift_start)) != str(get_datetime(before.shift_start or doc.shift_start)):
 		d = get_datetime(doc.shift_start)
 		bits.append("Punch moved to the %d %s shift" % (d.day, d.strftime("%b")))
-	elif (doc.shift or "") != (before.shift or "") or doc.get_value("shift_end") != before.get_value("shift_end"):
+	elif not same(doc.meta.get_field("shift"), doc.shift, before.shift) or not same(
+			doc.meta.get_field("shift_end"), doc.shift_end, before.shift_end):
 		bits.append("Punch shift changed")
 	# Never empty: the record requires a sentence, and an empty one would fail the punch save.
 	return "; ".join(bits) or "Punch changed"

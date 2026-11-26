@@ -29,6 +29,11 @@ ATT = "Attendance"
 LOG = punch_change.LOG
 REASON = "Employee forgot to punch"
 SAVE = "frappe.desk.form.save.savedocs"
+#: The real command behind a form's `frm.call` and the Shift Type "Mark Attendance" click.
+#: (An earlier version of this file used `frappe.desk.form.run_method.runserverobj`, a module
+#: that does not exist in frappe 16: right verdicts, wrong evidence, and it hid 05d P1-1.)
+RDM = "run_doc_method"
+SHIFT_DOCS = json.dumps({"doctype": "Shift Type", "name": hd.SHIFT})
 
 
 def setUpModule():
@@ -129,9 +134,9 @@ class TheSystemAndTheOtherRecordsPass(DayCase):
 		from hrms.hr.doctype.employee_checkin.employee_checkin import create_or_update_attendance
 
 		day = self.a_day()
-		att = self.cmd_as(self.hr, "frappe.desk.form.run_method.runserverobj",
+		att = self.cmd_as(self.hr, RDM,
 		                  lambda: create_or_update_attendance(self.emp, day, "Present", working_hours=8, shift=hd.SHIFT),
-		                  docs=json.dumps({"doctype": "Shift Type", "name": hd.SHIFT}), method="process_auto_attendance")
+		                  docs=SHIFT_DOCS, method="process_auto_attendance")
 		self.assertEqual(frappe.db.get_value(ATT, att.name, "docstatus"), 1)
 		self.assertEqual(self.rows(), [])
 
@@ -139,17 +144,17 @@ class TheSystemAndTheOtherRecordsPass(DayCase):
 		from hrms.hr.doctype.attendance.attendance import mark_attendance
 
 		day = self.a_day()
-		name = self.cmd_as(self.hr, "frappe.desk.form.run_method.runserverobj",
+		name = self.cmd_as(self.hr, RDM,
 		                   lambda: mark_attendance(self.emp, day, "Absent", hd.SHIFT),
-		                   docs=json.dumps({"doctype": "Shift Type", "name": hd.SHIFT}))
+		                   docs=SHIFT_DOCS, method="process_auto_attendance")
 		self.assertEqual(frappe.db.get_value(ATT, name, "docstatus"), 1)
 		self.assertEqual(self.rows(), [])
 
 	def test_A04_the_other_half_set_absent_by_set_value(self):
 		"""No hook runs on `set_value`, so nothing can be asked or listed. Documented, not a rule."""
 		att = self.submitted("Half Day", half_day_status="Present")
-		self.cmd_as(self.hr, "frappe.desk.form.run_method.runserverobj", lambda: frappe.db.set_value(
-			ATT, att.name, {"half_day_status": "Absent", "modify_half_day_status": 0}))
+		self.cmd_as(self.hr, RDM, lambda: frappe.db.set_value(
+			ATT, att.name, {"half_day_status": "Absent", "modify_half_day_status": 0}), docs=SHIFT_DOCS)
 		self.assertEqual(frappe.db.get_value(ATT, att.name, "half_day_status"), "Absent")
 		self.assertEqual(self.rows(), [])
 
@@ -499,6 +504,21 @@ class ThePathTableDoors(DayCase):
 				half_day_employee_list=json.dumps([self.emp])))
 		self.assertEqual(frappe.db.get_value(ATT, att.name, "half_day_status"), was)
 
+	def test_A24c_the_stock_tick_changes_an_existing_row_and_no_hook_sees_it(self):
+		"""Why the tick is refused (05d P3-4): the stock tool rewrites existing rows with a query
+		that never reaches a document, so no rule and no log can see it. Called WITHOUT our
+		wrapper, switch ON, as a person at a door."""
+		from hrms.hr.doctype.employee_attendance_tool.employee_attendance_tool import mark_employee_attendance as stock
+
+		att = self.submitted("Half Day", half_day_status="Present")
+		was = frappe.db.get_value(ATT, att.name, "half_day_status")
+		self.cmd_as(self.hr, day_change.TOOL_MARK, lambda: stock(
+			json.dumps([]), "Present", str(att.attendance_date), late_entry=0, early_exit=0, shift=hd.SHIFT,
+			mark_half_day=True, half_day_status="Absent" if was != "Absent" else "Present",
+			half_day_employee_list=json.dumps([self.emp])))
+		self.assertNotEqual(frappe.db.get_value(ATT, att.name, "half_day_status"), was, "the day changed")
+		self.assertEqual(self.rows(), [], "and nothing saw it")
+
 	def test_A24b_with_the_switch_off_the_tool_runs_for_a_replacement_and_the_tick(self):
 		self._set_notices(0)
 		day = self.cancelled_day()
@@ -506,11 +526,20 @@ class ThePathTableDoors(DayCase):
 			json.dumps([self.emp]), "Present", day, shift=hd.SHIFT))
 		self.assertTrue(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": day, "docstatus": 1}))
 
-	def test_A11_the_two_unlisted_gaps_are_named(self):
-		"""A11 (087 undo) writes by set_value and is a known gap from 00b (P10), unchanged here."""
+	def test_A11_the_087_undo_is_a_known_gap_and_writes_no_log_row(self):
+		"""A person undoes an approved, disputed punch fix. It writes the day by `set_value`, so
+		no hook sees it and the notice learns nothing (00b P10). This pins the gap: the day the
+		gap is closed, this test fails and says so."""
 		from alvoraa_portal import punch_fix
 
-		self.assertTrue(callable(punch_fix.undo_change))
+		self.held_on(self.day)
+		req = self.fix(time="18:30", by=self.hr)
+		self.decide(req, 1, by=self.h.hr2)
+		frappe.db.set_value("Attendance Request", req, "alvoraa_disputed_on", frappe.utils.now_datetime())
+		self.cmd_as(self.hr, "alvoraa_portal.punch_fix.undo_change", lambda: punch_fix.undo_change(req, "employee disputed it"),
+		            name=req)
+		self.assertTrue(frappe.db.get_value("Attendance Request", req, "alvoraa_undone_on"), "the undo happened")
+		self.assertEqual(self.rows(), [], "and nothing was logged")
 
 	def test_A25_the_upload_tool_is_a_door_by_command_and_by_job(self):
 		self.at_door(day_change.UPLOAD)
@@ -619,6 +648,199 @@ class TheListedEntryReachesTheNotice(DayCase):
 		self.assertEqual(mine[0].what, "Day changed from Absent to Present")
 
 
+class TheRunDocMethodDoor(DayCase):
+	"""05d P1-1: `run_doc_method` (a form's `frm.call`, a plain API call) runs the whitelisted
+	`Document.submit` and `Document.cancel`. It is a person's door when, and only when, the
+	document is an Attendance. The Shift Type click uses the same command and must stay open."""
+
+	_lwp = TheSystemAndTheOtherRecordsPass._lwp
+	_leave = TheSystemAndTheOtherRecordsPass._leave
+
+	def _rdm(self, cmd, user=None, **form):
+		"""The real handler function, with the request looking like the HTTP one."""
+		from frappe.handler import run_doc_method
+
+		frappe.set_user(user or self.hr)
+		self.at_door(cmd, **form)
+		frappe.local.request = frappe._dict(method="POST", path="/api/method/" + cmd)
+		try:
+			return run_doc_method(**{k: v for k, v in form.items() if k in ("method", "docs", "dt", "dn")})
+		finally:
+			frappe.local.request = None
+			frappe.set_user("Administrator")
+			self.leave_door()
+
+	def test_the_shift_type_click_is_still_not_a_door(self):
+		"""Written first. The same command, a Shift Type in `docs`: untouched, switch ON."""
+		self.at_door(RDM, method="process_auto_attendance", docs=SHIFT_DOCS)
+		self.assertFalse(day_change.at_a_door())
+		self.at_door(RDM, method="process_auto_attendance", dt="Shift Type", dn=hd.SHIFT)
+		self.assertFalse(day_change.at_a_door())
+		self.leave_door()
+
+	def test_a_run_doc_method_cancel_of_a_day_needs_the_two_step_reason(self):
+		att = self.submitted(day=self.a_day())
+		for cmd in (RDM, "runserverobj"):
+			with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason first"):
+				self._rdm(cmd, method="cancel", dt=ATT, dn=att.name)
+		self.assertEqual(frappe.db.get_value(ATT, att.name, "docstatus"), 1)
+		d = frappe.get_doc(ATT, att.name).as_dict(convert_dates_to_str=True)
+		d[day_change.FIELD] = REASON
+		self.desk(d, "Update")
+		self._rdm(RDM, method="cancel", dt=ATT, dn=att.name)
+		self.assertEqual(frappe.db.get_value(ATT, att.name, "docstatus"), 2)
+		(row,) = self.rows(attendance=att.name)
+		self.assertEqual(row.what, "Day record reset so it is worked out again from your punches (was Present)")
+
+	def test_a_run_doc_method_submit_of_a_replacement_needs_a_reason(self):
+		day = self.cancelled_day()
+		draft = frappe.get_doc(self.doc_dict(day, "Present")).insert(ignore_permissions=True)
+		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
+			self._rdm(RDM, method="submit", dt=ATT, dn=draft.name)
+		self.assertEqual(frappe.db.get_value(ATT, draft.name, "docstatus"), 0)
+		self.assertEqual(self.rows(), [])
+		frappe.db.set_value(ATT, draft.name, day_change.FIELD, REASON)
+		self._rdm(RDM, method="submit", docs=json.dumps(frappe.get_doc(ATT, draft.name).as_dict(convert_dates_to_str=True)))
+		self.assertEqual(frappe.db.get_value(ATT, draft.name, "docstatus"), 1)
+		self.assertEqual(len(self.rows(attendance=draft.name)), 1)
+
+	def test_api_v2_has_no_cmd_so_the_document_names_the_door(self):
+		frappe.local.request = frappe._dict(method="POST", path="/api/v2/method/run_doc_method")
+		try:
+			self.leave_door()
+			frappe.form_dict.update({"method": "cancel", "document": json.dumps({"doctype": ATT, "name": "X"})})
+			self.assertTrue(day_change.at_a_door())
+			frappe.form_dict.update({"document": json.dumps({"doctype": "Shift Type", "name": hd.SHIFT})})
+			self.assertFalse(day_change.at_a_door())
+		finally:
+			frappe.local.request = None
+			self.leave_door()
+
+	def test_a_leave_application_cancel_by_run_doc_method_stays_outside(self):
+		"""Another record's `run_doc_method`: not a door, and the day it cancels is not listed."""
+		day = self.a_day()
+		leave = self._leave(day)
+		leave.submit()
+		self._rdm(RDM, method="cancel", dt="Leave Application", dn=leave.name)
+		self.assertEqual(frappe.db.get_value("Leave Application", leave.name, "docstatus"), 2)
+		self.assertEqual(self.rows(), [])
+
+
+class TheWrappersCheckPermissionFirst(DayCase):
+	"""05d P2-3: no user without rights on Attendance learns anything from the refusal order."""
+
+	def test_an_employee_gets_the_same_permission_error_for_a_day_with_and_without_a_cancelled_record(self):
+		from alvoraa_portal import day_change as dc
+
+		with_record, without = self.cancelled_day(), self.a_day()
+		for day in (with_record, without):
+			with self.assertRaises(frappe.PermissionError):
+				self.cmd_as(self.emp_user, dc.BULK_MARK, lambda: dc.mark_bulk_attendance(
+					json.dumps({"employee": self.emp, "unmarked_days": [day], "status": "Present", "shift": hd.SHIFT})))
+			with self.assertRaises(frappe.PermissionError):
+				self.cmd_as(self.emp_user, dc.TOOL_MARK, lambda: dc.mark_employee_attendance(
+					json.dumps([self.emp]), "Present", day, shift=hd.SHIFT))
+
+
+class TheEmptyShiftTag(PunchChangeCase):
+	"""05d P2-2 (088c code): a punch with no shift tag saved with nothing changed is not a change."""
+
+	def _untagged(self):
+		p = self._machine_punch(frappe.get_doc({"doctype": "Employee Checkin", "employee": self.emp, "log_type": "IN",
+		                                        "time": "%s 06:10:00" % self.day}))
+		frappe.db.set_value("Employee Checkin", p.name, {"shift": None, "shift_start": None, "shift_end": None})
+		return p.name
+
+	def test_a_no_op_save_of_an_untagged_punch_is_neither_demanded_nor_logged(self):
+		name = self._untagged()
+		doc = frappe.get_doc("Employee Checkin", name)
+		self.assertFalse(punch_change._moved(doc, frappe.get_doc("Employee Checkin", name)),
+		                 "nothing moved")
+		frappe.set_user(self.hr)
+		try:
+			doc.save(ignore_permissions=True)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(self.log(), [])
+
+	def test_changing_only_the_time_does_not_say_the_shift_changed(self):
+		name = self._untagged()
+		self.edit(name, self.hr, reason=REASON, time="%s 06:20:00" % self.day)
+		(row,) = self.log(punch=name)
+		self.assertNotIn("shift", row.what.lower())
+		self.assertIn("moved from 06:10 to 06:20", row.what)
+
+
+class TheSentenceNamesWhatMoved(DayCase):
+	"""05d P2-1, built as approved in 00d section 5: names the fields that moved."""
+
+	def _cancelled(self, **values):
+		day = self.a_day()
+		doc = frappe.get_doc(self.doc_dict(day, "Half Day", half_day_status="Present")).insert(ignore_permissions=True)
+		doc.submit()
+		doc.cancel()
+		frappe.db.set_value(ATT, doc.name, values)
+		return day
+
+	def test_a_half_day_flip_that_moves_pay_is_named(self):
+		day = self._cancelled(half_day_status="Present")
+		self.desk(self.doc_dict(day, "Half Day", reason=REASON, half_day_status="Absent"))
+		(row,) = self.rows()
+		self.assertEqual(row.what, "Day changed: half day")
+
+	def test_leave_type_and_shift_are_named_too(self):
+		day = self._cancelled(half_day_status="Present", leave_type=None, shift=None)
+		self.desk(self.doc_dict(day, "Half Day", reason=REASON, half_day_status="Present", leave_type=self._lwp()))
+		(row,) = self.rows()
+		self.assertEqual(row.what, "Day changed: leave type, shift")
+
+	def test_nothing_moved_still_says_replaced(self):
+		day = self._cancelled(half_day_status="Present")
+		self.desk(self.doc_dict(day, "Half Day", reason=REASON, half_day_status="Present"))
+		(row,) = self.rows()
+		self.assertEqual(row.what, "Day record replaced, still Half Day")
+
+	_lwp = TheSystemAndTheOtherRecordsPass._lwp
+
+
+class TheReasonLeftOnACancelledRow(DayCase):
+	"""05d P3-10."""
+
+	def test_a_reason_saved_by_a_person_and_a_cancel_by_the_system_leaves_none_behind(self):
+		att = self.submitted(day=self.a_day())
+		d = frappe.get_doc(ATT, att.name).as_dict(convert_dates_to_str=True)
+		d[day_change.FIELD] = "Other"
+		d[day_change.TEXT] = "typed words"
+		self.desk(d, "Update")
+		self.assertEqual(frappe.db.get_value(ATT, att.name, day_change.FIELD), "Other")
+		frappe.get_doc(ATT, att.name).cancel()                 # the system: no door
+		self.assertEqual(frappe.db.get_value(ATT, att.name, [day_change.FIELD, day_change.TEXT]), (None, None))
+		self.assertEqual(self.rows(), [])
+
+
+class TheTwoLines(DayCase):
+	"""Decision 5 (Surbhi, 26 Nov): a punch fix and then a day cancel print two lines, cause and
+	consequence, not one merged line."""
+
+	def test_a_fix_then_a_day_cancel_are_two_rows_on_the_notice_list(self):
+		from alvoraa_portal import register_notice
+		from frappe.utils import get_first_day
+
+		att = self.held_on(self.day)
+		req = self.fix(time="18:30", by=self.hr)
+		self.decide(req, 1, by=self.h.hr2)
+		d = frappe.get_doc(ATT, att).as_dict(convert_dates_to_str=True)
+		d[day_change.FIELD] = REASON
+		self.desk(d, "Update")                                  # first step of the cancel: nothing listed
+		from frappe.desk.form.save import cancel
+		self.cmd_as(self.hr, "frappe.desk.form.save.cancel", lambda: cancel(ATT, att), doctype=ATT, name=att)
+		rows = [r for r in register_notice.qualifying_changes(get_first_day(self.day), [self.emp]) if str(r.from_date) == str(self.day)]
+		self.assertEqual(len(rows), 2, "cause and consequence, never merged")
+		self.assertEqual(sorted(bool(r.get("punch_change")) for r in rows), [False, True])
+		(log,) = self.rows(attendance=att)
+		self.assertTrue(log.what.startswith("Day record reset"))
+
+
 class TheCost(DayCase):
 	def _queries(self, fn):
 		from unittest.mock import patch
@@ -651,6 +873,19 @@ class TheCost(DayCase):
 		print("\n088d handler queries: 20 rows = %d, 1000 rows = %d" % (few, many))
 		self.assertEqual((few, many), (0, 0))
 
+	def test_a_person_at_a_door_costs_two_reads_a_row_and_no_more(self):
+		"""05d P3-9, measured: the person test repeats `files_as_machine` (two reads) for every
+		employee and every row. Judged: two reads against the stock 21 queries a row, human-paced,
+		so no cache is built (no-over-engineering: a number first). This test keeps the number."""
+		frappe.set_user(self.hr)
+		try:
+			punch_change._is_a_persons_change(self.emp)           # warm the cached reads
+			per = self._queries(lambda: [punch_change._is_a_persons_change(self.emp) for _ in range(500)]) / 500.0
+		finally:
+			frappe.set_user("Administrator")
+		print("\n088d person test: %.2f queries a row (500 rows)" % per)
+		self.assertLessEqual(per, 2.0)
+
 	def test_the_whole_insert_costs_the_same_per_row_at_20_and_100(self):
 		"""A full `mark_attendance` per row. 1000 rows take about half an hour a run, so the
 		1000-row figure is measured once by hand and recorded in 03d, not in every run."""
@@ -671,9 +906,15 @@ class TheCost(DayCase):
 
 
 class TheListIsComplete(DayCase):
-	def test_every_path_has_a_test(self):
-		names = " ".join(n for c in (TheSystemAndTheOtherRecordsPass, ThePathTableDoors)
-		                 for n in dir(c) if n.startswith("test_"))
-		missing = [p for p in ["A%02d" % i for i in range(1, 32)] if p not in names]
-		# A29 and A30 share one test, A06b and A16b etc. are extras; the 31 ids must all appear.
+	def test_every_path_has_a_test_that_asserts_something(self):
+		"""**This checks names and that each named test contains an assertion. It does not prove the
+		test covers the path's behaviour: that is read in the tests themselves.** It catches a
+		deleted test and an empty one (A11 used to assert only that a function exists)."""
+		import inspect
+
+		tests = [(n, getattr(c, n)) for c in (TheSystemAndTheOtherRecordsPass, ThePathTableDoors)
+		         for n in dir(c) if n.startswith("test_")]
+		missing = [p for p in ["A%02d" % i for i in range(1, 32)] if not any(p in n for n, _f in tests)]
 		self.assertEqual(missing, [], "paths with no test")
+		hollow = [n for n, f in tests if re.search(r"A\d\d", n) and "self.assert" not in inspect.getsource(f)]
+		self.assertEqual(hollow, [], "path tests with no assertion")

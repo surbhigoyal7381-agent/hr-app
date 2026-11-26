@@ -753,6 +753,7 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# Slice 088c (new file): the one insert of the append-only punch-change record,
 		# which has no create right for anybody (the controller refuses a hand-made row).
 		("alvoraa_portal", "punch_change.py"): 1,
+		("alvoraa_portal", "day_change.py"): 1,
 		# Slice 088 / 088c: the notice's own reads of requests, employees and the record.
 		("alvoraa_portal", "register_notice.py"): 14,
 		# Slice 089 (new file, OPS-24). ONE: the "Alert" bell line written FOR

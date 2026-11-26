@@ -43,8 +43,12 @@ TOOL_MARK = "hrms.hr.doctype.employee_attendance_tool.employee_attendance_tool.m
 UPLOAD = "hrms.hr.doctype.upload_attendance.upload_attendance.upload"
 UPLOAD_JOB = "hrms.hr.doctype.upload_attendance.upload_attendance.import_attendances"
 #: Desk and `frappe.client` entry points that name a document type (`doctype`, `doc` or `docs`).
+#: `run_doc_method` (and its old name `runserverobj`) is what a form's `frm.call` and a plain API
+#: call use to run a whitelisted method on a document, `submit` and `cancel` included (05d P1-1).
+#: It names the document in `dt` or in `docs`. The Shift Type "Mark Attendance" click uses the
+#: very same command with a Shift Type in `docs`, which is why the doctype is compared exactly.
 _FORM_CMDS = ("frappe.desk.form.save.savedocs", "frappe.desk.form.save.cancel",
-              "frappe.desk.form.save.discard",
+              "frappe.desk.form.save.discard", "run_doc_method", "runserverobj",
               "frappe.desk.doctype.bulk_update.bulk_update.submit_cancel_or_update_docs")
 _IMPORT_CMD = "frappe.core.doctype.data_import.data_import.form_start_import"
 _REST = ("/api/resource/", "/api/v2/document/")
@@ -89,12 +93,15 @@ def at_a_door():
 	cmd = form.get("cmd") or ""
 	if cmd:
 		if cmd in _FORM_CMDS or cmd.startswith("frappe.client."):
-			return ATTENDANCE in _doctypes(form.get("doctype"), form.get("doc"), form.get("docs"))
+			return ATTENDANCE in _doctypes(form.get("doctype"), form.get("doc"), form.get("docs"),
+			                               form.get("dt"))
 		if cmd == _IMPORT_CMD:
 			return _import_is_attendance(form.get("data_import"))
 		return cmd in (UPLOAD, BULK_MARK, TOOL_MARK)
 	request = getattr(frappe.local, "request", None)
 	path = getattr(request, "path", "") or ""
+	if path == "/api/v2/method/run_doc_method":                    # v2 carries no `cmd`
+		return ATTENDANCE in _doctypes(form.get("document"))
 	return any(path == p + ATTENDANCE or path.startswith(p + ATTENDANCE + "/") for p in _REST)
 
 
@@ -108,38 +115,29 @@ def _status(value):
 	return "held (not yet decided)" if value == "Held" else (value or "no record")
 
 
+_PAY_FIELDS = (("leave_type", "leave type"), ("half_day_status", "half day"), ("shift", "shift"))
+
+
 def _was(doc):
-	"""The status this day had before, if it had a record: the row this one amends, else the
-	latest cancelled row for the same person and day."""
+	"""The earlier record of this day, if there was one: the row this one amends, else the
+	latest cancelled row for the same person and day. The fields that move pay, not only the
+	status (05d P2-1)."""
+	fields = ["status"] + [f for f, _label in _PAY_FIELDS]
 	if doc.get("amended_from"):
-		return frappe.db.get_value(ATTENDANCE, doc.amended_from, "status")
+		return frappe.db.get_value(ATTENDANCE, doc.amended_from, fields, as_dict=True)
 	rows = frappe.get_all(ATTENDANCE, filters={"employee": doc.employee, "attendance_date": doc.attendance_date,
 	                                           "docstatus": 2, "name": ("!=", doc.name or "")},
-	                      fields=["status"], order_by="modified desc", limit=1, ignore_permissions=True)
-	return rows[0].status if rows else None
+	                      fields=fields, order_by="modified desc", limit=1, ignore_permissions=True)
+	return rows[0] if rows else None
 
 
 def _submit_sentence(doc, was):
-	if was == doc.status:
-		return "Day record replaced, still %s" % _status(doc.status)
-	return "Day changed from %s to %s" % (_status(was), _status(doc.status))
-
-
-def _same(df, a, b):
-	"""Whether two values of one field are the same thing. An empty value stays empty: Frappe's
-	own `get_value` turns an empty Datetime into 'now', so two empty values would differ."""
-	if a in (None, "") or b in (None, ""):
-		return a in (None, "") and b in (None, "")
-	if df.fieldtype in ("Datetime", "Date", "Time"):
-		from frappe.utils import get_datetime, get_time
-
-		cast = {"Datetime": get_datetime, "Date": getdate, "Time": get_time}[df.fieldtype]
-		return cast(a) == cast(b)
-	if df.fieldtype in ("Int", "Check"):
-		return cint(a) == cint(b)
-	if df.fieldtype in ("Float", "Currency", "Percent"):
-		return abs(frappe.utils.flt(a) - frappe.utils.flt(b)) < 0.0001
-	return str(a) == str(b)
+	if was.status != doc.status:
+		return "Day changed from %s to %s" % (_status(was.status), _status(doc.status))
+	moved = [label for f, label in _PAY_FIELDS if (doc.get(f) or "") != (was.get(f) or "")]
+	if moved:
+		return "Day changed: %s" % ", ".join(moved)
+	return "Day record replaced, still %s" % _status(doc.status)
 
 
 def _changed(doc, before):
@@ -147,7 +145,7 @@ def _changed(doc, before):
 	submit only the `allow_on_submit` fields can differ at all, so no list of fields is kept."""
 	return [df.fieldname for df in doc.meta.fields
 	        if df.fieldtype not in no_value_fields and df.fieldname not in (FIELD, TEXT)
-	        and not _same(df, doc.get(df.fieldname), before.get(df.fieldname))]
+	        and not pc.same(df, doc.get(df.fieldname), before.get(df.fieldname))]
 
 
 def _update_sentence(doc, fields):
@@ -236,10 +234,11 @@ def before_cancel(doc, method=None):
 
 
 def on_cancel(doc, method=None):
-	if not doc.flags.get(_STASH):
-		return                                      # a system cancel: nothing to write, nothing to clear
+	"""Whoever cancelled, a reason left sitting on the row is cleared (05d P3-10): a person may
+	have saved one and then the system cancelled the day. No reason on the row, no query."""
 	_write(doc)
-	frappe.db.set_value(ATTENDANCE, doc.name, {FIELD: None, TEXT: None}, update_modified=False)
+	if doc.get(FIELD) or doc.get(TEXT):
+		frappe.db.set_value(ATTENDANCE, doc.name, {FIELD: None, TEXT: None}, update_modified=False)
 
 
 # ── the two tools with nowhere to ask for a reason ───────────────────────────
@@ -263,6 +262,7 @@ def _replaces_a_record(employees, days):
 def mark_bulk_attendance(data: str | dict):
 	from hrms.hr.doctype.attendance.attendance import mark_bulk_attendance as stock
 
+	frappe.has_permission(ATTENDANCE, "write", throw=True)    # before anything observable (05d P2-3)
 	payload = (json.loads(data) if isinstance(data, str) else data) or {}
 	if _replaces_a_record([payload.get("employee")], payload.get("unmarked_days") or []):
 		_refuse_the_tool("Mark Attendance", "one of these days had a record that was cancelled, and "
@@ -293,6 +293,7 @@ def mark_employee_attendance(
 	def names(v):
 		return json.loads(v) if isinstance(v, str) else (v or [])
 
+	frappe.has_permission(ATTENDANCE, "write", throw=True)    # before anything observable (05d P2-3)
 	if mark_half_day and any(pc._is_a_persons_change(e) for e in names(half_day_employee_list) if e):
 		_refuse_the_tool("Employee Attendance Tool", "the half-day tick changes days that already "
 		                 "have a record, and it cannot ask for a reason.")

@@ -27,6 +27,7 @@ FIX = {}
 def setUpModule():
 	"""Build the tenant once for the whole module, clearing what an earlier run left."""
 	fx.setup_module_fixtures()
+	fx.ensure_gender()  # commits on an empty site; must happen before any test's savepoint (ALV-470)
 	pt.make_role()
 	frappe.set_user("Administrator")
 	frappe.db.delete("Employee", {"last_name": TAG})

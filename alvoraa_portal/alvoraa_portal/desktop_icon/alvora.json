@@ -1,0 +1,16 @@
+{
+ "app": "alvoraa_portal",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "layout-dashboard",
+ "icon_type": "Link",
+ "idx": 0,
+ "label": "Alvora",
+ "link_to": "Alvora",
+ "link_type": "Workspace Sidebar",
+ "name": "Alvora",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}

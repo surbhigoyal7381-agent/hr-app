@@ -16,8 +16,8 @@ job addressed to the Attendance itself? Anything else, however it got here, is t
 work or another record's, and passes untouched. Each path is pinned by `test_day_change_088d`.
 
 **Which acts are listed** (only a SUBMITTED row is a day record: payroll reads docstatus 1):
-a person submitting a row (first mark, or a replacement), a person changing a submitted row,
-a person cancelling one. Drafts are never listed or refused. It applies only while the
+a person REPLACING a day's record, a person changing a submitted row, a person cancelling one.
+Marking a day that never had a record is not listed (Surbhi, 26 Nov: it is the record being made). Drafts are never listed or refused. It applies only while the
 organisation's notice switch is on, like 088c.
 
 **Cancel carries no field values** (Desk sends only the name), so the reason has to be on the
@@ -119,10 +119,7 @@ def _was(doc):
 	return rows[0].status if rows else None
 
 
-def _submit_sentence(doc):
-	was = _was(doc)
-	if was is None:
-		return "Day marked %s" % _status(doc.status)
+def _submit_sentence(doc, was):
 	if was == doc.status:
 		return "Day record replaced, still %s" % _status(doc.status)
 	return "Day changed from %s to %s" % (_status(was), _status(doc.status))
@@ -192,10 +189,15 @@ def _write(doc):
 
 def before_validate(doc, method=None):
 	"""Runs for save and submit. A draft is not a day record yet, so only a row being
-	submitted is judged. The reason is blanked once it is taken, so it never sits on the row."""
+	submitted is judged. **Only a change to a day that already had a record is listed** (Surbhi,
+	26 Nov 2026): a day with no earlier record being marked for the first time is the record
+	being made, so it is neither asked about nor listed, and Mark Attendance keeps working.
+	The reason is blanked once it is taken, so it never sits on the row."""
 	if cint(doc.docstatus) != 1 or not _person_at_a_door(doc):
 		return
-	doc.flags[_STASH] = _demand(doc, _submit_sentence(doc))
+	was = _was(doc)
+	if was is not None:
+		doc.flags[_STASH] = _demand(doc, _submit_sentence(doc, was))
 	doc.set(FIELD, None)
 	doc.set(TEXT, None)
 
@@ -242,23 +244,29 @@ def on_cancel(doc, method=None):
 
 # ── the two tools with nowhere to ask for a reason ───────────────────────────
 
-def _refuse_the_tool(employees, name):
+def _refuse_the_tool(name, why):
 	"""Refused up front, loudly. Stock `mark_bulk_attendance` swallows every error inside its
 	loop and then says "Attendance marked successfully", so a refusal left to the per-row rule
 	would never reach the person."""
-	if any(pc._is_a_persons_change(e) for e in employees if e):
-		frappe.throw(_("'{0}' is not available while change notices are on. Every day marked by "
-		               "hand is printed on the employee's notice with a reason, and this tool has "
-		               "nowhere to ask for one. Open the Attendance form, pick a reason, save and "
-		               "submit.").format(name))
+	frappe.throw(_("'{0}' cannot do this while change notices are on: {1} Open the Attendance "
+	               "form, pick a reason, save and submit.").format(name, why))
+
+
+def _replaces_a_record(employees, days):
+	"""A day that had a record, now cancelled, would be replaced: that change needs a reason."""
+	people = [e for e in employees if e and pc._is_a_persons_change(e)]
+	return bool(people and days and frappe.db.exists(
+		ATTENDANCE, {"employee": ("in", people), "attendance_date": ("in", days), "docstatus": 2}))
 
 
 @frappe.whitelist()
 def mark_bulk_attendance(data: str | dict):
 	from hrms.hr.doctype.attendance.attendance import mark_bulk_attendance as stock
 
-	payload = json.loads(data) if isinstance(data, str) else data
-	_refuse_the_tool([(payload or {}).get("employee")], "Mark Attendance")
+	payload = (json.loads(data) if isinstance(data, str) else data) or {}
+	if _replaces_a_record([payload.get("employee")], payload.get("unmarked_days") or []):
+		_refuse_the_tool("Mark Attendance", "one of these days had a record that was cancelled, and "
+		                 "putting a new one in its place is a change that needs a reason.")
 	return stock(data)
 
 
@@ -276,8 +284,8 @@ def mark_employee_attendance(
 	half_day_status: str | None = None,
 	half_day_employee_list: list | str | None = None,
 ):
-	"""Also closes the half-day tick, which rewrites existing rows with `qb.update` and so
-	fires no hook at all (A24): the whole tool is refused, not just the tick."""
+	"""Refuses the half-day tick, which rewrites existing rows with `qb.update` and so fires no
+	hook at all (A24), and a replacement of a cancelled day. A first mark passes."""
 	from hrms.hr.doctype.employee_attendance_tool.employee_attendance_tool import (
 		mark_employee_attendance as stock,
 	)
@@ -285,7 +293,12 @@ def mark_employee_attendance(
 	def names(v):
 		return json.loads(v) if isinstance(v, str) else (v or [])
 
-	_refuse_the_tool(names(employee_list) + names(half_day_employee_list), "Employee Attendance Tool")
+	if mark_half_day and any(pc._is_a_persons_change(e) for e in names(half_day_employee_list) if e):
+		_refuse_the_tool("Employee Attendance Tool", "the half-day tick changes days that already "
+		                 "have a record, and it cannot ask for a reason.")
+	if _replaces_a_record(names(employee_list), [date]):
+		_refuse_the_tool("Employee Attendance Tool", "one of these days had a record that was "
+		                 "cancelled, and putting a new one in its place is a change that needs a reason.")
 	return stock(employee_list, status, date, leave_type, company, late_entry, early_exit, shift,
 	             mark_half_day, half_day_status, half_day_employee_list)
 

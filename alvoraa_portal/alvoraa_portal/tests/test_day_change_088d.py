@@ -49,6 +49,15 @@ class DayCase(PunchChangeCase):
 		DayCase._n += 1
 		return str(add_days(self.day, -DayCase._n))
 
+	def cancelled_day(self):
+		"""A day that had a record, now cancelled: marking it again is a REPLACEMENT, which is
+		what the notice lists. (A day that never had one is the record being made: not listed.)"""
+		day = self.a_day()
+		doc = frappe.get_doc(self.doc_dict(day, "Absent")).insert(ignore_permissions=True)
+		doc.submit()
+		doc.cancel()
+		return day
+
 	def at_door(self, cmd, **form):
 		"""Make the request look like `cmd` with these form values, for the length of a test step."""
 		frappe.form_dict.clear()
@@ -106,7 +115,7 @@ class TheSystemAndTheOtherRecordsPass(DayCase):
 
 	def test_control_a_person_at_the_desk_is_refused_without_a_reason(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "Pick a reason"):
-			self.desk(self.doc_dict(self.a_day()))
+			self.desk(self.doc_dict(self.cancelled_day()))
 
 	def test_A01_the_hourly_job_marks_a_day_as_administrator(self):
 		from hrms.hr.doctype.employee_checkin.employee_checkin import create_or_update_attendance
@@ -308,7 +317,7 @@ class TheSystemAndTheOtherRecordsPass(DayCase):
 
 	def test_the_switch_off_asks_for_nothing(self):
 		self._set_notices(0)
-		name = self.desk(self.doc_dict(self.a_day()))
+		name = self.desk(self.doc_dict(self.cancelled_day()))
 		self.assertTrue(name)
 		self.assertEqual(self.rows(), [])
 
@@ -316,12 +325,21 @@ class TheSystemAndTheOtherRecordsPass(DayCase):
 class ThePathTableDoors(DayCase):
 	"""The paths that ARE a person's direct edit: listed, and refused without a reason."""
 
-	def test_A16_a_person_marks_a_day_with_a_reason_and_it_is_listed(self):
-		day = self.a_day()
+	def test_A16_a_person_replacing_a_day_with_a_reason_is_listed(self):
+		day = self.cancelled_day()
 		name = self.desk(self.doc_dict(day, "Present", reason=REASON))
 		(row,) = self.rows(attendance=name)
-		self.assertEqual((row.what, row.reason_code, str(row.day)), ("Day marked Present", REASON, day))
+		self.assertEqual((row.what, row.reason_code, str(row.day)), ("Day changed from Absent to Present", REASON, day))
 		self.assertIsNone(frappe.db.get_value(ATT, name, day_change.FIELD), "the reason must not stay on the row")
+
+	def test_A16a_a_first_mark_is_not_asked_about_and_not_listed(self):
+		"""Surbhi, 26 Nov: only a change to a day that had a record. Control: A16 above."""
+		name = self.desk(self.doc_dict(self.a_day()))
+		self.assertEqual(frappe.db.get_value(ATT, name, "docstatus"), 1)
+		self.assertEqual(self.rows(), [])
+		name = self.desk(self.doc_dict(self.a_day(), reason=REASON))
+		self.assertIsNone(frappe.db.get_value(ATT, name, day_change.FIELD))
+		self.assertEqual(self.rows(), [], "a reason on a first mark is dropped, not logged")
 
 	def test_A16b_a_draft_is_never_demanded_or_listed(self):
 		day = self.a_day()
@@ -330,7 +348,7 @@ class ThePathTableDoors(DayCase):
 		self.assertEqual(self.rows(), [])
 
 	def test_A16c_submit_writes_one_row_not_two(self):
-		self.desk(self.doc_dict(self.a_day(), reason=REASON))
+		self.desk(self.doc_dict(self.cancelled_day(), reason=REASON))
 		self.assertEqual(len(self.rows()), 1)
 
 	def test_A17_ticking_the_held_confirm_needs_a_reason(self):
@@ -395,7 +413,7 @@ class ThePathTableDoors(DayCase):
 	def test_A20_deleting_a_draft_is_not_listed(self):
 		import frappe.client
 
-		name = self.desk(self.doc_dict(self.a_day()), action="Save")
+		name = self.desk(self.doc_dict(self.cancelled_day()), action="Save")
 		self.cmd_as(self.hr, "frappe.client.delete", lambda: frappe.client.delete(ATT, name), doctype=ATT, name=name)
 		self.assertFalse(frappe.db.exists(ATT, name))
 		self.assertEqual(self.rows(), [])
@@ -403,7 +421,7 @@ class ThePathTableDoors(DayCase):
 	def test_A21_frappe_client_and_REST_are_doors(self):
 		import frappe.client
 
-		day = self.a_day()
+		day = self.cancelled_day()
 		d = self.doc_dict(day)
 		frappe.set_user(self.hr)
 		self.at_door("frappe.client.insert", doc=json.dumps(d))
@@ -435,45 +453,55 @@ class ThePathTableDoors(DayCase):
 		self.assertEqual(frappe.db.get_value(ATT, att.name, "docstatus"), 1, "refused, not cancelled")
 		self.assertTrue(out, "the failure is reported to the person")
 
-	def test_A23_mark_attendance_is_refused_loudly_not_swallowed(self):
+	def _bulk(self, day):
+		return json.dumps({"employee": self.emp, "unmarked_days": [day], "status": "Present", "shift": hd.SHIFT})
+
+	def test_A23_mark_attendance_works_for_a_first_mark_and_is_refused_loudly_for_a_replacement(self):
 		day = self.a_day()
-		data = json.dumps({"employee": self.emp, "unmarked_days": [day], "status": "Present", "shift": hd.SHIFT})
-		with self.assertRaisesRegex(frappe.ValidationError, "'Mark Attendance' is not available"):
-			self.cmd_as(self.hr, day_change.BULK_MARK, lambda: day_change.mark_bulk_attendance(data))
-		self.assertFalse(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": day}))
+		self.cmd_as(self.hr, day_change.BULK_MARK, lambda: day_change.mark_bulk_attendance(self._bulk(day)))
+		self.assertTrue(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": day, "docstatus": 1}))
+		self.assertEqual(self.rows(), [])
+		again = self.cancelled_day()
+		with self.assertRaisesRegex(frappe.ValidationError, "'Mark Attendance' cannot do this"):
+			self.cmd_as(self.hr, day_change.BULK_MARK, lambda: day_change.mark_bulk_attendance(self._bulk(again)))
+		self.assertFalse(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": again, "docstatus": 1}))
 
 	def test_A23b_the_stock_loop_alone_would_swallow_the_refusal(self):
-		"""Why the wrapper exists: the stock loop skips the row and the person is told it worked."""
+		"""Why the wrapper exists: for a replacement the stock loop skips the row, and the person
+		is told it worked."""
 		from hrms.hr.doctype.attendance.attendance import process_bulk_attendance_in_batches
 
-		day = self.a_day()
+		day = self.cancelled_day()
 		data = frappe._dict(employee=self.emp, unmarked_days=[day], status="Present", shift=hd.SHIFT)
 		self.cmd_as(self.hr, day_change.BULK_MARK, lambda: process_bulk_attendance_in_batches(data))
 		self.assertFalse(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": day, "docstatus": 1}))
 
-	def test_A23c_with_the_switch_off_the_stock_tool_runs(self):
+	def test_A23c_with_the_switch_off_the_stock_tool_replaces_a_day(self):
 		self._set_notices(0)
-		day = self.a_day()
-		data = json.dumps({"employee": self.emp, "unmarked_days": [day], "status": "Present", "shift": hd.SHIFT})
-		self.cmd_as(self.hr, day_change.BULK_MARK, lambda: day_change.mark_bulk_attendance(data))
+		day = self.cancelled_day()
+		self.cmd_as(self.hr, day_change.BULK_MARK, lambda: day_change.mark_bulk_attendance(self._bulk(day)))
 		self.assertTrue(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": day, "docstatus": 1}))
 
-	def test_A24_the_attendance_tool_and_its_half_day_tick_are_refused(self):
+	def test_A24_the_attendance_tool_marks_a_first_day_but_not_a_replacement_or_the_half_day_tick(self):
 		day = self.a_day()
-		with self.assertRaisesRegex(frappe.ValidationError, "'Employee Attendance Tool' is not available"):
+		self.cmd_as(self.hr, day_change.TOOL_MARK, lambda: day_change.mark_employee_attendance(
+			json.dumps([self.emp]), "Present", day, shift=hd.SHIFT))
+		self.assertTrue(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": day, "docstatus": 1}))
+		again = self.cancelled_day()
+		with self.assertRaisesRegex(frappe.ValidationError, "'Employee Attendance Tool' cannot do this"):
 			self.cmd_as(self.hr, day_change.TOOL_MARK, lambda: day_change.mark_employee_attendance(
-				json.dumps([self.emp]), "Present", day, shift=hd.SHIFT))
+				json.dumps([self.emp]), "Present", again, shift=hd.SHIFT))
 		att = self.submitted("Half Day", half_day_status="Present")
 		was = frappe.db.get_value(ATT, att.name, "half_day_status")
-		with self.assertRaisesRegex(frappe.ValidationError, "not available"):
+		with self.assertRaisesRegex(frappe.ValidationError, "half-day tick"):
 			self.cmd_as(self.hr, day_change.TOOL_MARK, lambda: day_change.mark_employee_attendance(
 				json.dumps([]), "Present", str(att.attendance_date), mark_half_day=True, half_day_status="Absent",
 				half_day_employee_list=json.dumps([self.emp])))
 		self.assertEqual(frappe.db.get_value(ATT, att.name, "half_day_status"), was)
 
-	def test_A24b_with_the_switch_off_the_tool_runs(self):
+	def test_A24b_with_the_switch_off_the_tool_runs_for_a_replacement_and_the_tick(self):
 		self._set_notices(0)
-		day = self.a_day()
+		day = self.cancelled_day()
 		self.cmd_as(self.hr, day_change.TOOL_MARK, lambda: day_change.mark_employee_attendance(
 			json.dumps([self.emp]), "Present", day, shift=hd.SHIFT))
 		self.assertTrue(frappe.db.exists(ATT, {"employee": self.emp, "attendance_date": day, "docstatus": 1}))
@@ -518,31 +546,31 @@ class ThePathTableDoors(DayCase):
 class TheReason(DayCase):
 	def test_other_needs_text(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "say what happened"):
-			self.desk(self.doc_dict(self.a_day(), reason="Other"))
+			self.desk(self.doc_dict(self.cancelled_day(), reason="Other"))
 
 	def test_text_with_any_other_reason_is_refused(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "reason is not 'Other'"):
-			self.desk(self.doc_dict(self.a_day(), reason=REASON, text="hello"))
+			self.desk(self.doc_dict(self.cancelled_day(), reason=REASON, text="hello"))
 
 	def test_text_is_capped_at_100(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "101 characters"):
-			self.desk(self.doc_dict(self.a_day(), reason="Other", text="x" * 101))
-		self.desk(self.doc_dict(self.a_day(), reason="Other", text="x" * 100))
+			self.desk(self.doc_dict(self.cancelled_day(), reason="Other", text="x" * 101))
+		self.desk(self.doc_dict(self.cancelled_day(), reason="Other", text="x" * 100))
 
 	def test_text_is_stored_as_typed_one_line_and_never_as_markup(self):
-		name = self.desk(self.doc_dict(self.a_day(), reason="Other", text="  <img src=x onerror=1>\n\tmachine  fixed "))
+		name = self.desk(self.doc_dict(self.cancelled_day(), reason="Other", text="  <img src=x onerror=1>\n\tmachine  fixed "))
 		(row,) = self.rows(attendance=name)
 		self.assertNotIn("onerror", row.reason_text, "Frappe's own Data sanitising strips the handler")
 		self.assertTrue(row.reason_text.endswith("machine fixed"), row.reason_text)
 		self.assertEqual(row.reason_code, "Other")
 
 	def test_not_other_stores_no_text(self):
-		name = self.desk(self.doc_dict(self.a_day(), reason=REASON))
+		name = self.desk(self.doc_dict(self.cancelled_day(), reason=REASON))
 		self.assertIsNone(self.rows(attendance=name)[0].reason_text)
 
 	def test_a_reason_not_on_the_list_is_refused(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "not one of the reasons"):
-			self.desk(self.doc_dict(self.a_day(), reason="Because I said so"))
+			self.desk(self.doc_dict(self.cancelled_day(), reason="Because I said so"))
 
 	def test_F3_an_import_cannot_put_a_bad_code_or_stray_text_in_the_record(self):
 		"""Frappe skips its own Select check under `in_import`; ours does not. Control first."""
@@ -553,9 +581,9 @@ class TheReason(DayCase):
 			ok.set(punch_change.FIELD, "Because I said so")
 			ok._validate_selects()                            # control: Frappe accepts it
 			with self.assertRaisesRegex(frappe.ValidationError, "not one of the reasons"):
-				self.desk(self.doc_dict(self.a_day(), reason="Because I said so"))
+				self.desk(self.doc_dict(self.cancelled_day(), reason="Because I said so"))
 			with self.assertRaisesRegex(frappe.ValidationError, "reason is not 'Other'"):
-				self.desk(self.doc_dict(self.a_day(), reason=REASON, text="x"))
+				self.desk(self.doc_dict(self.cancelled_day(), reason=REASON, text="x"))
 			with self.assertRaisesRegex(frappe.ValidationError, "reason is not 'Other'"):
 				self.punch("12:00", user=self.hr, reason=REASON, **{punch_change.TEXT_FIELD: "stray"})
 		finally:
@@ -583,12 +611,12 @@ class TheListedEntryReachesTheNotice(DayCase):
 		from alvoraa_portal import register_notice
 		from frappe.utils import get_first_day
 
-		day = self.a_day()
+		day = self.cancelled_day()
 		self.desk(self.doc_dict(day, reason="Other", text="reader cable cut"))
 		rows = register_notice.qualifying_changes(get_first_day(day), [self.emp], with_content=True)
 		mine = [r for r in rows if r.get("punch_change")]
 		self.assertEqual(len(mine), 1)
-		self.assertEqual(mine[0].what, "Day marked Present")
+		self.assertEqual(mine[0].what, "Day changed from Absent to Present")
 
 
 class TheCost(DayCase):

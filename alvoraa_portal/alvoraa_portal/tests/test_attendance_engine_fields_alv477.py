@@ -62,6 +62,13 @@ class TestEngineFieldsAreTheEnginesAlone(FrappeTestCase):
 		self.assertEqual(len(ENGINE_FIELDS), 14)
 		self.assertEqual(len(set(ENGINE_FIELDS)), 14)
 
+	def test_no_read_only_field_we_define_on_attendance_is_allow_on_submit(self):
+		# Reads the definitions themselves, so a new engine field added with the flag left at 1
+		# is caught even if nobody adds it to VERDICT_FIELDS or to ENGINE_FIELDS above.
+		defined = list(payroll_fields.VERDICT) + list(held_day.FIELDS[held_day.ATTENDANCE])
+		open_ones = [f["fieldname"] for f in defined if f.get("read_only") and f.get("allow_on_submit")]
+		self.assertEqual(open_ones, [])
+
 	def test_a_save_that_changes_an_engine_field_is_refused_for_every_one(self):
 		for field in ENGINE_FIELDS:
 			with self.subTest(field=field):

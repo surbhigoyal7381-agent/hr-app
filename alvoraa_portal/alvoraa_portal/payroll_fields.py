@@ -22,7 +22,9 @@ The two that a person may set are the held-day confirmation (ATT-06) - somebody
 has to stand behind the time an employee left when the machine has no record of
 it. The rest are the engine's alone. `read_only` is not enforced by the server,
 but a change to a submitted row that is not `allow_on_submit` is refused by
-Frappe on every route (Desk, REST, `frappe.client`, import). The engine does not
+Frappe on every document route (Desk, REST, `frappe.client`). `db.set_value`,
+`db_set`, Server Scripts, raw SQL and `ignore_validate_update_after_submit`
+bypass that by design, and an import was not driven. The engine does not
 need the flag: it writes with `frappe.db.set_value`, which is not a document
 save. The flag is written as an explicit 0 rather than left out, because
 `create_custom_fields` merges what is given over what a site already has, so a

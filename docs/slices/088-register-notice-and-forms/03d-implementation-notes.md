@@ -4,7 +4,7 @@ author: hrms-fullstack-engineer
 date: 2026-11-26
 worktree: /Users/mac/hr-app/.claude/worktrees/088d-attendance-scope, branch docs/088d-attendance-scope (review fixes added 27 Nov, see the last section)
 built on: origin/dev 8a62945d (ALV-469 came in while I worked; see "What else moved")
-status: built and tested on my own stack (d088-*). NOT pushed. `register_notice.py` NOT edited.
+status: built and tested on my own stack (d088-*). NOT pushed. `register_notice.py` edited in the review round only (four lines, below), after the page-count fix landed.
 ---
 
 # 088d implementation notes
@@ -168,5 +168,30 @@ Dev was `e705daff` when this round started and moved twice more (ALV-480 and a t
 | R9 v2 door removed | v2 | `AssertionError: False is not true` |
 | R10 A11's assertions removed | path-table test | `Lists differ: ['test_A11_...'] != []`: the hollow test is named |
 
-## register_notice.py
-See the end of this section.
+## register_notice.py (item 11): the four lines, applied
+CI on dev was green on `7769f73c`, which includes the page-count fix (`e705daff`'s own CI was cancelled by the next push; `7e126677` and later passed). I re-read the file first: the line numbers had moved from `8a62945d`.
+1. `_punch_changes` `fields=[...]`: `"reason_text"` added.
+2. `_punch_changes` `row.update(...)`: `reason_text=r.reason_text` added.
+3. `_content_hash` punch tuple: `"reason_text"` added. **Effect:** a log row's fingerprint now has one more part, so a fingerprint taken before this change would not match. No notice has ever been printed on any tenant (the switch is off everywhere), so there is nothing to mismatch. Stated so nobody is surprised later.
+4. `sheet_rows` punch branch: `"why": punch_change.why_line(code, text)` (so "Other" prints "Other: <words>"). `my_changes` (the employee's own view) uses the same function, so both screens follow.
+Test: `test_the_typed_words_are_printed_and_are_part_of_the_fingerprint`. Break: hash without `reason_text` fails `AssertionError: '3fc3...' == '3fc3...'` (the fingerprint did not move); why line without the text fails `AssertionError: 'Other' != 'Other: reader cable cut'`.
+
+## Results this round (own stack; `alvoraa_goals` installed this time, so no KPI errors)
+| Suite | Result |
+|---|---|
+| `test_day_change_088d` | 72 tests: 71 OK on the full run, plus the new fingerprint test run alone (OK) |
+| `test_portal_security_010` | **45 + 5 OK** (the 13 KPI errors of last round were the missing app; with `alvoraa_goals` installed they pass), ceiling row for `day_change.py` included |
+| `test_punch_change_088c` | 40 OK (after the `_moved` and sentence change) |
+| `test_register_notice_088` | 82 OK, with the four lines in. **Two caveats, both mine, both environmental, shown:** (a) on a run after my real-HTTP probes one test failed because probe rows I had committed sat in a month the test expects empty; (b) on a second run of the whole suite on the same database two photo tests failed with "That photo was already used", because the first run's photo `File` rows are committed and stay. In both cases I removed my leftovers and the tests passed. The photo one means the 088 suite cannot be run twice on one database without cleaning; that is 088's own, not changed by me. |
+| `test_punch_fix_087` | 134 OK (after I reset the notice switch I had left on; with it on every fixture punch filed as Administrator is correctly refused: it looked like 50 failures and was my own leftover) |
+| `test_alv302_sync_punch` 62, `test_checkin_security_014` 14+2, `test_field_checkin_fixes_013` 16, `test_punch_dedupe_alv337` 26, `test_attendance_doors_085` 16, `test_invoicing` 4+20 | all OK |
+| `check_app_integrity.py` | OK (1078 checks) |
+| `check_brand_spelling.py` | OK |
+
+## Still unproven / said plainly
+- The path-table test checks names and that each test asserts; it does not prove each path's behaviour is covered.
+- A Workflow on Attendance is not a door (05d section 3). One line for the switch-on runbook: do not put a Workflow on Attendance.
+- Finding P4: a reason typed on a first mark is dropped without telling the person.
+- The two bulk job branches (`_bulk_action`, `start_import`) are proven by a real queued import (last round) and source reading, not by a unit test.
+- The 1,000-row whole insert (about 50 minutes) and an A/B wall time were not run.
+- ALV-477 is not touched.

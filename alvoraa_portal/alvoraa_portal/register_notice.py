@@ -259,7 +259,7 @@ def _punch_changes(month, employees, with_content):
 		punch_change.LOG,
 		filters={"employee": ("in", list(employees)),
 		         "day": ("between", [str(month), str(get_last_day(month))])},
-		fields=["name", "employee", "day", "changed_by", "changed_on", "reason_code", "what"],
+		fields=["name", "employee", "day", "changed_by", "changed_on", "reason_code", "reason_text", "what"],
 		order_by="day asc, changed_on asc", ignore_permissions=True)
 	if not rows:
 		return []
@@ -277,7 +277,7 @@ def _punch_changes(month, employees, with_content):
 		row[SIGNED_NOTICE] = signed.get(r.name)
 		row["is_open"] = r.name not in signed
 		if with_content:
-			row.update(creation=r.changed_on, reason_code=r.reason_code, what=r.what)
+			row.update(creation=r.changed_on, reason_code=r.reason_code, reason_text=r.reason_text, what=r.what)
 		out.append(row)
 	return out
 
@@ -541,7 +541,7 @@ def _content_hash(change):
 	import hashlib
 
 	if change.get("punch_change"):
-		parts = [str(change.get(f) or "") for f in ("name", "from_date", "reason_code", "what")]
+		parts = [str(change.get(f) or "") for f in ("name", "from_date", "reason_code", "reason_text", "what")]
 	else:
 		parts = [str(change.get(f) or "") for f in punch_fix.CONFIRMED_CONTENT]
 	return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
@@ -563,7 +563,7 @@ def sheet_rows(change, filer_login):
 			"day": _day_words(change.from_date), "what": [change.get("what")], "counts": None,
 			"filed_role": "HR", "filed_by": None,
 			"filed_on": str(getdate(change.get("creation") or change.from_date)),
-			"why": change.get("reason_code"), "blocks_pay": False,
+			"why": punch_change.why_line(change.get("reason_code"), change.get("reason_text")), "blocks_pay": False,
 		}
 	kind, who = punch_fix._filer(change.owner, filer_login)
 	what = [s for s in [_added_sentence(change)] if s] + _aside_sentences(change)

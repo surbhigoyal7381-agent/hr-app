@@ -660,6 +660,21 @@ class TheListedEntryReachesTheNotice(DayCase):
 		self.assertEqual(len(mine), 1)
 		self.assertEqual(mine[0].what, "Day changed from Absent to Present")
 
+	def test_the_typed_words_are_printed_and_are_part_of_the_fingerprint(self):
+		"""05d P3-11: `reason_text` reaches the sheet's reason column, and changing it changes the
+		fingerprint the signature vouches for."""
+		from alvoraa_portal import register_notice
+		from frappe.utils import get_first_day
+
+		day = self.cancelled_day()
+		self.desk(self.doc_dict(day, reason="Other", text="reader cable cut"))
+		(row,) = [r for r in register_notice.qualifying_changes(get_first_day(day), [self.emp], with_content=True)
+		          if r.get("punch_change")]
+		self.assertEqual(register_notice.sheet_rows(row, None)["why"], "Other: reader cable cut")
+		before = register_notice._content_hash(row)
+		row["reason_text"] = "something else"
+		self.assertNotEqual(register_notice._content_hash(row), before)
+
 
 class TheRunDocMethodDoor(DayCase):
 	"""05d P1-1: `run_doc_method` (a form's `frm.call`, a plain API call) runs the whitelisted

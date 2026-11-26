@@ -481,6 +481,25 @@ async function run() {
   is(/already been decided/.test(toasts(dom)), true,
      "a real conflict still says the server's own sentence");
 
+  /* 26 Nov 2026. Frappe HR refuses an approval with a TABLE (as_table): the
+     message is an array of rows, and put into an Error it printed as
+     "Date,Reason,Action,17-11-2026,...". It must read as lines. */
+  dom = await openInbox(approvals, {
+    "alvoraa_portal.attendance_correction.decide": () => ({
+      status: 417,
+      body: { exc_type: "ValidationError",
+              _server_messages: JSON.stringify([JSON.stringify({
+                message: [["Date", "Reason", "Action"], ["17-11-2026", "Attendance status unchanged", "Skip"]],
+                as_table: true, title: "No attendance records to create due to following reasons" })]) },
+    }),
+  });
+  dom.window.frappe = { boot: { sysdefaults: { date_format: "dd-mm-yyyy" } } };
+  screens(dom).querySelector('.nf-decide[data-yes="1"]').click();
+  await new Promise((r) => setTimeout(() => setTimeout(() => setTimeout(r, 0), 0), 0));
+  is(toasts(dom).indexOf("Date,Reason"), -1, "a table refusal is not printed as a run of commas");
+  is(toasts(dom).indexOf("No attendance records to create due to following reasons:\nDate \u2014 Reason \u2014 Action\n17 Nov 2026 \u2014 Attendance status unchanged \u2014 Skip") >= 0, true,
+     "it reads as a title and one line per row, with the date as 17 Nov 2026: " + JSON.stringify(toasts(dom)));
+
   /* Now the timeout. The server never answered, so nothing may claim a
      colleague decided it. This is the bug: Sandeep taps Approve on a factory
      floor, the request times out, the row vanishes and he is told the leave is

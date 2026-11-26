@@ -12,6 +12,45 @@ const loadedPanels = new Set(["home"]);
    shown, SEC-4) · refused (4xx; Frappe's pop-up as before). At most one.
    `relay` shows server messages itself so a 5xx can be kept quiet. */
 var CALL_LIMIT_MS = 15000;
+/* A server message is not always a sentence. Frappe sends a table (as_table)
+   or a list (as_list) as an ARRAY. Put into an Error or a text slot, an array
+   prints as one run of commas: "Date,Reason,Action,17-11-2026,Attendance status
+   unchanged,Skip" (an approver's card, 26 Nov 2026, Frappe HR's "no attendance
+   to create" table). Every place that reads a server message goes through
+   serverWords / serverSaid so that cannot happen again. The result is plain
+   text, never markup: the caller escapes it like any other server sentence.
+
+   A table becomes one line per row, cells joined by a dash, under its title.
+   A date in the system's own format becomes the portal's "17 Nov 2026". The
+   format is read from frappe.boot, never guessed; with none, the cell is left
+   as sent. The same code is in next-frame.js (a different page). */
+function serverDate(c) {
+  var fmt = window.frappe && frappe.boot && frappe.boot.sysdefaults && frappe.boot.sysdefaults.date_format;
+  if (!fmt || !/^[dmy]+[-\/.][dmy]+[-\/.][dmy]+$/.test(fmt)) return c;
+  var m = new RegExp("^" + fmt.replace(/\./g, "\\.").replace(/[dmy]+/g, function (t) { return "(\\d{" + t.length + "})"; }) + "$").exec(c);
+  if (!m) return c;
+  var at = {};
+  fmt.match(/[dmy]+/g).forEach(function (t, i) { at[t.charAt(0)] = m[i + 1]; });
+  return +at.m >= 1 && +at.m <= 12 && +at.d >= 1 && +at.d <= 31 ? fmtDate(at.y + "-" + at.m + "-" + at.d) : c;
+}
+function serverWords(one) {
+  var obj = one && typeof one === "object" && !Array.isArray(one);
+  var body = obj ? one.message : one;
+  if (!Array.isArray(body)) return typeof body === "string" ? body : "";
+  var lines = body.map(function (row) {
+    return (Array.isArray(row) ? row : [row]).map(function (c) {
+      return serverDate(String(c == null ? "" : c).replace(/<[^>]*>/g, "").trim());
+    }).filter(Boolean).join(" \u2014 ");
+  }).filter(Boolean);
+  var title = obj && typeof one.title === "string" ? one.title.trim() : "";
+  if (title && title !== "Message" && lines.length) lines.unshift(title + ":");
+  return lines.join("\n");
+}
+/* The first message of a failed call's `_server_messages`, as words; "" if none. */
+function serverSaid(r) {
+  try { return serverWords(JSON.parse(JSON.parse(r._server_messages)[0])); } catch (e) { return ""; }
+}
+
 /* The one sentence a failed call shows where the screen has no box of its own. */
 function callWords(kind) {
   return (kind === "server" || kind === "refused")
@@ -110,8 +149,7 @@ function sayMayHaveGone(r, button) {
 function refusalWords(err) {
   if (!err || err.kind !== "refused") return "";
   if (err.server && err.message) return String(err.message);
-  var msg = "";
-  try { msg = JSON.parse(JSON.parse(err._server_messages)[0]).message; } catch (e) {}
+  var msg = serverSaid(err);
   if (!msg) { try { msg = JSON.parse(err._server_messages)[0]; } catch (e) {} }
   return typeof msg === "string" ? msg.replace(/<[^>]*>/g, "").trim() : "";
 }
@@ -232,7 +270,7 @@ function hideLoad(){ document.getElementById("loading-overlay").classList.remove
 function toast(msg, type) {
   const w = document.getElementById("toast-wrap");
   const t = document.createElement("div");
-  t.className = "toast" + (type ? " " + type : "");
+  t.className = "toast" + (type ? " " + type : "") + (String(msg).indexOf("\n") >= 0 ? " multi" : "");
   t.textContent = msg;
   w.appendChild(t);
   setTimeout(() => t.remove(), 3000);
@@ -5183,7 +5221,7 @@ window.uploadMyDocument = async function(input, row) {
     var up = await fetch("/api/method/upload_file", {method: "POST", body: fd,
       headers: {"X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || ""}});
     var j = await up.json();
-    if (!up.ok || !j.message || !j.message.file_url) throw new Error((j._server_messages && JSON.parse(j._server_messages)[0]) || "Upload failed");
+    if (!up.ok || !j.message || !j.message.file_url) throw new Error(serverSaid(j) || "Upload failed");
     api("attach_my_document", {row: row, file_url: j.message.file_url}, function(r) {
       if (window.frappe && frappe.show_alert) frappe.show_alert({message: r.message || "Uploaded.", indicator: "green"}, 5);
       loadMyDocuments();
@@ -7885,7 +7923,7 @@ function acSayRefused(btn, e) {
     box = document.createElement("p");
     box.className = "ac-refused";
     box.setAttribute("role", "alert");
-    box.style.cssText = "margin:8px 0;font-size:var(--fs-sm);color:var(--danger,var(--red))";
+    box.style.cssText = "margin:8px 0;font-size:var(--fs-sm);color:var(--danger,var(--red));white-space:pre-line";
     acts.parentNode.insertBefore(box, acts);
   }
   box.textContent = words;
@@ -12237,8 +12275,7 @@ window.lpDoCancel = function(name) {
     loadLeaves();
   }, function(r) { if (mayHaveGone(r)) { sayMayHaveGone(r); return; }
     if (btn) btn.disabled = false;
-    var msg = drT("Not cancelled: the connection dropped. Try again.");
-    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
+    var msg = serverSaid(r) || drT("Not cancelled: the connection dropped. Try again.");
     var body = document.querySelector("#lp-dlg .gp-modal-body");
     if (body) body.insertAdjacentHTML("afterbegin", lpLine("bad", gpEsc(msg), "alert"));
   });
@@ -18345,8 +18382,7 @@ function deleteDrawerNote(noteId, empId) {
      fixed sentence. The error carries `kind` (see callKind) and `server`
      (true when the words are the server's own). */
   function gpErr(r, status) {
-    var msg = "";
-    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
+    var msg = serverSaid(r);
     var kind = callKind(r, status);
     if (kind !== "refused") msg = "";
     var e = new Error(msg || callWords(kind));

@@ -97,9 +97,9 @@ const dom = new JSDOM(html, {
       ? Promise.reject(new Error("net"))
       : REFUSE_DECIDE && /attendance_correction\.decide/.test(String(url))
       ? (calls.push({ fn: "decide", body: opts && opts.body }), Promise.resolve({ ok: false, status: REFUSE_DECIDE.status,
-          json: () => Promise.resolve(REFUSE_DECIDE.message
+          json: () => Promise.resolve(REFUSE_DECIDE.message || REFUSE_DECIDE.entry
             ? { exc_type: "ValidationError",
-                _server_messages: JSON.stringify([JSON.stringify({ message: REFUSE_DECIDE.message })]) }
+                _server_messages: JSON.stringify([JSON.stringify(REFUSE_DECIDE.entry || { message: REFUSE_DECIDE.message })]) }
             : { exc_type: "PermissionError" }),
           text: () => Promise.resolve("") }))
       : REFUSE_RAISE && /raise_correction/.test(String(url))
@@ -653,6 +653,42 @@ function putForm(reason) {
   (card0 && card0.querySelectorAll(".ac-refused").length === 1)
     ? ok("ALV-434: a second refusal replaces the first, not a pile")
     : bad("ALV-434: refusals pile up on the card");
+
+  // ── A refusal that is a TABLE must read as words, never as CSV ─────
+  // Surbhi, 26 Nov 2026: an On Duty request whose day was already Present was
+  // refused by Frappe HR with a table (as_table), and the card showed
+  // "Date,Reason,Action,17-11-2026,Attendance status unchanged,Skip". The
+  // server's message is an ARRAY of rows; put into an Error it printed as commas.
+  window.frappe = window.frappe || {};
+  window.frappe.boot = { sysdefaults: { date_format: "dd-mm-yyyy" } };
+  REFUSE_DECIDE = { status: 417, entry: {
+    message: [["Date", "Reason", "Action"], ["17-11-2026", "Attendance status unchanged", "Skip"]],
+    as_table: true, title: "No attendance records to create due to following reasons" } };
+  btn && btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await settle(300);
+  const tbox = card0 && card0.querySelector(".ac-refused");
+  const tlines = tbox ? tbox.textContent.split("\n") : [];
+  (tbox && !/Date,Reason/.test(tbox.textContent) && tbox.textContent.indexOf(",") < 0)
+    ? ok("table refusal: no run of commas on the card")
+    : bad("table refusal printed as CSV: " + (tbox ? tbox.textContent : "no box"));
+  (tlines[0] === "No attendance records to create due to following reasons:" && tlines[2] === "17 Nov 2026 \u2014 Attendance status unchanged \u2014 Skip")
+    ? ok("table refusal: title, then one line per row, date as 17 Nov 2026")
+    : bad("table refusal lines were: " + JSON.stringify(tlines));
+  (tbox && tbox.style.whiteSpace === "pre-line")
+    ? ok("table refusal: the box keeps its line breaks")
+    : bad("the refusal box does not keep line breaks");
+  const tt = [...doc.querySelectorAll(".toast")].pop();
+  (tt && /\bmulti\b/.test(tt.className) && !/Date,Reason/.test(tt.textContent))
+    ? ok("table refusal: the toast is the same words, flagged multi-line")
+    : bad("toast for a table refusal: " + (tt ? tt.className + " | " + tt.textContent : "none"));
+  // A table cell is data: markup in it must stay text.
+  REFUSE_DECIDE = { status: 417, entry: { message: [["<img src=x onerror=window.__pwn=1>", "ok"]], as_table: true } };
+  btn && btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await settle(300);
+  const xbox = card0 && card0.querySelector(".ac-refused");
+  (xbox && !xbox.querySelector("img") && !window.__pwn)
+    ? ok("table refusal: a cell with markup stays text")
+    : bad("markup in a table cell became markup");
   REFUSE_DECIDE = null;
 
   // ── The month reads newest first, and stops at today ───────────────

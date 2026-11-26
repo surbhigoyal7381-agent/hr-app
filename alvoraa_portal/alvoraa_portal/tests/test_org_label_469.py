@@ -233,6 +233,12 @@ class OrgFieldsAlv469(IntegrationTestCase):
 		ol.after_migrate()
 		emp = _employee("Ess", self.ess, employment_type="Contract")
 		frappe.db.set_value("Employee", emp, {ol.AGENCY_FIELD: None, ol.CATEGORY_FIELD: None})
+		# Frappe HR strips the Employee roles from a user with no linked Employee,
+		# so a role given in setUpClass can be gone by now, depending on test order.
+		# Give them again now the Employee exists, and prove they are there: without
+		# them the save is refused as a whole and this test proves nothing.
+		frappe.get_doc("User", self.ess).add_roles("Employee", "Employee Self Service")
+		self.assertIn("Employee", frappe.get_roles(self.ess))
 		frappe.set_user(self.ess)
 		doc = frappe.get_doc("Employee", emp)
 		doc.update({ol.AGENCY_FIELD: "Sneaky Agency", ol.CATEGORY_FIELD: "Sneaky"})

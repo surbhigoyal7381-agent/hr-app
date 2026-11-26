@@ -96,7 +96,8 @@ def overtime_next_band_percent(rule_set):
 	"""ALV-478: the rule set's "Pay The Next Overtime Band After (%)" as a whole number
 	1 to 100. Blank is 100 (paid at the band time only). Raises ValueError for anything
 	else, which the rule set's save turns into a plain-words refusal."""
-	text = str(rule_set.get("overtime_next_band_percent") or "").strip()
+	value = rule_set.get("overtime_next_band_percent")
+	text = "" if value is None else str(value).strip()
 	if not text:
 		return 100
 	if not text.isdigit() or not 1 <= int(text) <= 100:

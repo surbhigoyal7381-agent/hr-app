@@ -140,6 +140,19 @@ class TheSystemAndTheOtherRecordsPass(DayCase):
 		self.assertEqual(frappe.db.get_value(ATT, att.name, "docstatus"), 1)
 		self.assertEqual(self.rows(), [])
 
+	def test_A02b_the_shift_type_click_re_marks_a_day_a_person_reset(self):
+		"""The real case behind A02: HR cancels a day (the reset, listed) and the job or the click
+		puts the new row in its place. That row REPLACES a cancelled one, so a door that was too
+		wide would refuse it. It must not be refused and must not be listed (a first-mark test
+		cannot catch this: a first mark is never demanded)."""
+		from hrms.hr.doctype.employee_checkin.employee_checkin import create_or_update_attendance
+
+		day = self.cancelled_day()
+		att = self.cmd_as(self.hr, RDM, lambda: create_or_update_attendance(
+			self.emp, day, "Present", working_hours=8, shift=hd.SHIFT), docs=SHIFT_DOCS, method="process_auto_attendance")
+		self.assertEqual(frappe.db.get_value(ATT, att.name, "docstatus"), 1)
+		self.assertEqual(self.rows(), [])
+
 	def test_A03_an_absent_day_for_no_punch(self):
 		from hrms.hr.doctype.attendance.attendance import mark_attendance
 

@@ -2,7 +2,7 @@
 slice: 088d (a person's change to a day record is on the change notice)
 author: hrms-fullstack-engineer
 date: 2026-11-26
-worktree: /Users/mac/hr-app/.claude/worktrees/088d-attendance-scope, branch docs/088d-attendance-scope
+worktree: /Users/mac/hr-app/.claude/worktrees/088d-attendance-scope, branch docs/088d-attendance-scope (review fixes added 27 Nov, see the last section)
 built on: origin/dev 8a62945d (ALV-469 came in while I worked; see "What else moved")
 status: built and tested on my own stack (d088-*). NOT pushed. `register_notice.py` NOT edited.
 ---
@@ -129,3 +129,44 @@ Also: `scripts/check_app_integrity.py` OK (1071 checks); `scripts/check_brand_sp
 - **Temporary debt:** 1,000-row whole-insert figure not run; punch import not run for real; A11 not driven; A25 only door detection; the four `register_notice.py` lines wait on the page-count fix; no A/B wall time.
 - **Acceptable simplification:** the log keeps its name; `_changed` compares cast values per field type rather than a list of fields.
 - **Existing, not mine, seen on the way:** `punch_change._moved` compares `doc.get_value(...)` on `shift_start`/`shift_end`, and Frappe's `get_value` turns an empty Datetime into "now", so two empty values compare unequal. I hit it in my own comparison and avoided it there. Whether it makes a punch with no shift tag look "changed" in 088c was **not checked**.
+
+
+---
+
+# Review fixes (05d, "Ship with fixes"): what was done, item by item
+
+Dev was `e705daff` when this round started and moved twice more (ALV-480 and a toast commit; nothing near Attendance, the punch log or `hooks.py`). Everything below was run on a fresh stack, `throttle_user_limit` set to the integer 1000 first.
+
+| # | Finding | What I did | Proof |
+|---|---|---|---|
+| P1-1 | `run_doc_method` is a door | `day_change.py`: `run_doc_method` and `runserverobj` added to `_FORM_CMDS`; `dt` added to the doctype read; for API v2 (no `cmd`) the path `/api/v2/method/run_doc_method` is a door when `document` names an Attendance. The doctype is still compared exactly, so the Shift Type click (same command, a Shift Type in `docs`) stays outside. | Written first and run against the code with the fix removed: cancel, submit and v2 tests failed (`ValidationError not raised` x2, `False is not true`); the Shift Type regression passed. Then **over real HTTP**: `POST /api/method/run_doc_method` cancel with no reason was refused with the two-step sentence (417) and the row stayed submitted; with the reason saved first it cancelled, and the reason was cleared. `POST /api/v2/method/run_doc_method` with no reason: 417, row still submitted. |
+| 1 / P2-3 | wrappers act before permission | `frappe.has_permission("Attendance", "write", throw=True)` first in both | test: an employee login gets `PermissionError` for a day with and for a day without a cancelled record (same answer). |
+| 2 / P2-2 | empty shift tag reads as a change (088c code) | `punch_change.same(df, a, b)` (cast by type, empty equals empty) now serves `_moved` and the shift branch of `_sentence`; `day_change` uses the same function (no third comparison). I also replaced `get_value` on `skip_auto_attendance` with a plain read. | test: an untagged punch saved with nothing changed is not demanded and not logged; changing only its time does not say "shift". |
+| 3 / P2-1 | "names what moved" | **Built as approved.** `_was` now reads `status`, `leave_type`, `half_day_status`, `shift`. Status changed: "Day changed from A to B". Status same, others moved: "Day changed: half day" (labels "leave type", "half day", "shift"). Nothing moved: "Day record replaced, still X". I did not decide it was dropped; it simply was not built in round 1 and I did not say so. | three tests (half-day flip; leave type and shift; nothing moved). |
+| 4 / P3-5 | wrong `cmd` string | A02, A03, A04 now use `run_doc_method` with a Shift Type in `docs`. **And one more test, found while breaking P1-1:** `A02b`. With first marks no longer demanded (the Q1 reversal), the three original tests could not tell a too-wide door from a right one, because a first mark is never refused. `A02b` re-marks a day that has a cancelled record (the real case: HR resets a day, then the click or the job puts it back). | break R1 below. |
+| 5 / P3-6 | path-table test only spelled names | `test_A11` now drives the 087 undo and pins the gap (the undo happens, no log row). The path-table test now also fails if a path's test has no assertion. **It still checks names and the presence of an assertion. It does not prove coverage of behaviour.** | break R10. |
+| 6 / P3-4 | W2 half-day tick not proven needed | `test_A24c`: the stock tool called directly, switch ON, as a person: `half_day_status` changed and `rows()` is empty. That is the hole shown, not described. | passes. |
+| 7 / P3-7 | outside the ceiling gate | `("alvoraa_portal", "day_change.py"): 1` in `CEILINGS`; `test_portal_security_010` run (this time with `alvoraa_goals` installed, see results). | |
+| 8 / P3-8 | decision 5 had no test | `TheTwoLines`: a 087 fix then a person's day cancel gives two rows on the notice list, one the request and one the log row. | break R8b: a merge makes it `1 != 2`. |
+| 9 / P3-9 | repeated reads in the person test | **Measured, not changed.** 500 calls cost 1.00 query a call (not two: one of the two is cached by Frappe). Next to the stock 21 queries a row that is under 5 percent, at human pace, and only for a person at a door. No cache built. `test_a_person_at_a_door_costs_two_reads_a_row_and_no_more` keeps the number (it fails above 2.0). | printed: `088d person test: 1.00 queries a row (500 rows)` |
+| 10 / P3-10 | reason left on a cancelled row | `on_cancel` clears the two fields whenever they hold anything, by whoever cancelled; no query when they are empty (so system cancels still cost 0). | break R7. |
+| 11 / P3-11 | `reason_text` in the hash | see "register_notice.py" below. |
+
+## Breaks this round and exactly what they said
+| Break | Test | Failure |
+|---|---|---|
+| R2 P1-1 fix removed (test-first) | cancel, submit, v2 | `AssertionError: ValidationError not raised` (cancel and submit), `AssertionError: False is not true` (v2). Wrong values, right reason. |
+| R1 door too wide: any `run_doc_method` is a door | `test_the_shift_type_click_is_still_not_a_door` | `AssertionError: True is not false` (wrong value). **The three original system tests (A02, A03, leave cancel) passed under this break**, which is why A02b was added. |
+| R1b the same break, against A02b | A02b | `ValidationError: Pick a reason for this change...` raised **inside the Shift Type click**: the real refusal of HR's daily button. |
+| R3 permission check removed | wrappers test | `AssertionError: PermissionError not raised` |
+| R4 `_moved` back to `get_value` | untagged no-op | `AssertionError: True is not false : nothing moved` |
+| R5 shift branch back to `get_value` | time-only change | `AssertionError: 'shift' unexpectedly found in 'punch moved from 06:10 to 06:20; punch shift changed'`: the false sentence itself |
+| R6 `_was` status only | half-day, leave type and shift | `'Day record replaced, still Half Day' != 'Day changed: half day'` and `... != 'Day changed: leave type, shift'` |
+| R7 clearing removed | reason left behind | `Tuples differ: ('Other', 'typed words') != (None, None)` |
+| R8 "merge" first attempt | two lines | **Did not fail.** My break suppressed a log row when another log row existed, and the fix leaves no log row, so it changed nothing. Not counted. |
+| R8b merge done properly (suppress the log row when an approved request exists that day) | two lines | `AssertionError: 1 != 2 : cause and consequence, never merged` |
+| R9 v2 door removed | v2 | `AssertionError: False is not true` |
+| R10 A11's assertions removed | path-table test | `Lists differ: ['test_A11_...'] != []`: the hollow test is named |
+
+## register_notice.py
+See the end of this section.

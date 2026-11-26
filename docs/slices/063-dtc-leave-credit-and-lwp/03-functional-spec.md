@@ -1174,7 +1174,7 @@ Every new string translatable (`_()` on the server; `drT` in `portal.js`). Days 
 | Leave Application, reason | sensitive, health-adjacent | Approval | employment | No |
 | Approval notice (name, dates, days, approved) | sensitive | Managers and HR plan | employment | No new data; new recipients (HR) |
 | `designation` | internal (job fact) | Now also picks the Housekeeping table | employment | No - existing field, new use |
-| `dtc_agency` | internal | Which agency a person belongs to (read only in the release check) | employment | No |
+| `employment_agency` (was `dtc_agency` until ALV-469) | internal | Which agency a person belongs to (read only in the release check) | employment | No |
 | Housekeeping rows on the rule set | internal, no personal data | DTC's rule | - | Yes - rules, not people |
 
 **2 · Obligations engaged** (from `security-compliance-baseline.md`; checked against `compliance-feature-map.md` - access control, minimisation and audit are already mechanised there by `refuse()`, Version history and the fixed-field patterns; nothing respecified)

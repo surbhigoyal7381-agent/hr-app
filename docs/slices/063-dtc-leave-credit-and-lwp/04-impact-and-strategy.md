@@ -439,7 +439,7 @@ After HR makes slips each month: desk → Salary Slip list → filter Payroll En
 Designation = Housekeeping (Salary Slip carries `designation`, read in hrms' salary_slip.json) →
 must show **zero** rows, draft or submitted. A saved list filter, so HR clicks one link. It cannot see
 a Permanent Housekeeping person (there are none today); the engineer's read-only release check
-(AC-147) uses `dtc_agency` on Employee instead. If a slip is ever found, HR deletes the draft (or
+(AC-147) uses `employment_agency` on Employee instead (ALV-469 moved the agency there and hid `dtc_agency`; a site that has not migrated yet still holds it in `dtc_agency`). If a slip is ever found, HR deletes the draft (or
 cancels a submitted one) and Surbhi decides on Q-S1 (b).
 
 ---

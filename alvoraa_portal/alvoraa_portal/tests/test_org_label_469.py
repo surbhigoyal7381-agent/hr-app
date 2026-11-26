@@ -112,7 +112,9 @@ class OrgLabelAlv469(IntegrationTestCase):
 
 	def test_alv469_a_user_with_no_employee_row_sees_the_site_name(self):
 		lonely = _user("lonely")
-		self.assertEqual(ol.org_label(lonely), SITE)
+		with patch("frappe.log_error") as logged:
+			self.assertEqual(ol.org_label(lonely), SITE)
+		self.assertFalse(logged.called, "no Employee row is normal, not an error")
 
 	def test_alv469_any_error_gives_the_site_name_and_never_raises(self):
 		_employee("One", self.user, employment_type="Full-time")
@@ -159,6 +161,16 @@ class OrgLabelAlv469(IntegrationTestCase):
 		self.assertIn('class="nf-brand-mark" aria-hidden="true">A', html)
 		self.assertIn('class="nf-brand-name" title="Alv469 Org Label">Alv469 Org Label<', html)
 		self.assertNotIn("Alv469 Tenant Only", html)
+
+	def test_alv469_a_hostile_name_is_escaped_in_both_frames(self):
+		for hostile in ('Ravi" onmouseover="alert(1)', "<b>x</b>"):
+			for path in ("templates/includes/ess/frame.html", "templates/includes/ess/next/frame.html"):
+				html = frappe.render_template(path, {"brand_label": hostile, "brand_mark_url": "/m.png"})
+				self.assertNotIn('onmouseover="alert(1)', html, path)
+				self.assertNotIn("<b>x</b>", html, path)
+		html = frappe.render_template("templates/includes/ess/frame.html", {"brand_label": "<b>x</b>"})
+		self.assertIn("&lt;b&gt;x&lt;/b&gt;", html)
+		self.assertIn('sidebar-brand-logo">&lt;', html)
 
 	def test_alv469_titles_and_the_app_name_stay_on_the_tenant_name(self):
 		for page in ("www/hrms-employee.html", "www/hrms-employee-next.html"):
@@ -339,3 +351,55 @@ class GigWorkerPayRowsAlv469(IntegrationTestCase):
 		flags = pra._employee_flags(self.emp, frappe.utils.getdate("2026-11-10"), pra.prepare(rs))
 		self.assertTrue(flags["earns_marks"])
 		self.assertTrue(leave_rules.credit_facts(self.emp, rs)["category_earns"])
+
+
+class FooterPatchAlv469(IntegrationTestCase):
+	"""The footer patch changes the footer text and nothing else."""
+
+	FIELDS = ("email_footer_address", "disable_standard_email_footer")
+
+	def setUp(self):
+		self.saved = {f: frappe.db.get_single_value("System Settings", f, cache=False) for f in self.FIELDS}
+		frappe.get_doc({"doctype": "Email Account", "email_account_name": "Alv469 Mail",
+		                "email_id": "alv469mail@example.com", "enable_incoming": 0,
+		                "enable_outgoing": 1, "awaiting_password": 1}).insert(ignore_permissions=True)
+		frappe.db.set_value("Email Account", "Alv469 Mail", "brand_logo", "")
+
+	def tearDown(self):
+		frappe.delete_doc("Email Account", "Alv469 Mail", force=True, ignore_permissions=True)
+		for f, v in self.saved.items():
+			frappe.db.set_single_value("System Settings", f, v)
+			frappe.db.set_default(f, v)
+		frappe.clear_cache()
+
+	def _set(self, footer, flag=0):
+		frappe.db.set_single_value("System Settings", "email_footer_address", footer)
+		frappe.db.set_single_value("System Settings", "disable_standard_email_footer", flag)
+
+	def _run(self):
+		from alvoraa_portal.patches.v1_0 import alv469_email_footer_no_tenant_name as patch_
+
+		patch_.execute()
+		return (frappe.db.get_single_value("System Settings", "email_footer_address", cache=False),
+		        frappe.utils.cint(frappe.db.get_single_value("System Settings", "disable_standard_email_footer", cache=False)),
+		        frappe.db.get_value("Email Account", "Alv469 Mail", "brand_logo"))
+
+	def test_alv469_our_old_footer_loses_the_name_and_the_switch_and_logo_are_left_alone(self):
+		self._set("Old Co Ltd\nPowered by AllAboutHR", flag=0)
+		footer, flag, logo = self._run()
+		self.assertEqual(footer, "Powered by AllAboutHR")
+		self.assertEqual(flag, 0, "the standard-footer switch must not be reset")
+		self.assertFalse(logo, "a logo that was removed must not come back")
+
+	def test_alv469_a_handwritten_or_empty_footer_is_left_alone(self):
+		for text in ("Acme Pvt Ltd, 12 MG Road", ""):
+			self._set(text)
+			footer, flag, logo = self._run()
+			self.assertEqual(footer or "", text)
+			self.assertEqual(flag, 0)
+			self.assertFalse(logo)
+
+	def test_alv469_running_the_footer_patch_twice_changes_nothing_more(self):
+		self._set("Old Co Ltd\nPowered by AllAboutHR")
+		self._run()
+		self.assertEqual(self._run()[0], "Powered by AllAboutHR")

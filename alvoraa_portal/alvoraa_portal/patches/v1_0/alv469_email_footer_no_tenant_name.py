@@ -1,12 +1,24 @@
 """ALV-469: the email footer is only "Powered by AllAboutHR".
 
-Same work as the alvora_email_brand patch, which has already run on every
-existing site, so it needs a patch of its own. email_brand.apply() rewrites a
-footer this module wrote (last line is ours) and leaves a hand-written one.
+Changes ONE thing: the footer text, and only where the current footer is one
+this product wrote (its last line is "Powered by AllAboutHR") and it still has
+another line above it. It does not call email_brand.apply(), which would also
+reset the standard-footer switch and put back logos somebody removed on
+purpose. An empty or hand-written footer is left alone.
 """
 
-from alvoraa_portal.patches.v1_0 import alvora_email_brand
+import frappe
+
+from alvoraa_portal import email_brand
 
 
 def execute():
-	alvora_email_brand.execute()
+	current = frappe.db.get_single_value("System Settings", "email_footer_address", cache=False) or ""
+	lines = current.splitlines()
+	if len(lines) > 1 and lines[-1].strip() == email_brand.FOOTER_LINE:
+		email_brand._save_system_setting("email_footer_address", email_brand.FOOTER_LINE)
+		frappe.clear_cache()
+		print("  email footer: tenant name line removed")
+	else:
+		print("  email footer: nothing to change")
+	frappe.db.commit()

@@ -28,7 +28,7 @@ The email footer is now only "Powered by AllAboutHR".
 - `hooks.py`: `org_label.after_migrate` in both `after_migrate` and `after_install`.
 - `patches/v1_0/alv469_org_fields_from_dtc.py`, `alv469_email_footer_no_tenant_name.py`, both in `patches.txt`.
 - `email_brand.py`: `_footer_text()` is now just the Powered by line.
-- `tests/test_org_label_469.py` (new, 20 tests); `test_email_brand_174.py` (one test renamed and tightened).
+- `tests/test_org_label_469.py` (new); `test_email_brand_174.py` (one test renamed and tightened).
 
 ## Decisions and why
 
@@ -47,14 +47,23 @@ row in the rule set takes the defaults and **earns marks and leave credit**. Sur
 
 ## After-release steps (each on Surbhi's word)
 
+0. BEFORE release, read only, from your own terminal: pipe `/Users/mac/hrlocal-data/ops/check_alv469_fields.py` into the backend container the same way as the other ops scripts (header of the script has the command). It prints, per site, the type of `dtc_agency` / `dtc_employee_category` and how many Employee rows hold a value. Never run on a server without Surbhi's word.
 1. Release to the site. `bench migrate` runs `alv469_org_fields_from_dtc` and `alv469_email_footer_no_tenant_name` once, then `after_migrate` makes any missing field and the two Employment Types.
 2. **On dtc.alvoraa.co, and any site that copies DTC's rule set (e.g. ppj.dev):** Desk > Alvoraa Payroll Rule Set > Categories. Re-read the live "Contract" row first, then add two rows, "Gig Worker" and "Freelancer", copying it. From the DTC export (`hrlocal-data/dtc-ops/dtc_ruleset.json`) the Contract row is: grace_minutes 15, earns_marks 0, earns_leave_credits 0, doubles_deduction 0, late_quarter_after_minutes 0, break_allowance_minutes 0.
 3. Until step 2 is done, nobody on DTC may be given Gig Worker or Freelancer.
 4. On the Grace site: add the option "GI Staffing" to Employment Agency in Customize Form.
-5. Check the printed counts from step 1 look right (rows copied per field).
+5. Run the same script again after migrate. The new fields' counts must equal the old fields' counts, and the old fields must show hidden=1.
 
 ## Risks and gaps
 
 - Not checked: DTC's real `dtc_agency` / `dtc_employee_category` field types (the code handles Select, and for anything else uses the values people already hold).
 - The footer rule treats any footer ending with the Powered by line as ours, as before.
 - Not looked at in a browser: the 360 px ellipsis (CSS read only; the phone bar already had it).
+
+## Review round 1 fixes
+
+- Every `brand_label` is now escaped (`| e`) in text, `title=` and the badge letter (Frappe Jinja does not escape by itself).
+- The footer patch is narrowed as above and tested: switch, removed logo, hand-written and empty footers are left alone.
+- The no-Employee test now asserts no Error Log is written.
+- Slice 063's AC-147 release check reads `employment_agency` (docs only: no code read `dtc_agency`).
+- Read-only release check script added, outside the repo.

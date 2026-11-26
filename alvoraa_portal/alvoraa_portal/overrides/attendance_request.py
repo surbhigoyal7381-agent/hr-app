@@ -10,6 +10,7 @@ for every other request, so an ordinary request behaves as it always did.
   another request for the day is waiting, or one that is not a punch fix is approved.
 - `validate_no_attendance_to_create` refuses a day that already has the status the request would
   write ("status unchanged"). A punch fix does not write a status; `punch_fix.apply` does.
+  Since ALV-476 no request is refused for "status unchanged"; Holiday and On Leave still are.
 - `create_attendance_records` writes Present with no history. A punch fix writes the day
   once, in `punch_fix.apply`.
 
@@ -43,8 +44,16 @@ class AlvoraAttendanceRequest(AttendanceRequest):
 				               "Withdraw it or wait for HR."))
 
 	def validate_no_attendance_to_create(self):
-		if not is_punch_fix(self):
-			return super().validate_no_attendance_to_create()
+		"""ALV-476 (Surbhi, 26 Nov 2026): a day whose status would not change is still
+		worth a request - HR sees it with the employee's reason. Stock refused it before
+		HR ever saw it. Approving it changes nothing (stock updates a day only when the
+		status differs, and links no row, so cancelling it later cannot touch the day);
+		declining it changes nothing. Holiday and On Leave days are still refused."""
+		if is_punch_fix(self):
+			return
+		if any(w["reason"] == "Attendance status unchanged" for w in self.get_attendance_warnings()):
+			return
+		return super().validate_no_attendance_to_create()
 
 	def create_attendance_records(self):
 		if not is_punch_fix(self):

@@ -106,7 +106,7 @@ I had no UX scan, so these are mine. The designer should challenge them.
 
 > **Overtime tonight.** Last punch by 23:00: 1 quarter. By 01:00: 2 quarters (half a day). By 03:00 or later: 4 quarters (a full extra day). Counted when your day is judged.
 
-After a 23:42 punch the row says: **"Your last punch was 23:42. Overtime counted: 2 quarters."** No countdown, no streak, no nudge. Nothing shows before this person's own shift end plus one hour (21:30 for a 20:30 shift), worked out per person. Someone on a 22:00 shift sees their first line only from 23:00. The designer decides how the uneven steps (+1, +2, +4) are shown; they must not be smoothed. **For Contract staff the row is not shown** (7a).
+After a 23:42 punch the row says: **"Your last punch was 23:42. Overtime counted: 1 quarter."** *(Corrected 26 Nov 2026, ALV-478: the brief said 2 quarters. 23:42 is 1 at 75%, because 75% of the way from 23:00 to 01:00 is 00:30. Surbhi.)* No countdown, no streak, no nudge. Nothing shows before this person's own shift end plus one hour (21:30 for a 20:30 shift), worked out per person. Someone on a 22:00 shift sees their first line only from 23:00. The designer decides how the uneven steps (+1, +2, +4) are shown; they must not be smoothed. **For Contract staff the row is not shown** (7a).
 
 ## 7. Thin slice
 
@@ -204,7 +204,7 @@ No AI is involved. The rule is deterministic and a person owns every number. Not
 | **Shift windows reset** | Running `shift_standard` against DTC shrinks capture | Section 8 |
 | **Grade blank (2 people)** | No mark-rate row, so greens and reds are Rs 0, but quarters use salary and still pay | Worth telling DTC; not this slice's fix |
 
-**Illustrative money, not DTC data. `[ASSUMPTION]` salaries.** Basic Rs 30,000 over a 30-day month is Rs 1,000 a day, so a quarter is Rs 250. A 23:42 punch adds 2 quarters: the day pays 1.5, Rs 1,500. At Rs 15,000 Basic a quarter is Rs 125. Same table, each person's own day.
+**Illustrative money, not DTC data. `[ASSUMPTION]` salaries.** Basic Rs 30,000 over a 30-day month is Rs 1,000 a day, so a quarter is Rs 250. A 01:10 punch adds 2 quarters: the day pays 1.5, Rs 1,500. *(Was "23:42", corrected 26 Nov 2026, ALV-478: 23:42 is 1 quarter.)* At Rs 15,000 Basic a quarter is Rs 125. Same table, each person's own day.
 
 ## Thriving-workplace lens
 

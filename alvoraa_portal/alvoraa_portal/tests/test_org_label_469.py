@@ -308,7 +308,10 @@ class GigWorkerPayRowsAlv469(IntegrationTestCase):
 		rs.category_field = "employment_type"
 		if with_rows:
 			for kind in ol.OWN_NAME_TYPES:
-				rs.append("categories", {"category": kind, "earns_marks": 0, "earns_leave_credits": 0})
+				# The same values as DTC's own "Contract" row (dtc_ruleset.json export).
+				rs.append("categories", {"category": kind, "grace_minutes": 15, "earns_marks": 0,
+				                         "earns_leave_credits": 0, "doubles_deduction": 0,
+				                         "late_quarter_after_minutes": 0, "break_allowance_minutes": 0})
 		return rs
 
 	def setUp(self):

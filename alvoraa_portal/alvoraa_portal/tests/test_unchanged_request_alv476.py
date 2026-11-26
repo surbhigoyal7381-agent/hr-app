@@ -20,7 +20,7 @@ from alvoraa_portal.tests.utils import ensure_gender
 
 TAG = "ALV476"
 HOLIDAYS = "ALV476 Holidays"
-REFUSAL = "No attendance records to create"
+REFUSAL = "'Holiday', 'Skip'"  # stock raises the reasons table, not its title
 
 
 def setUpModule():

@@ -26,7 +26,7 @@ REFUSAL = "'Holiday', 'Skip'"  # stock raises the reasons table, not its title
 def setUpModule():
 	frappe.set_user("Administrator")
 	ac.after_migrate()
-	company = ensure_company()
+	ensure_company()
 	ensure_gender()
 	if not frappe.db.exists("Holiday List", HOLIDAYS):
 		frappe.get_doc({
@@ -34,12 +34,6 @@ def setUpModule():
 			"from_date": add_days(nowdate(), -400), "to_date": add_days(nowdate(), 400),
 			"holidays": [{"holiday_date": add_days(nowdate(), -9), "description": "A day off"}],
 		}).insert(ignore_permissions=True)
-	if not frappe.db.exists("Holiday List Assignment", {"assigned_to": company, "docstatus": 1}):
-		frappe.get_doc({
-			"doctype": "Holiday List Assignment", "holiday_list": HOLIDAYS,
-			"applicable_for": "Company", "assigned_to": company,
-			"from_date": add_days(nowdate(), -400),
-		}).insert(ignore_permissions=True).submit()
 	frappe.clear_cache(doctype="Attendance Request")
 	frappe.db.commit()
 
@@ -60,6 +54,13 @@ class UnchangedDayRequest(FrappeTestCase):
 			"date_of_birth": "1990-01-01", "date_of_joining": add_days(nowdate(), -300),
 			"status": "Active", "user_id": self.email, "create_user_permission": 0,
 		}).insert(ignore_permissions=True).name
+		# On the employee, not the company: an employee's own list is read first, so a
+		# site whose company already has a list cannot hide this test's holiday.
+		frappe.get_doc({
+			"doctype": "Holiday List Assignment", "holiday_list": HOLIDAYS,
+			"applicable_for": "Employee", "assigned_to": self.emp,
+			"from_date": add_days(nowdate(), -300),
+		}).insert(ignore_permissions=True).submit()
 		self.day = add_days(nowdate(), -3)
 
 	def tearDown(self):
@@ -121,5 +122,9 @@ class UnchangedDayRequest(FrappeTestCase):
 		"""Only "status unchanged" was let through. On Leave takes the same stock path
 		as Holiday and is not built here (it needs a leave type and allocation)."""
 		holiday = add_days(nowdate(), -9)
+		hl = frappe.get_doc("Holiday List", HOLIDAYS)
+		if not any(str(h.holiday_date) == str(holiday) for h in hl.holidays):  # a list left by an earlier day's run
+			hl.append("holidays", {"holiday_date": holiday, "description": "A day off"})
+			hl.save(ignore_permissions=True)
 		with self.assertRaisesRegex(frappe.ValidationError, REFUSAL):
 			self.ask_from_portal(holiday)

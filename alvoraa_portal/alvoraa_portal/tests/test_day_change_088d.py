@@ -67,9 +67,25 @@ class DayCase(PunchChangeCase):
 		"""Make the request look like `cmd` with these form values, for the length of a test step."""
 		frappe.form_dict.clear()
 		frappe.form_dict.update({"cmd": cmd, **form})
+		# A real request has a `docs` list on the response: `frappe.init` builds it
+		# (frappe/__init__.py:196) and the Desk save and cancel endpoints append the saved
+		# document to it (frappe/desk/form/save.py:92, reached by both). Eleven other test
+		# files in this app (counted 26 Nov 2026) replace `frappe.local.response` with a bare
+		# `_dict` and never put it back - only test_company_scope_078 does - so when this file
+		# runs after one of them in the same process the
+		# list is gone and every Desk call here dies with "'NoneType' object has no attribute
+		# 'append'" - 24 errors in CI shard 1 on dev 9bbf8673, and none when this file runs
+		# alone. A test must not depend on what ran before it (ALV-470), so stand the list up
+		# here and put back whatever was there in `leave_door`. A stack, because a step may
+		# enter a second door before leaving the first.
+		self._responses = getattr(self, "_responses", [])
+		self._responses.append(frappe.local.response)
+		frappe.local.response = frappe._dict({"docs": []})
 
 	def leave_door(self):
 		frappe.form_dict.clear()
+		if getattr(self, "_responses", None):
+			frappe.local.response = self._responses.pop()
 
 	def doc_dict(self, day, status="Present", reason=None, text=None, **extra):
 		d = {"doctype": ATT, "employee": self.emp, "company": self.h.company, "attendance_date": day,

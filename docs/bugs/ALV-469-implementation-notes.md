@@ -28,7 +28,7 @@ The email footer is now only "Powered by AllAboutHR".
 - `hooks.py`: `org_label.after_migrate` in both `after_migrate` and `after_install`.
 - `patches/v1_0/alv469_org_fields_from_dtc.py`, `alv469_email_footer_no_tenant_name.py`, both in `patches.txt`.
 - `email_brand.py`: `_footer_text()` is now just the Powered by line.
-- `tests/test_org_label_469.py` (new, 22 tests); `test_email_brand_174.py` (one test renamed and tightened).
+- `tests/test_org_label_469.py` (new, 20 tests); `test_email_brand_174.py` (one test renamed and tightened).
 
 ## Decisions and why
 

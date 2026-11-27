@@ -1,0 +1,16 @@
+{
+ "app": "alvoraa_goals",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon": "goal",
+ "icon_type": "Link",
+ "idx": 0,
+ "label": "Goals & Performance",
+ "link_to": "Goals & Performance",
+ "link_type": "Workspace Sidebar",
+ "name": "Goals & Performance",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}

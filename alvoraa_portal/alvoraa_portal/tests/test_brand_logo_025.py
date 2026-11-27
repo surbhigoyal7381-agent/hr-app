@@ -262,7 +262,7 @@ class PortalRenderCase(FrappeTestCase):
         # never points at a site file, because a browser cannot read one.
 
         # 2. the tenant's initial is still there underneath, as the last resort
-        self.assertIn("tenant_name[0] | upper", block)
+        self.assertIn("brand_label[0] | upper", block)  # ALV-469: was tenant_name
 
         # 3. a failed image takes itself out of the way so the letter shows
         self.assertIn("onerror", block)

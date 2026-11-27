@@ -92,6 +92,19 @@ def _minutes(value):
 	return int(parts[0]) * 60 + int(parts[1])
 
 
+def overtime_next_band_percent(rule_set):
+	"""ALV-478: the rule set's "Pay The Next Overtime Band After (%)" as a whole number
+	1 to 100. Blank is 100 (paid at the band time only). Raises ValueError for anything
+	else, which the rule set's save turns into a plain-words refusal."""
+	value = rule_set.get("overtime_next_band_percent")
+	text = "" if value is None else str(value).strip()
+	if not text:
+		return 100
+	if not text.isdigit() or not 1 <= int(text) <= 100:
+		raise ValueError(text)
+	return int(text)
+
+
 def overtime_bands(rule_set):
 	"""The rule set's overtime table as [(edge_minutes, total_quarters)], earliest
 	first. An edge is minutes from the SHIFT DAY's midnight, so 01:00 the next
@@ -196,6 +209,7 @@ def prepare(rule_set, from_date=None, to_date=None, employee=None):
 		"late_quarter_after": int(rule_set.get("late_quarter_after_minutes") or 0),
 		"break_allowance": int(rule_set.get("break_allowance_minutes") or 0),
 		"overtime_bands": overtime_bands(rule_set),
+		"overtime_next_percent": overtime_next_band_percent(rule_set),
 		"night_for_all": bool(rule_set.get("night_green_for_everyone")),
 		"window_field": (rule_set.late_window_employee_field or "").strip(),
 		"double_field": (rule_set.double_deduction_field or "").strip(),
@@ -389,6 +403,40 @@ def shift_day(punch):
 	return str(getdate(punch.get("shift_start") or punch.get("time")))
 
 
+def aside_filter():
+	"""The ONE test of whether a punch counts, as a get_all filter (ALV-355).
+
+	A punch counts unless HR set it aside (`alvoraa_fix_aside_request` is set). Nothing else.
+	`skip_auto_attendance` and `offshift` are NOT read: skip_auto_attendance is set for four
+	different reasons (Frappe: the day was already marked; a repeat scan; an out-of-range machine
+	date; HR set aside), three of them for punches that are real, and offshift marked 735 real DTC
+	punches. Repeat scans are folded by time instead (`fold_repeat_scans`).
+
+	Before the migrate that adds the column (an image deployed first) this returns {}, so every
+	punch counts - exactly how the engine judged days before slice 087."""
+	if frappe.db.has_column("Employee Checkin", "alvoraa_fix_aside_request"):
+		return {"alvoraa_fix_aside_request": ("is", "not set")}
+	return {}
+
+
+def fold_repeat_scans(rows, day):
+	"""`rows` (dicts with a `time`, earliest first, all on working day `day`) without the repeat
+	scans the engine folds: the same `punch_minutes` the engine counts with, so a screen and the
+	engine keep the same punches (ALV-355). Keeps the first row of each fold."""
+	rows = list(rows)
+	if not rows:
+		return rows
+	day = getdate(day)
+	kept = punch_minutes([get_datetime(r["time"]) for r in rows], day=day)
+	out, i = [], 0
+	for r in rows:
+		t = get_datetime(r["time"])
+		if i < len(kept) and (t.date() - day).days * 1440 + t.hour * 60 + t.minute == kept[i]:
+			out.append(r)
+			i += 1
+	return out
+
+
 def _punches(employee, date):
 	"""First and last punch of the day, how many there were, and the gaps
 	between them that may be breaks (`break_gaps`).
@@ -414,8 +462,7 @@ def _punches(employee, date):
 	# (not `skip_auto_attendance`, which also marks repeat scans and filed-away punches),
 	# and only where the column exists, so an image that is deployed before its migrate
 	# judges every day exactly as it did.
-	if frappe.db.has_column("Employee Checkin", "alvoraa_fix_aside_request"):
-		filters["alvoraa_fix_aside_request"] = ("is", "not set")
+	filters.update(aside_filter())
 	rows = frappe.get_all("Employee Checkin", filters=filters,
 	                      fields=["time", "shift_start"], order_by="time asc")
 	times = [get_datetime(r.time) for r in rows if shift_day(r) == str(date)]
@@ -551,6 +598,7 @@ def judge(attendance, ctx):
 		shift_hours_only=ctx["shift_hours_only"],
 		break_gaps=gaps,
 		overtime_bands=ctx["overtime_bands"],
+		overtime_next_band_percent=ctx["overtime_next_percent"],
 		**flags)
 
 

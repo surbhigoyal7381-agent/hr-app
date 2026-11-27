@@ -55,6 +55,10 @@ CHECKIN = "Employee Checkin"
 LOG = "Alvoraa Punch Change"
 #: The Select on the punch where a person gives the reason. Always blank once saved.
 FIELD = "alvoraa_change_reason"
+#: Free text, allowed only with the reason "Other", and then required (slice 088d).
+TEXT_FIELD = "alvoraa_change_reason_text"
+OTHER = "Other"
+TEXT_MAX = 100
 MATERIAL = ("time", "log_type", "skip_auto_attendance", "shift", "shift_start", "shift_end")
 
 FLAG = "in_punch_change"
@@ -82,20 +86,86 @@ def _is_a_persons_change(employee):
 	return not files_as_machine(user)
 
 
+def same(df, a, b):
+	"""Whether two values of one field are the same thing, cast by field type. An empty value
+	equals an empty value. **Do not use `get_value` for this:** Frappe's `get_datetime(None)`
+	returns "now", so an empty Datetime compared with itself differs, and a punch with no shift
+	tag looked changed on every save (05d P2-2)."""
+	if a in (None, "") or b in (None, ""):
+		return a in (None, "") and b in (None, "")
+	if df.fieldtype in ("Datetime", "Date", "Time"):
+		from frappe.utils import get_time
+
+		cast = {"Datetime": get_datetime, "Date": getdate, "Time": get_time}[df.fieldtype]
+		return cast(a) == cast(b)
+	if df.fieldtype in ("Int", "Check"):
+		return cint(a) == cint(b)
+	if df.fieldtype in ("Float", "Currency", "Percent"):
+		return abs(frappe.utils.flt(a) - frappe.utils.flt(b)) < 0.0001
+	return str(a) == str(b)
+
+
 def _moved(doc, before):
-	"""True when a material field differs from the saved copy. A new punch always counts."""
+	"""True when a material field differs from the saved copy. A new punch always counts.
+	A REST call or an import sends "0" and "2026-11-20 14:00" where the database holds 0 and a
+	datetime with seconds, so the values are cast by type, and empty equals empty."""
 	if not before:
 		return True
-	# Cast on both sides (`get_value`): a REST call or an import sends "0" and "2026-11-20 14:00",
-	# the database holds 0 and a datetime with seconds, and a raw comparison calls those a change.
-	return any((doc.get_value(f) or "") != (before.get_value(f) or "") for f in MATERIAL)
+	return any(not same(doc.meta.get_field(f), doc.get(f), before.get(f)) for f in MATERIAL)
 
 
-def _valid_reason(reason):
-	"""The reason has to be one of the log's own options. Frappe skips the Select check for the
-	whole of a Data Import (`flags.in_import`, `base_document.py`), so without this a spreadsheet
-	could write any sentence into the record, and the record can never be corrected."""
-	return reason in (frappe.get_meta(LOG).get_field("reason_code").options or "").split("\n")
+def clean_text(text):
+	"""One line: spaces collapsed, control characters and line breaks gone. Stored as typed
+	otherwise (escaped where it is shown), so the record says what the person wrote."""
+	return " ".join("".join(c if c.isprintable() else " " for c in (text or "")).split())
+
+
+def reason_problem(reason, text=None):
+	"""None when the reason and its text are acceptable, else the sentence to show.
+
+	The code has to be one of the log's own options, and free text is allowed with "Other"
+	only, and required with it. Frappe skips the Select check for the whole of a Data Import
+	(`flags.in_import`, `base_document.py`), so this is OUR check, run from our own hooks and
+	again in the writer: without it a spreadsheet could write any sentence into a record that
+	can never be corrected (review F3)."""
+	options = (frappe.get_meta(LOG).get_field("reason_code").options or "").split("\n")
+	if reason not in options:
+		return _("That is not one of the reasons on the list. Pick one from the list.")
+	text = clean_text(text)
+	if reason == OTHER:
+		if not text:
+			return _("The reason is 'Other', so say what happened in 'Reason Text' (up to {0} "
+			         "characters).").format(TEXT_MAX)
+		if len(text) > TEXT_MAX:
+			return _("'Reason Text' is {0} characters long. Shorten it to {1} or fewer.").format(
+				len(text), TEXT_MAX)
+	elif text:
+		return _("This row has text in 'Reason Text' but the reason is not 'Other'. Clear the "
+		         "text, or set the reason to 'Other'.")
+	return None
+
+
+def why_line(reason, text=None):
+	"""The reason as the paper prints it: the code, and for "Other" the typed words."""
+	return "%s: %s" % (reason, text) if reason == OTHER and text else reason
+
+
+def add_row(employee, day, reason, text, what, punch=None, attendance=None):
+	"""The one writer of the append-only log, for a punch and for a day record alike."""
+	problem = reason_problem(reason, text)
+	if problem:
+		access.log_refusal("088c-reason-list", "punch_change.add_row", LOG, punch or attendance)
+		frappe.throw(problem)
+	frappe.flags[FLAG] = True
+	try:
+		frappe.get_doc({
+			"doctype": LOG, "punch": punch, "attendance": attendance, "employee": employee,
+			"day": day, "reason_code": reason,
+			"reason_text": clean_text(text) if reason == OTHER else None,
+			"what": what, "changed_by": frappe.session.user, "changed_on": now_datetime(),
+		}).insert(ignore_permissions=True)
+	finally:
+		frappe.flags[FLAG] = False
 
 
 def _refuse(message, rule, doc):
@@ -113,8 +183,9 @@ def require_reason(doc, method=None):
 	The field is blanked on every path so a reason never sits on the punch and never gets
 	reused by the next edit. The chosen reason is carried to `write_log` on the document's own
 	flags, which only code on this server can set."""
-	reason = doc.get(FIELD)
+	reason, text = doc.get(FIELD), doc.get(TEXT_FIELD)
 	doc.set(FIELD, None)
+	doc.set(TEXT_FIELD, None)
 	before = None if doc.is_new() else doc.get_doc_before_save()
 	if before and doc.employee != before.employee:
 		# Refused, not logged: only the gaining person would be told. Either side counts.
@@ -138,11 +209,12 @@ def require_reason(doc, method=None):
 		          "notice. (If you are importing punches or calling the API, put the reason in "
 		          "the 'Reason For This Change' column, {0}, on every row.)").format(FIELD),
 		        "088c-reason", doc)
-	if not _valid_reason(reason):
-		_refuse(_("That is not one of the reasons on the list. Pick one from the list."),
-		        "088c-reason-list", doc)
+	problem = reason_problem(reason, text)
+	if problem:
+		_refuse(problem, "088c-reason-list", doc)
 	# An addition's sentence is written in `write_log`, once the working day is known.
-	doc.flags[_STASH] = {"reason": reason, "what": _sentence(doc, before) if before else None}
+	doc.flags[_STASH] = {"reason": reason, "text": text,
+	                     "what": _sentence(doc, before) if before else None}
 
 
 def write_log(doc, method=None):
@@ -152,32 +224,13 @@ def write_log(doc, method=None):
 	pending = doc.flags.pop(_STASH, None)
 	if not pending:
 		return
-	if not _valid_reason(pending["reason"]):
-		# The last line of defence: the same check as above, because this is the row that
-		# is evidence for ever.
-		_refuse(_("That is not one of the reasons on the list. Pick one from the list."),
-		        "088c-reason-list", doc)
 	from alvoraa_portal.payroll_rules_apply import shift_day
 
 	day = getdate(shift_day(doc))
 	what = pending["what"] or "Punch at %s added" % _when(doc.time, day)   # date shown when it is not the shift's day
-	frappe.flags[FLAG] = True
-	try:
-		frappe.get_doc({
-			"doctype": LOG,
-			"punch": doc.name,
-			"employee": doc.employee,
-			# The working day (ALV-402: the date the punch's SHIFT started), the one rule the
-			# engine, the reports and the screens use. NOT the calendar date: a 00:30 punch
-			# on a 20:30 shift belongs to the evening before.
-			"day": day,
-			"reason_code": pending["reason"],
-			"what": what,
-			"changed_by": frappe.session.user,
-			"changed_on": now_datetime(),
-		}).insert(ignore_permissions=True)
-	finally:
-		frappe.flags[FLAG] = False
+	# The working day (ALV-402: the date the punch's SHIFT started), NOT the calendar date: a
+	# 00:30 punch on a 20:30 shift belongs to the evening before.
+	add_row(doc.employee, day, pending["reason"], pending.get("text"), what, punch=doc.name)
 	access.security_logger().info("punch_change logged punch=%s user=%s", doc.name, frappe.session.user)
 
 
@@ -214,13 +267,14 @@ def _sentence(doc, before):
 	if (doc.log_type or "") != (before.log_type or ""):
 		bits.append("Punch type changed from %s to %s" % (
 			label.get(before.log_type, "blank"), label.get(doc.log_type, "blank")))
-	if cint(doc.get_value("skip_auto_attendance")) != cint(before.get_value("skip_auto_attendance")):
-		bits.append("Punch at %s %s" % (_hm(doc.time), "not counted" if cint(doc.get_value("skip_auto_attendance"))
+	if cint(doc.skip_auto_attendance) != cint(before.skip_auto_attendance):
+		bits.append("Punch at %s %s" % (_hm(doc.time), "not counted" if cint(doc.skip_auto_attendance)
 		                                else "counted again"))
 	if doc.shift_start and str(get_datetime(doc.shift_start)) != str(get_datetime(before.shift_start or doc.shift_start)):
 		d = get_datetime(doc.shift_start)
 		bits.append("Punch moved to the %d %s shift" % (d.day, d.strftime("%b")))
-	elif (doc.shift or "") != (before.shift or "") or doc.get_value("shift_end") != before.get_value("shift_end"):
+	elif not same(doc.meta.get_field("shift"), doc.shift, before.shift) or not same(
+			doc.meta.get_field("shift_end"), doc.shift_end, before.shift_end):
 		bits.append("Punch shift changed")
 	# Never empty: the record requires a sentence, and an empty one would fail the punch save.
 	return "; ".join(bits) or "Punch changed"
@@ -245,6 +299,12 @@ def after_migrate():
 		"description": "Needed when you add or change a punch for somebody else, if your "
 		               "organisation prints change notices. It is printed on the employee's "
 		               "notice. Always blank once saved.",
+	}, {
+		"fieldname": TEXT_FIELD, "fieldtype": "Data", "label": "Reason Text", "length": TEXT_MAX,
+		"insert_after": FIELD, "no_copy": 1, "print_hide": 1,
+		"depends_on": "eval:doc.%s=='Other'" % FIELD,
+		"description": "Only with the reason 'Other'. Printed on the employee's notice. Do not "
+		               "write medical details or the names of other people. Always blank once saved.",
 	}]})
 	try:
 		frappe.db.add_index(LOG, ["employee", "day"], index_name="employee_day")

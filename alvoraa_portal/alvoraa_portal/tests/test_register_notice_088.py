@@ -556,11 +556,15 @@ class TheHRList(RegisterNoticeCase):
 		for forbidden in ("explanation", "reason", "alvoraa_missing_time", "alvoraa_set_aside",
 		                  "from_date", "content_hash", "secret words about this person"):
 			self.assertNotIn(forbidden, blob, forbidden + " left the server in the list payload")
+		# `pages` is how many A4 sheets were printed, so the record dialog knows how many
+		# photos to ask for. It is a count of paper, not content: it says nothing about
+		# what any day was changed to, and `changed_days` above already tells HR the
+		# scale. Added deliberately, which is what this list is here to force.
 		self.assertEqual(sorted(out["rows"][0].keys()),
 		                 sorted(["employee", "employee_name", "employee_number", "branch",
 		                         "changed_days", "open_days", "state", "uncovered", "i_filed",
 		                         "printed_at", "printed_by", "recorded_by", "recorded_on",
-		                         "said", "notice", "can_tick", "can_record"]))
+		                         "said", "notice", "pages", "can_tick", "can_record"]))
 
 	def test_an_employee_and_a_line_manager_are_refused(self):
 		"""AC-9 and US-8. The control is every other test here, which calls it as HR."""
@@ -770,6 +774,37 @@ class ThePrintCall(RegisterNoticeCase):
 		self.assertEqual(notice.page_count, 2)
 		self.assertEqual(sorted(r.page_no for r in notice.changes), [1, 1, 1, 1, 1, 2],
 		                 "the stored record disagrees with the pages that were printed")
+
+	def test_the_list_tells_the_browser_how_many_pages_were_printed(self):
+		"""The record dialog asks for one photo of each printed page, and it can only
+		know how many to ask for if the list says so.
+
+		Without this the dialog assumed one page, so a two-page notice could not be
+		recorded by any route: two photos were refused by the browser and one by
+		`record`, and the person's pay stayed held. The browser test could not catch
+		it because it patched the page count onto the row by hand - a key the server
+		never sent - so this assertion belongs on the server side, where the contract
+		actually lives.
+		"""
+		for n in range(6):
+			self.an_approved_hr_change("1%d:30" % (n + 2))
+		out = self._print([self.emp])
+		self.assertEqual(len(out["sheets"]), 2, "the fixture did not make two pages")
+
+		# `.get`, not `[...]`: a missing key is exactly the fault this guards, and a bare
+		# KeyError would hide the sentence explaining what it costs.
+		row = self._rows_for_me()[0]
+		self.assertEqual(row.get("pages"), 2,
+		                 "the list did not tell the browser the notice has two pages, so "
+		                 "the record dialog would ask for one photo and refuse the second")
+
+	def test_a_notice_not_yet_printed_has_no_page_count(self):
+		"""Nothing has been printed, so there is nothing to photograph. The row says so
+		rather than claiming one page."""
+		self.an_approved_hr_change()
+		row = self._rows_for_me()[0]
+		self.assertEqual(row["state"], "not_printed")
+		self.assertIsNone(row["pages"])
 
 	def test_the_reference_carries_the_month_the_page_and_the_print_number(self):
 		"""Parity P-9, which Surbhi approved: a reprint must be tellable from the page

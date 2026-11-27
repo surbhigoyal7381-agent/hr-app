@@ -44,15 +44,16 @@ FIELDS = {
 		 "label": "Exempt From The Limit", "insert_after": LIMIT,
 		 "description": "Role or designation names, separated by commas."},
 	],
+	# Not allow_on_submit (ALV-477): only the engine writes these, with db.set_value. See payroll_fields.
 	ATTENDANCE: [
 		{"fieldname": "alvoraa_release_how", "fieldtype": "Select", "read_only": 1,
-		 "allow_on_submit": 1, "options": "\nHR decision\nMachine punch",
+		 "allow_on_submit": 0, "options": "\nHR decision\nMachine punch",
 		 "label": "Released By", "insert_after": "alvoraa_evaluated_on"},
 		{"fieldname": "alvoraa_release_by", "fieldtype": "Data", "read_only": 1,
-		 "allow_on_submit": 1, "label": "Released By (User Or Punch)",
+		 "allow_on_submit": 0, "label": "Released By (User Or Punch)",
 		 "insert_after": "alvoraa_release_how"},
 		{"fieldname": "alvoraa_release_on", "fieldtype": "Datetime", "read_only": 1,
-		 "allow_on_submit": 1, "label": "Released On", "insert_after": "alvoraa_release_by"},
+		 "allow_on_submit": 0, "label": "Released On", "insert_after": "alvoraa_release_by"},
 	],
 	REQUEST: [
 		{"fieldname": "alvoraa_missing_time", "fieldtype": "Time",
@@ -283,23 +284,27 @@ def _held_row(employee, date):
 def _day_logs(employee, date, shift, aside=()):
 	"""The punches a day is judged from. `aside` are punch names to leave out (slice 087:
 	a punch a pending fix would set aside; once approved it is out through its own
-	`skip_auto_attendance`).
+	`alvoraa_fix_aside_request`).
+
+	ALV-355: the same rule as the pay engine, and written once in `payroll_rules_apply`
+	(`aside_filter`, `fold_repeat_scans`). `skip_auto_attendance` and `offshift` are not read, so
+	a real punch Frappe flagged no longer drops out of the day; a repeat scan is folded by time.
 
 	ALV-402's rule, the same as `payroll_rules_apply._punches`: a punch belongs to the day its
 	shift started (`shift_start`), not to its calendar date, and a punch with no shift keeps its
 	calendar date. So this reads the day and the next and keeps what is this day's: leaving at
 	00:00 after a 20:30 shift end is the last punch of the day before, here as in the engine."""
-	from alvoraa_portal.payroll_rules_apply import shift_day  # the one working-day rule (ALV-402)
+	from alvoraa_portal.payroll_rules_apply import aside_filter, fold_repeat_scans, shift_day  # the one day rule
 
 	date = getdate(date)
-	filters = {"employee": employee, "skip_auto_attendance": 0, "offshift": 0,
+	filters = {"employee": employee, **aside_filter(),
 	           "time": ("between", [f"{date} 00:00:00", f"{add_days(date, 1)} 23:59:59"])}
 	if aside:
 		filters["name"] = ("not in", list(aside))
 	rows = frappe.get_all("Employee Checkin", filters=filters,
 	                      fields=["name", "time", "log_type", "shift_start", "shift_end"],
 	                      order_by="time asc")
-	return [r for r in rows if shift_day(r) == str(date)]
+	return fold_repeat_scans([r for r in rows if shift_day(r) == str(date)], date)
 
 
 def extra_when(shift, date, when, first_time=None):
@@ -336,6 +341,10 @@ def worked_out(row, extra=None, aside=(), logs=None):
 		log["shift_start"] = get_datetime(log["shift_start"])
 		log["shift_end"] = get_datetime(log["shift_end"])
 	logs = [frappe._dict(x) for x in logs]
+	if not logs:
+		# ALV-474: no punch counts (HR set every one aside). Frappe's get_attendance reads logs[0]
+		# and raised IndexError, so HR could not open the card on such a day. No punches = Absent.
+		return "Absent", 0, False, False, None, None
 	absent, half = flt(shift.working_hours_threshold_for_absent), flt(shift.working_hours_threshold_for_half_day)
 	if shift.is_half_holiday(row.employee, row.attendance_date):
 		absent, half = absent / 2, half / 2

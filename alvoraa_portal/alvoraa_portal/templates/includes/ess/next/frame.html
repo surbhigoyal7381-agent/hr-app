@@ -37,9 +37,9 @@
           attacker-controlled - but it lands inside an attribute, and the day
           somebody lets a tenant admin upload their own logo through a form is
           the day this line decides whether that is a stored-XSS hole. -#}
-      <span class="nf-brand-mark" aria-hidden="true">{{ tenant_name[0] | upper }}{% if brand_mark_url %}<img src="{{ brand_mark_url | e }}" alt="" onerror="this.remove()">{% endif %}</span>
+      <span class="nf-brand-mark" aria-hidden="true">{{ brand_label[0] | upper | e }}{% if brand_mark_url %}<img src="{{ brand_mark_url | e }}" alt="" onerror="this.remove()">{% endif %}</span>
       <span class="nf-brand-text">
-        <span class="nf-brand-name" title="{{ tenant_name }}">{{ tenant_name }}</span>
+        <span class="nf-brand-name" title="{{ brand_label | e }}">{{ brand_label | e }}</span>
         <span class="nf-brand-sub">{{ _("Employee portal") }}</span>
       </span>
     </div>

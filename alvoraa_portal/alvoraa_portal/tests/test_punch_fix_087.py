@@ -277,7 +277,7 @@ class Raising(PunchFixCase):
 		tomorrow = frappe.get_doc({"doctype": CHECKIN, "employee": self.emp, "log_type": "IN",
 		                           "time": "%s 10:00:00" % add_days(self.day, 1)}).insert(ignore_permissions=True).name
 		self.refused(lambda: self.fix("12:40", aside=[tomorrow]), "not on this day")
-		frappe.db.set_value(CHECKIN, names[0], "skip_auto_attendance", 1)
+		frappe.db.set_value(CHECKIN, names[0], punch_fix.ASIDE, "X")  # ALV-355: only a set-aside punch is refused
 		self.refused(lambda: self.fix("12:40", aside=[names[0]]), "does not count already")
 		self.fix("12:40", aside=[names[2]])  # control
 

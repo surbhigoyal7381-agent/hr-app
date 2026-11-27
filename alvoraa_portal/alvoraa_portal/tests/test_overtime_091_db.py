@@ -58,6 +58,15 @@ class TheTableThePersonTypes(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			_rule_set(overtime_bands=bad)
 
+	def test_alv478_the_percent_is_whole_1_to_100_or_blank(self):
+		day = getdate(nowdate())
+		for bad in ("0", "101", "75.5", "abc", "-5", 0, 101):
+			with self.assertRaises(frappe.ValidationError, msg=repr(bad)):
+				_rule_set(overtime_bands=BANDS, overtime_next_band_percent=bad)
+		for text, value in (("", 100), (None, 100), ("100", 100), ("1", 1), ("75", 75), (" 75 ", 75)):
+			rs = _rule_set(overtime_bands=BANDS, overtime_next_band_percent=text)
+			self.assertEqual(prepare(rs, day, day)["overtime_next_percent"], value, repr(text))
+
 	def test_more_than_a_day_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			_rule_set(overtime_bands=[dict(BANDS[0], total_quarters=5)])
@@ -159,9 +168,9 @@ class ANightJudgedFromRealPunches(FrappeTestCase):
 		frappe.db.set_value("Employee Checkin", doc.name, "shift_start", shift_start,
 		                    update_modified=False)
 
-	def _night(self, employment_type, out):
+	def _night(self, employment_type, out, percent=None):
 		rs = _rule_set(overtime_bands=BANDS, night_green_for_everyone=1,
-		               categories=[CONTRACT])
+		               categories=[CONTRACT], overtime_next_band_percent=percent)
 		emp = _employee(employment_type)
 		start = "{0} 10:30:00".format(self.d1)
 		self._punch(emp, "{0} 10:30:00".format(self.d1), start)
@@ -169,6 +178,13 @@ class ANightJudgedFromRealPunches(FrappeTestCase):
 		att = frappe._dict(name="X", employee=emp, attendance_date=self.d1,
 		                   status="Present", shift=SHIFT)
 		return judge(att, prepare(rs, self.d1, self.d2))
+
+	def test_alv478_the_setting_reaches_the_judge_from_the_saved_rule_set(self):
+		"""00:35 is 35 minutes into the 23:00-01:00 window: 1 quarter alone, 2 at 75%."""
+		out = "{0} 00:35:00".format(self.d2)
+		self.assertEqual(self._night("Permanent", out).overtime_quarters, 1)
+		self.assertEqual(self._night("Permanent", out, "100").overtime_quarters, 1)
+		self.assertEqual(self._night("Permanent", out, "75").overtime_quarters, 2)
 
 	def test_a_ten_past_one_punch_on_the_next_date_pays_two_quarters(self):
 		v = self._night("Permanent", "{0} 01:10:00".format(self.d2))

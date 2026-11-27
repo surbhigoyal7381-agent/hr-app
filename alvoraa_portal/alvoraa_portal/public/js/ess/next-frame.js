@@ -259,12 +259,45 @@
       .catch(function () { return ""; });
   }
 
+  /* A server message is not always a sentence: Frappe sends a table or a list
+     as an ARRAY, and an array put into an Error prints as one run of commas
+     ("Date,Reason,Action,17-11-2026,..."). So the first message is read here,
+     one line per row under its title, never as markup. The same code is in
+     portal.js (a different page). A date in the system's own format becomes
+     "17 Nov 2026"; with no format on the page the cell is left as sent. */
+  function serverDate(c) {
+    var fmt = window.frappe && window.frappe.boot && window.frappe.boot.sysdefaults
+      && window.frappe.boot.sysdefaults.date_format;
+    if (!fmt || !/^[dmy]+[-\/.][dmy]+[-\/.][dmy]+$/.test(fmt)) { return c; }
+    var m = new RegExp("^" + fmt.replace(/\./g, "\\.").replace(/[dmy]+/g, function (t) {
+      return "(\\d{" + t.length + "})";
+    }) + "$").exec(c);
+    if (!m) { return c; }
+    var at = {};
+    fmt.match(/[dmy]+/g).forEach(function (t, i) { at[t.charAt(0)] = m[i + 1]; });
+    if (+at.m < 1 || +at.m > 12 || +at.d < 1 || +at.d > 31) { return c; }
+    return +at.d + " " + "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ")[+at.m - 1] + " " + at.y;
+  }
+  function serverWords(one) {
+    var obj = one && typeof one === "object" && !Array.isArray(one);
+    var body = obj ? one.message : one;
+    if (!Array.isArray(body)) { return typeof body === "string" ? body : ""; }
+    var lines = body.map(function (row) {
+      return (Array.isArray(row) ? row : [row]).map(function (c) {
+        return serverDate(String(c == null ? "" : c).replace(/<[^>]*>/g, "").trim());
+      }).filter(Boolean).join(" \u2014 ");
+    }).filter(Boolean);
+    var title = obj && typeof one.title === "string" ? one.title.trim() : "";
+    if (title && title !== "Message" && lines.length) { lines.unshift(title + ":"); }
+    return lines.join("\n");
+  }
+
   /* The server's own sentence where there is one, so a refusal reads the same
      here as it does everywhere else. The status and the exception type travel
      with it, because `isSignedOut` needs them. */
   function apiError(data, res) {
     var msg = "";
-    try { msg = JSON.parse(JSON.parse(data._server_messages)[0]).message; } catch (e) {}
+    try { msg = serverWords(JSON.parse(JSON.parse(data._server_messages)[0])); } catch (e) {}
     if (!msg && data && typeof data.exc === "string") {
       try { msg = JSON.parse(data.exc)[0].trim().split("\n").pop(); } catch (e) {}
     }

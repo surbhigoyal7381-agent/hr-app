@@ -166,7 +166,7 @@
   border: 1px solid var(--border); border-radius: var(--r);
   background: var(--surface); text-align: center;
 }
-.nf-state-say { margin: 0 0 12px; font-size: var(--fs-base); color: var(--text2); }
+.nf-state-say { margin: 0 0 12px; font-size: var(--fs-base); color: var(--text2); white-space: pre-line; }
 .nf-state[data-kind="loading"] .nf-state-say::before {
   content: ""; display: block; width: 22px; height: 22px; margin: 0 auto 12px;
   border: 2px solid var(--border2); border-top-color: var(--primary);
@@ -288,7 +288,7 @@
 .nf-toast {
   padding: 12px 14px; border-radius: var(--r-sm);
   background: var(--text); color: var(--bg);
-  font-size: var(--fs-base); box-shadow: var(--sh2, 0 4px 16px rgba(0, 0, 0, .2));
+  font-size: var(--fs-base); box-shadow: var(--sh2, 0 4px 16px rgba(0, 0, 0, .2)); white-space: pre-line;
 }
 .nf-toast[data-kind="error"] { background: var(--red); color: #fff; }
 .nf-toast[data-kind="ok"] { background: var(--green); color: #fff; }

@@ -60,10 +60,17 @@ class TestTheListsAreClosed(_Base):
 		# Still not the personal mobile, whatever the eleventh is called.
 		self.assertNotIn("cell_number", people_fields.POSITIONS_PROFILE_FIELDS)
 
-	def test_the_six_my_profile_fields_are_exactly_these(self):
+	def test_the_nine_my_profile_fields_are_exactly_these(self):
+		"""Nine since ALV-495. The last three are the SECOND emergency contact,
+		Surbhi's decision of 28 November 2026, and they are here rather than on
+		a joiner-only list because she asked for the employee to be able to
+		edit them from the portal later."""
 		self.assertEqual(people_fields.MY_PROFILE_WRITE_FIELDS, (
 			"cell_number", "personal_email", "current_address",
-			"person_to_be_contacted", "relation", "emergency_phone_number"))
+			"person_to_be_contacted", "relation", "emergency_phone_number",
+			"alvoraa_second_person_to_be_contacted", "alvoraa_second_relation",
+			"alvoraa_second_emergency_phone_number"))
+		self.assertEqual(len(people_fields.MY_PROFILE_WRITE_FIELDS), 9)
 
 	def test_pay_bank_identity_and_date_of_birth_are_denied(self):
 		"""N1. Whatever is ticked, whatever the reader's permission level."""

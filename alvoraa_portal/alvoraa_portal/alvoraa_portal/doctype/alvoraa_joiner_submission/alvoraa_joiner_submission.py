@@ -37,6 +37,10 @@ TERMINAL = ("Made an employee", "Expired", "Cancelled")
 # field.** Where an identity number is genuinely needed it arrives as one of the
 # ticked document types - a file under HR's existing verification flow rather
 # than a searchable column on a table a stranger can write to.
+# **ALV-495 added the second emergency contact, and this list is what ERASES
+# it.** `strip_personal_fields` loops over exactly these names, so a column
+# added to the form and left out here would survive an erasure we have already
+# told the person happened. Anything the joiner can type belongs here.
 JOINER_FIELDS = (
 	"full_name",
 	"mobile",
@@ -45,6 +49,9 @@ JOINER_FIELDS = (
 	"emergency_contact_name",
 	"emergency_relation",
 	"emergency_phone",
+	"second_emergency_contact_name",
+	"second_emergency_relation",
+	"second_emergency_phone",
 )
 
 # Slice 079. The six details HR ticks are named after `Employee`'s own columns -
@@ -56,6 +63,15 @@ JOINER_FIELDS = (
 # `full_name` is deliberately NOT in it: it is HR's own entry at invite,
 # pre-filled on the form, correctable by the joiner, and never made compulsory
 # by a tick (AC-104).
+#
+# **Nine since ALV-495.** The last three are the second emergency contact, which
+# Surbhi asked for on 28 November 2026. Their Employee side are Custom Fields
+# made by `alvoraa_portal/second_emergency_contact.py`, not ERPNext columns, so
+# a site that has not migrated since ALV-495 has no home for them - which is why
+# that module runs on `after_install` as well as `after_migrate`.
+#
+# Adding a pair here is not enough on its own: the column must also be in
+# `JOINER_FIELDS` above, or it is never erased.
 COLUMN_FOR_TICK = {
 	"cell_number": "mobile",
 	"personal_email": "personal_email",
@@ -63,6 +79,9 @@ COLUMN_FOR_TICK = {
 	"person_to_be_contacted": "emergency_contact_name",
 	"relation": "emergency_relation",
 	"emergency_phone_number": "emergency_phone",
+	"alvoraa_second_person_to_be_contacted": "second_emergency_contact_name",
+	"alvoraa_second_relation": "second_emergency_relation",
+	"alvoraa_second_emergency_phone_number": "second_emergency_phone",
 }
 
 

@@ -361,10 +361,21 @@ class TestWhatIsStored(_Base):
 			self.assertNotIn(never, body)
 
 	def test_the_allow_list_has_no_bank_salary_or_statutory_field(self):
+		"""**The number is a tripwire and stays typed by hand.** It is not read
+		from the list, on purpose: anybody widening what a joiner may be asked
+		for has to come to this test and change it deliberately, which is the
+		moment to ask whether the new field belongs on a table a stranger can
+		write to. Seven until ALV-495 added a second emergency contact
+		(Surbhi, 28 November 2026); ten now."""
 		for never in ("bank_ac_no", "ctc", "pan_number", "aadhaar",
 		              "date_of_birth", "salary"):
 			self.assertNotIn(never, JOINER_FIELDS)
-		self.assertEqual(len(JOINER_FIELDS), 7)
+		self.assertEqual(len(JOINER_FIELDS), 10)
+		# The number and the contents must agree, or the tripwire passes while
+		# saying nothing about what is actually on the list.
+		for added in ("second_emergency_contact_name", "second_emergency_relation",
+		              "second_emergency_phone"):
+			self.assertIn(added, JOINER_FIELDS)
 
 	def test_the_tick_names_and_the_column_names_are_mapped_both_ways(self):
 		"""**New, because 079 introduced the map.** HR ticks `Employee`'s own

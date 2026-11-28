@@ -59,15 +59,29 @@ POSITIONS_PROFILE_FIELDS = (
 	"alvoraa_alternative_number",
 )
 
-# ── the six details an employee may correct about themselves ─────────────────
+# ── the nine details an employee may correct about themselves ────────────────
 #
-# All six are permlevel 0 - the employee's own details - and all six are things
-# only the person themselves actually knows. Their job, their pay, their bank
-# and their identity numbers are not here and never will be: a self-service
-# screen must not become a way round field rights.
+# All nine are permlevel 0 - the employee's own details - and all nine are
+# things only the person themselves actually knows. Their job, their pay, their
+# bank and their identity numbers are not here and never will be: a
+# self-service screen must not become a way round field rights.
 #
 # Blood group and marital status stay off: health and family data, and no
 # screen needs them.
+#
+# **Nine since ALV-495, and the last three are a SECOND emergency contact.**
+# Surbhi asked for them on the joiner form on 28 November 2026 and said the
+# employee may edit them later from the portal, which is why they are here on
+# the shared list rather than on a joiner-only one: they are exactly the fields
+# that screen will offer. The first three are ERPNext's own columns; the second
+# three are Custom Fields created by
+# `alvoraa_portal/second_emergency_contact.py`, at permlevel 0 for the same
+# reason the first three are.
+#
+# **A tenant whose site has not migrated since ALV-495 does not have the three
+# columns.** Ticking one there would store a name no screen can read. That is
+# why the field module is wired into `after_migrate` AND `after_install` rather
+# than left to a patch - see its docstring.
 MY_PROFILE_WRITE_FIELDS = (
 	"cell_number",
 	"personal_email",
@@ -75,6 +89,9 @@ MY_PROFILE_WRITE_FIELDS = (
 	"person_to_be_contacted",
 	"relation",
 	"emergency_phone_number",
+	"alvoraa_second_person_to_be_contacted",
+	"alvoraa_second_relation",
+	"alvoraa_second_emergency_phone_number",
 )
 
 # ── what a direct manager may see of a team member (slice 089) ───────────────
@@ -118,6 +135,10 @@ NEVER = (
 	# `is_denied` is asked about the Positions list, see `allowed`.)
 	"current_address", "permanent_address", "personal_email", "cell_number",
 	"person_to_be_contacted", "relation", "emergency_phone_number",
+	# ALV-495's second set, denied for exactly the same reason as the first.
+	# Belt and braces as above: they are not on POSITIONS_PROFILE_FIELDS either.
+	"alvoraa_second_person_to_be_contacted", "alvoraa_second_relation",
+	"alvoraa_second_emergency_phone_number",
 	# the reason somebody is leaving is never a profile row. The DATE may appear
 	# in the one "left on" sentence, which is not a field read.
 	"relieving_date",

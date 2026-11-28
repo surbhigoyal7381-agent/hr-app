@@ -44,6 +44,9 @@ from alvoraa_portal.tests.fixtures_045 import Wave4Base, own_user
 DOCTYPE = "Alvoraa Joiner Submission"
 
 # One value per column, so a map that crosses two of them over is visible.
+# The last three are ALV-495's second emergency contact, and they are
+# deliberately a DIFFERENT person from the first set: crossing the two sets over
+# is the mistake this dict is shaped to expose.
 SENT = {
 	"full_name": "Rakesh Kumar",
 	"mobile": "9811112222",
@@ -52,6 +55,9 @@ SENT = {
 	"emergency_contact_name": "Sunita Kumar",
 	"emergency_relation": "Sister",
 	"emergency_phone": "9822223333",
+	"second_emergency_contact_name": "Vijay Kumar",
+	"second_emergency_relation": "Brother",
+	"second_emergency_phone": "9833334444",
 }
 
 
@@ -179,10 +185,13 @@ class _Base(Wave4Base):
 
 
 class TestThePrefill(_Base):
-	def test_it_returns_the_six_details_and_the_name_character_for_character(self):
+	def test_it_returns_every_detail_and_the_name_character_for_character(self):
 		"""AC-2. The mobile number is the one that matters: it is where payslip
 		and attendance messages go, and a one-digit typo is invisible until
-		somebody says they never got anything."""
+		somebody says they never got anything.
+
+		Nine details since ALV-495. The second emergency contact is a different
+		person from the first, so this also fails if the two sets cross over."""
 		name = self._submission()
 		frappe.set_user(self.hr)
 		got = j2e.details_for_a_new_employee(submission=name)
@@ -194,6 +203,9 @@ class TestThePrefill(_Base):
 			"person_to_be_contacted": "Sunita Kumar",
 			"relation": "Sister",
 			"emergency_phone_number": "9822223333",
+			"alvoraa_second_person_to_be_contacted": "Vijay Kumar",
+			"alvoraa_second_relation": "Brother",
+			"alvoraa_second_emergency_phone_number": "9833334444",
 		})
 
 	def test_the_keys_are_the_one_map_inverted_and_nothing_else(self):
@@ -206,8 +218,8 @@ class TestThePrefill(_Base):
 		self.assertEqual(set(got), set(COLUMN_FOR_TICK) | {"first_name"})
 
 	def test_every_key_is_returned_even_when_the_joiner_left_it_blank(self):
-		"""Seven, always. A key that appears and disappears would make the
-		browser's behaviour depend on the data."""
+		"""Every key, always - ten since ALV-495. A key that appears and
+		disappears would make the browser's behaviour depend on the data."""
 		name = self._submission(current_address=None, emergency_relation=None)
 		frappe.set_user(self.hr)
 		got = j2e.details_for_a_new_employee(submission=name)
@@ -382,18 +394,25 @@ class TestTheLink(_Base):
 
 	def test_it_reports_the_real_count_of_details(self):
 		"""AC-16. Computed from what was actually on the row, never a fixed
-		string. Six here; five when the person left one blank."""
+		string: all of them here, one fewer when the person left one blank.
+
+		**The expected number is read from the map, not typed.** It was typed
+		as 6 until ALV-495 added three more columns, and then this test failed
+		for a number rather than for a fault - which is the mistake its own
+		docstring warns about."""
+		full = len(COLUMN_FOR_TICK)
 		name = self._submission()
 		frappe.set_user(self.hr)
 		self.assertEqual(
 			j2e.link_the_employee(submission=name,
-			                      employee=self.employee)["details"], 6)
+			                      employee=self.employee)["details"], full)
 		frappe.set_user("Administrator")
 		thin = self._submission(current_address=None)
 		frappe.set_user(self.hr)
 		self.assertEqual(
 			j2e.link_the_employee(submission=thin,
-			                      employee=self.other_employee)["details"], 5)
+			                      employee=self.other_employee)["details"],
+			full - 1)
 
 	def test_it_says_how_many_documents_it_did_not_move(self):
 		"""The honest half of AC-17. The document move is out of scope, so the

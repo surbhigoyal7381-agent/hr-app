@@ -870,6 +870,11 @@ after_migrate = [
     # Slice 080: the "Alternative number" field. Before the line below, so the
     # field exists by the time field rights are applied. See alternative_number.py.
     "alvoraa_portal.alternative_number.after_migrate",
+    # ALV-495: the SECOND emergency contact (name, relation, phone) on Employee.
+    # Here too it must come before field rights are applied. The three are
+    # permlevel 0 on purpose - the employee edits them later from the portal, so
+    # they are NOT on employee_field_rights.LEVEL_2. See second_emergency_contact.py.
+    "alvoraa_portal.second_emergency_contact.after_migrate",
     # ALV-469: the two org fields and the Gig Worker / Freelancer types. See org_label.py.
     "alvoraa_portal.org_label.after_migrate",
     # Slice 089: the one Custom Field on ToDo (writes only what is missing).
@@ -978,6 +983,10 @@ after_install = [
     # Slice 080: same as after_migrate, and this is the half that matters - a
     # patch would never run here, so a new tenant would not have the field.
     "alvoraa_portal.alternative_number.after_migrate",
+    # ALV-495: same as after_migrate, and for the same reason - a new tenant
+    # whose HR ticks the second emergency contact must not be reading a column
+    # that does not exist. See second_emergency_contact.py.
+    "alvoraa_portal.second_emergency_contact.after_migrate",
     # ALV-469: the two org fields and the Gig Worker / Freelancer types. See org_label.py.
     "alvoraa_portal.org_label.after_migrate",
     # Slice 089: the one Custom Field on ToDo (writes only what is missing).

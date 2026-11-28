@@ -9041,16 +9041,23 @@ var MYP = { data: null, sending: false };
 var MYP_API = "alvoraa_portal.my_profile.";
 var MYP_PHOTO = "alvoraa_portal.employee_photo.";
 
-/* The six an organisation may open, each with the words it needs. A field the
+/* The nine an organisation may open, each with the words it needs. A field the
    organisation has not ticked is ABSENT from the card - never disabled, never
-   greyed: a control that does nothing is worse than no control. */
+   greyed: a control that does nothing is worse than no control.
+
+   The last three are ALV-495's second emergency contact. They are candidates
+   here because the same three are on `MY_PROFILE_WRITE_FIELDS`, so this card
+   works the day Surbhi ticks them - but nothing appears until she does. */
 var MYP_FIELDS = {
   cell_number:            ["Mobile number", "The number HR and your manager will ring."],
   personal_email:         ["Personal email", "Used if you ever lose your work login."],
   current_address:        ["Where you live now", "Where post reaches you today. Not your permanent address."],
   person_to_be_contacted: ["Who to ring in an emergency", "A name we can ask for."],
   relation:               ["How they are related to you", "Wife, brother, friend. Whatever is true."],
-  emergency_phone_number: ["Their phone number", "A number that will be answered."]
+  emergency_phone_number: ["Their phone number", "A number that will be answered."],
+  alvoraa_second_person_to_be_contacted: ["Second emergency contact", "A second person we could ring."],
+  alvoraa_second_relation:               ["How they are related to you", "Wife, brother, friend. Whatever is true."],
+  alvoraa_second_emergency_phone_number: ["Their phone number", "A number that will be answered."]
 };
 var MYP_LONG = { current_address: 1 };   /* a textarea rather than one line */
 
@@ -9407,7 +9414,10 @@ var OCS_MY_WORDS = {
   current_address: "Where they live now",
   person_to_be_contacted: "Emergency contact name",
   relation: "How they are related",
-  emergency_phone_number: "Emergency contact number"
+  emergency_phone_number: "Emergency contact number",
+  alvoraa_second_person_to_be_contacted: "Second emergency contact name",
+  alvoraa_second_relation: "How the second contact is related",
+  alvoraa_second_emergency_phone_number: "Second emergency contact number"
 };
 /* The question the JOINER actually reads, and its hint - the same six fields
    again. Copied from `joining.html`'s own LABELS, which are Jinja-translated at
@@ -9420,7 +9430,10 @@ var OCS_JOINER_READS = {
   current_address: ["Where you live now", "Where post reaches you today"],
   person_to_be_contacted: ["Who to ring in an emergency", "A name we can ask for"],
   relation: ["How they are related to you", "Wife, brother, friend"],
-  emergency_phone_number: ["Their phone number", "A number that will be answered"]
+  emergency_phone_number: ["Their phone number", "A number that will be answered"],
+  alvoraa_second_person_to_be_contacted: ["Second emergency contact", "A second person we could ring"],
+  alvoraa_second_relation: ["How they are related to you", "Wife, brother, friend"],
+  alvoraa_second_emergency_phone_number: ["Their phone number", "A number that will be answered"]
 };
 function ocsWord(key, field) {
   /* ALV-305. The joiner list holds the SAME SIX fields as My Profile, by

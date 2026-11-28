@@ -19,22 +19,18 @@ import re
 import unittest
 
 import alvoraa_portal
+import hrms.alvoraa_org_structure.people_fields as people_fields
 
 APP_DIR = os.path.dirname(os.path.abspath(alvoraa_portal.__file__))
 JOINING = os.path.join(APP_DIR, "www", "joining.html")
 PORTAL_JS = os.path.join(APP_DIR, "public", "js", "ess", "portal.js")
 
-# The six the joiner picker offers, which are `MY_PROFILE_WRITE_FIELDS` by
-# identity. `full_name` is HR's own entry at invite, never a tick, so the
-# picker never shows it and it is not compared here.
-SIX = (
-	"cell_number",
-	"personal_email",
-	"current_address",
-	"person_to_be_contacted",
-	"relation",
-	"emergency_phone_number",
-)
+# What the joiner picker offers, READ FROM THE LIST ITSELF rather than copied.
+# It was a hard-coded six until ALV-495 added a second emergency contact and
+# the copy went stale the same day - so the copy is gone. `full_name` is HR's
+# own entry at invite, never a tick, so the picker never shows it and it is not
+# compared here.
+TICKS = people_fields.MY_PROFILE_WRITE_FIELDS
 
 
 def _block(text, start, end="};"):
@@ -66,13 +62,13 @@ def _portal_reads():
 
 class TestTheJoinerWordsAgree(unittest.TestCase):
 	def test_the_picker_quotes_the_joining_form_exactly(self):
-		"""Both files, word for word, for all six fields."""
+		"""Both files, word for word, for every field HR can tick."""
 		page = _joining_labels()
 		picker = _portal_reads()
 		# Not vacuous: if either regex stops matching, this is what fails first.
-		self.assertGreaterEqual(len(page), len(SIX) + 1)  # the six plus full_name
-		self.assertEqual(len(picker), len(SIX))
-		for field in SIX:
+		self.assertGreaterEqual(len(page), len(TICKS) + 1)  # the ticks plus full_name
+		self.assertEqual(len(picker), len(TICKS))
+		for field in TICKS:
 			with self.subTest(field=field):
 				self.assertIn(field, page, "joining.html no longer asks for it")
 				self.assertEqual(
@@ -96,6 +92,6 @@ class TestTheJoinerWordsAgree(unittest.TestCase):
 			"falls through to the raw column name again",
 		)
 		words = _block(source, "var OCS_MY_WORDS = {")
-		for field in SIX:
+		for field in TICKS:
 			with self.subTest(field=field):
 				self.assertIn(field + ":", words)

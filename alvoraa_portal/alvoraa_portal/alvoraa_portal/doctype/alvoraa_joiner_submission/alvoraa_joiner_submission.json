@@ -22,6 +22,9 @@
   "emergency_contact_name",
   "emergency_relation",
   "emergency_phone",
+  "second_emergency_contact_name",
+  "second_emergency_relation",
+  "second_emergency_phone",
   "bring_on_day_one",
   "outcome_section",
   "employee",
@@ -135,6 +138,21 @@
    "fieldname": "emergency_phone",
    "fieldtype": "Data",
    "label": "Their phone number"
+  },
+  {
+   "fieldname": "second_emergency_contact_name",
+   "fieldtype": "Data",
+   "label": "Second emergency contact name"
+  },
+  {
+   "fieldname": "second_emergency_relation",
+   "fieldtype": "Data",
+   "label": "How the second contact is related"
+  },
+  {
+   "fieldname": "second_emergency_phone",
+   "fieldtype": "Data",
+   "label": "The second contact's phone number"
   },
   {
    "fieldname": "bring_on_day_one",

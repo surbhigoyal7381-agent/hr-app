@@ -76,6 +76,13 @@ SELF_EDITABLE = (
 	"current_address", "current_accommodation_type", "permanent_address",
 	"permanent_accommodation_type", "person_to_be_contacted", "emergency_phone_number", "relation",
 	"marital_status", "bio", "image", "salutation", "education", "external_work_history",
+	# ALV-495. The SECOND emergency contact, Surbhi 28 November 2026: "yes
+	# employee can edit later". Without these three names here, ALV-266's rule
+	# puts every other field at level 2 and the employee could not change their
+	# own next of kin - the opposite of the decision. Found by the test, not by
+	# reading: the three were created at level 2 on the first run.
+	"alvoraa_second_person_to_be_contacted", "alvoraa_second_relation",
+	"alvoraa_second_emergency_phone_number",
 )
 
 # Passport, health and family details: HR roles only, to read AND write (D6,

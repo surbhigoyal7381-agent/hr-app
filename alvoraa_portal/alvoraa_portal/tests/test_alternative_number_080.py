@@ -231,7 +231,9 @@ class AltNumberOnTheScreens080(IntegrationTestCase):
 
 		self.assertEqual(people_fields.MY_PROFILE_WRITE_FIELDS, (
 			"cell_number", "personal_email", "current_address",
-			"person_to_be_contacted", "relation", "emergency_phone_number"))
+			"person_to_be_contacted", "relation", "emergency_phone_number",
+			"alvoraa_second_person_to_be_contacted", "alvoraa_second_relation",
+			"alvoraa_second_emergency_phone_number"))
 		self.assertNotIn(FIELD, people_fields.MY_PROFILE_WRITE_FIELDS)
 		for key in ("alvoraa_joiner_fields", "alvoraa_joiner_required_fields",
 		            "alvoraa_my_profile_required_fields"):
